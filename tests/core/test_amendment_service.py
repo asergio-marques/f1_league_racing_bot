@@ -1711,7 +1711,6 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     assert await _nothing_queued(path), "a refused approval was queued"
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the approval's check passes over a cancelled division's channels")
 @pytest.mark.asyncio
 async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(db_path):
     """A division cancelled mid-season, attendance on, whose attendance channel (601) has been

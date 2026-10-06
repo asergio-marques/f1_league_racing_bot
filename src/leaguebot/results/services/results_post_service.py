@@ -1623,6 +1623,11 @@ async def repost_channel_faults(
     permission arithmetic to do, and guessing would defeat the point of the gate — so an
     unresolvable bot member is itself a fault rather than a reason to wave the season
     through.
+
+    **A cancelled division is asked too** (owner, 2026-10-06, "Refuse at the press"): the
+    approval reposts its raced rounds, so a channel it configured and has lost refuses the
+    approval as a live division's does, and the channel is set again with `/results channel
+    results` or `standings`.
     """
     bot_member, faults = _repost_gate(guild, bot)
     if faults:
@@ -1635,7 +1640,7 @@ async def repost_channel_faults(
                    drc.results_channel_id, drc.standings_channel_id
             FROM divisions d
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.season_id = ? AND d.status != 'CANCELLED'
+            WHERE d.season_id = ?
             ORDER BY d.tier, d.id
             """,
             (season_id,),

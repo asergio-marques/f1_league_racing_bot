@@ -695,7 +695,6 @@ async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
     assert [name in " ".join(faults) for name in ("Alpha", "Beta", "Gamma")] == [True] * 3
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a cancelled division's channels are not checked before a points approval")
 @pytest.mark.asyncio
 async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channel(tmp_path):
     """A points approval reposts the raced rounds of a division since cancelled, so a results

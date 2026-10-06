@@ -325,7 +325,6 @@ async def test_recalculation_faults_names_a_deleted_attendance_channel(tmp_path)
     assert "Alpha" in faults[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: recalculation_faults takes no cancelled_too")
 @pytest.mark.asyncio
 async def test_recalculation_faults_names_a_cancelled_division_s_channels_only_when_asked(tmp_path):
     """Division Alpha, since cancelled, has lost its attendance channel. Asked with

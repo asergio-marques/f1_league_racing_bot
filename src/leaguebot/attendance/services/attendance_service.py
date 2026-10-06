@@ -2273,7 +2273,12 @@ async def sync_attendance(
 
 
 async def recalculation_faults(
-    db_path: str, season_id: int, guild, bot: LeagueBot | None = None
+    db_path: str,
+    season_id: int,
+    guild,
+    bot: LeagueBot | None = None,
+    *,
+    cancelled_too: bool = False,
 ) -> list[str]:
     """What stands between this season and recalculating its attendance (#187).
 
@@ -2289,6 +2294,12 @@ async def recalculation_faults(
     ``enforce_attendance_sanctions`` returns immediately when both the autosack and
     autoreserve thresholds are unset, so a league using neither must not be refused for a
     channel it will never post to.
+
+    **A cancelled division is passed over unless *cancelled_too*.** `/attendance sync` reads
+    only live divisions and keeps that reading. The approval of a points amendment asks with
+    *cancelled_too* (owner, 2026-10-06, "Refuse at the press"): it recalculates and reposts
+    the raced rounds of a division since cancelled too, so the channels of that division are
+    part of its question, and the results specification's "every division's" holds.
     """
     from leaguebot.image.services.image_validity_service import aspect_attaches_files
     from leaguebot.results.services.results_post_service import _bot_member, _channel_fault
@@ -2313,10 +2324,10 @@ async def recalculation_faults(
             FROM divisions d
             LEFT JOIN attendance_division_config adc ON adc.division_id = d.id
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.season_id = ? AND d.status != 'CANCELLED'
+            WHERE d.season_id = ? AND (? OR d.status != 'CANCELLED')
             ORDER BY d.tier, d.id
             """,
-            (season_id,),
+            (season_id, cancelled_too),
         )
         division_rows = await cursor.fetchall()
 

@@ -890,6 +890,11 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     so a manager sees what is wrong while deciding rather than after pressing Approve, and
     :func:`approve_amendment` calls it again at the press, before it writes anything, so the
     refusal cannot be stepped around by a panel drawn when the channels were still sound.
+
+    **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the
+    approval rescores, reposts and recalculates its raced rounds as a live division's, so the
+    results, standings, attendance and verdicts channels it configured are asked too, as the
+    results specification's "every division's" requires.
     This is how `validate_modification_ordering` is already used, and how
     `_placement_confirmation_faults` serves the season's own review and confirmation — the
     report and the refusal are the same reading, so they cannot drift.
@@ -920,7 +925,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
         from leaguebot.attendance.services import attendance_service
 
         faults += await attendance_service.recalculation_faults(
-            db_path, season_id, guild, bot
+            db_path, season_id, guild, bot, cancelled_too=True
         )
 
     return faults
