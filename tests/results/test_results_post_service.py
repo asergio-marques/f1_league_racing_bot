@@ -1024,9 +1024,12 @@ async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
     assert [name in " ".join(faults) for name in ("Alpha", "Beta", "Gamma")] == [True] * 3
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a cancelled division's channels are not checked before a points approval")
 @pytest.mark.asyncio
-async def test_repost_channel_faults_ignores_a_cancelled_division(tmp_path):
-    """A cancelled division is not reposted, so its channels are nobody's concern."""
+async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channel(tmp_path):
+    """A points approval reposts the raced rounds of a division since cancelled, so a results
+    channel that division configured and the server has lost is named as a live division's is,
+    and refuses the approval until it is set again."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.results_post_service import repost_channel_faults
 
@@ -1039,7 +1042,7 @@ async def test_repost_channel_faults_ignores_a_cancelled_division(tmp_path):
         db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
     )
 
-    assert faults == []
+    assert faults == ["**Alpha** — the results channel (id 501) is not in the server."]
 
 
 # ---------------------------------------------------------------------------

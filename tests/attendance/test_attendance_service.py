@@ -325,6 +325,33 @@ async def test_recalculation_faults_names_a_deleted_attendance_channel(tmp_path)
     assert "Alpha" in faults[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#439: recalculation_faults takes no cancelled_too")
+@pytest.mark.asyncio
+async def test_recalculation_faults_names_a_cancelled_division_s_channels_only_when_asked(tmp_path):
+    """Division Alpha, since cancelled, has lost its attendance channel. Asked with
+    `cancelled_too`, as a points approval asks, the channel is named; asked as `/attendance
+    sync` asks, with nothing, a cancelled division is passed over as it is today."""
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
+    from leaguebot.core.db.database import get_connection
+
+    path, season_id = await _seed_attendance_season(tmp_path)
+    async with get_connection(path) as db:
+        await db.execute("UPDATE divisions SET status = 'CANCELLED'")
+        await db.commit()
+
+    asked = await recalculation_faults(
+        path, season_id, _attendance_guild(present=(602,)), _plain_bot(), cancelled_too=True
+    )
+    default = await recalculation_faults(
+        path, season_id, _attendance_guild(present=(602,)), _plain_bot()
+    )
+
+    assert len(asked) == 1, asked
+    assert "attendance channel" in asked[0]
+    assert "Alpha" in asked[0]
+    assert default == []
+
+
 @pytest.mark.asyncio
 async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
     """Sanctions are announced as verdicts, so that channel is part of the cascade."""

@@ -1622,6 +1622,44 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     assert "attendance channel" in "; ".join(excinfo.value.faults)
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the approval's check passes over a cancelled division's channels")
+@pytest.mark.asyncio
+async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(db_path):
+    """A division cancelled mid-season, attendance on, whose attendance channel (601) has been
+    deleted: the approval reposts and recalculates its raced rounds too, so the check names the
+    channel, as the results specification's "every division's" channels require (owner,
+    2026-10-06, "Refuse at the press")."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services.amendment_service import approval_faults
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, "
+            "attendance_channel_id) VALUES (?, 601)",
+            (division_id,),
+        )
+        await db.execute(
+            "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", (division_id,)
+        )
+        await db.commit()
+    await _staged_amendment(path, season_id)
+
+    bot = _bot_recording_reposts([], missing=(601,))
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+
+    faults = await approval_faults(path, season_id, bot)
+
+    assert len(faults) == 1, faults
+    assert "attendance channel (id 601)" in faults[0]
+
+
 async def _approve_with_attendance(db_path, recalc):
     """Approve a sound amendment with attendance on, the recalculation replaced by *recalc*."""
     from unittest.mock import AsyncMock, patch
