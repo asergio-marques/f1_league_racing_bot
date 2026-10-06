@@ -4,7 +4,7 @@ Amending a round used to require two further columns carrying the post-race and 
 penalties, so that a re-inserted classification kept the sanctions already applied rather than
 losing them. That was the best available answer while the amendment was a single paste.
 
-The replay makes it wrong. `apply_penalties` **adds** to the stored penalty columns, and the
+The replay makes it wrong. `apply_penalties_on` **adds** to the stored penalty columns, and the
 replay re-inserts the driver rows with those columns at zero before running the round's report
 and appeal stages over them — so the staged verdicts reproduce the totals exactly. A paste that
 also carried the sanctions would have each one applied twice.

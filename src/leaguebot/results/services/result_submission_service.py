@@ -999,7 +999,7 @@ async def _clear_round_verdict_records_on(
 ) -> None:
     """Remove a round's penalty and appeal records so the approved set can be written whole.
 
-    **The amendment rewrites rather than adds** (#345). ``apply_penalties`` only ever inserts,
+    **The amendment rewrites rather than adds** (#345). ``apply_penalties_on`` only ever inserts,
     and adds to the stored penalty columns; replaying a round's reports over records that are
     still there duplicated every one of them, and doubled the sanction again on a second
     amendment. The times were right — stage one re-inserts the driver rows with those columns
@@ -1595,7 +1595,7 @@ async def run_amendment_review_stages(
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
     from leaguebot.results.services.penalty_wizard import _render_prompt_content
 
-    # **Scoped to the sessions being amended** (#345). `apply_penalties` walks whatever
+    # **Scoped to the sessions being amended** (#345). `apply_penalties_on` walks whatever
     # session types the staged set names, and stage one re-inserted only the amended sessions'
     # driver rows — with their penalty columns at zero. A report hydrated from an *unamended*
     # session would therefore be added on top of the milliseconds already standing there,

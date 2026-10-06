@@ -200,7 +200,7 @@ async def _applied_named(state: PenaltyReviewState, penalties: list[StagedPenalt
 
     "+5s for <@1> in FEATURE_RACE, DSQ for <@2> in SPRINT_RACE": each penalty or correction,
     the driver by the account they use now, and the session. The approval's own line carries it
-    because `apply_penalties` writes none.
+    because `apply_penalties_on` writes none.
     """
     named = []
     for sp in penalties:

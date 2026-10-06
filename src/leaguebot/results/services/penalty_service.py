@@ -18,7 +18,6 @@ from leaguebot.core.utils.input_validator import (
     parse_penalty_seconds,
     parse_time,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.results.services.penalty_wizard import StagedPardon
@@ -222,26 +221,6 @@ def _apply_time_penalty(total_time_str: str, penalty_seconds: int) -> str:
 # Application
 # ---------------------------------------------------------------------------
 
-async def apply_penalties(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    staged: list[StagedPenalty],
-    applied_by: int,
-    bot: LeagueBot,
-    *,
-    _phase: Literal["PENALTY", "APPEAL"] = "PENALTY",
-) -> list[dict]:
-    """:func:`apply_penalties_on`, saved on a connection of its own, stamped with the time now."""
-    async with get_connection(db_path) as db:
-        inserted = await apply_penalties_on(
-            db, round_id, division_id, staged, applied_by,
-            now=datetime.datetime.now(datetime.timezone.utc), _phase=_phase,
-        )
-        await db.commit()
-    return inserted
-
-
 async def apply_penalties_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -284,7 +263,7 @@ async def apply_penalties_on(
         sr_row = await cursor.fetchone()
         if sr_row is None:
             log.warning(
-                "apply_penalties: no ACTIVE session_result for round %s, session %s",
+                "apply_penalties_on: no ACTIVE session_result for round %s, session %s",
                 round_id,
                 session_type.value,
             )
@@ -419,7 +398,7 @@ async def apply_penalties_on(
         new_result_id = driver_to_new_result_id.get((sp.session_type.value, sp.driver_user_id))
         if new_result_id is None:
             log.warning(
-                "apply_penalties: no result row for user %s session %s — skipping record",
+                "apply_penalties_on: no result row for user %s session %s — skipping record",
                 sp.driver_user_id,
                 sp.session_type.value,
             )
@@ -487,7 +466,7 @@ async def load_staged_from_records(
     to one driver's row in ``race_session_results`` or ``qualifying_session_results``, from which
     the driver reads directly and the session through ``session_results``.
 
-    **Which list a penalty record belongs to is not recorded either.** ``apply_penalties``
+    **Which list a penalty record belongs to is not recorded either.** ``apply_penalties_on``
     inserts into ``penalty_records`` on both phases, so the appeal phase writes a row there *and*
     a row in ``appeal_records``. The appeals are therefore taken from ``appeal_records`` alone,
     and a ``penalty_records`` row is a report unless an appeal record of the same driver, session
@@ -572,7 +551,7 @@ async def load_staged_from_records(
 def reports_only(penalty_rows: list, appeal_rows: list) -> list:
     """The penalty records that are reports, leaving out the ones an appeal wrote.
 
-    ``apply_penalties`` inserts into ``penalty_records`` on both phases, so upholding an appeal
+    ``apply_penalties_on`` inserts into ``penalty_records`` on both phases, so upholding an appeal
     writes a row there *and* a row in ``appeal_records``, and nothing records which phase a
     penalty row came from. A penalty row is therefore a report unless an appeal record of the
     same shape accounts for it — matched once each, so two identical penalties are not both

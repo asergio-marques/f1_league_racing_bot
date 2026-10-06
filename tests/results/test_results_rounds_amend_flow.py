@@ -689,7 +689,7 @@ async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_p
 async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
     """The retired eight-column format is gone, not merely unused (#345).
 
-    `apply_penalties` adds to the stored penalty columns, and the replay re-inserts the driver
+    `apply_penalties_on` adds to the stored penalty columns, and the replay re-inserts the driver
     rows at zero before running the round's report and appeal stages over them. A paste that
     also carried the sanctions would have each applied twice — so there is no switch left that
     could ask for it, and the amendment validates exactly as a first submission does.

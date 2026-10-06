@@ -672,7 +672,7 @@ async def record_attendance_from_results_on(
     )
     round_row = await cursor.fetchone()
     if round_row is None or round_row["status"] == "CANCELLED":
-        log.info("record_attendance_from_results: skipping cancelled round %s", round_id)
+        log.info("record_attendance_from_results_on: skipping cancelled round %s", round_id)
         return
 
     # Set of driver_profile_ids who have any result row for this round.
@@ -737,22 +737,6 @@ async def record_attendance_from_results_on(
                     "UPDATE driver_round_attendance SET attended = 0 WHERE id = ?",
                     (dra_id,),
                 )
-
-
-async def record_attendance_from_results(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-) -> None:
-    """Record the round's attendance in a save of its own: :func:`record_attendance_from_results_on`
-    on a connection it opens and commits.
-
-    A change's save calls the ``_on`` form on its own connection; this one is for a caller
-    that has none.
-    """
-    async with get_connection(db_path) as db:
-        await record_attendance_from_results_on(db, round_id, division_id)
-        await db.commit()
 
 
 async def record_attendance_from_results_full_recompute(
@@ -2245,7 +2229,7 @@ async def cascade_attendance_from_round(
     ``standings_service.cascade_recompute_from_round``; attendance did not.
 
     **It deliberately does not rebuild the attended flags.** On this path the recording was
-    done by ``record_attendance_from_results``, which only ever upgrades a driver to present
+    done by ``record_attendance_from_results_on``, which only ever upgrades a driver to present
     and never revokes it (FR-003): a driver dropped from the results was given no chance to
     justify themselves, and the record errs in their favour.
     ``record_attendance_from_results_full_recompute`` can flip present to absent, so it is
