@@ -989,7 +989,7 @@ async def test_a_stop_before_the_save_applies_the_points_once_on_restart(tmp_pat
 LATEST = 2
 SANCTIONS_UNWORKED = (
     "⚠️ The attendance sanctions of Pro were not worked out, so none was applied. Repair the "
-    "cause, then run `/attendance sync division:Pro round:3`."
+    f"cause, then run `/attendance sync division:Pro round:{LATEST}`."
 )
 
 
@@ -1070,7 +1070,7 @@ async def test_a_sanction_that_does_not_apply_stops_the_queue_and_once_discarded
     assert league.attendance.applied == {LEWIS_PROFILE}
     named = (
         f"⚠️ The autoreserve of <@{MAX}> was not applied. Repair the cause, then run "
-        "`/attendance sync division:Pro round:3`."
+        f"`/attendance sync division:Pro round:{LATEST}`."
     )
     reply = updated_reply(press)
     assert reply.startswith(APPROVED_BUT)

@@ -162,6 +162,8 @@ class AttendanceDouble:
     `announce_fails` (by profile) and `lineup_fails` (a list, one per failing try) make a call
     raise; so do `recalculate_fails`, raised by `recalculate_on`, and `candidates_fail`, raised
     by `sanction_candidates` while attendance is on, each on every call while it is set.
+    `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
+    reads the hint the league would.
     """
 
     def __init__(self, league: "ReviewLeague") -> None:
@@ -248,7 +250,9 @@ class AttendanceDouble:
             raise self.lineup_fails.pop(0)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
-        return "Repair the cause, then run `/attendance sync division:Pro round:3`."
+        from leaguebot.attendance.services import attendance_service
+
+        return await attendance_service.sync_hint(self.league.db_path, division_id, round_id)
 
 
 def candidate(profile: int, driver: int, sanction: str = "AUTORESERVE",
