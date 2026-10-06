@@ -860,15 +860,14 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     panel, so a manager sees what is wrong while deciding rather than after pressing Approve;
     the points approval's check calls it again at the press and once more when the approval
     runs, before it writes anything, so the refusal cannot be stepped around by a panel drawn
-    when the channels were still sound.
+    when the channels were still sound. This is how `validate_modification_ordering` is already
+    used, and how `_placement_confirmation_faults` serves the season's own review and
+    confirmation — the report and the refusal are the same reading, so they cannot drift.
 
     **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the
     approval rescores, reposts and recalculates its raced rounds as a live division's, so the
     results, standings, attendance and verdicts channels it configured are asked too, as the
     results specification's "every division's" requires.
-    This is how `validate_modification_ordering` is already used, and how
-    `_placement_confirmation_faults` serves the season's own review and confirmation — the
-    report and the refusal are the same reading, so they cannot drift.
 
     **Each module answers for its own channels.** The results module knows what its repost
     needs and the attendance module knows what its recalculation needs; this function only
