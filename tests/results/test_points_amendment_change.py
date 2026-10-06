@@ -354,7 +354,6 @@ REPAIR_COMMANDS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the panel names only the results and standings commands")
 async def test_the_panel_names_the_command_for_every_channel_the_approval_checks(tmp_path):
     """A cancelled division's attendance channel is lost: the panel's refusal names the command
     that sets each channel the approval checks, results, standings, attendance and verdicts, not

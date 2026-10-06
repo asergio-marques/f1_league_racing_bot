@@ -1960,8 +1960,9 @@ class ResultsCog(commands.Cog):
                 f"be published:**\n• {bullet_list}\n"
                 f"Approving rescores every round of every division and reposts each one, so "
                 f"it is refused entire while any of that cannot be done — nothing would "
-                f"be changed. Repair the channels with `/results channel results` and "
-                f"`/results channel standings`, then run `/results amend review` again."
+                f"be changed. Repair the channels with `/results channel results`, "
+                f"`/results channel standings`, `/attendance channel attendance` or "
+                f"`/results channel verdicts`, then run `/results amend review` again."
             )
 
         # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
