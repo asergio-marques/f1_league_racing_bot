@@ -202,7 +202,6 @@ async def test_a_narrower_set_without_a_refusal_names_the_stage_the_season_stand
     assert "Ongoing, signups open" in _said(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: there is no stage_refusal to give the gate's words without an interaction")
 @pytest.mark.parametrize(
     ("stage", "stages", "refusal"),
     [
