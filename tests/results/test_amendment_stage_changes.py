@@ -61,6 +61,7 @@ from tests.support.review_league import (
     LATER_ROUND_ID,
     LEWIS,
     MAX,
+    MAX_PROFILE,
     NOW,
     OLD_RESULTS,
     RESULTS_CHANNEL,
@@ -69,6 +70,7 @@ from tests.support.review_league import (
     VERDICTS_CHANNEL,
     ReviewLeague,
     block_queue,
+    candidate,
     changes_of,
     is_appeals_prompt,
     one,
@@ -1064,6 +1066,60 @@ async def test_a_later_round_s_replacements_do_not_license_the_amended_round_s_t
     assert round_3_heading in said
     assert _sent_saying(league, "Corner cutting") == []
     assert await _banners_left(league) == [OLD_BANNER, round_3_heading, round_4_heading]
+
+
+#: Round 5's report for Max, and the banner heading it.
+FIFTH_REPORT = 8984
+FIFTH_BANNER = 8985
+
+
+async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_under(tmp_path):
+    """Results spec, amendment: a banner that also heads an attendance sanction card is kept.
+    Round 3 is amended in a division already at round 5, whose report for Max stands under its
+    banner. The rebuild carries the totals to round 5, where Max is over a threshold: the sanction
+    jobs run before the superseded announcements are taken down, so his card goes beneath round
+    5's banner as it stands, and that banner is kept, though it heads a card only once the
+    rebuild was planned. The other superseded banner and announcements come down. The double's
+    announcement posts the card as the real hook does, through `announce_sanction`, beneath the
+    banner of the round it is handed."""
+    from leaguebot.results.services import verdict_announcement_service
+
+    league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
+    await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    fifth = await _seed_round(league, LAST_ROUND_ID, 5, "Monza")
+    await _announced_verdict(league, fifth[MAX], FIFTH_REPORT, description="Pit lane speeding")
+    await _banner(league, ROUND_ID, OLD_BANNER)
+    await _banner(league, LAST_ROUND_ID, FIFTH_BANNER)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    headed_by: list[int] = []
+    recorded = league.attendance.announce_sanction
+
+    async def _announce(round_id: int, division_id: int, owed: dict[str, Any], *,
+                        as_text: bool) -> None:
+        headed_by.append(round_id)
+        await recorded(round_id, division_id, owed, as_text=as_text)
+        await verdict_announcement_service.announce_sanction(
+            league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
+            owed["sanction"], 10, as_text=as_text,
+        )
+
+    league.attendance.announce_sanction = _announce
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert headed_by == [LAST_ROUND_ID]
+    said = league.channel(VERDICTS_CHANNEL).messages
+    assert FIFTH_BANNER in said
+    assert FIFTH_BANNER in await _banners_left(league)
+    assert await one(
+        league.db_path,
+        "SELECT heads_sanctions FROM verdict_banner_messages WHERE message_id = ?",
+        str(FIFTH_BANNER),
+    ) == 1
+    for superseded in (OLD_BANNER, OLD_VERDICT, FIFTH_REPORT):
+        assert superseded not in said
+    assert OLD_BANNER not in await _banners_left(league)
 
 
 # ---------------------------------------------------------------------------
