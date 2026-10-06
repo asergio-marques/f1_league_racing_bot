@@ -1595,6 +1595,41 @@ class SeasonService:
             await db.commit()
 
 
+async def set_round_status_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    status: RoundStatus,
+    *,
+    only_from: Iterable[str] | None = None,
+) -> bool:
+    """Set a round's status on *db*, committing nothing, and say whether it moved.
+
+    The status alone: nothing else about the round is written, and this imports nothing of any
+    module, so the results module sets a round's place in its review through core's own writer
+    and the write is part of whatever save it is handed (issue #439). What else moves with the
+    status, a round's former drivers becoming marked as it turns FINAL, is the caller's, written
+    on the same connection.
+
+    The write is guarded, as every write of a round's status here is, so that a stale caller
+    cannot drag a round backwards. With *only_from* the round must stand in one of those states
+    (``ROUND_CANCELLABLE`` for a review opening, which a resubmission must not drag back from
+    appeals); without it the round must not be terminal, since a settled round is never
+    reopened (issue #167). A round that fails the guard is left as it is and ``False`` is
+    returned.
+    """
+    if only_from is None:
+        guard = f"status NOT IN ({_TERMINAL_SQL})"
+        params: tuple = (status.value, round_id)
+    else:
+        allowed = sorted(only_from)
+        guard = f"status IN ({', '.join('?' for _ in allowed)})"
+        params = (status.value, round_id, *allowed)
+    cursor = await db.execute(
+        f"UPDATE rounds SET status = ? WHERE id = ? AND {guard}", params
+    )
+    return cursor.rowcount > 0
+
+
 async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int) -> bool:
     """:meth:`SeasonService.refresh_division_status` on *db*, committing nothing.
 

@@ -474,6 +474,87 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
 # ── Post ──────────────────────────────────────────────────────────────────
 
 
+async def post_championship(
+    bot: LeagueBot,
+    channel,
+    *,
+    championship: str,
+    drawing,
+    heading: str,
+    label: str,
+    subject: str,
+    origin: PostingOrigin,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+) -> tuple[ChampionshipOutcome, discord.Message | None]:
+    """Draw and post one championship's graphic, saving nothing and deleting nothing.
+
+    The public half of :func:`_post_one`, for a caller that records the message id and takes the
+    message it replaces down by its own means (the change queue saves a post's id with the job's
+    done mark and deletes the old message as a job of its own). Gives the outcome and, where it is
+    ``POSTED``, the message sent; where the graphic was not produced or not delivered the outcome
+    says so (``FELL_BACK`` or ``REJECTED``) and the message is None, and nothing was sent that a
+    caller must take down.
+
+    **Produce before destroying** (FR-048): the PNG is rendered and the new message sent, and
+    nothing already standing is touched, so a render that fails leaves the channel holding the
+    standings it had.
+    """
+    what = f"{subject} — {championship} standings"
+
+    try:
+        decision = await render_png(bot, drawing, origin)
+    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
+        log.error("standings: %s render failed: %s", championship, exc, exc_info=True)
+        await report(bot, what, str(exc))
+        if origin is PostingOrigin.COMMANDED:
+            return ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}"), None
+        return ChampionshipOutcome(action=FELL_BACK), None
+
+    if decision.rejects:
+        return (
+            ChampionshipOutcome(
+                action=REJECTED,
+                message=decision.caller_message(what),
+                notices=decision.notices,
+            ),
+            None,
+        )
+
+    if not decision.posts_image:
+        # Uncommanded, and it would not draw: this championship's section is posted as
+        # text by the caller, and the other championship is untouched by it.
+        if decision.problem is not None:
+            await report(bot, what, decision.problem.detail)
+        return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices), None
+
+    from leaguebot.image.services.image_render_service import discard_attachment
+
+    png = decision.png_paths[0]
+    attachment = discord.File(str(png), filename=png.name)
+    # A season-boundary sheet carries no text above it. There is no round to head it with and
+    # no lifecycle phase to label it — the phrase naming the occasion is drawn *on* the
+    # graphic, as the lineup and calendar posted at approval are sent bare.
+    content = f"{heading}\n{label}" if occasion.names_a_round else None
+    try:
+        message = await channel.send(content, file=attachment)
+    except discord.HTTPException as exc:
+        # A Discord failure rather than a generation one. The graphic was produced; it is
+        # the delivery that was not, so it is the **textual** standings the caller posts
+        # and, if need be, enqueues for retry (FR-056).
+        log.error("standings: could not post the %s graphic: %s", championship, exc)
+        return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices), None
+    finally:
+        # Through the attachment, so the handle is closed before the file is removed.
+        discard_attachment(attachment)
+
+    # No ``png_path``: the file was discarded the moment the send returned, and handing
+    # back a path to something deleted is worse than handing back nothing.
+    return (
+        ChampionshipOutcome(action=POSTED, message_id=message.id, notices=decision.notices),
+        message,
+    )
+
+
 async def _post_one(
     bot: LeagueBot,
     channel,
@@ -491,6 +572,8 @@ async def _post_one(
 ) -> ChampionshipOutcome:
     """Draw, post and replace one championship's message.
 
+    :func:`post_championship`, then the previous message deleted and the new id saved.
+
     **Produce before destroying** (FR-048): the PNG is rendered and the new message sent
     before the previous one is deleted, so a render that fails leaves the channel holding
     the standings it had, and the caller's text fallback replaces nothing prematurely.
@@ -503,49 +586,19 @@ async def _post_one(
     )
 
     what = f"{subject} — {championship} standings"
-
-    try:
-        decision = await render_png(bot, drawing, origin)
-    except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("standings: %s render failed: %s", championship, exc, exc_info=True)
-        await report(bot, what, str(exc))
-        if origin is PostingOrigin.COMMANDED:
-            return ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}")
-        return ChampionshipOutcome(action=FELL_BACK)
-
-    if decision.rejects:
-        return ChampionshipOutcome(
-            action=REJECTED,
-            message=decision.caller_message(what),
-            notices=decision.notices,
-        )
-
-    if not decision.posts_image:
-        # Uncommanded, and it would not draw: this championship's section is posted as
-        # text by the caller, and the other championship is untouched by it.
-        if decision.problem is not None:
-            await report(bot, what, decision.problem.detail)
-        return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices)
-
-    from leaguebot.image.services.image_render_service import discard_attachment
-
-    png = decision.png_paths[0]
-    attachment = discord.File(str(png), filename=png.name)
-    # A season-boundary sheet carries no text above it. There is no round to head it with and
-    # no lifecycle phase to label it — the phrase naming the occasion is drawn *on* the
-    # graphic, as the lineup and calendar posted at approval are sent bare.
-    content = f"{heading}\n{label}" if occasion.names_a_round else None
-    try:
-        message = await channel.send(content, file=attachment)
-    except discord.HTTPException as exc:
-        # A Discord failure rather than a generation one. The graphic was produced; it is
-        # the delivery that was not, so it is the **textual** standings the caller posts
-        # and, if need be, enqueues for retry (FR-056).
-        log.error("standings: could not post the %s graphic: %s", championship, exc)
-        return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices)
-    finally:
-        # Through the attachment, so the handle is closed before the file is removed.
-        discard_attachment(attachment)
+    outcome, message = await post_championship(
+        bot,
+        channel,
+        championship=championship,
+        drawing=drawing,
+        heading=heading,
+        label=label,
+        subject=subject,
+        origin=origin,
+        occasion=occasion,
+    )
+    if message is None:
+        return outcome
 
     # A standings message id is keyed by round, on the top-ranked driver's snapshot row.
     # A season-boundary sheet has no round and no snapshot row to carry one, replaces
@@ -573,16 +626,10 @@ async def _post_one(
             message_ids=json.dumps([message.id]),
         )
 
-    if decision.notices:
-        await report_notices(bot, what, decision.notices)
+    if outcome.notices:
+        await report_notices(bot, what, outcome.notices)
 
-    # No ``png_path``: the file was discarded the moment the send returned, and handing
-    # back a path to something deleted is worse than handing back nothing.
-    return ChampionshipOutcome(
-        action=POSTED,
-        message_id=message.id,
-        notices=decision.notices,
-    )
+    return outcome
 
 
 async def try_post(

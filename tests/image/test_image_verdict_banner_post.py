@@ -3,7 +3,12 @@
 Discord is stubbed throughout: nothing here needs a running bot, a gateway connection or a
 real server.
 
-The rules these pin are the ones a later reader could plausibly undo:
+The rules these pin are the ones a later reader could plausibly undo. Since #439 a review's
+verdicts are announced by its `announce_verdict` jobs on the change queue, and the rules about the
+heading over a review's verdicts are pinned there, through the queue
+(`tests/results/test_report_approval_change.py`, `test_appeals_approval_change.py` and
+`test_verdict_announcement_jobs.py`); what stays here is the banner itself, the poster
+`/attendance sync` shares across its sanctions, and the written heading:
 
 * one banner per **approval**, posted **before** the first card and **only** if a card follows
   — an attendance sanction is a verdict and is headed like one, so the sanctions a penalty
@@ -45,21 +50,6 @@ class _Bot:
 
     def get_channel(self, _id):
         return self._channel
-
-
-class _State:
-    """One review's worth of applied penalties."""
-
-    def __init__(self, count: int = 2) -> None:
-        self.db_path = ":memory:"
-        self.round_id = 1
-        self.records = [
-            {"race_result_id": index, "qual_result_id": None, "driver_user_id": 100 + index,
-             "penalty_type": "TIME_PENALTY", "time_seconds": 5,
-             "description": "Contact.", "justification": "Reviewed.",
-             "team_instance_id": None}
-            for index in range(1, count + 1)
-        ]
 
 
 CONTEXT = {
@@ -149,55 +139,21 @@ def flow(monkeypatch, tmp_path):
     return state
 
 
-# ── One banner per batch, and only where a card follows ───────────────────
-
-
-async def test_a_batch_of_two_posts_exactly_one_banner(flow):
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
-
-    banners = [entry for entry in channel.sent if entry[1] is not None]
-    assert len(banners) == 1
-    assert len(flow["sent_verdicts"]) == 2
-
-
-async def test_the_banner_stands_before_the_first_card(flow):
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
-
-    assert channel.sent[0][1] is not None, "the banner is the first thing posted"
-    assert channel.sent[1][0] == "<@101>"
-
-
-async def test_a_batch_that_produces_no_card_posts_no_banner(flow):
-    """Every record failing to resolve leaves nothing to head.
-
-    Posted eagerly the banner would stand alone over an empty run, which is why it is
-    posted lazily, immediately before the first card that actually goes out.
-    """
-    flow["result_context"] = {}
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
-
-    assert channel.sent == []
-    assert flow["sent_verdicts"] == []
-
-
-async def test_an_appeal_batch_is_headed_too(flow):
-    channel = _Channel()
-    await vas.post_appeal_announcements(_Bot(channel), _State(1), _State(1).records)
-
-    banners = [entry for entry in channel.sent if entry[1] is not None]
-    assert len(banners) == 1
-
-
 # ── The message, and the filename that has to stand in for it ─────────────
+
+
+def _drawing():
+    return banner.build_drawing(
+        season_number=5, division_name="Pit Wall Premier", division_tier=1,
+        round_number=8, race_name="British Grand Prix", country_name="United Kingdom",
+    )
 
 
 async def test_the_banner_message_carries_no_text_at_all(flow):
     channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(1), _State(1).records)
+    await banner.try_post(_Bot(channel), channel, _drawing())
 
+    assert len(channel.sent) == 1
     content, file = channel.sent[0]
     assert file is not None
     assert content is None
@@ -217,32 +173,6 @@ async def test_the_attachment_is_named_for_the_round_it_heads():
 
 
 # ── The aspect off, and the render failing ────────────────────────────────
-
-
-async def test_with_the_aspect_off_the_batch_is_headed_in_words(flow):
-    """A batch is headed however the league is configured (#246, STW-VER-027).
-
-    It was once additive — nothing above the run at all — which left a league not using the
-    banner unable to tell where one batch ended and the next began.
-    """
-    flow["banner_enabled"] = False
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
-
-    assert channel.sent[0] == ("**Season 5 Pit Wall Premier Round 8**", None)
-    assert [content for content, _file in channel.sent[1:]] == ["<@101>", "<@102>"]
-    assert all(file is None for _content, file in channel.sent)
-
-
-async def test_with_the_aspect_off_the_batch_is_headed_only_once(flow):
-    """The one-header-per-approval rule holds for the words as much as the picture."""
-    flow["banner_enabled"] = False
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(3), _State(3).records)
-
-    headings = [content for content, _file in channel.sent
-                if content == "**Season 5 Pit Wall Premier Round 8**"]
-    assert len(headings) == 1
 
 
 async def test_a_text_heading_is_returned_so_it_can_be_taken_down(flow):
@@ -270,46 +200,9 @@ async def test_a_text_heading_is_returned_so_it_can_be_taken_down(flow):
     assert channel.sent == [("**Season 5 Pit Wall Premier Round 8**", None)]
 
 
-async def test_a_heading_that_cannot_be_sent_never_costs_the_league_its_verdicts(flow):
-    """A header failing must not cost a league the decisions it heads."""
-    flow["banner_enabled"] = False
-
-    class _Refusing(_Channel):
-        async def send(self, content=None, *, file=None, **_kwargs):
-            if content is not None and content.startswith("**Season"):
-                raise RuntimeError("no headers here")
-            await super().send(content, file=file)
-
-    channel = _Refusing()
-    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
-
-    assert [content for content, _file in channel.sent] == ["<@101>", "<@102>"]
-
-
-async def test_a_render_that_fails_heads_the_batch_in_words(flow):
-    flow["banner_draws"] = False
-    flow["banner_problem"] = "RASTERISER"
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(1), _State(1).records)
-
-    assert channel.sent[0] == ("**Season 5 Pit Wall Premier Round 8**", None)
-    assert len(flow["sent_verdicts"]) == 1
-
-
-async def test_a_banner_that_raises_never_costs_the_league_its_verdicts(flow, monkeypatch):
-    async def _boom(*_a, **_k):
-        raise RuntimeError("no")
-
-    monkeypatch.setattr(banner, "try_post", _boom)
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
-
-    assert len(flow["sent_verdicts"]) == 2
-
-
 async def test_the_banner_is_discarded_once_posted(flow):
     channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(1), _State(1).records)
+    await banner.try_post(_Bot(channel), channel, _drawing())
 
     assert flow["discarded"] == [flow["png"]]
 
@@ -318,18 +211,17 @@ async def test_the_banner_is_discarded_once_posted(flow):
 
 
 async def test_a_shared_poster_fires_once_across_several_paths(flow):
-    """The device `finalize_penalty_review` uses to head a whole approval.
+    """The device `/attendance sync` uses to head one round's sanctions.
 
-    It posts the penalty verdicts and then, further down the same call, the attendance
-    sanctions that approval enforced — into the same channel for the same round. One poster
-    covers both, and the second path finds it spent.
+    The autosack and the autoreserve paths each call it before their first card, into the same
+    channel for the same round. One poster covers both, and the second path finds it spent.
     """
     channel = _Channel()
     bot = _Bot(channel)
     head = vas.banner_for_round(bot, ":memory:", 1)
 
-    await vas.post_penalty_announcements(bot, _State(1), _State(1).records, head=head)
-    await head()  # as the attendance pipeline would call it, later in the same approval
+    await head()  # as the autosack path would call it
+    await head()  # and the autoreserve path, later in the same run
 
     banners = [entry for entry in channel.sent if entry[1] is not None]
     assert len(banners) == 1
@@ -356,8 +248,8 @@ async def test_an_approval_with_nothing_to_post_posts_no_banner(flow, monkeypatc
     The rule the three posting paths each hold to separately, asserted once as the rule it
     is. Every one of them calls the poster immediately before a verdict that is actually
     going out and never before deciding there is one, so an approval that applies no
-    penalty and sanctions nobody never calls it at all. `finalize_penalty_review` builds
-    the poster unconditionally, so building one must itself cost nothing.
+    penalty and sanctions nobody never calls it at all. A caller may build the poster
+    unconditionally, so building one must itself cost nothing.
     """
 
     async def _boom(*_a, **_k):
@@ -366,19 +258,6 @@ async def test_an_approval_with_nothing_to_post_posts_no_banner(flow, monkeypatc
     monkeypatch.setattr(vas, "_get_announcement_context", _boom)
     channel = _Channel()
     vas.banner_for_round(_Bot(channel), ":memory:", 1)  # built, never called
-    assert channel.sent == []
-
-
-async def test_a_penalty_run_with_nothing_applied_never_reaches_the_poster(flow, monkeypatch):
-    """The guard is above the poster, not below it."""
-
-    async def _boom(*_a, **_k):
-        raise AssertionError("a banner was built for an empty run")
-
-    monkeypatch.setattr(vas, "_banner_once", _boom)
-    channel = _Channel()
-    await vas.post_penalty_announcements(_Bot(channel), _State(0), [])
-    await vas.post_appeal_announcements(_Bot(channel), _State(0), [])
     assert channel.sent == []
 
 
@@ -580,22 +459,9 @@ def test_both_enforcement_sites_hand_the_poster_on():
 
     source = inspect.getsource(attendance_service)
     blocks = source.split("post_autosanction_announcement(")[1:]
-    assert len(blocks) == 2, "only the autosack and autoreserve enforcements announce"
+    assert len(blocks) == 1, "only the enforcement loop, for both sanctions, announces"
     for block in blocks:
         assert "head=head," in block[:600]
-
-
-def test_a_penalty_approval_shares_one_poster_with_the_attendance_pipeline():
-    """The whole point of `banner_for_round`: one header over one approval."""
-    import inspect
-
-    from leaguebot.results.services import result_submission_service
-
-    # The approval's body, once `finalize_penalty_review` has checked and claimed it (#402).
-    source = inspect.getsource(result_submission_service._apply_approved_reports)
-    assert source.count("banner_for_round(") == 1, "one poster, built once"
-    assert "post_penalty_announcements(\n                    bot, state, applied_records, head=" in source
-    assert "head=_verdict_banner," in source
 
 
 # ── heading_text ──────────────────────────────────────────────────────────

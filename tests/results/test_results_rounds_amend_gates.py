@@ -29,6 +29,7 @@ nothing reads and post nothing, and a league with the module off can still see t
 """
 from __future__ import annotations
 
+import json
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -477,3 +478,167 @@ async def test_several_sessions_can_be_chosen_at_once(tmp_path):
     view = _sent_view(interaction)
     select = next(item for item in view.children if isinstance(item, discord.ui.Select))
     assert (select.min_values, select.max_values) == (1, 2)
+
+
+# ---------------------------------------------------------------------------
+# A division with a job on the queue (owner, 2026-10-05, #439 slice 2)
+# ---------------------------------------------------------------------------
+
+LATER_ROUND_ID = 22
+OTHER_DIVISION_ID = 12
+OTHER_ROUND_ID = 31
+
+
+class _AmendmentWentOn(Exception):
+    """Raised where the command creates the amendment's channel: it was not held back."""
+
+
+async def _seed_queued_change(
+    db_path: str,
+    *,
+    kind: str = "results.review.open",
+    payload: dict | None = None,
+    state: str = "QUEUED",
+    stopped: bool = False,
+) -> int:
+    """A change of *kind* with *payload* (round 4's review opening by default), in *state*, with
+    its one job; the job has failed and stops the queue where *stopped*. An earlier change of
+    three jobs, long done, is seeded first, so that the job's number and its change's id differ,
+    as they do in a league that has used the queue. Gives the job's number."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "status) VALUES (?, ?, 4, '2026-02-08T18:00:00+00:00', 'NORMAL', 'AWAITING_RESULTS')",
+            (LATER_ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Am', 2, 556)",
+            (OTHER_DIVISION_ID, SEASON_ID),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', 'AWAITING_RESULTS')",
+            (OTHER_ROUND_ID, OTHER_DIVISION_ID),
+        )
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('hub.refresh', 'hub.refresh', '{}', 'BOT', 'DONE', 'refreshing the hub')"
+        )
+        for position in range(3):
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, done_at) "
+                "VALUES (?, ?, 'refresh', '2026-10-05T11:00:00+00:00')",
+                (cursor.lastrowid, position),
+            )
+        payload = {"round_id": LATER_ROUND_ID} if payload is None else payload
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES (?, ?, ?, 'MEMBER', ?, 'a change of the test')",
+            (kind, f"{kind}:{json.dumps(payload, sort_keys=True)}", json.dumps(payload), state),
+        )
+        change_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, done_at, "
+            "tries, failing_since, last_failure) VALUES (?, 0, 'open', '{}', ?, ?, ?, ?)",
+            (
+                change_id,
+                "2026-10-05T12:00:00+00:00" if state == "DONE" else None,
+                1 if stopped else 0,
+                "2026-10-05T12:00:00+00:00" if stopped else None,
+                "OperationalError" if stopped else None,
+            ),
+        )
+        job = cursor.lastrowid
+        await db.commit()
+    assert job is not None and job != change_id
+    return job
+
+
+def _logged(interaction) -> list[str]:
+    """The lines the refusal recorded in the log channel, through the bot's output router."""
+    return [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+
+
+def _gate_interaction():
+    """An admin's interaction whose log lines are caught, and whose command, if it goes on to
+    create the amendment's channel, stops there with `_AmendmentWentOn`."""
+    interaction = _interaction()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
+    interaction.guild.create_text_channel = AsyncMock(side_effect=_AmendmentWentOn())
+    return interaction
+
+
+@pytest.mark.parametrize(
+    ("state", "stopped"),
+    [("QUEUED", False), ("RUNNING", False), ("RUNNING", True), ("QUEUED", True)],
+    ids=["queued", "running", "running-stopped", "queued-stopped"],
+)
+async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
+    tmp_path, state, stopped,
+):
+    """Owner, 2026-10-05: "It shouldn't be possible to amend a round of a division which has
+    jobs in the queue", any job naming a round of the division, queued, running or stopped on a
+    failure. Round 4's review opening is on the queue; amending round 3 of the same division is
+    refused, naming the job it waits on (its own number, not its change's) and how to clear it,
+    and recorded in the log as a refusal. Nothing is amended: no channel is created."""
+    db_path = await _make_db(tmp_path, name=f"amend_queued_{state}_{stopped}")
+    job = await _seed_queued_change(db_path, state=state, stopped=stopped)
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    replied = _replied(interaction)
+    assert f"job #{job}" in replied, "the refusal does not name the job it waits on"
+    assert "Retry" in replied and "Discard" in replied
+    [line] = _logged(interaction)
+    assert line.startswith("⛔") and f"job #{job}" in line
+    interaction.guild.create_text_channel.assert_not_called()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def test_a_job_naming_the_division_alone_still_blocks_the_amendment(tmp_path):
+    """A change whose payload names the division and no round of it is the division's job too."""
+    db_path = await _make_db(tmp_path, name="amend_queued_division")
+    job = await _seed_queued_change(
+        db_path, kind="results.reports.approve", payload={"division_id": DIVISION_ID},
+    )
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert f"job #{job}" in _replied(interaction)
+    interaction.guild.create_text_channel.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "seed",
+    [
+        {"payload": {"round_id": OTHER_ROUND_ID}},
+        {"payload": {"round_id": OTHER_ROUND_ID, "division_id": OTHER_DIVISION_ID},
+         "kind": "results.reports.approve"},
+        {"state": "DONE"},
+        {"kind": "module.off:results", "payload": {"cascade_attendance": False}},
+    ],
+    ids=["another-division", "another-division-by-id", "finished", "bot-wide"],
+)
+async def test_a_job_that_is_not_the_division_s_in_hand_does_not_hold_the_amendment(
+    tmp_path, seed,
+):
+    """Only a job naming this division, and still in hand, holds the amendment back: one for
+    another division, one done, or a bot-wide one (turning results off) does not. The command
+    goes on to create the amendment's channel, and nothing is refused."""
+    db_path = await _make_db(tmp_path, name=f"amend_not_held_{len(str(seed))}")
+    await _seed_queued_change(db_path, **seed)
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    with pytest.raises(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert "job #" not in _replied(interaction)
+    assert _logged(interaction) == []

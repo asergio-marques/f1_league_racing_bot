@@ -126,6 +126,9 @@ def _interaction():
     interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
+    # An approval is asked of the change queue (#439), reached through the interaction's bot.
+    interaction.client.change_queue = MagicMock()
+    interaction.client.change_queue.ask = AsyncMock()
     return interaction
 
 
@@ -369,16 +372,28 @@ async def test_the_clear_confirmation_checks_the_tier_too(monkeypatch, button):
 
 
 async def test_approving_with_penalties_finalises_the_review():
-    view = PenaltyReviewView(_state(staged=[_penalty()]))
+    """Alex presses ✅ Approve on round 3's review with one 5-second penalty staged. The press
+    asks the change queue for `results.reports.approve` of round 3, the penalty in its payload.
+
+    The finaliser is stubbed while it stands (`create=True` once it is gone), so that the press
+    fails on what it asks rather than on a finaliser run against a stub bot."""
+    state = _state(staged=[_penalty()])
     interaction = _interaction()
+    state.bot.change_queue = interaction.client.change_queue
+    view = PenaltyReviewView(state)
 
     with patch(
         "leaguebot.results.services.result_submission_service.finalize_penalty_review",
-        new=AsyncMock(return_value=None),
-    ) as finalise:
+        new=AsyncMock(return_value=None), create=True,
+    ):
         await _press(view, "approve_btn", interaction)
 
-    finalise.assert_awaited_once()
+    ask = interaction.client.change_queue.ask
+    ask.assert_awaited_once()
+    kind, payload = ask.await_args.args[:2]
+    assert kind == "results.reports.approve"
+    assert payload["round_id"] == ROUND_ID
+    assert payload["staged"] == [_penalty().to_payload()]
 
 
 async def test_approving_with_nothing_staged_is_refused():
@@ -388,13 +403,10 @@ async def test_approving_with_nothing_staged_is_refused():
     view = PenaltyReviewView(_state(staged=[]))
     interaction = _interaction()
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
-        new=AsyncMock(return_value=None),
-    ) as finalise:
-        await _press(view, "approve_btn", interaction)
+    await _press(view, "approve_btn", interaction)
 
-    finalise.assert_not_awaited()
+    interaction.client.change_queue.ask.assert_not_awaited()
+    assert not view.state.bot.change_queue.ask.called
     assert "No penalties are staged" in _replied(interaction)
 
 
@@ -789,16 +801,15 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
     interaction.message.id = _APPROVAL_MESSAGE if on_message else _APPROVAL_MESSAGE + 1
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
-        new=AsyncMock(return_value=None),
-    ) as finalise, patch(
         "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
         new=AsyncMock(return_value=None),
     ) as resubmit:
         await button.callback(interaction)
 
     approval.assert_not_awaited()
-    finalise.assert_not_awaited()
+    interaction.client.change_queue.ask.assert_not_awaited()
+    if state is not None:
+        assert not state.bot.change_queue.ask.called
     resubmit.assert_not_awaited()
     interaction.response.send_modal.assert_not_awaited()
     (replied,) = [

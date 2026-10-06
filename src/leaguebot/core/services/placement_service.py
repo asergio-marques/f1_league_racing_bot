@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import discord
 
 from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
@@ -1966,8 +1967,23 @@ class PlacementService:
     # Division resolution helper (used by cogs)
     # ------------------------------------------------------------------
 
+    async def refresh_lineup(self, guild: discord.Guild, division_id: int) -> None:
+        """Post the division's lineup afresh, **raising** where it could not be posted.
+
+        What a job on the change queue calls (#439): a lineup channel the division was given and
+        the guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, for
+        the queue to stop on and try again, where `_refresh_lineup_post` logs and returns. A
+        division never given a lineup channel posts nothing and raises nothing.
+        """
+        await self._refresh_lineup_post(guild, division_id, raise_on_failure=True)
+
     async def _refresh_lineup_post(
-        self, guild: discord.Guild, division_id: int, *, bot: LeagueBot | None = None
+        self,
+        guild: discord.Guild,
+        division_id: int,
+        *,
+        bot: LeagueBot | None = None,
+        raise_on_failure: bool = False,
     ) -> None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
 
@@ -2018,6 +2034,10 @@ class PlacementService:
                     "_refresh_lineup_post: lineup channel %s not found for division %s",
                     lineup_channel_id, division_id,
                 )
+                if raise_on_failure:
+                    raise StepFailedOnDiscord(
+                        f"the lineup channel (id {lineup_channel_id}) is not in the server"
+                    )
                 return
         if not isinstance(channel, discord.TextChannel):
             return
@@ -2085,6 +2105,8 @@ class PlacementService:
             new_msg = await channel.send(embed=embed)
         except discord.HTTPException as exc:
             log.error("_refresh_lineup_post: failed to post embed: %s", exc)
+            if raise_on_failure:
+                raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
             return
 
         now = datetime.now(timezone.utc).isoformat()

@@ -233,6 +233,19 @@ async def refuse(
     )
 
 
+def abandoned_line(named: str, what: str, *, lapsed: bool, detail: str | None = None) -> str:
+    """The log channel's line for *what* cancelled by *named*, or lapsed unconfirmed having been
+    started by them, with *detail* beneath it (`record_abandoned` writes it)."""
+    line = (
+        f"⌛ {what} lapsed unconfirmed (started by {named})"
+        if lapsed
+        else f"↩️ {what} cancelled by {named}"
+    )
+    if detail:
+        line += "".join(f"\n  {text}" for text in detail.splitlines())
+    return line
+
+
 async def record_abandoned(
     bot: Any,
     member: int | discord.abc.User | None,
@@ -251,13 +264,7 @@ async def record_abandoned(
     """
     try:
         named = await _named(bot, member)
-        line = (
-            f"⌛ {what} lapsed unconfirmed (started by {named})"
-            if lapsed
-            else f"↩️ {what} cancelled by {named}"
-        )
-        if detail:
-            line += "".join(f"\n  {text}" for text in detail.splitlines())
+        line = abandoned_line(named, what, lapsed=lapsed, detail=detail)
         await bot.output_router.post_log(line)
     except Exception:  # noqa: BLE001 — the confirmation has already ended
         log.warning("could not record in the log channel that %s ended", what, exc_info=True)

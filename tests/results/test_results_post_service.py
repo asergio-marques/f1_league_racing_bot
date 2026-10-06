@@ -1217,291 +1217,6 @@ async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def _seed_round_for_cascade(tmp_path, *, results_id=501, standings_id=502):
-    """A division with one raced round, its results message already posted.
-
-    Returns ``(db_path, division_id, round_id, session_result_id)``.
-    """
-    from leaguebot.core.db.database import run_migrations, get_connection
-
-    db_path = str(tmp_path / "cascade.db")
-    await run_migrations(db_path)
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 2)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id, tier) "
-            "VALUES (?, 'Alpha', 777, 1)",
-            (season_id,),
-        )
-        division_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
-            (division_id, results_id, standings_id),
-        )
-        cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
-            (division_id,),
-        )
-        round_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO session_results "
-            "(round_id, division_id, session_type, status, results_message_id) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 9001)",
-            (round_id, division_id),
-        )
-        session_result_id = cursor.lastrowid
-        await db.commit()
-
-    return db_path, division_id, round_id, session_result_id
-
-
-async def _results_message_id(db_path, session_result_id):
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT results_message_id FROM session_results WHERE id = ?",
-                (session_result_id,),
-            )
-        ).fetchone()
-    return row["results_message_id"]
-
-
-@pytest.mark.asyncio
-async def test_the_cascade_does_not_report_an_unconfigured_channel(tmp_path):
-    """#187's rule against over-reporting, kept where the cascade now gates.
-
-    A channel the league never set has nothing posted for it and is rightly skipped in
-    silence; reporting it would hand a correctly configured league a fault to chase. Only
-    the standings channel is configured here and missing, so exactly one fault is owed.
-    """
-    from leaguebot.results.services.results_post_service import delete_and_repost_final_results
-
-    db_path, division_id, round_id, _sr = await _seed_round_for_cascade(
-        tmp_path, results_id=None
-    )
-
-    faults = await delete_and_repost_final_results(
-        db_path, round_id, division_id,
-        _guild_for_faults(present=()), "Final Results", bot=_bot_with_images(),
-    )
-
-    assert len(faults) == 1
-    assert "502" in faults[0]
-
-
-@pytest.mark.asyncio
-async def test_delete_and_repost_final_results_reports_a_missing_channel(tmp_path):
-    """A configured channel the server no longer holds is a fault, not a silence."""
-    from leaguebot.results.services.results_post_service import delete_and_repost_final_results
-
-    db_path, division_id, round_id, _sr = await _seed_round_for_cascade(tmp_path)
-
-    faults = await delete_and_repost_final_results(
-        db_path, round_id, division_id,
-        _guild_for_faults(present=()), "Final Results",
-        bot=_bot_with_images(),
-    )
-
-    assert len(faults) == 2
-    assert any("501" in line for line in faults)
-    assert any("502" in line for line in faults)
-
-
-@pytest.mark.asyncio
-async def test_delete_and_repost_final_results_keeps_the_message_when_posting_is_denied(
-    tmp_path,
-):
-    """The regression that matters (#237).
-
-    The function deletes the league's copy before posting its replacement. A channel that is
-    still *there* but that the bot may no longer post in got past the old truthiness guard,
-    so the delete ran, ``results_message_id`` was cleared, and the repost then failed —
-    leaving the round with nothing posted and no record of what had been. Gating first means
-    the worst case is that the league keeps what it already had.
-
-    A channel **deleted outright** is deliberately not the case under test here: the old
-    ``if rc is not None`` guard already skipped it without deleting anything, so a test
-    written that way would pass against the unfixed code and pin nothing. That the deleted
-    channel is now *reported* is covered by
-    ``test_delete_and_repost_final_results_reports_a_missing_channel``.
-    """
-    from leaguebot.results.services import results_post_service as rps
-
-    db_path, division_id, round_id, session_result_id = await _seed_round_for_cascade(
-        tmp_path
-    )
-
-    guild = _guild_for_faults(permissions=_permissions(send_messages=False))
-
-    # The posting itself is stubbed so that the unfixed code gets all the way through and
-    # this test fails on the message it destroyed, rather than on a mock it tripped over
-    # on the way.
-    with patch.object(rps, "_delete_posting", new=AsyncMock()) as deleted, \
-            patch.object(rps, "post_session_results", new=AsyncMock()), \
-            patch.object(rps, "post_standings", new=AsyncMock()), \
-            patch.object(rps, "_clear_standings_messages", new=AsyncMock()), \
-            patch.object(rps, "driver_standings_for_display", new=AsyncMock(return_value=[])):
-        faults = await rps.delete_and_repost_final_results(
-            db_path, round_id, division_id, guild, "Final Results",
-            bot=_bot_with_images(),
-        )
-
-    # Asserted before the fault, so that against the unfixed code this fails on the message
-    # it lost rather than on the return type that changed.
-    assert await _results_message_id(db_path, session_result_id) == 9001
-    deleted.assert_not_awaited()
-    assert any("Send Messages" in line for line in faults)
-
-
-@pytest.mark.asyncio
-async def test_delete_and_repost_final_results_reports_a_round_it_cannot_read(tmp_path):
-    from leaguebot.results.services.results_post_service import delete_and_repost_final_results
-
-    db_path, division_id, _round_id, _sr = await _seed_round_for_cascade(tmp_path)
-
-    faults = await delete_and_repost_final_results(
-        db_path, 999_999, division_id,
-        _guild_for_faults(), "Final Results", bot=_bot_with_images(),
-    )
-
-    assert len(faults) == 1
-    assert "could not be read" in faults[0]
-
-
-async def _seed_later_rounds_with_standings(
-    tmp_path, *, standings_id=502, count=3, posted=True
-):
-    """A division whose rounds 2..*count*+1 each carry a posted standings message.
-
-    Round 1 is the one an approval would be finalising; the rest are the later rounds whose
-    standings the cascade has to redraw. Returns ``(db_path, division_id, round_one_id)``.
-    """
-    from leaguebot.core.db.database import run_migrations, get_connection
-
-    db_path = str(tmp_path / "subsequent.db")
-    await run_migrations(db_path)
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 2)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id, tier) "
-            "VALUES (?, 'Alpha', 777, 1)",
-            (season_id,),
-        )
-        division_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, ?)",
-            (division_id, standings_id),
-        )
-
-        round_one_id = None
-        for number in range(1, count + 2):
-            cursor = await db.execute(
-                "INSERT INTO rounds (division_id, round_number, format, status, "
-                "scheduled_at) VALUES (?, ?, 'STANDARD', 'FINAL', '2026-06-01T18:00:00')",
-                (division_id, number),
-            )
-            rnd_id = cursor.lastrowid
-            if number == 1:
-                round_one_id = rnd_id
-                continue
-            await db.execute(
-                "INSERT INTO driver_standings_snapshots "
-                "(round_id, division_id, driver_user_id, standing_position, "
-                "total_points, standings_message_id) VALUES (?, ?, ?, 1, 25, ?)",
-                (rnd_id, division_id, 1000 + number, (8000 + number) if posted else None),
-            )
-        await db.commit()
-
-    return db_path, division_id, round_one_id
-
-
-@pytest.mark.asyncio
-async def test_repost_subsequent_standings_reports_the_rounds_it_could_not_repost(tmp_path):
-    """Every later round used to be skipped by a bare ``continue`` (#237).
-
-    Each one has already had its standings cleared by the time the channel is consulted, so
-    the silence left the division with its standings deleted from round 2 onward.
-    """
-    from leaguebot.results.services import results_post_service as rps
-
-    db_path, division_id, round_one_id = await _seed_later_rounds_with_standings(tmp_path)
-
-    with patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
-        faults = await rps.repost_subsequent_standings(
-            db_path, division_id, round_one_id,
-            _guild_for_faults(present=(501,)), bot=_bot_with_images(),
-        )
-
-    assert any("502" in line for line in faults)
-    assert any("round 2" in line and "round 4" in line for line in faults)
-
-
-@pytest.mark.asyncio
-async def test_repost_subsequent_standings_reports_the_channel_once(tmp_path):
-    """The standings channel is a division setting, so one fault covers every round.
-
-    Three rounds would otherwise raise the identical line three times, which reads as three
-    separate problems to the manager who has to repair one.
-    """
-    from leaguebot.results.services import results_post_service as rps
-
-    db_path, division_id, round_one_id = await _seed_later_rounds_with_standings(tmp_path)
-
-    with patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
-        faults = await rps.repost_subsequent_standings(
-            db_path, division_id, round_one_id,
-            _guild_for_faults(present=(501,)), bot=_bot_with_images(),
-        )
-
-    channel_lines = [line for line in faults if "502" in line]
-    assert len(channel_lines) == 1
-
-
-@pytest.mark.asyncio
-async def test_repost_subsequent_standings_is_silent_with_nothing_posted(tmp_path):
-    """A later round with no standings message posted is not a fault — nothing was lost.
-
-    The round has to *exist* for this to test anything: seeding none at all leaves the loop
-    with nothing to iterate, and the test passes whatever the guard does.
-    """
-    from leaguebot.results.services import results_post_service as rps
-
-    db_path, division_id, round_one_id = await _seed_later_rounds_with_standings(
-        tmp_path, count=2, posted=False
-    )
-
-    with patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
-        faults = await rps.repost_subsequent_standings(
-            db_path, division_id, round_one_id,
-            _guild_for_faults(present=(501,)), bot=_bot_with_images(),
-        )
-
-    assert faults == []
-
-
 @pytest.mark.asyncio
 async def test_merge_faults_does_not_repeat_a_line():
     """The two reposts word an identical fault identically (#237 review).
@@ -1558,3 +1273,130 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
         "Repair the cause, then amend the round again with "
         "`/results rounds amend division_name:Main` — "
     )
+
+
+# ---------------------------------------------------------------------------
+# The producers post and nothing more (#439)
+#
+# `produce_session_results` and `produce_standings` send, and hand back what they put up and
+# what it replaces: the change queue saves the new ids with a job's done mark and takes the old
+# messages down as jobs of their own, once the new ones stand.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_producers_post_without_saving_or_deleting(tmp_path):
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.models.session_result import SessionResult
+    from leaguebot.results.services.results_post_service import (
+        PostedTable,
+        produce_session_results,
+        produce_standings,
+    )
+    from tests.support.review_league import (
+        DIVISION_ID,
+        OLD_RESULTS,
+        OLD_STANDINGS,
+        RESULTS_CHANNEL,
+        ROUND_ID,
+        STANDINGS_CHANNEL,
+        channel,
+        make_db,
+    )
+
+    continuation = OLD_STANDINGS + 1
+    db_path = await make_db(
+        tmp_path, attendance=False, config_name="Standard",
+        round_status="AWAITING_REPORT_VERDICTS", verdicts_channel=True, other_division=False,
+        appeals_prompt=None,
+    )
+    async with get_connection(db_path) as db:
+        # The standings stand as two messages, the anchor and one continuation.
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_ids = ? "
+            "WHERE standings_message_id = ?",
+            (f"[{OLD_STANDINGS}, {continuation}]", OLD_STANDINGS),
+        )
+        session_id = (await (await db.execute(
+            "SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,))).fetchone())[0]
+        await db.commit()
+
+    async def _stored() -> tuple:
+        async with get_connection(db_path) as db:
+            results = await (await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results")).fetchone()
+            standings = await (await db.execute(
+                "SELECT standings_message_id, standings_message_ids "
+                "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,))).fetchone()
+        return tuple(results), tuple(standings)
+
+    stored = await _stored()
+    events: list[tuple[str, int, int]] = []
+    results_channel = channel(RESULTS_CHANNEL, events)
+    results_channel.seed(OLD_RESULTS, "provisional results")
+    standings_channel = channel(STANDINGS_CHANNEL, events)
+    standings_channel.seed(OLD_STANDINGS, "provisional standings")
+    standings_channel.seed(continuation, "provisional standings, continued")
+    guild = MagicMock()
+    guild.get_member.return_value = None
+    guild.get_role.return_value = None
+
+    session = SessionResult(
+        id=session_id, round_id=ROUND_ID, division_id=DIVISION_ID,
+        session_type="FEATURE_RACE", status="ACTIVE", config_name="Standard",
+        submitted_by=None, submitted_at=None, results_message_id=OLD_RESULTS,
+    )
+
+    async def _results(**kwargs) -> PostedTable:
+        return await produce_session_results(
+            db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
+            "Provisional Results", **kwargs,
+        )
+
+    async def _standings(label: str = "Provisional Results", **kwargs) -> list[PostedTable]:
+        return await produce_standings(
+            db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
+            guild, True, label, **kwargs,
+        )
+
+    # A session's results: posted afresh, the old posting handed back and left standing.
+    posted = await _results()
+    sent = [mid for kind, cid, mid in events if kind == "send" and cid == RESULTS_CHANNEL]
+    assert posted == PostedTable(sent, [OLD_RESULTS])
+    assert OLD_RESULTS in results_channel.messages
+
+    # Standings that fit: edited in place, only the continuation it no longer fills handed back.
+    assert await _standings() == [
+        PostedTable([OLD_STANDINGS], [continuation], edited=True, championship="drivers")
+    ]
+
+    # Standings too long for one message: sent afresh, the whole previous posting handed back.
+    long_label = "\n".join(f"Provisional line {n}" for n in range(200))
+    tables = await _standings(long_label)
+    assert len(tables) == 1 and len(tables[0].new) > 1
+    assert tables[0].old == [OLD_STANDINGS, continuation]
+    assert tables[0].edited is False
+
+    assert not [event for event in events if event[0] == "delete"]
+    assert {OLD_STANDINGS, continuation} <= set(standings_channel.messages)
+    assert await _stored() == stored
+
+    # The stored anchor deleted by hand: sent afresh, nothing handed back.
+    del standings_channel.messages[OLD_STANDINGS]
+    tables = await _standings()
+    assert len(tables) == 1 and tables[0].old == [] and tables[0].edited is False
+
+    # The picture saves and replaces for itself, leaving the caller nothing to do.
+    drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
+    bot = MagicMock()
+    with patch(
+        "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
+    ):
+        assert await _results(bot=bot) == PostedTable([9990], [], drawn=True)
+    with patch(
+        "leaguebot.image.services.image_standings_post.try_post", new=AsyncMock(return_value=drew)
+    ):
+        assert await _standings(bot=bot) == []
+
+    assert not [event for event in events if event[0] == "delete"]
+    assert await _stored() == stored

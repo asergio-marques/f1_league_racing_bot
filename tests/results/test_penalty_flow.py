@@ -6,11 +6,13 @@ DB state.  Discord interactions are fully mocked.
 """
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty, apply_penalties
+from leaguebot.results.services.penalty_service import StagedPenalty, apply_penalties_on
 from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
 from tests.support.teams import seed_team_instances
 
@@ -94,13 +96,8 @@ async def _insert_feature_race(db_path: str, round_id: int, division_id: int) ->
     return sr_id
 
 
-class _FakeBot:
-    """Minimal bot stub for apply_penalties."""
-
-    class output_router:
-        @staticmethod
-        async def post_log(*_a, **_kw):
-            pass
+#: The time a penalty is stamped with where its staged penalty carries none of its own.
+_NOW = datetime.datetime(2026, 3, 1, 20, 0, tzinfo=datetime.timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -109,16 +106,16 @@ class _FakeBot:
 
 
 async def test_full_flow_no_penalties(tmp_path):
-    """With empty staged list apply_penalties is a no-op; positions unchanged."""
+    """With empty staged list apply_penalties_on is a no-op; positions unchanged."""
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
     sr_id = await _insert_feature_race(db_path, round_id, division_id)
 
     # Apply with empty staged list
-    await apply_penalties(
-        db_path, round_id, division_id, [], 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, [], 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -140,7 +137,7 @@ async def test_full_flow_no_penalties(tmp_path):
 
 
 async def test_full_flow_with_positive_time_penalty(tmp_path):
-    """Stage +30s on P1 driver; P1 drops behind P2 after apply_penalties."""
+    """Stage +30s on P1 driver; P1 drops behind P2 after apply_penalties_on."""
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
@@ -154,9 +151,9 @@ async def test_full_flow_with_positive_time_penalty(tmp_path):
             penalty_seconds=30,  # 20:00.000 + 30s = 20:30.000 > 20:10.000
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -190,9 +187,9 @@ async def test_full_flow_with_negative_time_penalty(tmp_path):
             penalty_seconds=-20,  # 20:10.000 - 20s = 19:50.000 < 20:00.000
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -226,9 +223,9 @@ async def test_full_flow_with_dsq(tmp_path):
             penalty_seconds=None,
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -267,9 +264,9 @@ async def test_dsq_fastest_lap_not_redistributed_integration(tmp_path):
             penalty_seconds=None,
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -430,9 +427,9 @@ async def test_gap_string_penalty_p1_drops(tmp_path):
             penalty_seconds=10,  # 2875744 + 10000 = 2885744ms > 2878699ms (P2's total) → P1 drops
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -463,9 +460,9 @@ async def test_gap_string_penalty_p3_gets_penalty(tmp_path):
             penalty_seconds=120,
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -536,9 +533,9 @@ async def test_dsq_reorders_race_session_results(tmp_path):
             penalty_seconds=None,
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -606,9 +603,9 @@ async def test_dsq_reorders_qualifying_session_results(tmp_path):
             penalty_seconds=None,
         )
     ]
-    await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot()
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

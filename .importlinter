@@ -192,10 +192,6 @@ forbidden_modules =
     leaguebot.signup
     leaguebot.weather
 allow_indirect_imports = True
-ignore_imports =
-    # #284: results recalculates attendance itself, where attendance is to act on a hook that
-    # results offers.
-    leaguebot.results.services.result_submission_service -> leaguebot.attendance.services.attendance_service
 
 [importlinter:contract:attendance-uses-no-other-module-but-results-and-image]
 name = Attendance uses no other module but results and image

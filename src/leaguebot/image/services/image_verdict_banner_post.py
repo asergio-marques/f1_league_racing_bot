@@ -30,14 +30,16 @@ only handle a search has. A league that would rather have searchable headers swi
 aspect off and gets them in words, which is now a choice between two headers rather than
 between a header and none.
 
-**A header never costs a verdict.** It is posted before the first card of the batch, and
-every failure on that path is swallowed: the cards follow whether the header arrived or not.
-That holds for the words as much as for the picture — a channel that refuses the heading
-still gets its verdicts.
+**`try_post` itself never raises, and a header never costs a verdict** where the poster is
+swallowed: it is posted before the first card of the batch, and a failure on that path is logged
+and returned as None. That holds for `/attendance sync`'s sanctions. A round's review is the
+exception (decided at the review's Gate 2): its heading is a job like any other, treating None as a
+failure, so a heading Discord refuses stops the queue until it is retried or discarded and the
+verdicts waiting behind it go out beneath none only once it is discarded.
 
-That swallowing is safe because **a header is an aid to reading a channel and is no record
-of a decision** (decided 2026-09-21): it exists so a reader can tell at a glance which round
-the verdicts beneath it pertain to. Two things follow, and a later reader is apt to reach for
+Swallowing is safe where it is done because **a header is an aid to reading a channel and is no
+record of a decision** (decided 2026-09-21): it exists so a reader can tell at a glance which
+round the verdicts beneath it pertain to. Two things follow, and a later reader is apt to reach for
 either. It carries no repost or amendment marking, though a text heading now *could* carry
 one where a drawn banner could not — a re-headed batch reads identically to the one it
 replaced, and that is intended. And a batch that slips through unheaded is a want of
@@ -224,19 +226,26 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     await _report_notices(bot, what, notices)
 
 
-async def try_post(bot: LeagueBot, channel, drawing: VerdictBannerDrawing):
+async def try_post(
+    bot: LeagueBot, channel, drawing: VerdictBannerDrawing, *, as_text: bool = False
+):
     """Post the banner above a batch of verdicts. Returns the message sent, or None.
+
+    *as_text* heads the batch in words and never draws, as a queued retry does (Constitution
+    XIV, rule 8).
 
     The message rather than a flag, so the caller can record which message carries the banner
     and take it down when the run beneath it is replaced (#345). A banner belongs to no verdict
     record, so nothing else knows where it is.
 
-    Never raises. A banner is a header, and a header failing must not cost a league the
-    decisions it heads, so every fault on this path is logged and swallowed.
+    Never raises: every fault on this path is logged and swallowed, and a banner not posted is
+    None. What that means is the caller's. `/attendance sync`'s sanctions go out beneath none, a
+    header being an aid to reading a channel; a round's review heads its verdicts with a job
+    that treats None as a failure, which stops the queue (`review_verdicts.announce_heading`).
     """
     import discord
 
-    if not await banner_enabled(bot):
+    if as_text or not await banner_enabled(bot):
         #  The picture is not to be drawn — the module off, the aspect off, or the template
         #  unusable — so the batch is headed in words instead of not at all (STW-VER-027).
         try:

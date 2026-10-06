@@ -785,3 +785,37 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
     assert head.endswith("lapsed unconfirmed (started by <@77>)")
     assert "/results rounds amend" in head
     assert any("put back as it was" in part for part in beneath)
+
+
+async def test_the_sweep_skips_an_amendment_whose_stage_is_in_hand(tmp_path):
+    """**Leave it while stuck** (#439). A stage's approval asked for and waiting on the queue holds
+    the amendment as the claim did: the sweep, past the half-hour, leaves it for the queue."""
+    from tests.support import review_league as league_of
+    from tests.support.change_queue import member_interaction
+
+    league = await league_of.review_league(tmp_path, round_status="FINAL")
+    deadline = league_of.NOW + timedelta(minutes=30)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state, expires_at, started_by) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', ?, ?, ?, 77)",
+            (league_of.ROUND_ID, league_of.AMEND_CHANNEL, league_of.NOW.isoformat(),
+             json.dumps({"sessions": [], "profiles_before": []}), deadline.isoformat()),
+        )
+        await db.commit()
+    await league_of.block_queue(league)
+    await league.bot.change_queue.ask(
+        "results.amendment.reports.approve",
+        {"round_id": league_of.ROUND_ID, "division_id": league_of.DIVISION_ID,
+         "session_types": ["FEATURE_RACE"], "staged": [], "pardons": [],
+         "prompt_message_id": None, "approval_message_id": None},
+        interaction=member_interaction(league.bot), what="✅ Approve on the amendment's reports",
+    )
+
+    swept = await sweep_expired_amendments(league.bot, now=deadline + timedelta(hours=2))
+
+    assert swept == 0
+    assert await league_of.one(
+        league.db_path, "SELECT pre_amendment_state FROM round_amend_channels"
+    ) is not None

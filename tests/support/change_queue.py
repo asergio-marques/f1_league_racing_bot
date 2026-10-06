@@ -16,10 +16,18 @@ to it.
 A job that fails stops the queue until it is cleared (owner, 2026-10-02): `stopped_job` reads the
 job the queue is stopped at, and `retry_job` and `discard_job` press Retry and Discard on its stop
 notice, as a member holding the tier `tier_member` gives them.
+
+A queue `restart_queue` starts has a worker running in the background, and is stopped before the
+test ends: `tests/conftest.py` calls `stop_started_queues` once the test has run, while its event
+loop is still open, and it waits there for any database thread a stopped worker left running.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -113,10 +121,18 @@ async def run_queue(bot: Any, *, steps: int | None = None) -> None:
         await bot.change_queue.run_until_idle(steps=steps)
 
 
+#: How long `stop_started_queues` waits, in all, for aiosqlite's threads to finish.
+THREAD_GRACE_SECONDS = 5.0
+
+#: Every queue `restart_queue` has started, with the event loop its worker runs on.
+_STARTED: list[tuple[Any, asyncio.AbstractEventLoop]] = []
+
+
 async def restart_queue(bot: Any) -> Any:
     """A fresh queue on the same database, clock and router, as after a restart, and started.
 
     The old queue is stopped first where it was started. The same change types are registered.
+    The queue is remembered, for `stop_started_queues` to stop once the test has run.
     """
     from leaguebot.core.services.change_queue import ChangeQueue
 
@@ -128,7 +144,39 @@ async def restart_queue(bot: Any) -> Any:
     bot.change_queue = queue
     _register(bot, queue, setup)
     await maybe_await(queue.start())
+    _STARTED.append((queue, asyncio.get_running_loop()))
     return queue
+
+
+def stop_started_queues(*, started_before: Collection[threading.Thread] = ()) -> None:
+    """Stop every queue `restart_queue` started, on the loop it runs on, and forget them; then
+    wait for aiosqlite's threads to finish.
+
+    Called by `tests/conftest.py` after the test's call and before its teardown, while the test's
+    event loop is open and idle. A worker left running is cancelled only as the loop closes, part
+    way through a read of the database: aiosqlite's thread then answers a closed loop, and pytest
+    reports a `PytestUnhandledThreadExceptionWarning` ("Event loop is closed") against whichever
+    test is running when it fires.
+
+    Stopping cancels the worker wherever it stands, which may be part way through opening a
+    connection: aiosqlite's thread finishes the opening after the cancel, and answers the loop
+    when it does. The same holds for a queue the test started and stopped itself. So each
+    aiosqlite thread still alive is waited for, up to `THREAD_GRACE_SECONDS` in all, before the
+    loop is left to close; none is alive where nothing was cut off. A thread in *started_before*,
+    alive before the test's call began (a connection a fixture holds until its teardown), is not
+    waited for: it would never finish in time, and every test holding one would pay the whole
+    grace period.
+    """
+    started, _STARTED[:] = list(_STARTED), []
+    for queue, loop in started:
+        if not loop.is_closed() and not loop.is_running():
+            loop.run_until_complete(queue.stop())
+    deadline = time.monotonic() + THREAD_GRACE_SECONDS
+    earlier = set(started_before)
+    for thread in threading.enumerate():
+        # aiosqlite names no thread; Python names it after its target.
+        if thread.name.endswith("(_connection_worker_thread)") and thread not in earlier:
+            thread.join(max(deadline - time.monotonic(), 0))
 
 
 async def maybe_await(value: Any) -> Any:
@@ -249,7 +297,13 @@ async def seed_server(db_path: str) -> None:
 def league_double(db_path: str) -> Any:
     """A bot double with the league's log and interaction channels, and a real `OutputRouter`.
 
-    `bot.log_channel` and `bot.interaction_channel` record what each is sent.
+    `bot.log_channel` and `bot.interaction_channel` record what each is sent. The league's server
+    is `SERVER_ID`, as `config_service.get_league_server_id` gives it; `bot.get_guild` finds no
+    guild for it until a test gives one.
+    `bot.attendance_after_review` is the attendance hook the builder hands the review's change
+    types (#439), as a league with attendance off sees it: every method does nothing, no driver
+    is owed a sanction, and the sync hint names `/attendance sync`. A test that runs the hook
+    replaces it.
     """
     from leaguebot.core.services.output_router import OutputRouter
 
@@ -270,7 +324,15 @@ def league_double(db_path: str) -> Any:
             league_admin_role_id=ADMIN_ROLE_ID,
         )
     )
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    hook = MagicMock()
+    for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
+                 "apply_sanction", "announce_sanction", "refresh_lineup"):
+        setattr(hook, name, AsyncMock(return_value=None))
+    hook.sanction_candidates = AsyncMock(return_value=[])
+    hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
+    bot.attendance_after_review = hook
     return bot
 
 
@@ -361,10 +423,16 @@ async def step_rows(db_path: str, change_id: int | None = None) -> list[dict[str
 
 
 async def stopped_job(db_path: str) -> dict[str, Any] | None:
-    """The job the queue is stopped at: not done, and failed since `failing_since`; or None."""
+    """The job the queue is stopped at: not done, and failed since `failing_since`; or None.
+
+    Only a job of a change still QUEUED or RUNNING counts: a change that has ended (discarded
+    at a job, say) leaves the job it stopped at as it was."""
+    live = {row["id"] for row in await change_rows(db_path)
+            if row["state"] in ("QUEUED", "RUNNING")}
     stopped = [
         row for row in await step_rows(db_path)
-        if row["done_at"] is None and row["failing_since"] is not None
+        if row["change_id"] in live and row["done_at"] is None
+        and row["failing_since"] is not None
     ]
     return stopped[0] if stopped else None
 

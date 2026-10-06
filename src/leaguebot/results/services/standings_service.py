@@ -7,6 +7,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Collection, Iterable, Mapping
 
+import aiosqlite
+
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
@@ -264,6 +266,19 @@ async def compute_driver_standings(
     up_to_round_id: int,
     display_names: Mapping[int, str] | None = None,
 ) -> list[DriverStandingsSnapshot]:
+    """:func:`compute_driver_standings_on`, on a connection of its own."""
+    async with get_connection(db_path) as db:
+        return await compute_driver_standings_on(
+            db, division_id, up_to_round_id, display_names
+        )
+
+
+async def compute_driver_standings_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    up_to_round_id: int,
+    display_names: Mapping[int, str] | None = None,
+) -> list[DriverStandingsSnapshot]:
     """Aggregate driver points for all rounds up to and including *up_to_round_id*.
 
     Ordered by :func:`order_drivers`, which holds the rule (FR-028) and its final tiebreak.
@@ -272,51 +287,53 @@ async def compute_driver_standings(
     caller; the order is taken on the same string. A driver the caller could not resolve falls
     back to their id, as everywhere else.
 
+    Reads on the connection it is handed and writes nothing, so a save that recomputes the
+    standings can read its own earlier writes (the points it has just recalculated).
+
     Returns snapshots with standing_position assigned from 1.
     """
     names = display_names or {}
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT driver_user_id, finishing_position, points_awarded,
-                   fastest_lap_bonus, outcome, session_type, round_id, round_number
-            FROM (
-                SELECT rsr.driver_user_id, rsr.finishing_position,
-                       rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
-                       sr.session_type, r.id AS round_id, r.round_number
-                FROM race_session_results rsr
-                JOIN session_results sr ON sr.id = rsr.session_result_id
-                JOIN rounds r ON r.id = sr.round_id
-                WHERE r.division_id = ?
-                  AND r.id <= ?
-                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-                  AND sr.status = 'ACTIVE'
-                UNION ALL
-                SELECT qsr.driver_user_id, qsr.finishing_position,
-                       qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
-                       sr.session_type, r.id AS round_id, r.round_number
-                FROM qualifying_session_results qsr
-                JOIN session_results sr ON sr.id = qsr.session_result_id
-                JOIN rounds r ON r.id = sr.round_id
-                WHERE r.division_id = ?
-                  AND r.id <= ?
-                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-                  AND sr.status = 'ACTIVE'
-            )
-            ORDER BY round_number
-            """,
-            (
-                division_id, up_to_round_id, up_to_round_id,
-                division_id, up_to_round_id, up_to_round_id,
-            ),
+    cursor = await db.execute(
+        """
+        SELECT driver_user_id, finishing_position, points_awarded,
+               fastest_lap_bonus, outcome, session_type, round_id, round_number
+        FROM (
+            SELECT rsr.driver_user_id, rsr.finishing_position,
+                   rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
+                   sr.session_type, r.id AS round_id, r.round_number
+            FROM race_session_results rsr
+            JOIN session_results sr ON sr.id = rsr.session_result_id
+            JOIN rounds r ON r.id = sr.round_id
+            WHERE r.division_id = ?
+              AND r.id <= ?
+              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+              AND sr.status = 'ACTIVE'
+            UNION ALL
+            SELECT qsr.driver_user_id, qsr.finishing_position,
+                   qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
+                   sr.session_type, r.id AS round_id, r.round_number
+            FROM qualifying_session_results qsr
+            JOIN session_results sr ON sr.id = qsr.session_result_id
+            JOIN rounds r ON r.id = sr.round_id
+            WHERE r.division_id = ?
+              AND r.id <= ?
+              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+              AND sr.status = 'ACTIVE'
         )
-        rows = await cursor.fetchall()
-        # A result keeps the account it was recorded under, and a driver who changed account
-        # mid-season stands under two. Both are theirs and are counted as one driver, under
-        # the account they use now (issue #243).
-        from leaguebot.core.services.driver_service import current_account_map_for_division
+        ORDER BY round_number
+        """,
+        (
+            division_id, up_to_round_id, up_to_round_id,
+            division_id, up_to_round_id, up_to_round_id,
+        ),
+    )
+    rows = await cursor.fetchall()
+    # A result keeps the account it was recorded under, and a driver who changed account
+    # mid-season stands under two. Both are theirs and are counted as one driver, under
+    # the account they use now (issue #243).
+    from leaguebot.core.services.driver_service import current_account_map_for_division
 
-        current_of = await current_account_map_for_division(db, division_id)
+    current_of = await current_account_map_for_division(db, division_id)
 
     # Aggregate
     total_points: dict[int, int] = defaultdict(int)
@@ -348,20 +365,19 @@ async def compute_driver_standings(
     from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not in the standings (issue #220).
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"""
-            SELECT dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
-            FROM team_seats ts
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-            WHERE ti.division_id = ?
-              AND ts.driver_profile_id IS NOT NULL
-              AND {uncommitted_seat_excluded("ts")}
-            """,
-            (division_id,),
-        )
-        seated_rows = await cursor.fetchall()
+    cursor = await db.execute(
+        f"""
+        SELECT dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
+        FROM team_seats ts
+        JOIN team_instances ti ON ti.id = ts.team_instance_id
+        JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+        WHERE ti.division_id = ?
+          AND ts.driver_profile_id IS NOT NULL
+          AND {uncommitted_seat_excluded("ts")}
+        """,
+        (division_id,),
+    )
+    seated_rows = await cursor.fetchall()
     # uid -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a driver with
     # no seat at all gets 2 below, ranking after the reserves — their points stand but they
     # are no longer of a team (decided 2026-09-15).
@@ -416,6 +432,16 @@ async def compute_team_standings(
     division_id: int,
     up_to_round_id: int,
 ) -> list[TeamStandingsSnapshot]:
+    """:func:`compute_team_standings_on`, on a connection of its own."""
+    async with get_connection(db_path) as db:
+        return await compute_team_standings_on(db, division_id, up_to_round_id)
+
+
+async def compute_team_standings_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    up_to_round_id: int,
+) -> list[TeamStandingsSnapshot]:
     """Aggregate team points for all sessions up to *up_to_round_id*.
 
     Ordered by :func:`order_teams`, which holds the rule (FR-029) and its final tiebreak.
@@ -427,42 +453,41 @@ async def compute_team_standings(
 
     Returns snapshots with standing_position assigned from 1.
     """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT team_instance_id, finishing_position, points_awarded,
-                   fastest_lap_bonus, outcome, session_type, round_number
-            FROM (
-                SELECT rsr.team_instance_id, rsr.finishing_position,
-                       rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
-                       sr.session_type, r.round_number
-                FROM race_session_results rsr
-                JOIN session_results sr ON sr.id = rsr.session_result_id
-                JOIN rounds r ON r.id = sr.round_id
-                WHERE r.division_id = ?
-                  AND r.id <= ?
-                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-                  AND sr.status = 'ACTIVE'
-                UNION ALL
-                SELECT qsr.team_instance_id, qsr.finishing_position,
-                       qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
-                       sr.session_type, r.round_number
-                FROM qualifying_session_results qsr
-                JOIN session_results sr ON sr.id = qsr.session_result_id
-                JOIN rounds r ON r.id = sr.round_id
-                WHERE r.division_id = ?
-                  AND r.id <= ?
-                  AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-                  AND sr.status = 'ACTIVE'
-            )
-            ORDER BY round_number
-            """,
-            (
-                division_id, up_to_round_id, up_to_round_id,
-                division_id, up_to_round_id, up_to_round_id,
-            ),
+    cursor = await db.execute(
+        """
+        SELECT team_instance_id, finishing_position, points_awarded,
+               fastest_lap_bonus, outcome, session_type, round_number
+        FROM (
+            SELECT rsr.team_instance_id, rsr.finishing_position,
+                   rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
+                   sr.session_type, r.round_number
+            FROM race_session_results rsr
+            JOIN session_results sr ON sr.id = rsr.session_result_id
+            JOIN rounds r ON r.id = sr.round_id
+            WHERE r.division_id = ?
+              AND r.id <= ?
+              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+              AND sr.status = 'ACTIVE'
+            UNION ALL
+            SELECT qsr.team_instance_id, qsr.finishing_position,
+                   qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
+                   sr.session_type, r.round_number
+            FROM qualifying_session_results qsr
+            JOIN session_results sr ON sr.id = qsr.session_result_id
+            JOIN rounds r ON r.id = sr.round_id
+            WHERE r.division_id = ?
+              AND r.id <= ?
+              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
+              AND sr.status = 'ACTIVE'
         )
-        rows = await cursor.fetchall()
+        ORDER BY round_number
+        """,
+        (
+            division_id, up_to_round_id, up_to_round_id,
+            division_id, up_to_round_id, up_to_round_id,
+        ),
+    )
+    rows = await cursor.fetchall()
 
     total_points: dict[int, int] = defaultdict(int)
     for row in rows:
@@ -485,13 +510,12 @@ async def compute_team_standings(
     # teams join the standings without having scored, and every team supplies the name the
     # final tiebreak orders on — a reserve team whose driver scored is in the set already.
     # That name is the full name, the one a reader sees the table ordered by (#381).
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, full_name AS team_name, is_reserve FROM team_instances "
-            "WHERE division_id = ?",
-            (division_id,),
-        )
-        team_rows = await cursor.fetchall()
+    cursor = await db.execute(
+        "SELECT id, full_name AS team_name, is_reserve FROM team_instances "
+        "WHERE division_id = ?",
+        (division_id,),
+    )
+    team_rows = await cursor.fetchall()
     # team id -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a team of
     # another division, which no result should name, gets 2 below and ranks after both.
     team_meta: dict[int, tuple[int, str]] = {}
@@ -741,77 +765,86 @@ async def persist_snapshots(
     driver_snaps: list[DriverStandingsSnapshot],
     team_snaps: list[TeamStandingsSnapshot],
 ) -> None:
-    """INSERT OR REPLACE all snapshot rows into the database."""
+    """:func:`persist_snapshots_on`, saved on a connection of its own."""
+    async with get_connection(db_path) as db:
+        await persist_snapshots_on(db, driver_snaps, team_snaps)
+        await db.commit()
+
+
+async def persist_snapshots_on(
+    db: aiosqlite.Connection,
+    driver_snaps: list[DriverStandingsSnapshot],
+    team_snaps: list[TeamStandingsSnapshot],
+) -> None:
+    """INSERT OR REPLACE all snapshot rows on the connection it is handed, committing nothing."""
     from leaguebot.core.services.driver_service import resolve_driver_profile_id
 
-    async with get_connection(db_path) as db:
-        await _drop_superseded_driver_rows(db, driver_snaps)
+    await _drop_superseded_driver_rows(db, driver_snaps)
 
-        # Whether each division exists, cached (all snaps in a batch are typically one division)
-        _division_known: dict[int, bool] = {}
+    # Whether each division exists, cached (all snaps in a batch are typically one division)
+    _division_known: dict[int, bool] = {}
 
-        for snap in driver_snaps:
-            if snap.division_id not in _division_known:
-                cursor = await db.execute(
-                    "SELECT 1 FROM divisions WHERE id = ?", (snap.division_id,)
-                )
-                _division_known[snap.division_id] = await cursor.fetchone() is not None
-            snap_profile_id: int | None = None
-            if _division_known[snap.division_id]:
-                snap_profile_id = await resolve_driver_profile_id(
-                    snap.driver_user_id, db
-                )
-            await db.execute(
-                """
-                INSERT INTO driver_standings_snapshots
-                    (round_id, division_id, driver_user_id, standing_position, total_points,
-                     finish_counts, first_finish_rounds, standings_message_id, driver_profile_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(round_id, division_id, driver_user_id)
-                DO UPDATE SET
-                    standing_position = excluded.standing_position,
-                    total_points = excluded.total_points,
-                    finish_counts = excluded.finish_counts,
-                    first_finish_rounds = excluded.first_finish_rounds,
-                    driver_profile_id = excluded.driver_profile_id
-                """,
-                (
-                    snap.round_id,
-                    snap.division_id,
-                    snap.driver_user_id,
-                    snap.standing_position,
-                    snap.total_points,
-                    json.dumps(snap.finish_counts),
-                    json.dumps(snap.first_finish_rounds),
-                    snap.standings_message_id,
-                    snap_profile_id,
-                ),
+    for snap in driver_snaps:
+        if snap.division_id not in _division_known:
+            cursor = await db.execute(
+                "SELECT 1 FROM divisions WHERE id = ?", (snap.division_id,)
             )
-        for team_snap in team_snaps:
-            await db.execute(
-                """
-                INSERT INTO team_standings_snapshots
-                    (round_id, division_id, team_instance_id, standing_position, total_points,
-                     finish_counts, first_finish_rounds)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(round_id, division_id, team_instance_id)
-                DO UPDATE SET
-                    standing_position = excluded.standing_position,
-                    total_points = excluded.total_points,
-                    finish_counts = excluded.finish_counts,
-                    first_finish_rounds = excluded.first_finish_rounds
-                """,
-                (
-                    team_snap.round_id,
-                    team_snap.division_id,
-                    team_snap.team_instance_id,
-                    team_snap.standing_position,
-                    team_snap.total_points,
-                    json.dumps(team_snap.finish_counts),
-                    json.dumps(team_snap.first_finish_rounds),
-                ),
+            _division_known[snap.division_id] = await cursor.fetchone() is not None
+        snap_profile_id: int | None = None
+        if _division_known[snap.division_id]:
+            snap_profile_id = await resolve_driver_profile_id(
+                snap.driver_user_id, db
             )
-        await db.commit()
+        await db.execute(
+            """
+            INSERT INTO driver_standings_snapshots
+                (round_id, division_id, driver_user_id, standing_position, total_points,
+                 finish_counts, first_finish_rounds, standings_message_id, driver_profile_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(round_id, division_id, driver_user_id)
+            DO UPDATE SET
+                standing_position = excluded.standing_position,
+                total_points = excluded.total_points,
+                finish_counts = excluded.finish_counts,
+                first_finish_rounds = excluded.first_finish_rounds,
+                driver_profile_id = excluded.driver_profile_id
+            """,
+            (
+                snap.round_id,
+                snap.division_id,
+                snap.driver_user_id,
+                snap.standing_position,
+                snap.total_points,
+                json.dumps(snap.finish_counts),
+                json.dumps(snap.first_finish_rounds),
+                snap.standings_message_id,
+                snap_profile_id,
+            ),
+        )
+    for team_snap in team_snaps:
+        await db.execute(
+            """
+            INSERT INTO team_standings_snapshots
+                (round_id, division_id, team_instance_id, standing_position, total_points,
+                 finish_counts, first_finish_rounds)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(round_id, division_id, team_instance_id)
+            DO UPDATE SET
+                standing_position = excluded.standing_position,
+                total_points = excluded.total_points,
+                finish_counts = excluded.finish_counts,
+                first_finish_rounds = excluded.first_finish_rounds
+            """,
+            (
+                team_snap.round_id,
+                team_snap.division_id,
+                team_snap.team_instance_id,
+                team_snap.standing_position,
+                team_snap.total_points,
+                json.dumps(team_snap.finish_counts),
+                json.dumps(team_snap.first_finish_rounds),
+            ),
+        )
 
 
 async def compute_and_persist_round(
@@ -820,7 +853,21 @@ async def compute_and_persist_round(
     division_id: int,
     display_names: Mapping[int, str] | None = None,
 ) -> None:
-    """Compute and persist driver + team standings snapshots for a round.
+    """:func:`compute_and_persist_round_on`, saved through :func:`persist_snapshots`."""
+    driver_snaps = await compute_driver_standings(
+        db_path, division_id, round_id, display_names
+    )
+    team_snaps = await compute_team_standings(db_path, division_id, round_id)
+    await persist_snapshots(db_path, driver_snaps, team_snaps)
+
+
+async def compute_and_persist_round_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    display_names: Mapping[int, str] | None = None,
+) -> None:
+    """Compute and persist driver + team standings snapshots for a round, committing nothing.
 
     *display_names* are the names the final tiebreak orders a full tie on, and they are
     passed here for the same reason the posting paths resolve them: the stored
@@ -829,12 +876,16 @@ async def compute_and_persist_round(
     beside it — and the movement arrows of the next round read the stored order. Every
     caller holding a guild resolves them; one that does not falls back to the id
     (decided 2026-09-15).
+
+    It works on the connection it is handed, so a save that has just rewritten a round's
+    points recomputes the standings from those points, and awaits nothing but the connection:
+    the names are resolved from Discord beforehand, by a job of their own.
     """
-    driver_snaps = await compute_driver_standings(
-        db_path, division_id, round_id, display_names
+    driver_snaps = await compute_driver_standings_on(
+        db, division_id, round_id, display_names
     )
-    team_snaps = await compute_team_standings(db_path, division_id, round_id)
-    await persist_snapshots(db_path, driver_snaps, team_snaps)
+    team_snaps = await compute_team_standings_on(db, division_id, round_id)
+    await persist_snapshots_on(db, driver_snaps, team_snaps)
 
 
 async def cascade_recompute_from_round(
@@ -843,33 +894,54 @@ async def cascade_recompute_from_round(
     from_round_id: int,
     display_names: Mapping[int, str] | None = None,
 ) -> None:
-    """Recompute and persist snapshots for all rounds from *from_round_id* onwards.
+    """:func:`cascade_recompute_from_round_on`, saved on a connection of its own.
 
-    Fetches all rounds >= the from_round's round_number, ordered ascending,
-    and calls compute_and_persist_round for each.
+    Each round is saved as it is computed, as it always was.
+    """
+    async with get_connection(db_path) as db:
+        round_ids = await _rounds_from(db, division_id, from_round_id)
+    for round_id in round_ids:
+        await compute_and_persist_round(db_path, round_id, division_id, display_names)
+
+
+async def _rounds_from(
+    db: aiosqlite.Connection, division_id: int, from_round_id: int
+) -> list[int]:
+    """The ids of the division's rounds from *from_round_id* on, in round order, cancelled ones out."""
+    cursor = await db.execute(
+        """
+        SELECT id FROM rounds
+        WHERE division_id = ?
+          AND round_number >= (
+              SELECT round_number FROM rounds WHERE id = ?
+          )
+          AND status != 'CANCELLED'
+        ORDER BY round_number
+        """,
+        (division_id, from_round_id),
+    )
+    return [int(row["id"]) for row in await cursor.fetchall()]
+
+
+async def cascade_recompute_from_round_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    from_round_id: int,
+    display_names: Mapping[int, str] | None = None,
+) -> None:
+    """Recompute and persist snapshots for all rounds from *from_round_id* onwards, committing nothing.
+
+    Computes every round from *from_round_id* on, ascending, with
+    :func:`compute_and_persist_round_on`, all on the connection it is handed: the cascade is
+    saved whole or not at all, with whatever else the caller's save writes.
 
     *display_names* are resolved once by the caller and used for every round of the cascade,
     rather than per round: the roster only grows as the season runs, so one resolution taken
     across the division covers them all, and a cascade over twenty rounds should not make
     twenty rounds of Discord lookups.
     """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT id FROM rounds
-            WHERE division_id = ?
-              AND round_number >= (
-                  SELECT round_number FROM rounds WHERE id = ?
-              )
-              AND status != 'CANCELLED'
-            ORDER BY round_number
-            """,
-            (division_id, from_round_id),
-        )
-        round_rows = await cursor.fetchall()
-
-    for row in round_rows:
-        await compute_and_persist_round(db_path, row["id"], division_id, display_names)
+    for round_id in await _rounds_from(db, division_id, from_round_id):
+        await compute_and_persist_round_on(db, round_id, division_id, display_names)
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ Two things make the read harder than a select.
 both have to be recovered by join — the driver from the per-format table, the session from
 `session_results` above it.
 
-**A penalty row is written on both phases.** `apply_penalties` inserts into `penalty_records`
+**A penalty row is written on both phases.** `apply_penalties_on` inserts into `penalty_records`
 whichever phase it runs in, so an appeal leaves a row in *both* tables. Taking the appeals from
 `appeal_records` and every `penalty_records` row as a report would therefore show the appeal
 twice — once as itself and once as a report that was never made. The pairing is one-for-one, so
@@ -98,7 +98,7 @@ async def _appeal(db_path, result_id, *, column="race_result_id", penalty_type="
                   seconds=5, description="Contact", justification="At fault"):
     """Defaults match `_penalty`'s, because a real pair shares them.
 
-    `finalize_appeals_review` copies one `StagedPenalty` into both tables, so the description
+    `_apply_staged_appeals_on` copies one `StagedPenalty` into both tables, so the description
     and justification of a genuine penalty/appeal pair are identical. A helper that gave them
     different text would be testing a state the bot cannot produce.
     """
@@ -149,7 +149,7 @@ async def test_a_qualifying_report_recovers_its_own_session(tmp_path):
 
 
 async def test_an_appeal_is_read_as_an_appeal_and_not_also_as_a_report(tmp_path):
-    """`apply_penalties` writes a `penalty_records` row on the appeal phase too.
+    """`apply_penalties_on` writes a `penalty_records` row on the appeal phase too.
 
     Counting that row as a report as well would show the manager a decision nobody made.
     """
@@ -272,7 +272,7 @@ async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
 async def test_the_pairing_holds_because_both_rows_come_from_one_staged_appeal(tmp_path):
     """Why matching on shape is sound rather than lucky.
 
-    `finalize_appeals_review` runs `apply_penalties(..., _phase="APPEAL")`, which inserts a
+    `_apply_staged_appeals_on` runs `apply_penalties_on(..., _phase="APPEAL")`, which inserts a
     `penalty_records` row, and then writes the `appeal_records` row from the **same**
     `StagedPenalty` — the driver, the session, the type and the seconds are copied from one
     object into both tables in one pass. There is no route by which the pair can disagree, so
@@ -322,7 +322,7 @@ async def test_a_report_and_an_appeal_of_the_same_size_for_different_incidents_b
     vanished from the review stage — the manager could neither see it nor edit it, and approving
     wrote it out of the round's record.
 
-    The pair written by `finalize_appeals_review` always agrees on the text too, both rows being
+    The pair written by `_apply_staged_appeals_on` always agrees on the text too, both rows being
     copied from one `StagedPenalty`, so including it separates these without breaking that.
     """
     db_path, ids = await _seed(tmp_path, "hydrate_same_size")

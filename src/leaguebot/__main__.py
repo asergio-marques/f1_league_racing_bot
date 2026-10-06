@@ -87,11 +87,38 @@ def register_change_types(bot: LeagueBot) -> None:
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
+    from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.results_off_change import results_off_change
+    from leaguebot.results.services.report_approval_change import report_approval_change
+    from leaguebot.results.services.review_open_change import (
+        appeals_open_change,
+        close_stale_change,
+        review_open_change,
+    )
 
     bot.change_queue.register(
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
     )
+    bot.change_queue.register(review_open_change())
+    bot.change_queue.register(appeals_open_change())
+    bot.change_queue.register(close_stale_change())
+    # The review's change types stamp what they write with the queue's own clock, read when they
+    # run (the queue is rebuilt at a restart), and reach attendance through the hook alone.
+    bot.change_queue.register(
+        report_approval_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
+    bot.change_queue.register(
+        appeals_approval_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
+    for stage in amendment_stage_changes(
+        attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+    ):
+        bot.change_queue.register(stage)
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
 
@@ -178,6 +205,12 @@ async def main() -> None:
     # still recovering found the wizard with no bot and failed (#228).
     bot.wizard_service.set_bot(bot)
     bot.attendance_service = AttendanceService(DB_PATH)
+
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    # Attendance's share of a round's review, handed the placement service it moves seats
+    # through; results' change types reach attendance through it alone (#439).
+    bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
@@ -917,36 +950,6 @@ async def _abandon_interrupted_resubmission(
     )
 
 
-async def staged_penalties_warning(db_path: str, entries: list[dict]) -> str:
-    """The notice posted when the bot restarted part-way through finalising a penalty review.
-
-    Each entry names the account its result stands under, which applied it; the notice names
-    the driver by the account they use now (issue #243).
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.driver_service import current_account_map
-
-    async with get_connection(db_path) as db:
-        current_of = await current_account_map(db)
-    lines = [
-        "⚠️ **The bot restarted mid-finalization.** "
-        "The penalties listed below were **already applied to the results** "
-        "before the crash. Do **not** re-add them — just approve as-is to finalize.",
-        "",
-    ]
-    for e in entries:
-        stype = e.get("session_type", "?").replace("_", " ").title()
-        ptype = e.get("penalty_type", "?")
-        psecs = e.get("penalty_seconds")
-        uid = e.get("driver_user_id", "?")
-        if isinstance(uid, int):
-            uid = current_of.get(uid, uid)
-        # Signed either way: a negative penalty read "+-3s" when the plus was written by hand.
-        label = f"{psecs:+d}s" if ptype == "TIME" and psecs is not None else ptype
-        lines.append(f"• <@{uid}> | {stype} | **{label}**")
-    return "\n".join(lines)
-
-
 async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     """Take down what a round's cleanups would have, their moment passing while the bot was down.
 
@@ -1049,17 +1052,10 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
       - Re-trigger run_result_submission_job so the wizard opens immediately
         (production path — test mode uses /test-mode advance instead).
 
-    Penalty-review orphans (in_penalty_review=1):
-      - Where a resubmission was in progress (resubmitting=1), its collection is lost but
-        the round's results are not: nothing is written until the last session is in
-        (issue #210). Clear the flag, take down the announcement's Cancel button, and say in
-        the channel that the earlier results stand — then re-prompt as below.
-      - Re-post the penalty review prompt.  skip_results_post is set based on
-        the results_posted column so we never re-post interim results that were
-        already sent before the crash.
-      - If staged_penalties is set the penalties were already committed to the
-        DB before the previous crash; a warning is posted in the channel so the
-        LM knows not to re-add them before approving.
+    Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
+    change on the queue is carrying out to it, and otherwise asks the queue to put the review back
+    (#439). A resubmission a restart cut short is cleared first (`_abandon_interrupted_resubmission`),
+    its collection being lost though the round's results are not (issue #210).
     """
     from leaguebot.core.db.database import get_connection
 
@@ -1067,7 +1063,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         cursor = await db.execute(
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
-                   rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
+                   rsc.results_posted, rsc.prompt_message_id, rsc.appeals_prompt_message_id,
                    rsc.resubmitting, rsc.resubmit_prompt_message_id, rsc.resubmit_started_by,
                    r.division_id, r.status, r.round_number, d.name AS division_name
             FROM round_submission_channels rsc
@@ -1079,139 +1075,17 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         )
         orphans = await cursor.fetchall()
 
+    from leaguebot.results.services.review_recovery import recover_review
+
     for row in orphans:
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
-        in_penalty_review: int = row["in_penalty_review"]
-        results_posted: int = row["results_posted"]
-        staged_penalties_json: str | None = row["staged_penalties"]
-        prompt_message_id: int | None = row["prompt_message_id"]
-        resubmitting: int = row["resubmitting"]
-        resubmit_prompt_message_id: int | None = row["resubmit_prompt_message_id"]
-        resubmit_started_by: int | None = row["resubmit_started_by"]
-        division_id: int = row["division_id"]
-        round_status: str = row["status"] or ""
 
         guild = await league_guild(bot)
 
-        # **A FINAL round is never restored to a review** (#345). This branch rebuilds the
-        # appeals prompt from a crash, and `_build_penalty_review_state` cannot know the review
-        # it rebuilds was an amendment's — `is_amendment` lives on the in-memory state alone.
-        # Approving such a prompt would run the first-pass path against a settled round:
-        # `refresh_division_status` and `wind_down_ongoing` are not guarded by the round's
-        # status, so a division could be finished and a season wound down a second time.
-        #
-        # Only a round actually awaiting appeals is restored, which an amended round never is.
-        # An amendment interrupted by a restart is abandoned instead, by
-        # `_recover_orphaned_amend_channels`, and the manager told to run it again.
-        if in_penalty_review and round_status == "AWAITING_APPEAL_VERDICTS":
-            # The bot restarted while a round was awaiting appeals review.
-            # Re-post the AppealsReviewView prompt to the submission channel.
-            if guild is None:
-                log.warning(
-                    "Recovery: the league's server is not in the cache, cannot restore appeals review for round %s",
-                    round_id,
-                )
-                continue
-            channel = as_text_channel(guild.get_channel(channel_id))
-            if channel is None:
-                log.warning(
-                    "Recovery: channel %s not found, cannot restore appeals review for round %s",
-                    channel_id, round_id,
-                )
-                continue
-            try:
-                from leaguebot.results.services.result_submission_service import _build_penalty_review_state
-                from leaguebot.results.services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
-                state = await _build_penalty_review_state(
-                    bot, round_id, division_id, channel_id
-                )
-                appeals_view = AppealsReviewView(state=state)
-                content = await _render_appeals_prompt_content(state)
-                msg = await channel.send(content, view=appeals_view)
-                state.appeals_prompt_message_id = msg.id
-                bot.add_view(appeals_view, message_id=msg.id)
-                log.info(
-                    "Recovery: restored appeals review prompt for round %s in channel %s",
-                    round_id, channel_id,
-                )
-            except Exception:
-                log.exception(
-                    "Recovery: failed to restore appeals review for round %s", round_id
-                )
-            continue
-
-        if in_penalty_review:
-            # The bot restarted while a round was awaiting penalty review.
-            # Re-post the penalty review prompt instead of deleting the channel.
-            if guild is None:
-                log.warning(
-                    "Recovery: the league's server is not in the cache, cannot restore penalty review for round %s",
-                    round_id,
-                )
-                continue
-            channel = as_text_channel(guild.get_channel(channel_id))
-            if channel is None:
-                log.warning(
-                    "Recovery: channel %s not found, cannot restore penalty review for round %s",
-                    channel_id, round_id,
-                )
-                if resubmitting:
-                    # The round must not stay stuck as resubmitting with its channel gone.
-                    await _abandon_interrupted_resubmission(
-                        bot, round_id, None, resubmit_prompt_message_id,
-                        started_by=resubmit_started_by,
-                        round_label=f"round {row['round_number']} ({row['division_name']})",
-                    )
-                continue
-            try:
-                if resubmitting:
-                    await _abandon_interrupted_resubmission(
-                        bot, round_id, channel, resubmit_prompt_message_id,
-                        started_by=resubmit_started_by,
-                        round_label=f"round {row['round_number']} ({row['division_name']})",
-                    )
-
-                # If staged_penalties is set, penalties were already written to
-                # the result tables before the crash.  Warn the LM before
-                # re-posting the prompt with an empty staged list so they know
-                # not to re-add those penalties before approving.
-                if staged_penalties_json:
-                    import json as _json
-                    try:
-                        entries = _json.loads(staged_penalties_json)
-                        await channel.send(
-                            await staged_penalties_warning(bot.db_path, entries)
-                        )
-                    except Exception:
-                        log.exception(
-                            "Recovery: failed to post staged_penalties warning for round %s", round_id
-                        )
-
-                from leaguebot.results.services.result_submission_service import enter_penalty_state
-
-                # Delete the previous penalty review prompt to avoid confusion
-                # from duplicate messages after restart.
-                if prompt_message_id is not None:
-                    try:
-                        old_msg = await channel.fetch_message(prompt_message_id)
-                        await old_msg.delete()
-                    except (discord.NotFound, discord.HTTPException):
-                        pass  # Already deleted or unavailable — proceed anyway
-
-                await enter_penalty_state(
-                    bot, guild, round_id, division_id, channel,
-                    skip_results_post=bool(results_posted),
-                )
-                log.info(
-                    "Recovery: restored penalty review prompt for round %s in channel %s "
-                    "(results_posted=%s, had_staged_penalties=%s)",
-                    round_id, channel_id, results_posted, bool(staged_penalties_json),
-                )
-            except Exception:
-                log.exception(
-                    "Recovery: failed to restore penalty review for round %s", round_id
-                )
+        # A round that is a review is put back, or left to the change carrying it out, by the
+        # results service (#439). What is left is a first paste cut short, which is no review.
+        if await recover_review(bot, row, guild, _abandon_interrupted_resubmission):
             continue
 
         # ------------------------------------------------------------------
@@ -1427,10 +1301,16 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
 
     # The league's server is the one configured; the rows no longer say.
 
+    from leaguebot.results.services.result_submission_service import stage_in_hand
+
     for row in orphans:
         row_id: int = row["id"]
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
+        # An amendment whose stage is in hand on the queue, stopped included, is finished by the
+        # queue, not ended here ("Leave it while stuck").
+        if await stage_in_hand(bot.db_path, round_id):
+            continue
         try:
             _sessions = ", ".join(
                 str(st).replace("_", " ").title() for st in json.loads(row["session_types"])

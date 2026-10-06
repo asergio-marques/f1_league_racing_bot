@@ -171,12 +171,40 @@ async def test_a_review_replaced_by_a_newer_prompt_has_moved_on(tmp_path):
 
 
 async def test_a_review_being_approved_has_moved_on(tmp_path):
-    """**The controls stay on screen while the approval draws the round's graphics**, which on the
-    Pi is a long time, and nothing in the database says the review is closing until it moves the
-    round on. A second Approve pressed then ran the whole approval twice."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path)
-    state.approving = True
+    """**The controls stay on screen while the approval is carried out**, and nothing in the
+    round says the review is closing until the approval moves it on. A second Approve pressed
+    then ran the whole approval twice.
+
+    The approval is a change on the queue (#439), and the check finds it there: round 3's
+    approval waits behind a job that has stopped the queue."""
+    from tests.support.change_queue import member_interaction
+    from tests.support.review_league import (
+        DIVISION_ID as LEAGUE_DIVISION,
+        LEWIS,
+        PROMPT,
+        ROUND_ID as LEAGUE_ROUND,
+        SUBMISSION_CHANNEL,
+        block_queue,
+        penalty,
+        review_league,
+    )
+
+    league = await review_league(tmp_path)
+    await block_queue(league)
+    await league.bot.change_queue.ask(
+        "results.reports.approve",
+        {
+            "round_id": LEAGUE_ROUND, "division_id": LEAGUE_DIVISION,
+            "staged": [penalty(LEWIS).to_payload()], "pardons": [],
+            "prompt_message_id": PROMPT, "approval_message_id": None,
+        },
+        interaction=member_interaction(league.bot), what="✅ Approve on round 3's penalty review",
+    )
+    state = PenaltyReviewState(
+        round_id=LEAGUE_ROUND, division_id=LEAGUE_DIVISION, submission_channel_id=SUBMISSION_CHANNEL,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot,
+        prompt_message_id=PROMPT, round_number=3, division_name="Pro",
+    )
 
     refusal = await _review_moved_on(state)
 
@@ -209,10 +237,23 @@ def _interaction():
     return interaction
 
 
-def _amendment(db_path: str, *, reports_approved: bool) -> PenaltyReviewState:
+async def _amendment(db_path: str, *, reports_approved: bool) -> PenaltyReviewState:
+    """Round 3 under an amendment, its report stage approved where *reports_approved*: read from
+    the amendment row's `reports_approved_at` (#439), not from the review's memory."""
     state = _state(db_path, prompt_message_id=990001)
     state.is_amendment = True
-    state.reports_approved = reports_approved
+    approved = ", reports_approved_at" if reports_approved else ""
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM round_amend_channels WHERE round_id = ?", (ROUND_ID,))
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+            f"created_at, pre_amendment_state, expires_at{approved}) VALUES (?, 8200, "
+            "'[\"FEATURE_RACE\"]', '2026-02-02T00:00:00+00:00', '{}', "
+            "'2099-01-01T00:00:00+00:00'"
+            + (", '2026-02-02T00:10:00+00:00'" if reports_approved else "") + ")",
+            (ROUND_ID,),
+        )
+        await db.commit()
     return state
 
 
@@ -221,8 +262,8 @@ async def test_an_amendments_reports_close_once_approved(tmp_path):
     Add staged one that would never be applied."""
     db_path = await _make_db(tmp_path, round_status="FINAL", closed=1)
 
-    assert await _review_moved_on(_amendment(db_path, reports_approved=False)) is None
-    refusal = await _review_moved_on(_amendment(db_path, reports_approved=True))
+    assert await _review_moved_on(await _amendment(db_path, reports_approved=False)) is None
+    refusal = await _review_moved_on(await _amendment(db_path, reports_approved=True))
     assert refusal is not None
     assert "already approved" in refusal
 
@@ -233,7 +274,7 @@ async def test_an_amendments_pardons_close_with_its_reports(tmp_path, control):
     appeals, because that is when it writes them; the specs had them changed in the report stage
     alone. Each of the three pardon controls is driven here, with the real check behind it."""
     db_path = await _make_db(tmp_path, round_status="FINAL", closed=1)
-    state = _amendment(db_path, reports_approved=True)
+    state = await _amendment(db_path, reports_approved=True)
     state.staged_pardons = [
         StagedPardon(
             driver_user_id=4001, driver_profile_id=31, attendance_id=41,
@@ -345,15 +386,15 @@ async def test_an_approval_message_no_longer_current_approves_nothing(tmp_path, 
     view = ApprovalView(state)
     interaction = _interaction()
     interaction.message.id = 990001
+    interaction.client.change_queue.ask = AsyncMock()
 
     with patch(
         "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
-    ), patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
-    ) as finalise, patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+    ), patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
         await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert "withdrawn" in interaction.response.send_message.await_args.args[0]
-    finalise.assert_not_awaited()
+    interaction.client.change_queue.ask.assert_not_awaited()
+    assert not state.bot.change_queue.ask.called
     refresh.assert_not_awaited()
     interaction.response.defer.assert_not_awaited()

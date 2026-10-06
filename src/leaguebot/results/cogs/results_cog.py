@@ -2445,6 +2445,22 @@ class ResultsCog(commands.Cog):
             )
             return
 
+        # A division with a job of a round's review on the queue is not amended (#439): a review
+        # queued before the amendment began would publish its unapproved standings.
+        from leaguebot.results.services.review_changes import division_job_in_hand
+
+        waiting_on = await division_job_in_hand(self.bot.db_path, div.id)
+        if waiting_on is not None:
+            await refuse(
+                interaction,
+                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue (job "
+                f"#{waiting_on}), so it cannot be amended until that is done. Let it finish, or "
+                "press **Retry** or **Discard** on its notice if it has stopped, then amend "
+                "again.",
+                what=describe(interaction),
+            )
+            return
+
         # Load ACTIVE session_results
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
@@ -2785,6 +2801,22 @@ class ResultsCog(commands.Cog):
                     )
                     return
                 if stage_one_done[0]:
+                    from leaguebot.results.services.result_submission_service import (
+                        stage_in_hand,
+                    )
+
+                    # **A stage's approval on the change queue holds the amendment** (#439):
+                    # queued, running or stopped on a failure, it cannot be cancelled, and the
+                    # presser is told so before anything is said of putting the round back.
+                    if await stage_in_hand(self.bot.db_path, amended_round_id):
+                        await refuse(
+                            bi,
+                            "⏳ A stage of this amendment is being approved, so it cannot be "
+                            "cancelled now. If its approval is stopped, press Retry or Discard "
+                            "on its notice in the log channel.",
+                            what=cancel_what,
+                        )
+                        return
                     # **After stage one, cancelling is a revert** (#345). The corrected
                     # classification is already written, so stopping here would leave the
                     # round scored from it and posted from the old one until the sweep came.

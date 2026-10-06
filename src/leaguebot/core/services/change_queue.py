@@ -10,6 +10,20 @@ own writes, its audit records and its log lines, so a stop leaves a step wholly 
 and a restart carries the change on from its first step not done. A step marked done is never run
 again.
 
+**A post's id is saved with the post's mark** (`Step.record`). A step that is not a `SAVE` may carry
+a `record(db, ctx, result)`, which the worker awaits inside the save that marks the step done,
+before the mark, on the connection it is handed and never committing. A message id is thereby saved
+with the post's done mark, or neither is: a stop between the post and its mark can only leave the
+post sent, never an id unsaved beside a step marked done. It runs also where a `DELETE` or an
+`EDIT` completes because its message is already gone (a channel found deleted still has its row
+deleted), and never for a job found no longer due or discarded, which sent nothing to record. A
+`SAVE` step writes in its own run, so `register` refuses one that carries a record. *Rejected:* a
+`SAVE` job after each post to write its id, which doubles the jobs a change numbers and stops on.
+A record that raises rolls the save back and stops the queue like any failure, and the result the
+step returned is kept on the job as the partial result a failure on Discord keeps, so that the next
+try can remove the copy already sent before it posts again (`StepContext.kept`): a second copy is
+accepted only where the bot stops, not where a save fails.
+
 **One change runs at a time, in the order asked.** One asyncio task, `ChangeQueue._task`, is kept
 on the instance and started by `start()` (idempotent), from `on_ready` and never from an
 interaction, so that it inherits no interaction's context. `run_until_idle` is the same loop for the
@@ -63,6 +77,15 @@ not use the bot to look up other services).
 **The check runs twice**: when the change is asked for, so that a member is refused at once, and
 when it starts, since what it checked may have changed in between.
 
+**What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
+payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included
+(its state stays as it was) and the one named in *excluding* left out, which a check handed its own
+`change_id` uses to leave itself out. A check uses it to refuse a press while the same approval is
+already in hand, and a restart's recovery and a sweep use it to leave alone what the queue is still
+carrying out. It gives what the repeat rule below does not: that refuses a repeat only while the
+first has not started, where a specification may ask for the refusal while the first is still being
+applied, whatever its position.
+
 **A request repeating a change is refused only while it could still be the same request:** where
 the last change asked for, whatever became of any other, has the same key and has not started.
 Asked again once anything else has been asked for after it, or once it has started, a change is
@@ -82,7 +105,7 @@ import json
 import logging
 import os
 import sqlite3
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -158,12 +181,17 @@ class _Held:
 
 @dataclass(frozen=True)
 class CheckContext:
-    """What a change type's check reads: the request, the bot for Discord, and the database."""
+    """What a change type's check reads: the request, the bot for Discord, and the database.
+
+    *change_id* is the change's id where the check runs as the change starts, None where it is
+    asked about a request not yet made: a check that reads `unfinished` leaves itself out with it.
+    """
 
     payload: dict[str, Any]
     bot: "LeagueBot"
     db_path: str
     origin: ChangeOrigin
+    change_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -201,12 +229,16 @@ class StepContext(OutcomeContext):
     """What a step reads: the change as `OutcomeContext` gives it, and the step itself.
 
     *tries* is how many times the step has failed on Discord before, so that a posting step can
-    post as text on a retry (Constitution XIV, rule 8).
+    post as text on a retry (Constitution XIV, rule 8). *kept* is what the stopped job's last try
+    left on it (the `result` of the `StepFailedOnDiscord` it raised, or the result a record that
+    raised had been handed), None on a first try: a posting job reads it to remove the messages its
+    last try sent before it posts again.
     """
 
     step_name: str = ""
     step_payload: dict[str, Any] = field(default_factory=dict)
     tries: int = 0
+    kept: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -218,7 +250,11 @@ class Step:
     runs, and a step no longer due is marked done as dropped. `describe(ctx)` names the job in the
     lines that say it stopped the queue, was retried or discarded ("refreshing the hub panel"); by
     default the job is named by the change's own `what`. `gone_line`, a line or what forms one, is
-    what an `EDIT` step writes where its message is gone.
+    what an `EDIT` step writes where its message is gone. `record(db, ctx, result)`, on a step that
+    is not a `SAVE`, is awaited in the save that marks the step done, before the mark, and writes on
+    *db* without committing: a post's message id is saved with the post's mark. It is run, too,
+    where a `DELETE` or `EDIT` completes because its message is gone, and not for a job found no
+    longer due. A record that raises stops the queue at the job, and *result* is kept on it.
     """
 
     name: str
@@ -227,6 +263,7 @@ class Step:
     still_due: Callable[[StepContext], Awaitable[bool]] | None = None
     describe: Callable[[StepContext], Awaitable[str]] | None = None
     gone_line: Callable[[StepContext], str] | str | None = None
+    record: Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]] | None = None
 
 
 @dataclass(frozen=True)
@@ -300,8 +337,30 @@ class ChangeQueue:
     # Registering and asking
     # ------------------------------------------------------------------
 
+    def now(self) -> datetime:
+        """The queue's clock: the time a change type's check and writers are to take as "now", so
+        that they and the retry schedule never disagree and a test that moves the clock moves
+        them all."""
+        return self._clock()
+
+    async def job_numbers(self, change_id: int) -> tuple[int | None, int | None]:
+        """The number of *change_id*'s first job not done, and of the job the queue is stopped
+        at (None where it is not stopped), for a request made with no interaction to
+        acknowledge, which says in a channel what the acknowledgement would."""
+        async with get_connection(self._db_path) as db:
+            steps = await self._read_steps(db, change_id)
+        first = next((row["id"] for row in steps if row["done_at"] is None), None)
+        stopped = await self._stopped_jobs()
+        return first, (stopped[0][2]["id"] if stopped else None)
+
     def register(self, change_type: ChangeType) -> None:
-        """Make *change_type* known."""
+        """Make *change_type* known. A `SAVE` step carrying a `record` is refused: it writes in
+        its own run."""
+        for step in change_type.steps.values():
+            if step.record is not None and step.kind is StepKind.SAVE:
+                raise ValueError(
+                    f"step {step.name!r} of {change_type.kind!r} is a SAVE and cannot carry a record"
+                )
         self._types[change_type.kind] = change_type
 
     def _type(self, kind: str) -> ChangeType:
@@ -352,6 +411,12 @@ class ChangeQueue:
                 return None
             if verdict.kind is VerdictKind.NOT_DUE:
                 log.info("%s is no longer due, so it was not asked for: %s", what, verdict.reason)
+                return None
+            if origin is ChangeOrigin.MEMBER:
+                # A member's request refused with no interaction to tell (a paste, say) is not
+                # saved either: nobody asked for what the check refuses.
+                log.info("%s was refused, so it was not asked for: %s", what,
+                         verdict.reply or verdict.reason)
                 return None
 
         # The worker passes over this lock to choose its next change, so it cannot pick the
@@ -570,6 +635,7 @@ class ChangeQueue:
             step_name=row["name"],
             step_payload=json.loads(row["payload"]),
             tries=row["tries"],
+            kept=json.loads(row["result"]) if row["result"] else None,
         )
 
     def forget_held(self) -> None:
@@ -608,8 +674,11 @@ class ChangeQueue:
                 # Look again: nothing may be left to set the signal, and a change the fault
                 # left QUEUED would otherwise wait for the next ask or a restart.
                 continue
+            # The wait is built only once the time to the next try is known, so a cancel while
+            # that is read drops no coroutine unawaited.
+            wait = await self._seconds_to_next_try()
             try:
-                await asyncio.wait_for(self._signal.wait(), await self._seconds_to_next_try())
+                await asyncio.wait_for(self._signal.wait(), wait)
             except asyncio.TimeoutError:
                 pass
 
@@ -755,6 +824,7 @@ class ChangeQueue:
                     self._bot,
                     self._db_path,
                     ChangeOrigin(change["origin"]),
+                    change["id"],
                 )
             )
         except Exception as error:  # noqa: BLE001 — a check that raises stops the queue
@@ -978,6 +1048,7 @@ class ChangeQueue:
             return False
         ctx = self._step_context(change, step_rows, row)
         stopped_as = await self._stopped_as(change, row, ctx)
+        produced: StepResult | None = None
         try:
             if step.still_due is not None and not await step.still_due(ctx):
                 return await self._complete(
@@ -997,11 +1068,29 @@ class ChangeQueue:
                         await db.rollback()
                         raise
                 return await self._delivered(change, saved, row)
-            return await self._complete(change, row, await step.run(ctx), stopped_as)
+            produced = await step.run(ctx)
+            return await self._complete(
+                change, row, produced, stopped_as, record=self._recording(step, ctx, produced)
+            )
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_stop`
             log.log(self._failure_level(row), "job %s (%r) of %s raised (change %s)", row["id"],
                     row["name"], change["what"], change["id"], exc_info=error)
-            return await self._step_failed(change, step, ctx, row, error)
+            return await self._step_failed(change, step, ctx, row, error, produced)
+
+    @staticmethod
+    def _recording(
+        step: Step, ctx: StepContext, result: StepResult
+    ) -> Callable[[aiosqlite.Connection], Awaitable[None]] | None:
+        """The step's record bound to what it returned, to run in the save marking it done; None
+        where it carries none."""
+        record = step.record
+        if record is None:
+            return None
+
+        async def _record(db: aiosqlite.Connection) -> None:
+            await record(db, ctx, result)
+
+        return _record
 
     async def _stopped_as(
         self, change: aiosqlite.Row, row: aiosqlite.Row, ctx: StepContext
@@ -1015,12 +1104,16 @@ class ChangeQueue:
     async def _complete(
         self, change: aiosqlite.Row, row: aiosqlite.Row, result: StepResult,
         stopped_as: str | None,
+        record: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None,
     ) -> bool:
         """Save the mark of a step whose work needed no connection, with *result*'s audits and
-        lines, then deliver the lines."""
+        lines, then deliver the lines. The step's *record* runs first, in the same save, so that
+        what it writes lands with the mark or not at all."""
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
+                if record is not None:
+                    await record(db)
                 saved = await self._save_result(db, change, row, result, stopped_as)
                 if saved is None:
                     await db.rollback()
@@ -1050,24 +1143,33 @@ class ChangeQueue:
         ctx: StepContext,
         row: aiosqlite.Row,
         error: Exception,
+        produced: StepResult | None = None,
     ) -> bool:
         """Deal with the job *row* raising *error*, its save already rolled back.
 
         `NotFound` completes a `DELETE` job (the message is already gone, and no line says so)
-        and an `EDIT` job (with its `gone_line`). Every other failure, from Discord or from the
-        bot, stops the queue at the job.
+        and an `EDIT` job (with its `gone_line`), its record run as it is marked. Every other
+        failure, from Discord or from the bot, stops the queue at the job. Where the step had
+        returned and what failed was the save that marks it (its record raising), *produced* is
+        kept on the job as a partial result, so that the next try can remove what this one sent.
         """
-        if isinstance(error, discord.NotFound) and step.kind in (StepKind.DELETE, StepKind.EDIT):
+        if (
+            produced is None
+            and isinstance(error, discord.NotFound)
+            and step.kind in (StepKind.DELETE, StepKind.EDIT)
+        ):
             lines: tuple[str, ...] = ()
             if step.kind is StepKind.EDIT and step.gone_line is not None:
                 gone = step.gone_line if isinstance(step.gone_line, str) else step.gone_line(ctx)
                 lines = (gone,)
+            completed = StepResult(result={"gone": True}, lines=lines)
             return await self._complete(
-                change, row, StepResult(result={"gone": True}, lines=lines),
-                await self._stopped_as(change, row, ctx),
+                change, row, completed, await self._stopped_as(change, row, ctx),
+                record=self._recording(step, ctx, completed),
             )
         job = await self._name_job(change, row, ctx)
-        await self._stop(change, row, error, job=job)
+        kept = produced.result if produced is not None and step.kind is not StepKind.SAVE else None
+        await self._stop(change, row, error, job=job, partial=kept)
         return False
 
     @staticmethod
@@ -1095,6 +1197,7 @@ class ChangeQueue:
         error: BaseException,
         *,
         job: str | None = None,
+        partial: dict[str, Any] | None = None,
     ) -> None:
         """Stop the queue at the job *row* of *change*, which failed with *error*.
 
@@ -1108,7 +1211,7 @@ class ChangeQueue:
         stopped trying on its own, and leaves no try.
         A Retry's try that fails (`retry`) writes one line naming the presser and the kind of
         fault instead, and leaves the schedule as it stood. A partial result a failure carries
-        is kept on the job. *row* is the job, or for a check
+        is kept on the job, as is the result of a step whose record raised (*partial*). *row* is the job, or for a check
         that fails before the change starts, the change's first job not done; *job* names it,
         the change's own words where none is given.
 
@@ -1128,7 +1231,8 @@ class ChangeQueue:
         marks = (since + timedelta(minutes=minutes) for minutes in RETRY_AFTER)
         next_try = next((mark for mark in marks if mark > now), None)
         kind = self._fault_kind(error)
-        partial = error.result if isinstance(error, StepFailedOnDiscord) else None
+        if partial is None and isinstance(error, StepFailedOnDiscord):
+            partial = error.result
         named = job if job is not None else what
         line = hour_line(row["id"], named) if not first and next_try is None else None
         # Read, not popped: the entry goes once the save has committed, so a save that raises
@@ -1677,6 +1781,73 @@ def empty_queue_in(path: str | os.PathLike[str]) -> None:
         db.commit()
     finally:
         db.close()
+
+
+async def unfinished(
+    db_path: str, kinds: Collection[str], *, excluding: int | None = None
+) -> list[dict[str, Any]]:
+    """The payloads of the changes of *kinds* that are queued or running, a stopped one included,
+    oldest first, leaving out the change whose id is *excluding*.
+
+    A change done, refused, dropped or discarded is not in hand and is not given. Read on a
+    connection of its own, so a check may call it while the queue is between jobs.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return []
+    marks = ", ".join("?" for _ in kinds)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
+            "AND state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR id != ?) ORDER BY id",
+            (*kinds, excluding, excluding),
+        )
+        return [json.loads(row["payload"]) for row in await cursor.fetchall()]
+
+
+async def ever_asked(db_path: str, kinds: Collection[str]) -> list[dict[str, Any]]:
+    """The payloads of every change of *kinds* the queue has recorded, in whatever state, oldest
+    first.
+
+    Where :func:`unfinished` gives only what is in hand, this gives what was asked for at all: a
+    change done, discarded, dropped or refused at its start is still a record that it was asked
+    for. A change refused when it was asked is not saved, so is not given. Read on a connection of
+    its own.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return []
+    marks = ", ".join("?" for _ in kinds)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) ORDER BY id",  # noqa: S608 — marks only
+            tuple(kinds),
+        )
+        return [json.loads(row["payload"]) for row in await cursor.fetchall()]
+
+
+async def in_hand(db_path: str, kinds: Collection[str]) -> list[tuple[dict[str, Any], int | None]]:
+    """Each change of *kinds* that is queued or running, a stopped one included, as its payload
+    and the number of the job it waits on, oldest first.
+
+    The job is the change's first job not yet done, which is the stopped one where the queue is
+    stopped at it, or `None` where every job is done and only the change's own close remains. It
+    is the number a manager sees on the notice, and so the one a refusal names. Read as
+    :func:`unfinished` is.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return []
+    marks = ", ".join("?" for _ in kinds)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT c.payload, (SELECT s.id FROM queued_change_steps s WHERE s.change_id = c.id "
+            "AND s.done_at IS NULL ORDER BY s.position LIMIT 1) AS job "
+            f"FROM queued_changes c WHERE c.kind IN ({marks}) "  # noqa: S608 — marks only
+            "AND c.state IN ('QUEUED', 'RUNNING') ORDER BY c.id",
+            tuple(kinds),
+        )
+        return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
 
 
 def highest_job_number(path: str | os.PathLike[str]) -> int:
