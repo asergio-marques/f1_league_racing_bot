@@ -16,8 +16,8 @@ records upgrade-only (FR-003).
 profile, the Discord user, the sanction and the divisions an autosack reaches; the thresholds
 and the driver's total are read again when the sanction is applied or announced.
 
-**The league's server** is the one the configuration row holds; where none is claimed, the
-bot's only server (a bot serves one league).
+**The league's server** is core's `league_guild`, the one route from a job to it; where none is
+claimed or it is not in the cache the method raises `GuildUnavailable`.
 """
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import league_guild
 
 
 class AttendanceAfterReview:
@@ -55,13 +56,7 @@ class AttendanceAfterReview:
         return bool(row and row["module_enabled"])
 
     async def _guild(self) -> discord.Guild:
-        async with get_connection(self._db_path) as db:
-            row = await (await db.execute(
-                "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
-            )).fetchone()
-        guild = self._bot.get_guild(int(row["server_id"])) if row else None
-        if guild is None and len(self._bot.guilds) == 1:
-            guild = self._bot.guilds[0]
+        guild = await league_guild(self._bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
         return guild

@@ -68,6 +68,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.batch_notice import delete_notice, send_notice
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
@@ -422,10 +423,9 @@ def display_names(ctx: StepContext) -> dict[int, str] | None:
 
 
 async def _league_guild(bot: LeagueBot) -> discord.Guild:
-    """The league's server, or `GuildUnavailable` where it is not in the cache."""
-    config = await bot.config_service.get_server_config()
-    guild = None if config is None else bot.get_guild(config.server_id)
-    if not isinstance(guild, discord.Guild):
+    """The league's server through core's `league_guild`, or `GuildUnavailable` where it gives None."""
+    guild = await league_guild(bot)
+    if guild is None:
         raise GuildUnavailable("the league's server is not in the cache")
     return guild
 

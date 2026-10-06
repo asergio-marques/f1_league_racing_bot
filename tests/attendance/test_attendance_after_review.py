@@ -166,6 +166,7 @@ def _bot(db_path: str, *, attendance: bool = True, channel: Any = None) -> Any:
     bot.db_path = db_path
     bot.user = MagicMock(id=BOT_USER_ID)
     bot.get_guild = MagicMock(return_value=guild)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.guilds = [guild]
     bot.get_channel = MagicMock(return_value=channel)
     bot.fetch_channel = AsyncMock(return_value=channel)
