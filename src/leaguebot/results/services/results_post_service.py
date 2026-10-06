@@ -891,6 +891,23 @@ async def produce_standings(
     # Look for existing standings message (stored in the top-ranked driver snapshot)
     existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
 
+    # **A text table posted over standings that also stand as a constructors message** (a graphic
+    # per championship, or a text table per championship) is posted afresh, and takes both
+    # down: an edit in place would leave the drivers' picture attached to the full table, and
+    # the constructors message standing with its id still recorded.
+    constructors_id = await _get_standings_message_id(
+        db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
+    )
+    constructors_old: list[int] = []
+    if constructors_id is not None:
+        constructors_old = list(
+            await _get_standings_message_ids(
+                db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
+            )
+            or [constructors_id]
+        )
+        fresh = True
+
     sent_msg: discord.Message | None = None
     stale: list[int] = []
     if existing_msg_id is not None and fresh:
@@ -936,7 +953,12 @@ async def produce_standings(
 
     if sent_msg is None:
         sent = await _send_chunked(standings_channel, content)
-        return [PostedTable([m.id for m in sent], stale, championship=STANDINGS_DRIVERS)]
+        tables = [PostedTable([m.id for m in sent], stale, championship=STANDINGS_DRIVERS)]
+        if constructors_old:
+            # Nothing new carries the constructors now: the table forgets its id and loses its
+            # messages with the drivers' (see `_record_and_take_down`).
+            tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
+        return tables
     # Edited in place, so it is the one message it always was and occupies no others.
     return [PostedTable([sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS)]
 
@@ -1119,8 +1141,8 @@ async def _record_and_take_down(
             )
         if driver_snapshots and table.championship is not None:
             await _set_standings_message_id(
-                db_path, division_id, round_id, table.new[0], table.championship,
-                message_ids=json.dumps(table.new),
+                db_path, division_id, round_id, table.new[0] if table.new else None,
+                table.championship, message_ids=json.dumps(table.new) if table.new else None,
             )
 
 

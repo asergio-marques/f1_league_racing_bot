@@ -746,11 +746,15 @@ async def _record_standings_post(
     if result.result.get("dropped"):
         return
     for table in result.result["tables"]:
-        if table["championship"] is None or not table["new"]:
+        if table["championship"] is None:
             continue
+        # A table with nothing new is a championship whose message a text table replaced: its
+        # id is forgotten, the old message coming down in its own job.
+        new = table["new"]
         await set_standings_message_id_on(
-            db, result.result["division_id"], result.result["round_id"], table["new"][0],
-            table["championship"], message_ids=json.dumps(table["new"]),
+            db, result.result["division_id"], result.result["round_id"],
+            new[0] if new else None, table["championship"],
+            message_ids=json.dumps(new) if new else None,
         )
 
 
