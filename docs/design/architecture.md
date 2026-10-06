@@ -684,7 +684,7 @@ to it would switch off the one failure path for every command.
    the rest. Inside a queued change, each item is a job: one that fails stops the queue until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
    work (above). Neither applies where an operation's own rule is all or nothing, as a points
-   amendment's is (the results specification's "Changing points system mid-season");
+   amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 
