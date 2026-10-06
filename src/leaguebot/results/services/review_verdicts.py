@@ -471,7 +471,12 @@ async def _after_a_sanction(ctx: StepContext) -> bool:
     applied; the sheet the approval posts first is not one of them."""
     if ctx.step_name == ATTENDANCE_SHEET and not ctx.step_payload.get("after_sanctions"):
         return True
-    return bool(_applied(ctx))
+    applied = {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
+    if ctx.step_name != ATTENDANCE_SHEET:
+        return bool(applied)
+    # A sheet is redrawn for the drivers it marks: a sacked driver's other division is redrawn
+    # only where that driver's own sack applied, as `enforce_attendance_sanctions` has it.
+    return bool(applied & {int(p) for p in ctx.step_payload.get("sanctioned", [])})
 
 
 async def _describe_sheet(ctx: StepContext) -> str:
@@ -496,6 +501,19 @@ async def _division_name(db_path: str, division_id: int) -> str:
             await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
         ).fetchone()
     return "the division" if row is None else str(row["name"])
+
+
+async def _latest_scored_round(db_path: str, division_id: int, fallback: int) -> int:
+    """The division's latest round with a recorded attendance total, which is where its current
+    sheet stands; *fallback* where it has none."""
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT r.id FROM rounds r JOIN driver_round_attendance dra ON dra.round_id = r.id "
+            "WHERE r.division_id = ? AND dra.total_points_after IS NOT NULL "
+            "ORDER BY r.round_number DESC LIMIT 1",
+            (division_id,),
+        )).fetchone()
+    return fallback if row is None else int(row["id"])
 
 
 async def _describe_plan(ctx: StepContext) -> str:
@@ -525,7 +543,11 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
                 sheets.setdefault(int(other), set()).add(int(candidate["driver_profile_id"]))
         for sheet_division in [division_id, *sorted(d for d in sheets if d != division_id)]:
             planned.append(PlannedStep(ATTENDANCE_SHEET, {
-                "round_id": round_id, "division_id": sheet_division,
+                # Another division's sheet is drawn as at that division's own latest round, not
+                # the round the sack was decided at, whose number means nothing there.
+                "round_id": round_id if sheet_division == division_id
+                else await _latest_scored_round(ctx.db_path, sheet_division, round_id),
+                "division_id": sheet_division,
                 "division": division if sheet_division == division_id
                 else await _division_name(ctx.db_path, sheet_division),
                 "sanctioned": sorted(sheets[sheet_division]), "after_sanctions": True,
