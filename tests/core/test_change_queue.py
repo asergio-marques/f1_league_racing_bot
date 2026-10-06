@@ -2074,7 +2074,6 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     assert sorted(p["n"] for p in found) == ["other", "queued", "stopped"]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: in_hand takes no excluding, so a change cannot leave itself out")
 async def test_in_hand_leaves_out_the_change_named_in_excluding(env):
     """`in_hand` leaves out the change whose id is *excluding*, as `unfinished` does, so a check
     reading the queue for its own kind does not find itself; with none named it gives every
