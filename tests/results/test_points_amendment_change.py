@@ -65,7 +65,6 @@ from tests.support.review_league import block_queue, candidate, run_until_done, 
 
 KIND = "results.points_amendment.approve"
 
-
 SUCCESS = "✅ Amendment approved. All standings recomputed and reposted."
 MODE_OFF = (
     "❌ Amendment mode is not active. Nothing was changed: these changes were already "
@@ -98,6 +97,8 @@ def _unmarked(first_line: str) -> str:
     """A reply's first line without the mark it opens with (its emoji and the space after it), as
     every ⛔ refusal line gives the reply as its reason."""
     return first_line.split(" ", 1)[1]
+
+
 #: The season's own table, as it stood before any approval.
 SEASON_TABLE = [("Standard", "FEATURE_RACE", 1, 25), ("Standard", "FEATURE_RACE", 2, 18)]
 APPROVED_TABLE = [("Standard", "FEATURE_RACE", 1, 26), ("Standard", "FEATURE_RACE", 2, 18)]

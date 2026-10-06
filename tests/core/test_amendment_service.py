@@ -1137,9 +1137,6 @@ async def _seed_division_with_rounds(path: str, season_id: int):
 #: The stub bot's own Discord user id. The pre-flight looks its member up by it (#187).
 _BOT_USER_ID = 4242
 
-#: Approving a points amendment is a change on the queue (#439, slice 3): until it is built, a
-#: test that approves through it fails on the change type's import.
-
 #: "Now", for the queue that carries the approval.
 _APPROVE_NOW = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
 
