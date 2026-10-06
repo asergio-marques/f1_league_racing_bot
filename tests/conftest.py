@@ -39,6 +39,7 @@ import atexit
 import functools
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -225,6 +226,26 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "rasteriser" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    """Stop every change queue the test started through `restart_queue`, once the test has run,
+    and wait for the database threads a stopped worker left running.
+
+    Here rather than in a fixture because the stop must run on the test's own event loop: after
+    the test's call, while the loop is open and idle, and before the teardown that closes it,
+    whichever order the fixtures are torn down in. A worker still running when the loop closes is
+    cut off part way through a read, and aiosqlite's thread raises "Event loop is closed" against
+    a later test (`tests/support/change_queue.py`, `stop_started_queues`). Nothing is imported
+    where no test has imported the support module.
+    """
+    try:
+        return (yield)
+    finally:
+        queues = sys.modules.get("tests.support.change_queue")
+        if queues is not None:
+            queues.stop_started_queues()
 
 
 @pytest.fixture(autouse=True)

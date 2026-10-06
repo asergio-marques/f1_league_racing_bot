@@ -16,10 +16,17 @@ to it.
 A job that fails stops the queue until it is cleared (owner, 2026-10-02): `stopped_job` reads the
 job the queue is stopped at, and `retry_job` and `discard_job` press Retry and Discard on its stop
 notice, as a member holding the tier `tier_member` gives them.
+
+A queue `restart_queue` starts has a worker running in the background, and is stopped before the
+test ends: `tests/conftest.py` calls `stop_started_queues` once the test has run, while its event
+loop is still open, and it waits there for any database thread a stopped worker left running.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -113,10 +120,18 @@ async def run_queue(bot: Any, *, steps: int | None = None) -> None:
         await bot.change_queue.run_until_idle(steps=steps)
 
 
+#: How long `stop_started_queues` waits, in all, for aiosqlite's threads to finish.
+THREAD_GRACE_SECONDS = 5.0
+
+#: Every queue `restart_queue` has started, with the event loop its worker runs on.
+_STARTED: list[tuple[Any, asyncio.AbstractEventLoop]] = []
+
+
 async def restart_queue(bot: Any) -> Any:
     """A fresh queue on the same database, clock and router, as after a restart, and started.
 
     The old queue is stopped first where it was started. The same change types are registered.
+    The queue is remembered, for `stop_started_queues` to stop once the test has run.
     """
     from leaguebot.core.services.change_queue import ChangeQueue
 
@@ -128,7 +143,35 @@ async def restart_queue(bot: Any) -> Any:
     bot.change_queue = queue
     _register(bot, queue, setup)
     await maybe_await(queue.start())
+    _STARTED.append((queue, asyncio.get_running_loop()))
     return queue
+
+
+def stop_started_queues() -> None:
+    """Stop every queue `restart_queue` started, on the loop it runs on, and forget them; then
+    wait for aiosqlite's threads to finish.
+
+    Called by `tests/conftest.py` after the test's call and before its teardown, while the test's
+    event loop is open and idle. A worker left running is cancelled only as the loop closes, part
+    way through a read of the database: aiosqlite's thread then answers a closed loop, and pytest
+    reports a `PytestUnhandledThreadExceptionWarning` ("Event loop is closed") against whichever
+    test is running when it fires.
+
+    Stopping cancels the worker wherever it stands, which may be part way through opening a
+    connection: aiosqlite's thread finishes the opening after the cancel, and answers the loop
+    when it does. The same holds for a queue the test started and stopped itself. So each
+    aiosqlite thread still alive is waited for, up to `THREAD_GRACE_SECONDS` in all, before the
+    loop is left to close; none is alive where nothing was cut off.
+    """
+    started, _STARTED[:] = list(_STARTED), []
+    for queue, loop in started:
+        if not loop.is_closed() and not loop.is_running():
+            loop.run_until_complete(queue.stop())
+    deadline = time.monotonic() + THREAD_GRACE_SECONDS
+    for thread in threading.enumerate():
+        # aiosqlite names no thread; Python names it after its target.
+        if thread.name.endswith("(_connection_worker_thread)"):
+            thread.join(max(deadline - time.monotonic(), 0))
 
 
 async def maybe_await(value: Any) -> Any:
