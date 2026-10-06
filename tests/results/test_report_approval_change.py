@@ -857,7 +857,6 @@ SANCTIONS_PLAN_DISCARDED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a failed sanctions plan carries no sync hint for its discard")
 async def test_a_failed_sanctions_plan_keeps_the_sync_hint_for_its_discard(tmp_path):
     """A fault reading which drivers are owed a sanction fails the `plan_sanctions` job as the
     sheet's and a sanction's do: the failure keeps the hook's `attendance sync` hint on its kept
