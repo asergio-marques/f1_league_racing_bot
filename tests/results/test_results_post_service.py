@@ -388,335 +388,6 @@ def test_the_two_sections_posted_apart_say_everything_the_joint_message_says():
 
 
 # ---------------------------------------------------------------------------
-# repost_round_results — the label is the round's own, and an unraced round is
-# skipped (#130)
-# ---------------------------------------------------------------------------
-
-
-async def _seed_division_for_repost(
-    tmp_path,
-    *,
-    round_status: str,
-    with_session_results: bool = True,
-    results_channel_id: int | None = 501,
-    standings_channel_id: int | None = 502,
-):
-    """A season, a division with both channels configured, and one round.
-
-    Returns ``(db_path, division_id, round_id)``.
-
-    Either channel id may be passed as None to seed a division that never configured it,
-    which is a different thing from one whose configured channel has since been deleted
-    (#187) and must not be reported as a fault.
-    """
-    from leaguebot.core.db.database import run_migrations, get_connection
-
-    db_path = str(tmp_path / "repost.db")
-    await run_migrations(db_path)
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 2)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
-            (season_id,),
-        )
-        division_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
-            (division_id, results_channel_id, standings_channel_id),
-        )
-        cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 4, 'STANDARD', ?, '2026-06-01T18:00:00')",
-            (division_id, round_status),
-        )
-        round_id = cursor.lastrowid
-        if with_session_results:
-            await db.execute(
-                "INSERT INTO session_results (round_id, division_id, session_type, status) "
-                "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-                (round_id, division_id),
-            )
-        await db.commit()
-
-    return db_path, division_id, round_id
-
-
-def _guild_capturing_sends(captured: list[str]):
-    """A guild whose two configured channels record whatever is sent to them."""
-    async def fake_send(content=None, **kwargs):
-        captured.append(content or "")
-        msg = MagicMock()
-        msg.id = 4242
-        return msg
-
-    def get_channel(channel_id):
-        channel = AsyncMock()
-        channel.send = fake_send
-        channel.id = channel_id
-        return channel
-
-    guild = MagicMock()
-    guild.get_channel = get_channel
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
-    return guild
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_needs_no_label(tmp_path):
-    """The two production call sites pass no label; that must not raise (#130).
-
-    Before the fix ``label`` was a required positional parameter, so this call raised
-    ``TypeError: missing a required argument: 'label'`` — swallowed by the amendment
-    cascade's per-round ``try/except``, which is why a league saw stale standings.
-    """
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL"
-    )
-    captured: list[str] = []
-
-    await repost_round_results(
-        db_path, round_id, division_id, _guild_capturing_sends(captured)
-    )
-
-    assert captured, "nothing was reposted"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("round_status", "expected_label"),
-    [
-        ("AWAITING_REPORT_VERDICTS", "Provisional Results"),
-        ("AWAITING_APPEAL_VERDICTS", "Post-Race Penalty Results"),
-        ("FINAL", "Final Results"),
-    ],
-)
-async def test_repost_round_results_labels_from_round_status(
-    tmp_path, round_status, expected_label
-):
-    """An omitted label is the round's own lifecycle stage, as the sync commands derive it."""
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status=round_status
-    )
-    captured: list[str] = []
-
-    await repost_round_results(
-        db_path, round_id, division_id, _guild_capturing_sends(captured)
-    )
-
-    assert captured
-    assert any(expected_label in content for content in captured), (
-        f"no posted message carried {expected_label!r}: {captured}"
-    )
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_honours_an_explicit_label(tmp_path):
-    """A caller that passes a label still overrides the derivation."""
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL"
-    )
-    captured: list[str] = []
-
-    await repost_round_results(
-        db_path, round_id, division_id, _guild_capturing_sends(captured),
-        "Provisional Results (amended)",
-    )
-
-    assert any("Provisional Results (amended)" in content for content in captured)
-    assert not any("Final Results" in content for content in captured)
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_skips_a_round_with_no_results(tmp_path):
-    """A round that has not been raced has nothing to repost — not even standings (#130).
-
-    The amendment cascade walks every non-cancelled round of the division, so without
-    this guard approving an amendment would post standings for future rounds.
-    """
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="NOT_RUN", with_session_results=False
-    )
-    captured: list[str] = []
-
-    await repost_round_results(
-        db_path, round_id, division_id, _guild_capturing_sends(captured)
-    )
-
-    assert captured == []
-
-
-# ---------------------------------------------------------------------------
-# repost_round_results — a configured channel that has gone missing is a fault
-# and not a silence (#187)
-# ---------------------------------------------------------------------------
-
-
-def _guild_losing_channels(captured: list[str], *, missing: tuple[int, ...]):
-    """A guild in which the channels named by *missing* are no longer present.
-
-    ``guild.get_channel`` returns None for a deleted channel, which is the whole of the
-    reproduction: nothing raises, so a caller's ``except`` never runs.
-    """
-    guild = _guild_capturing_sends(captured)
-    working = guild.get_channel
-
-    def get_channel(channel_id):
-        if channel_id in missing:
-            return None
-        return working(channel_id)
-
-    guild.get_channel = get_channel
-    return guild
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_reports_a_deleted_results_channel(tmp_path):
-    """A results channel the league configured and has since deleted is named (#187).
-
-    Before the fix the bare ``if rc:`` guard skipped it without raising and without a
-    word in any log, which is how a failed amendment cascade reported success.
-    """
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL"
-    )
-    captured: list[str] = []
-
-    faults = await repost_round_results(
-        db_path, round_id, division_id,
-        _guild_losing_channels(captured, missing=(501,)),
-    )
-
-    assert len(faults) == 1, faults
-    assert "results channel" in faults[0]
-    assert "501" in faults[0]
-    assert "Alpha" in faults[0]
-    # The standings half is untouched by the results half's fault.
-    assert captured, "the standings were not reposted despite their channel being fine"
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_reports_a_deleted_standings_channel(tmp_path):
-    """The standings channel is guarded the same way, and reported the same way (#187)."""
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL"
-    )
-    captured: list[str] = []
-
-    faults = await repost_round_results(
-        db_path, round_id, division_id,
-        _guild_losing_channels(captured, missing=(502,)),
-    )
-
-    assert len(faults) == 1, faults
-    assert "standings channel" in faults[0]
-    assert "502" in faults[0]
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_reports_both_channels_when_both_are_gone(tmp_path):
-    """Neither channel's fault hides the other's — a manager repairs both at once."""
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL"
-    )
-    captured: list[str] = []
-
-    faults = await repost_round_results(
-        db_path, round_id, division_id,
-        _guild_losing_channels(captured, missing=(501, 502)),
-    )
-
-    assert len(faults) == 2, faults
-    assert captured == []
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_reports_nothing_when_it_succeeds(tmp_path):
-    """The honest empty answer: everything asked for was done (#187)."""
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL"
-    )
-    captured: list[str] = []
-
-    faults = await repost_round_results(
-        db_path, round_id, division_id, _guild_capturing_sends(captured)
-    )
-
-    assert faults == []
-    assert captured
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_reports_nothing_for_an_unconfigured_channel(tmp_path):
-    """A division that never configured a channel has nothing posted for it (#187).
-
-    This is the guard against over-reporting. A channel left unset is an ordinary
-    configuration and is right to be skipped in silence; only a channel the league
-    *did* configure and the server no longer holds is a fault. Without this
-    distinction the validation built on top of it would refuse correctly configured
-    leagues.
-    """
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="FINAL",
-        results_channel_id=None, standings_channel_id=None,
-    )
-    captured: list[str] = []
-
-    faults = await repost_round_results(
-        db_path, round_id, division_id, _guild_capturing_sends(captured)
-    )
-
-    assert faults == []
-    assert captured == []
-
-
-@pytest.mark.asyncio
-async def test_repost_round_results_reports_nothing_for_an_unraced_round(tmp_path):
-    """A round with nothing posted for it raises no fault however its channels stand."""
-    from leaguebot.results.services.results_post_service import repost_round_results
-
-    db_path, division_id, round_id = await _seed_division_for_repost(
-        tmp_path, round_status="NOT_RUN", with_session_results=False
-    )
-    captured: list[str] = []
-
-    faults = await repost_round_results(
-        db_path, round_id, division_id,
-        _guild_losing_channels(captured, missing=(501, 502)),
-    )
-
-    assert faults == []
-
-
-# ---------------------------------------------------------------------------
 # repost_channel_faults — established before a single row is overwritten (#187)
 # ---------------------------------------------------------------------------
 
@@ -1025,8 +696,10 @@ async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_repost_channel_faults_ignores_a_cancelled_division(tmp_path):
-    """A cancelled division is not reposted, so its channels are nobody's concern."""
+async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channel(tmp_path):
+    """A points approval reposts the raced rounds of a division since cancelled, so a results
+    channel that division configured and the server has lost is named as a live division's is,
+    and refuses the approval until it is set again."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.results_post_service import repost_channel_faults
 
@@ -1039,7 +712,7 @@ async def test_repost_channel_faults_ignores_a_cancelled_division(tmp_path):
         db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
     )
 
-    assert faults == []
+    assert faults == ["**Alpha** — the results channel (id 501) is not in the server."]
 
 
 # ---------------------------------------------------------------------------
@@ -1156,11 +829,15 @@ async def test_the_standings_fall_back_to_the_id_with_no_bot_in_scope(tmp_path):
 
 @pytest.mark.asyncio
 async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
-    """The whole point of resolving names on the recomputation as well as on the posting."""
+    """The whole point of resolving names on the recomputation as well as on the posting.
+
+    The names are resolved first and the cascade handed them, as a points approval's `names`
+    job and its save do (#439)."""
     from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services import standings_service
     from leaguebot.results.services.results_post_service import (
         driver_standings_for_display,
-        recompute_standings_from_round,
+        standings_display_names,
     )
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=302)
@@ -1168,7 +845,8 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     bot.db_path = db_path
     guild = _guild_naming({1: "zulu", 2: "alpha"})
 
-    await recompute_standings_from_round(db_path, division_id, round_id, guild, bot)
+    names = await standings_display_names(db_path, division_id, guild, bot)
+    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id, names)
     drawn = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
 
     async with get_connection(db_path) as db:
@@ -1187,13 +865,17 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
 
 @pytest.mark.asyncio
 async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
-    """The one path that genuinely holds no guild still recomputes, ordered by id."""
+    """The one path that genuinely holds no guild still recomputes, ordered by id: no names
+    are resolved, and the cascade is handed none."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.results_post_service import recompute_standings_from_round
+    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.results_post_service import standings_display_names
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=303)
 
-    await recompute_standings_from_round(db_path, division_id, round_id, None, None)
+    names = await standings_display_names(db_path, division_id, None, None)
+    assert names is None
+    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id, names)
 
     async with get_connection(db_path) as db:
         rows = await (

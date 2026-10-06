@@ -2074,6 +2074,36 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     assert sorted(p["n"] for p in found) == ["other", "queued", "stopped"]
 
 
+async def test_in_hand_leaves_out_the_change_named_in_excluding(env):
+    """`in_hand` leaves out the change whose id is *excluding*, as `unfinished` does, so a check
+    reading the queue for its own kind does not find itself; with none named it gives every
+    change in hand, each with the number of the job it waits on."""
+    from leaguebot.core.services.change_queue import in_hand
+
+    api = _api()
+
+    async def _work(ctx):
+        if ctx.payload["n"] == "stopped":
+            raise RuntimeError("boom")
+        return api.StepResult()
+
+    _queue(env, _type("watched", steps=[api.Step("work", api.StepKind.ACT, _work)]))
+
+    await _ask(env, "watched", {"n": "stopped"})
+    await run_queue(env.bot)
+    queued_id = await _ask(env, "watched", {"n": "queued"})
+    stopped = await stopped_job(env.db_path)
+    assert stopped is not None
+
+    found = await maybe_await(in_hand(env.db_path, ["watched"], excluding=queued_id))
+    assert found == [({"n": "stopped"}, stopped["id"])]
+    found = await maybe_await(in_hand(env.db_path, ["watched"], excluding=None))
+    assert [payload["n"] for payload, _job in found] == ["stopped", "queued"]
+    assert found[0][1] == stopped["id"]
+    found = await maybe_await(in_hand(env.db_path, ["watched"]))
+    assert [payload["n"] for payload, _job in found] == ["stopped", "queued"]
+
+
 async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
     """`ever_asked` gives the payloads of every change of the kinds asked that the queue saved,
     oldest first, whether done, dropped at its check, discarded or still queued, and none of

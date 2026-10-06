@@ -35,9 +35,9 @@ async def _shared_or_own(db_path: str, db):
     step of somebody else's transaction and must not commit it, or the atomicity the caller
     opened it for is lost a step at a time.
 
-    **Why the recalculation needs this** (#187). ``recalculate_attendance_for_round``
-    recomputes a round's attendance and then propagates the running total through every
-    finalised round after it, one call apiece. Each call used to open and commit its own
+    **Why the recalculation needs this** (#187). ``_recalculate_forward`` recomputes a round's
+    attendance and then propagates the running total through every finalised round after it,
+    one call apiece. Each call used to open and commit its own
     connection, so a failure in the middle of that loop left the league's attendance points
     correct up to round four and stale from round five on — and no command re-runs the
     recalculation, so there was no way back. Sharing one transaction makes the whole
@@ -744,74 +744,71 @@ async def record_attendance_from_results_full_recompute(
     round_id: int,
     division_id: int,
     *,
-    db=None,
+    db,
 ) -> None:
     """Recompute attended flags without the upgrade-only constraint (FR-028/amendment).
 
-    Used exclusively by recalculate_attendance_for_round so that a deliberate result
+    Used by ``_recalculate_forward`` so that a deliberate result
     correction can flip attended in either direction. Skipped for cancelled rounds.
 
-    *db* joins a transaction the caller already opened, and is then the caller's to commit;
-    see :func:`_shared_or_own`.
+    *db* is the caller's transaction, which it commits: this opens and commits no connection of
+    its own (#439). *db_path* names the league database *db* is a connection to.
     """
-    async with _shared_or_own(db_path, db) as (db, _owned):
-        # Guard: skip if round is cancelled.
-        cursor = await db.execute(
-            "SELECT status FROM rounds WHERE id = ?",
-            (round_id,),
-        )
-        round_row = await cursor.fetchone()
-        if round_row is None or round_row["status"] == "CANCELLED":
-            log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
-            return
+    # Guard: skip if round is cancelled.
+    cursor = await db.execute(
+        "SELECT status FROM rounds WHERE id = ?",
+        (round_id,),
+    )
+    round_row = await cursor.fetchone()
+    if round_row is None or round_row["status"] == "CANCELLED":
+        log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
+        return
 
-        cursor = await db.execute(
-            """
-            SELECT DISTINCT driver_profile_id FROM (
-                SELECT rsr.driver_profile_id
-                FROM race_session_results rsr
-                JOIN session_results sr ON sr.id = rsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-                UNION ALL
-                SELECT qsr.driver_profile_id
-                FROM qualifying_session_results qsr
-                JOIN session_results sr ON sr.id = qsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            ) WHERE driver_profile_id IS NOT NULL
-            """,
-            (round_id, round_id),
-        )
-        attended_rows = await cursor.fetchall()
-        attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+    cursor = await db.execute(
+        """
+        SELECT DISTINCT driver_profile_id FROM (
+            SELECT rsr.driver_profile_id
+            FROM race_session_results rsr
+            JOIN session_results sr ON sr.id = rsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            UNION ALL
+            SELECT qsr.driver_profile_id
+            FROM qualifying_session_results qsr
+            JOIN session_results sr ON sr.id = qsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+        ) WHERE driver_profile_id IS NOT NULL
+        """,
+        (round_id, round_id),
+    )
+    attended_rows = await cursor.fetchall()
+    attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
 
-        cursor = await db.execute(
-            """
-            SELECT dra.id, dra.driver_profile_id
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND (
-                  ti.is_reserve = 0
-                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
-              )
-            """,
-            (round_id, division_id, division_id),
-        )
-        dra_rows = await cursor.fetchall()
+    cursor = await db.execute(
+        """
+        SELECT dra.id, dra.driver_profile_id
+        FROM driver_round_attendance dra
+        JOIN driver_season_assignments dsa
+            ON dsa.driver_profile_id = dra.driver_profile_id
+        JOIN team_seats ts ON ts.id = dsa.team_seat_id
+        JOIN team_instances ti ON ti.id = ts.team_instance_id
+        WHERE dra.round_id = ?
+          AND dra.division_id = ?
+          AND ti.division_id = ?
+          AND (
+              ti.is_reserve = 0
+              OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+          )
+        """,
+        (round_id, division_id, division_id),
+    )
+    dra_rows = await cursor.fetchall()
 
-        for row in dra_rows:
-            new_val = 1 if row["driver_profile_id"] in attended_ids else 0
-            await db.execute(
-                "UPDATE driver_round_attendance SET attended = ? WHERE id = ?",
-                (new_val, row["id"]),
-            )
-        if _owned:
-            await db.commit()
+    for row in dra_rows:
+        new_val = 1 if row["driver_profile_id"] in attended_ids else 0
+        await db.execute(
+            "UPDATE driver_round_attendance SET attended = ? WHERE id = ?",
+            (new_val, row["id"]),
+        )
 
 
 async def distribute_attendance_points(
@@ -2105,48 +2102,6 @@ def _failure_reason(exc: Exception, *, applied: bool) -> str:
     return reason
 
 
-async def recalculate_attendance_for_round(
-    bot: LeagueBot,
-    guild: discord.Guild,
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    season_id: int,
-) -> SanctionOutcome:
-    """Re-run the full attendance pipeline for an amended round (FR-028–FR-031).
-
-    Upgrade-only rule does NOT apply here — this is a deliberate correction and may
-    flip attended in either direction (FR-028). Existing AttendancePardon rows are
-    preserved (FR-029). total_points_after is propagated forward through any
-    subsequent finalized rounds (FR-030).
-
-    **The recompute and the whole propagation are one transaction** (#187). Every step
-    below used to open and commit a connection of its own, so a failure in the middle of
-    the propagation loop left a division's attendance points correct up to one round and
-    stale from the next on — and nothing a league manager can run re-runs this, so there
-    was no route back. Committing once means the recalculation either lands whole or does
-    not land at all.
-
-    The **posting** stays outside that transaction deliberately. It is Discord I/O, and
-    holding a write transaction open across it would block every other writer for as long
-    as Discord took to answer.
-    """
-    touched = await _recalculate_forward(
-        db_path, round_id, division_id, recompute="round"
-    )
-    latest = touched[-1]
-
-    # FR-031: re-post sheet and re-evaluate sanctions, against the last round recalculated
-    # rather than the one named (#238). Each round's stored total is the driver's total as at
-    # that round, so the division's current standing is on the last of them. Its only caller
-    # names the latest finalised round already, which makes the two the same round today —
-    # the rule is written out so it stays right if that ever changes.
-    await post_attendance_sheet(bot, guild, db_path, latest, division_id)
-    return await enforce_attendance_sanctions(
-        bot, guild, db_path, latest, division_id, season_id
-    )
-
-
 async def _recalculate_forward(
     db_path: str, round_id: int, division_id: int, *, recompute: str, db=None
 ) -> list[int]:
@@ -2175,6 +2130,22 @@ async def _recalculate_forward(
     *db* joins a transaction the caller already opened, and is then the caller's to commit
     (see :func:`_shared_or_own`): an approval's save hands its own, so the recalculation is
     saved with everything else the approval writes (#439).
+
+    **Why one transaction** (#187). Every step used to open and commit a connection of its own,
+    so a failure in the middle of the propagation left a division's attendance points correct up
+    to one round and stale from the next on, and nothing a league manager can run repeats it.
+    Committing once means the recalculation lands whole or not at all. The posting that follows
+    stays outside it: it is Discord I/O, and a write transaction held open across it would block
+    every other writer for as long as Discord took to answer.
+
+    **The rules of an amendment's recalculation** (FR-028–FR-031), carried out here with
+    ``recompute="round"``: the upgrade-only rule does not apply, this being a deliberate
+    correction that may flip *attended* in either direction (FR-028); existing pardons are
+    preserved (FR-029); and ``total_points_after`` is propagated forward through every
+    subsequent finalised round (FR-030). The sheet and the sanctions that follow (FR-031) are
+    posted against the **last** round recalculated and not the one named (#238): each round's
+    stored total is the driver's total as at that round, so the division's current standing is on
+    the last of them.
     """
     if recompute not in {"all", "round", "none"}:
         raise ValueError(f"unknown recompute mode {recompute!r}")
@@ -2276,7 +2247,12 @@ async def sync_attendance(
 
 
 async def recalculation_faults(
-    db_path: str, season_id: int, guild, bot: LeagueBot | None = None
+    db_path: str,
+    season_id: int,
+    guild,
+    bot: LeagueBot | None = None,
+    *,
+    cancelled_too: bool = False,
 ) -> list[str]:
     """What stands between this season and recalculating its attendance (#187).
 
@@ -2292,6 +2268,12 @@ async def recalculation_faults(
     ``enforce_attendance_sanctions`` returns immediately when both the autosack and
     autoreserve thresholds are unset, so a league using neither must not be refused for a
     channel it will never post to.
+
+    **A cancelled division is passed over unless *cancelled_too*.** `/attendance sync` reads
+    only live divisions and keeps that reading. The approval of a points amendment asks with
+    *cancelled_too* (owner, 2026-10-06, "Refuse at the press"): it recalculates and reposts
+    the raced rounds of a division since cancelled too, so the channels of that division are
+    part of its question, and the results specification's "every division's" holds.
     """
     from leaguebot.image.services.image_validity_service import aspect_attaches_files
     from leaguebot.results.services.results_post_service import _bot_member, _channel_fault
@@ -2316,10 +2298,10 @@ async def recalculation_faults(
             FROM divisions d
             LEFT JOIN attendance_division_config adc ON adc.division_id = d.id
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.season_id = ? AND d.status != 'CANCELLED'
+            WHERE d.season_id = ? AND (? OR d.status != 'CANCELLED')
             ORDER BY d.tier, d.id
             """,
-            (season_id,),
+            (season_id, cancelled_too),
         )
         division_rows = await cursor.fetchall()
 

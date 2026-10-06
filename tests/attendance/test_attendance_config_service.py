@@ -24,10 +24,12 @@ column named and leave the other as it was, and a second call must not insert a 
 for the division — a league re-pointing its RSVP channel would otherwise lose its attendance
 channel, or end up with two rows and a non-deterministic read.
 
-The recalculation tests cover FR-028–FR-031 (`recalculate_attendance_for_round`), the path an
-amendment takes. Its ordering is the substance: the upgrade-only rule is deliberately *not*
-applied, pardons must survive, and the forward propagation must reach every subsequent
-finalised round rather than stopping at the next one.
+The recalculation tests cover FR-028–FR-030 (`_recalculate_forward` with `recompute="round"`),
+the recalculation a points approval saves with its points through the attendance hook (#439).
+Its ordering is the substance: the upgrade-only rule is deliberately *not* applied, pardons
+must survive, and the forward propagation must reach every subsequent finalised round rather
+than stopping at the next one. The sheet and the sanctions that follow are jobs of the
+approval's own, not part of the recalculation.
 """
 from __future__ import annotations
 
@@ -35,16 +37,13 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import attendance_service
-from leaguebot.attendance.services.attendance_service import (
-    AttendanceService,
-    recalculate_attendance_for_round,
-)
+from leaguebot.attendance.services.attendance_service import AttendanceService
 
 SERVER_ID = 8308
 SEASON_ID = 1
@@ -387,29 +386,21 @@ async def _make_rounds_db(tmp_path, statuses: list[str]) -> str:
 
 @pytest.fixture
 def pipeline():
-    """Stub the four pipeline steps, so the ordering and the arguments are what is tested."""
+    """Stub the two recalculation steps, so the ordering and the arguments are what is
+    tested."""
     with patch.object(
         attendance_service,
         "record_attendance_from_results_full_recompute",
         new=AsyncMock(return_value=None),
     ) as recompute, patch.object(
         attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
-    ) as distribute, patch.object(
-        attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ) as sheet, patch.object(
-        attendance_service, "enforce_attendance_sanctions", new=AsyncMock(return_value=None)
-    ) as sanctions:
-        yield recompute, distribute, sheet, sanctions
+    ) as distribute:
+        yield recompute, distribute
 
 
 async def _recalculate(db_path: str, round_id: int = 1) -> None:
-    await recalculate_attendance_for_round(
-        bot=MagicMock(),
-        guild=MagicMock(),
-        db_path=db_path,
-        round_id=round_id,
-        division_id=DIVISION_ID,
-        season_id=SEASON_ID,
+    await attendance_service._recalculate_forward(
+        db_path, round_id, DIVISION_ID, recompute="round",
     )
 
 
@@ -417,28 +408,17 @@ async def test_an_amended_round_is_fully_recomputed_not_upgraded(tmp_path, pipel
     """FR-028. The upgrade-only rule does not apply to a deliberate correction, so this
     calls the *full recompute* — which may flip `attended` in either direction. Calling the
     ordinary recorder here would silently refuse to take an attendance away again."""
-    recompute, _, _, _ = pipeline
+    recompute, _ = pipeline
     db_path = await _make_rounds_db(tmp_path, ["FINAL"])
 
     await _recalculate(db_path)
 
-    # The positional arguments are the subject; the connection it is handed is not.
-    # Every step of the recalculation now shares one transaction so the propagation
-    # lands whole or not at all (#187), and pinning the connection object here would
-    # tie this test to that mechanism rather than to the rule it is about.
+    # The positional arguments are the subject. The recompute is always handed the
+    # recalculation's own connection, saved with the rest of it (#187, #439), and commits
+    # nothing itself.
     recompute.assert_awaited_once()
     assert recompute.await_args.args == (db_path, 1, DIVISION_ID)
-
-
-async def test_the_sheet_and_the_sanctions_are_both_re_run(tmp_path, pipeline):
-    """FR-031. An amendment that changes who attended changes who is over a threshold."""
-    _, _, sheet, sanctions = pipeline
-    db_path = await _make_rounds_db(tmp_path, ["FINAL"])
-
-    await _recalculate(db_path)
-
-    sheet.assert_awaited_once()
-    sanctions.assert_awaited_once()
+    assert recompute.await_args.kwargs["db"] is not None
 
 
 async def test_points_are_propagated_through_every_subsequent_finalised_round(
@@ -447,7 +427,7 @@ async def test_points_are_propagated_through_every_subsequent_finalised_round(
     """FR-030. `total_points_after` is a running total, so amending round 1 changes the
     total carried by rounds 2 and 3 alike. Stopping at the next round would leave the
     later ones reporting a total nobody can reproduce."""
-    _, distribute, _, _ = pipeline
+    _, distribute = pipeline
     db_path = await _make_rounds_db(tmp_path, ["FINAL", "FINAL", "AWAITING_APPEAL_VERDICTS"])
 
     await _recalculate(db_path, round_id=1)
@@ -459,7 +439,7 @@ async def test_points_are_propagated_through_every_subsequent_finalised_round(
 async def test_rounds_not_yet_finalised_are_not_propagated_into(tmp_path, pipeline):
     """A round still awaiting its results has no total to correct, and running the
     distribution over it would write one before the results exist."""
-    _, distribute, _, _ = pipeline
+    _, distribute = pipeline
     db_path = await _make_rounds_db(tmp_path, ["FINAL", "NOT_RUN", "AWAITING_RESULTS"])
 
     await _recalculate(db_path, round_id=1)
@@ -469,7 +449,7 @@ async def test_rounds_not_yet_finalised_are_not_propagated_into(tmp_path, pipeli
 
 async def test_earlier_rounds_are_left_alone(tmp_path, pipeline):
     """Amending round 2 cannot change round 1's running total — only the rounds after it."""
-    _, distribute, _, _ = pipeline
+    _, distribute = pipeline
     db_path = await _make_rounds_db(tmp_path, ["FINAL", "FINAL", "FINAL"])
 
     await _recalculate(db_path, round_id=2)

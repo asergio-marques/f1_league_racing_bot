@@ -163,20 +163,16 @@ async def _amend(
     bot=None,
     config_name="Standard",
     fl_override=None,
-    repost_faults=None,
     sessions=None,
 ):
-    """*repost_faults* are the lines the cascade could not post (#237).
-
-    Both repost functions return a list of faults rather than ``None``, so the stubs must
-    too: the amendment now adds what comes back to the line it logs.
-    """
+    """Stage one of an amendment, with the points, the cascade and the posting of a round's
+    results stubbed: "repost" is `post_round_results`, which stage one must not reach."""
     bot = bot or _bot()
     with patch(
         "leaguebot.results.services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "leaguebot.results.services.results_post_service.repost_round_results",
-        new=AsyncMock(return_value=list(repost_faults or [])),
+        "leaguebot.results.services.results_post_service.post_round_results",
+        new=AsyncMock(),
     ) as repost, patch(
         "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:

@@ -202,6 +202,41 @@ async def test_a_narrower_set_without_a_refusal_names_the_stage_the_season_stand
     assert "Ongoing, signups open" in _said(interaction)
 
 
+@pytest.mark.parametrize(
+    ("stage", "stages", "refusal"),
+    [
+        (None, BEFORE_PENDING_COMPLETION, None),
+        (SeasonStage.PENDING_COMPLETION, BEFORE_PENDING_COMPLETION, None),
+        (SeasonStage.ONGOING_SIGNUPS, PLACEMENT_STAGES, None),
+        (SeasonStage.ONGOING, PLACEMENT_STAGES, "\u26d4 Use `/driver move` instead."),
+        (None, PLACEMENT_STAGES, "\u26d4 Use `/driver move` instead."),
+        (SeasonStage.ONGOING, BEFORE_PENDING_COMPLETION, None),
+    ],
+    ids=["no-season", "pending-completion", "another-stage", "callers-refusal",
+         "callers-refusal-no-season", "allowed"],
+)
+async def test_the_stage_refusal_is_the_command_s_own_words(stage, stages, refusal):
+    """`stage_refusal` gives, for a season standing at *stage* (None where there is none), the
+    very text `season_for_command` sends a member, or None where the stage is allowed, so a
+    queued change's check refuses in the command's own words."""
+    from leaguebot.core.utils.season_gate import stage_refusal
+
+    interaction = _interaction()
+    season = None if stage is None else _season(stage)
+    got = await season_for_command(
+        interaction, _service(season), "results amend review", stages=stages, refusal=refusal,
+        record=False,
+    )
+
+    text = stage_refusal(stage, "results amend review", stages=stages, refusal=refusal)
+
+    if got is not None:
+        assert text is None
+    else:
+        assert text == _said(interaction)
+        assert text
+
+
 # ---------------------------------------------------------------------------
 # How it answers
 # ---------------------------------------------------------------------------

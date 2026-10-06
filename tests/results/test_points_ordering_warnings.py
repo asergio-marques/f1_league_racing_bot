@@ -488,27 +488,59 @@ def _stop_view(*_args, **kwargs) -> None:
 async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_nothing(
     db_path, season
 ):
-    """The guard is asked again at the press — the panel has no timeout."""
+    """The guard is asked again at the press — the panel has no timeout.
+
+    The press asks the change queue for the season's approval, and the change's check refuses
+    it at once, through the press's own interaction (#439, slice 3)."""
+    import discord
+
     from leaguebot.core.services.amendment_service import modify_session_points
+    from tests.support.change_queue import (
+        acknowledgement,
+        attach_queue,
+        league_double,
+        member_interaction,
+        tier_member,
+    )
 
     await modify_session_points(
         db_path, season, "100%", "FEATURE_RACE", [(2, 30)],
         actor_id=USER_ID, actor_name="Manager#0001", now=NOW,
     )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
+        )
+        await db.execute("UPDATE seasons SET stage = 'ONGOING' WHERE id = ?", (season,))
+        await db.commit()
     cog = _cog_with_season(db_path, season)
+    # The cog's bot with a real router and queue, keeping what the command reads of it.
+    bot = league_double(db_path)
+    for name in ("user", "get_guild", "module_service", "image_config_service"):
+        setattr(bot, name, getattr(cog.bot, name))
+    bot.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(id=season, season_number=1, stage=SeasonStage.ONGOING)
+    )
+    cog.bot = bot
+    attach_queue(bot, db_path, now=NOW)
     interaction = _interaction()
+    press = member_interaction(bot, user=tier_member("admin", member_id=USER_ID))
 
-    def _approve(*_args, **kwargs) -> None:
+    async def _press_approve(*_args, **kwargs) -> None:
         view = kwargs.get("view")
-        if view is not None:
-            view.approved = True
-            view.stop()
+        if view is None:
+            return
+        button = next(
+            item for item in view.children
+            if isinstance(item, discord.ui.Button) and "Approve" in (item.label or "")
+        )
+        await button.callback(press)
 
-    interaction.followup.send = AsyncMock(side_effect=_approve)
+    interaction.followup.send = AsyncMock(side_effect=_press_approve)
 
     await undecorate(ResultsCog.amend_review)(cog, interaction)
 
-    replies = _replies(interaction)
+    replies = acknowledgement(press)
     assert "Amendment not approved" in replies
     assert "Nothing has been changed" in replies
     # Named, not merely counted: the deliverability refusal (#187) carries both phrases

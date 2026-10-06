@@ -18,6 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
 from leaguebot.results.services.points_config_service import (
@@ -223,6 +224,28 @@ def _bulk_refusal(errors: list[str]) -> tuple[str, str]:
     return reply, reason
 
 
+async def _approval_holds_staging(
+    interaction: discord.Interaction, db_path: str, season: Season, *, what: str
+) -> bool:
+    """Refuse a command that stages points changes where the season's approval is in hand.
+
+    While `/results amend review`'s approval is waiting, running or stopped on the queue, nothing
+    outside it may put back or undo what it approves (architecture.md, "How a change is carried
+    out"), so the six staging commands leave the working copy and amendment mode alone, naming the
+    job. True where *interaction* was refused (#439, slice 3).
+    """
+    from leaguebot.results.services.points_amendment_change import (
+        approval_in_hand,
+        staging_refusal,
+    )
+
+    job = await approval_in_hand(db_path, season.id)
+    if job is None:
+        return False
+    await refuse(interaction, staging_refusal(season.season_number, job), what=what)
+    return True
+
+
 def _bulk_values(valid: list[tuple[int, int]]) -> str:
     """The values a paste set, one per line, for its log line."""
     return "".join(f"\n  P{position} \u2192 {points} pts" for position, points in valid)
@@ -381,6 +404,8 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
             interaction, bot.season_service, "results amend bulk-session"
         )
         if season is None:
+            return
+        if await _approval_holds_staging(interaction, self._db_path, season, what=what):
             return
 
         valid, errors, overrides = _parse_bulk_lines(self.entries.value)
@@ -1533,6 +1558,10 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
+            return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
         currently_on = state is not None and state.amendment_active
@@ -1579,6 +1608,10 @@ class ResultsCog(commands.Cog):
             interaction, self.bot.season_service, "results amend revert"
         )
         if season is None:
+            return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
             return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
@@ -1637,6 +1670,10 @@ class ResultsCog(commands.Cog):
             interaction, self.bot.season_service, "results amend session"
         )
         if season is None:
+            return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
             return
 
         stands = False
@@ -1724,6 +1761,10 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
+            return
 
         try:
             if points_config_service.values_stand(
@@ -1785,6 +1826,10 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
+            return
 
         try:
             if points_config_service.values_stand(
@@ -1833,9 +1878,14 @@ class ResultsCog(commands.Cog):
             return
         # Before the modal, not after: showing one and refusing its submission would have a
         # manager type a screenful of positions to no purpose.
-        if await season_for_command(
+        season = await season_for_command(
             interaction, self.bot.season_service, "results amend bulk-session"
-        ) is None:
+        )
+        if season is None:
+            return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
             return
         await interaction.response.send_modal(
             BulkAmendSessionModal(name, session, self.bot.db_path)
@@ -1863,10 +1913,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from leaguebot.core.services.amendment_service import (
-            AmendmentNotDeliverableError,
-            NonMonotonicAmendmentError,
             approval_faults,
-            approve_amendment,
             get_amendment_state,
             get_modification_store_diff,
             validate_modification_ordering,
@@ -1913,8 +1960,9 @@ class ResultsCog(commands.Cog):
                 f"be published:**\n• {bullet_list}\n"
                 f"Approving rescores every round of every division and reposts each one, so "
                 f"it is refused entire while any of that cannot be done — nothing would "
-                f"be changed. Repair the channels with `/results channel results` and "
-                f"`/results channel standings`, then run `/results amend review` again."
+                f"be changed. Repair the channels with `/results channel results`, "
+                f"`/results channel standings`, `/attendance channel attendance` or "
+                f"`/results channel verdicts`, then run `/results amend review` again."
             )
 
         # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
@@ -1922,24 +1970,17 @@ class ResultsCog(commands.Cog):
         # until its last stage is approved; approving here reposts every round of every
         # division from the same database, and would publish them unapproved. Shown in the
         # panel and read again at the press, as the two refusals above are.
-        from leaguebot.results.services.result_submission_service import (
-            amendment_wait_text,
-            open_amendment_in_season,
-        )
-
-        def _held_text(row) -> str:
-            return (
-                f"Round {row['round_number']} of **{row['division_name']}** is being amended in "
-                f"<#{row['channel_id']}>. Its corrections are not approved yet, and approving "
-                "here reposts every round of every division, so it waits until that amendment "
-                f"has finished — {amendment_wait_text()}."
-            )
+        from leaguebot.results.services.points_amendment_change import KIND, held_text
+        from leaguebot.results.services.result_submission_service import open_amendment_in_season
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:
             diff += (
-                "\n\n\u23f8\ufe0f **These changes cannot be approved yet.** " + _held_text(held)
+                "\n\n\u23f8\ufe0f **These changes cannot be approved yet.** " + held_text(held)
             )
+
+        # The season the panel was drawn for, bound where it is known not to be None.
+        staged_for = season
 
         class _ReviewView(LeagueView):
             def __init__(self_v) -> None:
@@ -1947,8 +1988,7 @@ class ResultsCog(commands.Cog):
                 self_v.approved = False
                 self_v.rejected = False
                 # The interaction of the press, answered through from here on: the
-                # command's own token lasts fifteen minutes from the command, and an
-                # approval that rescores and reposts a season can outlast it.
+                # command's own token lasts fifteen minutes from the command.
                 self_v.pressed_by: discord.Interaction | None = None
 
             async def on_timeout(self_v) -> None:
@@ -1980,7 +2020,14 @@ class ResultsCog(commands.Cog):
                 self_v.approved = True
                 self_v.pressed_by = btn_inter
                 self_v.stop()
-                await btn_inter.response.defer()
+                # The queue's acknowledgement is the press's response, so it is not deferred
+                # (#439). Every check, the approval and its replies are the change's.
+                await bot_of(btn_inter).change_queue.ask(
+                    KIND,
+                    {"season_id": staged_for.id, "season_number": staged_for.season_number},
+                    interaction=btn_inter,
+                    what=describe(interaction),
+                )
 
             @discord.ui.button(label="\u274c Reject", style=discord.ButtonStyle.danger)
             async def reject(
@@ -2014,66 +2061,6 @@ class ResultsCog(commands.Cog):
                 self.bot, pressed.user, what=what, lapsed=False, detail=_NOTHING_APPROVED
             )
             return
-
-        if view.approved:
-            # Asked again at the press rather than trusted from above: a staged table can
-            # change between the diff being drawn and the button being pressed — in either
-            # direction.
-            held = await open_amendment_in_season(self.bot.db_path, season.id)
-            if held is not None:
-                await refuse(
-                    pressed,
-                    "\u23f8\ufe0f Not approved yet. " + _held_text(held)
-                    + " **Nothing has been changed**; run `/results amend review` again then.",
-                    what=what,
-                    reason=(
-                        f"round {held['round_number']} of {held['division_name']} is being "
-                        "amended, so nothing was approved"
-                    ),
-                )
-                return
-            try:
-                sanction_failures = await approve_amendment(
-                    self.bot.db_path, season.id, interaction.user.id, bot_of(interaction)
-                )
-            except NonMonotonicAmendmentError as exc:
-                bullet_list = "\n\u2022 ".join(exc.errors)
-                await refuse(
-                    pressed,
-                    f"\u274c Amendment not approved \u2014 the points would be out of order:\n"
-                    f"\u2022 {bullet_list}\n"
-                    f"Nothing has been changed. The staged changes are still there to repair.",
-                    what=what,
-                    reason="the points would be out of order:\n" + "\n".join(exc.errors),
-                )
-                return
-            except AmendmentNotDeliverableError as exc:
-                bullet_list = "\n• ".join(exc.faults)
-                await refuse(
-                    pressed,
-                    f"⛔ Amendment not approved — the result could not be "
-                    f"published:\n• {bullet_list}\n"
-                    f"**Nothing has been changed** — not the season's points, not the "
-                    f"staged changes, not amendment mode. Approving rescores and reposts "
-                    f"every round of every division, so it is refused entire rather than "
-                    f"left half-published. Repair the channels above and review again.",
-                    what=what,
-                    reason="the result could not be published:\n" + "\n".join(exc.faults),
-                )
-                return
-            reply = "\u2705 Amendment approved. All standings recomputed and reposted."
-            if sanction_failures:
-                # The approval stands; the sanctions it set off are finished by
-                # `/attendance sync`, which each division's last line names (#239).
-                reply += (
-                    "\n\u26a0\ufe0f But some attendance sanctions did not apply:\n"
-                    + "\n".join(f"\u2022 {line}" for line in sanction_failures)
-                )
-            await pressed.followup.send(reply, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend review | Success\n"
-                f"  standings recomputed and reposted",
-            )
 
     # ------------------------------------------------------------------
     # /results reserves group — T026
@@ -2451,10 +2438,13 @@ class ResultsCog(commands.Cog):
 
         waiting_on = await division_job_in_hand(self.bot.db_path, div.id)
         if waiting_on is not None:
+            # 0 is a change with only its close left: it still holds the division, but has no
+            # job a manager could Retry or Discard to name.
+            naming = f" (job #{waiting_on})" if waiting_on else ""
             await refuse(
                 interaction,
-                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue (job "
-                f"#{waiting_on}), so it cannot be amended until that is done. Let it finish, or "
+                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue{naming}, so "
+                "it cannot be amended until that is done. Let it finish, or "
                 "press **Retry** or **Discard** on its notice if it has stopped, then amend "
                 "again.",
                 what=describe(interaction),

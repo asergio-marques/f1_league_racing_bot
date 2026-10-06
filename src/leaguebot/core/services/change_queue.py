@@ -1826,9 +1826,15 @@ async def ever_asked(db_path: str, kinds: Collection[str]) -> list[dict[str, Any
         return [json.loads(row["payload"]) for row in await cursor.fetchall()]
 
 
-async def in_hand(db_path: str, kinds: Collection[str]) -> list[tuple[dict[str, Any], int | None]]:
+async def in_hand(
+    db_path: str, kinds: Collection[str], *, excluding: int | None = None
+) -> list[tuple[dict[str, Any], int | None]]:
     """Each change of *kinds* that is queued or running, a stopped one included, as its payload
-    and the number of the job it waits on, oldest first.
+    and the number of the job it waits on, oldest first, leaving out the change whose id is
+    *excluding*.
+
+    *excluding* is how a check reads the queue for its own kind without finding itself, as
+    :func:`unfinished` does.
 
     The job is the change's first job not yet done, which is the stopped one where the queue is
     stopped at it, or `None` where every job is done and only the change's own close remains. It
@@ -1844,8 +1850,8 @@ async def in_hand(db_path: str, kinds: Collection[str]) -> list[tuple[dict[str, 
             "SELECT c.payload, (SELECT s.id FROM queued_change_steps s WHERE s.change_id = c.id "
             "AND s.done_at IS NULL ORDER BY s.position LIMIT 1) AS job "
             f"FROM queued_changes c WHERE c.kind IN ({marks}) "  # noqa: S608 — marks only
-            "AND c.state IN ('QUEUED', 'RUNNING') ORDER BY c.id",
-            tuple(kinds),
+            "AND c.state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR c.id != ?) ORDER BY c.id",
+            (*kinds, excluding, excluding),
         )
         return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
 

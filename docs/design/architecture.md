@@ -227,8 +227,9 @@ audit record, which is how some settings came to have none.
   specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
-  (`unfinished`), which gives the changes of the kinds asked for that are queued, running or
-  stopped on a failure, leaving out the one whose check is running (`CheckContext.change_id`).
+  (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
+  of the kinds asked for that are queued, running or stopped on a failure, leaving out the one
+  whose check is running (`CheckContext.change_id`).
   What a change type refuses is read from the database and the queue, never from a flag kept in
   memory, so it holds across a restart. A bot's request that this check finds no longer due (a
   review reopened for a round that has since gone final) is dropped, not stopped: only a channel
@@ -256,8 +257,8 @@ audit record, which is how some settings came to have none.
   never turned away as a repeat, since it reads what it posts when it runs. A change that can only
   be done once, such as approving a round's appeals, is refused by the checks once it has been done,
   since the round has moved on. The rule turns a repeat away only while the first has not started;
-  a change that must also be refused while the first is under way, or stopped, asks `unfinished`
-  in its own check.
+  a change that must also be refused while the first is under way, or stopped, asks the queue
+  (`unfinished` or `in_hand`) in its own check.
 - **Steps, each saved with its mark.** A change is made of steps, and each step is a job with a
   number of its own, which every line about the job carries (the core specification's "How a
   change is carried out" says it is never reused; the database issues the numbers, and a
@@ -310,10 +311,10 @@ audit record, which is how some settings came to have none.
   and attendance specifications say which, and what each stop leaves). A new change asked for meanwhile is
   acknowledged as usual, joins the back of the queue and says that the queue is stopped.
   Nothing overtakes the stopped job, so whatever runs outside the queue leaves alone what a change
-  is in hand on, stopped included, as `unfinished` tells it (core specification, "How a change is
-  carried out"). Discord answering that a message is already gone is no failure: a
-  job that deletes it is done, and one that edits it is done too, with a line in the log channel
-  saying the message was gone.
+  is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
+  specification, "How a change is carried out"). Discord answering that a message is already
+  gone is no failure: a job that deletes it is done, and one that edits it is done too, with a
+  line in the log channel saying the message was gone.
 
   A job is cleared in one of three ways, which the core specification's "How a change is carried
   out" holds, with the schedule, who may press each button and the lines written; what follows is
@@ -683,7 +684,7 @@ to it would switch off the one failure path for every command.
    the rest. Inside a queued change, each item is a job: one that fails stops the queue until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
    work (above). Neither applies where an operation's own rule is all or nothing, as a points
-   amendment's is (the results specification's "Changing points system mid-season");
+   amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 

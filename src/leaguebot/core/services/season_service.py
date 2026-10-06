@@ -182,16 +182,7 @@ class SeasonService:
         broken, and matching :meth:`get_previewable_season` keeps every reader of a
         league's current season agreeing on which one that is.
         """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, start_date, status, season_number, stage FROM seasons "
-                "WHERE status IN ('SETUP', 'ACTIVE') "
-                "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return None
-        return _row_to_season(row)
+        return await live_season(self._db_path)
 
     async def get_previewable_season(self) -> Season | None:
         """Return the season an `/images test` preview draws, or None.
@@ -1808,6 +1799,24 @@ async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> Non
     if surplus:
         ph = ",".join("?" * len(surplus))
         await db.execute(f"DELETE FROM rounds WHERE id IN ({ph})", surplus)  # noqa: S608
+
+
+async def live_season(db_path: str) -> Season | None:
+    """The live (SETUP or ACTIVE) season of the league database at *db_path*, or None.
+
+    The query behind :meth:`SeasonService.get_setup_or_active_season`, for a reader that has the
+    database and no service: a queued change's check reads the season through it.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, start_date, status, season_number, stage FROM seasons "
+            "WHERE status IN ('SETUP', 'ACTIVE') "
+            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return _row_to_season(row)
 
 
 # ------------------------------------------------------------------

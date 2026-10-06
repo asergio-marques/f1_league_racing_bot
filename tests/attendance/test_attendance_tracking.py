@@ -270,7 +270,12 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
         await db.execute("DELETE FROM session_results")
         await db.commit()
 
-    await record_attendance_from_results_full_recompute(db_file, round_id=1, division_id=10)
+    # The connection is the caller's to hand and to commit: the recompute opens none (#439).
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_full_recompute(
+            db_file, round_id=1, division_id=10, db=db
+        )
+        await db.commit()
 
     async with get_connection(db_file) as db:
         cur = await db.execute("SELECT attended FROM driver_round_attendance WHERE driver_profile_id = 1")
@@ -615,7 +620,11 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
-    await record_attendance_from_results_full_recompute(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_full_recompute(
+            db_file, round_id=1, division_id=10, db=db
+        )
+        await db.commit()
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
     async with get_connection(db_file) as db:
@@ -634,8 +643,9 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
 # ---------------------------------------------------------------------------
 # 7. The recalculation is one transaction, or none of it (#187)
 #
-# `recalculate_attendance_for_round` recomputes a round and then propagates the running
-# total through every finalised round after it, one call apiece. Each call used to open
+# `_recalculate_forward` recomputes a round and then propagates the running total through
+# every finalised round after it, one call apiece, as a points approval's save does through
+# the attendance hook (#439). Each call used to open
 # and commit its own connection, so a failure in the middle of that loop left a division's
 # attendance points correct up to one round and stale from the next on — and nothing a
 # league manager can run re-runs the recalculation.
@@ -735,8 +745,6 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     already persisted when the second round's call failed — leaving the division scored
     to a different rule from one round to the next, with no command to put it right.
     """
-    from unittest.mock import AsyncMock
-
     from leaguebot.attendance.services import attendance_service
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
@@ -754,17 +762,10 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     monkeypatch.setattr(
         attendance_service, "distribute_attendance_points", failing_after_the_first
     )
-    monkeypatch.setattr(
-        attendance_service, "post_attendance_sheet", AsyncMock()
-    )
-    monkeypatch.setattr(
-        attendance_service, "enforce_attendance_sanctions", AsyncMock()
-    )
 
     with pytest.raises(RuntimeError):
-        await attendance_service.recalculate_attendance_for_round(
-            bot=None, guild=None, db_path=db_file,
-            round_id=round_ids[0], division_id=division_id, season_id=1,
+        await attendance_service._recalculate_forward(
+            db_file, round_ids[0], division_id, recompute="round",
         )
 
     assert len(calls) == 2, "the propagation did not reach a second round"
@@ -776,18 +777,12 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
 @pytest.mark.asyncio
 async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
     """The other half of the same rule: nothing was broken making it atomic."""
-    from unittest.mock import AsyncMock
-
     from leaguebot.attendance.services import attendance_service
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
-    monkeypatch.setattr(attendance_service, "post_attendance_sheet", AsyncMock())
-    monkeypatch.setattr(attendance_service, "enforce_attendance_sanctions", AsyncMock())
-
-    await attendance_service.recalculate_attendance_for_round(
-        bot=None, guild=None, db_path=db_file,
-        round_id=round_ids[0], division_id=division_id, season_id=1,
+    await attendance_service._recalculate_forward(
+        db_file, round_ids[0], division_id, recompute="round",
     )
 
     # NO_RSVP and did not attend: no_rsvp_penalty + absent_penalty (2 + 1).

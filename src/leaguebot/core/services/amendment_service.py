@@ -463,36 +463,6 @@ class AmendmentModifiedError(Exception):
     """Raised when disabling amendment mode while modified_flag=1."""
 
 
-class NonMonotonicAmendmentError(Exception):
-    """Raised when an amendment would install a points table that is out of order.
-
-    Carries the violations as ``errors``, in the same words the season's approval uses,
-    so the caller can hand them to a manager unchanged.
-    """
-
-    def __init__(self, errors: list[str]) -> None:
-        super().__init__("; ".join(errors))
-        self.errors = errors
-
-
-class AmendmentNotDeliverableError(Exception):
-    """Raised when an amendment could not be published, having written nothing (#187).
-
-    Carries the faults as ``faults``, as lines a league can read, so the caller can hand
-    them to a manager unchanged.
-
-    **A second exception rather than a second kind of** :class:`NonMonotonicAmendmentError`.
-    The two refusals answer different questions — one about the table being installed, one
-    about the league being able to see the result — and they name different repairs. Folding
-    them together would make one message serve both badly, and would churn the ordering
-    rule's own tests and its own line in the specification for no gain.
-    """
-
-    def __init__(self, faults: list[str]) -> None:
-        super().__init__("; ".join(faults))
-        self.faults = faults
-
-
 async def validate_modification_ordering(db_path: str, season_id: int) -> list[str]:
     """Return ordering errors in the modification store, in approval's own words.
 
@@ -535,8 +505,8 @@ async def modification_ordering_warnings(
     terms: a staged edit that breaks the ordering **warns and still applies**. A manager
     restructuring a table mid-season moves through the same transient states as one
     building it in the first place, and the refusal waits for
-    :func:`approve_amendment`, which is where the table would stop being staged and
-    start scoring a championship.
+    the approval, which is where the table would stop being staged and start scoring a
+    championship.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -886,13 +856,18 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     Returns the faults as lines a league can read, and an empty list where the whole
     cascade could be carried out.
 
-    **Called twice, from one reading.** `/results amend review` calls it to draw its panel,
-    so a manager sees what is wrong while deciding rather than after pressing Approve, and
-    :func:`approve_amendment` calls it again at the press, before it writes anything, so the
-    refusal cannot be stepped around by a panel drawn when the channels were still sound.
-    This is how `validate_modification_ordering` is already used, and how
-    `_placement_confirmation_faults` serves the season's own review and confirmation — the
-    report and the refusal are the same reading, so they cannot drift.
+    **Called three times, from one reading.** `/results amend review` calls it to draw its
+    panel, so a manager sees what is wrong while deciding rather than after pressing Approve;
+    the points approval's check calls it again at the press and once more when the approval
+    runs, before it writes anything, so the refusal cannot be stepped around by a panel drawn
+    when the channels were still sound. This is how `validate_modification_ordering` is already
+    used, and how `_placement_confirmation_faults` serves the season's own review and
+    confirmation — the report and the refusal are the same reading, so they cannot drift.
+
+    **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the
+    approval rescores, reposts and recalculates its raced rounds as a live division's, so the
+    results, standings, attendance and verdicts channels it configured are asked too, as the
+    results specification's "every division's" requires.
 
     **Each module answers for its own channels.** The results module knows what its repost
     needs and the attendance module knows what its recalculation needs; this function only
@@ -920,222 +895,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
         from leaguebot.attendance.services import attendance_service
 
         faults += await attendance_service.recalculation_faults(
-            db_path, season_id, guild, bot
+            db_path, season_id, guild, bot, cancelled_too=True
         )
 
     return faults
-
-
-async def approve_amendment(
-    db_path: str,
-    season_id: int,
-    approved_by: int,
-    bot: LeagueBot,
-) -> list[str]:
-    """Atomically overwrite season points from the modification store, then recompute all standings.
-
-    Raises :class:`NonMonotonicAmendmentError` if the staged tables are out of order,
-    having written nothing, and :class:`AmendmentNotDeliverableError` if the result could
-    not be published, likewise having written nothing.
-
-    **Either everything succeeds or everything fails** (decided 2026-09-17, issue #187).
-    Everything the approval will need is established before the first row is deleted, and
-    an approval that could not be carried out in full is refused entire: not the season's
-    points, not the modification store, not the amending mode. There is no partial
-    outcome, and there is deliberately no vocabulary for one — a cascade that reposted four
-    divisions of six used to be reported to the league as a success, which is the defect
-    this rule exists to make impossible rather than merely to describe accurately.
-
-    **Why the guard is here and not only in the command.** This function's first act is
-    to delete the season's points, and its second is to refill them from the
-    modification store. A check that lived only in `/results amend review` would leave
-    the one function that can empty a running season's points table willing to do so on
-    anybody's word — and the failure it guards against is silent: the season would be
-    rescored against the bad table immediately, every round of every division reposted
-    with the new numbers, and nothing would look wrong until somebody read the
-    championship and found second place ahead of first.
-
-    It is the mid-season half of the same rule the confirmation of placements holds at the start of
-    one. A rule that bound only the approval would be a rule a league could step around
-    by approving a good table and amending it afterwards.
-
-    **Every raced session is scored again before the commit, not after it.** Replacing the
-    tables changes no stored points by itself, and the cascade below only sums what is stored,
-    so without the rescoring every round would be reposted, and the championship recomputed,
-    with the points of the table just replaced. It runs on this transaction's connection
-    (`results_post_service.rescore_season`), so the new tables, the points they give, the
-    emptied modification store and the amending mode switched off land together: a rescoring
-    that fails part-way leaves the season exactly as it stood, reposts nothing and logs no
-    success, and the failure reaches the manager as any other would. Every division of the
-    season is rescored, a finished or cancelled one's raced rounds included, and no other
-    season is touched.
-
-    **The attendance sanctions are the one thing returned rather than refused** (#239). They
-    fall on drivers once the rescored championship is published, and a sanction that does not
-    apply cannot un-publish it. Their failures come back as lines for the manager — each
-    division's ending on the `/attendance sync` that finishes it — and an empty list means
-    every sanction the recalculation reached was applied.
-    """
-    ordering_errors = await validate_modification_ordering(db_path, season_id)
-    if ordering_errors:
-        raise NonMonotonicAmendmentError(ordering_errors)
-
-    # Established before the first DELETE below, which is the whole point of it: after that
-    # line the season's points are gone and no refusal can put them back (#187).
-    faults = await approval_faults(db_path, season_id, bot)
-    if faults:
-        raise AmendmentNotDeliverableError(faults)
-
-    async with get_connection(db_path) as db:
-        # Overwrite season_points_entries
-        await db.execute(
-            "DELETE FROM season_points_entries WHERE season_id = ?", (season_id,)
-        )
-        await db.execute(
-            """
-            INSERT INTO season_points_entries (season_id, config_name, session_type, position, points)
-            SELECT season_id, config_name, session_type, position, points
-            FROM season_modification_entries WHERE season_id = ?
-            """,
-            (season_id,),
-        )
-        # Overwrite season_points_fl
-        await db.execute(
-            "DELETE FROM season_points_fl WHERE season_id = ?", (season_id,)
-        )
-        await db.execute(
-            """
-            INSERT INTO season_points_fl (season_id, config_name, session_type, fl_points, fl_position_limit)
-            SELECT season_id, config_name, session_type, fl_points, fl_position_limit
-            FROM season_modification_fl WHERE season_id = ?
-            """,
-            (season_id,),
-        )
-        # Clear modification store
-        await db.execute(
-            "DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,)
-        )
-        await db.execute(
-            "DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,)
-        )
-        # Disable amendment mode
-        await db.execute(
-            "UPDATE season_amendment_state SET amendment_active = 0, modified_flag = 0 WHERE season_id = ?",
-            (season_id,),
-        )
-        # Score every raced session again under the tables just written, in this same
-        # transaction, so the tables and the points they give commit together or not at all.
-        from leaguebot.results.services import results_post_service
-        await results_post_service.rescore_season(db, season_id)
-        # Whether the bot is set up at all: there is no log channel to report to otherwise.
-        # A packed bot keeps its row with the claim cleared (#247), so a row is not enough.
-        cursor = await db.execute(
-            "SELECT 1 FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
-        )
-        set_up = await cursor.fetchone() is not None
-        await db.commit()
-
-    # Cascade-recompute all divisions
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
-        )
-        div_rows = await cursor.fetchall()
-
-    guild = await league_guild(bot)
-    sanction_failures: list[str] = []
-
-    for div_row in div_rows:
-        division_id = div_row["id"]
-        # Get first round number for division
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT id FROM rounds
-                WHERE division_id = ? AND status != 'CANCELLED'
-                ORDER BY round_number ASC LIMIT 1
-                """,
-                (division_id,),
-            )
-            first_round_row = await cursor.fetchone()
-        if first_round_row is None:
-            continue
-        first_round_id = first_round_row["id"]
-        await results_post_service.recompute_standings_from_round(
-            db_path, division_id, first_round_id, guild, bot
-        )
-        if guild:
-            # Repost for each round
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    "SELECT id FROM rounds WHERE division_id = ? AND status != 'CANCELLED' ORDER BY round_number",
-                    (division_id,),
-                )
-                round_rows = await cursor.fetchall()
-            for r_row in round_rows:
-                try:
-                    await results_post_service.repost_round_results(
-                        db_path, r_row["id"], division_id, guild, bot=bot
-                    )
-                except Exception:
-                    log.exception(
-                        "approve_amendment: failed repost for round %s / division %s",
-                        r_row["id"],
-                        division_id,
-                    )
-
-        # T018: Attendance recalculation (033-attendance-tracking).
-        if guild and set_up and await bot.module_service.is_attendance_enabled():
-            from leaguebot.attendance.services.attendance_service import recalculate_attendance_for_round
-
-            # Find the most recently finalized round per division to recalculate.
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT id FROM rounds
-                    WHERE division_id = ?
-                      AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
-                    ORDER BY round_number DESC LIMIT 1
-                    """,
-                    (division_id,),
-                )
-                latest_row = await cursor.fetchone()
-
-            if latest_row is not None:
-                from leaguebot.attendance.services.attendance_service import sync_hint
-
-                try:
-                    outcome = await recalculate_attendance_for_round(
-                        bot, guild, db_path,
-                        latest_row["id"], division_id,
-                        season_id,
-                    )
-                    lines = outcome.failure_lines()
-                except Exception as exc:
-                    log.exception(
-                        "approve_amendment: recalculate_attendance_for_round failed for division %s",
-                        division_id,
-                    )
-                    lines = [f"the attendance could not be recalculated: {exc}"]
-                    # The run never reached its own log line, so the log is told here.
-                    await bot.output_router.post_log(
-                        "ATTENDANCE_SANCTIONS | Incomplete\n"
-                        f"  {lines[0]}\n"
-                        f"  {await sync_hint(db_path, division_id, latest_row['id'])}"
-                    )
-                if lines:
-                    sanction_failures += lines + [
-                        await sync_hint(db_path, division_id, latest_row["id"])
-                    ]
-
-    # Logged last, after the cascade it reports (#187). This used to be posted the moment
-    # the points were committed and before a single message had been attempted, so the log
-    # recorded `AMENDMENT_APPROVED | Success` for an approval whose reposting had not
-    # started and might not survive. The season's approval logs its own success at the end
-    # for the same reason (`season_end_service.execute_season_end`).
-    if set_up:
-        await bot.output_router.post_log(
-            f"<@{approved_by}> | AMENDMENT_APPROVED | Success\n"
-            f"  season_id: {season_id}"
-        )
-    return sanction_failures

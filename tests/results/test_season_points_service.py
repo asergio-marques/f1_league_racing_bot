@@ -414,3 +414,187 @@ async def test_attached_ordering_and_the_season_copy_word_a_fault_the_same_way(d
     from_snapshot = await validate_monotonic_ordering(db_path, season_id)
 
     assert from_source == from_snapshot
+
+
+# ---------------------------------------------------------------------------
+# install_staged_points_on — approving a points amendment (#439, slice 3)
+#
+# The approval's one save installs the staged points on the connection it is handed, so the
+# points, the rescoring, the standings and the attendance land together or not at all. It
+# checks again, on that connection, that amendment mode is on and the staged table in order,
+# and refuses having written nothing where either fails: the backstop that keeps an approval
+# from an older panel from emptying the season's points (#507).
+#
+# `install_staged_points_on` and `StagedPointsNotApprovable` are imported inside each test, so
+# the file collects while they are unbuilt.
+# ---------------------------------------------------------------------------
+
+
+MODE_OFF_REPLY = (
+    "❌ Amendment mode is not active. Nothing was changed: these changes were already "
+    "approved, or amendment mode was turned off after this panel was drawn."
+)
+
+
+async def _season_mid_amendment(
+    db_path: str,
+    *,
+    staged_p1: int = 26,
+    staged_fl: int = 1,
+    staged_limit: int | None = 10,
+    active: bool = True,
+) -> int:
+    """An active season scoring on `Standard`: Feature Race P1 25, P2 18, fastest lap 1 point
+    to the top 10. The working copy holds the same table with P1, the fastest lap and its limit
+    as given, and amendment mode is on (or off, where *active* is False) with the table marked
+    modified."""
+    season_id = await _make_season(db_path, status="ACTIVE")
+    async with get_connection(db_path) as db:
+        for table, p1 in (
+            ("season_points_entries", 25), ("season_modification_entries", staged_p1),
+        ):
+            for position, points in ((1, p1), (2, 18)):
+                await db.execute(
+                    f"INSERT INTO {table} (season_id, config_name, session_type, position, "
+                    "points) VALUES (?, 'Standard', 'FEATURE_RACE', ?, ?)",
+                    (season_id, position, points),
+                )
+        for table, fl, limit in (
+            ("season_points_fl", 1, 10), ("season_modification_fl", staged_fl, staged_limit),
+        ):
+            await db.execute(
+                f"INSERT INTO {table} (season_id, config_name, session_type, fl_points, "
+                "fl_position_limit) VALUES (?, 'Standard', 'FEATURE_RACE', ?, ?)",
+                (season_id, fl, limit),
+            )
+        await db.execute(
+            "INSERT INTO season_amendment_state (season_id, amendment_active, modified_flag) "
+            "VALUES (?, ?, 1)",
+            (season_id, 1 if active else 0),
+        )
+        await db.commit()
+    return season_id
+
+
+async def _points_state(db) -> dict:
+    """The season's points, the working copy and the mode, as read on *db*."""
+    async def rows(sql: str) -> list[tuple]:
+        return [tuple(r) for r in await (await db.execute(sql)).fetchall()]
+
+    return {
+        "points": await rows(
+            "SELECT config_name, session_type, position, points FROM season_points_entries "
+            "ORDER BY position"
+        ),
+        "fl": await rows(
+            "SELECT config_name, session_type, fl_points, fl_position_limit "
+            "FROM season_points_fl"
+        ),
+        "staged": await rows(
+            "SELECT config_name, session_type, position, points "
+            "FROM season_modification_entries ORDER BY position"
+        ),
+        "staged_fl": await rows(
+            "SELECT config_name, session_type, fl_points, fl_position_limit "
+            "FROM season_modification_fl"
+        ),
+        "mode": await rows("SELECT amendment_active, modified_flag FROM season_amendment_state"),
+    }
+
+
+async def test_staged_points_are_installed_on_the_save_handed_and_kept_only_when_it_commits(
+    db_path,
+):
+    """The install writes on the connection it is handed and commits nothing: left uncommitted,
+    the season keeps its points, the working copy and the mode; committed, the season scores on
+    the staged table, the working copy is emptied and amendment mode is off."""
+    from leaguebot.results.services.season_points_service import install_staged_points_on
+
+    season_id = await _season_mid_amendment(db_path, staged_fl=2)
+    async with get_connection(db_path) as db:
+        before = await _points_state(db)
+
+    async with get_connection(db_path) as db:
+        await install_staged_points_on(db, season_id)
+        on_the_save = await _points_state(db)
+        # Closed without a commit.
+    async with get_connection(db_path) as db:
+        assert await _points_state(db) == before
+
+    assert on_the_save["points"] == [
+        ("Standard", "FEATURE_RACE", 1, 26), ("Standard", "FEATURE_RACE", 2, 18),
+    ]
+
+    async with get_connection(db_path) as db:
+        await install_staged_points_on(db, season_id)
+        await db.commit()
+    async with get_connection(db_path) as db:
+        after = await _points_state(db)
+    assert after == {
+        "points": [("Standard", "FEATURE_RACE", 1, 26), ("Standard", "FEATURE_RACE", 2, 18)],
+        "fl": [("Standard", "FEATURE_RACE", 2, 10)],
+        "staged": [],
+        "staged_fl": [],
+        "mode": [(0, 0)],
+    }
+
+
+async def test_installing_returns_each_value_changed_by_its_session_label(db_path):
+    """What the install returns names every value it changed, before and after, a session by
+    its label: the approval's success line and its audit record are formed from it. A value
+    staged unchanged (P2, 18) is not named."""
+    from leaguebot.results.services.season_points_service import install_staged_points_on
+
+    season_id = await _season_mid_amendment(db_path, staged_fl=2, staged_limit=5)
+    async with get_connection(db_path) as db:
+        changed = await install_staged_points_on(db, season_id)
+        await db.commit()
+
+    lines = list(changed.lines())
+    assert lines[:2] == [
+        "Standard, Feature Race, P1: 25 → 26",
+        "Standard, Feature Race, fastest lap: 1 → 2",
+    ]
+    # The position limit is named too; its wording is the build's, the values are not.
+    assert len(lines) == 3
+    assert lines[2].startswith("Standard, Feature Race, ") and "10 → 5" in lines[2]
+    assert not any("18" in line for line in lines)
+
+
+@pytest.mark.parametrize("case", ["mode off", "out of order"])
+async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or_the_table_is_out_of_order(
+    db_path, case,
+):
+    """Read again on the save: amendment mode turned off since the check (the changes already
+    approved, or the mode turned off) or a staged table out of order refuses, with the reply the
+    admin is given and, for the ordering, the errors as its reason. Nothing is written, even where
+    the caller commits afterwards."""
+    from leaguebot.results.services.season_points_service import (
+        StagedPointsNotApprovable,
+        install_staged_points_on,
+    )
+
+    if case == "mode off":
+        season_id = await _season_mid_amendment(db_path, active=False)
+    else:
+        season_id = await _season_mid_amendment(db_path, staged_p1=10)
+    async with get_connection(db_path) as db:
+        before = await _points_state(db)
+
+    async with get_connection(db_path) as db:
+        with pytest.raises(StagedPointsNotApprovable) as refused:
+            await install_staged_points_on(db, season_id)
+        await db.commit()
+    async with get_connection(db_path) as db:
+        assert await _points_state(db) == before
+
+    if case == "mode off":
+        assert refused.value.reply == MODE_OFF_REPLY
+    else:
+        error = "Config 'Standard', FEATURE_RACE: position 1 (10 pts) < position 2 (18 pts)"
+        assert refused.value.reply == (
+            "❌ Amendment not approved — the points would be out of order:\n"
+            f"• {error}\n"
+            "Nothing has been changed. The staged changes are still there to repair."
+        )
+        assert error in refused.value.reason

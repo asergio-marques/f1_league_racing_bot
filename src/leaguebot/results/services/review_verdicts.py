@@ -49,7 +49,9 @@ or discarded. An `apply_sanction` is due only while its driver is still owed the
 retry applies only what is owed and a driver `/attendance sync` sanctioned meanwhile is not
 sanctioned twice; its announcement, the lineup and the later sheets are due only where a sanction
 was applied by one of these jobs. The sync command is named only once a job is discarded: a failure
-carries the hint the hook gives for it on the job's kept result, which the discard keeps.
+carries the hint the hook gives for it on the job's kept result, which the discard keeps. A
+`plan_sanctions` a league admin discards is named, with the sync command, as a run of the
+sanctions that could not begin (attendance specification, "Sanctions that do not apply").
 """
 from __future__ import annotations
 
@@ -273,6 +275,11 @@ def not_done(ctx: OutcomeContext) -> list[str]:
             lines.append(
                 f"⚠️ The attendance sheet of {payload.get('division', 'the division')} was not "
                 f"posted. {_hint(view)}"
+            )
+        elif view.name == PLAN_SANCTIONS:
+            lines.append(
+                f"⚠️ The attendance sanctions of {payload.get('division', 'the division')} were "
+                f"not worked out, so none was applied. {_hint(view)}"
             )
         elif view.name == APPLY_SANCTION:
             candidate = payload["candidate"]
@@ -568,7 +575,10 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     payload = ctx.step_payload
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     division = payload.get("division", "the division")
-    owed = await hook.sanction_candidates(round_id, division_id)
+    try:
+        owed = await hook.sanction_candidates(round_id, division_id)
+    except Exception as error:
+        raise await _failed(hook, division_id, round_id, error)
     planned: list[PlannedStep] = []
     for candidate in owed:
         job = {"round_id": round_id, "division_id": division_id, "division": division,

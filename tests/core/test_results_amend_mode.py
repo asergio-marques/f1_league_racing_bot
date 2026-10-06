@@ -105,6 +105,12 @@ def _state(active: bool | None, *, modified: bool = True):
 
 @contextmanager
 def _amendment(*, state=None, **overrides):
+    """The amendment service stubbed, and no points approval of the season in hand.
+
+    The staging commands ask the change queue whether an approval of the season is in hand
+    (#439, slice 3), and the cog's `db_path` here is a placeholder no league database stands
+    behind, so that reading is stubbed to find none.
+    """
     mocks = {
         "get_amendment_state": AsyncMock(return_value=state),
         "enable_amendment_mode": AsyncMock(return_value=None),
@@ -115,6 +121,12 @@ def _amendment(*, state=None, **overrides):
     with ExitStack() as stack:
         for name, mock in mocks.items():
             stack.enter_context(patch(f"leaguebot.core.services.amendment_service.{name}", new=mock))
+        stack.enter_context(
+            patch(
+                "leaguebot.results.services.points_amendment_change.approval_in_hand",
+                new=AsyncMock(return_value=None),
+            )
+        )
         yield mocks
 
 
