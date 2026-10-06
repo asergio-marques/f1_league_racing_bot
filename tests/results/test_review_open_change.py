@@ -846,6 +846,56 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
     assert row["resubmit_prompt_message_id"] is None
 
 
+async def test_a_cancelled_resubmission_whose_prompt_was_discarded_is_recorded_once_it_is_back(
+    tmp_path,
+):
+    """A league admin discards the prompt's post of a cancel's return. The cancel's line in the
+    channel and in the log still wait for a prompt to stand: the first change posts neither, and
+    the review it asks for again carries the cancel on, posting both once its own prompt is up,
+    naming the manager who cancelled, and taking the Cancel button off."""
+    league = await _league(tmp_path, name="open_cancelled_discarded", in_review=True,
+                           results_posted=True, resubmitting=True,
+                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+    submission = league.channel(SUBMISSION_CHANNEL)
+    submission.seed(CANCEL_MESSAGE, "🔄 Resubmission under way")
+    submission.messages[CANCEL_MESSAGE].view = MagicMock()
+    submission.fail_when = (
+        lambda _content, kwargs: type(kwargs.get("view")).__name__ == "PenaltyReviewView"
+    )
+    await _open(league, publish=False, returning="cancelled", cancel_message_id=CANCEL_MESSAGE)
+    assert await stopped_at(league) == "post_review_prompt"
+
+    await discard_job(league.bot)
+
+    # The first change has ended and the review asked for again is stopped at its own prompt.
+    asked = await changes_of(league.db_path, KIND)
+    assert len(asked) == 2
+    assert await stopped_at(league) == "post_review_prompt"
+    assert _prompts(league) == []
+    assert not any("Resubmission cancelled" in text for text in _contents(league, SUBMISSION_CHANNEL))
+    assert not any("cancelled by" in line for line in league.bot.log_channel.sent)
+
+    submission.fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    prompt = _prompts(league)[0]
+    cancel_lines = [mid for mid in league.sent_to(SUBMISSION_CHANNEL)
+                    if "Resubmission cancelled" in submission.messages[mid].content]
+    assert len(cancel_lines) == 1
+    assert submission.messages[cancel_lines[0]].content == (
+        "↩️ **Resubmission cancelled.** The earlier results stand."
+    )
+    assert _at(league, "send", SUBMISSION_CHANNEL, prompt) < _at(
+        league, "send", SUBMISSION_CHANNEL, cancel_lines[0]
+    )
+    [cancel] = [line for line in league.bot.log_channel.sent if "cancelled by" in line]
+    assert f"cancelled by Alex (`<@{MEMBER_ID}>`)" in cancel.split("\n", 1)[0]
+    assert "The earlier results stand." in cancel
+    assert submission.messages[CANCEL_MESSAGE].view is None
+    assert (await _channel_row(league.db_path))["resubmitting"] == 0
+
+
 async def test_a_resubmission_that_fails_before_the_swap_returns_to_review_and_says_so(tmp_path):
     """A resubmission that failed before its results were swapped in leaves the earlier results
     standing: the bot asks for the review back, and the log says the resubmission ended."""

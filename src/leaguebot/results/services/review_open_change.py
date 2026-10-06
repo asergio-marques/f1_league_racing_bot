@@ -20,19 +20,21 @@ It is now a list of jobs the queue saves and resumes:
    their jobs was discarded.
 5. For a restart, **`delete_message`** for the old prompt, once the new one stands; for a
    resubmission's return, **`take_down_cancel`** (an `EDIT`) taking the Cancel button off its
-   announcement, and for a cancel, **`post_cancel_line`**.
+   announcement, and for a cancel, **`post_cancel_line`**, no longer due where the prompt's post
+   was discarded: the cancel's line follows a prompt that stands.
 6. **`close`**, one save, **an opening job** so that it runs last whatever was discarded before
    it, writing the log line: for a paste, that the review is open, `| Incomplete` where a
    league admin discarded a posting job, naming each table not posted and the commands that post
    it (`review_posting.not_done`, as the approvals do); for a cancel, the cancel's line,
-   now after the prompt is back; for a lapse or a failure, the line of the resubmission that
-   ended. **A Discard reopens the review** ("Discard reopens the review"): where `open` or the
-   prompt's post was discarded, `close` asks, in its own save, as the bot, for
-   `results.review.open` again, with the dead prompt's id as ``old_prompt_id``, so that a fresh
+   now after the prompt is back, and none where the prompt was discarded, the review asked for
+   again writing it once its own prompt stands; for a lapse or a failure, the line of the
+   resubmission that ended. **A Discard reopens the review** ("Discard reopens the review"):
+   where `open` or the prompt's post was discarded, `close` asks, in its own save, as the bot,
+   for `results.review.open` again, with the dead prompt's id as ``old_prompt_id``, so that a fresh
    prompt replaces it. Where the interim results already stand it asks with ``publish`` unset,
    as recovery does, and records them as posted in the same save. A discarded `open` wrote
    nothing, so the request it asks for carries the return (``returning`` and
-   ``cancel_message_id``) on.
+   ``cancel_message_id``) on; so does a cancel whose prompt was discarded, its line still owed.
 
 **The check refuses a member and drops the bot.** A member's request is refused where the round
 cannot enter a review, its submission channel's row is closed or the channel is gone, or the
@@ -320,6 +322,13 @@ def review_open_change() -> ChangeType:
             )
         return StepResult()
 
+    async def prompt_not_discarded(ctx: StepContext) -> bool:
+        """The cancel's line follows the prompt: where a league admin discarded the prompt's post,
+        the review asked for again carries the cancel on and posts it once its own prompt stands."""
+        return not any(
+            view.name == _POST_REVIEW_PROMPT and _discarded(view.result) for view in ctx.steps
+        )
+
     async def post_cancel_line(ctx: StepContext) -> StepResult:
         guild = await _league_guild(ctx.bot)
         channel = _channel(guild, int(ctx.step_payload["channel_id"]), "submission")
@@ -349,6 +358,9 @@ def review_open_change() -> ChangeType:
         lines: tuple[str, ...] = ()
         if open_lost:
             # Nothing was changed: the Discard's own line records it.
+            pass
+        elif returning == "cancelled" and prompt_lost:
+            # The cancel is recorded once the prompt is back, by the review asked for again below.
             pass
         elif returning == "cancelled":
             lines = (abandoned_line(
@@ -402,7 +414,9 @@ def review_open_change() -> ChangeType:
             "round_number": payload.get("round_number"),
             "division_name": payload.get("division_name"),
         }
-        if open_lost:
+        # A discarded `open` wrote nothing, so the return is carried on; so is a cancel whose
+        # prompt was discarded, its line still owed until a prompt stands.
+        if open_lost or returning == "cancelled":
             for key in ("returning", "cancel_message_id"):
                 if payload.get(key) is not None:
                     again[key] = payload[key]
@@ -459,7 +473,8 @@ def review_open_change() -> ChangeType:
             _TAKE_DOWN_CANCEL, StepKind.EDIT, take_down_cancel, describe=describe_take_down,
         ),
         _POST_CANCEL_LINE: Step(
-            _POST_CANCEL_LINE, StepKind.ACT, post_cancel_line, describe=describe_cancel_line,
+            _POST_CANCEL_LINE, StepKind.ACT, post_cancel_line, still_due=prompt_not_discarded,
+            describe=describe_cancel_line,
         ),
         _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
