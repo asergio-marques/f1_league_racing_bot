@@ -41,6 +41,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 import pytest
@@ -239,13 +240,18 @@ def pytest_runtest_call(item):
     cut off part way through a read, and aiosqlite's thread raises "Event loop is closed" against
     a later test (`tests/support/change_queue.py`, `stop_started_queues`). Nothing is imported
     where no test has imported the support module.
+
+    Only the database threads started during the test's call are waited for: one a fixture opened
+    in set-up stays alive until its teardown, and waiting on it would cost every such test the
+    whole grace period (`test_stop_started_queues_waits_on_no_thread_a_fixture_holds`).
     """
+    before = set(threading.enumerate())
     try:
         return (yield)
     finally:
         queues = sys.modules.get("tests.support.change_queue")
         if queues is not None:
-            queues.stop_started_queues()
+            queues.stop_started_queues(started_before=before)
 
 
 @pytest.fixture(autouse=True)

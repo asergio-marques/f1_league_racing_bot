@@ -27,6 +27,7 @@ import asyncio
 import json
 import threading
 import time
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -147,7 +148,7 @@ async def restart_queue(bot: Any) -> Any:
     return queue
 
 
-def stop_started_queues() -> None:
+def stop_started_queues(*, started_before: Collection[threading.Thread] = ()) -> None:
     """Stop every queue `restart_queue` started, on the loop it runs on, and forget them; then
     wait for aiosqlite's threads to finish.
 
@@ -161,16 +162,20 @@ def stop_started_queues() -> None:
     connection: aiosqlite's thread finishes the opening after the cancel, and answers the loop
     when it does. The same holds for a queue the test started and stopped itself. So each
     aiosqlite thread still alive is waited for, up to `THREAD_GRACE_SECONDS` in all, before the
-    loop is left to close; none is alive where nothing was cut off.
+    loop is left to close; none is alive where nothing was cut off. A thread in *started_before*,
+    alive before the test's call began (a connection a fixture holds until its teardown), is not
+    waited for: it would never finish in time, and every test holding one would pay the whole
+    grace period.
     """
     started, _STARTED[:] = list(_STARTED), []
     for queue, loop in started:
         if not loop.is_closed() and not loop.is_running():
             loop.run_until_complete(queue.stop())
     deadline = time.monotonic() + THREAD_GRACE_SECONDS
+    earlier = set(started_before)
     for thread in threading.enumerate():
         # aiosqlite names no thread; Python names it after its target.
-        if thread.name.endswith("(_connection_worker_thread)"):
+        if thread.name.endswith("(_connection_worker_thread)") and thread not in earlier:
             thread.join(max(deadline - time.monotonic(), 0))
 
 
