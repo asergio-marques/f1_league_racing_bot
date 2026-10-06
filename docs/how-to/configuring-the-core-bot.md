@@ -784,7 +784,7 @@ command.
 
 ## When a job stops the queue
 
-Some changes are carried out as a list of jobs, one after another, each with a number of its own ("job #12"). **Any job that fails stops the queue**, and nothing behind it runs until that job is cleared. Turning `results` off is carried out this way, and so is a round's review in the results module: opening it, approving its reports and its appeals, and approving either stage of an amendment, with the attendance sheet and each sanction that follows. The rules below hold for every change that joins them.
+Some changes are carried out as a list of jobs, one after another, each with a number of its own ("job #12"). **Any job that fails stops the queue**, and nothing behind it runs until that job is cleared. Turning `results` off is carried out this way, and so is a round's review in the results module: opening it, approving its reports and its appeals, and approving either stage of an amendment, with the attendance sheet and each sanction that follows; and approving a points amendment in the results module, with its reposts, sheet and sanctions. The rules below hold for every change that joins them.
 
 You will see:
 
