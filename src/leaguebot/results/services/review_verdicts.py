@@ -185,10 +185,17 @@ def plan_round_verdicts(
     ]
 
 
-def plan_attendance(round_id: int, division_id: int, division_name: str) -> list[PlannedStep]:
+def plan_attendance(
+    round_id: int, division_id: int, division_name: str, *, heading_round_id: int | None = None
+) -> list[PlannedStep]:
     """The division's attendance sheet as at *round_id*, then the job that plans the sanctions the
     round's attendance owes. Callers pass the latest round the totals were carried to, which is
-    where a sheet is drawn and a threshold read (decided with #238)."""
+    where a sheet is drawn and a threshold read (decided with #238).
+
+    *heading_round_id* is the round whose verdicts the sanction cards stand beneath, which is the
+    round approved and not the latest one the cascade reached: the cards are headed by that
+    round's banner, read back from its row, and a later round's banner would head them wrongly.
+    It defaults to *round_id*, which is right where the two are the same round."""
     return [
         PlannedStep(ATTENDANCE_SHEET, {
             "round_id": round_id, "division_id": division_id, "division": division_name,
@@ -196,6 +203,7 @@ def plan_attendance(round_id: int, division_id: int, division_name: str) -> list
         }),
         PlannedStep(PLAN_SANCTIONS, {
             "round_id": round_id, "division_id": division_id, "division": division_name,
+            "heading_round_id": round_id if heading_round_id is None else heading_round_id,
         }),
     ]
 
@@ -505,7 +513,8 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     planned: list[PlannedStep] = []
     for candidate in owed:
         job = {"round_id": round_id, "division_id": division_id, "division": division,
-               "candidate": candidate}
+               "candidate": candidate,
+               "heading_round_id": int(payload.get("heading_round_id", round_id))}
         planned.append(PlannedStep(APPLY_SANCTION, job))
         planned.append(PlannedStep(ANNOUNCE_SANCTION, job))
     if owed:
@@ -577,9 +586,10 @@ async def _describe_announce(ctx: StepContext) -> str:
 
 async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
+    # Headed by the approved round's banner, not the round the thresholds were read at.
     await hook.announce_sanction(
-        int(payload["round_id"]), int(payload["division_id"]), payload["candidate"],
-        as_text=ctx.tries > 0,
+        int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
+        payload["candidate"], as_text=ctx.tries > 0,
     )
     return StepResult()
 

@@ -67,8 +67,9 @@ class AttendanceAfterReview(Protocol):
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
     ) -> None:
-        """Announce one candidate's sanction in the verdicts channel. Raises where it could
-        not post."""
+        """Announce one candidate's sanction in the verdicts channel, beneath the banner of
+        *round_id*, which is the round whose verdicts it follows. Raises where it could not
+        post."""
 
     async def refresh_lineup(self, division_id: int) -> None:
         """Post the division's lineup afresh. Raises where it could not post."""

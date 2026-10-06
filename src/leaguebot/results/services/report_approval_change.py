@@ -236,7 +236,9 @@ def report_approval_change(
             review_verdicts.POST_APPEALS_PROMPT,
             {"round_id": round_id, "division_id": division_id},
         ))
-        then.extend(review_verdicts.plan_attendance(latest, division_id, division_name))
+        then.extend(review_verdicts.plan_attendance(
+            latest, division_id, division_name, heading_round_id=round_id
+        ))
         return StepResult(
             result={
                 "round_number": round_number, "division_name": division_name,
