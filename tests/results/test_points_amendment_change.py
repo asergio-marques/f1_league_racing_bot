@@ -66,7 +66,6 @@ from tests.support.review_league import block_queue, candidate, run_until_done, 
 KIND = "results.points_amendment.approve"
 
 ON_THE_QUEUE = "#439: approving a points amendment is not yet a change on the change queue"
-STAGING_HELD = "#439: the staging commands do not yet refuse while a points approval is in hand"
 
 SUCCESS = "✅ Amendment approved. All standings recomputed and reposted."
 MODE_OFF = (
@@ -567,7 +566,6 @@ _STAGING = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=STAGING_HELD)
 @pytest.mark.parametrize("state", ["waiting", "names", "post", "close"])
 @pytest.mark.parametrize("command, args", _STAGING, ids=[c for c, _ in _STAGING])
 async def test_the_staging_commands_are_refused_while_the_approval_is_in_hand(

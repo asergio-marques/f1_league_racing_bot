@@ -18,6 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
 from leaguebot.results.services.points_config_service import (
@@ -223,6 +224,28 @@ def _bulk_refusal(errors: list[str]) -> tuple[str, str]:
     return reply, reason
 
 
+async def _approval_holds_staging(
+    interaction: discord.Interaction, db_path: str, season: Season, *, what: str
+) -> bool:
+    """Refuse a command that stages points changes where the season's approval is in hand.
+
+    While `/results amend review`'s approval is waiting, running or stopped on the queue, nothing
+    outside it may put back or undo what it approves (architecture.md, "How a change is carried
+    out"), so the six staging commands leave the working copy and amendment mode alone, naming the
+    job. True where *interaction* was refused (#439, slice 3).
+    """
+    from leaguebot.results.services.points_amendment_change import (
+        approval_in_hand,
+        staging_refusal,
+    )
+
+    job = await approval_in_hand(db_path, season.id)
+    if job is None:
+        return False
+    await refuse(interaction, staging_refusal(season.season_number, job), what=what)
+    return True
+
+
 def _bulk_values(valid: list[tuple[int, int]]) -> str:
     """The values a paste set, one per line, for its log line."""
     return "".join(f"\n  P{position} \u2192 {points} pts" for position, points in valid)
@@ -381,6 +404,8 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
             interaction, bot.season_service, "results amend bulk-session"
         )
         if season is None:
+            return
+        if await _approval_holds_staging(interaction, self._db_path, season, what=what):
             return
 
         valid, errors, overrides = _parse_bulk_lines(self.entries.value)
@@ -1533,6 +1558,10 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
+            return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
         currently_on = state is not None and state.amendment_active
@@ -1579,6 +1608,10 @@ class ResultsCog(commands.Cog):
             interaction, self.bot.season_service, "results amend revert"
         )
         if season is None:
+            return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
             return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
@@ -1637,6 +1670,10 @@ class ResultsCog(commands.Cog):
             interaction, self.bot.season_service, "results amend session"
         )
         if season is None:
+            return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
             return
 
         stands = False
@@ -1724,6 +1761,10 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
+            return
 
         try:
             if points_config_service.values_stand(
@@ -1785,6 +1826,10 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
+            return
 
         try:
             if points_config_service.values_stand(
@@ -1833,9 +1878,14 @@ class ResultsCog(commands.Cog):
             return
         # Before the modal, not after: showing one and refusing its submission would have a
         # manager type a screenful of positions to no purpose.
-        if await season_for_command(
+        season = await season_for_command(
             interaction, self.bot.season_service, "results amend bulk-session"
-        ) is None:
+        )
+        if season is None:
+            return
+        if await _approval_holds_staging(
+            interaction, self.bot.db_path, season, what=describe(interaction)
+        ):
             return
         await interaction.response.send_modal(
             BulkAmendSessionModal(name, session, self.bot.db_path)
