@@ -674,6 +674,100 @@ async def test_a_sanction_card_s_own_heading_is_posted_once_and_recorded(tmp_pat
     assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 1
 
 
+async def test_a_sanction_card_after_a_discarded_verdicts_heading_stands_beneath_none(tmp_path):
+    """This approval announces verdicts, and their heading is discarded: the verdicts go out
+    beneath none. Max's sanction then applies, and its card goes out beneath none too, as the
+    verdicts do: one heading per approval, so a discarded one is not raised again over the cards.
+    No second heading is planned, and none is posted."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    _cards_posted_for_real(league)
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
+    await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "announce_heading"
+
+    # The channel would take a heading now, so a build that planned one over the cards shows.
+    league.channel(VERDICTS_CHANNEL).fail_when = None
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert MAX_PROFILE in league.attendance.applied
+    assert league.attendance._calls("announce_sanction") == [("announce_sanction", MAX_PROFILE)]
+    assert verdict_headings(league) == []
+    assert len(league.sent_to(VERDICTS_CHANNEL)) == 3, "two verdicts and the card, no heading"
+    steps = await step_rows(league.db_path)
+    assert len([row for row in steps if row["name"] == "announce_heading"]) == 1
+    assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 0
+
+
+def _named(steps: list[dict[str, Any]], name: str, profile: int | None = None) -> list[int]:
+    """The places in *steps* of each job called *name*, of *profile*'s candidate where given."""
+    import json
+
+    return [
+        index for index, row in enumerate(steps)
+        if row["name"] == name and (
+            profile is None
+            or json.loads(row["payload"]).get("candidate", {}).get("driver_profile_id") == profile
+        )
+    ]
+
+
+async def test_a_sanction_card_s_heading_is_planned_by_the_first_sanction_that_applies(tmp_path):
+    """A clean round, Lewis and Max over a threshold. Lewis's sanction does not apply and is
+    discarded; Max's applies. The one heading is planned by Max's `apply_sanction`, after it and
+    ahead of his card, not when the sanctions are planned: a heading planned there would stand
+    ahead of a sanction that might never apply."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    league.attendance.apply_fails = {LEWIS_PROFILE: ValueError("Pro has no reserve team")}
+    _cards_posted_for_real(league)
+    await _approve(league, staged=[])
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "apply_sanction"
+    assert _named(await step_rows(league.db_path), "announce_heading") == [], (
+        "a heading was planned before any sanction applied"
+    )
+
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    steps = await step_rows(league.db_path)
+    [heading] = _named(steps, "announce_heading")
+    [applied] = _named(steps, "apply_sanction", MAX_PROFILE)
+    [card] = _named(steps, "announce_sanction", MAX_PROFILE)
+    assert applied < heading < card
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 2, "the heading and Max's card"
+
+
+async def test_no_sanction_card_heading_is_planned_where_no_sanction_applies(tmp_path):
+    """A clean round, Lewis and Max over a threshold. Lewis's sanction does not apply and is
+    discarded, and Max's is dropped, `/attendance sync` having sanctioned him meanwhile. No
+    sanction of this approval applied, so no card follows and no heading is planned."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    league.attendance.apply_fails = {LEWIS_PROFILE: ValueError("Pro has no reserve team")}
+    _cards_posted_for_real(league)
+    await _approve(league, staged=[])
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "apply_sanction"
+
+    league.attendance.applied.add(MAX_PROFILE)  # `/attendance sync` sanctioned Max meanwhile
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    steps = await step_rows(league.db_path)
+    [max_apply] = _named(steps, "apply_sanction", MAX_PROFILE)
+    assert (steps[max_apply]["result"] or {}).get("dropped") is True
+    assert _named(steps, "announce_heading") == []
+    assert league.sent_to(VERDICTS_CHANNEL) == []
+
+
 async def test_a_sanction_card_s_heading_retried_after_attendance_is_turned_off_is_dropped(
     tmp_path,
 ):
