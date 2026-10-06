@@ -822,8 +822,8 @@ async def test_apply_penalties_on_neither_reposts_nor_logs(tmp_path):
     assert "bot" not in parameters, "it is handed no bot, so it has no log channel to post to"
 
     db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
-    recompute = AsyncMock()
-    repost = AsyncMock(return_value=[])
+    standings = AsyncMock()
+    repost = AsyncMock()
     staged = [
         StagedPenalty(
             driver_user_id=2,
@@ -833,14 +833,14 @@ async def test_apply_penalties_on_neither_reposts_nor_logs(tmp_path):
         )
     ]
 
-    with patch.object(rps, "recompute_standings_from_round", new=recompute), \
-            patch.object(rps, "repost_round_results", new=repost):
+    with patch.object(rps, "post_standings", new=standings), \
+            patch.object(rps, "post_round_results", new=repost):
         async with get_connection(db_path) as db:
             inserted = await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
             await db.commit()
 
     assert [r["driver_user_id"] for r in inserted] == [2]
-    recompute.assert_not_awaited()
+    standings.assert_not_awaited()
     repost.assert_not_awaited()
 
 

@@ -1159,11 +1159,15 @@ async def test_the_standings_fall_back_to_the_id_with_no_bot_in_scope(tmp_path):
 
 @pytest.mark.asyncio
 async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
-    """The whole point of resolving names on the recomputation as well as on the posting."""
+    """The whole point of resolving names on the recomputation as well as on the posting.
+
+    The names are resolved first and the cascade handed them, as a points approval's `names`
+    job and its save do (#439)."""
     from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services import standings_service
     from leaguebot.results.services.results_post_service import (
         driver_standings_for_display,
-        recompute_standings_from_round,
+        standings_display_names,
     )
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=302)
@@ -1171,7 +1175,8 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     bot.db_path = db_path
     guild = _guild_naming({1: "zulu", 2: "alpha"})
 
-    await recompute_standings_from_round(db_path, division_id, round_id, guild, bot)
+    names = await standings_display_names(db_path, division_id, guild, bot)
+    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id, names)
     drawn = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
 
     async with get_connection(db_path) as db:
@@ -1190,13 +1195,17 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
 
 @pytest.mark.asyncio
 async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
-    """The one path that genuinely holds no guild still recomputes, ordered by id."""
+    """The one path that genuinely holds no guild still recomputes, ordered by id: no names
+    are resolved, and the cascade is handed none."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.results_post_service import recompute_standings_from_round
+    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.results_post_service import standings_display_names
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=303)
 
-    await recompute_standings_from_round(db_path, division_id, round_id, None, None)
+    names = await standings_display_names(db_path, division_id, None, None)
+    assert names is None
+    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id, names)
 
     async with get_connection(db_path) as db:
         rows = await (
