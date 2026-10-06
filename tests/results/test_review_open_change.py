@@ -773,6 +773,15 @@ async def test_a_discarded_open_or_review_prompt_asks_for_the_review_again(tmp_p
     assert await stopped_at(league) is None
     assert len(_prompts(league)) == 1
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 1
+    if job == "post_review_prompt":
+        # The opening that lost its prompt says so, as the approvals do of a lost appeals
+        # prompt; the review asked for again then records its own opening.
+        lines = league.bot.log_channel.sent
+        [first] = [line for line in lines if "Penalty review opened | Incomplete" in line]
+        assert "⚠️ The penalty review prompt was not posted. It is being posted again." in first
+        assert lines.index(first) < next(
+            i for i, line in enumerate(lines) if "Penalty review opened | Success" in line
+        )
 
 
 # ---------------------------------------------------------------------------

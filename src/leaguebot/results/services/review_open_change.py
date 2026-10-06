@@ -24,8 +24,9 @@ It is now a list of jobs the queue saves and resumes:
    was discarded: the cancel's line follows a prompt that stands.
 6. **`close`**, one save, **an opening job** so that it runs last whatever was discarded before
    it, writing the log line: for a paste, that the review is open, `| Incomplete` where a
-   league admin discarded a posting job, naming each table not posted and the commands that post
-   it (`review_posting.not_done`, as the approvals do); for a cancel, the cancel's line,
+   league admin discarded a posting job or the prompt's post, naming each table not posted with
+   the commands that post it, and the prompt as being posted again (`_not_done`, as the
+   approvals do); for a cancel, the cancel's line,
    now after the prompt is back, and none where the prompt was discarded, the review asked for
    again writing it once its own prompt stands; for a lapse or a failure, the line of the
    resubmission that ended. **A Discard reopens the review** ("Discard reopens the review"):
@@ -160,6 +161,16 @@ def _discarded(result: dict[str, Any] | None) -> bool:
 
 def _dropped(result: dict[str, Any] | None) -> bool:
     return bool((result or {}).get("dropped"))
+
+
+def _not_done(ctx: OutcomeContext) -> list[str]:
+    """One line for each job of an opening a league admin discarded: the posting jobs'
+    (`review_posting.not_done`), then the prompt's, worded as the approvals word a lost appeals
+    prompt (`review_verdicts.not_done`). The reply and the log line both read it."""
+    lines = review_posting.not_done(ctx)
+    if any(view.name == _POST_REVIEW_PROMPT and _discarded(view.result) for view in ctx.steps):
+        lines.append("⚠️ The penalty review prompt was not posted. It is being posted again.")
+    return lines
 
 
 async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | None:
@@ -379,10 +390,10 @@ def review_open_change() -> ChangeType:
                 "  Press 🔄 Resubmit Initial Results to start again.",
             )
         elif ctx.actor_id is not None:
-            # A table a league admin discarded is named, with the commands that post it, as the
-            # approvals' lines name theirs: the review is open, but the league's channels are not
-            # as a Success would say.
-            left = review_posting.not_done(ctx)
+            # A table or the prompt a league admin discarded is named, with the commands that post
+            # a table, as the approvals' lines name theirs: the review is open, but the league's
+            # channels are not as a Success would say.
+            left = _not_done(ctx)
             lines = (f"{ctx.named} | Penalty review opened | "
                      f"{'Incomplete' if left else 'Success'}\n"
                      f"  round {number}{division}"
@@ -453,11 +464,7 @@ def review_open_change() -> ChangeType:
         if opened is None or _discarded(opened.result) or _dropped(opened.result):
             return "Nothing was changed. The penalty review is being opened again."
         reply = f"✅ The penalty review is open (round {ctx.payload['round_id']})."
-        lines = review_posting.not_done(ctx)
-        if (done.get(_POST_REVIEW_PROMPT) is not None
-                and _discarded(done[_POST_REVIEW_PROMPT].result)):
-            lines.append("⚠️ The penalty review prompt was not posted. It is being posted again.")
-        return "\n".join([reply, *lines])
+        return "\n".join([reply, *_not_done(ctx)])
 
     steps: dict[str, Step] = {
         **{name: step for name, step in posting_steps().items()},
