@@ -864,35 +864,60 @@ async def test_a_calendar_that_falls_back_to_text_is_reported_in_the_reply_and_t
     assert "Pro: the template has no rows" in calendar_lines[0]
 
 
+#: Each post retried: its job, its channel, the modules it needs, and where it reaches for its
+#: picture, stubbed to stand aside so that the text follows on every host, whether or not it
+#: carries the rasteriser: the module, the function, and what the stub returns.
 _RETRIED_POSTS = {
-    "the lineup": ("refresh_lineup", lambda chans: chans.lineup, {}),
-    "the calendar": ("post_calendar", lambda chans: chans.calendar, {}),
-    "the opening standings": ("opening_standings", lambda chans: chans.standings,
-                              {"results": True}),
-    "the opening sheet": ("opening_sheet", lambda chans: chans.attendance,
-                          {"attendance": True}),
+    "the lineup": (
+        "refresh_lineup", lambda chans: chans.lineup, {},
+        ("leaguebot.image.services.image_lineup_post", "try_post",
+         MagicMock(applicable=False)),
+    ),
+    "the calendar": (
+        "post_calendar", lambda chans: chans.calendar, {},
+        ("leaguebot.core.services.calendar_post_service", "render_calendar_image",
+         SimpleNamespace(problem=None, notices=[], png_paths=[])),
+    ),
+    "the opening standings": (
+        "opening_standings", lambda chans: chans.standings, {"results": True},
+        ("leaguebot.image.services.image_standings_post", "try_post",
+         MagicMock(rejects=False, applicable=False)),
+    ),
+    "the opening sheet": (
+        "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
+        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False),
+    ),
 }
 
 
 @pytest.mark.parametrize("post", sorted(_RETRIED_POSTS))
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
-    """Images on, every aspect drawn: Pro's channel refuses the first send, and the post the
-    retry makes carries no picture."""
-    job, which, modules = _RETRIED_POSTS[post]
+    """Images on, every aspect on: Pro's channel refuses the first send. The first try reaches
+    for the picture, Pro's retry does not and posts the text, and Am's post, a first try of its
+    own, reaches for it again."""
+    import importlib
+
+    job, which, modules, (module, name, returned) = _RETRIED_POSTS[post]
     league = await _league_for(tmp_path, monkeypatch, images=True, **modules)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
     cid = which(PRO_CH)
     league.channel(cid).send_fails = http_error(status=503, text="Service Unavailable")
     await _pressed(league)
+    draw = AsyncMock(return_value=returned)
+    monkeypatch.setattr(importlib.import_module(module), name, draw)
+
     await run_queue(league.bot)
     assert await _stopped_at(league) == job
+    assert draw.await_count == 1, "the first try did not reach for the picture"
 
     league.channel(cid).send_fails = None
     await retry_job(league.bot)
 
     assert league.texts(cid), "nothing was posted on the retry"
     assert league.channel(cid).files[-1] is None
+    assert league.texts(which(AM_CH)), "Am's post did not follow the retry"
+    assert draw.await_count == 2, "the retry reached for the picture"
 
 
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
