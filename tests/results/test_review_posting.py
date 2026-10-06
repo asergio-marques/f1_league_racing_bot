@@ -597,6 +597,98 @@ async def test_a_discarded_part_posted_table_names_its_stranded_messages(tmp_pat
     assert "/results rounds sync" in reply
 
 
+#: Round 3's constructors' standings, posted as a text table of their own beside the drivers'.
+OLD_CONSTRUCTORS_TABLE = 8809
+
+
+async def _standings_as_two_tables(league: _League) -> None:
+    """Round 3's standings stand as one text table per championship, each with its id recorded:
+    the drivers' as `OLD_STANDINGS`, the constructors' as `OLD_CONSTRUCTORS_TABLE`."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET constructor_standings_message_id = ?, "
+            "constructor_standings_message_ids = ? WHERE round_id = ?",
+            (OLD_CONSTRUCTORS_TABLE, json.dumps([OLD_CONSTRUCTORS_TABLE]), ROUND_ID),
+        )
+        await db.commit()
+    league.channel(STANDINGS_CHANNEL).seed(OLD_CONSTRUCTORS_TABLE, "constructors' standings")
+
+
+def _each_championship_as_text() -> Any:
+    """The picture applies to the standings and draws neither championship, so each is posted
+    as a text table of its own."""
+    from leaguebot.results.services.results_post_service import (
+        STANDINGS_CONSTRUCTORS,
+        STANDINGS_DRIVERS,
+    )
+
+    outcome = MagicMock(rejects=False, applicable=True,
+                        fallback_championships=[STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS])
+    return patch("leaguebot.image.services.image_standings_post.try_post",
+                 new=AsyncMock(return_value=outcome))
+
+
+async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first_before_its_next_try(
+    tmp_path,
+):
+    """Round 3's standings are posted as one text table per championship. Discord takes the
+    drivers' table and refuses the constructors', once: the queue stops, and the drivers' table
+    the failed try sent, recorded nowhere, is deleted before the retry posts. The retry goes out
+    as text, one table carrying both championships, so the channel is left with that table alone,
+    its id recorded, and no drivers' table besides it.
+
+    The legacy `post_standings`, which the sync commands call, fails the same way and takes the
+    stray table down with the failure, leaving the tables already recorded as they stood."""
+    from leaguebot.results.services.results_post_service import post_standings
+
+    league = await _league(tmp_path)
+    await _standings_as_two_tables(league)
+    standings = league.channel(STANDINGS_CHANNEL)
+    standings.fail_send_at = 2
+    with _each_championship_as_text():
+        await _ask(league)
+        await run_queue(league.bot)
+        assert (await stopped_job(league.db_path))["name"] == "post_standings"
+        stray = league.sent_to(STANDINGS_CHANNEL)
+        assert len(stray) == 1 and stray[0] in standings.messages
+
+        standings.fail_send_at = None
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    posted = [mid for mid in league.sent_to(STANDINGS_CHANNEL) if mid not in stray]
+    assert posted
+    assert stray[0] not in standings.messages
+    assert league.events.index(("delete", STANDINGS_CHANNEL, stray[0])) < league.events.index(
+        ("send", STANDINGS_CHANNEL, posted[0])
+    )
+    # Besides the retry's table the channel holds only round 4's, which this round leaves alone.
+    assert set(standings.messages) == set(posted) | {OLD_LATER_STANDINGS}
+    async with get_connection(league.db_path) as db:
+        row = await (await db.execute(
+            "SELECT standings_message_ids, constructor_standings_message_id "
+            "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,),
+        )).fetchone()
+    assert json.loads(row["standings_message_ids"]) == posted
+    assert row["constructor_standings_message_id"] is None
+
+    legacy_path = tmp_path / "legacy"
+    legacy_path.mkdir()
+    legacy = await _league(legacy_path)
+    await _standings_as_two_tables(legacy)
+    legacy_standings = legacy.channel(STANDINGS_CHANNEL)
+    legacy_standings.fail_send_at = 2
+    with _each_championship_as_text(), pytest.raises(discord.HTTPException):
+        await post_standings(
+            legacy.db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", legacy_standings, [], [],
+            legacy.guild, True, LABEL, bot=legacy.bot,
+        )
+
+    [legacy_stray] = legacy.sent_to(STANDINGS_CHANNEL)
+    assert legacy_stray not in legacy_standings.messages
+    assert {OLD_STANDINGS, OLD_CONSTRUCTORS_TABLE} <= set(legacy_standings.messages)
+
+
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     league = await _league(tmp_path, results_channel=None)
     await _ask(league)
