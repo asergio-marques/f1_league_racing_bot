@@ -646,8 +646,7 @@ async def test_the_amendment_names_the_member_who_ran_it(tmp_path):
 # The amendment says what it could not repost (#237)
 #
 # The third caller of the cascade, and the third to throw away what it could not post. It
-# has no interaction to answer, so the log channel is the only route — as in
-# `apply_penalties_on`.
+# has no interaction to answer, so the log channel is the only route.
 # ---------------------------------------------------------------------------
 
 AMEND_FAULT = "**Alpha** \u2014 the results channel <#501> no longer exists."
