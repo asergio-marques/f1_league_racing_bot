@@ -1,6 +1,47 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-06 — v14.10.0 → v14.11.0: MINOR — a recalculation saved whole, reposts and verdicts queued and retried (issue #439)]
+  Version change    : 14.10.0 → 14.11.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.10.0: guidance inside Principle XII
+                      is materially expanded, and one clause that let a failure pass unreported is
+                      replaced by the rule that it is retried and reported. No principle is removed.
+
+  Modified sections :
+    - Principle XII, Race Results & Championship Integrity — Amendment & Penalty: "recomputed and
+      reposted atomically" becomes the recalculation saved whole, all or nothing, with what the
+      amendment or penalty writes, so that a round is never published as approved with its old
+      points; the reposts follow as jobs on the change queue, each posted before the message it
+      replaces is deleted, a repost Discord refuses stopping the queue and being retried.
+    - Principle XII — Penalty Appeals: the standings follow the same split; "Announcement skipped
+      silently if channel is inaccessible; finalization is never blocked by an announcement
+      failure" is removed. Each correction's announcement is a job on the queue, retried where
+      Discord refuses it and, once discarded, reported as not announced with the driver named.
+      The decision still stands whatever befalls its announcement.
+
+  Why the constitution is the document that moved:
+    - The owner decided on 2026-10-05 (#439, slice 2) to amend Principle XII with the slice that
+      moves a round's review, its approvals and an amendment's stages onto the change queue.
+      The old wording promised an atomicity the reposts never had, and permitted a verdict to be
+      skipped without a word.
+    - `docs/wip-specs/results_module_specification.md` (stage one, stage two, "A republication
+      that does not land shall be reported") carries the same rules and remains their governing
+      statement; `docs/design/architecture.md`, "How a change is carried out", holds the design.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-reviews-on-the-queue.
+
+  Templates / docs  : none. No template in .specify/templates names either rule; the results
+                      specification, the README and the guides are corrected on the same branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-10-02 — v14.9.0 → v14.10.0: MINOR — the change queue's two windows, and a failing log channel told to the member alone (issue #439)]
   Version change    : 14.9.0 → 14.10.0
   Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.8.0: guidance is added inside
@@ -5998,8 +6039,13 @@ governs the **Results & Standings optional module** (Principle X).
 - A league manager MAY amend any session's results entirely (full re-entry) or apply
   targeted time penalties or disqualifications per driver via a guided wizard. Each
   amendment or penalty MUST produce an audit log entry per Principle V.
-- On amendment or penalty application, standings for the affected round and all subsequent
-  rounds in that division MUST be recomputed and reposted atomically.
+- On amendment or penalty application, the recalculation (the points, and the standings for
+  the affected round and all subsequent rounds in that division) MUST be saved whole, all or
+  nothing, together with what the amendment or penalty writes. A recalculation that cannot be
+  completed MUST change nothing, and a round MUST NOT be published as approved with its old
+  points. The reposts MUST be carried out as jobs on the change queue after that save, each
+  posted before the message it replaces is deleted, and a repost Discord refuses MUST stop the
+  queue and be retried, never skipped.
 - A request to cancel a round MUST be rejected with a clear error while the transient round
   results submission channel stands open for it, and once any of its results have been
   entered. From the moment results are entered the drivers have reports and appeals to lodge
@@ -6042,13 +6088,17 @@ governs the **Results & Standings optional module** (Principle X).
 - The appeals review MUST produce an audit log entry per correction, including description
   and justification (Principle V).
 - On approving corrections: the affected `DriverSessionResult` rows are updated; standings
-  for the affected round and all subsequent rounds in that division MUST be recomputed and
-  reposted atomically, consistent with the amendment recomputation rule above.
+  for the affected round and all subsequent rounds in that division MUST be saved whole with
+  them and reposted as jobs on the change queue, retried where Discord refuses, consistent
+  with the amendment recalculation rule above.
 - On approving with no staged corrections: the round advances to `FINAL` with results
   identical to the `Post-Race Penalty Results` post. No result changes occur.
 - Each applied correction MUST produce one announcement post to the division's configured
-  verdicts channel (if accessible). Announcement skipped silently if channel is
-  inaccessible; finalization is never blocked by an announcement failure.
+  verdicts channel, as a job on the change queue. An announcement Discord refuses MUST stop
+  the queue and be retried; one a league admin discards MUST be reported as not announced,
+  naming the driver, for the manager to post themselves. The decision itself stands, the
+  correction being saved before it is announced, so an announcement failure never undoes
+  finalisation, and is never skipped silently.
 
 #### Standings Computation
 
@@ -8736,4 +8786,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.10.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-02
+**Version**: 14.11.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-06
