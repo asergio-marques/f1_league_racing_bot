@@ -410,7 +410,7 @@ Both delete what the bot posted and post it again from what it holds: the first 
 Approving either review stage, and `/results rounds amend`, republish the round's results and every later round's standings. Each table is posted **before** the message it replaces is deleted, so the worst that can happen is that you keep the older version, never that you lose both. A post that cannot land stops the queue like any failed job, and you are told about it rather than left to find an empty channel.
 
 - **While the bot is still trying,** the log channel's ❌ notice names the job, what it was posting and where ("round 3's Feature Race results in #results"), and the kind of fault. It names no sync command: a sync would post a second copy beside the one the bot is about to post.
-- **Once a league admin discards it,** the approval's reply and its log line read `Incomplete`, and a `RESULTS_REPOST | Incomplete` entry names what was not posted, ending with the `/results rounds sync` and `/results standings sync` commands, or, where every division is done and both are closed, the `/results rounds amend` to run again.
+- **Once a league admin discards it,** the approval's reply and its own log line (`PENALTY_REVIEW_APPROVED`, `APPEALS_REVIEW_APPROVED` or `RESULT_AMENDED`) read `Incomplete` and name what was not posted, ending with the `/results rounds sync` and `/results standings sync` commands, or, where every division is done and both are closed, the `/results rounds amend` to run again.
 - **`/results rounds amend`** names what its last stage could not post in the reply to the approval and in its own `RESULT_AMENDED | Incomplete` entry.
 
 Work it in this order.
@@ -429,8 +429,8 @@ Work it in this order.
 The verdict in your verdicts channel is the only thing that tells a driver *why* their classification changed. A verdict Discord refuses stops the queue, and so does the heading over a round's verdicts, the verdicts waiting behind it. The bot tries again, as text where it was a picture, and you can press **Retry** once the cause is repaired.
 
 1. **Repair the cause.** Usually the verdicts channel has been deleted or the bot's permission to post in it has been taken away. If the channel is gone, set a new one with `/results channel verdicts`, then press **Retry** on the notice.
-2. **Or let a league admin discard it.** The other verdicts go ahead. The approval's reply and a `VERDICTS | Incomplete` entry in the log channel name each verdict not announced, with the driver it was owed to. A heading discarded leaves the verdicts beneath none.
-3. **Post a discarded decision yourself**, in that channel, naming the driver, the sanction and the reasoning. There is no command that announces a decided verdict again: a verdict that is discarded is not tried again. The entry in the log channel has the details you need.
+2. **Or let a league admin discard it.** The other verdicts go ahead. The approval's reply and its own `Incomplete` log line (`PENALTY_REVIEW_APPROVED`, `APPEALS_REVIEW_APPROVED` or `RESULT_AMENDED`) name each verdict not announced, with the driver it was owed to. A heading discarded leaves the verdicts beneath none.
+3. **Post a discarded decision yourself**, in that channel, naming the driver, the sanction and the reasoning. There is no command that announces a decided verdict again: a verdict that is discarded is not tried again. The `Incomplete` line in the log channel has the details you need.
 
 **A division with no verdicts channel is reported, not skipped.** Unlike a results or standings channel, a verdicts channel is one of the three every division must have before its placements can be confirmed, so if the queue finds none, something has been removed since. It stops at the heading, and you set the channel and press **Retry**.
 
