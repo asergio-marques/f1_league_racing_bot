@@ -227,8 +227,8 @@ audit record, which is how some settings came to have none.
   specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
-  (`unfinished`), which gives the changes of the kinds asked for that are queued, running or
-  stopped on a failure, leaving out the one whose check is running (`CheckContext.change_id`).
+  (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
+  of the kinds asked for that are queued, running or stopped on a failure, leaving out the one whose check is running (`CheckContext.change_id`).
   What a change type refuses is read from the database and the queue, never from a flag kept in
   memory, so it holds across a restart. A bot's request that this check finds no longer due (a
   review reopened for a round that has since gone final) is dropped, not stopped: only a channel
