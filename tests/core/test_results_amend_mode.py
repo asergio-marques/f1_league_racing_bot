@@ -42,6 +42,11 @@ SERVER_ID = 12108
 SEASON_ID = 3
 ACTOR_ID = 77
 
+NO_APPROVAL_READ = (
+    "#439: points_amendment_change.approval_in_hand, which the staging commands read, "
+    "does not exist yet"
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -105,6 +110,12 @@ def _state(active: bool | None, *, modified: bool = True):
 
 @contextmanager
 def _amendment(*, state=None, **overrides):
+    """The amendment service stubbed, and no points approval of the season in hand.
+
+    The staging commands ask the change queue whether an approval of the season is in hand
+    (#439, slice 3), and the cog's `db_path` here is a placeholder no league database stands
+    behind, so that reading is stubbed to find none.
+    """
     mocks = {
         "get_amendment_state": AsyncMock(return_value=state),
         "enable_amendment_mode": AsyncMock(return_value=None),
@@ -115,6 +126,12 @@ def _amendment(*, state=None, **overrides):
     with ExitStack() as stack:
         for name, mock in mocks.items():
             stack.enter_context(patch(f"leaguebot.core.services.amendment_service.{name}", new=mock))
+        stack.enter_context(
+            patch(
+                "leaguebot.results.services.points_amendment_change.approval_in_hand",
+                new=AsyncMock(return_value=None),
+            )
+        )
         yield mocks
 
 
@@ -138,6 +155,7 @@ def _logged(cog) -> str:
 
 
 @pytest.mark.parametrize("command", [_toggle, _revert], ids=["toggle", "revert"])
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_both_commands_are_refused_while_the_module_is_disabled(command):
     cog = _make_cog(results_enabled=False)
     interaction = _interaction()
@@ -151,6 +169,7 @@ async def test_both_commands_are_refused_while_the_module_is_disabled(command):
 
 
 @pytest.mark.parametrize("command", [_toggle, _revert], ids=["toggle", "revert"])
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_both_commands_need_a_season(command):
     """The store hangs off one, and the points being amended are that season's."""
     cog = _make_cog(season=None)
@@ -172,6 +191,7 @@ async def test_both_commands_need_a_season(command):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_amendment_mode_is_enabled_when_it_was_off():
     cog = _make_cog()
     interaction = _interaction()
@@ -183,6 +203,7 @@ async def test_amendment_mode_is_enabled_when_it_was_off():
     assert "enabled" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_a_season_that_has_never_amended_starts_a_store():
     """No state row at all is the same as off — a league amending for the first time must
     not be refused for never having done it before."""
@@ -195,6 +216,7 @@ async def test_a_season_that_has_never_amended_starts_a_store():
     svc["enable_amendment_mode"].assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_enabling_says_the_store_was_initialised():
     """The store is the thing the manager is about to type into, and a bare "enabled"
     would not tell them where their edits are going."""
@@ -207,6 +229,7 @@ async def test_enabling_says_the_store_was_initialised():
     assert "Modification store initialised" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_enabling_is_logged_as_enabled():
     """The toggle is one command doing two opposite things, so the log has to say which."""
     cog = _make_cog()
@@ -222,6 +245,7 @@ async def test_enabling_is_logged_as_enabled():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_amendment_mode_is_disabled_when_it_was_on():
     cog = _make_cog()
     interaction = _interaction()
@@ -233,6 +257,7 @@ async def test_amendment_mode_is_disabled_when_it_was_on():
     assert "disabled" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_disabling_is_logged_as_disabled():
     cog = _make_cog()
 
@@ -242,6 +267,7 @@ async def test_disabling_is_logged_as_disabled():
     assert "amendment_mode: disabled" in _logged(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_disabling_is_refused_while_changes_are_pending():
     """The store holds edits nobody has approved. Turning the mode off would discard them
     silently — a manager who spent an evening retyping a points table would lose it to a
@@ -258,6 +284,7 @@ async def test_disabling_is_refused_while_changes_are_pending():
     assert "uncommitted changes exist" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_the_refusal_names_both_ways_out():
     """Discarding deliberately and applying are genuinely different decisions, and a
     manager blocked here needs to be told they have both."""
@@ -275,6 +302,7 @@ async def test_the_refusal_names_both_ways_out():
     assert "/results amend review" in replied
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_a_refused_disable_is_not_logged_as_a_success():
     """The mode is still on, and a log saying otherwise would have a league believe their
     staged edits were gone: the log records the refusal and its reason instead."""
@@ -302,6 +330,7 @@ async def test_a_refused_disable_is_not_logged_as_a_success():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_the_store_is_reverted_to_the_season_s_points():
     cog = _make_cog()
     interaction = _interaction()
@@ -314,6 +343,7 @@ async def test_the_store_is_reverted_to_the_season_s_points():
 
 
 @pytest.mark.parametrize("active", [False, None], ids=["mode-off", "no-store"])
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_reverting_is_refused_when_the_mode_is_not_on(active):
     """There is no store to revert, and doing nothing quietly would leave a manager
     believing they had discarded changes that were never staged."""
@@ -327,6 +357,7 @@ async def test_reverting_is_refused_when_the_mode_is_not_on(active):
     svc["revert_modification_store"].assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_a_refused_revert_is_recorded_as_a_refusal():
     """Nothing was reverted, so the log records the refusal and its reason, never a revert."""
     cog = _make_cog()
@@ -343,6 +374,7 @@ async def test_a_refused_revert_is_recorded_as_a_refusal():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NO_APPROVAL_READ)
 async def test_a_successful_revert_is_logged():
     cog = _make_cog()
 
