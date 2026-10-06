@@ -655,7 +655,8 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
     (round 5), not at the round the sack was decided at, whose number means nothing there.
 
     Where Max's sack is discarded, Am's sheet is not posted: its only change was his, though
-    Lewis's sanction applied and Pro's sheet is posted again. Where Am has no scored round of its
+    Lewis's sanction applied and Pro's sheet is posted again, marking Lewis alone as having
+    reached the point limit, not Max, whose sack never happened. Where Am has no scored round of its
     own, it has no sheet yet, so none is planned: two sheets, not three (owner, 2026-10-06)."""
     league = await review_league(tmp_path, attendance=True)
     if case != "unscored":
@@ -679,11 +680,13 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
     if case == "discarded":
         league.attendance.apply_fails = {MAX_PROFILE: ValueError("Discord refused the sack")}
     drawn: list[tuple[int, int]] = []
+    marked: list[tuple[int, set[int]]] = []
     recorded = league.attendance.post_sheet
 
     async def _post_sheet(round_id: int, division_id: int, *, sanctioned: Any,
                           as_text: bool) -> None:
         drawn.append((division_id, round_id))
+        marked.append((division_id, set(sanctioned)))
         await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text)
 
     league.attendance.post_sheet = _post_sheet
@@ -697,12 +700,17 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
     sheets = [row for row in await step_rows(league.db_path) if row["name"] == "attendance_sheet"]
     divisions = [division for division, _round in drawn]
     assert divisions[0] == DIVISION_ID
+    assert marked[0] == (DIVISION_ID, set()), "the sheet before the sanctions marks nobody"
     if case == "scored":
         assert len(sheets) == 3
         assert sorted(divisions[1:]) == sorted([DIVISION_ID, OTHER_DIVISION_ID])
         assert (OTHER_DIVISION_ID, OTHER_ROUND_ID) in drawn
+        assert (OTHER_DIVISION_ID, {MAX_PROFILE}) in marked[1:], "Am's sheet marks Max's sack"
     elif case == "discarded":
         assert divisions == [DIVISION_ID, DIVISION_ID]
+        assert marked[1] == (DIVISION_ID, {LEWIS_PROFILE}), (
+            "Pro's sheet after the sanctions marks only the sanction that applied"
+        )
     else:
         assert len(sheets) == 2
         assert divisions == [DIVISION_ID, DIVISION_ID]
