@@ -270,7 +270,12 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
         await db.execute("DELETE FROM session_results")
         await db.commit()
 
-    await record_attendance_from_results_full_recompute(db_file, round_id=1, division_id=10)
+    # The connection is the caller's to hand and to commit: the recompute opens none (#439).
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_full_recompute(
+            db_file, round_id=1, division_id=10, db=db
+        )
+        await db.commit()
 
     async with get_connection(db_file) as db:
         cur = await db.execute("SELECT attended FROM driver_round_attendance WHERE driver_profile_id = 1")
@@ -615,7 +620,11 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
-    await record_attendance_from_results_full_recompute(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_full_recompute(
+            db_file, round_id=1, division_id=10, db=db
+        )
+        await db.commit()
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
     async with get_connection(db_file) as db:
