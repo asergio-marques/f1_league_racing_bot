@@ -429,7 +429,6 @@ async def test_attached_ordering_and_the_season_copy_word_a_fault_the_same_way(d
 # the file collects while they are unbuilt.
 # ---------------------------------------------------------------------------
 
-INSTALL_UNBUILT = "#439: install_staged_points_on is not written yet"
 
 MODE_OFF_REPLY = (
     "❌ Amendment mode is not active. Nothing was changed: these changes were already "
@@ -503,7 +502,6 @@ async def _points_state(db) -> dict:
     }
 
 
-@pytest.mark.xfail(strict=True, reason=INSTALL_UNBUILT)
 async def test_staged_points_are_installed_on_the_save_handed_and_kept_only_when_it_commits(
     db_path,
 ):
@@ -541,7 +539,6 @@ async def test_staged_points_are_installed_on_the_save_handed_and_kept_only_when
     }
 
 
-@pytest.mark.xfail(strict=True, reason=INSTALL_UNBUILT)
 async def test_installing_returns_each_value_changed_by_its_session_label(db_path):
     """What the install returns names every value it changed, before and after, a session by
     its label: the approval's success line and its audit record are formed from it. A value
@@ -565,7 +562,6 @@ async def test_installing_returns_each_value_changed_by_its_session_label(db_pat
 
 
 @pytest.mark.parametrize("case", ["mode off", "out of order"])
-@pytest.mark.xfail(strict=True, reason=INSTALL_UNBUILT)
 async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or_the_table_is_out_of_order(
     db_path, case,
 ):

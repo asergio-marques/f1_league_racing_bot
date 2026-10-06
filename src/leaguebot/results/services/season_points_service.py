@@ -7,6 +7,7 @@ from itertools import groupby
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services import points_config_service
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
@@ -24,6 +25,19 @@ class ConfigAlreadyAttachedError(Exception):
 
 class ConfigNotAttachedError(Exception):
     pass
+
+
+class StagedPointsNotApprovable(Exception):
+    """The staged points cannot be installed, and nothing was written (#507).
+
+    Carries the *reply* the admin is given and the *reason* the refusal's log line is written
+    beneath, as the change queue's refusal takes them.
+    """
+
+    def __init__(self, reply: str, reason: str) -> None:
+        super().__init__(reply)
+        self.reply = reply
+        self.reason = reason
 
 
 async def attach_config(
@@ -340,3 +354,119 @@ async def get_season_config_names(db_path: str, season_id: int) -> list[str]:
         )
         rows = await cursor.fetchall()
     return [r["config_name"] for r in rows]
+
+
+async def install_staged_points_on(db: aiosqlite.Connection, season_id: int) -> PointsChanged:
+    """Make the season's staged points table its own, on *db*, and commit nothing.
+
+    The write an approval of a mid-season amendment is made of: the working copy replaces
+    `season_points_entries` and `season_points_fl`, is emptied, and amendment mode goes off,
+    all on the connection the approval's one save holds, so that they land with the rescoring
+    and the standings or not at all. It returns each value it changed, before and after.
+
+    **It reads before it writes, and refuses having written nothing** (#507): where amendment
+    mode is off, or the working copy is out of order, it raises :class:`StagedPointsNotApprovable`.
+    A panel drawn earlier, or an approval already made, finds the working copy emptied, and
+    installing an empty table would empty the season's points, so every round scored
+    afterwards would score nothing and a penalty's recalculation would move no points. The
+    check at the press catches it first; this one is the backstop for whatever writes the
+    database between that check and the save.
+    """
+    cursor = await db.execute(
+        "SELECT amendment_active FROM season_amendment_state WHERE season_id = ?", (season_id,)
+    )
+    state = await cursor.fetchone()
+    if state is None or not state["amendment_active"]:
+        raise StagedPointsNotApprovable(
+            "❌ Amendment mode is not active. Nothing was changed: these changes were already "
+            "approved, or amendment mode was turned off after this panel was drawn.",
+            "amendment mode is not active",
+        )
+
+    staged = await _points_table(db, "season_modification_entries", "season_modification_fl", season_id)
+    errors = [
+        ordering_message(config_name, session_type, violation)
+        for (config_name, session_type), (positions, _fl) in sorted(staged.items())
+        for violation in ordering_violations(sorted(positions.items()))
+    ]
+    if errors:
+        bullets = "\n• ".join(errors)
+        raise StagedPointsNotApprovable(
+            "❌ Amendment not approved — the points would be out of order:\n"
+            f"• {bullets}\n"
+            "Nothing has been changed. The staged changes are still there to repair.",
+            "the points would be out of order:\n" + "\n".join(errors),
+        )
+
+    current = await _points_table(db, "season_points_entries", "season_points_fl", season_id)
+
+    await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
+    await db.execute(
+        "INSERT INTO season_points_entries (season_id, config_name, session_type, position, points) "
+        "SELECT season_id, config_name, session_type, position, points "
+        "FROM season_modification_entries WHERE season_id = ?",
+        (season_id,),
+    )
+    await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
+    await db.execute(
+        "INSERT INTO season_points_fl (season_id, config_name, session_type, fl_points, "
+        "fl_position_limit) SELECT season_id, config_name, session_type, fl_points, "
+        "fl_position_limit FROM season_modification_fl WHERE season_id = ?",
+        (season_id,),
+    )
+    await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
+    await db.execute(
+        "UPDATE season_amendment_state SET amendment_active = 0, modified_flag = 0 "
+        "WHERE season_id = ?",
+        (season_id,),
+    )
+    return _changed(current, staged)
+
+
+_Table = dict[tuple[str, str], tuple[dict[int, int], tuple[int | None, int | None] | None]]
+
+
+async def _points_table(
+    db: aiosqlite.Connection, entries: str, fastest_laps: str, season_id: int
+) -> _Table:
+    """A season's points as one table keyed by configuration and session type: each
+    position's points, and the fastest lap's points and position limit where it has them."""
+    table: _Table = {}
+    cursor = await db.execute(
+        f"SELECT config_name, session_type, position, points FROM {entries} WHERE season_id = ?",
+        (season_id,),
+    )
+    for row in await cursor.fetchall():
+        key = (row["config_name"], row["session_type"])
+        table.setdefault(key, ({}, None))[0][int(row["position"])] = int(row["points"])
+    cursor = await db.execute(
+        f"SELECT config_name, session_type, fl_points, fl_position_limit FROM {fastest_laps} "
+        "WHERE season_id = ?",
+        (season_id,),
+    )
+    for row in await cursor.fetchall():
+        key = (row["config_name"], row["session_type"])
+        positions = table.setdefault(key, ({}, None))[0]
+        limit = None if row["fl_position_limit"] is None else int(row["fl_position_limit"])
+        table[key] = (positions, (int(row["fl_points"]), limit))
+    return table
+
+
+def _changed(before: _Table, after: _Table) -> PointsChanged:
+    """Each value that differs between two tables, in table order."""
+    changes: list[ValueChange] = []
+    for key in sorted(before.keys() | after.keys()):
+        old_positions, old_fl = before.get(key, ({}, None))
+        new_positions, new_fl = after.get(key, ({}, None))
+        config_name, session_type = key
+        for position in sorted(old_positions.keys() | new_positions.keys()):
+            old, new = old_positions.get(position), new_positions.get(position)
+            if old != new:
+                changes.append(ValueChange(config_name, session_type, f"P{position}", old, new))
+        for index, what in enumerate(("fastest lap", "fastest lap position limit")):
+            old = None if old_fl is None else old_fl[index]
+            new = None if new_fl is None else new_fl[index]
+            if old != new:
+                changes.append(ValueChange(config_name, session_type, what, old, new))
+    return PointsChanged(tuple(changes))
