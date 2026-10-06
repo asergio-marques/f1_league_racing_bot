@@ -11,7 +11,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import (
-    record_attendance_from_results,
+    record_attendance_from_results_on,
     record_attendance_from_results_full_recompute,
     distribute_attendance_points,
 )
@@ -155,7 +155,9 @@ async def test_record_attendance_sets_attended_flags(tmp_path):
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
-    await record_attendance_from_results(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_on(db, round_id=1, division_id=10)
+        await db.commit()
 
     async with get_connection(db_file) as db:
         cur = await db.execute(
@@ -185,7 +187,9 @@ async def test_record_attendance_excludes_reserve_team_drivers(tmp_path):
         await _add_session_result(db, round_id=1, driver_profile_id=3, user_id=1003)
         await db.commit()
 
-    await record_attendance_from_results(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_on(db, round_id=1, division_id=10)
+        await db.commit()
 
     async with get_connection(db_file) as db:
         cur = await db.execute(
@@ -216,14 +220,18 @@ async def test_record_attendance_upgrades_absent_to_present(tmp_path):
         await _add_session_result(db, round_id=1, driver_profile_id=2, user_id=1002)
         await db.commit()
 
-    await record_attendance_from_results(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_on(db, round_id=1, division_id=10)
+        await db.commit()
 
     # Second call: driver 1 now has a result too (late session)
     async with get_connection(db_file) as db:
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
-    await record_attendance_from_results(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_on(db, round_id=1, division_id=10)
+        await db.commit()
 
     async with get_connection(db_file) as db:
         cur = await db.execute(
@@ -252,7 +260,9 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
-    await record_attendance_from_results(db_file, round_id=1, division_id=10)
+    async with get_connection(db_file) as db:
+        await record_attendance_from_results_on(db, round_id=1, division_id=10)
+        await db.commit()
 
     # Remove result rows to simulate amendment correcting a wrong entry
     async with get_connection(db_file) as db:

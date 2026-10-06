@@ -1,11 +1,16 @@
 """Unit tests for penalty_service (T033)."""
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
 from tests.support.teams import seed_team_instances
+
+#: The time a penalty is stamped with where its staged penalty carries none of its own.
+_NOW = datetime.datetime(2026, 3, 1, 20, 0, tzinfo=datetime.timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +312,7 @@ def test_negative_penalty_cumulative_second_reduction_rejected():
 async def test_apply_negative_penalty_reorders(tmp_path):
     """Driver with a -10s penalty moves above a driver with no penalty."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -349,12 +354,6 @@ async def test_apply_negative_penalty_reorders(tmp_path):
         )
         await db.commit()
 
-    class _FakeBot:
-        class output_router:
-            @staticmethod
-            async def post_log(*_a, **_kw):
-                pass
-
     staged = [
         StagedPenalty(
             driver_user_id=1,
@@ -363,7 +362,9 @@ async def test_apply_negative_penalty_reorders(tmp_path):
             penalty_seconds=-15,  # -15s on P1 → 1200000 - 15000 = 1185000ms < 1210000ms → P1 stays P1
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -382,7 +383,7 @@ async def test_apply_negative_penalty_reorders(tmp_path):
 async def test_apply_negative_penalty_reorders_move_up(tmp_path):
     """P2 driver with -15s total adjusted time moves to P1 if beats P1."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -424,12 +425,6 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
         )
         await db.commit()
 
-    class _FakeBot:
-        class output_router:
-            @staticmethod
-            async def post_log(*_a, **_kw):
-                pass
-
     # Give driver 2 a -20s: 1210000ms - 20000ms = 1190000ms < 1200000ms → driver 2 becomes P1
     staged = [
         StagedPenalty(
@@ -439,7 +434,9 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
             penalty_seconds=-20,
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -456,7 +453,7 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
 async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
     """Two drivers with identical post-penalty times keep their original order."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -500,12 +497,6 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
         )
         await db.commit()
 
-    class _FakeBot:
-        class output_router:
-            @staticmethod
-            async def post_log(*_a, **_kw):
-                pass
-
     staged = [
         StagedPenalty(
             driver_user_id=1,
@@ -514,7 +505,9 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
             penalty_seconds=-10,  # P1 (1210000 - 10000 = 1200000ms) ties with P2 (1200000ms)
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -533,7 +526,7 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
 async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     """AC7: DSQ on fastest-lap holder forfeits the bonus; no other driver gains it."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
     from leaguebot.results.services.standings_service import compute_points_for_session
     from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap
     from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
@@ -581,12 +574,6 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
         )
         await db.commit()
 
-    class _FakeBot:
-        class output_router:
-            @staticmethod
-            async def post_log(*_a, **_kw):
-                pass
-
     staged = [
         StagedPenalty(
             driver_user_id=1,
@@ -595,7 +582,9 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
             penalty_seconds=None,
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     # Verify: after DSQ, driver 1's fast-lap bonus is 0
     # and driver 2 does NOT gain the bonus (not redistributed)
@@ -623,13 +612,6 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
 # ---------------------------------------------------------------------------
 # No further action alters no classification (#138)
 # ---------------------------------------------------------------------------
-
-
-class _QuietBot:
-    class output_router:
-        @staticmethod
-        async def post_log(*_a, **_kw):
-            pass
 
 
 async def _seed_one_session(tmp_path, session_type: str) -> tuple[str, int, int, int]:
@@ -700,7 +682,7 @@ def _nfa(session_type: SessionType) -> StagedPenalty:
 @pytest.mark.parametrize("phase", ["PENALTY", "APPEAL"])
 async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_path, phase):
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
     columns = (
@@ -718,17 +700,19 @@ async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_pa
             return [dict(r) for r in await cursor.fetchall()]
 
     before = await _rows()
-    await apply_penalties(
-        db_path, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, _QuietBot(),
-        _phase=phase,
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(
+            db, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, now=_NOW,
+            _phase=phase,
+        )
+        await db.commit()
 
     assert await _rows() == before
 
 
 async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(tmp_path):
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(
         tmp_path, "FEATURE_QUALIFYING"
@@ -744,10 +728,11 @@ async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(
             return [dict(r) for r in await cursor.fetchall()]
 
     before = await _rows()
-    await apply_penalties(
-        db_path, round_id, division_id, [_nfa(SessionType.FEATURE_QUALIFYING)], 999,
-        _QuietBot(),
-    )
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(
+            db, round_id, division_id, [_nfa(SessionType.FEATURE_QUALIFYING)], 999, now=_NOW,
+        )
+        await db.commit()
 
     assert await _rows() == before
 
@@ -756,13 +741,15 @@ async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     """It alters nothing, but it is still a decision, and the round's verdicts are read from
     the record — its announcement and an amendment's replay both need it there."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
 
-    inserted = await apply_penalties(
-        db_path, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, _QuietBot(),
-    )
+    async with get_connection(db_path) as db:
+        inserted = await apply_penalties_on(
+            db, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, now=_NOW,
+        )
+        await db.commit()
 
     assert [(r["driver_user_id"], r["penalty_type"], r["time_seconds"]) for r in inserted] == [
         (1, "NFA", None)
@@ -786,7 +773,7 @@ async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tm
     """The guard is on sessions only no further action touches. A real sanction in the same
     session re-sorts it as it always has."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
     staged = [
@@ -799,7 +786,9 @@ async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tm
         ),
     ]
 
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _QuietBot())
+    async with get_connection(db_path) as db:
+        await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -813,25 +802,26 @@ async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tm
 
 
 # ---------------------------------------------------------------------------
-# apply_penalties applies and nothing more (#482, F1)
+# apply_penalties_on applies and nothing more (#482, F1)
 #
 # Every caller is an approval or amendment stage that reposts the round and writes the
-# action's one line itself, so apply_penalties neither reposts nor logs.
+# action's one line itself, so apply_penalties_on neither reposts nor logs.
 # ---------------------------------------------------------------------------
 
 
-async def test_apply_penalties_neither_reposts_nor_logs(tmp_path):
+async def test_apply_penalties_on_neither_reposts_nor_logs(tmp_path):
     import inspect
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import AsyncMock, patch
 
+    from leaguebot.core.db.database import get_connection
     from leaguebot.results.services import results_post_service as rps
-    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.penalty_service import apply_penalties_on
 
-    assert "_skip_post" not in inspect.signature(apply_penalties).parameters
+    parameters = inspect.signature(apply_penalties_on).parameters
+    assert "_skip_post" not in parameters
+    assert "bot" not in parameters, "it is handed no bot, so it has no log channel to post to"
 
     db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock()
     recompute = AsyncMock()
     repost = AsyncMock(return_value=[])
     staged = [
@@ -845,12 +835,13 @@ async def test_apply_penalties_neither_reposts_nor_logs(tmp_path):
 
     with patch.object(rps, "recompute_standings_from_round", new=recompute), \
             patch.object(rps, "repost_round_results", new=repost):
-        inserted = await apply_penalties(db_path, round_id, division_id, staged, 999, bot)
+        async with get_connection(db_path) as db:
+            inserted = await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
+            await db.commit()
 
     assert [r["driver_user_id"] for r in inserted] == [2]
     recompute.assert_not_awaited()
     repost.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
