@@ -820,6 +820,36 @@ async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, line
     assert [step.name for step in result.then] == (["announce_heading"] if headed else [])
 
 
+async def test_a_fault_working_out_the_cards_heading_comes_before_the_sanction_is_applied(
+    tmp_path, monkeypatch,
+):
+    """Whether the cards need a heading is worked out before the sanction is applied, so a
+    fault in reading the round's banners fails the job with nothing applied. Applied ahead of the
+    fault, the sanction would be found no longer owed on Retry, its job dropped and its card
+    never posted."""
+    from leaguebot.results.services import review_verdicts
+    from leaguebot.results.services import verdict_announcement_service
+
+    league = await review_league(tmp_path, attendance=True)
+
+    async def _unreadable(_db_path: str, _round_id: int) -> Any:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(verdict_announcement_service, "_banners_of", _unreadable)
+    hook = MagicMock()
+    hook.apply_sanction = AsyncMock(return_value="ATTENDANCE_AUTORESERVE | x")
+    ctx = MagicMock()
+    ctx.db_path = league.db_path
+    ctx.steps = ()
+    ctx.step_payload = {"round_id": ROUND_ID, "division_id": DIVISION_ID,
+                        "candidate": candidate(MAX_PROFILE, MAX)}
+
+    with pytest.raises(RuntimeError, match="database is locked"):
+        await review_verdicts._apply_sanction(ctx, hook)
+
+    hook.apply_sanction.assert_not_awaited()
+
+
 async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]

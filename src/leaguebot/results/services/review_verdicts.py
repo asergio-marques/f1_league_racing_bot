@@ -663,7 +663,15 @@ async def _sanction_heading(ctx: StepContext) -> tuple[PlannedStep, ...]:
 
 
 async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
+    """Apply one driver's sanction and, where it is the first to apply with no heading standing,
+    plan the heading over the cards.
+
+    The heading is worked out before the sanction is applied, so that a fault in the reads it
+    takes fails the job with nothing applied: applied ahead of the fault, the sanction would be
+    found no longer owed on Retry, its job dropped and its card never posted. It is planned only
+    where the sanction applied."""
     payload = ctx.step_payload
+    heading = await _sanction_heading(ctx)
     try:
         line = await hook.apply_sanction(
             int(payload["round_id"]), int(payload["division_id"]), payload["candidate"], None
@@ -672,8 +680,7 @@ async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
     # None is the hook's word that attendance is off and nothing was applied: no card follows,
     # so there is nothing to head.
-    heading = () if line is None else await _sanction_heading(ctx)
-    return StepResult(lines=(line,) if line else (), then=heading)
+    return StepResult(lines=(line,) if line else (), then=() if line is None else heading)
 
 
 async def _describe_announce(ctx: StepContext) -> str:
