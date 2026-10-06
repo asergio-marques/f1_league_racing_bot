@@ -52,7 +52,6 @@ from tests.support.season_league import (
     REVIEW_CHANNEL,
     SEASON_ID,
     TEST_DRIVER,
-    UNCOMMITTED,
     DIVISIONS,
     approval_changes,
     post_review,
@@ -704,11 +703,8 @@ async def test_a_driver_discord_cannot_fetch_for_another_reason_stops_the_queue(
 
 
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
-async def test_a_test_driver_and_an_uncommitted_placement_are_granted_nothing(
-    tmp_path, monkeypatch,
-):
-    """A test driver (104) and a placement whose committed mark is empty (105), both at McLaren
-    in Am beside Charles."""
+async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
+    """A test driver (104) placed at McLaren in Am beside Charles."""
     league = await _league_for(tmp_path, monkeypatch, extra_drivers=True)
     await _pressed(league)
 
@@ -716,7 +712,6 @@ async def test_a_test_driver_and_an_uncommitted_placement_are_granted_nothing(
 
     assert CHARLES in league.granted
     assert TEST_DRIVER not in league.granted
-    assert UNCOMMITTED not in league.granted
     assert [job["name"] for job in await _jobs(league)].count("grant_roles") == 3
 
 

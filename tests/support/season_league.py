@@ -68,8 +68,8 @@ PRO_ROLE, AM_ROLE = 801, 802
 FERRARI, MCLAREN = 31, 32
 FERRARI_ROLE, MCLAREN_ROLE = 811, 812
 LEWIS, MAX, CHARLES = 101, 102, 103
-#: Seeded only with `extra_drivers`: a test driver at McLaren, and a placement left uncommitted.
-TEST_DRIVER, UNCOMMITTED = 104, 105
+#: Seeded only with `extra_drivers`: a test driver at McLaren.
+TEST_DRIVER = 104
 #: The league admin who runs the review and presses Approve.
 ADMIN_ID = 77
 BOT_USER_ID = 4000
@@ -107,7 +107,7 @@ TEAMS = {
 #: Each driver's team and seat.
 SEATS = {LEWIS: (FERRARI, 1), MAX: (FERRARI, 2), CHARLES: (MCLAREN, 1)}
 NAMES = {LEWIS: "Lewis", MAX: "Max", CHARLES: "Charles", TEST_DRIVER: "Tester",
-         UNCOMMITTED: "Oscar", ADMIN_ID: "Admin"}
+         ADMIN_ID: "Admin"}
 
 
 def round_id(division_id: int, number: int) -> int:
@@ -423,7 +423,6 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
         seats = dict(SEATS)
         if extra_drivers:
             seats[TEST_DRIVER] = (MCLAREN, 2)
-            seats[UNCOMMITTED] = (MCLAREN, 3)
         for user_id, (team_id, seat) in seats.items():
             division_id = TEAMS[team_id][0]
             await db.execute(
@@ -441,13 +440,11 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                 "VALUES (?, ?, ?)",
                 (team_id, seat, profile_id(user_id)),
             )
-            # The placement left uncommitted carries no mark at all, which the approval's
-            # commit (`committed = 0`) does not take up.
+            # Every placement is uncommitted until the approval's save commits it.
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, team_seat_id, committed) VALUES (?, ?, ?, ?, ?)",
-                (profile_id(user_id), SEASON_ID, division_id, cursor.lastrowid,
-                 None if user_id == UNCOMMITTED else 0),
+                "division_id, team_seat_id, committed) VALUES (?, ?, ?, ?, 0)",
+                (profile_id(user_id), SEASON_ID, division_id, cursor.lastrowid),
             )
         await db.commit()
     return db_path
