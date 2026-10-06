@@ -10,6 +10,7 @@ Everything of the queue is imported inside a test, so this file collects while i
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
@@ -2178,3 +2179,283 @@ async def test_the_queue_gives_its_clock_as_now(env):
     assert queue.now() == NOW
     env.clock.advance(minutes=90)
     assert queue.now() == NOW + timedelta(minutes=90)
+
+
+# ---------------------------------------------------------------------------
+# Whether a change's reply can still be updated, and a refusal at run that asks a change of its
+# own (#439, slice 4a: the season's approval tells the review's channel what its member can no
+# longer be told)
+# ---------------------------------------------------------------------------
+
+_NO_REPLY_UPDATABLE = "#439: a step's context does not yet say whether its change's reply can be updated"
+_NO_REFUSAL_HOOK = "#439: a change type cannot yet ask a change of its own when its check refuses at run"
+
+
+def _hooked(change_type: Any, hook: Any) -> Any:
+    """*change_type* with *hook* as its refusal hook (`ChangeType.on_refused`)."""
+    return dataclasses.replace(change_type, on_refused=hook)
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_REPLY_UPDATABLE)
+async def test_a_step_reads_whether_its_change_s_reply_can_still_be_updated(env):
+    """A member's change held and acknowledged under fourteen minutes ago can still have its reply
+    updated; one fourteen minutes on, a bot's change, and a change carried over a restart cannot."""
+    api = _api()
+    seen: list[Any] = []
+
+    async def _read(ctx):
+        seen.append(getattr(ctx, "reply_updatable", "no such field"))
+        return api.StepResult()
+
+    _queue(env, _type(steps=[api.Step("a", api.StepKind.ACT, _read)]))
+
+    await _ask(env, payload={"n": 1})
+    await run_queue(env.bot)
+    await _ask(env, payload={"n": 2})
+    env.clock.advance(minutes=14)
+    await run_queue(env.bot)
+    await _ask(env, payload={"n": 3}, origin=api.ChangeOrigin.BOT)
+    await run_queue(env.bot)
+    await _ask(env, payload={"n": 4})
+    await restart_queue(env.bot)
+    try:
+        await run_queue(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert seen == [True, False, False, False]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
+async def test_a_refusal_hook_asks_its_follow_ons_in_the_refusal_s_own_save(env):
+    """A member's change refused as it starts, whose type's refusal hook returns a follow-on: the
+    change is refused with its line, and the follow-on is queued as the bot's for the same member,
+    with a job numbered after the refused change's, and runs. Where the refusal's save fails, it
+    leaves neither the refusal nor the follow-on."""
+    api = _api()
+    holder = {"refuse": False}
+    told: list[str] = []
+    seen: list[Any] = []
+
+    def _hook(ctx):
+        seen.append(ctx)
+        n = ctx.payload["n"]
+        return (api.FollowOn("tell", {"n": n}, f"Telling of refusal {n}"),)
+
+    _queue(
+        env,
+        _hooked(_type(steps=[_act("a", [])], check=_check_refusing_when(holder)), _hook),
+        _type("tell", steps=[_act("tell", told)]),
+    )
+
+    await _ask(env, payload={"n": 1})
+    holder["refuse"] = True
+    await run_queue(env.bot)
+
+    rows = await change_rows(env.db_path)
+    assert [(r["kind"], r["origin"], r["state"]) for r in rows] == [
+        ("dummy", "MEMBER", "REFUSED"), ("tell", "BOT", "DONE"),
+    ]
+    assert rows[1]["actor_id"] == MEMBER_ID
+    assert rows[1]["what"] == "Telling of refusal 1"
+    assert json.loads(rows[1]["payload"]) == {"n": 1}
+    refused_jobs = await step_rows(env.db_path, rows[0]["id"])
+    told_jobs = await step_rows(env.db_path, rows[1]["id"])
+    assert [job["name"] for job in told_jobs] == ["tell"]
+    assert told_jobs[0]["id"] > max(job["id"] for job in refused_jobs)
+    assert told == ["tell"]
+    assert f"⛔ {WHAT} refused for {NAMED} — Not now." in "\n".join(await _lines(env))
+    assert len(seen) == 1
+    assert (seen[0].payload, seen[0].reply, seen[0].actor_id, seen[0].what) == (
+        {"n": 1}, "⚠️ Not now.", MEMBER_ID, WHAT,
+    )
+
+    async with get_connection(env.db_path) as db:  # the save fails once the state is written
+        await db.execute(
+            "CREATE TRIGGER the_save_fails BEFORE INSERT ON queued_changes "
+            "WHEN NEW.kind = 'tell' BEGIN SELECT RAISE(ABORT, 'the save fails'); END"
+        )
+        await db.commit()
+    holder["refuse"] = False
+    await _ask(env, payload={"n": 2})
+    holder["refuse"] = True
+    with contextlib.suppress(sqlite3.DatabaseError):
+        await run_queue(env.bot)
+
+    assert [(r["kind"], r["state"]) for r in await change_rows(env.db_path)] == [
+        ("dummy", "REFUSED"), ("tell", "DONE"), ("dummy", "QUEUED"),
+    ]
+    assert "\n".join(await _lines(env)).count(f"⛔ {WHAT} refused for {NAMED}") == 1
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
+async def test_the_refusal_hook_is_told_whether_the_reply_can_still_be_updated(env):
+    """Refused as it starts: held and fresh, the reply can be updated; fourteen minutes on, or after
+    a restart, it cannot."""
+    holder = {"refuse": False}
+    seen: list[bool] = []
+
+    def _hook(ctx):
+        seen.append(ctx.reply_updatable)
+        return ()
+
+    _queue(env, _hooked(_type(steps=[_act("a", [])], check=_check_refusing_when(holder)), _hook))
+
+    async def _refused_at_run(n: int, meanwhile=None) -> None:
+        holder["refuse"] = False
+        await _ask(env, payload={"n": n})
+        holder["refuse"] = True
+        if meanwhile is not None:
+            await meanwhile()
+        await run_queue(env.bot)
+
+    async def _fourteen_minutes() -> None:
+        env.clock.advance(minutes=14)
+
+    async def _restart() -> None:
+        await restart_queue(env.bot)
+
+    await _refused_at_run(1)
+    await _refused_at_run(2, _fourteen_minutes)
+    try:
+        await _refused_at_run(3, _restart)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert seen == [True, False, False]
+    assert await _states(env) == ["REFUSED", "REFUSED", "REFUSED"]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
+async def test_the_refusal_hook_is_never_asked_at_the_press_for_a_bot_change_or_for_a_stop(env):
+    """Refused when it is asked for, a bot's change refused (stopping the queue) or no longer due
+    (dropped), and a member's change whose check raises: the hook is asked for none of them. It is
+    asked for a member's change refused as it starts."""
+    api = _api()
+    mode = {"verdict": "go"}
+    asked: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("⚠️ Not now.", "not now")
+        if mode["verdict"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    def _hook(ctx):
+        asked.append(ctx.payload["n"])
+        return ()
+
+    _queue(env, _hooked(_type(steps=[_act("a", [])], check=_check), _hook))
+
+    async def _checked_at_run(n: int, verdict: str, **ask) -> None:
+        mode["verdict"] = "go"
+        await _ask(env, payload={"n": n}, **ask)
+        mode["verdict"] = verdict
+        await run_queue(env.bot)
+
+    mode["verdict"] = "refuse"
+    await _ask(env, payload={"n": 1})
+    await run_queue(env.bot)
+    await _checked_at_run(2, "refuse", origin=api.ChangeOrigin.BOT)
+    assert await stopped_job(env.db_path) is not None
+    await discard_job(env.bot)
+    await _checked_at_run(3, "not_due", origin=api.ChangeOrigin.BOT)
+    await _checked_at_run(4, "raise")
+    assert await stopped_job(env.db_path) is not None
+    await discard_job(env.bot)
+
+    assert asked == []
+    assert await _states(env) == ["DISCARDED", "DROPPED", "DISCARDED"]
+
+    await _checked_at_run(5, "refuse")
+
+    assert asked == [5]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
+async def test_a_change_type_without_a_refusal_hook_is_refused_as_before(env):
+    """A change type declares no refusal hook unless it is given one; refused as it starts, its
+    member's change is refused as it always was, the reply updated where it can be, and asks no
+    change of its own, whether or not the reply can still be updated."""
+    api = _api()
+    hook = next((f for f in dataclasses.fields(api.ChangeType) if f.name == "on_refused"), None)
+    assert hook is not None and hook.default is None
+    holder = {"refuse": False}
+    ran: list[str] = []
+    _queue(env, _type(steps=[_act("a", ran)], check=_check_refusing_when(holder)))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, payload={"n": 1}, interaction=interaction)
+    holder["refuse"] = True
+    await run_queue(env.bot)
+    holder["refuse"] = False
+    await _ask(env, payload={"n": 2})
+    holder["refuse"] = True
+    env.clock.advance(minutes=15)
+    await run_queue(env.bot)
+
+    assert updated_reply(interaction) == "⚠️ Not now."
+    assert "\n".join(await _lines(env)).count(f"⛔ {WHAT} refused for {NAMED} — Not now.") == 2
+    assert await _states(env) == ["REFUSED", "REFUSED"]
+    assert ran == []
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
+async def test_a_refusal_hook_that_raises_stops_the_queue_at_the_change_and_a_discard_drops_it_whole(env):
+    """A member's change refused as it starts whose hook raises: the queue stops at the change's
+    first job, as for a check that raises, its notice naming the change and the kind of fault;
+    nothing of the refusal is saved. A Retry runs the check and the hook again; a Discard drops the
+    change whole, and the change behind it runs."""
+    api = _api()
+    holder = {"refuse": False}
+    checks: list[str] = []
+    hooks: list[str] = []
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        checks.append("checked")
+        return api.Verdict.refuse("⚠️ Not now.") if holder["refuse"] else api.Verdict.go()
+
+    def _hook(ctx):
+        hooks.append(ctx.what)
+        raise RuntimeError("the hook broke")
+
+    _queue(
+        env,
+        _hooked(_type(steps=[_act("a", ran), _act("b", ran)], check=_check), _hook),
+        _type("later", steps=[_act("later", ran)]),
+    )
+
+    await _ask(env)
+    await _ask(env, "later")
+    holder["refuse"] = True
+    await run_queue(env.bot)
+
+    assert await _states(env) == ["QUEUED", "QUEUED"]
+    assert (await stopped_job(env.db_path))["name"] == "a"
+    lines = await _lines(env)
+    stop = [line for line in lines if "The queue is stopped at job #" in line]
+    assert len(stop) == 1
+    assert WHAT in stop[0] and "(RuntimeError)" in stop[0]
+    assert not any("refused for" in line for line in lines)
+    assert len(await change_rows(env.db_path)) == 2
+    assert hooks == [WHAT]
+
+    tried = len(checks)
+    await retry_job(env.bot)
+
+    assert len(checks) == tried + 1
+    assert hooks == [WHAT, WHAT]
+    assert await _states(env) == ["QUEUED", "QUEUED"]
+
+    await discard_job(env.bot)
+
+    assert await _states(env) == ["DISCARDED", "DONE"]
+    assert ran == ["later"]
+    lines = await _lines(env)
+    assert any("| Discard job #" in line and "| Discarded" in line for line in lines)
+    assert not any("refused for" in line for line in lines)
+    assert len(await change_rows(env.db_path)) == 2
