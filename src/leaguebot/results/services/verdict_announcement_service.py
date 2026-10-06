@@ -248,8 +248,8 @@ def _banner_once(bot: LeagueBot, channel, ctx: dict):
     **One of these covers a whole approval, not one function.** Approving a penalty review
     posts the penalty verdicts and then, further down the same call, the attendance
     sanctions that review's scoring triggered — into the same channel, for the same round.
-    They are one run of verdicts as a league reads them, so `finalize_penalty_review` builds
-    one poster with `banner_for_round` and hands it to both paths; the second finds it
+    They are one run of verdicts as a league reads them, so a caller posting both builds one
+    poster with `banner_for_round` and hands it to both paths; the second finds it
     already spent. An attendance sanction firing where no penalty was applied heads itself,
     which is the case a per-function poster left bare (decided 2026-09-09).
 
@@ -324,7 +324,7 @@ def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
 
     The same callable as :func:`_banner_once`, resolving the round's context and channel on
     the first call rather than being handed them. That is what lets a caller holding neither
-    — `finalize_penalty_review`, which knows only the round — build one poster and pass it
+    — one that knows only the round — build one poster and pass it
     to the several paths that post verdicts beneath it.
 
     Resolving lazily costs nothing where no verdict follows: an approval applying no penalty

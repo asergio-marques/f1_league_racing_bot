@@ -1088,7 +1088,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 
             # --- Determine attendance from session results directly (FR-007).
             #     The pre-computed attended flag on the DRA row is not populated
-            #     until finalize_penalty_review, so we query results here instead.
+            #     until the report approval's save, so we query results here instead.
             #     A driver is considered attended if they appear in ANY active
             #     session result for this round. ---
             cursor = await db.execute(

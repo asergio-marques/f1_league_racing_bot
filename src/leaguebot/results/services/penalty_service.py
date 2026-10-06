@@ -575,7 +575,7 @@ def reports_only(penalty_rows: list, appeal_rows: list) -> list:
 def _record_shape(row) -> tuple:
     """What makes two verdict records the same sanction, for pairing an appeal to its penalty.
 
-    **The text is part of it.** ``finalize_appeals_review`` writes the ``appeal_records`` row and
+    **The text is part of it.** ``_apply_staged_appeals_on`` writes the ``appeal_records`` row and
     the ``penalty_records`` row from the *same* ``StagedPenalty``, copying the description and
     the justification into both, so a genuine pair always agrees on all six fields.
 

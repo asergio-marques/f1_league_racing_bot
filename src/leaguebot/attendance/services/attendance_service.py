@@ -2219,8 +2219,8 @@ async def cascade_attendance_from_round(
     """Award *round_id*'s attendance points and carry the new totals through every later
     finalised round, in one transaction. Returns the ids of the rounds it touched.
 
-    What `finalize_penalty_review` calls where it once called `distribute_attendance_points`
-    alone (#238). A driver's total is the sum of their rounds, but a copy of the answer is
+    What a round's report approval calls, through attendance's hook, where it once called
+    `distribute_attendance_points` alone (#238). A driver's total is the sum of their rounds, but a copy of the answer is
     stored on every round's row as ``total_points_after``, and the sheet and the sanctions
     read a copy rather than the sum. Amending round 3 of ten and correcting only round 3's
     copy left rounds 4 to 10 holding a total worked out from the old figure — which the
