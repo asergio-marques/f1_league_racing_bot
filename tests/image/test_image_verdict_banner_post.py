@@ -248,8 +248,8 @@ async def test_an_approval_with_nothing_to_post_posts_no_banner(flow, monkeypatc
     The rule the three posting paths each hold to separately, asserted once as the rule it
     is. Every one of them calls the poster immediately before a verdict that is actually
     going out and never before deciding there is one, so an approval that applies no
-    penalty and sanctions nobody never calls it at all. `finalize_penalty_review` builds
-    the poster unconditionally, so building one must itself cost nothing.
+    penalty and sanctions nobody never calls it at all. A caller may build the poster
+    unconditionally, so building one must itself cost nothing.
     """
 
     async def _boom(*_a, **_k):

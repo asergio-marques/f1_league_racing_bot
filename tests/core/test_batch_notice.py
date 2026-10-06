@@ -83,7 +83,7 @@ async def test_nothing_is_deleted_when_nothing_was_posted():
 
 
 async def test_a_notice_already_gone_is_not_an_error():
-    """`finalize_appeals_review` deletes the whole submission channel just after its
+    """The appeals approval deletes the whole submission channel just after its
     batch, so losing the message with it is ordinary, not a fault."""
     channel, message = _channel()
     message.delete = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
