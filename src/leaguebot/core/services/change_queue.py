@@ -674,8 +674,11 @@ class ChangeQueue:
                 # Look again: nothing may be left to set the signal, and a change the fault
                 # left QUEUED would otherwise wait for the next ask or a restart.
                 continue
+            # The wait is built only once the time to the next try is known, so a cancel while
+            # that is read drops no coroutine unawaited.
+            wait = await self._seconds_to_next_try()
             try:
-                await asyncio.wait_for(self._signal.wait(), await self._seconds_to_next_try())
+                await asyncio.wait_for(self._signal.wait(), wait)
             except asyncio.TimeoutError:
                 pass
 
