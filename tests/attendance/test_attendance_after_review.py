@@ -266,6 +266,57 @@ async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp
     assert placement.move_driver.await_args.kwargs["team_name"] == "Reserve"
 
 
+async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_path):
+    """The queue writes a job's lines in the save that marks it done, so a stop between a line
+    posted from the job and that mark would leave a line for a job tried again. The hook applies
+    Lewis's autosack and Max's autoreserve and returns each line, posting none; the sanction job
+    carries the line its hook returns in its result. `/attendance sync` calls attendance's own
+    `apply_sanction` with its default, which still posts the line."""
+    from leaguebot.attendance.services import attendance_service
+    from leaguebot.results.services import review_verdicts
+
+    db_path = await _db(tmp_path)
+    await _totals(db_path, LATEST_ROUND, {LEWIS: 25, MAX: 12})
+    bot = _bot(db_path)
+    hook = _hook(bot, _placement())
+    lines = {}
+    for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
+                       key=lambda c: c["driver_profile_id"]):
+        lines[owed["driver_profile_id"]] = await hook.apply_sanction(
+            LATEST_ROUND, DIVISION_ID, owed, None
+        )
+
+    assert lines[LEWIS].startswith("ATTENDANCE_AUTOSACK | ")
+    assert f"driver_profile_id={LEWIS}" in lines[LEWIS]
+    assert lines[MAX].startswith("ATTENDANCE_AUTORESERVE | ")
+    assert lines[MAX].endswith("→ moved to Reserve")
+    bot.output_router.post_log.assert_not_awaited()
+
+    double = MagicMock()
+    double.apply_sanction = AsyncMock(return_value=lines[LEWIS])
+    ctx = MagicMock()
+    ctx.step_payload = {"round_id": LATEST_ROUND, "division_id": DIVISION_ID,
+                        "candidate": {"driver_profile_id": LEWIS, "sanction": "AUTOSACK"}}
+
+    result = await review_verdicts._apply_sanction(ctx, double)
+
+    assert tuple(result.lines) == (lines[LEWIS],)
+
+    synced = tmp_path / "synced"
+    synced.mkdir()
+    db_path = await _db(synced)
+    await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
+    bot = _bot(db_path)
+    [owed] = await _hook(bot, _placement()).sanction_candidates(LATEST_ROUND, DIVISION_ID)
+
+    line = await attendance_service.apply_sanction(
+        bot, bot.get_guild(1), db_path, _placement(), LATEST_ROUND, DIVISION_ID, owed,
+    )
+
+    assert line.startswith("ATTENDANCE_AUTOSACK | ")
+    bot.output_router.post_log.assert_awaited_once_with(line)
+
+
 async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(tmp_path):
     """Defect 4: the sheet's failure stops the queue and is retried there, so it raises
     `StepFailedOnDiscord`; nothing is put on the old retry queue, and the sheet posted earlier is
