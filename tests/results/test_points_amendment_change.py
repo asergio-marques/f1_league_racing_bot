@@ -75,6 +75,8 @@ MODE_OFF = (
 )
 NOT_PUBLISHED = "⛔ Amendment not approved — the result could not be published:"
 OUT_OF_ORDER = "❌ Amendment not approved — the points would be out of order:"
+#: The ordering error for P2 staged at 30 over P1 staged at 26.
+ORDERING_ERROR = "Config 'Standard', FEATURE_RACE: position 1 (26 pts) < position 2 (30 pts)"
 NOTHING_CHANGED = (
     "Nothing was changed: the season keeps its points, the staged changes stay staged and "
     "amendment mode stays on. Run `/results amend review` again."
@@ -410,7 +412,7 @@ async def _cancelled_attendance_lost(league: Any) -> None:
     pytest.param(_round_amended, {},
                  "⏸️ Not approved yet. Round 3 of **Pro** is being amended in <#706>.", None,
                  id="round-amendment-open"),
-    pytest.param(_out_of_order, {}, OUT_OF_ORDER, "STD", id="out-of-order"),
+    pytest.param(_out_of_order, {}, OUT_OF_ORDER, ORDERING_ERROR, id="out-of-order"),
     pytest.param(_undeliverable, {}, NOT_PUBLISHED,
                  "**Pro** — the results channel (id 700) is not in the server.",
                  id="undeliverable"),
@@ -422,8 +424,10 @@ async def test_the_press_is_refused_at_once_in_today_s_words(
     tmp_path, setup, options, expected, detail,
 ):
     """A panel drawn while the approval could be made; then the condition changes, and Approve
-    is pressed. The press is answered with the refusal, one ⛔ line names it, nothing is queued
-    and the season, its working copy and amendment mode stay as they stood."""
+    is pressed. The press is answered with the refusal, one ⛔ line names it with its detail
+    (the positions at fault, the channel lost) written beneath, nothing is queued and the
+    season, its working copy and amendment mode stay as they stood. The ordering's line says
+    nothing of publishing, so the two refusals are told apart."""
     league = await points_league(tmp_path, **options)
     panel = await open_panel(league)
     await setup(league)
@@ -434,11 +438,14 @@ async def test_the_press_is_refused_at_once_in_today_s_words(
 
     reply = acknowledgement(press)
     assert reply.startswith(expected)
-    if detail is not None and detail != "STD":
-        assert detail in reply
     lines = _refusal_lines(league)
     assert len(lines) == 1
     assert lines[0].split("\n")[0].endswith(f"— {reply.split(chr(10))[0]}")
+    if detail is not None:
+        assert detail in reply
+        assert detail in lines[0].partition("\n")[2]
+    if expected == OUT_OF_ORDER:
+        assert "published" not in lines[0]
     assert len(await _approvals(league)) == asked
     assert await points_state(league) == before
 
