@@ -172,9 +172,7 @@ and hands it to the review's change types, so results imports nothing of attenda
 `.importlinter` exception for it is gone. Each method checks attendance's switch itself, on the
 connection it is handed where it writes, and does nothing while the module is off; a change type
 asks the hook without asking whether attendance is on. The placement service, which a sanction
-moves seats through, is handed to the hook by the builder and not looked up on the bot. Results
-calls no private name of image's: where it posts a championship's standings as a picture, it calls
-the function image offers for that.
+moves seats through, is handed to the hook by the builder and not looked up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.
@@ -240,9 +238,9 @@ audit record, which is how some settings came to have none.
   saves is saved in one step behind the gate, and only its posts come after, as
   `steward_module.md` §4 does for the cycle close. A round's approval is one such step: the
   penalties or corrections, the recalculated points, the round's attendance, the standings
-  snapshots and the round's new status are saved together, and a fault in any of them, a points
-  recalculation that cannot be scored included, rolls the whole step back and stops the queue
-  there, with nothing changed and the review still open.
+  snapshots and the round's new status are saved together, and a fault in any of them rolls the
+  whole step back and stops the queue there (results specification, stage one: what the commit
+  writes shall be saved together).
 - **One change at a time.** One worker runs one change at a time, across the whole bot, since SQLite
   lets one writer in at a time anyway. It takes changes in the order they were put on it, the
   with no exception: nothing overtakes a change, not even one whose job is stopped (below). Two presses of the same button can no
@@ -308,14 +306,12 @@ audit record, which is how some settings came to have none.
   (when it first failed, how often it has been tried, when it is next due), so it survives a
   restart. What the job's earlier steps saved stays saved, which is why anything that must be all
   or nothing is saved in one step; the failed step's own save is rolled back, so a try runs it
-  afresh. Every job of a round's review is such a job: a post and its deletion, the notice that brackets
-  a republication, a verdict and the heading over it, the attendance sheet, and each driver's
-  sanction and its announcement, so a division with no verdicts channel, or no reserve team for a
-  sanction, stops the queue and is not stepped over. A new change asked for meanwhile is
+  afresh. Every job of a round's review is such a job, one a module cannot step over (the results
+  and attendance specifications say which, and what each stop leaves). A new change asked for meanwhile is
   acknowledged as usual, joins the back of the queue and says that the queue is stopped.
-  Nothing overtakes the stopped job, so what is outside the queue (the sweep that undoes a lapsed
-  amendment, a Cancel, amend recovery) leaves alone a round with a change in hand, stopped
-  included, as `unfinished` tells it. Discord answering that a message is already gone is no failure: a
+  Nothing overtakes the stopped job, so whatever runs outside the queue leaves alone what a change
+  is in hand on, stopped included, as `unfinished` tells it (core specification, "How a change is
+  carried out"). Discord answering that a message is already gone is no failure: a
   job that deletes it is done, and one that edits it is done too, with a line in the log channel
   saying the message was gone.
 
@@ -330,9 +326,9 @@ audit record, which is how some settings came to have none.
   presses, drops that one job, which the log records with what was not done, and the request's
   later jobs run on, each checking again whether it is still due. A change that had not yet begun,
   because its check failed, is dropped whole. Where a discarded job leaves a review without what
-  it stands on (the approval's save, the job that opens the review, the one that posts its
-  prompt), the change's closing job asks, as a bot's request in a save of its own, for the review
-  to open again, so a fresh prompt replaces the dead one at once and not at the next restart.
+  it stands on, the change's closing job asks, as a bot's request in a save of its own, for the
+  review to open again (core specification, "How a change is carried out"; the results
+  specification says which jobs).
 
   Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
   and names the job. They work directly on the queue's own records, and are not changes put on the
@@ -516,10 +512,8 @@ event (a review posted again, an interrupted submission reopened, the hub's pane
 the core specification's "When the bot stops" lists) is a step of the sweep too, reached through the
 hook for the bot starting. Each step of the sweep is kept separate, so one failing is reported and
 does not stop the rest. A step holds no module's rule: the entry point's step for putting a round's
-review back calls the results service that decides it (a round with a change in hand is left to the
-queue, a round whose review was open asks for it to open again, an appeals stage asks for its prompt
-again, a final round left with its channel open is closed), and that decision is asked of the queue
-as a change like any other.
+review back calls the results service that decides it (core specification, "When the bot stops"),
+and that decision is asked of the queue as a change like any other.
 
 **The sweep only delegates.** It is core's: it asks each kind of job, through what its module signed
 up, which of its events came due, puts them all in the order they fell due, and hands each to the
