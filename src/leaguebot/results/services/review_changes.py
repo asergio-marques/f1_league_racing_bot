@@ -46,8 +46,9 @@ async def round_in_hand(db_path: str, round_id: int) -> bool:
 
 
 async def division_job_in_hand(db_path: str, division_id: int) -> int | None:
-    """The number of the first job a review change of *division_id* waits on, or None where the
-    division has none in hand, the change that is nearest its turn first.
+    """The number of the first job a change holding *division_id* waits on, a review change of it
+    or a points approval of its season, or None where none is in hand, the change nearest its
+    turn first.
 
     A change belongs to the division where its payload names the division, or names a round of it,
     or, for a points approval, names the division's season. A change with every job done and only
