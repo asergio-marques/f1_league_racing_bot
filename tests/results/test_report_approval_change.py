@@ -853,7 +853,7 @@ async def test_a_fault_working_out_the_cards_heading_comes_before_the_sanction_i
 #: What a league admin is told where the job working out who is owed a sanction was discarded.
 SANCTIONS_PLAN_DISCARDED = (
     "⚠️ The attendance sanctions of Pro were not worked out, so none was applied. Repair the "
-    "cause, then run `/attendance sync division:Pro round:3`."
+    "cause, then run `/attendance sync division:Pro round:4`."
 )
 
 
@@ -885,7 +885,6 @@ async def test_a_failed_sanctions_plan_keeps_the_sync_hint_for_its_discard(tmp_p
     assert raised.value.__cause__ is fault
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded sanctions plan leaves the penalty approval a success")
 async def test_a_discarded_sanctions_plan_makes_the_penalty_approval_incomplete_naming_attendance_sync(
     tmp_path,
 ):
