@@ -35,7 +35,8 @@ every round's standings (each a new message), the attendance sheet and the sanct
 each round's heading over its report verdicts and its appeal verdicts, from the amended round on.
 A round's superseded announcements and the banner heading them are taken down only where every
 verdict replacing them was posted (a verdict deleted from a channel is in no channel at all), and a
-banner that also heads an attendance sanction card is kept. Ones left standing are named, with a
+banner that also heads an attendance sanction card is kept, which its take-down reads as it runs:
+the rebuild's own sanction cards head themselves by the round's banner before it. Ones left standing are named, with a
 link, for deletion by hand.
 
 **The payloads** are `round_id`, `division_id`, `session_types` (the sessions amended, as their
@@ -556,6 +557,12 @@ def amendment_stage_changes(
         if channel is None:
             return StepResult(result={"gone": True})
         message_id = int(payload["message_id"])
+        # The sanction jobs run before the take-downs and head their cards by the round's
+        # banner as it stands, so whether this banner heads one is read now, not when the
+        # rebuild was planned: a banner that also heads a sanction card is kept.
+        async with get_connection(ctx.db_path) as db:
+            if await _banners_heading_sanctions_on(db, [message_id]):
+                return StepResult(result={"kept": True})
         failures: list[Any] = []
         left = await _delete_posting(
             channel, message_id, [message_id], label="verdict banner", failures=failures
@@ -568,8 +575,10 @@ def amendment_stage_changes(
         return StepResult(result={"deleted": True})
 
     async def forget_banner(
-        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
+        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
     ) -> None:
+        if (result.result or {}).get("kept"):
+            return
         await _forget_banners_on(db, [int(ctx.step_payload["message_id"])])
 
     steps: dict[str, Step] = {
