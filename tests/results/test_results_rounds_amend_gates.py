@@ -655,9 +655,6 @@ async def test_a_job_that_is_not_the_division_s_in_hand_does_not_hold_the_amendm
 
 POINTS_KIND = "results.points_amendment.approve"
 POINTS_PAYLOAD = {"season_id": SEASON_ID, "season_number": 7}
-POINTS_UNREAD = (
-    "#439: division_job_in_hand does not read a points approval of the division's season yet"
-)
 
 _PRO = SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)
 _AM = SimpleNamespace(id=OTHER_DIVISION_ID, name="Am", tier=2)
@@ -675,7 +672,6 @@ def _division_cog(db_path: str, division: str):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=POINTS_UNREAD)
 @pytest.mark.parametrize("division", ["Pro", "Am"])
 @pytest.mark.parametrize(
     ("state", "stopped"),
@@ -735,8 +731,7 @@ async def test_a_finished_or_discarded_points_approval_does_not_hold_the_amendme
     "points_first",
     [
         pytest.param(False, id="review-job-first"),
-        pytest.param(True, id="points-approval-first",
-                     marks=pytest.mark.xfail(strict=True, reason=POINTS_UNREAD)),
+        pytest.param(True, id="points-approval-first"),
     ],
 )
 async def test_a_review_job_and_a_points_approval_name_the_one_nearer_its_turn(
