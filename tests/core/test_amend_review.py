@@ -28,11 +28,16 @@ reposts every round of every division from the database, which holds an open ame
 corrections before they are approved. Named in the panel and read again at the press, like the
 other two refusals.
 
-**Every outcome is recorded** (#482): posting the panel, a refusal with its reason, an approval,
-a rejection as a cancel, and a panel left unanswered for five minutes as a lapse. Rejecting and
-lapsing change nothing, and their lines say so and that the review can be run again. A reply
-after a press goes through the pressing interaction, so an approval that runs long is still
-answered.
+**Every outcome is recorded** (#482): posting the panel, a refusal with its reason, a rejection
+as a cancel, and a panel left unanswered for five minutes as a lapse. Rejecting and lapsing
+change nothing, and their lines say so and that the review can be run again.
+
+**Approve asks the change queue** (#439, slice 3). The press hands the season's approval to the
+queue through its own interaction, unanswered, and the queue's acknowledgement is its response.
+Every check at the press, the approval itself, its replies and its lines are the change's, and
+are pinned against the real queue in `tests/results/test_points_amendment_change.py`; this file
+pins only that the panel asks, once and with what. So the second readings "asked again at the
+press" above are the change's check, not the panel's.
 """
 from __future__ import annotations
 
@@ -45,14 +50,12 @@ import pytest
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.services.amendment_service import (
-    AmendmentNotDeliverableError,
-    NonMonotonicAmendmentError,
-)
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 12108
 SEASON_ID = 1
+
+ASKS_THE_QUEUE = "#439: Approve still approves on the spot rather than asking the change queue"
 
 
 # ---------------------------------------------------------------------------
@@ -67,13 +70,18 @@ def _make_cog(
 ) -> ResultsCog:
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.db_path = "/tmp/not-read.db"
+    # Read by nothing the panel does: an in-memory name, so a press that still approved on the
+    # spot would open no file on the host.
+    bot.db_path = ":memory:"
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    # The change queue the Approve button asks (#439, slice 3); what it then does is the queue's.
+    bot.change_queue = MagicMock()
+    bot.change_queue.ask = AsyncMock(return_value=None)
     # The league's server, on which the admin who ran the review (id 77) is Admin: a lapse
     # names who started it from their id alone.
     admin = SimpleNamespace(id=77, display_name="Admin")
@@ -173,9 +181,7 @@ async def _review(
     state=SimpleNamespace(amendment_active=True),
     diff: str = "P1: 25 → 26",
     panel_errors=None,
-    approve_error=None,
     panel_faults=None,
-    approve_result=None,
     held=(None, None),
 ):
     """Run the command, answering the panel with *press* ("approve", "reject" or None).
@@ -186,11 +192,11 @@ async def _review(
     returns where it does not wait.
 
     *panel_faults* is what `approval_faults` reports while the panel is drawn — the
-    channels the approval would have to post to (#187). It is separate from
-    *approve_error*, so a test can drive the panel's warning and the press's refusal
-    independently, exactly as the ordering's two halves already are.
+    channels the approval would have to post to (#187).
 
-    *held* is the open round amendment the panel and then the press find, if any (#345).
+    *held* is the open round amendment the panel finds, if any (#345).
+
+    Returns the stubs, "approve" being the queue's `ask`, which the press awaits (#439).
     """
     interaction.client.output_router = cog.bot.output_router
     pressing = _press_interaction(cog)
@@ -239,9 +245,6 @@ async def _review(
             "leaguebot.core.services.amendment_service.approval_faults",
             new=AsyncMock(return_value=panel_faults or []),
         ) as faults, patch(
-            "leaguebot.core.services.amendment_service.approve_amendment",
-            new=AsyncMock(side_effect=approve_error, return_value=approve_result or []),
-        ) as approve, patch(
             "leaguebot.results.services.result_submission_service.open_amendment_in_season",
             new=AsyncMock(side_effect=list(held)),
         ):
@@ -251,26 +254,11 @@ async def _review(
                 await _answer_panel(panel)
     finally:
         discord.ui.View.wait = original  # type: ignore[assignment]
-    return {"approve": approve, "validate": validate, "faults": faults}
-
-
-def _logged(cog) -> str:
-    return "\n".join(
-        str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list
-    )
+    return {"approve": cog.bot.change_queue.ask, "validate": validate, "faults": faults}
 
 
 def _logged_lines(cog) -> list[str]:
     return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
-
-
-def _refusal_lines(cog) -> list[str]:
-    """The ⛔ lines recording a refusal of the review, or of its Approve button, for Admin."""
-    lines = [line for line in _logged_lines(cog) if line.startswith("⛔")]
-    for line in lines:
-        assert "`/results amend review`" in line, line
-        assert " refused for Admin (<@77>) — " in line, line
-    return lines
 
 
 def _assert_refusal_recorded(cog, interaction) -> None:
@@ -430,9 +418,10 @@ async def test_a_sound_table_earns_no_warning():
     assert "cannot be approved" not in _panel(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_the_panel_does_not_refuse_the_button():
     """The fault is shown, not enforced here — an admin may still press Approve, and the
-    check at the press is what actually stops it."""
+    change's check, when the queue is asked, is what actually stops it."""
     cog = _make_cog()
     interaction = _interaction()
 
@@ -441,7 +430,6 @@ async def test_the_panel_does_not_refuse_the_button():
         interaction,
         panel_errors=["P2 beats P1"],
         press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 beats P1"]),
     )
 
     stubs["approve"].assert_awaited_once()
@@ -452,161 +440,22 @@ async def test_the_panel_does_not_refuse_the_button():
 # ---------------------------------------------------------------------------
 
 
-async def test_approving_writes_the_amendment():
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
+async def test_approving_asks_the_queue_for_the_season_s_approval():
+    """One ask, of the points approval's kind, naming the season by id and number, through
+    the press and under the command's name."""
+    from leaguebot.results.services.points_amendment_change import KIND
+
     cog = _make_cog()
     interaction = _interaction()
 
     stubs = await _review(cog, interaction, press="approve")
 
     stubs["approve"].assert_awaited_once()
-    assert stubs["approve"].await_args.args[1] == SEASON_ID
-    assert stubs["approve"].await_args.args[2] == 77
-
-
-async def test_an_approved_amendment_says_the_standings_were_reposted():
-    """The visible consequence, and the one an admin needs to look for in the channels."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(cog, interaction, press="approve")
-
-    replied = _replied(interaction)
-    assert "Amendment approved" in replied
-    assert "recomputed and reposted" in replied
-
-
-async def test_an_approval_with_clean_sanctions_says_nothing_of_them():
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(cog, interaction, press="approve")
-
-    assert "attendance sanctions" not in _replied(interaction)
-
-
-async def test_an_approval_lists_the_sanctions_that_did_not_apply():
-    """#239. It used to answer a bare success whatever became of the sanctions."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(
-        cog, interaction, press="approve",
-        approve_result=[
-            "<@5> (Five) — autosack: discord down",
-            "Repair the cause, then run `/attendance sync division:Pro round:2`.",
-        ],
-    )
-
-    replied = _replied(interaction)
-    assert "Amendment approved" in replied
-    assert "some attendance sanctions did not apply" in replied
-    assert "• <@5> (Five) — autosack: discord down" in replied
-    assert "/attendance sync division:Pro round:2" in replied
-
-
-async def test_an_approval_is_logged():
-    """It overwrites the season's points and nothing undoes it; the log is the record that
-    it happened and who did it."""
-    cog = _make_cog()
-
-    await _review(cog, _interaction(), press="approve")
-
-    logged = _logged(cog)
-    assert "/results amend review | Success" in logged
-    assert "Admin" in logged
-
-
-async def test_the_ordering_is_checked_again_at_the_press():
-    """The panel stays open for five minutes, so a staged table can change between the diff
-    being drawn and the button being pressed — in either direction."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    stubs = await _review(
-        cog,
-        interaction,
-        panel_errors=[],
-        press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 beats P1"]),
-    )
-
-    stubs["approve"].assert_awaited_once()
-    assert "not approved" in _replied(interaction)
-
-
-async def test_a_table_repaired_after_the_panel_was_drawn_is_approved():
-    """The other direction, and what shows the second check is not merely the first
-    repeated: a panel drawn with a fault, repaired in another window, approves cleanly."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(cog, interaction, panel_errors=["P2 beats P1"], press="approve")
-
-    assert "Amendment approved" in _replied(interaction)
-
-
-async def test_a_refused_approval_says_nothing_was_changed():
-    """The season's points are untouched, and an admin who has just been refused needs to
-    know they are not half-written."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(
-        cog,
-        interaction,
-        press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 beats P1"]),
-    )
-
-    replied = _replied(interaction)
-    assert "Nothing has been changed" in replied
-    assert "P2 beats P1" in replied
-
-
-async def test_a_refused_approval_leaves_the_staged_changes_to_repair():
-    """Telling an admin their staging was discarded would send them to rebuild work that is
-    still there."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(
-        cog,
-        interaction,
-        press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 beats P1"]),
-    )
-
-    assert "still there to repair" in _replied(interaction)
-
-
-async def test_a_refusal_is_logged_with_its_reason():
-    """The bot declining to do what an admin asked is worth a record, and the reason is
-    what makes the record useful: one ⛔ refusal line carrying the positions at fault (#482)."""
-    cog = _make_cog()
-
-    await _review(
-        cog,
-        _interaction(),
-        press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 beats P1"]),
-    )
-
-    (line,) = _refusal_lines(cog)
-    assert "P2 beats P1" in line
-    assert "Refused (" not in _logged(cog)
-
-
-async def test_a_refused_approval_is_not_also_logged_as_a_success():
-    cog = _make_cog()
-
-    await _review(
-        cog,
-        _interaction(),
-        press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 beats P1"]),
-    )
-
-    assert "Success" not in _logged(cog)
+    call = stubs["approve"].await_args
+    assert call.args == (KIND, {"season_id": SEASON_ID, "season_number": 1})
+    assert call.kwargs["interaction"] is interaction.pressed_by
+    assert call.kwargs["what"] == "`/results amend review`"
 
 
 # ---------------------------------------------------------------------------
@@ -704,9 +553,11 @@ async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     assert "Success" not in posted[0]
 
 
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_a_press_is_answered_through_its_own_interaction():
-    """The command's token has run out by the time the approval finishes (D1): the reply
-    goes through the press, and the approval is recorded as a success with no failure line."""
+    """The command's token can run out long before the approval finishes (D1): the queue is
+    handed the press, not yet answered, so its acknowledgement is the press's own response,
+    and the command's spent token is never used after the panel."""
     cog = _make_cog()
     interaction = _interaction()
 
@@ -716,14 +567,19 @@ async def test_a_press_is_answered_through_its_own_interaction():
         raise discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Webhook")
 
     interaction.followup.send = AsyncMock(side_effect=_spent_after_the_panel)
+    answered_when_asked: list[bool] = []
+
+    async def _ask(*_args, **kwargs):
+        answered_when_asked.append(kwargs["interaction"].response.is_done())
+
+    cog.bot.change_queue.ask = AsyncMock(side_effect=_ask)
 
     stubs = await _review(cog, interaction, press="approve")
 
     stubs["approve"].assert_awaited_once()
-    assert "Amendment approved" in "\n".join(_said(interaction.pressed_by))
-    lines = _logged_lines(cog)
-    assert any("/results amend review | Success" in line for line in lines)
-    assert not any("fail" in line.lower() for line in lines)
+    assert stubs["approve"].await_args.kwargs["interaction"] is interaction.pressed_by
+    assert answered_when_asked == [False]
+    assert interaction.followup.send.await_count == 1, "the spent token was used again"
 
 
 # ---------------------------------------------------------------------------
@@ -807,94 +663,18 @@ async def test_a_sound_season_earns_no_channel_warning():
     assert "could not be published" not in _panel(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_the_channels_are_checked_again_at_the_press():
     """The panel stays open for five minutes, so a channel can be deleted between the diff
-    being drawn and the button being pressed. The service reads them again for that reason."""
+    being drawn and the button being pressed. The change reads them again for that reason."""
     cog = _make_cog()
     interaction = _interaction()
 
     stubs = await _review(cog, interaction, press="approve")
 
-    # Once for the panel; the second reading is the service's own, inside approve_amendment.
+    # Once for the panel; the second reading is the change's check, when the queue is asked.
     stubs["faults"].assert_awaited_once()
     stubs["approve"].assert_awaited_once()
-
-
-async def test_an_undeliverable_amendment_is_refused_at_the_press():
-    """The service raises and the command says so, rather than claiming success (#187)."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(
-        cog, interaction, press="approve",
-        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
-    )
-
-    replied = _replied(interaction)
-    assert "not approved" in replied
-    assert CHANNEL_FAULT in replied
-    assert "recomputed and reposted" not in replied
-
-
-async def test_a_refused_amendment_says_nothing_was_changed():
-    """A manager must know the season still holds its own points, and the staged
-    changes are still there to approve once the channel is repaired."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _review(
-        cog, interaction, press="approve",
-        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
-    )
-
-    replied = _replied(interaction)
-    assert "Nothing has been changed" in replied
-    assert "staged changes" in replied
-
-
-async def test_an_undeliverable_amendment_is_not_logged_as_a_success():
-    """The defect in one line: the log said Success for a cascade that never ran (#187)."""
-    cog = _make_cog()
-
-    await _review(
-        cog, _interaction(), press="approve",
-        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
-    )
-
-    logged = _logged(cog)
-    assert "| Success" not in logged, logged
-
-
-async def test_the_refusal_is_logged_with_its_reason():
-    """The bot declining what an admin asked is worth a record, and the reason is what
-    makes the record useful — as the ordering refusal's already is: one ⛔ refusal line
-    naming the admin and carrying the channel at fault (#482)."""
-    cog = _make_cog()
-
-    await _review(
-        cog, _interaction(), press="approve",
-        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
-    )
-
-    (line,) = _refusal_lines(cog)
-    assert CHANNEL_FAULT in line
-    assert "Refused (" not in _logged(cog)
-
-
-async def test_the_two_refusals_are_told_apart():
-    """A table out of order and an unreachable channel name different repairs; a log
-    that called both the same would send a manager to the wrong one. The ordering's ⛔
-    line carries the positions at fault and says nothing of channels (#482)."""
-    cog = _make_cog()
-
-    await _review(
-        cog, _interaction(), press="approve",
-        approve_error=NonMonotonicAmendmentError(["P2 pays as much as P1"]),
-    )
-
-    (line,) = _refusal_lines(cog)
-    assert "P2 pays as much as P1" in line
-    assert "published" not in line and "reachable" not in line
 
 
 # ---------------------------------------------------------------------------
@@ -915,24 +695,7 @@ async def test_the_panel_names_a_round_being_amended():
     assert "Round 2 of **Pro** is being amended in <#8200>" in panel
 
 
-async def test_a_round_being_amended_is_checked_again_at_the_press():
-    """The panel stays open for five minutes: an amendment can open between drawing it and
-    the press. The refusal is one ⛔ line naming the division being amended (#482)."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    stubs = await _review(cog, interaction, press="approve", held=(None, AMENDING))
-
-    stubs["approve"].assert_not_awaited()
-    replied = _replied(interaction)
-    assert "Not approved yet." in replied
-    assert "Nothing has been changed" in replied
-    (line,) = _refusal_lines(cog)
-    assert "Pro" in line
-    assert "Refused (" not in _logged(cog)
-    assert "| Success" not in _logged(cog)
-
-
+@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_an_amendment_finished_after_the_panel_was_drawn_does_not_refuse():
     cog = _make_cog()
 
