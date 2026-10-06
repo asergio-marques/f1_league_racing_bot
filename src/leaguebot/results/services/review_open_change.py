@@ -22,7 +22,9 @@ It is now a list of jobs the queue saves and resumes:
    resubmission's return, **`take_down_cancel`** (an `EDIT`) taking the Cancel button off its
    announcement, and for a cancel, **`post_cancel_line`**.
 6. **`close`**, one save, **an opening job** so that it runs last whatever was discarded before
-   it, writing the log line: for a paste, that the review is open; for a cancel, the cancel's line,
+   it, writing the log line: for a paste, that the review is open, `| Incomplete` where a
+   league admin discarded a posting job, naming each table not posted and the commands that post
+   it (`review_posting.not_done`, as the approvals do); for a cancel, the cancel's line,
    now after the prompt is back; for a lapse or a failure, the line of the resubmission that
    ended. **A Discard reopens the review** ("Discard reopens the review"): where `open` or the
    prompt's post was discarded, `close` asks, in its own save, as the bot, for
@@ -365,8 +367,14 @@ def review_open_change() -> ChangeType:
                 "  Press 🔄 Resubmit Initial Results to start again.",
             )
         elif ctx.actor_id is not None:
-            lines = (f"{ctx.named} | Penalty review opened | Success\n"
-                     f"  round {number}{division}",)
+            # A table a league admin discarded is named, with the commands that post it, as the
+            # approvals' lines name theirs: the review is open, but the league's channels are not
+            # as a Success would say.
+            left = review_posting.not_done(ctx)
+            lines = (f"{ctx.named} | Penalty review opened | "
+                     f"{'Incomplete' if left else 'Success'}\n"
+                     f"  round {number}{division}"
+                     + "".join(f"\n  {text}" for text in left),)
         if not (open_lost or prompt_lost):
             return StepResult(result={"closed": True}, lines=lines)
 

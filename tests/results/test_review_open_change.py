@@ -725,6 +725,8 @@ async def test_the_review_prompt_waits_for_the_interim_results(tmp_path):
 async def test_a_discarded_interim_post_leaves_results_unposted_and_the_prompt_still_comes(
     tmp_path,
 ):
+    """The review's own log line reads `| Incomplete`, not `| Success`, naming the table not
+    posted and ending with the two commands that post it, as the approvals' lines do."""
     league = await _league(tmp_path, name="open_post_discarded")
     league.channel(RESULTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
     await _open(league)
@@ -736,6 +738,12 @@ async def test_a_discarded_interim_post_leaves_results_unposted_and_the_prompt_s
     assert league.sent_to(RESULTS_CHANNEL) == []
     assert len(_prompts(league)) == 1
     assert (await _channel_row(league.db_path))["results_posted"] == 0
+    log = league.log()
+    assert "Penalty review opened | Success" not in log
+    opened = log[log.index("Penalty review opened | Incomplete"):]
+    assert "Round 3's Feature Race results were not posted." in opened
+    assert "standings were not posted" not in opened
+    assert "Repair the cause, then run `/results rounds sync` and `/results standings sync`." in opened
 
 
 @pytest.mark.parametrize("job", ["open", "post_review_prompt"])
