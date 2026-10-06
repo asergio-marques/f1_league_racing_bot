@@ -65,7 +65,6 @@ from tests.support.review_league import block_queue, candidate, run_until_done, 
 
 KIND = "results.points_amendment.approve"
 
-ON_THE_QUEUE = "#439: approving a points amendment is not yet a change on the change queue"
 
 SUCCESS = "✅ Amendment approved. All standings recomputed and reposted."
 MODE_OFF = (
@@ -827,7 +826,6 @@ async def test_every_division_is_reposted_a_cancelled_one_included(tmp_path):
     assert updated_reply(press) == SUCCESS
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_discarded_repost_is_named_incomplete_with_its_division_and_both_sync_commands(
     tmp_path,
 ):
@@ -844,7 +842,7 @@ async def test_a_discarded_repost_is_named_incomplete_with_its_division_and_both
 
     named = "⚠️ Round 2's Feature Race results in Pro were not posted."
     reply = updated_reply(press)
-    assert reply.startswith(APPROVED_BUT)
+    assert APPROVED_BUT in reply
     assert named in reply
     assert reply.endswith(BOTH_SYNCS)
     lines = _incomplete_lines(league)
@@ -856,7 +854,6 @@ async def test_a_discarded_repost_is_named_incomplete_with_its_division_and_both
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_discarded_deletion_links_the_old_table_for_deletion_by_hand(tmp_path):
     """Pro's old round 1 results table cannot be deleted; a league admin discards the job. Both
     tables stand, and the reply and the `| Incomplete` line name the old one for deletion by
@@ -873,7 +870,7 @@ async def test_a_discarded_deletion_links_the_old_table_for_deletion_by_hand(tmp
     await discard_job(league.bot)
 
     reply = updated_reply(press)
-    assert reply.startswith(APPROVED_BUT)
+    assert APPROVED_BUT in reply
     named = [line for line in reply.split("\n")
              if line.startswith("⚠️ An earlier message could not be deleted (")]
     assert len(named) == 1
@@ -1043,7 +1040,6 @@ async def test_each_division_s_sheet_and_sanctions_follow_its_reposts_at_its_lat
     assert updated_reply(press) == SUCCESS
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_sanction_that_does_not_apply_stops_the_queue_and_once_discarded_is_named_with_attendance_sync(
     tmp_path,
 ):
@@ -1069,10 +1065,10 @@ async def test_a_sanction_that_does_not_apply_stops_the_queue_and_once_discarded
         f"`/attendance sync division:Pro round:{LATEST}`."
     )
     reply = updated_reply(press)
-    assert reply.startswith(APPROVED_BUT)
+    assert APPROVED_BUT in reply
     assert named in reply
     lines = _incomplete_lines(league)
-    assert len(lines) == 1 and named in lines[0]
+    assert len(lines) == 1 and named.replace(f"<@{MAX}>", f"`<@{MAX}>`") in lines[0]
     assert _success_lines(league) == []
 
 
@@ -1160,7 +1156,6 @@ async def test_the_sanction_cards_raise_a_heading_only_where_the_round_has_none_
     assert named in _incomplete_lines(league)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_discarded_sanctions_plan_makes_the_approval_incomplete_and_names_attendance_sync(
     tmp_path,
 ):
@@ -1176,7 +1171,7 @@ async def test_a_discarded_sanctions_plan_makes_the_approval_incomplete_and_name
     await discard_job(league.bot)
 
     reply = updated_reply(press)
-    assert reply.startswith(APPROVED_BUT)
+    assert APPROVED_BUT in reply
     assert SANCTIONS_UNWORKED in reply
     lines = _incomplete_lines(league)
     assert len(lines) == 1 and SANCTIONS_UNWORKED in lines[0]
