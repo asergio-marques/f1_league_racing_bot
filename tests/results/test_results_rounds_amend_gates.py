@@ -601,6 +601,32 @@ async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
         assert (await cursor.fetchone())[0] == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the refusal names job #0 where only the close is left")
+async def test_a_change_with_only_its_close_left_holds_the_amendment_without_a_job_number(tmp_path):
+    """Round 4's review opening has done its every job and only its close is left: it still holds
+    the division, and the refusal leaves out the job number rather than naming job #0, as the
+    points approval's own refusals do."""
+    db_path = await _make_db(tmp_path, name="amend_close_only")
+    job = await _seed_queued_change(db_path, state="RUNNING")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE queued_change_steps SET done_at = '2026-10-05T12:00:00+00:00' WHERE id = ?",
+            (job,),
+        )
+        await db.commit()
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    replied = _replied(interaction)
+    assert replied.startswith("⏸️ A round of Pro has a job on the change queue, so it cannot be")
+    assert "job #" not in replied
+    [line] = _logged(interaction)
+    assert line.startswith("⛔") and "job #" not in line
+    interaction.guild.create_text_channel.assert_not_called()
+
+
 async def test_a_job_naming_the_division_alone_still_blocks_the_amendment(tmp_path):
     """A change whose payload names the division and no round of it is the division's job too."""
     db_path = await _make_db(tmp_path, name="amend_queued_division")
