@@ -1,6 +1,7 @@
 """Unit tests for amendment_service (T034) — points-amendment workflow."""
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
 
 import pytest
@@ -1088,7 +1089,7 @@ async def test_reopening_a_check_in_forgets_the_distribution_of_the_call_it_repl
 
 
 # ---------------------------------------------------------------------------
-# approve_amendment reposts what it rescored (#130)
+# Approving a points amendment reposts what it rescored (#130)
 # ---------------------------------------------------------------------------
 
 
@@ -1136,16 +1137,30 @@ async def _seed_division_with_rounds(path: str, season_id: int):
 #: The stub bot's own Discord user id. The pre-flight looks its member up by it (#187).
 _BOT_USER_ID = 4242
 
+#: Approving a points amendment is a change on the queue (#439, slice 3): until it is built, a
+#: test that approves through it fails on the change type's import.
+APPROVAL_UNBUILT = "#439: approving a points amendment is not yet a change on the change queue"
 
-def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = ()):
-    """A bot stub whose guild is real enough for the repost path to run.
+#: "Now", for the queue that carries the approval.
+_APPROVE_NOW = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+
+_message_ids = itertools.count(4300)
+
+
+def _bot_recording_reposts(path: str, reposted: list[tuple], *, missing: tuple[int, ...] = ()):
+    """A bot double whose guild is real enough for the approval's posting jobs to run.
+
+    Built on the change queue's `league_double` (#439, slice 3): a real output router, so every
+    line the approval writes lands in `bot.log_channel`, whose `sent` records it. Its guild's
+    channels record each send in *reposted* as ``(channel_id, content)``, and each message they
+    send can be fetched and deleted again, as the jobs replacing an old message do.
 
     *missing* names channels the guild no longer holds, for the refusal tests: a deleted
     channel is what ``guild.get_channel`` answers None to.
 
-    The channels are specced as ``discord.TextChannel`` because the approval now checks
-    that what a division points at is something that can be posted in (#187). A bare
-    ``AsyncMock`` is not, and would be refused before any reposting was attempted.
+    The channels are specced as ``discord.TextChannel`` because the approval checks that what a
+    division points at is something that can be posted in (#187). A bare ``AsyncMock`` is not,
+    and would be refused before any reposting was attempted.
 
     **A bare ``MagicMock`` grants every permission.** The validation reads permissions with
     ``getattr(permissions, name, False)``, and a ``MagicMock`` answers any attribute with a
@@ -1162,55 +1177,136 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
     import discord
     from unittest.mock import AsyncMock, MagicMock
 
+    from tests.support.change_queue import SERVER_ID, league_double
+
+    bot = league_double(path)
     guild = MagicMock()
-    guild.id = 1
+    guild.id = SERVER_ID
     # The bot's own member resolves — the pre-flight reads its permissions through it — and
     # nobody else's does, which is what makes the postings below fall back to plain ids for
     # the drivers. Two different questions asked of one cache (#187).
     guild.get_member = lambda user_id: MagicMock() if user_id == _BOT_USER_ID else None
-    guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
+    guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+    channels: dict[int, object] = {}
 
-    def get_channel(channel_id):
-        if channel_id in missing:
-            return None
+    def _channel(channel_id):
         channel = MagicMock(spec=discord.TextChannel)
+        channel.id = channel_id
+        channel.mention = f"<#{channel_id}>"
+        channel.guild = guild
+        messages: dict[int, object] = {}
+
+        def _message(message_id):
+            message = MagicMock()
+            message.id = message_id
+            message.channel = channel
+            message.jump_url = f"https://discord.test/{channel_id}/{message_id}"
+
+            async def _delete(*_args, **_kwargs):
+                messages.pop(message_id, None)
+
+            message.delete = AsyncMock(side_effect=_delete)
+            message.edit = AsyncMock(return_value=message)
+            return message
 
         async def fake_send(content=None, **kwargs):
             reposted.append((channel_id, content or ""))
-            msg = MagicMock()
-            msg.id = 4242
-            return msg
+            message = _message(next(_message_ids))
+            message.content = content or ""
+            messages[message.id] = message
+            return message
 
-        channel.send = fake_send
-        channel.id = channel_id
+        async def fetch_message(message_id):
+            if message_id not in messages:
+                raise discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Message")
+            return messages[message_id]
+
+        channel.send = AsyncMock(side_effect=fake_send)
+        channel.fetch_message = AsyncMock(side_effect=fetch_message)
+        channel.get_partial_message = MagicMock(
+            side_effect=lambda message_id: messages.get(message_id) or _message(message_id)
+        )
         # Everything granted: these tests are about the cascade, not about permissions.
         channel.permissions_for.return_value = MagicMock()
         return channel
 
+    def get_channel(channel_id):
+        if channel_id in missing:
+            return None
+        if channel_id not in channels:
+            channels[channel_id] = _channel(channel_id)
+        return channels[channel_id]
+
     guild.get_channel = get_channel
 
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.user.id = _BOT_USER_ID
-    bot.get_guild.return_value = guild
-    bot.output_router.post_log = AsyncMock()
+    bot.get_guild = MagicMock(return_value=guild)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.image_config_service.get_toggles = AsyncMock(return_value={})
     return bot
 
 
+async def _approve(path: str, season_id: int, bot):
+    """Press Approve on the season's points amendment, as user 99, and run the queue.
+
+    A queue is attached on the test's database, results turned on and the season ongoing, as
+    a league using amendments has them, and the approval asked for through a league admin's press, as
+    `/results amend review`'s Approve button asks it (#439, slice 3). Returns the press, whose
+    reply is the queue's acknowledgement, or the refusal the change's check gave at once.
+    """
+    from leaguebot.results.services.points_amendment_change import KIND
+    from tests.support.change_queue import attach_queue, member_interaction, run_queue, tier_member
+
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
+        )
+        # The season is being raced: the approval's check refuses a season with no stage.
+        await db.execute(
+            "UPDATE seasons SET stage = 'ONGOING' WHERE id = ? AND stage IS NULL", (season_id,)
+        )
+        cursor = await db.execute(
+            "SELECT season_number FROM seasons WHERE id = ?", (season_id,)
+        )
+        season_number = (await cursor.fetchone())["season_number"]
+        await db.commit()
+    attach_queue(bot, path, now=_APPROVE_NOW)
+    press = member_interaction(bot, user=tier_member("admin", member_id=99))
+    await bot.change_queue.ask(
+        KIND, {"season_id": season_id, "season_number": season_number},
+        interaction=press, what="`/results amend review`",
+    )
+    await run_queue(bot)
+    return press
+
+
+def _reply(press) -> str:
+    """What the press was answered with."""
+    from tests.support.change_queue import acknowledgement
+
+    return acknowledgement(press)
+
+
+async def _nothing_queued(path: str) -> bool:
+    from tests.support.change_queue import change_rows
+
+    return await change_rows(path) == []
+
+
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_approve_amendment_reposts_every_raced_round(db_path):
     """Approving an amendment must repost what it rescored, not only write it (#130).
 
     The reply tells the manager "All standings recomputed and reposted". Before the fix
     the repost raised ``TypeError`` on every round, was swallowed by the per-round
     ``try/except``, and the league's channels kept the old points for the rest of the
-    season. No test called ``approve_amendment`` at all, which is why the suite passed.
+    season. No test called ``approve_amendment`` at all, which is why the suite passed. The
+    approval is now a change on the queue (#439, slice 3), its reposts jobs of its own.
     """
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     division_id, raced, _unraced = await _seed_division_with_rounds(path, season_id)
@@ -1221,7 +1317,7 @@ async def test_approve_amendment_reposts_every_raced_round(db_path):
     )
 
     reposted: list[tuple] = []
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
+    await _approve(path, season_id, _bot_recording_reposts(path, reposted))
 
     assert reposted, "approving an amendment reposted nothing"
     # Both raced rounds reach the standings channel, each headed by its own round number.
@@ -1234,10 +1330,9 @@ async def test_approve_amendment_reposts_every_raced_round(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
     """The cascade walks every non-cancelled round; only the raced ones are reposted (#130)."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1248,7 +1343,7 @@ async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
     )
 
     reposted: list[tuple] = []
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
+    await _approve(path, season_id, _bot_recording_reposts(path, reposted))
 
     assert not any("Round 3" in content for _channel_id, content in reposted), (
         "standings were posted for a round that has not been raced"
@@ -1256,10 +1351,9 @@ async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_approve_amendment_still_overwrites_the_points(db_path):
     """The rescore and the repost are one operation — calling it for real proves both."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1269,7 +1363,7 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
         path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
     )
 
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    await _approve(path, season_id, _bot_recording_reposts(path, []))
 
     async with get_connection(path) as db:
         row = await (
@@ -1287,6 +1381,7 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
     """The fastest lap bonus is overwritten by the same transaction as the points.
 
@@ -1296,7 +1391,7 @@ async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
     amending the bonus would have seen the panel accept the change and the old bonus keep
     being awarded.
     """
-    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
+    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1312,7 +1407,7 @@ async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
     await enable_amendment_mode(path, season_id)
     await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
 
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    await _approve(path, season_id, _bot_recording_reposts(path, []))
 
     async with get_connection(path) as db:
         row = await (
@@ -1325,6 +1420,7 @@ async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_amendment_empties_the_modification_store(db_path):
     """The staging tables are cleared, so the next amendment starts from the season.
 
@@ -1332,7 +1428,7 @@ async def test_an_approved_amendment_empties_the_modification_store(db_path):
     mode would show the previous amendment's figures as though they were pending changes,
     and approving it would rewrite the season with them.
     """
-    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
+    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1342,7 +1438,7 @@ async def test_an_approved_amendment_empties_the_modification_store(db_path):
     )
     await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
 
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    await _approve(path, season_id, _bot_recording_reposts(path, []))
 
     async with get_connection(path) as db:
         for table in ("season_modification_entries", "season_modification_fl"):
@@ -1396,6 +1492,7 @@ async def _season_state(path: str, season_id: int):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
     """The headline of #187: a deleted standings channel refuses the approval outright.
 
@@ -1404,8 +1501,6 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
     posted ``AMENDMENT_APPROVED | Success`` — then reposted nothing at all, because
     ``guild.get_channel`` answers None for a deleted channel and nothing raises.
     """
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1413,13 +1508,13 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
     before = await _season_state(path, season_id)
 
     reposted: list[tuple] = []
-    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
-        await approve_amendment(
-            path, season_id, 99, _bot_recording_reposts(reposted, missing=(502,))
-        )
+    press = await _approve(
+        path, season_id, _bot_recording_reposts(path, reposted, missing=(502,))
+    )
 
-    assert "standings channel" in "; ".join(excinfo.value.faults)
-    assert "Alpha" in "; ".join(excinfo.value.faults)
+    assert "standings channel" in _reply(press)
+    assert "Alpha" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
     assert reposted == [], "a refused amendment posted to the league's channels"
     assert await _season_state(path, season_id) == before, (
         "a refused amendment changed the season"
@@ -1427,21 +1522,21 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_refused_amendment_keeps_the_season_points(db_path):
     """The points are what the refusal exists to protect: after the DELETE nothing
     could put them back."""
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await _staged_amendment(path, season_id)
 
-    with pytest.raises(AmendmentNotDeliverableError):
-        await approve_amendment(
-            path, season_id, 99, _bot_recording_reposts([], missing=(501, 502))
-        )
+    press = await _approve(
+        path, season_id, _bot_recording_reposts(path, [], missing=(501, 502))
+    )
 
+    assert "could not be published" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
     async with get_connection(path) as db:
         row = await (
             await db.execute(
@@ -1453,20 +1548,20 @@ async def test_a_refused_amendment_keeps_the_season_points(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
     """A manager repairs the channel and approves again; the work must still be there."""
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await _staged_amendment(path, season_id)
 
-    with pytest.raises(AmendmentNotDeliverableError):
-        await approve_amendment(
-            path, season_id, 99, _bot_recording_reposts([], missing=(502,))
-        )
+    press = await _approve(
+        path, season_id, _bot_recording_reposts(path, [], missing=(502,))
+    )
 
+    assert "could not be published" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
     state = await get_amendment_state(path, season_id)
     assert state is not None
     assert state.amendment_active, "amendment mode was switched off by a refusal"
@@ -1482,38 +1577,35 @@ async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
     """Nothing happened, so the log must not say anything did (#187)."""
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await _staged_amendment(path, season_id)
 
-    bot = _bot_recording_reposts([], missing=(502,))
-    with pytest.raises(AmendmentNotDeliverableError):
-        await approve_amendment(path, season_id, 99, bot)
+    bot = _bot_recording_reposts(path, [], missing=(502,))
+    press = await _approve(path, season_id, bot)
 
-    logged = "\n".join(
-        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
-    )
-    assert "AMENDMENT_APPROVED" not in logged, logged
+    assert "could not be published" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
+    logged = "\n".join(bot.log_channel.sent)
+    assert "| Success" not in logged, logged
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
     """The issue's other reproduction path: Send Messages revoked on a live channel."""
     from unittest.mock import MagicMock
 
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await _staged_amendment(path, season_id)
 
-    bot = _bot_recording_reposts([])
+    bot = _bot_recording_reposts(path, [])
     guild = bot.get_guild.return_value
     working = guild.get_channel
 
@@ -1526,29 +1618,28 @@ async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
 
     guild.get_channel = get_channel
 
-    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
-        await approve_amendment(path, season_id, 99, bot)
+    press = await _approve(path, season_id, bot)
 
-    assert "Send Messages" in "; ".join(excinfo.value.faults)
+    assert "Send Messages" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
     """Today this overwrites the points and then silently reposts nothing at all (#187)."""
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await _staged_amendment(path, season_id)
 
-    bot = _bot_recording_reposts([])
+    bot = _bot_recording_reposts(path, [])
     bot.get_guild.return_value = None
 
-    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
-        await approve_amendment(path, season_id, 99, bot)
+    press = await _approve(path, season_id, bot)
 
-    assert "not in this server" in "; ".join(excinfo.value.faults)
+    assert "not in this server" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
     async with get_connection(path) as db:
         row = await (
             await db.execute(
@@ -1560,10 +1651,9 @@ async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path):
     """The guard against over-refusing: an unconfigured channel is ordinary (#187)."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     async with get_connection(path) as db:
@@ -1579,7 +1669,7 @@ async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path
         await db.commit()
     await _staged_amendment(path, season_id)
 
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    await _approve(path, season_id, _bot_recording_reposts(path, []))
 
     async with get_connection(path) as db:
         row = await (
@@ -1592,11 +1682,10 @@ async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_path):
     """The approval recalculates attendance too, so its channels are part of the gate."""
     from unittest.mock import AsyncMock
-
-    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1613,13 +1702,13 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
         await db.commit()
     await _staged_amendment(path, season_id)
 
-    bot = _bot_recording_reposts([], missing=(601,))
+    bot = _bot_recording_reposts(path, [], missing=(601,))
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
 
-    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
-        await approve_amendment(path, season_id, 99, bot)
+    press = await _approve(path, season_id, bot)
 
-    assert "attendance channel" in "; ".join(excinfo.value.faults)
+    assert "attendance channel" in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
 
 
 @pytest.mark.xfail(strict=True, reason="#439: the approval's check passes over a cancelled division's channels")
@@ -1651,7 +1740,7 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
         await db.commit()
     await _staged_amendment(path, season_id)
 
-    bot = _bot_recording_reposts([], missing=(601,))
+    bot = _bot_recording_reposts(path, [], missing=(601,))
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
 
     faults = await approval_faults(path, season_id, bot)
@@ -1661,11 +1750,10 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
     """A league without the attendance module must not be refused for a channel it has
     never configured — the same gate the cascade's own recalculation holds to."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
@@ -1682,7 +1770,7 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
     await _staged_amendment(path, season_id)
 
     # 601 is absent, but the module is off, so nothing asks after it.
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([], missing=(601,)))
+    await _approve(path, season_id, _bot_recording_reposts(path, [], missing=(601,)))
 
     async with get_connection(path) as db:
         row = await (
@@ -1695,6 +1783,7 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     """The log records the approval once the reposting it claims has been done (#187).
 
@@ -1702,52 +1791,40 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     been attempted — so ``AMENDMENT_APPROVED | Success`` stood in the log whatever became
     of the cascade, and a manager reading it had no reason to check the channels.
     """
-    from unittest.mock import AsyncMock
-
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await _staged_amendment(path, season_id)
 
     order: list[str] = []
-    reposted: list[tuple] = []
-    bot = _bot_recording_reposts(reposted)
-    guild = bot.get_guild.return_value
-    working = guild.get_channel
 
-    def get_channel(channel_id):
-        channel = working(channel_id)
-        sent = channel.send
-
-        async def recording_send(content=None, **kwargs):
+    class _Reposts(list):
+        def append(self, item):
             order.append("repost")
-            return await sent(content, **kwargs)
+            super().append(item)
 
-        channel.send = recording_send
-        return channel
+    bot = _bot_recording_reposts(path, _Reposts())
+    logged = bot.log_channel.send.side_effect
 
-    guild.get_channel = get_channel
+    async def recording_log(content="", **kwargs):
+        order.append("log" if "| Success" in str(content) else "other-log")
+        return await logged(content, **kwargs)
 
-    async def recording_log(content):
-        order.append("log" if "AMENDMENT_APPROVED" in str(content) else "other-log")
+    bot.log_channel.send.side_effect = recording_log
 
-    bot.output_router.post_log = AsyncMock(side_effect=recording_log)
-
-    await approve_amendment(path, season_id, 99, bot)
+    await _approve(path, season_id, bot)
 
     assert "repost" in order, "nothing was reposted, so the ordering proves nothing"
-    assert order.index("log") > order.index("repost"), order
+    last_repost = len(order) - 1 - order[::-1].index("repost")
+    assert order.index("log") > last_repost, order
     assert order[-1] == "log", f"the approval was not the last thing logged: {order}"
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_the_ordering_refusal_still_comes_first(db_path):
     """A table out of order is refused as such, not as an undeliverable one — the two
     refusals name different repairs and must not be confused."""
-    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
-
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1759,10 +1836,15 @@ async def test_the_ordering_refusal_still_comes_first(db_path):
         path, season_id, "STD", "FEATURE_RACE", [(2, 25)], **ACTOR
     )
 
-    with pytest.raises(NonMonotonicAmendmentError):
-        await approve_amendment(
-            path, season_id, 99, _bot_recording_reposts([], missing=(501, 502))
-        )
+    press = await _approve(
+        path, season_id, _bot_recording_reposts(path, [], missing=(501, 502))
+    )
+
+    assert _reply(press).startswith(
+        "❌ Amendment not approved — the points would be out of order:"
+    ), _reply(press)
+    assert "could not be published" not in _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
 
 
 # ---------------------------------------------------------------------------
@@ -1852,10 +1934,9 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(db_
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
     """The regression. Before the fix this amendment was applied without a word."""
-    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
-
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1864,14 +1945,17 @@ async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
         path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
     )
 
-    with pytest.raises(NonMonotonicAmendmentError) as raised:
-        await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    press = await _approve(path, season_id, _bot_recording_reposts(path, []))
 
-    assert raised.value.errors, "the refusal must carry what is wrong with it"
-    assert "STD" in raised.value.errors[0]
+    assert _reply(press).startswith(
+        "❌ Amendment not approved — the points would be out of order:"
+    ), _reply(press)
+    assert "STD" in _reply(press), "the refusal must carry what is wrong with it"
+    assert await _nothing_queued(path), "a refused approval was queued"
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_ordering(db_path):
     """Both checks apply; the ordering one is reached first, and nothing is written (#187).
 
@@ -1883,8 +1967,6 @@ async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_orderi
     entire, nothing changed. The panel is the surface that names **both**, which
     ``test_the_panel_names_both_faults_when_both_apply`` holds.
     """
-    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
-
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1895,11 +1977,14 @@ async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_orderi
 
     before = await _season_state(path, season_id)
     reposted: list[tuple] = []
-    with pytest.raises(NonMonotonicAmendmentError):
-        await approve_amendment(
-            path, season_id, 99, _bot_recording_reposts(reposted, missing=(501, 502))
-        )
+    press = await _approve(
+        path, season_id, _bot_recording_reposts(path, reposted, missing=(501, 502))
+    )
 
+    assert _reply(press).startswith(
+        "❌ Amendment not approved — the points would be out of order:"
+    ), _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
     assert not reposted
     assert await _season_state(path, season_id) == before, (
         "a refusal for either reason must leave the season exactly as it stood"
@@ -1907,14 +1992,13 @@ async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_orderi
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path):
     """Nothing written: not the points, not the store, not the mode, and nothing reposted.
 
     This function's first act is to delete the season's points. A guard placed even one
     statement late would leave a running championship with no points table at all.
     """
-    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
-
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1924,9 +2008,10 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
     )
 
     reposted: list[tuple] = []
-    with pytest.raises(NonMonotonicAmendmentError):
-        await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
+    press = await _approve(path, season_id, _bot_recording_reposts(path, reposted))
 
+    assert "out of order" in _reply(press), _reply(press)
+    assert await _nothing_queued(path), "a refused approval was queued"
     assert await _season_points(path, season_id) == {1: 25, 2: 18}, "the season's points moved"
     assert not reposted, "a refused amendment reposted a standings table"
 
@@ -1948,10 +2033,9 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_well_ordered_amendment_still_applies(db_path):
     """The other half: a guard that refuses everything is no better than none at all."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1960,16 +2044,15 @@ async def test_a_well_ordered_amendment_still_applies(db_path):
         path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
     )
 
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    await _approve(path, season_id, _bot_recording_reposts(path, []))
 
     assert await _season_points(path, season_id) == {1: 30, 2: 18}
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_path):
     """Trailing zeros are the ordinary shape of a table, mid-season as at the start."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
@@ -1981,7 +2064,7 @@ async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_pat
         path, season_id, "STD", "FEATURE_RACE", [(4, 0)], **ACTOR
     )
 
-    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+    await _approve(path, season_id, _bot_recording_reposts(path, []))
 
     assert await _season_points(path, season_id) == {1: 25, 2: 18, 3: 0, 4: 0}
 
@@ -2201,37 +2284,25 @@ def _posts(reposted: list[tuple], channel_id: int, round_number: int) -> list[st
 
 
 def _scoring_bot(path: str, reposted: list[tuple]):
-    """The repost stub above, with drivers the server does not hold.
+    """The repost double above, for sessions that carry drivers.
 
-    These sessions carry drivers, which the #130 stub never had to name. Naming one reads
+    These sessions carry drivers, which the #130 double never had to name. Naming one reads
     the database through the bot, and asks the server for them, which answers as Discord
     does for somebody who is not a member.
     """
-    from unittest.mock import AsyncMock, MagicMock
-
-    import discord
-
-    bot = _bot_recording_reposts(reposted)
-    bot.db_path = path
-    bot.get_guild.return_value.fetch_member = AsyncMock(
-        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
-    )
-    return bot
+    return _bot_recording_reposts(path, reposted)
 
 
 async def _approve_raised_win(path: str, season_id: int, reposted: list[tuple] | None = None):
     """Stage a win worth 30 rather than 25, and approve it."""
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     await enable_amendment_mode(path, season_id)
     await modify_session_points(
         path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
     )
-    await approve_amendment(
-        path, season_id, 99, _scoring_bot(path, [] if reposted is None else reposted)
-    )
+    await _approve(path, season_id, _scoring_bot(path, [] if reposted is None else reposted))
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_amendment_rescores_every_raced_session(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2247,6 +2318,7 @@ async def test_an_approved_amendment_rescores_every_raced_session(db_path):
         assert points[_RUNNER_UP] == (18, 0), points
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_amendment_moves_the_standings(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2266,6 +2338,7 @@ async def test_an_approved_amendment_moves_the_standings(db_path):
     assert row is not None and row["total_points"] == 60, "the standings kept the old points"
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_amendment_reposts_every_standings_with_the_new_points(db_path):
     """What the owner asked for at Gate 1: every standings, of every division, reposted with
     the new totals, and none for a round not yet raced.
@@ -2294,6 +2367,7 @@ async def test_an_approved_amendment_reposts_every_standings_with_the_new_points
         )
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_amendment_reposts_every_results_table_with_the_new_points(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2315,8 +2389,9 @@ async def test_an_approved_amendment_reposts_every_results_table_with_the_new_po
             assert winner_line.endswith("**30 pts**"), winner_line
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
-    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
+    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2326,16 +2401,17 @@ async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
     await enable_amendment_mode(path, season_id)
     await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
 
-    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+    await _approve(path, season_id, _scoring_bot(path, []))
 
     for session_id in sessions:
         assert (await _race_points(path, session_id))[_THIRD] == (15, 3)
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_rescoring_keeps_the_fastest_lap_override(db_path):
     """The runner-up was given the fastest lap by hand; the rescoring must not hand it back
     to the quickest time."""
-    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
+    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2351,7 +2427,7 @@ async def test_rescoring_keeps_the_fastest_lap_override(db_path):
     await enable_amendment_mode(path, season_id)
     await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
 
-    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+    await _approve(path, season_id, _scoring_bot(path, []))
 
     for session_id in sessions:
         points = await _race_points(path, session_id)
@@ -2359,12 +2435,10 @@ async def test_rescoring_keeps_the_fastest_lap_override(db_path):
         assert points[_THIRD] == (15, 0), points
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
     """Third set the quickest lap; with the bonus now limited to the top two, nobody holds it."""
-    from leaguebot.core.services.amendment_service import (
-        approve_amendment,
-        modify_fl_position_limit,
-    )
+    from leaguebot.core.services.amendment_service import modify_fl_position_limit
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2374,7 +2448,7 @@ async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
     await enable_amendment_mode(path, season_id)
     await modify_fl_position_limit(path, season_id, "STD", "FEATURE_RACE", 2)
 
-    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+    await _approve(path, season_id, _scoring_bot(path, []))
 
     for session_id in sessions:
         points = await _race_points(path, session_id)
@@ -2382,9 +2456,8 @@ async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
         assert all(bonus == 0 for _points, bonus in points.values()), points
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_an_approved_amendment_rescores_qualifying(db_path):
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_points_config(path, season_id, qualifying={1: 3})
     _division, _raced, _s, qualifying_sessions, _unraced = await _seed_raced_division(
@@ -2396,7 +2469,7 @@ async def test_an_approved_amendment_rescores_qualifying(db_path):
         path, season_id, "STD", "FEATURE_QUALIFYING", [(1, 5)], **ACTOR
     )
 
-    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+    await _approve(path, season_id, _scoring_bot(path, []))
 
     async with get_connection(path) as db:
         for session_id in qualifying_sessions:
@@ -2408,6 +2481,7 @@ async def test_an_approved_amendment_rescores_qualifying(db_path):
             assert (await cursor.fetchone())["points_awarded"] == 5
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_session_under_another_configuration_keeps_its_points(db_path):
     """Beta races under ALT, 12-8-6 with no fastest-lap bonus; amending STD leaves it alone."""
     path, season_id = db_path
@@ -2433,6 +2507,7 @@ async def test_a_session_under_another_configuration_keeps_its_points(db_path):
         }
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_reposted(db_path):
     """What the owner asked for at Gate 2: two rounds of different formats, each scored under
     a configuration of its own, both paying 25 for a win.
@@ -2472,6 +2547,7 @@ async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_
     assert f"<@{_WINNER}> — **55 pts**" in standings[-1], standings[-1]
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_rescoring_keeps_the_sanctions(db_path):
     """The winner and the runner-up are paid the new table; the penalties stand.
 
@@ -2479,8 +2555,6 @@ async def test_rescoring_keeps_the_sanctions(db_path):
     in; third did not finish, fourth was disqualified having set the quickest lap, and
     fifth did not start.
     """
-    from leaguebot.core.services.amendment_service import approve_amendment
-
     path, season_id = db_path
     await _seed_points_config(path, season_id, race={1: 25, 2: 18, 3: 15, 4: 12, 5: 10})
     _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
@@ -2501,7 +2575,7 @@ async def test_rescoring_keeps_the_sanctions(db_path):
         path, season_id, "STD", "FEATURE_RACE", [(2, 20)], **ACTOR
     )
 
-    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+    await _approve(path, season_id, _scoring_bot(path, []))
 
     points = await _race_points(path, sessions[0])
     assert points[_WINNER][0] == 30, points
@@ -2511,6 +2585,7 @@ async def test_rescoring_keeps_the_sanctions(db_path):
     assert points[1005] == (0, 0), "a driver who did not start was paid"
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2529,6 +2604,7 @@ async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db
     assert "**30 pts**" in posts[-1], posts[-1]
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_cancelled_division_is_rescored(db_path):
     """Beta was cancelled after two rounds; what it raced is scored under the new table too
     (decided 2026-09-26)."""
@@ -2546,6 +2622,7 @@ async def test_a_cancelled_division_is_rescored(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_finished_division_is_rescored_while_another_races(db_path):
     """Beta finished its season, its last round cancelled, while Alpha still has a round to
     race; what Beta raced is scored under the new table too."""
@@ -2563,6 +2640,7 @@ async def test_a_finished_division_is_rescored_while_another_races(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_rescoring_leaves_another_season_alone(db_path):
     """A completed season keeps the points it was scored with.
 
@@ -2590,13 +2668,13 @@ async def test_rescoring_leaves_another_season_alone(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 2000] == (25, 0)
 
 
+@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
-    """Scoring the second session raises: the approval fails whole, and the season, the
-    staged changes and the first session's points are exactly as they stood. Nothing is
-    reposted, and the log records no success."""
+    """Scoring the second session raises: the approval's save fails whole and the queue stops
+    at it, and the season, the staged changes and the first session's points are exactly as
+    they stood. Nothing is reposted, and the log records no success."""
     import sqlite3
 
-    from leaguebot.core.services.amendment_service import approve_amendment
     from leaguebot.results.services import result_submission_service
 
     path, season_id = db_path
@@ -2621,14 +2699,17 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
 
     reposted: list[tuple] = []
     bot = _scoring_bot(path, reposted)
-    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
-        await approve_amendment(path, season_id, 99, bot)
+    await _approve(path, season_id, bot)
 
-    assert reposted == [], "a failed approval reposted"
-    logged = "\n".join(
-        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
+    from tests.support.change_queue import stopped_job
+
+    stopped = await stopped_job(path)
+    assert stopped is not None and stopped["name"] == "apply", (
+        f"the queue did not stop at the approval's save: {stopped}"
     )
-    assert "AMENDMENT_APPROVED" not in logged, "a failed approval was logged as a success"
+    assert reposted == [], "a failed approval reposted"
+    logged = "\n".join(bot.log_channel.sent)
+    assert "| Success" not in logged, "a failed approval was logged as a success"
     points, staged, state = await _season_state(path, season_id)
     assert points == [(1, 25), (2, 18), (3, 15)], "the season's table moved"
     assert staged == [(1, 30), (2, 18), (3, 15)], "the staged changes were lost"
