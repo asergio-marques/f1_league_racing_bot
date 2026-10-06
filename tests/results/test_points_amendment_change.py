@@ -211,7 +211,6 @@ async def _approval_in_hand(league: Any, state: str, stack: ExitStack) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_repost_discord_refuses_stops_the_queue_and_no_success_is_recorded_until_it_lands(
     tmp_path,
 ):
@@ -237,7 +236,6 @@ async def test_a_repost_discord_refuses_stops_the_queue_and_no_success_is_record
     assert _replies(press).endswith(SUCCESS)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_standings_recompute_that_fails_changes_nothing_and_can_be_approved_again(
     tmp_path,
 ):
@@ -265,7 +263,6 @@ async def test_a_standings_recompute_that_fails_changes_nothing_and_can_be_appro
     assert (await points_state(league))["points"] == APPROVED_TABLE
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_second_approval_from_an_older_panel_is_refused_and_the_season_keeps_its_points(
     tmp_path,
 ):
@@ -284,7 +281,6 @@ async def test_a_second_approval_from_an_older_panel_is_refused_and_the_season_k
     assert (await points_state(league))["points"] == APPROVED_TABLE
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_an_approval_pressed_after_amendment_mode_was_turned_off_is_refused(tmp_path):
     """#507's second route: the staged changes reverted and amendment mode turned off while the
     panel stood open; its Approve is refused and the season's tables are untouched."""
@@ -302,7 +298,6 @@ async def test_an_approval_pressed_after_amendment_mode_was_turned_off_is_refuse
     assert before["points"] == SEASON_TABLE
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_old_results_tables_are_deleted_once_their_replacements_stand(tmp_path):
     """#445, the points half: with images off, each old results table is deleted, and only
     after its replacement is sent."""
@@ -473,7 +468,6 @@ async def _cancelled_results_lost(league: Any) -> None:
     league.remove_channel(BETA_RESULTS)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("setup, expected", [
     pytest.param(_live_channel_lost, NOT_PUBLISHED, id="live-channel-lost"),
     pytest.param(_cancelled_results_lost, NOT_PUBLISHED, id="cancelled-results-lost"),
@@ -502,7 +496,6 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     assert before["points"] == SEASON_TABLE
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_save_refuses_where_amendment_mode_ended_after_the_check(tmp_path):
     """A `names` job fails once; meanwhile amendment mode is turned off by a write to the
     database (no command can reach this window). Retried, the save writes nothing and the
@@ -522,7 +515,6 @@ async def test_the_save_refuses_where_amendment_mode_ended_after_the_check(tmp_p
     assert before["points"] == SEASON_TABLE
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_table_repaired_after_the_panel_was_drawn_is_approved(tmp_path):
     """The panel was drawn while P2 was staged above P1; the table is repaired before the press,
     and the press approves it (the check reads at the press, not the panel's reading)."""
@@ -539,7 +531,6 @@ async def test_a_table_repaired_after_the_panel_was_drawn_is_approved(tmp_path):
     assert (await points_state(league))["points"] == APPROVED_TABLE
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("state", ["waiting", "names", "post", "close"])
 async def test_a_second_press_while_the_approval_is_in_hand_is_refused_at_once_naming_its_job(
     tmp_path, state,
@@ -602,7 +593,6 @@ async def test_the_staging_commands_are_refused_while_the_approval_is_in_hand(
         assert await points_state(league) == before
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_staging_commands_run_again_once_the_approval_is_done_or_discarded(tmp_path):
     """Once the approval is done, `toggle` turns amendment mode on again; once a league admin
     discards its save, `session` stages again."""
@@ -672,7 +662,6 @@ async def _saved(league: Any) -> dict[str, Any]:
         }
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_admin_is_told_at_once_and_the_reply_is_updated_when_every_round_is_reposted(
     tmp_path,
 ):
@@ -691,7 +680,6 @@ async def test_the_admin_is_told_at_once_and_the_reply_is_updated_when_every_rou
     assert updated_reply(press) == SUCCESS
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_each_post_and_each_deletion_is_a_job_of_its_own(tmp_path):
     """The names are looked up a division at a time, then the save; then each results table,
     each standings and each deletion of an old message is a job of its own, Pro's before Am's,
@@ -729,7 +717,6 @@ async def test_each_post_and_each_deletion_is_a_job_of_its_own(tmp_path):
             assert deleted_at > posted_at
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_points_rescoring_standings_and_attendance_are_saved_in_one_save(tmp_path):
     """Attendance on; its recalculation raises inside the save. Nothing of the four is saved:
     the season's points, working copy and mode, every session's points and every standings
@@ -748,7 +735,6 @@ async def test_the_points_rescoring_standings_and_attendance_are_saved_in_one_sa
     assert await race_points(league, PRO, 1) == {LEWIS: 25, MAX: 18}
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_approval_is_audited_with_every_value_changed(tmp_path):
     """One `POINTS_AMENDMENT_APPROVED` record, by the admin who pressed, holding the season and
     the one value changed (Feature Race P1), before (25) and after (26)."""
@@ -796,7 +782,6 @@ async def test_one_success_line_names_the_admin_and_the_values_set_after_the_las
     assert "standings recomputed and reposted" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_only_raced_rounds_are_reposted_each_under_its_own_label(tmp_path):
     """Pro's rounds 1 and 2 (final) and 3 (awaiting its report verdicts) are reposted, each under
     its own label; round 4, not run, and round 5, recorded as cancelled, post nothing."""
@@ -822,7 +807,6 @@ async def test_only_raced_rounds_are_reposted_each_under_its_own_label(tmp_path)
                for job in await _jobs(league))
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_every_division_is_reposted_a_cancelled_one_included(tmp_path):
     """Beta, cancelled, has its raced round 1 reposted in its own channels (results 721,
     standings 720), after Am's, and its old messages deleted."""
@@ -899,7 +883,6 @@ async def test_a_discarded_deletion_links_the_old_table_for_deletion_by_hand(tmp
     assert len(league.sent_to(PRO_RESULTS)) == 3
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_discarded_save_says_nothing_was_changed_and_leaves_amendment_mode_on(tmp_path):
     """The save fails (the standings cannot be computed) and a league admin discards it: the
     reply says nothing was changed, the season keeps its points, the staged changes and
@@ -920,7 +903,6 @@ async def test_a_discarded_save_says_nothing_was_changed_and_leaves_amendment_mo
     assert _success_lines(league) == [] and _incomplete_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_discarded_names_job_changes_nothing_and_the_save_is_never_made(tmp_path):
     """A `names` job fails and a league admin discards it: the save is not due, so the reply
     says nothing was changed, the season keeps its points, the staged changes and amendment
@@ -946,7 +928,6 @@ async def test_a_discarded_names_job_changes_nothing_and_the_save_is_never_made(
     assert _success_lines(league) == [] and _incomplete_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_stop_after_the_save_finishes_the_reposts_on_restart_and_records_one_success(
     tmp_path,
 ):
@@ -974,7 +955,6 @@ async def test_a_stop_after_the_save_finishes_the_reposts_on_restart_and_records
     assert acknowledgement(press).startswith("⏳ Approving season 1's points amendment.")
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_stop_before_the_save_applies_the_points_once_on_restart(tmp_path):
     """The bot stops after the first `names` job, before the save; restarted, the queue applies
     the points once: the season's table, every session rescored, amendment mode off, one audit
@@ -1030,7 +1010,6 @@ def _headed_by(league: Any) -> list[int]:
     return headed
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_each_division_s_sheet_and_sanctions_follow_its_reposts_at_its_latest_approved_round(
     tmp_path,
 ):
@@ -1096,7 +1075,6 @@ async def test_a_sanction_that_does_not_apply_stops_the_queue_and_once_discarded
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_clean_sanctions_run_adds_nothing_to_the_reply(tmp_path):
     """Max is owed an autoreserve in Pro and it applies and is announced: the reply is today's
     success text alone, and one success line is written, no `Incomplete`."""
@@ -1127,7 +1105,6 @@ async def test_attendance_off_posts_no_sheet_and_applies_no_sanction(tmp_path):
     assert updated_reply(press) == SUCCESS
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_sanction_cards_go_beneath_the_round_s_recorded_banner(tmp_path):
     """A banner is recorded for Pro's round 2, where Max's autoreserve falls due: his card goes
     beneath it, no heading is planned and the banner stands."""
@@ -1152,7 +1129,6 @@ async def test_the_sanction_cards_go_beneath_the_round_s_recorded_banner(tmp_pat
     assert updated_reply(press) == SUCCESS
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_sanction_cards_raise_a_heading_only_where_the_round_has_none_and_it_stops_the_queue(
     tmp_path,
 ):

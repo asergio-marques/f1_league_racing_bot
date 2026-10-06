@@ -55,8 +55,6 @@ from tests.support.undecorate import undecorate
 SERVER_ID = 12108
 SEASON_ID = 1
 
-ASKS_THE_QUEUE = "#439: Approve still approves on the spot rather than asking the change queue"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -418,7 +416,6 @@ async def test_a_sound_table_earns_no_warning():
     assert "cannot be approved" not in _panel(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_the_panel_does_not_refuse_the_button():
     """The fault is shown, not enforced here — an admin may still press Approve, and the
     change's check, when the queue is asked, is what actually stops it."""
@@ -440,7 +437,6 @@ async def test_the_panel_does_not_refuse_the_button():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_approving_asks_the_queue_for_the_season_s_approval():
     """One ask, of the points approval's kind, naming the season by id and number, through
     the press and under the command's name."""
@@ -553,7 +549,6 @@ async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     assert "Success" not in posted[0]
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_a_press_is_answered_through_its_own_interaction():
     """The command's token can run out long before the approval finishes (D1): the queue is
     handed the press, not yet answered, so its acknowledgement is the press's own response,
@@ -663,7 +658,6 @@ async def test_a_sound_season_earns_no_channel_warning():
     assert "could not be published" not in _panel(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_the_channels_are_checked_again_at_the_press():
     """The panel stays open for five minutes, so a channel can be deleted between the diff
     being drawn and the button being pressed. The change reads them again for that reason."""
@@ -695,7 +689,6 @@ async def test_the_panel_names_a_round_being_amended():
     assert "Round 2 of **Pro** is being amended in <#8200>" in panel
 
 
-@pytest.mark.xfail(strict=True, reason=ASKS_THE_QUEUE)
 async def test_an_amendment_finished_after_the_panel_was_drawn_does_not_refuse():
     cog = _make_cog()
 

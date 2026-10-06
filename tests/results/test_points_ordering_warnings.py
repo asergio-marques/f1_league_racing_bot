@@ -484,11 +484,6 @@ def _stop_view(*_args, **kwargs) -> None:
         view.stop()
 
 
-#: Approving a points amendment is a change on the queue (#439, slice 3).
-APPROVAL_UNBUILT = "#439: approving a points amendment is not yet a change on the change queue"
-
-
-@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 @pytest.mark.asyncio
 async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_nothing(
     db_path, season
