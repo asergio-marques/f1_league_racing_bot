@@ -45,7 +45,14 @@ class AttendanceAfterReview(Protocol):
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:
         """Rebuild the round's attended flags from its results, in both directions (FR-028),
-        and carry the totals through every later final round: an amendment's."""
+        and carry the totals through every later final round: an amendment's.
+
+        Saved on *db*, the caller's connection, and committed by the caller: the recalculation
+        is one transaction with whatever else the approval writes (#187). Pardons already
+        recorded are kept (FR-029) and the totals are carried forward through every later
+        approved round (FR-030). The sheet and the sanctions that follow (FR-031) are planned
+        against the latest approved round of the division, where the totals now stand (#238).
+        Does nothing while attendance is off."""
 
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
