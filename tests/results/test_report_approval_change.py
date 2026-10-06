@@ -517,6 +517,70 @@ async def test_each_driver_over_a_threshold_is_sanctioned_and_announced_in_jobs_
     assert league.attendance._calls("refresh_lineup") == [("refresh_lineup", DIVISION_ID)]
 
 
+#: Round 4's banner, heading its own verdicts in the verdicts channel since it went final.
+LATER_BANNER = 8970
+
+
+async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanction_cards_with_one_banner(
+    tmp_path,
+):
+    """Round 3's reports are approved while round 4 is already final, its verdicts standing
+    under a banner of its own. The attendance cascade carries the totals to round 4, where Max
+    is over a threshold, but his sanction follows round 3's verdicts: its card goes beneath the
+    banner posted for them, and round 4's banner is left as it was. The double's announcement
+    posts the card as the real hook does, through `announce_sanction`, beneath the banner of the
+    round it is handed."""
+    from leaguebot.results.services import verdict_announcement_service
+
+    league = await review_league(tmp_path, attendance=True)
+    league.channel(VERDICTS_CHANNEL).seed(LATER_BANNER, "**Season 1 Pro Round 4**")
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO verdict_banner_messages (round_id, channel_id, message_id, posted_at) "
+            "VALUES (?, ?, ?, '2026-02-08T21:00:00+00:00')",
+            (LATER_ROUND_ID, str(VERDICTS_CHANNEL), str(LATER_BANNER)),
+        )
+        await db.commit()
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    headed_by: list[int] = []
+    recorded = league.attendance.announce_sanction
+
+    async def _announce(round_id: int, division_id: int, owed: dict[str, Any], *,
+                        as_text: bool) -> None:
+        headed_by.append(round_id)
+        await recorded(round_id, division_id, owed, as_text=as_text)
+        await verdict_announcement_service.announce_sanction(
+            league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
+            owed["sanction"], 10, as_text=as_text,
+        )
+
+    league.attendance.announce_sanction = _announce
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert headed_by == [ROUND_ID]
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 4, "the two verdicts and the card follow one banner, and no other is posted"
+    assert LATER_BANNER in league.channel(VERDICTS_CHANNEL).messages
+    banners = await one(
+        league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages WHERE round_id = ?",
+        ROUND_ID,
+    )
+    assert banners == 1
+    assert await one(
+        league.db_path,
+        "SELECT heads_sanctions FROM verdict_banner_messages WHERE message_id = ?",
+        str(sent[0]),
+    ) == 1
+    assert await one(
+        league.db_path,
+        "SELECT heads_sanctions FROM verdict_banner_messages WHERE message_id = ?",
+        str(LATER_BANNER),
+    ) == 0
+
+
 async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
