@@ -360,6 +360,7 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "grant_roles"
+    assert f"granting <@{LEWIS}> the roles of **Pro** and Ferrari" in league.log()
     await discard_job(league.bot)
 
     line = f"<@{LEWIS}> — their roles could not be granted. Give them their division's and team's roles by hand."
@@ -744,6 +745,7 @@ async def test_a_stuck_arming_leaves_the_season_ongoing_and_arms_once_retried(
     await run_queue(league.bot)
 
     assert await _stopped_at(league) == "arm"
+    assert "arming the timed work of season 3" in league.log()
     assert (await league.season())["stage"] == "ONGOING"
     assert league.armed == []
 
@@ -1198,6 +1200,7 @@ async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discard
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "tell_review_channel"
+    assert f"telling <#{REVIEW_CHANNEL}> how the approval of season 3 ended" in league.log()
     await discard_job(league.bot)
 
     assert _told(league, CHANNEL_APPROVED) == 0
