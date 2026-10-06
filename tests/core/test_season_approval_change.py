@@ -183,6 +183,14 @@ def _all_rounds() -> list[int]:
     return [round_id(division, n) for division in (PRO, AM) for n in range(1, 5)]
 
 
+def _armed(league: Any) -> dict[str, list[int]]:
+    """The rounds armed, by the kind of timed work: weather, results or attendance."""
+    armed: dict[str, list[int]] = {}
+    for which, rounds in league.armed:
+        armed.setdefault(which, []).extend(rounds)
+    return {which: sorted(rounds) for which, rounds in armed.items()}
+
+
 def _not_done(text: str) -> list[str]:
     """The bullets of the reply's "Not everything could be done" section, in order."""
     assert NOT_EVERYTHING in text, text
@@ -262,6 +270,8 @@ async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calen
         assert len(league.texts(chans.lineup)) == 1
         assert len(league.texts(chans.calendar)) == 1
         assert len(league.texts(chans.attendance)) == 1
+    assert _armed(league) == {"results": sorted(_all_rounds()),
+                              "attendance": sorted(_all_rounds())}
     assert len(_confirmed_lines(league)) == 1
 
 
@@ -718,6 +728,8 @@ async def test_a_test_driver_and_an_uncommitted_placement_are_granted_nothing(
                      id="weather off and results on"),
         pytest.param({"weather": False, "results": True, "test_mode": True}, [],
                      id="weather off and results on under test mode"),
+        pytest.param({"weather": False, "results": True, "attendance": True},
+                     ["results", "attendance"], id="weather off, results and attendance on"),
         pytest.param({"weather": False, "results": False}, [], id="neither"),
     ],
 )
@@ -730,7 +742,7 @@ async def test_the_timed_work_is_armed_by_today_s_module_rules(
 
     await run_queue(league.bot)
 
-    assert league.armed == [(which, _all_rounds()) for which in armed]
+    assert _armed(league) == {which: sorted(_all_rounds()) for which in armed}
     assert (await _approval(league))["state"] == "DONE"
 
 
