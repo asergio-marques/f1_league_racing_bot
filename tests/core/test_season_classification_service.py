@@ -5,8 +5,8 @@ Both are the standings and attendance sheets a league already reads every round,
 different heading and with no message text — see
 ``leaguebot.core.models.classification_occasion.ClassificationOccasion``.
 
-What matters here is the orchestration: which sheets are posted for which division, and
-that one division's failure never stops the next. What the sheets *say* is covered by
+What matters here is the orchestration: which sheets are posted for which division, and,
+for the opening one, that each division's posting raises where it cannot be made. What the sheets *say* is covered by
 ``test_image_standings_service`` and ``test_attendance_sheet_posting``.
 """
 from __future__ import annotations
@@ -20,22 +20,6 @@ from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services import season_classification_service as service
 
 pytestmark = pytest.mark.asyncio
-
-
-def _division(division_id: int, name: str, channel_id=900):
-    division = MagicMock()
-    division.id = division_id
-    division.name = name
-    division.standings_channel_id = channel_id
-    return division
-
-
-def _round(round_id: int, number: int):
-    rnd = MagicMock()
-    rnd.id = round_id
-    rnd.round_number = number
-    rnd.track_name = "Silverstone Circuit"
-    return rnd
 
 
 def _bot(path):
@@ -127,20 +111,54 @@ def _patched(standings=None, attendance=None):
 
 
 # ── The opening classification ────────────────────────────────────────────
+#
+# One division at a time, each a job of the season's approval on the change queue (#439,
+# slice 4a): the standings and the sheet are two functions, each reading the division's
+# channel and its first round as it runs, and each raising where it cannot post, for the
+# queue to stop on. The standings channel is read from `division_results_config`, where
+# `/division results-channel` keeps it; the approval used to look for it on a division read
+# that never carries it, so no opening standings were ever posted.
+
+_ONE_DIVISION = "#439: the opening classification is not yet posted one division at a time"
 
 
+def _opening_posts(standings=None, attendance=None):
+    """The opening standings, through whichever of results' two posting functions it uses,
+    and the sheet. Both standings doubles are the one mock, so a test reads either."""
+    standings = standings or AsyncMock(return_value=[])
+    return (
+        patch("leaguebot.results.services.results_post_service.post_standings", standings),
+        patch("leaguebot.results.services.results_post_service.produce_standings", standings),
+        patch(
+            "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
+            attendance or AsyncMock(return_value=None),
+        ),
+    )
+
+
+async def _first_round_id(path, division_id: int) -> int:
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM rounds WHERE division_id = ? AND round_number = 1", (division_id,)
+        )
+        return (await cursor.fetchone())["id"]
+
+
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_posts_both_sheets_for_every_division(db_path):
     _season_id, division_ids = await _seed(db_path, divisions=("Div A", "Div B"))
-    divisions = [_division(division_ids[0], "Div A"), _division(division_ids[1], "Div B")]
-    div_rounds = {division_ids[0]: [_round(1, 1)], division_ids[1]: [_round(2, 1)]}
-    standings, attendance = AsyncMock(), AsyncMock()
+    standings, attendance = AsyncMock(return_value=[]), AsyncMock()
 
-    with _patched(standings, attendance)[0], _patched(standings, attendance)[1]:
-        problems = await service.post_opening_classifications(
-            _bot(db_path), _guild(), db_path, divisions, div_rounds
-        )
+    first, second, third = _opening_posts(standings, attendance)
+    with first, second, third:
+        for division_id in division_ids:
+            await service.post_opening_standings(
+                _bot(db_path), _guild(), db_path, division_id, as_text=False
+            )
+            await service.post_opening_sheet(
+                _bot(db_path), _guild(), db_path, division_id, as_text=False
+            )
 
-    assert problems == []
     assert standings.await_count == 2
     assert attendance.await_count == 2
     assert all(
@@ -149,76 +167,131 @@ async def test_the_opening_posts_both_sheets_for_every_division(db_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_is_drawn_against_the_divisions_first_round(db_path):
     """Not because it stands after it — the grid of rounds is read from the calendar."""
     _season_id, division_ids = await _seed(db_path)
-    divisions = [_division(division_ids[0], "Div A")]
-    div_rounds = {division_ids[0]: [_round(41, 1), _round(42, 2)]}
-    standings = AsyncMock()
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
+            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
+            (division_ids[0],),
+        )
+        await db.commit()
+    opener = await _first_round_id(db_path, division_ids[0])
+    standings, attendance = AsyncMock(return_value=[]), AsyncMock()
 
-    with _patched(standings)[0], _patched(standings)[1]:
-        await service.post_opening_classifications(
-            _bot(db_path), _guild(), db_path, divisions, div_rounds
+    first, second, third = _opening_posts(standings, attendance)
+    with first, second, third:
+        await service.post_opening_standings(
+            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
+        )
+        await service.post_opening_sheet(
+            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
         )
 
-    assert standings.await_args.args[2] == 41
+    assert standings.await_args.args[2] == opener
+    assert attendance.await_args.args[3] == opener
 
 
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_carries_no_lifecycle_label(db_path):
     _season_id, division_ids = await _seed(db_path)
-    standings = AsyncMock()
+    standings = AsyncMock(return_value=[])
 
-    with _patched(standings)[0], _patched(standings)[1]:
-        await service.post_opening_classifications(
-            _bot(db_path),
-            _guild(),
-            db_path,
-            [_division(division_ids[0], "Div A")],
-            {division_ids[0]: [_round(41, 1)]},
+    first, second, third = _opening_posts(standings)
+    with first, second, third:
+        await service.post_opening_standings(
+            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
         )
 
     assert standings.await_args.args[10] == ""
 
 
-async def test_one_divisions_failure_does_not_stop_the_next(db_path):
-    """Approval is far too consequential to be failed by a picture."""
-    _season_id, division_ids = await _seed(db_path, divisions=("Div A", "Div B"))
-    divisions = [_division(division_ids[0], "Div A"), _division(division_ids[1], "Div B")]
-    div_rounds = {division_ids[0]: [_round(1, 1)], division_ids[1]: [_round(2, 1)]}
-    standings = AsyncMock(side_effect=[RuntimeError("the template is at fault"), None])
-    attendance = AsyncMock()
-
-    with _patched(standings, attendance)[0], _patched(standings, attendance)[1]:
-        problems = await service.post_opening_classifications(
-            _bot(db_path), _guild(), db_path, divisions, div_rounds
-        )
-
-    assert standings.await_count == 2, "the second division is still posted"
-    assert attendance.await_count == 2
-    assert len(problems) == 1
-    assert "Div A standings" in problems[0]
-
-
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_a_division_with_no_rounds_is_skipped(db_path):
     _season_id, division_ids = await _seed(db_path)
-    standings = AsyncMock()
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM rounds WHERE division_id = ?", (division_ids[0],))
+        await db.commit()
+    standings, attendance = AsyncMock(return_value=[]), AsyncMock()
 
-    with _patched(standings)[0], _patched(standings)[1]:
-        problems = await service.post_opening_classifications(
-            _bot(db_path), _guild(), db_path, [_division(division_ids[0], "Div A")], {}
+    first, second, third = _opening_posts(standings, attendance)
+    with first, second, third:
+        await service.post_opening_standings(
+            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
+        )
+        await service.post_opening_sheet(
+            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
         )
 
-    assert problems == []
     assert standings.await_count == 0
+    assert attendance.await_count == 0
 
 
-async def test_no_guild_posts_nothing(db_path):
-    standings = AsyncMock()
-    with _patched(standings)[0], _patched(standings)[1]:
-        assert await service.post_opening_classifications(
-            _bot(db_path), None, db_path, [_division(1, "Div A")], {}
-        ) == []
-    assert standings.await_count == 0
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
+async def test_the_opening_standings_post_reads_the_division_s_standings_channel(db_path):
+    """Div A's standings channel (900) is set with `/division results-channel`, in the results
+    module's own settings: the opening classification is posted there, both championships."""
+    _season_id, division_ids = await _seed(db_path)
+    guild = _guild()
+    standings_channel = MagicMock()
+    guild.get_channel.side_effect = lambda channel_id: (
+        standings_channel if channel_id == 900 else None
+    )
+    standings = AsyncMock(return_value=[])
+
+    first, second, third = _opening_posts(standings)
+    with first, second, third:
+        await service.post_opening_standings(
+            _bot(db_path), guild, db_path, division_ids[0], as_text=False
+        )
+
+    standings.assert_awaited_once()
+    args = standings.await_args.args
+    assert args[5] is standings_channel
+    assert args[6], "the drivers' championship"
+    assert args[7] is not None, "the constructors' championship"
+    assert standings.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
+
+
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
+async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
+    """Div A's standings channel (900) has been deleted from the server: the job raises for
+    the queue to stop on, rather than passing over the division in silence."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    _season_id, division_ids = await _seed(db_path)
+    guild = _guild()
+    guild.get_channel.return_value = None
+    standings = AsyncMock(return_value=[])
+
+    first, second, third = _opening_posts(standings)
+    with first, second, third, pytest.raises(StepFailedOnDiscord):
+        await service.post_opening_standings(
+            _bot(db_path), guild, db_path, division_ids[0], as_text=False
+        )
+
+    standings.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
+async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
+    """Discord refuses Div A's opening attendance sheet: the sheet is asked for with
+    `raise_on_failure`, and what it raises reaches the job, for the queue to stop on."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    _season_id, division_ids = await _seed(db_path)
+    attendance = AsyncMock(side_effect=StepFailedOnDiscord("the sheet could not be posted"))
+
+    first, second, third = _opening_posts(attendance=attendance)
+    with first, second, third, pytest.raises(StepFailedOnDiscord):
+        await service.post_opening_sheet(
+            _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
+        )
+
+    assert attendance.await_args.kwargs["raise_on_failure"] is True
+    assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
 
 
 # ── The final classification ──────────────────────────────────────────────
