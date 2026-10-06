@@ -905,6 +905,32 @@ async def test_a_discarded_save_says_nothing_was_changed_and_leaves_amendment_mo
 
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_discarded_names_job_changes_nothing_and_the_save_is_never_made(tmp_path):
+    """A `names` job fails and a league admin discards it: the save is not due, so the reply
+    says nothing was changed, the season keeps its points, the staged changes and amendment
+    mode, no session is rescored, nothing is posted or audited, and no success or
+    `Incomplete` line is written; the queue runs on."""
+    league = await points_league(tmp_path)
+    before, saved = await points_state(league), await _saved(league)
+
+    with _names_fail_once():
+        press = await press_approve(league)
+        await run_queue(league.bot)
+        assert await stopped_at(league) == "names"
+        await discard_job(league.bot)
+
+    assert updated_reply(press).endswith(NOTHING_CHANGED)
+    assert await stopped_job(league.db_path) is None
+    assert await points_state(league) == before
+    assert before["mode"][0][0] == 1
+    assert await _saved(league) == saved
+    assert await audit_rows(league, "POINTS_AMENDMENT_APPROVED") == []
+    assert all(league.sent_to(cid) == []
+               for cid in (PRO_RESULTS, PRO_STANDINGS, AM_RESULTS, AM_STANDINGS))
+    assert _success_lines(league) == [] and _incomplete_lines(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_stop_after_the_save_finishes_the_reposts_on_restart_and_records_one_success(
     tmp_path,
 ):
