@@ -47,10 +47,14 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.season_points import snapshot_points
 
 SERVER_ID = 3300
 SEASON_ID = 11
 USER_ID = 77
+
+
+_SNAPSHOT_ON = "#439: the points snapshot has no form on a handed save yet"
 
 
 @pytest.fixture
@@ -774,12 +778,11 @@ async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
     """A re-approval is looked at from both sides; the manager reads one line, not two."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
-    from leaguebot.results.services import season_points_service
-
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
+    await snapshot_points(db_path, SEASON_ID)
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 

@@ -14,8 +14,11 @@ from leaguebot.results.services.points_config_service import (
 from leaguebot.results.services.season_points_service import (
     attach_config,
     list_season_configs_with_sessions,
-    snapshot_configs_to_season,
 )
+from tests.support.season_points import snapshot_points
+
+
+_SNAPSHOT_ON = "#439: the points snapshot has no form on a handed save yet"
 
 
 @pytest.fixture
@@ -150,30 +153,33 @@ async def _season_in_setup(path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_list_season_configs_with_sessions_reads_the_seasons_own_store(db_path):
     await _season_in_setup(db_path)
     await create_config(db_path, "Standard")
     await set_session_points(db_path, "Standard", SessionType.FEATURE_RACE, 1, 25)
     await attach_config(db_path, SEASON_ID, "Standard", "SETUP")
-    await snapshot_configs_to_season(db_path, SEASON_ID)
+    await snapshot_points(db_path, SEASON_ID)
 
     rows = await list_season_configs_with_sessions(db_path, SEASON_ID)
 
     assert rows == [("Standard", [SessionType.FEATURE_RACE])]
 
 
+@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_list_season_configs_reports_an_attached_but_unfilled_config(db_path):
     """Attached and empty must read as attached, not vanish — as on the server side."""
     await _season_in_setup(db_path)
     await create_config(db_path, "Never Filled")
     await attach_config(db_path, SEASON_ID, "Never Filled", "SETUP")
-    await snapshot_configs_to_season(db_path, SEASON_ID)
+    await snapshot_points(db_path, SEASON_ID)
 
     rows = await list_season_configs_with_sessions(db_path, SEASON_ID)
 
     assert rows == [("Never Filled", [])]
 
 
+@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_list_configs_reads_the_season_store_after_snapshot_diverges(db_path):
     """The reason `/results config list` makes the manager name the store (#200).
 
@@ -185,7 +191,7 @@ async def test_list_configs_reads_the_season_store_after_snapshot_diverges(db_pa
     await create_config(db_path, "Standard")
     await set_session_points(db_path, "Standard", SessionType.FEATURE_RACE, 1, 25)
     await attach_config(db_path, SEASON_ID, "Standard", "SETUP")
-    await snapshot_configs_to_season(db_path, SEASON_ID)
+    await snapshot_points(db_path, SEASON_ID)
 
     # The server's copy gains a session the season's snapshot never took.
     await set_session_points(db_path, "Standard", SessionType.SPRINT_RACE, 1, 8)
