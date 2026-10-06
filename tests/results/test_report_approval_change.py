@@ -646,10 +646,7 @@ OTHER_ROUND_ID = 25
 @pytest.mark.parametrize("case", [
     "scored",
     "discarded",
-    pytest.param("unscored", marks=pytest.mark.xfail(strict=True, reason=(
-        "#439: a sacked driver's other division with no scored round of its own still gets a "
-        "sheet job, drawn at the sacking round, where it is to get none"
-    ))),
+    "unscored",
 ])
 async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(tmp_path, case):
     """Max, over the autosack threshold, also sat in division 12 (Am); Lewis is owed an

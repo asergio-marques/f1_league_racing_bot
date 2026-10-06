@@ -485,10 +485,14 @@ async def _describe_sheet(ctx: StepContext) -> str:
 
 async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
+    sanctioned = {int(p) for p in payload.get("sanctioned", [])}
+    if payload.get("after_sanctions"):
+        # Only a driver whose sanction applied is marked: one discarded or dropped is not.
+        sanctioned &= {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
     try:
         await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
-            sanctioned={int(p) for p in payload.get("sanctioned", [])}, as_text=ctx.tries > 0,
+            sanctioned=sanctioned, as_text=ctx.tries > 0,
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
@@ -503,9 +507,9 @@ async def _division_name(db_path: str, division_id: int) -> str:
     return "the division" if row is None else str(row["name"])
 
 
-async def _latest_scored_round(db_path: str, division_id: int, fallback: int) -> int:
+async def _latest_scored_round(db_path: str, division_id: int) -> int | None:
     """The division's latest round with a recorded attendance total, which is where its current
-    sheet stands; *fallback* where it has none."""
+    sheet stands; `None` where it has none, and so has no sheet to correct."""
     async with get_connection(db_path) as db:
         row = await (await db.execute(
             "SELECT r.id FROM rounds r JOIN driver_round_attendance dra ON dra.round_id = r.id "
@@ -513,7 +517,7 @@ async def _latest_scored_round(db_path: str, division_id: int, fallback: int) ->
             "ORDER BY r.round_number DESC LIMIT 1",
             (division_id,),
         )).fetchone()
-    return fallback if row is None else int(row["id"])
+    return None if row is None else int(row["id"])
 
 
 async def _describe_plan(ctx: StepContext) -> str:
@@ -542,11 +546,16 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
             for other in candidate.get("other_divisions", []):
                 sheets.setdefault(int(other), set()).add(int(candidate["driver_profile_id"]))
         for sheet_division in [division_id, *sorted(d for d in sheets if d != division_id)]:
+            # Another division's sheet is drawn as at that division's own latest round, not the
+            # round the sack was decided at, whose number means nothing there; a division with
+            # no scored round has posted no sheet yet, so there is none to correct.
+            sheet_round = round_id if sheet_division == division_id else (
+                await _latest_scored_round(ctx.db_path, sheet_division)
+            )
+            if sheet_round is None:
+                continue
             planned.append(PlannedStep(ATTENDANCE_SHEET, {
-                # Another division's sheet is drawn as at that division's own latest round, not
-                # the round the sack was decided at, whose number means nothing there.
-                "round_id": round_id if sheet_division == division_id
-                else await _latest_scored_round(ctx.db_path, sheet_division, round_id),
+                "round_id": sheet_round,
                 "division_id": sheet_division,
                 "division": division if sheet_division == division_id
                 else await _division_name(ctx.db_path, sheet_division),
