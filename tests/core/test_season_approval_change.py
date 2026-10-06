@@ -51,6 +51,7 @@ from tests.support.season_league import (
     AM_ROLE,
     REVIEW_CHANNEL,
     SEASON_ID,
+    SEASON_NUMBER,
     TEST_DRIVER,
     DIVISIONS,
     approval_changes,
@@ -65,6 +66,9 @@ from tests.support.undecorate import undecorate
 _ON_THE_QUEUE = "#439: ✅ Approve still approves the season on the spot, not through the change queue"
 _NOTICE_AS_A_JOB = "#439: the review's channel is not yet told of the outcome by a job on the queue"
 _LATE_REFUSAL = "#439: a refusal as the approval runs is not yet told in the review's channel"
+_ARMED_WHATEVER_THE_MODULES = (
+    "#439: with weather and results both off, approving a season arms no result submission"
+)
 _OPENING_STANDINGS = (
     "#439: the opening standings read a standings channel get_divisions never fills, so none is "
     "posted"
@@ -725,13 +729,16 @@ async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
                      id="weather off and results on under test mode"),
         pytest.param({"weather": False, "results": True, "attendance": True},
                      ["results", "attendance"], id="weather off, results and attendance on"),
-        pytest.param({"weather": False, "results": False}, [], id="neither"),
+        pytest.param({"weather": False, "results": False}, ["results"],
+                     id="weather and results off"),
+        pytest.param({"weather": False, "results": False, "test_mode": True}, ["results"],
+                     id="weather and results off under test mode"),
     ],
 )
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
-async def test_the_timed_work_is_armed_by_today_s_module_rules(
-    tmp_path, monkeypatch, modules, armed,
-):
+async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
+    """Each round's result submission is armed whatever the modules, save under test mode with
+    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in")."""
     league = await _league_for(tmp_path, monkeypatch, **modules)
     await _pressed(league)
 
@@ -739,6 +746,52 @@ async def test_the_timed_work_is_armed_by_today_s_module_rules(
 
     assert _armed(league) == {which: sorted(_all_rounds()) for which in armed}
     assert (await _approval(league))["state"] == "DONE"
+
+
+@pytest.mark.parametrize("test_mode", [False, True], ids=["test mode off", "test mode on"])
+@pytest.mark.xfail(strict=True, reason=_ARMED_WHATEVER_THE_MODULES)
+async def test_a_season_with_weather_and_results_off_arms_a_result_submission_for_each_round(
+    tmp_path, monkeypatch, test_mode,
+):
+    league = await _league_for(tmp_path, monkeypatch, weather=False, results=False,
+                               test_mode=test_mode)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    arm = league.bot.scheduler_service.schedule_result_submission_jobs
+    assert arm.call_count == 1, league.armed
+    assert league.armed == [("results", _all_rounds())]
+    assert arm.call_args.kwargs["division_meta"] == {
+        division: (SEASON_NUMBER, DIVISIONS[division][1]) for division in (PRO, AM)
+    }
+
+
+@pytest.mark.xfail(strict=True, reason=_ARMED_WHATEVER_THE_MODULES)
+async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
+    tmp_path, monkeypatch,
+):
+    """Each armed job fired as the scheduler would fire it at its round's moment."""
+    from leaguebot.results.services import result_submission_service
+
+    league = await _league_for(tmp_path, monkeypatch, weather=False, results=False)
+    await _pressed(league)
+    await run_queue(league.bot)
+    fired = _armed(league).get("results", [])
+    assert fired == sorted(_all_rounds())
+    before = {cid: league.texts(cid) for cid in league.channels}
+
+    with patch.object(result_submission_service, "create_submission_channel",
+                      AsyncMock()) as create:
+        for each in fired:
+            await result_submission_service.run_result_submission_job(each, league.bot)
+
+    rounds = await league.rows("SELECT status FROM rounds")
+    assert {row["status"] for row in rounds} == {"FINAL"}
+    divisions = await league.rows("SELECT status FROM divisions")
+    assert {row["status"] for row in divisions} == {"FINISHED"}
+    create.assert_not_awaited()
+    assert {cid: league.texts(cid) for cid in league.channels} == before
 
 
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
