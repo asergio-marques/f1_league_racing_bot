@@ -760,14 +760,15 @@ async def test_the_blocker_never_blocks_a_season_it_could_not_read():
     assert await cog._portrait_configuration_blocker() is None
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the approval is not yet asked of the change queue")
 def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
-    refusal must stop the approval rather than report and carry on. Driven, not read, in
-    `test_do_approve_gates.py`."""
+    refusal must stop the approval rather than report and carry on, before the approval is
+    asked of the change queue (#439). Driven, not read, in `test_do_approve_gates.py`."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
 
     branch = source[source.index("if image_faults:"):]
-    branch = branch[: branch.index("snapshot_configs_to_season")]
+    branch = branch[: branch.index("change_queue.ask")]
     assert "return" in branch
     assert "Season cannot be approved" in branch
 
