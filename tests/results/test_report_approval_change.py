@@ -850,6 +850,71 @@ async def test_a_fault_working_out_the_cards_heading_comes_before_the_sanction_i
     hook.apply_sanction.assert_not_awaited()
 
 
+#: What a league admin is told where the job working out who is owed a sanction was discarded.
+SANCTIONS_PLAN_DISCARDED = (
+    "⚠️ The attendance sanctions of Pro were not worked out, so none was applied. Repair the "
+    "cause, then run `/attendance sync division:Pro round:3`."
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a failed sanctions plan carries no sync hint for its discard")
+async def test_a_failed_sanctions_plan_keeps_the_sync_hint_for_its_discard(tmp_path):
+    """A fault reading which drivers are owed a sanction fails the `plan_sanctions` job as the
+    sheet's and a sanction's do: the failure keeps the hook's `attendance sync` hint on its kept
+    result, for the line a Discard writes, and the fault stays its cause, which the stop notice
+    names by its type."""
+    from leaguebot.results.services import review_verdicts
+
+    league = await review_league(tmp_path, attendance=True)
+    hook = MagicMock()
+    fault = RuntimeError("database is locked")
+    hook.sanction_candidates = AsyncMock(side_effect=fault)
+    hook.sync_hint = AsyncMock(
+        return_value="Repair the cause, then run `/attendance sync division:Pro round:3`."
+    )
+    ctx = MagicMock()
+    ctx.db_path = league.db_path
+    ctx.steps = ()
+    ctx.step_payload = {"round_id": ROUND_ID, "division_id": DIVISION_ID, "division": "Pro"}
+
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await review_verdicts._plan_sanctions(ctx, hook)
+
+    assert raised.value.result["hint"] == (
+        "Repair the cause, then run `/attendance sync division:Pro round:3`."
+    )
+    assert raised.value.__cause__ is fault
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a discarded sanctions plan leaves the penalty approval a success")
+async def test_a_discarded_sanctions_plan_makes_the_penalty_approval_incomplete_naming_attendance_sync(
+    tmp_path,
+):
+    """A league admin discards the job working out which drivers of Pro are owed an attendance
+    sanction, after the reports were approved with attendance on. No sanction was weighed, so
+    the approval is `Incomplete`, its reply and log line naming the sanctions not worked out and
+    the `attendance sync` command that finishes them, never `Success` (attendance
+    specification, "A run of the sanctions that cannot begin at all")."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.candidates_fail = RuntimeError("database is locked")
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "plan_sanctions"
+
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance._calls("apply_sanction") == []
+    reply = updated_reply(interaction)
+    assert SANCTIONS_PLAN_DISCARDED in reply
+    log = league.log()
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in log
+    assert "PENALTY_REVIEW_APPROVED | Success" not in log
+    approved = log[log.index("PENALTY_REVIEW_APPROVED | Incomplete"):]
+    assert SANCTIONS_PLAN_DISCARDED in approved
+
+
 async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]

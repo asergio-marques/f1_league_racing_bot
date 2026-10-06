@@ -160,7 +160,8 @@ class AttendanceDouble:
     `candidates` are the drivers over a threshold; one whose profile is in `applied` is no longer
     owed. `record_fails`, `sheet_fails` (a list, one per failing try), `apply_fails` and
     `announce_fails` (by profile) and `lineup_fails` (a list, one per failing try) make a call
-    raise.
+    raise; so do `recalculate_fails`, raised by `recalculate_on`, and `candidates_fail`, raised
+    by `sanction_candidates` while attendance is on, each on every call while it is set.
     """
 
     def __init__(self, league: "ReviewLeague") -> None:
@@ -173,6 +174,8 @@ class AttendanceDouble:
         self.apply_fails: dict[int, Exception] = {}
         self.announce_fails: dict[int, Exception] = {}
         self.lineup_fails: list[Exception] = []
+        self.recalculate_fails: Exception | None = None
+        self.candidates_fail: Exception | None = None
 
     def _calls(self, name: str) -> list[tuple[Any, ...]]:
         return [call for call in self.calls if call[0] == name]
@@ -194,6 +197,8 @@ class AttendanceDouble:
 
     async def recalculate_on(self, db: Any, round_id: int, division_id: int) -> None:
         self.calls.append(("recalculate_on", round_id, division_id))
+        if self.recalculate_fails is not None:
+            raise self.recalculate_fails
 
     async def post_sheet(self, round_id: int, division_id: int, *, sanctioned: Any,
                          as_text: bool) -> None:
@@ -206,6 +211,8 @@ class AttendanceDouble:
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
         if not self.league.attendance_on:
             return []
+        if self.candidates_fail is not None:
+            raise self.candidates_fail
         return [dict(c) for c in self.candidates if c["driver_profile_id"] not in self.applied]
 
     async def enabled(self) -> bool:
