@@ -378,6 +378,7 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A paste answers no command, so the submission channel shall be told after the last paste that the penalty review is being opened, with the number of its job, and, where the queue is stopped, that it opens once the stopped job is cleared.
     - The round's results and standings shall be posted first, as Provisional Results (or Provisional Results (amended) for a resubmission), and the stage-one prompt after them. A post that fails stops the queue and is tried again like any job, and the prompt waits behind it.
     - A post discarded shall leave the round's results unposted and be named, with the commands that post them; the prompt shall still be posted.
+    - Where the save that opens the review, or the post of the stage-one prompt, is discarded, the bot shall ask at once for the review to open again, so that a fresh prompt replaces the dead one; results already posted shall not be posted again. Where the save was discarded, nothing was changed, and the reply shall say so and that the review is being opened again. Decided 2026-10-05, "Discard reopens the review".
     - A request to open the review that the round no longer needs (it is cancelled or final, its channel is closed, or the stage has moved on) shall be dropped; one that finds the channel missing or unusable shall stop the queue, and the manager shall set the channel and press Retry.
 
 **Stage one — post-race penalties.** The prompt shall carry:
