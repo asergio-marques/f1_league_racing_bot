@@ -893,7 +893,8 @@ async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(d
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
-    season_svc.transition_to_active = AsyncMock()
+    cog.bot.approval_windows = AsyncMock(return_value=(None, None))
+    cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction.followup.send.reset_mock()
 
     await SeasonCog._do_approve(cog, interaction)
@@ -902,7 +903,7 @@ async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(d
     assert "Season cannot be approved" in refusal
     assert fault in refusal
     assert cog._image_configuration_faults.await_count == 2
-    season_svc.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

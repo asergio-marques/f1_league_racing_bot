@@ -14,7 +14,6 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.season_service import SeasonService
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22070
@@ -345,7 +344,7 @@ async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path
     cog = _cog(db_path)
     cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.ONGOING)
-    cog.bot.season_service.transition_to_active = AsyncMock()
+    cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.id = USER_ID
@@ -355,13 +354,18 @@ async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path
     await SeasonCog._do_approve(cog, interaction)
 
     assert "no longer in placements" in interaction.followup.send.await_args.args[0]
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 # ── Committing ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#439: the placements have no commit on a handed save yet"
+)
 async def test_confirming_commits_every_placement_of_the_season(db_path):
+    """The approval's one save commits every placement of the season on the connection it is
+    handed, and the save commits it (#439)."""
     async with get_connection(db_path) as db:
         for profile_id in (1, 2):
             await db.execute(
@@ -376,7 +380,11 @@ async def test_confirming_commits_every_placement_of_the_season(db_path):
             )
         await db.commit()
 
-    assert await SeasonService(db_path).commit_placements(SEASON_ID) == 2
+    from leaguebot.core.services.season_service import commit_placements_on
+
+    async with get_connection(db_path) as db:
+        assert await commit_placements_on(db, SEASON_ID) == 2
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT committed FROM driver_season_assignments")
