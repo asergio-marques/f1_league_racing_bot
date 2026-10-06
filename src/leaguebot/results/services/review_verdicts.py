@@ -16,7 +16,12 @@ and presses Retry. A retry posts as text (Constitution XIV, rule 8).
 Discord refuses stops the queue with no verdict posted ahead of it; once discarded, the verdicts go
 out beneath none, and the outcome says so. It treats a banner `try_post` returns as None as a
 failure. Its `record` saves the banner row, so the sanctions that follow read the heading back from
-its row and a stop and a restart between a verdict and a sanction post no second one.
+its row and a stop and a restart between a verdict and a sanction post no second one. **The
+sanction cards' own heading is the same job** (owner, 2026-10-06, "Yes, it stops too"): where no
+penalty was applied, so no heading stands over the round's verdicts, the first `apply_sanction`
+that applies plans one ahead of its card (`_sanction_heading`), which stops the queue as the
+verdicts' does and, once discarded, leaves the cards beneath none. Nothing here posts a heading
+that cannot fail; `/attendance sync` heads its own cards in its own loop.
 
 **A verdict is a job for each record** (`announce_verdict`), its `record` saving the message and
 channel it was announced in with the job's mark. A try that posted and failed to save its id left
@@ -82,6 +87,10 @@ ANNOUNCE_SANCTION = "announce_sanction"
 REFRESH_LINEUP = "refresh_lineup"
 
 _SYNC = "Run `/attendance sync` to finish it."
+
+#: What an `announce_heading` payload carries where it heads a round's sanction cards and no
+#: verdict, so that its job and a Discard of it name what it heads.
+_OVER_SANCTIONS = "sanctions"
 
 
 def verdict_steps(
@@ -194,7 +203,8 @@ def plan_attendance(
 
     *heading_round_id* is the round whose verdicts the sanction cards stand beneath, which is the
     round approved and not the latest one the cascade reached: the cards are headed by that
-    round's banner, read back from its row, and a later round's banner would head them wrongly.
+    round's banner, read back from its row, or by a heading of their own posted for that round
+    where it has none, and a later round's banner would head them wrongly.
     It defaults to *round_id*, which is right where the two are the same round."""
     return [
         PlannedStep(ATTENDANCE_SHEET, {
@@ -233,7 +243,12 @@ def not_done(ctx: OutcomeContext) -> list[str]:
         if not _discarded(view):
             continue
         payload = view.payload
-        if view.name == ANNOUNCE_HEADING:
+        if view.name == ANNOUNCE_HEADING and payload.get("over") == _OVER_SANCTIONS:
+            lines.append(
+                f"⚠️ The heading over round {payload.get('round_number', '?')}'s attendance "
+                "sanctions was not posted: their cards stand beneath none."
+            )
+        elif view.name == ANNOUNCE_HEADING:
             lines.append(
                 f"⚠️ The heading over round {payload.get('round_number', '?')}'s verdicts was "
                 "not posted: the verdicts stand beneath none."
@@ -406,7 +421,13 @@ async def _describe_heading(ctx: StepContext) -> str:
     context = await vas._get_announcement_context(ctx.db_path, int(ctx.step_payload["round_id"]))
     raw = context.get("penalty_channel_id") if context else None
     where = "" if raw is None else f" in <#{raw}>"
-    return f"posting the heading over round {ctx.step_payload.get('round_number', '?')}'s verdicts{where}"
+    over = (
+        "attendance sanctions" if ctx.step_payload.get("over") == _OVER_SANCTIONS else "verdicts"
+    )
+    return (
+        f"posting the heading over round {ctx.step_payload.get('round_number', '?')}'s "
+        f"{over}{where}"
+    )
 
 
 async def _announce_heading(ctx: StepContext) -> StepResult:
@@ -596,6 +617,35 @@ async def _describe_apply(ctx: StepContext) -> str:
     )
 
 
+async def _sanction_heading(ctx: StepContext) -> tuple[PlannedStep, ...]:
+    """The heading the sanction cards are owed, planned after the first sanction that applies and
+    so ahead of its card; nothing where the cards already have one.
+
+    One heading per approval: where a heading of this change over the round's verdicts has run,
+    the cards go beneath it, and where it was discarded they stand beneath none, as the verdicts
+    do. A round whose verdicts already stand under a recorded banner heads its cards with that
+    banner, read back from its row. Only where neither is so is a heading planned, a job like the
+    one over the verdicts, which stops the queue where it cannot be posted.
+    """
+    round_id = int(ctx.step_payload.get("heading_round_id", ctx.step_payload["round_id"]))
+    if any(
+        view.name == ANNOUNCE_HEADING and view.done
+        and int(view.payload.get("round_id", 0)) == round_id
+        for view in ctx.steps
+    ):
+        return ()
+    if await vas._banners_of(ctx.db_path, round_id):
+        return ()
+    async with get_connection(ctx.db_path) as db:
+        row = await (
+            await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+        ).fetchone()
+    heading: dict[str, Any] = {"round_id": round_id, "over": _OVER_SANCTIONS}
+    if row is not None:
+        heading["round_number"] = row["round_number"]
+    return (PlannedStep(ANNOUNCE_HEADING, heading),)
+
+
 async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     try:
@@ -604,7 +654,7 @@ async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
-    return StepResult(lines=(line,) if line else ())
+    return StepResult(lines=(line,) if line else (), then=await _sanction_heading(ctx))
 
 
 async def _describe_announce(ctx: StepContext) -> str:

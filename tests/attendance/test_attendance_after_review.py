@@ -297,6 +297,9 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
     ctx = MagicMock()
     ctx.step_payload = {"round_id": LATEST_ROUND, "division_id": DIVISION_ID,
                         "candidate": {"driver_profile_id": LEWIS, "sanction": "AUTOSACK"}}
+    # The job reads the round's banners, to plan the cards' heading where none stands.
+    ctx.db_path = db_path
+    ctx.steps = ()
 
     result = await review_verdicts._apply_sanction(ctx, double)
 

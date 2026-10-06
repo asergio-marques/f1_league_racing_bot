@@ -583,6 +583,94 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
     ) == 0
 
 
+def _cards_posted_for_real(league: ReviewLeague) -> None:
+    """Make the double's announcement post the card as the real hook does, through
+    `announce_sanction`, beneath the banner of the round it is handed."""
+    from leaguebot.results.services import verdict_announcement_service
+
+    recorded = league.attendance.announce_sanction
+
+    async def _announce(round_id: int, division_id: int, owed: dict[str, Any], *,
+                        as_text: bool) -> None:
+        await recorded(round_id, division_id, owed, as_text=as_text)
+        await verdict_announcement_service.announce_sanction(
+            league.bot, league.db_path, round_id, owed["driver_user_id"], None,
+            owed["sanction"], 10, as_text=as_text,
+        )
+
+    league.attendance.announce_sanction = _announce
+
+
+async def test_a_sanction_card_s_own_heading_discord_refuses_stops_the_queue_until_discarded(
+    tmp_path,
+):
+    """A clean round: no penalty applied, so no verdict and no heading over verdicts, but Lewis
+    and Max are over a threshold. Their cards are headed by a job of its own, planned once the
+    first sanction applies, and where the verdicts channel refuses the written heading the queue
+    stops there, no card posted ahead of it (owner, 2026-10-06, "Yes, it stops too"). Once a
+    league admin discards it, both cards go out beneath none, no second heading is tried, and the
+    reply and the approval's line name the heading as not posted."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    _cards_posted_for_real(league)
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
+    interaction = await _approve(league, staged=[])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "announce_heading"
+    assert LEWIS_PROFILE in league.attendance.applied
+    assert league.sent_to(VERDICTS_CHANNEL) == []
+    assert league.attendance._calls("announce_sanction") == []
+
+    # The channel would take the heading now, so a build that tried it again behind the
+    # discarded job would show here.
+    league.channel(VERDICTS_CHANNEL).fail_when = None
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert verdict_headings(league) == []
+    cards = league.sent_to(VERDICTS_CHANNEL)
+    assert len(cards) == 2
+    assert f"<@{LEWIS}>" in (league.channel(VERDICTS_CHANNEL).messages[cards[0]].content or "")
+    assert f"<@{MAX}>" in (league.channel(VERDICTS_CHANNEL).messages[cards[1]].content or "")
+    steps = await step_rows(league.db_path)
+    assert len([row for row in steps if row["name"] == "announce_heading"]) == 1
+    assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 0
+    reply = updated_reply(interaction)
+    assert "heading" in reply.lower() and "not posted" in reply.lower(), (
+        "the reply does not name the heading that was not posted"
+    )
+    log = league.log()
+    approved = log[log.index("PENALTY_REVIEW_APPROVED | Incomplete"):]
+    assert "heading" in approved and "not posted" in approved
+
+
+async def test_a_sanction_card_s_own_heading_is_posted_once_and_recorded(tmp_path):
+    """A clean round with two drivers over a threshold: one heading goes up, ahead of both
+    cards, and is recorded as heading the round's sanctions, so a replay keeps it."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
+                                    candidate(MAX_PROFILE, MAX)]
+    _cards_posted_for_real(league)
+    await _approve(league, staged=[])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 3, "one heading over the two cards, and no other is posted"
+    steps = await step_rows(league.db_path)
+    assert len([row for row in steps if row["name"] == "announce_heading"]) == 1
+    assert await one(
+        league.db_path,
+        "SELECT COUNT(*) FROM verdict_banner_messages WHERE round_id = ? AND message_id = ? "
+        "AND heads_sanctions = 1",
+        ROUND_ID, str(sent[0]),
+    ) == 1
+    assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 1
+
+
 async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]

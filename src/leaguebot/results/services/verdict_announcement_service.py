@@ -250,8 +250,11 @@ def _banner_once(bot: LeagueBot, channel, ctx: dict):
     sanctions that review's scoring triggered — into the same channel, for the same round.
     They are one run of verdicts as a league reads them, so a caller posting both builds one
     poster with `banner_for_round` and hands it to both paths; the second finds it
-    already spent. An attendance sanction firing where no penalty was applied heads itself,
-    which is the case a per-function poster left bare (decided 2026-09-09).
+    already spent. An attendance sanction `/attendance sync` fires where no penalty was applied
+    heads itself, which is the case a per-function poster left bare (decided 2026-09-09). A
+    review's approval no longer posts through this: its headings are jobs on the queue
+    (`review_verdicts`), the sanction cards' own included, which stop the queue where they cannot
+    be posted.
 
     Never raises, and never returns anything the caller must act on: a header failing must
     not cost a league the decisions it heads.
@@ -299,24 +302,6 @@ class _RecordingPoster:
 
     async def __call__(self) -> None:
         await self._post(self)
-
-
-def _banner_once_recorded(bot: LeagueBot, channel, ctx, db_path: str, round_id: int):
-    """`_banner_once`, recording the message it posts (#345).
-
-    What a poster falls back to when no shared banner was handed to it. The banner is recorded
-    however it was posted, or an amendment would take a run's cards down and leave the header
-    that was put up by this path standing over the empty space.
-    """
-    once = _banner_once(bot, channel, ctx)
-
-    async def post(poster: _RecordingPoster) -> None:
-        message = await once()
-        if message is not None:
-            poster.message = message
-        await _record_banner(db_path, round_id, getattr(channel, "id", None), message)
-
-    return _RecordingPoster(post)
 
 
 def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
@@ -706,8 +691,9 @@ async def announce_sanction(
     heading the round's verdicts already stand under, **read back from its row** and not from
     a poster held in memory, so a stop and a restart between the verdicts and the sanctions
     post no second one. A round whose verdicts posted no heading (no penalty was applied) is
-    headed here, as an attendance sanction has always headed itself. *as_text* leaves the
-    picture out of the card.
+    headed by a job of its own, planned ahead of the first card (`review_verdicts`), whose row
+    this reads back the same way; this posts no heading, so a card whose heading was discarded
+    stands beneath none. *as_text* leaves the picture out of the card.
 
     A division with no verdicts channel set is a failure, not a card skipped: a verdicts
     channel is one the season cannot be approved without.
@@ -726,12 +712,7 @@ async def announce_sanction(
         )
 
     banners = await _banners_of(db_path, round_id)
-    if not banners:
-        poster = _banner_once_recorded(bot, channel, ctx, db_path, round_id)
-        await poster()
-        banner_id = getattr(poster.message, "id", None)
-    else:
-        banner_id = banners[-1][1]
+    banner_id = banners[-1][1] if banners else None
 
     driver_ref = f"<@{driver_discord_id}>"
     if driver_display_name:

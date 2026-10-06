@@ -513,50 +513,6 @@ async def test_the_banner_records_the_message_it_was_posted_as(tmp_path):
         assert [tuple(r) for r in await cursor.fetchall()] == [(7, "4242", "9911")]
 
 
-async def test_a_batch_that_heads_itself_records_its_banner(tmp_path):
-    """**The fallback banner was invisible to the replay** (#345).
-
-    A poster handed no banner posts one of its own — the appeals stage of a first pass, an
-    attendance sanction firing alone. Unrecorded, an amendment took that run's cards down and
-    left the header standing over the empty space, then posted a fresh one below it.
-    """
-    import os
-
-    from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.image.services import image_verdict_banner_post
-    from leaguebot.results.services import verdict_announcement_service as vas
-
-    db_path = os.path.join(str(tmp_path), "banner_fallback.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (1, 3, '2026-01-01', 'ACTIVE')"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-            "VALUES (1, 1, 'Pro', 1, 555)"
-        )
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
-            "VALUES (7, 1, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')"
-        )
-        await db.commit()
-
-    channel = MagicMock()
-    channel.id = 4242
-    with patch.object(
-        image_verdict_banner_post, "try_post", new=AsyncMock(return_value=MagicMock(id=9912))
-    ), patch.object(image_verdict_banner_post, "build_drawing", new=MagicMock()):
-        await vas._banner_once_recorded(
-            MagicMock(), channel, {"division_name": "Pro"}, db_path, 7
-        )()
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages")
-        assert [r[0] for r in await cursor.fetchall()] == ["9912"]
-
-
 def test_a_round_label_names_the_round_as_a_league_numbers_it():
     from leaguebot.results.services.verdict_announcement_service import _round_label
 
