@@ -585,7 +585,8 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
 
 def _cards_posted_for_real(league: ReviewLeague) -> None:
     """Make the double's announcement post the card as the real hook does, through
-    `announce_sanction`, beneath the banner of the round it is handed."""
+    `announce_sanction`, beneath the banner of the round it is handed, and post nothing while
+    attendance is off."""
     from leaguebot.results.services import verdict_announcement_service
 
     recorded = league.attendance.announce_sanction
@@ -593,6 +594,8 @@ def _cards_posted_for_real(league: ReviewLeague) -> None:
     async def _announce(round_id: int, division_id: int, owed: dict[str, Any], *,
                         as_text: bool) -> None:
         await recorded(round_id, division_id, owed, as_text=as_text)
+        if not league.attendance_on:
+            return
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], None,
             owed["sanction"], 10, as_text=as_text,
@@ -669,6 +672,58 @@ async def test_a_sanction_card_s_own_heading_is_posted_once_and_recorded(tmp_pat
         ROUND_ID, str(sent[0]),
     ) == 1
     assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 1
+
+
+async def test_a_sanction_card_s_heading_retried_after_attendance_is_turned_off_is_dropped(
+    tmp_path,
+):
+    """A clean round with Max over a threshold: his sanction applies and its heading is planned,
+    but the verdicts channel has been deleted and the heading stops the queue. While it is
+    stopped, a league admin turns attendance off, which the queue does not carry, and then the
+    channel is set again. On Retry the heading is no longer due, since the card it would head is
+    attendance's and attendance posts nothing while it is off: it is dropped, and nothing is
+    posted in the verdicts channel, so no heading stands over no card."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    _cards_posted_for_real(league)
+    verdicts = league.channels.pop(VERDICTS_CHANNEL)
+    await _approve(league, staged=[])
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "announce_heading"
+    assert MAX_PROFILE in league.attendance.applied
+
+    await league.switch_attendance(False)
+    league.channels[VERDICTS_CHANNEL] = verdicts
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.sent_to(VERDICTS_CHANNEL) == [], "a heading was posted over no card"
+    [heading] = [row for row in await step_rows(league.db_path)
+                 if row["name"] == "announce_heading"]
+    assert heading["done_at"] is not None
+    assert (heading["result"] or {}).get("dropped") is True
+    assert await one(league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages") == 0
+
+
+@pytest.mark.parametrize("line, headed", [(None, False), ("ATTENDANCE_AUTORESERVE | x", True)])
+async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, line, headed):
+    """The hook answers `apply_sanction` with None only where attendance is off and nothing was
+    applied: no card follows, so the job plans no heading. Where it applied, on a clean round
+    with no banner recorded, the heading is planned."""
+    from leaguebot.results.services import review_verdicts
+
+    league = await review_league(tmp_path, attendance=True)
+    hook = MagicMock()
+    hook.apply_sanction = AsyncMock(return_value=line)
+    ctx = MagicMock()
+    ctx.db_path = league.db_path
+    ctx.steps = ()
+    ctx.step_payload = {"round_id": ROUND_ID, "division_id": DIVISION_ID,
+                        "candidate": candidate(MAX_PROFILE, MAX)}
+
+    result = await review_verdicts._apply_sanction(ctx, hook)
+
+    assert [step.name for step in result.then] == (["announce_heading"] if headed else [])
 
 
 async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):

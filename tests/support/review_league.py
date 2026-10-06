@@ -155,7 +155,8 @@ def is_appeals_prompt(_content: str, kwargs: dict[str, Any]) -> bool:
 class AttendanceDouble:
     """The attendance hook the builder hands the change types, as a double.
 
-    Every method does nothing while the league's attendance is off, as the real hook does.
+    Every method does nothing while the league's attendance is off, as the real hook does, and
+    `apply_sanction` returns its log line where it applied and None where attendance is off.
     `candidates` are the drivers over a threshold; one whose profile is in `applied` is no longer
     owed. `record_fails`, `sheet_fails` (a list, one per failing try), `apply_fails` and
     `announce_fails` (by profile) and `lineup_fails` (a list, one per failing try) make a call
@@ -207,16 +208,20 @@ class AttendanceDouble:
             return []
         return [dict(c) for c in self.candidates if c["driver_profile_id"] not in self.applied]
 
+    async def enabled(self) -> bool:
+        return self.league.attendance_on
+
     async def apply_sanction(self, round_id: int, division_id: int, candidate: dict[str, Any],
-                             actor: Any) -> None:
+                             actor: Any) -> str | None:
         if not self.league.attendance_on:
-            return
+            return None
         profile = candidate["driver_profile_id"]
         self.calls.append(("apply_sanction", profile))
         failure = self.apply_fails.pop(profile, None)
         if failure is not None:
             raise failure
         self.applied.add(profile)
+        return f"ATTENDANCE_{candidate['sanction']} | driver_profile_id={profile}"
 
     async def announce_sanction(self, round_id: int, division_id: int, candidate: dict[str, Any],
                                 *, as_text: bool) -> None:

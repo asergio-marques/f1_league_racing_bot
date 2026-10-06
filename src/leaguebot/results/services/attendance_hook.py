@@ -23,6 +23,11 @@ import discord
 class AttendanceAfterReview(Protocol):
     """Attendance's share of a round's review."""
 
+    async def enabled(self) -> bool:
+        """Whether attendance is on: asked by a job of results' own that serves only attendance's
+        posts, the heading over a round's sanction cards, which has nothing to head once
+        attendance is off."""
+
     async def record_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int, pardons: Any,
         now: datetime,
@@ -61,8 +66,9 @@ class AttendanceAfterReview(Protocol):
     ) -> str | None:
         """Apply one candidate's sanction as *actor* (None is the bot), and return its log line,
         which it does not post: the job carries it, so the queue writes it with the job's mark.
-        None where attendance is off. Raises where it does not apply: a division with no
-        Reserve team, or a role change Discord refuses."""
+        None where attendance is off, and only there, so None tells the job nothing was applied.
+        Raises where it does not apply: a division with no Reserve team, or a role change Discord
+        refuses."""
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool

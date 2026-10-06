@@ -7,10 +7,11 @@ channel, posting) and never looks another service up on it: the placement servic
 was handed, and attendance's switch is read from the database, on the connection a writer is
 handed.
 
-**Each method does nothing while attendance is off.** A writer writes on the save it is handed
-and commits nothing, so a fault in the attendance fails the approval whole. An amendment's
-recalculation rebuilds the amended round's attended flags both ways (FR-028); the first pass
-records upgrade-only (FR-003).
+**Each method does nothing while attendance is off**, and `enabled` says whether it is, for the
+one job of results' own that serves attendance alone (the heading over the sanction cards). A
+writer writes on the save it is handed and commits nothing, so a fault in the attendance fails
+the approval whole. An amendment's recalculation rebuilds the amended round's attended flags both
+ways (FR-028); the first pass records upgrade-only (FR-003).
 
 **A sanction is one driver's**, and one that does not apply raises. The candidate carries the
 profile, the Discord user, the sanction and the divisions an autosack reaches; the thresholds
@@ -46,7 +47,7 @@ class AttendanceAfterReview:
     def _db_path(self) -> str:
         return self._bot.db_path
 
-    async def _enabled(self) -> bool:
+    async def enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
             return await self._enabled_on(db)
 
@@ -99,7 +100,7 @@ class AttendanceAfterReview:
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
     ) -> None:
-        if not await self._enabled():
+        if not await self.enabled():
             return
         await _att.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
@@ -108,7 +109,7 @@ class AttendanceAfterReview:
         )
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
-        if not await self._enabled():
+        if not await self.enabled():
             return []
         owed, _signed_off = await _att.owed_sanctions(self._db_path, round_id, division_id)
         return owed
@@ -117,7 +118,7 @@ class AttendanceAfterReview:
         self, round_id: int, division_id: int, candidate: dict[str, Any],
         actor: discord.abc.User | None,
     ) -> str | None:
-        if not await self._enabled():
+        if not await self.enabled():
             return None
         try:
             return await _att.apply_sanction(
@@ -131,7 +132,7 @@ class AttendanceAfterReview:
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
     ) -> None:
-        if not await self._enabled():
+        if not await self.enabled():
             return
         from leaguebot.results.services import verdict_announcement_service as vas
 
@@ -145,7 +146,7 @@ class AttendanceAfterReview:
         )
 
     async def refresh_lineup(self, division_id: int) -> None:
-        if not await self._enabled():
+        if not await self.enabled():
             return
         await self._placement.refresh_lineup(await self._guild(), division_id)
 

@@ -279,6 +279,7 @@ async def test_the_hook_s_apply_sanction_returns_its_line_and_posts_nothing(tmp_
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25, MAX: 12})
     bot = _bot(db_path)
     hook = _hook(bot, _placement())
+    assert await hook.enabled() is True
     lines = {}
     for owed in sorted(await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID),
                        key=lambda c: c["driver_profile_id"]):
@@ -359,8 +360,11 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     owed = {"driver_profile_id": LEWIS, "driver_user_id": LEWIS, "sanction": "AUTOSACK",
             "other_divisions": []}
 
+    assert await hook.enabled() is False
     assert await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID) == []
-    await hook.apply_sanction(LATEST_ROUND, DIVISION_ID, owed, None)
+    assert await hook.apply_sanction(LATEST_ROUND, DIVISION_ID, owed, None) is None, (
+        "None is how the job knows nothing was applied"
+    )
     await hook.announce_sanction(LATEST_ROUND, DIVISION_ID, owed, as_text=False)
     await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned={LEWIS}, as_text=False)
     await hook.refresh_lineup(DIVISION_ID)

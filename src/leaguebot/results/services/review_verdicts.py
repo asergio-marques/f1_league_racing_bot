@@ -33,9 +33,13 @@ channel's row, so that a restart or a Discard knows which prompt stands. A try t
 failed to save its id left the message standing, which the next try removes first from `ctx.kept`.
 
 **Attendance is the hook's** (`results/services/attendance_hook.py`), which does nothing while
-attendance is off, so no job here asks the switch. The sheet is a job (`attendance_sheet`) that
-raises where it could not post, in place of the old retry queue; a sheet that stops the queue holds
-the sanctions behind it until it is retried or discarded, which delays them and never skips them.
+attendance is off, so no job of attendance's here asks the switch. The one job of results' own
+that serves attendance alone, the heading over the sanction cards, asks it of the hook
+(`enabled`) and is dropped while attendance is off, and an `apply_sanction` the hook answers with
+None, which it gives only while attendance is off, plans no heading. The sheet is a job
+(`attendance_sheet`) that raises where it could not post, in place of the old retry queue; a sheet
+that stops the queue holds the sanctions behind it until it is retried or discarded, which delays
+them and never skips them.
 
 **Each sanction is a job of its own.** `plan_sanctions` reads the drivers owed one and plans, for
 each, `apply_sanction` then `announce_sanction`, and, where any was owed, `refresh_lineup` and the
@@ -123,7 +127,8 @@ def verdict_steps(
     return {
         POST_APPEALS_PROMPT: appeals_prompt_step(),
         ANNOUNCE_HEADING: Step(
-            ANNOUNCE_HEADING, StepKind.ACT, _announce_heading, describe=_describe_heading,
+            ANNOUNCE_HEADING, StepKind.ACT, _announce_heading,
+            still_due=bound(_heading_still_due), describe=_describe_heading,
             record=record_heading,
         ),
         ANNOUNCE_VERDICT: Step(
@@ -430,6 +435,17 @@ async def _describe_heading(ctx: StepContext) -> str:
     )
 
 
+async def _heading_still_due(ctx: StepContext, hook: AttendanceAfterReview) -> bool:
+    """A heading over the verdicts is always due. One over a round's sanction cards is due only
+    while attendance is on: the cards are attendance's, and the hook posts none once it is off,
+    so a heading tried after attendance was turned off (on a Retry, the switch not being a change
+    the queue carries) would stand over no card. The switch is asked of the hook, never read
+    here."""
+    if ctx.step_payload.get("over") != _OVER_SANCTIONS:
+        return True
+    return await hook.enabled()
+
+
 async def _announce_heading(ctx: StepContext) -> StepResult:
     round_id = int(ctx.step_payload["round_id"])
     channel, context = await _channel_of(ctx, round_id)
@@ -654,7 +670,10 @@ async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
-    return StepResult(lines=(line,) if line else (), then=await _sanction_heading(ctx))
+    # None is the hook's word that attendance is off and nothing was applied: no card follows,
+    # so there is nothing to head.
+    heading = () if line is None else await _sanction_heading(ctx)
+    return StepResult(lines=(line,) if line else (), then=heading)
 
 
 async def _describe_announce(ctx: StepContext) -> str:
