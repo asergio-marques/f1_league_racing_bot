@@ -303,7 +303,7 @@ async def driver_standings_for_display(
     pass falls back to ordering a full tie by user id.
 
     The recomputation that persists a snapshot resolves the same names, through
-    :func:`recompute_standings_from_round`, so the stored order and the drawn order agree.
+    :func:`standings_display_names`, so the stored order and the drawn order agree.
 
     The name is whatever resolves at the moment of computing, and no earlier one is kept. A
     driver renamed mid-season therefore moves among the entries they are tied with, and a
@@ -365,28 +365,6 @@ async def standings_display_names(
 
     return await _driver_names(
         bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
-    )
-
-
-async def recompute_standings_from_round(
-    db_path: str,
-    division_id: int,
-    from_round_id: int,
-    guild: discord.Guild | None,
-    bot: LeagueBot | None = None,
-) -> None:
-    """Cascade the standings from *from_round_id*, ordered as the postings are.
-
-    The snapshot a round stores is the order a league was shown, so the recomputation reads
-    the same names the posting does. Without it the two paths agree on everything except the
-    entries tied on every criterion, which the persisted order would settle by user id and
-    the posted order by name — and the next round's movement arrows are derived from the
-    stored order, so the disagreement would surface as an arrow against a driver who had not
-    moved (decided 2026-09-15, reversing the narrower call taken earlier the same day).
-    """
-    names = await standings_display_names(db_path, division_id, guild, bot)
-    await standings_service.cascade_recompute_from_round(
-        db_path, division_id, from_round_id, names
     )
 
 
@@ -1761,138 +1739,6 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
         f"Repair the cause, then run `/results rounds sync division:{name}` and "
         f"`/results standings sync division:{name}`."
     )
-
-
-async def repost_round_results(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    guild: discord.Guild,
-    label: str | None = None,
-    *,
-    bot: LeagueBot | None = None,
-) -> list[str]:
-    """Load the division's channels and repost/edit round results and standings.
-
-    Returns the faults it met, as lines a league can read, and an empty list where
-    everything it was asked to do was done.
-
-    **The label is derived from the round, not demanded of the caller** (#130). Every
-    caller reposts rounds it does not choose — the amendment cascade walks a whole
-    season at once, and its rounds sit at different lifecycle stages — so no single
-    label a caller could pass would be right for all of them. Omitting *label* takes
-    the round's own status through ``_label_from_status``, which is what the two sync
-    commands do. An explicit *label* still wins, for a caller that means to override it.
-
-    **A round with no ACTIVE session results is skipped entirely.** Nothing was posted
-    for it, so there is nothing to repost. ``post_round_results`` already guards itself
-    this way but ``post_standings`` does not, and the amendment cascade walks every
-    non-cancelled round of the division — future ones included. Without this guard,
-    approving an amendment would post standings for rounds that have not been raced.
-
-    **A configured channel that has gone missing is a fault, not a silence** (#187). The
-    two channel guards below used to be bare truthiness tests, which conflated a channel
-    the league never configured with one it configured and has since deleted. The first
-    is no business of this function's — a division with no standings channel has nothing
-    posted for it and is right to be skipped without a word. The second is a fault, and
-    swallowing it is what let a failed amendment cascade report success: no exception is
-    raised by a channel that simply is not there, so the caller's ``except`` never ran
-    and not even the host's log file recorded anything. ``repost_results_for_division``
-    already warns in exactly this case; this function was the outlier.
-
-    The missing channel is reported this way rather than raised because a repost runs after
-    the thing it reports on has already happened: making this raise would turn a stale
-    channel into a failed penalty. Every caller now has somewhere to put the return —
-    ``penalty_service`` posts it to the log channel, and the two review approvals in
-    ``result_submission_service`` tell the approving manager as well (#237). One caller
-    still discards it — ``amendment_service.approve_amendment`` — and is left alone
-    deliberately: the amendment path is gated by ``repost_channel_faults`` before it writes
-    anything, so a fault there has already been reported and refused upstream.
-    """
-    faults: list[str] = []
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT d.season_id, d.name AS division_name,
-                   drc.results_channel_id, drc.standings_channel_id,
-                   r.round_number, r.track_name, r.status
-            FROM divisions d
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            JOIN rounds r ON r.id = ?
-            WHERE d.id = ?
-            """,
-            (round_id, division_id),
-        )
-        row = await cursor.fetchone()
-
-    if row is None:
-        log.warning("repost_round_results: division %s not found", division_id)
-        return faults
-
-    division_name: str = row["division_name"] or f"division {division_id}"
-    results_ch_id: int | None = row["results_channel_id"]
-    standings_ch_id: int | None = row["standings_channel_id"]
-    round_number: int = row["round_number"]
-    track_name: str = row["track_name"] or "Unknown"
-
-    if label is None:
-        label = _label_from_status(row["status"] or "")
-
-    if not await _round_has_posted_results(db_path, round_id):
-        log.debug(
-            "repost_round_results: round %s has no ACTIVE session results — nothing to repost",
-            round_id,
-        )
-        return faults
-
-    if results_ch_id:
-        rc = as_text_channel(guild.get_channel(results_ch_id))
-        if rc is None:
-            log.warning(
-                "repost_round_results: results channel %s not found in guild", results_ch_id
-            )
-            faults.append(missing_channel_fault(division_name, "results", results_ch_id))
-        else:
-            await post_round_results(db_path, round_id, division_id, rc, guild, label, bot=bot)
-
-    if standings_ch_id:
-        sc = as_text_channel(guild.get_channel(standings_ch_id))
-        if sc is None:
-            log.warning(
-                "repost_round_results: standings channel %s not found in guild", standings_ch_id
-            )
-            faults.append(missing_channel_fault(division_name, "standings", standings_ch_id))
-        else:
-            driver_snaps = await driver_standings_for_display(
-                db_path, division_id, round_id, guild, bot
-            )
-            team_snaps = await standings_service.compute_team_standings(
-                db_path, division_id, round_id
-            )
-            # Check reserves visibility flag
-            show_reserves = await _get_show_reserves(db_path, division_id)
-            await post_standings(
-                db_path, division_id, round_id, round_number, track_name, sc,
-                driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
-            )
-
-    return faults
-
-
-async def _round_has_posted_results(db_path: str, round_id: int) -> bool:
-    """Whether *round_id* has any ACTIVE session results — i.e. whether it has been raced.
-
-    The same condition the two sync commands select on, so a repost covers exactly the
-    rounds a resynchronisation would.
-    """
-    async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT 1 FROM session_results WHERE round_id = ? AND status = 'ACTIVE' LIMIT 1",
-                (round_id,),
-            )
-        ).fetchone()
-    return row is not None
 
 
 async def _get_show_reserves(db_path: str, division_id: int) -> bool:
