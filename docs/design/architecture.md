@@ -163,6 +163,22 @@ table. Core reaches it through a hook, so core's own graphics (the calendar, the
 for rather than drawn by importing it. Where a module must let one that depends on it act (results
 after a round, for attendance), it does so through a hook too.
 
+**Results reaches attendance through one hook, handed in by the builder.** What attendance does
+after a round's review (recording the round's attendance and its pardons, recalculating after an
+amendment, posting the sheet, finding the drivers over a threshold, applying and announcing one
+driver's sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
+attendance implements it on its own functions. The builder makes it once, attaches it to the bot
+and hands it to the review's change types, so results imports nothing of attendance and the
+`.importlinter` exception for it is gone. Each method checks attendance's switch itself, on the
+connection it is handed where it writes, and does nothing while the module is off; a change type
+asks the hook without asking whether attendance is on. The placement service, which a sanction
+moves seats through, is handed to the hook by the builder and not looked up on the bot. Results
+calls no private name of image's: where it posts a championship's standings as a picture, it calls
+the function image offers for that.
+
+*Rejected:* results calling attendance's functions directly and checking the switch itself, which
+is the dependency the table forbids and leaves each caller to remember the switch.
+
 **Each module turns itself on and off.** A module's service has the code that turns it on and off,
 next to the code that sets up what turning it off must remove. Kept apart, a switch-off comes to
 miss what setup added, as signup's switch-off came to leave behind the permission its setup gives
@@ -211,10 +227,22 @@ audit record, which is how some settings came to have none.
   checked again at each try. So does any change, a member's included, whose check raises as it
   starts; meanwhile the log channel records what failed, as the core
   specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+
+  A check that must refuse a press while the same approval is already in hand reads the queue
+  (`unfinished`), which gives the changes of the kinds asked for that are queued, running or
+  stopped on a failure, leaving out the one whose check is running (`CheckContext.change_id`).
+  What a change type refuses is read from the database and the queue, never from a flag kept in
+  memory, so it holds across a restart. A bot's request that this check finds no longer due (a
+  review reopened for a round that has since gone final) is dropped, not stopped: only a channel
+  missing or unusable stops the queue.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
-  `steward_module.md` §4 does for the cycle close.
+  `steward_module.md` §4 does for the cycle close. A round's approval is one such step: the
+  penalties or corrections, the recalculated points, the round's attendance, the standings
+  snapshots and the round's new status are saved together, and a fault in any of them, a points
+  recalculation that cannot be scored included, rolls the whole step back and stops the queue
+  there, with nothing changed and the review still open.
 - **One change at a time.** One worker runs one change at a time, across the whole bot, since SQLite
   lets one writer in at a time anyway. It takes changes in the order they were put on it, the
   with no exception: nothing overtakes a change, not even one whose job is stopped (below). Two presses of the same button can no
@@ -229,7 +257,9 @@ audit record, which is how some settings came to have none.
   when a request is queued again). A change of a kind that may be repeated, such as a repost, is
   never turned away as a repeat, since it reads what it posts when it runs. A change that can only
   be done once, such as approving a round's appeals, is refused by the checks once it has been done,
-  since the round has moved on.
+  since the round has moved on. The rule turns a repeat away only while the first has not started;
+  a change that must also be refused while the first is under way, or stopped, asks `unfinished`
+  in its own check.
 - **Steps, each saved with its mark.** A change is made of steps, and each step is a job with a
   number of its own, which every line about the job carries (the core specification's "How a
   change is carried out" says it is never reused; the database issues the numbers, and a
@@ -246,7 +276,12 @@ audit record, which is how some settings came to have none.
   "Saving a state and returning to it") empties the queue that comes back with it, so a change under
   way when the state was saved is not resumed.
 - **Posts are remembered.** A posting step sends the post, then saves its message id with the step's
-  mark. Where the post replaces an earlier message, deleting that message is a step of its own,
+  mark: a step that is not a save may carry a `record`, which the worker runs on the connection of
+  the save that marks the step done, before the mark, so the id and the mark commit together or
+  not at all. A `record` never commits, is refused on a save step (which writes in its own run),
+  and runs also where a deletion or an edit finds its message already gone, so that a row tied to
+  that message is still closed. *Rejected:* a save step after each post to write its id, which
+  doubles the jobs a review numbers and stops on, for no gain. Where the post replaces an earlier message, deleting that message is a step of its own,
   after it, reading the old message's id, which the posting step saved beside the new one, so the
   new post stands before the old one goes (Constitution XIV rule 8). Two windows remain. If the bot
   stops after a post is sent but before its id is saved, the step runs again after the restart and
@@ -255,7 +290,11 @@ audit record, which is how some settings came to have none.
   bot stops in between, or for as long as the deletion's stop lasts (below). The design accepts
   both,
   and Constitution XIV rule 8 ("at most one such message stands at any moment") is amended with the
-  queue to allow them. Scanning the channel to spot such a copy is not done: `steward_module.md` §7
+  queue to allow them. A `record` that raises is not a stop of the bot: its save is rolled back, the queue stops at
+  the job like any failure, and what the step returned is kept on the job (`StepContext.kept`,
+  which a step's next try reads, and which the first try finds empty), so the next try removes
+  the copy already sent before it posts again. A post of several messages that fails part-way
+  keeps the ids already sent the same way. Scanning the channel to spot such a copy is not done: `steward_module.md` §7
   rejects scanning a channel as guesswork, and that reasoning carries over.
 
   A deletion that fails stops the queue like any other job (below). A deletion that follows a post
@@ -269,8 +308,14 @@ audit record, which is how some settings came to have none.
   (when it first failed, how often it has been tried, when it is next due), so it survives a
   restart. What the job's earlier steps saved stays saved, which is why anything that must be all
   or nothing is saved in one step; the failed step's own save is rolled back, so a try runs it
-  afresh. A new change asked for meanwhile is acknowledged as usual, joins the back of the queue and
-  says that the queue is stopped. Discord answering that a message is already gone is no failure: a
+  afresh. Every job of a round's review is such a job: a post and its deletion, the notice that brackets
+  a republication, a verdict and the heading over it, the attendance sheet, and each driver's
+  sanction and its announcement, so a division with no verdicts channel, or no reserve team for a
+  sanction, stops the queue and is not stepped over. A new change asked for meanwhile is
+  acknowledged as usual, joins the back of the queue and says that the queue is stopped.
+  Nothing overtakes the stopped job, so what is outside the queue (the sweep that undoes a lapsed
+  amendment, a Cancel, amend recovery) leaves alone a round with a change in hand, stopped
+  included, as `unfinished` tells it. Discord answering that a message is already gone is no failure: a
   job that deletes it is done, and one that edits it is done too, with a line in the log channel
   saying the message was gone.
 
@@ -284,7 +329,10 @@ audit record, which is how some settings came to have none.
   being tried, and the only way on after the hour: the job is made due at once. *Discard,* a button a league admin
   presses, drops that one job, which the log records with what was not done, and the request's
   later jobs run on, each checking again whether it is still due. A change that had not yet begun,
-  because its check failed, is dropped whole.
+  because its check failed, is dropped whole. Where a discarded job leaves a review without what
+  it stands on (the approval's save, the job that opens the review, the one that posts its
+  prompt), the change's closing job asks, as a bot's request in a save of its own, for the review
+  to open again, so a fresh prompt replaces the dead one at once and not at the next restart.
 
   Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
   and names the job. They work directly on the queue's own records, and are not changes put on the
@@ -342,7 +390,9 @@ Save first, then post, then record what was posted in a save of its own.
 **Each table is written by one module.** Every statement that changes a table lives in the module
 that owns it, and other modules ask that module to make the change. Each module's design file lists
 its tables, and the check of this rule holds the owner of every table (see "How the rules are
-checked"), failing on a table added without one. Where a module keeps its own columns on a core
+checked"), failing on a table added without one. Results records a round's attendance through the hook
+above, so the attendance tables are written by attendance's code, on the connection results' step
+was handed. Where a module keeps its own columns on a core
 table (weather on rounds, sessions and a division's forecast channel, attendance on rounds, and the
 weather and signup on/off flags on the settings row), that module's design file names those columns
 as an exception. Those columns are that module's alone, and core does not set them either. The other
@@ -465,7 +515,11 @@ that makes a change puts it on the queue, like any other. A module's start-up wo
 event (a review posted again, an interrupted submission reopened, the hub's panel posted again, as
 the core specification's "When the bot stops" lists) is a step of the sweep too, reached through the
 hook for the bot starting. Each step of the sweep is kept separate, so one failing is reported and
-does not stop the rest.
+does not stop the rest. A step holds no module's rule: the entry point's step for putting a round's
+review back calls the results service that decides it (a round with a change in hand is left to the
+queue, a round whose review was open asks for it to open again, an appeals stage asks for its prompt
+again, a final round left with its channel open is closed), and that decision is asked of the queue
+as a change like any other.
 
 **The sweep only delegates.** It is core's: it asks each kind of job, through what its module signed
 up, which of its events came due, puts them all in the order they fell due, and hands each to the
