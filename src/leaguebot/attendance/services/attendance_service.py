@@ -744,74 +744,71 @@ async def record_attendance_from_results_full_recompute(
     round_id: int,
     division_id: int,
     *,
-    db=None,
+    db,
 ) -> None:
     """Recompute attended flags without the upgrade-only constraint (FR-028/amendment).
 
-    Used exclusively by recalculate_attendance_for_round so that a deliberate result
+    Used by ``_recalculate_forward`` so that a deliberate result
     correction can flip attended in either direction. Skipped for cancelled rounds.
 
-    *db* joins a transaction the caller already opened, and is then the caller's to commit;
-    see :func:`_shared_or_own`.
+    *db* is the caller's transaction, which it commits: this opens and commits no connection of
+    its own (#439). *db_path* names the league database *db* is a connection to.
     """
-    async with _shared_or_own(db_path, db) as (db, _owned):
-        # Guard: skip if round is cancelled.
-        cursor = await db.execute(
-            "SELECT status FROM rounds WHERE id = ?",
-            (round_id,),
-        )
-        round_row = await cursor.fetchone()
-        if round_row is None or round_row["status"] == "CANCELLED":
-            log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
-            return
+    # Guard: skip if round is cancelled.
+    cursor = await db.execute(
+        "SELECT status FROM rounds WHERE id = ?",
+        (round_id,),
+    )
+    round_row = await cursor.fetchone()
+    if round_row is None or round_row["status"] == "CANCELLED":
+        log.info("record_attendance_from_results_full_recompute: skipping cancelled round %s", round_id)
+        return
 
-        cursor = await db.execute(
-            """
-            SELECT DISTINCT driver_profile_id FROM (
-                SELECT rsr.driver_profile_id
-                FROM race_session_results rsr
-                JOIN session_results sr ON sr.id = rsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-                UNION ALL
-                SELECT qsr.driver_profile_id
-                FROM qualifying_session_results qsr
-                JOIN session_results sr ON sr.id = qsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            ) WHERE driver_profile_id IS NOT NULL
-            """,
-            (round_id, round_id),
-        )
-        attended_rows = await cursor.fetchall()
-        attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+    cursor = await db.execute(
+        """
+        SELECT DISTINCT driver_profile_id FROM (
+            SELECT rsr.driver_profile_id
+            FROM race_session_results rsr
+            JOIN session_results sr ON sr.id = rsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            UNION ALL
+            SELECT qsr.driver_profile_id
+            FROM qualifying_session_results qsr
+            JOIN session_results sr ON sr.id = qsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+        ) WHERE driver_profile_id IS NOT NULL
+        """,
+        (round_id, round_id),
+    )
+    attended_rows = await cursor.fetchall()
+    attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
 
-        cursor = await db.execute(
-            """
-            SELECT dra.id, dra.driver_profile_id
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND (
-                  ti.is_reserve = 0
-                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
-              )
-            """,
-            (round_id, division_id, division_id),
-        )
-        dra_rows = await cursor.fetchall()
+    cursor = await db.execute(
+        """
+        SELECT dra.id, dra.driver_profile_id
+        FROM driver_round_attendance dra
+        JOIN driver_season_assignments dsa
+            ON dsa.driver_profile_id = dra.driver_profile_id
+        JOIN team_seats ts ON ts.id = dsa.team_seat_id
+        JOIN team_instances ti ON ti.id = ts.team_instance_id
+        WHERE dra.round_id = ?
+          AND dra.division_id = ?
+          AND ti.division_id = ?
+          AND (
+              ti.is_reserve = 0
+              OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+          )
+        """,
+        (round_id, division_id, division_id),
+    )
+    dra_rows = await cursor.fetchall()
 
-        for row in dra_rows:
-            new_val = 1 if row["driver_profile_id"] in attended_ids else 0
-            await db.execute(
-                "UPDATE driver_round_attendance SET attended = ? WHERE id = ?",
-                (new_val, row["id"]),
-            )
-        if _owned:
-            await db.commit()
+    for row in dra_rows:
+        new_val = 1 if row["driver_profile_id"] in attended_ids else 0
+        await db.execute(
+            "UPDATE driver_round_attendance SET attended = ? WHERE id = ?",
+            (new_val, row["id"]),
+        )
 
 
 async def distribute_attendance_points(

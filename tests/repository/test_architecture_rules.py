@@ -1293,7 +1293,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/amendment_service.py", "approve_amendment"): (1, SLICE[3]),
     ("results/services/results_post_service.py", "_repost_results_rounds"): (1, SLICE[3]),
     ("results/services/results_post_service.py", "_undo_results_repost"): (1, SLICE[3]),
-    ("attendance/services/attendance_service.py", "record_attendance_from_results_full_recompute"): (1, SLICE[3]),
     # The season approval, and the round and division cancels
     ("core/services/season_service.py", "SeasonService.transition_to_active"): (1, SLICE[4]),
     ("core/services/season_service.py", "SeasonService.commit_placements"): (1, SLICE[4]),
