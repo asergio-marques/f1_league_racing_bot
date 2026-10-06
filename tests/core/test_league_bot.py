@@ -14,6 +14,8 @@ import inspect
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from leaguebot.__main__ import create_bot
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
@@ -80,3 +82,34 @@ def test_the_wizard_has_its_bot_before_the_gateway_opens():
         if isinstance(node, ast.Call) and ast.unparse(node.func) == "bot.start"
     )
     assert binds[0].lineno < start.lineno
+
+
+_NO_WINDOWS_READER = "#439: the bot does not yet carry the reader of the approval's windows"
+_NO_SEASON_APPROVAL = "#439: the season's approval is not yet a change type the builder registers"
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_WINDOWS_READER)
+def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
+    """The season cog reads the enabled modules' windows through `bot.approval_windows`, which
+    `LeagueBot` declares and the builder sets, so that core imports neither attendance nor
+    weather, nor `__main__` (#439, slice 4a)."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    assert "approval_windows" in _declared()
+    assert "approval_windows" in _attached_in_bot_py()
+    assert "self.bot.approval_windows()" in inspect.getsource(SeasonCog._approval_windows)
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_SEASON_APPROVAL)
+def test_the_season_approval_is_registered():
+    """The builder registers the season's approval and the change that tells the review's channel
+    of a refusal its member can no longer be told of (#439, slice 4a)."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.season_approval_change import KIND, TELL_KIND
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
+    assert kinds.count(KIND) == 1
+    assert kinds.count(TELL_KIND) == 1
