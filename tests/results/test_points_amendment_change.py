@@ -93,6 +93,12 @@ def _naming(text: str, job: int) -> str:
     """*text* naming job *job*, or with its " (job #N)" left out where *job* is 0, only the
     approval's close being left."""
     return text.format(job=job) if job else text.replace(" (job #{job})", "")
+
+
+def _unmarked(first_line: str) -> str:
+    """A reply's first line without the mark it opens with (its emoji and the space after it), as
+    every ⛔ refusal line gives the reply as its reason."""
+    return first_line.split(" ", 1)[1]
 #: The season's own table, as it stood before any approval.
 SEASON_TABLE = [("Standard", "FEATURE_RACE", 1, 25), ("Standard", "FEATURE_RACE", 2, 18)]
 APPROVED_TABLE = [("Standard", "FEATURE_RACE", 1, 26), ("Standard", "FEATURE_RACE", 2, 18)]
@@ -314,7 +320,6 @@ async def test_the_old_results_tables_are_deleted_once_their_replacements_stand(
             assert len(sends_before) >= number
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("lost, setting", [(BETA_RESULTS, "results"),
                                            (BETA_STANDINGS, "standings")])
 async def test_a_cancelled_division_whose_channel_is_gone_refuses_the_press(
@@ -336,7 +341,7 @@ async def test_a_cancelled_division_whose_channel_is_gone_refuses_the_press(
     assert fault in reply
     lines = _refusal_lines(league)
     assert len(lines) == 1
-    assert lines[0].split("\n")[0].endswith(f"— {NOT_PUBLISHED}")
+    assert lines[0].split("\n")[0].endswith(f"— {_unmarked(NOT_PUBLISHED)}")
     assert fault in lines[0]
     assert await _approvals(league) == []
     assert await points_state(league) == before
@@ -400,7 +405,6 @@ async def _cancelled_attendance_lost(league: Any) -> None:
     league.remove_channel(BETA_ATTENDANCE)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("setup, options, expected, detail", [
     pytest.param(_results_off, {},
                  "❌ The Results & Standings module is not enabled on this server.", None,
@@ -449,7 +453,7 @@ async def test_the_press_is_refused_at_once_in_today_s_words(
     assert reply.startswith(expected)
     lines = _refusal_lines(league)
     assert len(lines) == 1
-    assert lines[0].split("\n")[0].endswith(f"— {reply.split(chr(10))[0]}")
+    assert lines[0].split("\n")[0].endswith(f"— {_unmarked(reply.split(chr(10))[0])}")
     if detail is not None:
         assert detail in reply
         assert detail in lines[0].partition("\n")[2]
