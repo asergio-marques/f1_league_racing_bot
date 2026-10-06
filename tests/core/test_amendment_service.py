@@ -1139,7 +1139,6 @@ _BOT_USER_ID = 4242
 
 #: Approving a points amendment is a change on the queue (#439, slice 3): until it is built, a
 #: test that approves through it fails on the change type's import.
-APPROVAL_UNBUILT = "#439: approving a points amendment is not yet a change on the change queue"
 
 #: "Now", for the queue that carries the approval.
 _APPROVE_NOW = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
@@ -1768,7 +1767,6 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=APPROVAL_UNBUILT)
 async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     """The log records the approval once the reposting it claims has been done (#187).
 
@@ -1789,6 +1787,12 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
             super().append(item)
 
     bot = _bot_recording_reposts(path, _Reposts())
+    # The fixture's server names its log channel 30, which the queue's close line is sent to.
+    get_channel, fetch_channel = bot.get_channel.side_effect, bot.fetch_channel.side_effect
+    bot.get_channel.side_effect = lambda cid: bot.log_channel if cid == 30 else get_channel(cid)
+    bot.fetch_channel.side_effect = (
+        lambda cid: bot.log_channel if cid == 30 else fetch_channel(cid)
+    )
     logged = bot.log_channel.send.side_effect
 
     async def recording_log(content="", **kwargs):
