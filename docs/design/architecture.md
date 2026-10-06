@@ -228,7 +228,8 @@ audit record, which is how some settings came to have none.
 
   A check that must refuse a press while the same approval is already in hand reads the queue
   (`unfinished`, or `in_hand` where the refusal names the job it waits on), which give the changes
-  of the kinds asked for that are queued, running or stopped on a failure, leaving out the one whose check is running (`CheckContext.change_id`).
+  of the kinds asked for that are queued, running or stopped on a failure, leaving out the one
+  whose check is running (`CheckContext.change_id`).
   What a change type refuses is read from the database and the queue, never from a flag kept in
   memory, so it holds across a restart. A bot's request that this check finds no longer due (a
   review reopened for a round that has since gone final) is dropped, not stopped: only a channel
@@ -256,8 +257,8 @@ audit record, which is how some settings came to have none.
   never turned away as a repeat, since it reads what it posts when it runs. A change that can only
   be done once, such as approving a round's appeals, is refused by the checks once it has been done,
   since the round has moved on. The rule turns a repeat away only while the first has not started;
-  a change that must also be refused while the first is under way, or stopped, asks `unfinished`
-  in its own check.
+  a change that must also be refused while the first is under way, or stopped, asks the queue
+  (`unfinished` or `in_hand`) in its own check.
 - **Steps, each saved with its mark.** A change is made of steps, and each step is a job with a
   number of its own, which every line about the job carries (the core specification's "How a
   change is carried out" says it is never reused; the database issues the numbers, and a
@@ -310,10 +311,10 @@ audit record, which is how some settings came to have none.
   and attendance specifications say which, and what each stop leaves). A new change asked for meanwhile is
   acknowledged as usual, joins the back of the queue and says that the queue is stopped.
   Nothing overtakes the stopped job, so whatever runs outside the queue leaves alone what a change
-  is in hand on, stopped included, as `unfinished` tells it (core specification, "How a change is
-  carried out"). Discord answering that a message is already gone is no failure: a
-  job that deletes it is done, and one that edits it is done too, with a line in the log channel
-  saying the message was gone.
+  is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
+  specification, "How a change is carried out"). Discord answering that a message is already
+  gone is no failure: a job that deletes it is done, and one that edits it is done too, with a
+  line in the log channel saying the message was gone.
 
   A job is cleared in one of three ways, which the core specification's "How a change is carried
   out" holds, with the schedule, who may press each button and the lines written; what follows is
