@@ -404,3 +404,106 @@ def test_a_round_still_on_is_not_struck_through():
     first = cps.textual_calendar("Elite", rounds).splitlines()[1]
     assert "~~" not in first
     assert "Cancelled" not in first
+
+
+# ── The raising form a job on the change queue calls (#439, slice 4a) ────
+
+_NOT_RAISING = "#439: the calendar posting has no raising form, nor a form posted as text"
+
+
+def _discord_refusal():
+    import discord
+
+    return discord.HTTPException(MagicMock(status=500, reason="Server Error"), "refused")
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RAISING)
+@pytest.mark.parametrize("fault", ["channel gone", "send refused"])
+@pytest.mark.asyncio
+async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, fault):
+    """A job on the queue stops where the calendar cannot be posted, rather than handing the
+    text to the old retry queue: the channel set and no longer on the server, or Discord
+    refusing the send."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services import retry_service
+
+    enqueue = AsyncMock()
+    monkeypatch.setattr(retry_service, "enqueue", enqueue)
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
+    channel, partial = _channel()
+    if fault == "channel gone":
+        guild = _guild(None)
+    else:
+        channel.send = AsyncMock(side_effect=_discord_refusal())
+        guild = _guild(channel)
+
+    with pytest.raises(StepFailedOnDiscord):
+        await cps.post_division_calendar(
+            _bot(tmp_path), guild, _division(calendar_message_id=111), _rounds(), TRACKS,
+            raise_on_failure=True,
+        )
+
+    enqueue.assert_not_awaited()
+    partial.delete.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RAISING)
+@pytest.mark.asyncio
+async def test_a_post_as_text_draws_nothing(tmp_path, monkeypatch):
+    """A retried post goes as text (Constitution XIV rule 8): with the image module and the
+    calendar aspect both on, nothing is drawn and the textual calendar is posted."""
+    render = AsyncMock(return_value=NS(problem=None, notices=[], png_paths=[]))
+    monkeypatch.setattr(cps, "render_calendar_image", render)
+    monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
+    channel, _ = _channel()
+
+    result = await cps.post_division_calendar(
+        _bot(tmp_path), _guild(channel), _division(), _rounds(), TRACKS,
+        raise_on_failure=True, as_text=True,
+    )
+
+    render.assert_not_awaited()
+    kwargs = cps.replace_calendar_message.await_args.kwargs
+    assert kwargs["image_path"] is None
+    assert kwargs["content"] == cps.textual_calendar("Elite", _rounds())
+    assert result.posted_as_image is False
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RAISING)
+@pytest.mark.asyncio
+async def test_the_previous_calendar_is_read_when_it_posts(tmp_path, monkeypatch):
+    """The calendar replaced is the one the division holds as the job posts, not the one on a
+    division read earlier: an approval that waited on the queue while the calendar was posted
+    again must not delete a calendar already gone and leave the newer one standing."""
+    from leaguebot.core.db.database import get_connection, run_migrations
+
+    bot = _bot(tmp_path)
+    await run_migrations(bot.db_path)
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 900, 100, 101)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+            "VALUES (3, 3, '2026-11-01', 'SETUP', 'PLACEMENTS')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status, "
+            "calendar_channel_id, calendar_message_id) "
+            "VALUES (7, 3, 'Elite', 1, 801, 'SETUP', 999, '444')"
+        )
+        await db.commit()
+    monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
+    channel, partial = _channel(message_id=888)
+
+    await cps.post_division_calendar(
+        bot, _guild(channel), _division(calendar_message_id=111), _rounds(), TRACKS,
+        raise_on_failure=True,
+    )
+
+    channel.get_partial_message.assert_called_once_with(444)
+    partial.delete.assert_awaited_once()
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute("SELECT calendar_message_id FROM divisions WHERE id = 7")
+        assert (await cursor.fetchone())["calendar_message_id"] == "888"
