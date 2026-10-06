@@ -1221,11 +1221,6 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
 # read exactly as before.
 # ---------------------------------------------------------------------------
 
-POINTS_APPROVAL_UNBUILT = (
-    "#439: display_names and plan_division_posts do not take a division yet"
-)
-
-
 def _outcome_context(*steps: Any) -> Any:
     from leaguebot.core.services.change_queue import OutcomeContext
 
@@ -1236,7 +1231,6 @@ def _outcome_context(*steps: Any) -> Any:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=POINTS_APPROVAL_UNBUILT)
 async def test_names_are_read_back_by_division():
     """Pro's (11) and Am's (12) `names` jobs both done, Beta's (13) not yet: asked for a division,
     the names of that division's job; for one whose job is not done, none; asked for no division,
@@ -1256,7 +1250,6 @@ async def test_names_are_read_back_by_division():
     assert review_posting.display_names(ctx) == {101: "Lewis"}
 
 
-@pytest.mark.xfail(strict=True, reason=POINTS_APPROVAL_UNBUILT)
 async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path):
     """Pro's posts planned with its name: every results and standings job carries it, and each
     one a league admin discards is named with the division ("Round 3's Feature Race results in

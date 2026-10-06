@@ -259,7 +259,9 @@ def _standings_job(
     return PlannedStep(POST_STANDINGS, payload)
 
 
-async def plan_division_posts(db: aiosqlite.Connection, division_id: int) -> list[PlannedStep]:
+async def plan_division_posts(
+    db: aiosqlite.Connection, division_id: int, *, division_name: str | None = None
+) -> list[PlannedStep]:
     """The jobs that rebuild everything a division's results and standings channels show, read on
     *db*: every round's results in round order, then every round's standings in round order, each
     a new message (a repost, never an edit), under the round's own lifecycle label.
@@ -267,6 +269,10 @@ async def plan_division_posts(db: aiosqlite.Connection, division_id: int) -> lis
     Division-wide rather than one round, since a repost lands at the bottom of a channel and
     replacing one round alone would read 2, 3, 4, 5, 1. A round with no ACTIVE session had nothing
     posted and plans none; a channel the division was never given plans none of its jobs.
+
+    With *division_name*, every job carries it as `"division"` and `not_done` names it ("Round 2's
+    Feature Race results in Pro were not posted"): a change that reposts several divisions says
+    which. Planned with none, as the amendment's rebuild plans them, the lines name no division.
     """
     config = await (
         await db.execute(
@@ -314,7 +320,17 @@ async def plan_division_posts(db: aiosqlite.Connection, division_id: int) -> lis
             standings.append(
                 _standings_job(int(rnd["id"]), rnd["round_number"], label, pending, fresh=True)
             )
-    return [*results, *standings]
+    planned = [*results, *standings]
+    if division_name is not None:
+        for step in planned:
+            step.payload["division"] = division_name
+    return planned
+
+
+def _in_division(payload: dict[str, Any]) -> str:
+    """" in Pro" where the job was planned with its division's name, else nothing."""
+    division = payload.get("division")
+    return f" in {division}" if division else ""
 
 
 def not_done(ctx: OutcomeContext, *, reposted: bool = False) -> list[str]:
@@ -346,12 +362,15 @@ def not_done(ctx: OutcomeContext, *, reposted: bool = False) -> list[str]:
             pending = pending or payload["remedy"] == _AMEND
             lines.append(
                 f"⚠️ Round {payload.get('round_number', '?')}'s "
-                f"{payload.get('session', 'results')} were not posted."
+                f"{payload.get('session', 'results')}{_in_division(payload)} were not posted."
             )
         elif view.name == POST_STANDINGS:
             unposted = True
             pending = pending or payload["remedy"] == _AMEND
-            lines.append(f"⚠️ Round {payload.get('round_number', '?')}'s standings were not posted.")
+            lines.append(
+                f"⚠️ Round {payload.get('round_number', '?')}'s standings"
+                f"{_in_division(payload)} were not posted."
+            )
         if view.name in (POST_SESSION_RESULTS, POST_STANDINGS) and result.get("new"):
             ids = ", ".join(str(i) for i in result["new"])
             lines.append(
@@ -413,10 +432,17 @@ async def _resolve_names(ctx: StepContext) -> StepResult:
     return StepResult(result={"names": names})
 
 
-def display_names(ctx: StepContext) -> dict[int, str] | None:
+def display_names(ctx: StepContext, division_id: int | None = None) -> dict[int, str] | None:
     """The names the change's `names` job resolved, or None where it resolved none (the keys
-    came through JSON as text)."""
+    came through JSON as text).
+
+    With *division_id*, the names of that division's `names` job (a change that resolves several
+    plans one for each, its payload's `division_id`); with none, the first job done, which is how
+    a change of one division reads them.
+    """
     for view in ctx.steps:
+        if division_id is not None and view.payload.get("division_id") != division_id:
+            continue
         if view.name == NAMES and view.done:
             found = (view.result or {}).get("names")
             return None if found is None else {int(k): v for k, v in found.items()}
