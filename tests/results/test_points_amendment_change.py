@@ -12,6 +12,7 @@ today the press approves on the spot, inside the button.
 """
 from __future__ import annotations
 
+import json
 from contextlib import ExitStack
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -23,14 +24,18 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    restart_queue,
     retry_job,
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
 from tests.support.points_league import (
+    ADMIN_ID,
     AM_RESULTS,
     AM_STANDINGS,
+    BETA,
     BETA_ATTENDANCE,
     BETA_RESULTS,
     BETA_STANDINGS,
@@ -38,15 +43,25 @@ from tests.support.points_league import (
     AM,
     PRO_RESULTS,
     PRO_STANDINGS,
+    PRO_VERDICTS,
+    MAX,
+    MAX_PROFILE,
+    LEWIS,
+    LEWIS_PROFILE,
+    NOW,
+    audit_rows,
     old_results,
+    old_standings,
     open_panel,
     points_league,
     points_state,
     press_approve,
+    race_points,
+    round_id,
     run_staging,
     write,
 )
-from tests.support.review_league import block_queue, stopped_at
+from tests.support.review_league import block_queue, candidate, run_until_done, stopped_at
 
 KIND = "results.points_amendment.approve"
 
@@ -83,8 +98,6 @@ APPROVED_TABLE = [("Standard", "FEATURE_RACE", 1, 26), ("Standard", "FEATURE_RAC
 
 def _replies(press: Any) -> str:
     """Everything the press was answered with: the acknowledgement, then its updates."""
-    from tests.support.change_queue import updated_reply
-
     return "\n".join(part for part in (acknowledgement(press), updated_reply(press)) if part)
 
 
@@ -585,3 +598,350 @@ async def test_the_staging_commands_run_again_once_the_approval_is_done_or_disca
     await discard_job(discarded.bot)
     staged = await run_staging(discarded, "session", position=1, points=27)
     assert staged.reply.startswith("✅ Updated in modification store")
+
+
+# ---------------------------------------------------------------------------
+# What it does
+# ---------------------------------------------------------------------------
+
+ACKNOWLEDGED = (
+    "⏳ Approving season 1's points amendment. This message will be updated when it is done; "
+    "if it takes longer, the log channel will say so. It begins with job #{job}."
+)
+APPROVED_BUT = (
+    "⚠️ Amendment approved: the new points are in force and every round is rescored, but some "
+    "of it could not be done:"
+)
+BOTH_SYNCS = "Repair the cause, then run `/results rounds sync` and `/results standings sync`."
+
+
+def _incomplete_lines(league: Any) -> list[str]:
+    return [line for line in league.bot.log_channel.sent
+            if "/results amend review | Incomplete" in line]
+
+
+async def _jobs(league: Any) -> list[dict[str, Any]]:
+    """The approval's jobs in order, each payload read back from JSON."""
+    rows = await step_rows(league.db_path, (await _approvals(league))[0]["id"])
+    for row in rows:
+        row["payload"] = json.loads(row["payload"] or "{}")
+    return rows
+
+
+async def _saved(league: Any) -> dict[str, Any]:
+    """What the approval's save writes besides the points: every session's points and every
+    standings snapshot."""
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(league.db_path) as db:
+        async def rows(sql: str) -> list[tuple[Any, ...]]:
+            return [tuple(r) for r in await (await db.execute(sql)).fetchall()]
+
+        return {
+            "race": await rows(
+                "SELECT session_result_id, driver_user_id, points_awarded "
+                "FROM race_session_results ORDER BY session_result_id, driver_user_id"
+            ),
+            "standings": await rows(
+                "SELECT round_id, driver_user_id, standing_position, total_points "
+                "FROM driver_standings_snapshots ORDER BY round_id, driver_user_id"
+            ),
+        }
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_admin_is_told_at_once_and_the_reply_is_updated_when_every_round_is_reposted(
+    tmp_path,
+):
+    """The press is acknowledged at once, naming the approval's first job; once every job is
+    done, the acknowledgement is updated with today's success text."""
+    league = await points_league(tmp_path)
+
+    press = await press_approve(league)
+    first = (await _jobs(league))[0]["id"]
+
+    assert acknowledgement(press) == ACKNOWLEDGED.format(job=first)
+    assert updated_reply(press) == ""
+
+    await run_queue(league.bot)
+
+    assert updated_reply(press) == SUCCESS
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_each_post_and_each_deletion_is_a_job_of_its_own(tmp_path):
+    """The names are looked up a division at a time, then the save; then each results table,
+    each standings and each deletion of an old message is a job of its own, Pro's before Am's,
+    each old message deleted after the post that replaces it; the close comes last."""
+    league = await points_league(tmp_path)
+
+    await press_approve(league)
+    await run_queue(league.bot)
+
+    jobs = await _jobs(league)
+    names = [job["name"] for job in jobs]
+    assert names[:4] == ["plan_names", "names", "names", "apply"]
+    assert names[-1] == "close"
+    assert names.count("post_session_results") == 6
+    assert names.count("post_standings") == 6
+    assert names.count("delete_message") == 12
+    posts = [(i, job) for i, job in enumerate(jobs)
+             if job["name"] in ("post_session_results", "post_standings")]
+    divisions = [job["payload"]["division"] for _, job in posts]
+    assert divisions == ["Pro"] * 6 + ["Am"] * 6
+    for division_id, name, cid in ((PRO, "Pro", PRO_RESULTS), (AM, "Am", AM_RESULTS)):
+        for number in (1, 2, 3):
+            posted_at = next(
+                i for i, job in posts
+                if job["name"] == "post_session_results"
+                and job["payload"]["division"] == name
+                and job["payload"]["round_number"] == number
+            )
+            deleted_at = next(
+                i for i, job in enumerate(jobs)
+                if job["name"] == "delete_message"
+                and job["payload"]["message_id"] == old_results(division_id, number)
+            )
+            assert jobs[deleted_at]["payload"]["channel_id"] == cid
+            assert deleted_at > posted_at
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_points_rescoring_standings_and_attendance_are_saved_in_one_save(tmp_path):
+    """Attendance on; its recalculation raises inside the save. Nothing of the four is saved:
+    the season's points, working copy and mode, every session's points and every standings
+    snapshot stand as they were, and the queue is stopped at the save."""
+    league = await points_league(tmp_path, attendance=True)
+    league.attendance.recalculate_fails = RuntimeError("the attendance could not be recalculated")
+    before, saved = await points_state(league), await _saved(league)
+
+    await press_approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "apply"
+    assert any(call[0] == "recalculate_on" for call in league.attendance.calls)
+    assert await points_state(league) == before
+    assert await _saved(league) == saved
+    assert await race_points(league, PRO, 1) == {LEWIS: 25, MAX: 18}
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_approval_is_audited_with_every_value_changed(tmp_path):
+    """One `POINTS_AMENDMENT_APPROVED` record, by the admin who pressed, holding the season and
+    the one value changed (Feature Race P1), before (25) and after (26)."""
+    league = await points_league(tmp_path)
+
+    await press_approve(league)
+    await run_queue(league.bot)
+
+    rows = await audit_rows(league, "POINTS_AMENDMENT_APPROVED")
+    assert len(rows) == 1
+    assert rows[0]["actor_id"] == ADMIN_ID
+    old, new = json.loads(rows[0]["old_value"]), json.loads(rows[0]["new_value"])
+    assert old["season_id"] == new["season_id"] == 1
+    assert len(old["changed"]) == len(new["changed"]) == 1
+    assert "25" in json.dumps(old["changed"]) and "26" not in json.dumps(old["changed"])
+    assert "26" in json.dumps(new["changed"]) and "25" not in json.dumps(new["changed"])
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_one_success_line_names_the_admin_and_the_values_set_after_the_last_job(tmp_path):
+    """One success line, written once the last post is sent, names the admin, the season, each
+    value set and the rounds reposted; the old `AMENDMENT_APPROVED` line and "standings
+    recomputed and reposted" are gone."""
+    league = await points_league(tmp_path)
+    seen_at_send: list[int] = []
+
+    def _count(_content: str, _kwargs: dict[str, Any]) -> bool:
+        seen_at_send.append(len(_success_lines(league)))
+        return False
+
+    league.channel(AM_STANDINGS).fail_when = _count
+
+    await press_approve(league)
+    await run_queue(league.bot)
+
+    lines = _success_lines(league)
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.startswith(f"Admin (<@{ADMIN_ID}>) | /results amend review | Success")
+    assert "  season: 1" in line
+    assert "  points changed: Standard, Feature Race, P1: 25 → 26" in line
+    assert "  rounds rescored and reposted: 6 across 2 division(s)" in line
+    assert seen_at_send and set(seen_at_send) == {0}
+    assert "AMENDMENT_APPROVED" not in league.log()
+    assert "standings recomputed and reposted" not in league.log()
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_only_raced_rounds_are_reposted_each_under_its_own_label(tmp_path):
+    """Pro's rounds 1 and 2 (final) and 3 (awaiting its report verdicts) are reposted, each under
+    its own label; round 4, not run, and round 5, recorded as cancelled, post nothing."""
+    league = await points_league(tmp_path)
+    await write(
+        league,
+        "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, track_name, "
+        "status) VALUES (?, ?, 5, '2026-07-01T18:00:00+00:00', 'NORMAL', 'Silverstone', "
+        "'CANCELLED')",
+        round_id(PRO, 5), PRO,
+    )
+
+    await press_approve(league)
+    await run_queue(league.bot)
+
+    channel = league.channel(PRO_RESULTS)
+    posted = [channel.messages[mid].content for mid in league.sent_to(PRO_RESULTS)]
+    assert len(posted) == 3
+    assert "Final Results" in posted[0] and "Final Results" in posted[1]
+    assert "Provisional Results" in posted[2]
+    assert len(league.sent_to(PRO_STANDINGS)) == 3
+    assert all(job["payload"].get("round_number") in (None, 1, 2, 3)
+               for job in await _jobs(league))
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_every_division_is_reposted_a_cancelled_one_included(tmp_path):
+    """Beta, cancelled, has its raced round 1 reposted in its own channels (results 721,
+    standings 720), after Am's, and its old messages deleted."""
+    league = await points_league(tmp_path, cancelled_division=True)
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    assert len(league.sent_to(BETA_RESULTS)) == 1
+    assert len(league.sent_to(BETA_STANDINGS)) == 1
+    assert old_results(BETA, 1) in league.deleted_from(BETA_RESULTS)
+    assert old_standings(BETA, 1) in league.deleted_from(BETA_STANDINGS)
+    sends = [(i, cid) for i, (kind, cid, _mid) in enumerate(league.events) if kind == "send"]
+    last_am = max(i for i, cid in sends if cid in (AM_RESULTS, AM_STANDINGS))
+    first_beta = min(i for i, cid in sends if cid in (BETA_RESULTS, BETA_STANDINGS))
+    assert first_beta > last_am
+    assert updated_reply(press) == SUCCESS
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_discarded_repost_is_named_incomplete_with_its_division_and_both_sync_commands(
+    tmp_path,
+):
+    """Pro's round 2 Feature Race results are refused; a league admin discards the job. The
+    queue runs on, the old table stands, and the reply and the `| Incomplete` line name the
+    table and its division, ending with both sync commands; no success line."""
+    league = await points_league(tmp_path)
+    _refuse_send(league, PRO_RESULTS, 2)
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "post_session_results"
+    await discard_job(league.bot)
+
+    named = "⚠️ Round 2's Feature Race results in Pro were not posted."
+    reply = updated_reply(press)
+    assert reply.startswith(APPROVED_BUT)
+    assert named in reply
+    assert reply.endswith(BOTH_SYNCS)
+    lines = _incomplete_lines(league)
+    assert len(lines) == 1
+    assert named in lines[0] and BOTH_SYNCS in lines[0]
+    assert _success_lines(league) == []
+    assert old_results(PRO, 2) not in league.deleted_from(PRO_RESULTS)
+    assert old_results(PRO, 2) in league.channel(PRO_RESULTS).messages
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_discarded_deletion_links_the_old_table_for_deletion_by_hand(tmp_path):
+    """Pro's old round 1 results table cannot be deleted; a league admin discards the job. Both
+    tables stand, and the reply and the `| Incomplete` line name the old one for deletion by
+    hand."""
+    league = await points_league(tmp_path)
+    old = old_results(PRO, 1)
+    league.channel(PRO_RESULTS).messages[old].delete = AsyncMock(
+        side_effect=http_error(status=403, text="Missing Permissions")
+    )
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "delete_message"
+    await discard_job(league.bot)
+
+    reply = updated_reply(press)
+    assert reply.startswith(APPROVED_BUT)
+    named = [line for line in reply.split("\n")
+             if line.startswith("⚠️ An earlier message could not be deleted (")]
+    assert len(named) == 1
+    assert named[0].endswith("delete it by hand.")
+    assert str(old) in named[0] or f"<#{PRO_RESULTS}>" in named[0]
+    assert named[0] in _incomplete_lines(league)[0]
+    assert old in league.channel(PRO_RESULTS).messages
+    assert len(league.sent_to(PRO_RESULTS)) == 3
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_discarded_save_says_nothing_was_changed_and_leaves_amendment_mode_on(tmp_path):
+    """The save fails (the standings cannot be computed) and a league admin discards it: the
+    reply says nothing was changed, the season keeps its points, the staged changes and
+    amendment mode, nothing is posted, and no success or `Incomplete` line is written."""
+    league = await points_league(tmp_path)
+    before = await points_state(league)
+
+    with _standings_fail():
+        press = await press_approve(league)
+        await run_queue(league.bot)
+        assert await stopped_at(league) == "apply"
+        await discard_job(league.bot)
+
+    assert updated_reply(press).endswith(NOTHING_CHANGED)
+    assert await points_state(league) == before
+    assert before["mode"][0][0] == 1
+    assert league.sent_to(PRO_RESULTS) == league.sent_to(PRO_STANDINGS) == []
+    assert _success_lines(league) == [] and _incomplete_lines(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_stop_after_the_save_finishes_the_reposts_on_restart_and_records_one_success(
+    tmp_path,
+):
+    """The bot stops just after the save and a first post; restarted, the queue finishes the
+    reposts: each round posted once, every old table deleted once, one success line, one audit
+    record, and the points applied once."""
+    league = await points_league(tmp_path)
+    press = await press_approve(league)
+    await run_until_done(league, "apply")
+    await run_queue(league.bot, steps=1)
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    for division_id, results in ((PRO, PRO_RESULTS), (AM, AM_RESULTS)):
+        assert len(league.sent_to(results)) == 3
+        assert sorted(league.deleted_from(results)) == [
+            old_results(division_id, n) for n in (1, 2, 3)
+        ]
+    assert len(_success_lines(league)) == 1
+    assert len(await audit_rows(league, "POINTS_AMENDMENT_APPROVED")) == 1
+    assert (await points_state(league))["points"] == APPROVED_TABLE
+    assert await race_points(league, PRO, 1) == {LEWIS: 26, MAX: 18}
+    assert acknowledgement(press).startswith("⏳ Approving season 1's points amendment.")
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_stop_before_the_save_applies_the_points_once_on_restart(tmp_path):
+    """The bot stops after the first `names` job, before the save; restarted, the queue applies
+    the points once: the season's table, every session rescored, amendment mode off, one audit
+    record and one success line."""
+    league = await points_league(tmp_path)
+    await press_approve(league)
+    await run_until_done(league, "names")
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    state = await points_state(league)
+    assert state["points"] == APPROVED_TABLE
+    assert state["mode"][0][0] == 0
+    assert await race_points(league, PRO, 1) == {LEWIS: 26, MAX: 18}
+    assert await race_points(league, AM, 3) == {LEWIS: 26, MAX: 18}
+    assert len(await audit_rows(league, "POINTS_AMENDMENT_APPROVED")) == 1
+    assert len(_success_lines(league)) == 1
