@@ -29,6 +29,7 @@ nothing reads and post nothing, and a league with the module off can still see t
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from types import SimpleNamespace
@@ -642,3 +643,123 @@ async def test_a_job_that_is_not_the_division_s_in_hand_does_not_hold_the_amendm
 
     assert "job #" not in _replied(interaction)
     assert _logged(interaction) == []
+
+
+# ---------------------------------------------------------------------------
+# A points approval of the season on the queue (owner, 2026-10-06, "Refuse it", #439 slice 3)
+#
+# Approving a change to the season's points reposts every round of every division, so while one
+# is in hand no round of the season is amended: the approval's reposts would publish the
+# amendment's corrections before they were approved. The refusal is r1-1's, word for word.
+# ---------------------------------------------------------------------------
+
+POINTS_KIND = "results.points_amendment.approve"
+POINTS_PAYLOAD = {"season_id": SEASON_ID, "season_number": 7}
+POINTS_UNREAD = (
+    "#439: division_job_in_hand does not read a points approval of the division's season yet"
+)
+
+_PRO = SimpleNamespace(id=DIVISION_ID, name="Pro", tier=1)
+_AM = SimpleNamespace(id=OTHER_DIVISION_ID, name="Am", tier=2)
+
+
+def _division_cog(db_path: str, division: str):
+    """The cog, its season holding Pro and Am, with round 3 of *division* FINAL."""
+    division_id = DIVISION_ID if division == "Pro" else OTHER_DIVISION_ID
+    round_id = ROUND_ID if division == "Pro" else OTHER_ROUND_ID
+    return _make_cog(
+        db_path,
+        divisions=[_PRO, _AM],
+        rounds=[SimpleNamespace(id=round_id, division_id=division_id, round_number=3,
+                                status="FINAL")],
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=POINTS_UNREAD)
+@pytest.mark.parametrize("division", ["Pro", "Am"])
+@pytest.mark.parametrize(
+    ("state", "stopped"),
+    [("QUEUED", False), ("RUNNING", False), ("RUNNING", True)],
+    ids=["waiting", "running", "stopped"],
+)
+async def test_a_round_is_not_amended_while_a_points_approval_of_its_season_is_in_hand(
+    tmp_path, state, stopped, division,
+):
+    """Season 7's points approval is on the queue, waiting, being carried out, or stopped at a
+    failed job; its payload names the season alone, no division and no round. Amending round 3
+    of Pro, or of Am, is refused in r1-1's words, naming the approval's job and how to clear it,
+    with one refusal line in the log; no amendment is opened and no channel created."""
+    db_path = await _make_db(tmp_path, name=f"amend_points_{state}_{stopped}_{division}")
+    job = await _seed_queued_change(
+        db_path, kind=POINTS_KIND, payload=POINTS_PAYLOAD, state=state, stopped=stopped,
+    )
+    cog = _division_cog(db_path, division)
+    interaction = _gate_interaction()
+
+    with contextlib.suppress(_AmendmentWentOn):
+        await _amend(cog, interaction, division=division, session=SessionType.FEATURE_RACE)
+
+    assert _replied(interaction) == (
+        f"\u23f8\ufe0f A round of {division} has a job on the change queue (job #{job}), so it "
+        "cannot be amended until that is done. Let it finish, or press **Retry** or **Discard** "
+        "on its notice if it has stopped, then amend again."
+    )
+    [line] = _logged(interaction)
+    assert line.startswith("\u26d4") and f"job #{job}" in line
+    interaction.guild.create_text_channel.assert_not_called()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        assert (await cursor.fetchone())[0] == 0
+
+
+@pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
+async def test_a_finished_or_discarded_points_approval_does_not_hold_the_amendment(
+    tmp_path, state,
+):
+    """Season 7's points approval has finished, or a league admin discarded it: it is no longer
+    in hand, so amending round 3 of Pro goes on to create the amendment's channel, nothing
+    refused and nothing logged."""
+    db_path = await _make_db(tmp_path, name=f"amend_points_over_{state}")
+    await _seed_queued_change(db_path, kind=POINTS_KIND, payload=POINTS_PAYLOAD, state=state)
+    cog = _division_cog(db_path, "Pro")
+    interaction = _gate_interaction()
+
+    with pytest.raises(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert "job #" not in _replied(interaction)
+    assert _logged(interaction) == []
+
+
+@pytest.mark.parametrize(
+    "points_first",
+    [
+        pytest.param(False, id="review-job-first"),
+        pytest.param(True, id="points-approval-first",
+                     marks=pytest.mark.xfail(strict=True, reason=POINTS_UNREAD)),
+    ],
+)
+async def test_a_review_job_and_a_points_approval_name_the_one_nearer_its_turn(
+    tmp_path, points_first,
+):
+    """Both round 4 of Pro's review opening and season 7's points approval are waiting on the
+    queue, asked in either order. Amending round 3 of Pro is refused naming the job of whichever
+    was asked first, the one nearer its turn, and not the other."""
+    db_path = await _make_db(tmp_path, name=f"amend_points_and_review_{points_first}")
+    seeds = [
+        {"kind": POINTS_KIND, "payload": POINTS_PAYLOAD},
+        {},
+    ]
+    if not points_first:
+        seeds.reverse()
+    first = await _seed_queued_change(db_path, **seeds[0])
+    second = await _seed_queued_change(db_path, **seeds[1])
+    cog = _division_cog(db_path, "Pro")
+    interaction = _gate_interaction()
+
+    with contextlib.suppress(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    replied = _replied(interaction)
+    assert f"job #{first})" in replied
+    assert f"job #{second})" not in replied
