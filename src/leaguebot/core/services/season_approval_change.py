@@ -43,6 +43,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     AuditRecord,
+    FollowOn,
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
@@ -57,6 +58,7 @@ from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
     OutcomeContext,
+    RefusedContext,
     Step,
     StepContext,
     StepView,
@@ -89,6 +91,7 @@ __all__ = [
     "TELL_KIND",
     "approval_in_hand",
     "season_approval_change",
+    "season_approval_tell_change",
     "ungranted_line",
     "unposted_lineup_line",
 ]
@@ -149,6 +152,15 @@ def channel_not_approved(actor_id: int | None, season_number: Any) -> str:
     return (
         f"⛔ <@{actor_id}> — Season #{season_number} was not approved. Your reply could not be "
         f"updated; the log channel has why. Run `/season placements-review` again."
+    )
+
+
+def channel_refused(actor_id: int | None, season_number: Any, reply: str) -> str:
+    """What the review's channel is told of an approval refused as it came up to run, its member
+    having no reply left to be told in: the refusal's own reply beneath a line naming them."""
+    return (
+        f"⛔ <@{actor_id}> — Season #{season_number} was not approved when its turn came on the "
+        f"queue, and your reply could no longer be updated:\n{reply}"
     )
 
 
@@ -637,10 +649,30 @@ def season_approval_change(
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the season's approval"
 
+    def tell_of_refusal(context: RefusedContext) -> tuple[FollowOn, ...]:
+        """Where the member can no longer be told of a refusal at run, ask the change that tells
+        the review's channel (`season_approval_tell_change`), saved with the refusal."""
+        if context.reply_updatable:
+            return ()
+        number = context.payload["season_number"]
+        channel_id = context.payload["channel_id"]
+        return (
+            FollowOn(
+                TELL_KIND,
+                {
+                    "season_number": number,
+                    "channel_id": channel_id,
+                    "actor_id": context.actor_id,
+                    "text": channel_refused(context.actor_id, number, context.reply),
+                },
+                f"Telling <#{channel_id}> that season {number} was not approved",
+            ),
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
-        refused = (_view(ctx, APPLY) or _EMPTY).result
-        if refused and refused.get("refused"):
-            return str(refused["refused"])
+        refusal = (_view(ctx, APPLY) or _EMPTY).result
+        if refusal and refusal.get("refused"):
+            return str(refusal["refused"])
         if not _applied(ctx):
             return NOT_SAVED
         applied = (_view(ctx, APPLY) or _EMPTY).result or {}
@@ -701,6 +733,44 @@ def season_approval_change(
         key=lambda payload: f"{KIND}:{payload['season_id']}",
         doing=doing,
         outcome=outcome,
+        on_refused=tell_of_refusal,
+    )
+
+
+def season_approval_tell_change() -> ChangeType:
+    """The change that tells the review's channel an approval was refused as it came up to run.
+
+    The approval's `on_refused` asks for it, in the refusal's own save, where the member's reply
+    can no longer be updated (a restart, or fourteen minutes on). Its one job posts the text the
+    approval wrote into its payload, as the review's channel's notice, and stops the queue where
+    Discord refuses it. It has no member to answer, so its outcome is empty.
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        return Verdict.go()
+
+    async def tell(ctx: StepContext) -> StepResult:
+        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), str(ctx.payload["text"]))
+        return StepResult(result={"told": True})
+
+    async def describe(ctx: StepContext) -> str:
+        return (
+            f"telling <#{ctx.payload['channel_id']}> that season "
+            f"{ctx.payload['season_number']} was not approved"
+        )
+
+    return ChangeType(
+        kind=TELL_KIND,
+        opening=(PlannedStep(TELL_REVIEW_CHANNEL),),
+        steps={
+            TELL_REVIEW_CHANNEL: Step(TELL_REVIEW_CHANNEL, StepKind.ACT, tell, describe=describe)
+        },
+        check=check,
+        key=lambda payload: f"{TELL_KIND}:{payload['season_number']}",
+        doing=lambda payload: (
+            f"Telling the review's channel that season {payload['season_number']} was not approved"
+        ),
+        outcome=lambda _ctx: "",
     )
 
 

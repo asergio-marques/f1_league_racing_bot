@@ -132,7 +132,10 @@ def register_change_types(bot: LeagueBot) -> None:
     the real set.
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
-    from leaguebot.core.services.season_approval_change import season_approval_change
+    from leaguebot.core.services.season_approval_change import (
+        season_approval_change,
+        season_approval_tell_change,
+    )
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
@@ -194,6 +197,7 @@ def register_change_types(bot: LeagueBot) -> None:
             now=lambda: bot.change_queue.now(),
         )
     )
+    bot.change_queue.register(season_approval_tell_change())
 
 
 async def main() -> None:

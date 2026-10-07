@@ -84,9 +84,6 @@ def test_the_wizard_has_its_bot_before_the_gateway_opens():
     assert binds[0].lineno < start.lineno
 
 
-_NO_SEASON_APPROVAL = "#439: the season's approval is not yet a change type the builder registers"
-
-
 def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
     """The season cog reads the enabled modules' windows through `bot.approval_windows`, which
     `LeagueBot` declares and the builder sets, so that core imports neither attendance nor
@@ -98,7 +95,6 @@ def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
     assert "self.bot.approval_windows()" in inspect.getsource(SeasonCog._approval_windows)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SEASON_APPROVAL)
 def test_the_season_approval_is_registered():
     """The builder registers the season's approval and the change that tells the review's channel
     of a refusal its member can no longer be told of (#439, slice 4a)."""
