@@ -56,7 +56,7 @@ Three things have to be done on that computer, by hand, before any command in th
 2. **Set three switches in that same portal** — turn on the *Server Members* and *Message Content* intents, and turn off *Public Bot*. Without the first intent the bot cannot hand out roles at all. See [Privileged Gateway Intents](../../README.md#privileged-gateway-intents). With *Public Bot* off, nobody but the bot's owner can add it to a server.
 3. **Start it once.** It builds its own databases on first run — two of them, `bot.db` for your league's records and `scheduler.db` for work it has scheduled ahead. There is nothing to create.
 
-> **If you keep backups, keep both.** `bot.db` on its own is not a complete backup: without `scheduler.db` a restored season still knows its rounds, but every weather phase, RSVP notice and result submission it was waiting to send has gone, and only reviewing and approving the season again brings them back. Copying `bot.db` while the bot is running can also miss the most recent changes, because they may still be sitting in a `bot.db-wal` file next to it. The safe ways are in [Backing up](../../README.md#backing-up). Backups are optional and entirely your choice — but a half-backup is worse than none, because it looks complete.
+> **If you keep backups, keep both.** `bot.db` on its own is not a complete backup: without `scheduler.db` a restored season still knows its rounds, but every weather phase, RSVP notice and result submission it was waiting to send has gone. A season under way cannot be approved again, and no command rebuilds its scheduled work wholesale: `/round amend` arms one round's work again when it moves that round, and nothing else does. Copying `bot.db` while the bot is running can also miss the most recent changes, because they may still be sitting in a `bot.db-wal` file next to it. The safe ways are in [Backing up](../../README.md#backing-up). Backups are optional and entirely your choice — but a half-backup is worse than none, because it looks complete.
 
 **Invite it to your league's server, and to no other.** `/bot init` claims the server it runs in. On any other server the bot refuses every command, and the computer running it logs a warning for as long as it sits in more than one — see [One bot, one server](../../README.md#one-bot-one-server).
 
@@ -504,7 +504,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 >
 > The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
 
-**The review disappears once you approve it.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
+**The review disappears once you press Approve and the approval is taken in hand.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. If the approval is then refused when its turn comes on the queue, or a league admin discards it, your season stays in placements with the review gone: run `/season placements-review` again. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
 
 **These will refuse the season whatever modules you use:**
 
@@ -535,10 +535,14 @@ Your season is **ongoing** from the moment it is saved in step 1, before anythin
 
 **If one of steps 2 to 6 cannot be done, the approval still stands.** The job that failed stops the queue until it is retried or a league admin discards it. Your confirmation then lists each job a league admin discarded, under **Not everything could be done**, with timed work that was not armed first, for no command arms it again:
 
+- the setup the bot held in memory, where it could not be let go of — `/round amend` may refuse this season until the bot restarts;
 - a driver the bot could not give their roles — grant them by hand, and `/team lineup` shows who is placed where;
-- a calendar that was not posted — post it with `/division calendar-sync`;
+- the notice that the season's posts were being made, where it could not be posted;
 - a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
-- opening standings and attendance sheets that were not posted — no command posts them again, and each round's results and attendance post them as usual.
+- a calendar that was not posted — post it with `/division calendar-sync`;
+- opening standings and attendance sheets that were not posted — no command posts them again, and each round's results and attendance post them as usual;
+- part of a division's opening standings left standing when the job stopped, naming the channel and the message — delete it by hand;
+- that notice, where it could not be deleted, with its link — delete it by hand.
 
 The same list goes to the log channel. A driver who has left the server is simply passed over.
 
@@ -673,8 +677,9 @@ Where the window closes with nobody left to settle, the season goes straight bac
 > Classification` and holding the state at that division's last round with results. A division that
 > ran no round gets none. The final attendance sheet is posted **beside** the last round's rather
 > than replacing it, so the channel ends the season holding both — it is the season's last word and
-> nothing should be able to delete it. As at approval, a division whose sheets will not post is
-> named in the log channel and the season completes regardless.
+> nothing should be able to delete it. Unlike approval, where a sheet that will not post stops the
+> queue, here a division whose sheets will not post is named in the log channel and the season
+> completes regardless.
 
 An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot init` settings all carry over.
 
