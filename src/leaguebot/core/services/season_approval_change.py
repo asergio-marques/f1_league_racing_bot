@@ -114,6 +114,7 @@ POST_CALENDAR = "post_calendar"
 OPENING_STANDINGS = "opening_standings"
 OPENING_SHEET = "opening_sheet"
 DELETE_BATCH_NOTICE = "delete_batch_notice"
+TELL_REVIEW_CHANNEL = "tell_review_channel"
 CLOSE = "close"
 
 NOTICE_TEXT = "🎨 Posting lineups, calendars and opening classifications — one moment."
@@ -132,6 +133,38 @@ NOT_ARMED = (
 NOTICE_NOT_POSTED = "The notice that the season's posts were being made could not be posted."
 _NOTICE_NOT_DELETED = "The notice that the season's posts were being made could not be deleted"
 _BUTTON = "the ✅ Approve button of `/season placements-review`"
+
+
+def channel_approved(actor_id: int | None, season_number: Any) -> str:
+    """What the review's channel is told of an approval its member could not be told of."""
+    return (
+        f"✅ <@{actor_id}> — Season #{season_number} is approved and ongoing. Your confirmation "
+        f"could not be sent to you privately; the log channel has what it said."
+    )
+
+
+def channel_not_approved(actor_id: int | None, season_number: Any) -> str:
+    """What the review's channel is told of an approval that did not go through, its member
+    having no reply left to be told in."""
+    return (
+        f"⛔ <@{actor_id}> — Season #{season_number} was not approved. Your reply could not be "
+        f"updated; the log channel has why. Run `/season placements-review` again."
+    )
+
+
+async def tell_channel(bot: Any, channel_id: int, text: str) -> None:
+    """Post *text* in the review's channel, read from the league's server as the job runs.
+
+    Raises `StepFailedOnDiscord` where the channel is no longer there, and whatever Discord
+    raises where the post is refused: the job that calls it stops the queue.
+    """
+    guild = await _guild(bot)
+    channel = as_text_channel(guild.get_channel(channel_id))
+    if channel is None:
+        raise StepFailedOnDiscord(
+            f"the channel <#{channel_id}> no longer exists or cannot be posted in"
+        )
+    await send_notice(channel, text)
 
 
 def ungranted_line(user_ids: list[str]) -> str:
@@ -520,6 +553,21 @@ def season_approval_change(
             ) from error
         return StepResult(result={"deleted": True})
 
+    async def tell_review_channel(ctx: StepContext) -> StepResult:
+        """Tell the channel the review was read in how the approval ended, where the member's
+        reply can no longer be updated: fourteen minutes on, or after a restart."""
+        number = ctx.payload["season_number"]
+        text = (
+            channel_approved(ctx.actor_id, number)
+            if _applied(ctx)
+            else channel_not_approved(ctx.actor_id, number)
+        )
+        await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), text)
+        return StepResult(result={"told": True})
+
+    async def reply_lost(ctx: StepContext) -> bool:
+        return not ctx.reply_updatable
+
     async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         saved = _applied(ctx)
         if not saved:
@@ -580,6 +628,12 @@ def season_approval_change(
 
         return describe
 
+    async def describe_tell(ctx: StepContext) -> str:
+        return (
+            f"telling <#{ctx.payload['channel_id']}> how the approval of season "
+            f"{ctx.payload['season_number']} ended"
+        )
+
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the season's approval"
 
@@ -633,11 +687,15 @@ def season_approval_change(
             DELETE_BATCH_NOTICE, StepKind.DELETE, delete_batch_notice, still_due=notice_posted,
             describe=describe_notice_delete,
         ),
+        TELL_REVIEW_CHANNEL: Step(
+            TELL_REVIEW_CHANNEL, StepKind.ACT, tell_review_channel, still_due=reply_lost,
+            describe=describe_tell,
+        ),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
     return ChangeType(
         kind=KIND,
-        opening=(PlannedStep(APPLY), PlannedStep(CLOSE)),
+        opening=(PlannedStep(APPLY), PlannedStep(TELL_REVIEW_CHANNEL), PlannedStep(CLOSE)),
         steps=steps,
         check=check,
         key=lambda payload: f"{KIND}:{payload['season_id']}",
@@ -723,6 +781,8 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
             lines.append(
                 f"{_NOTICE_NOT_DELETED}{f' ({link})' if link else ''}: delete it by hand."
             )
+        elif told and view.name == TELL_REVIEW_CHANNEL:
+            lines.append(f"<#{ctx.payload['channel_id']}> was not told how the approval ended")
     if ungranted_at is not None:
         lines[ungranted_at] = ungranted_line(ungranted)
     return [NOT_ARMED, *lines] if not armed else lines
