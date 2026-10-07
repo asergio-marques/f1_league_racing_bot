@@ -5436,9 +5436,10 @@ class SeasonCog(commands.Cog):
         """Approve the season: every gate, then the backup question where test mode is on, then
         the approval is asked of the change queue, which carries it out (#439, slice 4a).
 
-        Returns whether the approval was asked of the queue. False where a gate refused the
-        press, or the backup question was cancelled or went unanswered: the button's review
-        then stands (`_ApproveView.approve`), and nothing has been approved.
+        Returns whether the approval was asked of the queue and saved. False where a gate
+        refused the press, the backup question was cancelled or went unanswered, or the queue's
+        own check refused the approval: the button's review then stands
+        (`_ApproveView.approve`), and nothing has been approved.
 
         *deadline* is when the review stops being approvable, carried in from the view so
         the backup question below can be given what is left of that window rather than a
@@ -5776,7 +5777,7 @@ class SeasonCog(commands.Cog):
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
             fingerprint = (await take_fingerprint(self.bot, cfg.season_id)).areas
-        await self.bot.change_queue.ask(
+        change_id = await self.bot.change_queue.ask(
             APPROVAL_KIND,
             {
                 "season_id": cfg.season_id,
@@ -5787,7 +5788,8 @@ class SeasonCog(commands.Cog):
             interaction=interaction,
             what=what,
         )
-        return True
+        # None where the queue's own check refused the approval and saved nothing.
+        return change_id is not None
 
     # ------------------------------------------------------------------
     # Guard: block messages while round is in penalty review (T014)
@@ -6267,9 +6269,11 @@ class _ApproveView(LeagueView):
         """Ask the change queue to approve the season, and only then take the review down.
 
         A press refused at the press by the approval's own gates (a date gone by, a channel, the
-        rasteriser and the rest), or cancelled at the test-mode backup question, leaves the review and its button standing, to be pressed again within
+        rasteriser and the rest) or by the queue's check of it, or cancelled at the test-mode
+        backup question, leaves the review and its button standing, to be pressed again within
         its five minutes, as a press that fails on a fault does (the core specification's
-        "Confirming placements"). Only a press whose approval is asked of the queue deletes the
+        "Confirming placements"). One refused because the season has changed since the review
+        ends it as an expired one does. Only a press whose approval the queue saves deletes the
         review and forgets its prompt.
         """
         # Checked first, the fingerprint included: the message is public, so anyone who can
@@ -6301,26 +6305,20 @@ class _ApproveView(LeagueView):
         # The report you read is the report you approve. The five-minute life makes a change
         # unlikely; this makes one detectable — and it is what lets the approval trust the
         # review's own render rather than drawing everything a second time.
-        if self._fingerprint is not None and self._season_id is not None:
-            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-
-            current = await take_fingerprint(
-                self._cog.bot, self._season_id
+        changed = await self._changed_since_review()
+        if changed:
+            bullets = "\n".join(f"• {area}" for area in changed)
+            await refuse(
+                interaction,
+                f"⛔ Your season has changed since this review, so the report above "
+                f"no longer describes it:\n{bullets}\n"
+                f"Run `/season placements-review` again and approve from the fresh report. "
+                f"**Nothing has been approved.**",
+                what=self._button,
+                reason=f"the season has changed since this review:\n{bullets}",
             )
-            changed = self._fingerprint.differs_from(current)
-            if changed:
-                bullets = "\n".join(f"• {area}" for area in changed)
-                await refuse(
-                    interaction,
-                    f"⛔ Your season has changed since this review, so the report above "
-                    f"no longer describes it:\n{bullets}\n"
-                    f"Run `/season placements-review` again and approve from the fresh report. "
-                    f"**Nothing has been approved.**",
-                    what=self._button,
-                    reason=f"the season has changed since this review:\n{bullets}",
-                )
-                await self._expire_now()
-                return
+            await self._expire_now()
+            return
 
         async with self._press_worked():
             asked = await self._cog._do_approve(
@@ -6333,9 +6331,10 @@ class _ApproveView(LeagueView):
             ran_out = self._expiry_waiting or datetime.now(timezone.utc) >= self._deadline
         if not asked:
             # The review stands, unless its five minutes ran out meanwhile, as at a backup
-            # question left unanswered: then it ends as a timeout would, the press having
+            # question left unanswered, or the season has changed since it, as the queue's check
+            # may have refused it for: then it ends as an expired one does, the press having
             # recorded its own outcome.
-            if ran_out:
+            if ran_out or await self._changed_since_review():
                 await self._expire_now()
             return
         # Stopped first: the review is answered, and a timer firing while the clean-up below
@@ -6345,10 +6344,20 @@ class _ApproveView(LeagueView):
         await self._clear_report()
         self._message = None
 
+    async def _changed_since_review(self) -> list[str]:
+        """The areas of the season changed since the review described it, named as a league
+        reads them; none where the review recorded no fingerprint."""
+        if self._fingerprint is None or self._season_id is None:
+            return []
+        from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+
+        current = await take_fingerprint(self._cog.bot, self._season_id)
+        return self._fingerprint.differs_from(current)
+
     async def _clear_report(self) -> None:
-        """Delete the review, the question included, once the approval is asked of the change
-        queue: only then, never on a press refused at the press or cancelled at the backup
-        question, which leaves the review standing (`approve`).
+        """Delete the review, the question included, once the change queue has saved the
+        approval: only then, never on a press refused at the press or by the queue's check, or
+        cancelled at the backup question, which leaves the review standing (`approve`).
 
         The report describes a season awaiting a decision, and the decision is now taken:
         left standing it is a long scroll of a state that has moved on, above whatever the

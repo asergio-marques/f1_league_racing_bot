@@ -624,7 +624,7 @@ def test_approval_refuses_before_it_commits_anything():
     """The fingerprint stands where the render stood: ahead of everything committed."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
 
-    gate_at = source.index("differs_from")
+    gate_at = source.index("_changed_since_review()")
     assert source.index("_may_approve") < gate_at, (
         "who is pressing is settled before what they are pressing on"
     )
@@ -654,8 +654,11 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     # The review still withholds its button on a graphic that will not draw. The approval
     # no longer re-draws to find that out — it refuses unless the season still fingerprints
     # as the one the review described, which is the same evidence reached more cheaply.
-    assert "differs_from" in _function_source(
+    assert "_changed_since_review()" in _function_source(
         SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve"
+    )
+    assert "differs_from" in _function_source(
+        SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_changed_since_review"
     )
 
     # The image configuration blocks on both surfaces too, and through one helper so that
@@ -903,7 +906,7 @@ async def test_the_access_check_runs_before_the_fingerprint():
 
     source = inspect.getsource(_ApproveView.approve)
 
-    assert source.index("_may_approve") < source.index("take_fingerprint"), (
+    assert source.index("_may_approve") < source.index("_changed_since_review()"), (
         "the fingerprint is taken for a member who may not approve anyway"
     )
 
@@ -1230,13 +1233,6 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     assert "your review has expired" in message.channel.send.await_args.args[0]
 
 
-_REFUSED_ASK_CLEARS = (
-    "#439 M1: _do_approve ignores the change queue's ask, so a press the queue's check "
-    "refuses still deletes the review"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_REFUSED_ASK_CLEARS)
 async def test_a_press_the_queue_refuses_leaves_the_review_standing(tmp_path):
     """Every gate at the press passes, and the queue's own check of the approval refuses it (a
     date gone by while the backup question stood open, say): nothing is saved, and the review
@@ -1252,7 +1248,6 @@ async def test_a_press_the_queue_refuses_leaves_the_review_standing(tmp_path):
     assert await _prompt_rows(view) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSED_ASK_CLEARS)
 async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review(
     tmp_path, monkeypatch
 ):
