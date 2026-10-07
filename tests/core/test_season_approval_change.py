@@ -1184,8 +1184,8 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
 async def test_no_separate_opening_classification_line_is_written(tmp_path, monkeypatch):
     """Each opening post is a job of the approval, and one discarded is named on the approval's
     own line (the test above). The separate "| Opening classification" report line goes with
-    `post_opening_classifications` (plan 2.3), and is written neither when every opening post
-    fails and is discarded nor when none does. It replaces what the deleted
+    `post_opening_classifications` (plan 2.3): it is not written when Pro's opening standings and
+    sheet fail and are discarded. It replaces what the deleted
     `test_do_approve_posting.py::test_the_opening_classification_report_names_the_member_who_approved`
     pinned as present."""
     league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
