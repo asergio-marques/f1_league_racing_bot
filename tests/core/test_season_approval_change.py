@@ -1784,6 +1784,40 @@ async def test_a_late_refusal_notice_discord_refuses_stops_the_queue_and_a_disca
     assert len(jobs) == 1 and "discarded" in jobs[0]["result"]
 
 
+_REJUDGED_REFUSAL_UNTOLD = (
+    "#439, code-3-3 and product-3-1 (call p8): a retried save refused by its re-judgement after "
+    "the reply expired tells the review's channel only that the season was not approved; it must "
+    "give the refusal's reason"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_REJUDGED_REFUSAL_UNTOLD)
+async def test_a_retried_save_refused_after_the_reply_expired_tells_the_review_s_channel_why(
+    tmp_path, monkeypatch,
+):
+    """The save fails once and the queue stops at it; while it is stopped Pro's round 2 is
+    edited, and the clock passes fifteen minutes from the press, so the reply can no longer be
+    updated; then Retry. The re-judgement refuses, and the review's channel is told so once, with
+    the refusal's own reason beneath the late-refusal line, not the short "not approved" line
+    (call p8)."""
+    league = await _league_for(tmp_path, monkeypatch)
+    await _pressed(league)
+    with _save_fails_once():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        await _edit_round(league)
+        league.clock.advance(minutes=15)
+
+        await retry_job(league.bot)
+
+    assert (await league.season())["stage"] == "PLACEMENTS"
+    assert await _stopped_at(league) is None
+    assert _told(league, CHANNEL_NOT_APPROVED) == 0
+    notices = _late_notices(league)
+    assert len(notices) == 1, league.texts(REVIEW_CHANNEL)
+    assert _REFUSALS["a round edited"][2] in notices[0]
+
+
 # ── A discard of the approval before it started, told in the channel ────────────────
 #
 # The owner's answer r1-2 ("Tell the review's channel"): every outcome of a season approval that
