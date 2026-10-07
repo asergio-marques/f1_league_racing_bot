@@ -1240,6 +1240,110 @@ async def test_a_stop_before_the_save_approves_once_on_restart(tmp_path, monkeyp
     assert sorted(league.granted[LEWIS]) == sorted([PRO_ROLE, FERRARI_ROLE])
 
 
+# ── A save stopped and tried again is judged again ──────────────────────────────────
+#
+# The queue judges a change only before it starts, and the save reads nothing but its own
+# connection, so a save stopped and retried would otherwise commit the season as it stands at
+# the retry. Core specification: what can change while the confirmation waits is judged again
+# when it is carried out (#439, code-1-2).
+
+
+def _save_fails_once() -> ExitStack:
+    """The save's commitment of the placements raises the first time only, as a passing fault
+    of the database would; every later save goes through."""
+    from leaguebot.core.services import season_service
+
+    real = season_service.commit_placements_on
+    tries = {"n": 0}
+
+    async def _once(*args: Any, **kwargs: Any) -> Any:
+        tries["n"] += 1
+        if tries["n"] == 1:
+            raise RuntimeError("disk I/O error")
+        return await real(*args, **kwargs)
+
+    return _everywhere("commit_placements_on", _once)
+
+
+async def _window_opening_soon(league: Any) -> None:
+    """Pro's round 1 is moved so that its check-in notice (five days before it, attendance on)
+    opens five minutes after "now": the press and the first try find nothing gone by."""
+    soon = league.clock.now + timedelta(days=5, minutes=5)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?", soon.isoformat(), round_id(PRO, 1)
+    )
+
+
+async def _pass_the_window(league: Any) -> None:
+    """Ten minutes on: the check-in notice has opened, and the reply can still be updated."""
+    league.clock.advance(minutes=10)
+
+
+#: What changes while the save is stopped: what sets the league up before the press, what
+#: changes it, and the reply's words for the refusal.
+_WHILE_STOPPED = {
+    "a round edited": (None, _edit_round, _REFUSALS["a round edited"][2]),
+    "a window passed": (_window_opening_soon, _pass_the_window, _REFUSALS["a date passed"][2]),
+}
+
+
+async def _points_copied(league: Any) -> list[dict[str, Any]]:
+    return await league.rows("SELECT * FROM season_points_entries WHERE season_id = ?", SEASON_ID)
+
+
+@pytest.mark.parametrize("change", sorted(_WHILE_STOPPED))
+async def test_a_retried_save_judges_the_approval_again_and_refuses_what_changed_while_it_was_stopped(
+    tmp_path, monkeypatch, change,
+):
+    """The save fails once and the queue stops at it; while it is stopped the season changes;
+    then Retry. The retry judges the approval again before it saves, and refuses it with the
+    check's own words, writing nothing."""
+    before, alter, words = _WHILE_STOPPED[change]
+    league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    if before is not None:
+        await before(league)
+    press = await _pressed(league)
+    with _save_fails_once():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        await alter(league)
+
+        await retry_job(league.bot)
+
+    assert words in reply(press)
+    assert APPROVED not in reply(press)
+    assert "judge" in [job["name"] for job in await _jobs(league)]
+    assert len([line for line in _log_lines(league) if "⛔" in line and "Approve" in line]) == 1
+    assert _confirmed_lines(league) == []
+    assert (await league.season())["stage"] == "PLACEMENTS"
+    assert await _sessions(league) == {}
+    assert await _committed(league) == 0
+    assert await _points_copied(league) == []
+    assert league.armed == [] and league.granted == {}
+    assert await _stopped_at(league) is None
+    assert (await _approval(league))["state"] not in ("QUEUED", "RUNNING")
+
+
+async def test_a_retried_save_with_nothing_changed_while_it_was_stopped_approves(
+    tmp_path, monkeypatch,
+):
+    """The control: the save fails once and is retried with nothing changed; judged again, the
+    approval still stands, and the season is approved once."""
+    league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    press = await _pressed(league)
+    with _save_fails_once():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+
+        await retry_job(league.bot)
+
+    assert APPROVED in reply(press)
+    assert (await league.season())["stage"] == "ONGOING"
+    assert len(_confirmed_lines(league)) == 1
+    assert await _sessions(league) == {rid: 2 for rid in _all_rounds()}
+    assert await _stopped_at(league) is None
+
+
 # ── The public notice ───────────────────────────────────────────────────────────────
 
 
