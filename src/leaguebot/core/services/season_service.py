@@ -752,38 +752,6 @@ class SeasonService:
             await db.commit()
             return cursor.rowcount
 
-    async def commit_placements(self, season_id: int) -> int:
-        """Commit every placement of *season_id* not yet committed; returns how many.
-
-        Called as placements are confirmed (issue #220). A committed placement is part of the
-        championship: it holds its roles, stands in its lineup, is called to check-in and
-        scored in results and standings.
-        """
-        async with get_connection(self._db_path) as db:
-            committed = await commit_placements_on(db, season_id)
-            await db.commit()
-            return committed
-
-    async def transition_to_active(self, season_id: int) -> None:
-        """Set season status to ACTIVE, and its divisions with it.
-
-        The divisions move SETUP -> ACTIVE in the same transaction. Until issue #154 nothing ever
-        wrote 'ACTIVE' to a division at all — every insert path takes the schema default of
-        'SETUP' and nothing moved it on — so every division sat in setup for its whole life and
-        `/season cancel` posted its notice to none of them. A cancelled division is left alone: a
-        division called off during setup does not start racing because the season did.
-        """
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE seasons SET status = ? WHERE id = ?",
-                (SeasonStatus.ACTIVE.value, season_id),
-            )
-            await db.execute(
-                "UPDATE divisions SET status = 'ACTIVE' WHERE season_id = ? AND status = 'SETUP'",
-                (season_id,),
-            )
-            await db.commit()
-
     async def delete_season(self, season_id: int) -> None:
         """FK-safe cascade delete of one season and all its child records.
 
@@ -1515,24 +1483,6 @@ class SeasonService:
     # Session
     # ------------------------------------------------------------------
 
-    async def create_sessions_for_round(self, round_id: int, fmt: RoundFormat) -> list[Session]:
-        """Make the sessions of *round_id* the ones *fmt* defines, replacing any it holds.
-
-        **Replaced, not added to** (issue #408). A confirmation of placements that writes the
-        sessions and then fails before the season goes active leaves them behind, and the next
-        confirmation used to write a full second set, every session of which the phases then
-        forecast twice. However often this is called, the round holds one set: the one its
-        format defines now.
-
-        The old rows go with whatever phase data they held, so this is for a round no phase has
-        been drawn for. Its one caller is the confirmation, before anything is armed.
-        """
-        async with get_connection(self._db_path) as db:
-            sessions = await create_sessions_for_round_on(db, round_id, fmt)
-            await db.commit()
-
-        return sessions
-
     async def get_sessions(self, round_id: int) -> list[Session]:
         """Return all sessions for *round_id*."""
         async with get_connection(self._db_path) as db:
@@ -1574,13 +1524,17 @@ class SeasonService:
 async def create_sessions_for_round_on(
     db: aiosqlite.Connection, round_id: int, fmt: RoundFormat
 ) -> list[Session]:
-    """:meth:`SeasonService.create_sessions_for_round` on *db*, committing nothing (issue #439).
+    """Make the sessions of *round_id* the ones *fmt* defines on *db*, committing nothing.
 
     The season's approval makes every round's sessions in the one save that also commits the
     placements, takes the points snapshot and moves the season to Ongoing, so the sessions are
-    written on the connection that save holds and committed with it, or not at all. Replaced,
-    not added to, as the committing form is: however often a save is tried, the round holds the
-    one set its format defines.
+    written on the connection that save holds and committed with it, or not at all.
+
+    **Replaced, not added to** (issue #408). A confirmation that writes the sessions and then
+    fails before the season goes active used to leave them behind, and the next confirmation
+    wrote a full second set, every session of which the phases then forecast twice. However
+    often a save is tried, the round holds one set: the one its format defines now. The old rows
+    go with whatever phase data they held, so this is for a round no phase has been drawn for.
     """
     session_types: list[SessionType] = SESSIONS_BY_FORMAT.get(fmt, [])
     sessions: list[Session] = []
@@ -1595,9 +1549,12 @@ async def create_sessions_for_round_on(
 
 
 async def commit_placements_on(db: aiosqlite.Connection, season_id: int) -> int:
-    """:meth:`SeasonService.commit_placements` on *db*, committing nothing (issue #439).
+    """Commit every placement of *season_id* not yet committed on *db*; returns how many.
 
-    Returns how many placements it committed.
+    Committed as placements are confirmed (issue #220), and nothing is committed here: the
+    season's approval holds the save. A committed placement is part of the championship: it
+    holds its roles, stands in its lineup, is called to check-in and scored in results and
+    standings.
     """
     cursor = await db.execute(
         "UPDATE driver_season_assignments SET committed = 1 "
@@ -1608,13 +1565,16 @@ async def commit_placements_on(db: aiosqlite.Connection, season_id: int) -> int:
 
 
 async def transition_to_active_on(db: aiosqlite.Connection, season_id: int) -> bool:
-    """Set a season ACTIVE, and its divisions with it, on *db*, committing nothing (issue #439).
+    """Set a season ACTIVE, and its divisions with it, on *db*, committing nothing.
 
     Guarded: only a season still being set up, in Placements, moves; one already Ongoing is left
     as it is, and its divisions with it, and ``False`` is returned. The trigger
-    ``seasons_stage_follow_status`` takes the stage to Ongoing with the status. Divisions move
-    SETUP -> ACTIVE with the season, a cancelled one left alone, as in
-    :meth:`SeasonService.transition_to_active`.
+    ``seasons_stage_follow_status`` takes the stage to Ongoing with the status.
+
+    The divisions move SETUP -> ACTIVE in the same save. Until issue #154 nothing ever wrote
+    'ACTIVE' to a division at all, so every division sat in setup for its whole life and
+    `/season cancel` posted its notice to none of them. A cancelled division is left alone: a
+    division called off during setup does not start racing because the season did.
     """
     cursor = await db.execute(
         "UPDATE seasons SET status = ? WHERE id = ? AND status = 'SETUP' AND stage = 'PLACEMENTS'",
