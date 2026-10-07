@@ -2451,3 +2451,263 @@ async def test_a_refusal_hook_that_raises_stops_the_queue_at_the_change_and_a_di
     assert any("| Discard job #" in line and "| Discarded" in line for line in lines)
     assert not any("refused for" in line for line in lines)
     assert len(await change_rows(env.db_path)) == 2
+
+
+# ---------------------------------------------------------------------------
+# A discard of a member's change before it started that asks a change of its own (#439, slice
+# 4a, the owner's answer r1-2: every outcome of a season approval its member can no longer be told
+# of is told in the review's channel, a Discard of the unstarted approval included)
+# ---------------------------------------------------------------------------
+
+#: The hook is unbuilt. It is named here by analogy with the refusal hook (`ChangeType.on_refused`,
+#: plan 2.1b): `ChangeType.on_discarded`, reading what the refusal hook reads where it applies (the
+#: payload, the member, the request, and whether the reply can still be updated) and returning the
+#: follow-ons to ask. The name is these tests', not the plan's.
+_NO_DISCARD_HOOK = (
+    "#439: the queue has no discard hook (`ChangeType.on_discarded`, named by analogy with "
+    "`on_refused`) asking a change of its own when a member's change is discarded before it starts"
+)
+
+
+def _discard_hooked(change_type: Any, hook: Any) -> Any:
+    """*change_type* with *hook* as its discard hook, `ChangeType.on_discarded` (named by analogy
+    with the refusal hook, `on_refused`)."""
+    return dataclasses.replace(change_type, on_discarded=hook)
+
+
+def _check_raising_when(holder: dict) -> Any:
+    async def _check(_ctx):
+        if holder["raise"]:
+            raise RuntimeError("the check broke")
+        return _api().Verdict.go()
+
+    return _check
+
+
+async def _stopped_at_its_check(env, n: int, holder: dict, meanwhile=None, **ask) -> None:
+    """Ask for change *n*, then make its check raise as it starts, so the queue stops at it before
+    it starts; *meanwhile* runs between the two."""
+    holder["raise"] = False
+    await _ask(env, payload={"n": n}, **ask)
+    holder["raise"] = True
+    if meanwhile is not None:
+        await meanwhile()
+    await run_queue(env.bot)
+    assert await stopped_job(env.db_path) is not None
+
+
+def _discard_lines(lines: list[str]) -> int:
+    return sum("| Discard job #" in line and "| Discarded" in line for line in lines)
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
+async def test_a_discard_hook_asks_its_follow_ons_in_the_discard_s_own_save(env):
+    """A member's change stopped at its check before it started, which a league admin discards,
+    whose type's discard hook (`on_discarded`, named by analogy with `on_refused`) returns a
+    follow-on: the change ends DISCARDED with the Discard's line, and the follow-on is queued as the
+    bot's for the same member, with a job numbered after the discarded change's, and runs. Where
+    the Discard's save fails, it leaves neither the discard nor the follow-on: the stop stands."""
+    api = _api()
+    holder = {"raise": False}
+    told: list[str] = []
+    seen: list[Any] = []
+
+    def _hook(ctx):
+        seen.append(ctx)
+        n = ctx.payload["n"]
+        return (api.FollowOn("tell", {"n": n}, f"Telling of discard {n}"),)
+
+    _queue(
+        env,
+        _discard_hooked(_type(steps=[_act("a", [])], check=_check_raising_when(holder)), _hook),
+        _type("tell", steps=[_act("tell", told)]),
+    )
+
+    await _stopped_at_its_check(env, 1, holder)
+    await discard_job(env.bot)
+
+    rows = await change_rows(env.db_path)
+    assert [(r["kind"], r["origin"], r["state"]) for r in rows] == [
+        ("dummy", "MEMBER", "DISCARDED"), ("tell", "BOT", "DONE"),
+    ]
+    assert rows[1]["actor_id"] == MEMBER_ID
+    assert rows[1]["what"] == "Telling of discard 1"
+    assert json.loads(rows[1]["payload"]) == {"n": 1}
+    discarded_jobs = await step_rows(env.db_path, rows[0]["id"])
+    told_jobs = await step_rows(env.db_path, rows[1]["id"])
+    assert [job["name"] for job in told_jobs] == ["tell"]
+    assert told_jobs[0]["id"] > max(job["id"] for job in discarded_jobs)
+    assert told == ["tell"]
+    assert _discard_lines(await _lines(env)) == 1
+    assert len(seen) == 1
+    assert (seen[0].payload, seen[0].actor_id, seen[0].what) == ({"n": 1}, MEMBER_ID, WHAT)
+
+    async with get_connection(env.db_path) as db:  # the save fails once the state is written
+        await db.execute(
+            "CREATE TRIGGER the_save_fails BEFORE INSERT ON queued_changes "
+            "WHEN NEW.kind = 'tell' BEGIN SELECT RAISE(ABORT, 'the save fails'); END"
+        )
+        await db.commit()
+    await _stopped_at_its_check(env, 2, holder)
+    with contextlib.suppress(sqlite3.DatabaseError):
+        await discard_job(env.bot)
+
+    rows = await change_rows(env.db_path)
+    assert [(r["kind"], r["state"]) for r in rows] == [
+        ("dummy", "DISCARDED"), ("tell", "DONE"), ("dummy", "QUEUED"),
+    ]
+    assert (await stopped_job(env.db_path))["change_id"] == rows[2]["id"]
+    assert _discard_lines(await _lines(env)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
+async def test_the_discard_hook_is_told_whether_the_reply_can_still_be_updated(env):
+    """Discarded before it started: held and fresh, the reply can be updated; fourteen minutes
+    on, or after a restart, it cannot. The hook is `on_discarded`, named by analogy with
+    `on_refused`."""
+    holder = {"raise": False}
+    seen: list[bool] = []
+
+    def _hook(ctx):
+        seen.append(ctx.reply_updatable)
+        return ()
+
+    _queue(
+        env,
+        _discard_hooked(_type(steps=[_act("a", [])], check=_check_raising_when(holder)), _hook),
+    )
+
+    async def _restart() -> None:
+        await restart_queue(env.bot)
+
+    await _stopped_at_its_check(env, 1, holder)
+    await discard_job(env.bot)
+    await _stopped_at_its_check(env, 2, holder)
+    env.clock.advance(minutes=14)
+    await discard_job(env.bot)
+    try:
+        await _stopped_at_its_check(env, 3, holder, _restart)
+        await discard_job(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert seen == [True, False, False]
+    assert await _states(env) == ["DISCARDED", "DISCARDED", "DISCARDED"]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
+async def test_the_discard_hook_is_never_asked_for_a_bot_change_or_a_change_that_had_started(env):
+    """A bot's change stopped at its check, whether its check raised or refused, and a member's
+    change that had started and stopped at a job of its own: each discarded, and the hook
+    (`on_discarded`, named by analogy with `on_refused`) asked for none of them. It is asked for a
+    member's change discarded before it started."""
+    api = _api()
+    mode = {"check": "go"}
+    failing: dict[str, Any] = {"fail": None}
+    asked: list[int] = []
+
+    async def _check(_ctx):
+        if mode["check"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["check"] == "refuse":
+            return api.Verdict.refuse("⚠️ Not now.", "not now")
+        return api.Verdict.go()
+
+    def _hook(ctx):
+        asked.append(ctx.payload["n"])
+        return ()
+
+    _queue(env, _discard_hooked(_type(steps=[_fails_while(failing, "a")], check=_check), _hook))
+
+    async def _stopped_then_discarded(n: int, check: str, **ask) -> None:
+        mode["check"] = "go"
+        await _ask(env, payload={"n": n}, **ask)
+        mode["check"] = check
+        await run_queue(env.bot)
+        assert await stopped_job(env.db_path) is not None
+        await discard_job(env.bot)
+
+    await _stopped_then_discarded(1, "raise", origin=api.ChangeOrigin.BOT)
+    await _stopped_then_discarded(2, "refuse", origin=api.ChangeOrigin.BOT)
+    failing["fail"] = RuntimeError("boom")
+    await _stopped_then_discarded(3, "go")
+    failing["fail"] = None
+
+    assert asked == []
+    assert await _states(env) == ["DISCARDED", "DISCARDED", "DONE"]
+
+    await _stopped_then_discarded(4, "raise")
+
+    assert asked == [4]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
+async def test_a_change_type_without_a_discard_hook_is_discarded_as_before(env):
+    """A change type declares no discard hook (`on_discarded`, named by analogy with
+    `on_refused`) unless it is given one; a member's change of it discarded before it started ends
+    DISCARDED as it always did, the reply updated where it can be, and asks no change of its own,
+    whether or not the reply can still be updated."""
+    api = _api()
+    hook = next((f for f in dataclasses.fields(api.ChangeType) if f.name == "on_discarded"), None)
+    assert hook is not None and hook.default is None
+    holder = {"raise": False}
+    ran: list[str] = []
+    _queue(env, _type(steps=[_act("a", ran)], check=_check_raising_when(holder)))
+    interaction = member_interaction(env.bot)
+
+    await _stopped_at_its_check(env, 1, holder, interaction=interaction)
+    await discard_job(env.bot)
+    await _stopped_at_its_check(env, 2, holder)
+    env.clock.advance(minutes=15)
+    await discard_job(env.bot)
+
+    assert updated_reply(interaction).endswith(
+        f"⛔ {WHAT} was discarded by a league admin: nothing of it was done."
+    )
+    assert await _states(env) == ["DISCARDED", "DISCARDED"]
+    assert _discard_lines(await _lines(env)) == 2
+    assert ran == []
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
+async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_without_follow_ons(
+    env, caplog,
+):
+    """A member's change stopped at its check before it started, whose discard hook
+    (`on_discarded`, named by analogy with `on_refused`) raises as a league admin discards it.
+
+    Unlike a refusal hook that raises (the test above it: nothing saved, the stop stands, and a
+    Discard drops the change whole), the Discard goes ahead: the change ends DISCARDED with the
+    Discard's line, no follow-on is asked, the hook's fault is logged on the host, and the change
+    behind it runs. Discard is the queue's last way past a stop. A refusal hook that raises can
+    leave its stop to it because a Discard does not ask that hook again; a discard hook that
+    raised and so refused the Discard would raise again at every press, being pure, and leave the
+    queue stopped with no way past."""
+    holder = {"raise": False}
+    ran: list[str] = []
+
+    def _hook(_ctx):
+        raise RuntimeError("the hook broke")
+
+    _queue(
+        env,
+        _discard_hooked(_type(steps=[_act("a", ran)], check=_check_raising_when(holder)), _hook),
+        _type("later", steps=[_act("later", ran)]),
+    )
+
+    await _ask(env, payload={"n": 1})
+    await _ask(env, "later")
+    holder["raise"] = True
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "a"
+
+    presser = await discard_job(env.bot)
+
+    assert await _states(env) == ["DISCARDED", "DONE"]
+    assert ran == ["later"]
+    assert len(await change_rows(env.db_path)) == 2
+    assert _discard_lines(await _lines(env)) == 1
+    assert "is discarded" in acknowledgement(presser)
+    assert any(
+        "the hook broke" in str(record.exc_info[1]) for record in _host_errors(caplog)
+    )
