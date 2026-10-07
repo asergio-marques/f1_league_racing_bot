@@ -1402,7 +1402,6 @@ async def test_a_stop_between_the_refusal_and_its_notice_posts_the_notice_on_res
     assert await _stopped_at(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_LATE_REFUSAL)
 async def test_a_late_refusal_notice_discord_refuses_stops_the_queue_and_a_discard_drops_it(
     tmp_path, monkeypatch,
 ):
@@ -1423,4 +1422,9 @@ async def test_a_late_refusal_notice_discord_refuses_stops_the_queue_and_a_disca
     assert len(discards) == 1 and named in discards[0]
     assert _late_notices(league) == []
     assert await _stopped_at(league) is None
-    assert (await _tell_changes(league))[0]["state"] == "DISCARDED"
+    # The follow-on started as its check passed, so its one job is discarded and the change is
+    # done, as any started change whose job is discarded is (call p5).
+    told = (await _tell_changes(league))[0]
+    assert told["state"] == "DONE"
+    jobs = await step_rows(league.db_path, told["id"])
+    assert len(jobs) == 1 and "discarded" in jobs[0]["result"]
