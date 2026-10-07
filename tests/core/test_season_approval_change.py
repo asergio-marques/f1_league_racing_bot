@@ -1428,3 +1428,99 @@ async def test_a_late_refusal_notice_discord_refuses_stops_the_queue_and_a_disca
     assert told["state"] == "DONE"
     jobs = await step_rows(league.db_path, told["id"])
     assert len(jobs) == 1 and "discarded" in jobs[0]["result"]
+
+
+# ── A discard of the approval before it started, told in the channel ────────────────
+#
+# The owner's answer r1-2 ("Tell the review's channel"): every outcome of a season approval that
+# cannot reach the member is told in the review's channel, a Discard of the approval stopped at
+# its own check included. The hook that asks it is unbuilt and named here by analogy with the
+# refusal hook of plan 2.1b (`ChangeType.on_refused`): `ChangeType.on_discarded`. The channel is
+# told `CHANNEL_NOT_APPROVED`, plan 2.1's "Not approved (`apply` discarded…)" notice: a Discard at
+# the check leaves what a discarded `apply` leaves, nothing approved and no refusal to quote, and
+# the log channel has the Discard's line for why. 2.1b's `LATE_REFUSAL_HEAD` frames a refusal's own
+# reply, which a Discard does not have.
+
+_DISCARD_HOOK = (
+    "#439: a Discard of an approval stopped at its check is not told in the review's channel; the "
+    "queue has no discard hook (`ChangeType.on_discarded`, named by analogy with `on_refused`)"
+)
+
+
+def _check_raises() -> ExitStack:
+    """The approval's check raises as it runs, as a fault reading the season would: the
+    fingerprint it takes raises. The press, already made, is not affected."""
+    return _everywhere("take_fingerprint", AsyncMock(side_effect=RuntimeError("disk I/O error")))
+
+
+async def _stopped_at_its_check(league: Any) -> None:
+    with _check_raises():
+        await run_queue(league.bot)
+    assert await _stopped_at(league) == "apply"
+    assert (await _approval(league))["state"] == "QUEUED"
+
+
+@pytest.mark.xfail(strict=True, reason=_DISCARD_HOOK)
+async def test_a_discard_of_the_approval_stopped_at_its_check_after_the_reply_expired_is_told_in_the_review_s_channel(
+    tmp_path, monkeypatch,
+):
+    """The approval's check raises as it comes up to run, so the queue stops at it before it
+    starts; fifteen minutes on, the reply past updating, a league admin discards it. The approval's
+    discard hook (`on_discarded`, by analogy with `on_refused`) asks the change that tells the
+    review's channel the season was not approved, as the bot's for the approver."""
+    league = await _league_for(tmp_path, monkeypatch)
+    press = await _pressed(league)
+    await _stopped_at_its_check(league)
+    league.clock.advance(minutes=15)
+
+    await discard_job(league.bot)
+
+    assert (await _approval(league))["state"] == "DISCARDED"
+    assert (await league.season())["stage"] == "PLACEMENTS"
+    told = await _tell_changes(league)
+    assert [(row["origin"], row["actor_id"], row["state"]) for row in told] == [
+        ("BOT", ADMIN_ID, "DONE")
+    ]
+    assert _told(league, CHANNEL_NOT_APPROVED) == 1
+    assert "was discarded by a league admin" not in reply(press)
+    assert await _stopped_at(league) is None
+
+
+async def test_a_discard_of_the_approval_stopped_at_its_check_while_the_reply_can_be_updated_tells_the_channel_nothing(
+    tmp_path, monkeypatch,
+):
+    """The same, discarded five minutes on: the member's reply says the approval was discarded,
+    and nothing is asked or posted in the review's channel. Passes already, and is left unmarked:
+    the queue updates the reply of a change discarded before it started today, and the discard
+    hook (`on_discarded`, by analogy with `on_refused`) must ask nothing where it still can."""
+    league = await _league_for(tmp_path, monkeypatch)
+    press = await _pressed(league)
+    await _stopped_at_its_check(league)
+    league.clock.advance(minutes=5)
+
+    await discard_job(league.bot)
+
+    assert (await _approval(league))["state"] == "DISCARDED"
+    assert "was discarded by a league admin: nothing of it was done." in reply(press)
+    assert await _tell_changes(league) == []
+    assert _told(league, f"<@{ADMIN_ID}> — Season #3") == 0
+
+
+@pytest.mark.xfail(strict=True, reason=_DISCARD_HOOK)
+async def test_a_discard_of_the_approval_stopped_at_its_check_after_a_restart_is_told_in_the_channel(
+    tmp_path, monkeypatch,
+):
+    """The press, a restart, then the approval's check raising as it runs; a league admin
+    discards it at once. Nothing being held after a restart, the reply cannot be updated, so the
+    discard hook (`on_discarded`, by analogy with `on_refused`) asks the channel's notice."""
+    league = await _league_for(tmp_path, monkeypatch)
+    await _pressed(league)
+    with _check_raises():
+        await league.restart()
+        await run_queue(league.bot)
+    assert await _stopped_at(league) == "apply"
+
+    await discard_job(league.bot)
+
+    assert (await _approval(league))["state"] == "DISCARDED"
+    assert _told(league, CHANNEL_NOT_APPROVED) == 1
