@@ -2044,8 +2044,8 @@ class PlacementService:
         is deliberately not reopened by this feature: the lineup image is an alternative
         output beside the text, not a reform of it.
         """
-        owner = bot if bot is not None else getattr(self, "_bot", None)
-        if owner is not None and not as_text:
+        owner = None if as_text else (bot if bot is not None else getattr(self, "_bot", None))
+        if owner is not None:
             try:
                 from leaguebot.image.services.image_lineup_post import try_post
 
