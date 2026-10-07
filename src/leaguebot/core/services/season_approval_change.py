@@ -566,7 +566,7 @@ def season_approval_change(
         guild = await _guild(ctx.bot)
         await season_classification_service.post_opening_standings(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0,
+            as_text=ctx.tries > 0, kept=ctx.kept,
         )
         return StepResult()
 

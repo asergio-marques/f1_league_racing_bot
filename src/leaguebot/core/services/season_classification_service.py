@@ -25,6 +25,7 @@ picture.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -54,7 +55,13 @@ async def _opening_round(db_path: str, division_id: int):
 
 
 async def post_opening_standings(
-    bot: LeagueBot, guild, db_path: str, division_id: int, *, as_text: bool = False
+    bot: LeagueBot,
+    guild,
+    db_path: str,
+    division_id: int,
+    *,
+    as_text: bool = False,
+    kept: dict[str, Any] | None = None,
 ) -> None:
     """Post one division's opening standings, both championships, raising where it cannot.
 
@@ -64,9 +71,10 @@ async def post_opening_standings(
     said so. A division never given a channel posts nothing; one given a channel the guild no
     longer holds raises `StepFailedOnDiscord`, for the change queue to stop on. No message id is
     recorded (results specification: the opening classification is not kept), so a table already
-    sent when a later one fails is taken down before the failure is raised: the next try posts
-    both again, and the first copy would otherwise stand beside it. *as_text* leaves the graphic
-    out, which is how a job retries (Constitution XIV rule 8).
+    sent when a later one fails is named on the failure (`result`), and the job keeps it: the
+    next try is handed it as *kept* and removes that copy before it posts both again, failing
+    again, with what it still has to remove, where a message will not delete. *as_text* leaves
+    the graphic out, which is how a job retries (Constitution XIV rule 8).
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
@@ -75,7 +83,7 @@ async def post_opening_standings(
     from leaguebot.results.services.results_post_service import (
         _get_show_reserves,
         produce_standings,
-        take_down_part_posted_standings,
+        remove_part_posted_messages,
     )
 
     opener = await _opening_round(db_path, division_id)
@@ -94,6 +102,14 @@ async def post_opening_standings(
     channel = guild.get_channel(int(channel_id))
     if channel is None:
         raise StepFailedOnDiscord(f"the standings channel (id {channel_id}) is not in the server")
+    earlier = [int(each) for each in (kept or {}).get("new") or []]
+    if earlier:
+        left, failures = await remove_part_posted_messages(channel, earlier)
+        if left:
+            raise StepFailedOnDiscord(
+                f"{len(left)} message(s) of the earlier try could not be removed",
+                result={"new": left, "channel_id": int(channel_id)},
+            ) from (failures[0] if failures else None)
 
     # Twice, deliberately. The order is taken on the name the sheet will actually draw, and the
     # names are resolved from Discord by user id, so the roster has to be known before it can be
@@ -123,9 +139,14 @@ async def post_opening_standings(
             occasion=ClassificationOccasion.SEASON_OPENING,
         )
     except Exception as failure:
-        # No id of the opening classification is kept, so a table already sent when a later one
-        # failed would stand beside the copy the next try posts: take it down before raising.
-        await take_down_part_posted_standings(channel, failure)
+        # No id of the opening classification is recorded, so a table already sent when a later
+        # one failed is put on the failure for the job to keep, and the next try removes it.
+        stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
+        if stranded:
+            raise StepFailedOnDiscord(
+                "the opening standings were posted in part and the rest was refused",
+                result={"new": stranded, "channel_id": int(channel_id)},
+            ) from failure
         raise
 
 

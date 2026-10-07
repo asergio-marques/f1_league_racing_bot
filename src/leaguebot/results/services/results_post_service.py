@@ -1140,6 +1140,27 @@ async def take_down_part_posted_standings(
         )
 
 
+async def remove_part_posted_messages(
+    channel: discord.TextChannel, message_ids: list[int]
+) -> tuple[list[int], list[discord.HTTPException]]:
+    """Delete the messages a failed posting left standing, and hand back what would not go.
+
+    For a caller that keeps the ids on its failed job and removes them at the start of its next
+    try (`StepContext.kept`): the ids it could not remove, and the failures that left them. A
+    message already gone is not returned.
+    """
+    failures: list[discord.HTTPException] = []
+    left: list[int] = []
+    for message_id in message_ids:
+        left.extend(
+            await _delete_posting(
+                channel, message_id, [message_id], label="part-posted standings",
+                failures=failures,
+            )
+        )
+    return left, failures
+
+
 async def post_standings(
     db_path: str,
     division_id: int,
