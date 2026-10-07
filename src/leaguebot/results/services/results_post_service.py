@@ -1124,6 +1124,22 @@ async def _record_and_take_down(
             )
 
 
+async def take_down_part_posted_standings(
+    standings_channel: discord.TextChannel, failure: BaseException
+) -> None:
+    """Delete the tables a failed :func:`produce_standings` had already sent, which it names.
+
+    ``produce_standings`` hands the ids of what it sent before it failed on the failure
+    (``left_standing``). A caller that records nothing of what it posts, as the season's opening
+    classification does, takes them down here, so that its next try does not post a second copy.
+    A message that will not delete is logged, as for any posting taken down.
+    """
+    for message_id in getattr(failure, "left_standing", []):
+        await _delete_posting(
+            standings_channel, message_id, [message_id], label="part-posted standings"
+        )
+
+
 async def post_standings(
     db_path: str,
     division_id: int,
@@ -1156,10 +1172,7 @@ async def post_standings(
     except Exception as failure:
         # What a part-posted standings left standing, recorded nowhere, comes down with the
         # failure: the messages already recorded are still the league's board.
-        for message_id in getattr(failure, "left_standing", []):
-            await _delete_posting(
-                standings_channel, message_id, [message_id], label="part-posted standings"
-            )
+        await take_down_part_posted_standings(standings_channel, failure)
         raise
     await _record_and_take_down(
         db_path, division_id, round_id, standings_channel, driver_snapshots, tables

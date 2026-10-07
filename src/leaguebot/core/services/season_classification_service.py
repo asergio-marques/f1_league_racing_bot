@@ -63,14 +63,20 @@ async def post_opening_standings(
     it on a division read that never carries it, so no opening standings were ever posted and nothing
     said so. A division never given a channel posts nothing; one given a channel the guild no
     longer holds raises `StepFailedOnDiscord`, for the change queue to stop on. No message id is
-    recorded (results specification: the opening classification is not kept). *as_text* leaves the
-    graphic out, which is how a job retries (Constitution XIV rule 8).
+    recorded (results specification: the opening classification is not kept), so a table already
+    sent when a later one fails is taken down before the failure is raised: the next try posts
+    both again, and the first copy would otherwise stand beside it. *as_text* leaves the graphic
+    out, which is how a job retries (Constitution XIV rule 8).
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.image.services.image_results_post import _driver_names
     from leaguebot.results.services import standings_service
-    from leaguebot.results.services.results_post_service import _get_show_reserves, produce_standings
+    from leaguebot.results.services.results_post_service import (
+        _get_show_reserves,
+        produce_standings,
+        take_down_part_posted_standings,
+    )
 
     opener = await _opening_round(db_path, division_id)
     if opener is None:
@@ -100,21 +106,27 @@ async def post_opening_standings(
     team_snaps = await standings_service.opening_team_standings(db_path, division_id)
     if not driver_snaps:
         return
-    await produce_standings(
-        db_path,
-        division_id,
-        opener["id"],
-        opener["round_number"],
-        opener["track_name"] or "",
-        channel,
-        driver_snaps,
-        team_snaps,
-        guild,
-        await _get_show_reserves(db_path, division_id),
-        "",
-        bot=None if as_text else bot,
-        occasion=ClassificationOccasion.SEASON_OPENING,
-    )
+    try:
+        await produce_standings(
+            db_path,
+            division_id,
+            opener["id"],
+            opener["round_number"],
+            opener["track_name"] or "",
+            channel,
+            driver_snaps,
+            team_snaps,
+            guild,
+            await _get_show_reserves(db_path, division_id),
+            "",
+            bot=None if as_text else bot,
+            occasion=ClassificationOccasion.SEASON_OPENING,
+        )
+    except Exception as failure:
+        # No id of the opening classification is kept, so a table already sent when a later one
+        # failed would stand beside the copy the next try posts: take it down before raising.
+        await take_down_part_posted_standings(channel, failure)
+        raise
 
 
 async def post_opening_sheet(
