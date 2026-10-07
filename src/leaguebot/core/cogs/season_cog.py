@@ -3034,8 +3034,10 @@ class SeasonCog(commands.Cog):
 
     async def _do_confirm_configuration(
         self, interaction: discord.Interaction, *, what: str | None = None
-    ) -> None:
-        """Confirm the configuration: judge the faults afresh, then move the season on.
+    ) -> bool:
+        """Confirm the configuration: judge the faults afresh, then move the season on. Returns
+        whether it was confirmed: False where the press was refused, which leaves the button's
+        review standing (`_ApproveView._settle_press`).
 
         A refusal is recorded under *what*, the button pressed, which the button passes in;
         the review's own Confirm configuration button where the caller names none.
@@ -3050,7 +3052,7 @@ class SeasonCog(commands.Cog):
         cfg = self._get_pending()
         if cfg is None or not cfg.season_id:
             await refuse(interaction, "⛔ There is no season in configuration.", what=what)
-            return
+            return False
 
         await interaction.response.defer(ephemeral=True)
         faults = await self._configuration_faults(cfg.season_id, interaction.guild)
@@ -3063,7 +3065,7 @@ class SeasonCog(commands.Cog):
                 what=what,
                 reason="the configuration cannot be confirmed:\n" + "\n".join(faults),
             )
-            return
+            return False
 
         server_config = await self.bot.config_service.get_server_config()
         test_mode = bool(server_config is not None and server_config.test_mode_active)
@@ -3083,7 +3085,7 @@ class SeasonCog(commands.Cog):
                 "⛔ The season is no longer in configuration. **Nothing has been confirmed.**",
                 what=what,
             )
-            return
+            return False
         if signup_on:
             # The season's signups are made under these settings, fixed from this moment.
             await self.bot.signup_module_service.snapshot_season_config(
@@ -3107,6 +3109,7 @@ class SeasonCog(commands.Cog):
             f"  season: Season #{cfg.season_number}\n"
             f"  stage: {target.value}",
         )
+        return True
 
     # No command confirms placements (decided 2026-09-07). They are confirmed from the button
     # `/season placements-review` posts and from nowhere else: the review is the evidence the
@@ -6526,34 +6529,26 @@ class _ConfirmConfigurationView(_ApproveView):
         if await self._refuse_if_under_way(interaction):
             return
 
-        if self._fingerprint is not None and self._season_id is not None:
-            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-
-            current = await take_fingerprint(
-                self._cog.bot, self._season_id
+        changed = await self._changed_since_review()
+        if changed:
+            bullets = "\n".join(f"• {area}" for area in changed)
+            await refuse(
+                interaction,
+                f"⛔ The season has changed since this review:\n{bullets}\n"
+                f"Run `{self._review_command}` again and confirm from the fresh "
+                f"report. **Nothing has been confirmed.**",
+                what=self._button,
+                reason=f"the season has changed since this review:\n{bullets}",
             )
-            changed = self._fingerprint.differs_from(current)
-            if changed:
-                bullets = "\n".join(f"• {area}" for area in changed)
-                await refuse(
-                    interaction,
-                    f"⛔ The season has changed since this review:\n{bullets}\n"
-                    f"Run `{self._review_command}` again and confirm from the fresh "
-                    f"report. **Nothing has been confirmed.**",
-                    what=self._button,
-                    reason=f"the season has changed since this review:\n{bullets}",
-                )
-                await self._expire_now()
-                return
+            await self._expire_now()
+            return
 
         async with self._press_worked():
-            await self._cog._do_confirm_configuration(interaction, what=self._button)
-        # Stopped first: the review is answered, and a timer firing while the clean-up below
-        # awaits Discord would otherwise announce it expired and record a lapse.
-        self.stop()
-        await self._forget()
-        await self._clear_report()
-        self._message = None
+            confirmed = await self._cog._do_confirm_configuration(
+                interaction, what=self._button
+            )
+            ran_out = self._ran_out()
+        await self._settle_press(confirmed, ran_out=ran_out)
 
 
 def _round_amend_named(round_number: int | None, division_name: str | None = None) -> str:

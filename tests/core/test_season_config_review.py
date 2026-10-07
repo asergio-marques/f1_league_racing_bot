@@ -408,11 +408,6 @@ def _reviewer_press() -> MagicMock:
     return interaction
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: a Confirm configuration press its own checks refuse still deletes and "
-    "forgets the review",
-)
 async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path):
     """Every review's button alike: a press refused at the press (here a fault found afresh)
     leaves the review and its button standing, to be pressed again within its five minutes."""
