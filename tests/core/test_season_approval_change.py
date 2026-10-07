@@ -1101,15 +1101,6 @@ def _names_for_deletion_by_hand(line: str, cid: int, ids: list[int]) -> bool:
     return "by hand" in line and (linked or named)
 
 
-_PART_POSTED_DISCARDED = (
-    "#439, code-3-1 and product-3-2: a discarded opening standings job keeps the table it posted "
-    "before it stopped, and the not-done line still says only that the standings could not be "
-    "posted; it must name the table left standing, by its link or by its channel and message id, "
-    "for deletion by hand"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_PART_POSTED_DISCARDED)
 async def test_a_discarded_part_posted_opening_standings_names_the_table_left_standing(
     tmp_path, monkeypatch,
 ):

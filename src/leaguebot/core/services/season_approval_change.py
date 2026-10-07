@@ -905,6 +905,15 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
                 f"command posts them again; the first round's results post the standings as "
                 f"usual."
             )
+            stranded = (view.result or {}).get("new")
+            if stranded:
+                ids = ", ".join(str(each_id) for each_id in stranded)
+                lines.append(
+                    f"**{each['division_name']}** — a part of its opening standings was posted "
+                    f"before the job stopped and stands in "
+                    f"<#{(view.result or {}).get('channel_id')}> (message {ids}): delete it by "
+                    f"hand."
+                )
         elif view.name == OPENING_SHEET:
             lines.append(
                 f"**{each['division_name']}** — its opening attendance sheet could not be "
