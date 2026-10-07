@@ -978,6 +978,45 @@ async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     assert draw.await_count == 2, "the retry reached for the picture"
 
 
+async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(
+    tmp_path, monkeypatch,
+):
+    """Images and results on, the standings aspect on, and neither graphic drawn, so Pro's
+    opening standings go out as one table per championship. Pro's standings channel accepts the
+    drivers' table and refuses the teams', so the queue stops at the job; Retry, the channel
+    accepting everything. Afterwards the channel holds one drivers' table and one teams' table,
+    not a second drivers' copy beside the first (#439). Only the outcome is pinned: whether the
+    first copy comes down with the failure or at the start of the next try is the build's to
+    choose."""
+    from leaguebot.image.services import image_standings_post
+    from leaguebot.image.services.image_standings_post import (
+        FELL_BACK,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
+    )
+
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
+        side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
+            drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
+        )
+    ))
+    standings = league.channel(PRO_CH.standings)
+    standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
+    await _pressed(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+
+    standings.fail_when = None
+    await retry_job(league.bot)
+
+    standing = [message.content or "" for message in standings.messages.values()]
+    assert sum(text.count("**Driver Standings**") for text in standing) == 1, standing
+    assert sum(text.count("**Team Standings**") for text in standing) == 1, standing
+
+
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):

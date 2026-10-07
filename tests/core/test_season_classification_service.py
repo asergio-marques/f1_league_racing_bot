@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -285,50 +284,6 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     assert attendance.await_args.kwargs["raise_on_failure"] is True
     assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
 
-
-async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(db_path):
-    """Div A's opening standings go out as one table per championship, as they do where the
-    image flow ran and neither graphic drew. Discord accepts the drivers' table and refuses the
-    teams', so the job fails; it is tried again as text with the channel accepting everything.
-    Afterwards the channel holds one drivers' table and one teams' table, not a second drivers'
-    copy beside the first (#439). Only the outcome is pinned: whether the first copy comes down
-    with the failure or before the next try is the build's to choose."""
-    from leaguebot.image.services.image_standings_post import (
-        FELL_BACK,
-        ChampionshipOutcome,
-        StandingsPostOutcome,
-    )
-    from tests.support.review_league import channel
-
-    _season_id, division_ids = await _seed(db_path)
-    events: list[tuple[str, int, int]] = []
-    standings_channel = channel(900, events)
-    guild = _guild()
-    guild.get_channel.side_effect = lambda channel_id: (
-        standings_channel if channel_id == 900 else None
-    )
-    neither_drew = AsyncMock(return_value=StandingsPostOutcome(
-        drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
-    ))
-    standings_channel.fail_when = lambda content, _kwargs: "**Team Standings**" in content
-
-    with patch("leaguebot.image.services.image_standings_post.try_post", neither_drew):
-        with pytest.raises(discord.HTTPException):
-            await service.post_opening_standings(
-                _bot(db_path), guild, db_path, division_ids[0], as_text=False
-            )
-        # The drivers' table was sent before the teams' was refused.
-        assert neither_drew.await_count == 1
-        assert [event[0] for event in events][:1] == ["send"]
-
-        standings_channel.fail_when = None
-        await service.post_opening_standings(
-            _bot(db_path), guild, db_path, division_ids[0], as_text=True
-        )
-
-    standing = [message.content for message in standings_channel.messages.values()]
-    assert sum(text.count("**Driver Standings**") for text in standing) == 1, standing
-    assert sum(text.count("**Team Standings**") for text in standing) == 1, standing
 
 
 # ── The final classification ──────────────────────────────────────────────
