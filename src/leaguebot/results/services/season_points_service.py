@@ -121,38 +121,6 @@ async def missing_attached_configs(
     return sorted(missing)
 
 
-async def snapshot_configs_to_season(
-    db_path: str,
-    season_id: int,
-) -> None:
-    """Copy all attached server-level configs into the season's own points store."""
-    config_names = await get_attached_config_names(db_path, season_id)
-    async with get_connection(db_path) as db:
-        for config_name in config_names:
-            entries, fl_entries = await points_config_service.get_config_entries(
-                db_path, config_name
-            )
-            for entry in entries:
-                await db.execute(
-                    """
-                    INSERT OR REPLACE INTO season_points_entries
-                        (season_id, config_name, session_type, position, points)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (season_id, config_name, entry.session_type.value, entry.position, entry.points),
-                )
-            for fl in fl_entries:
-                await db.execute(
-                    """
-                    INSERT OR REPLACE INTO season_points_fl
-                        (season_id, config_name, session_type, fl_points, fl_position_limit)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (season_id, config_name, fl.session_type.value, fl.fl_points, fl.fl_position_limit),
-                )
-        await db.commit()
-
-
 async def snapshot_configs_to_season_on(db: aiosqlite.Connection, season_id: int) -> None:
     """Copy the season's attached configurations onto it, on the connection it is handed.
 
@@ -236,7 +204,7 @@ async def validate_attached_config_ordering(
 
     **Why this reads the source rather than the season's own copy.** A season's points
     live in ``season_points_entries``, and the only thing that writes them on the
-    approval path is :func:`snapshot_configs_to_season`, which runs *after* every gate —
+    approval path is :func:`snapshot_configs_to_season_on`, which runs *after* every gate —
     deliberately, because it is a write and writes belong after the backup offer. So a
     gate that reads the season's copy reads an empty table on a first approval and
     passes whatever the league built. The snapshot is a straight copy of the attached
@@ -364,7 +332,7 @@ async def list_season_configs_with_sessions(
     """Every configuration this season holds, with the session types that carry entries.
 
     The season's own store, not the server's. The two diverge the moment
-    ``snapshot_configs_to_season`` copies the server's tables across: editing a server
+    ``snapshot_configs_to_season_on`` copies the server's tables across: editing a server
     configuration afterwards does not change what the season scores by. That divergence is
     why ``/results config list`` makes the manager name the store rather than guessing one
     (#200), and it is pinned by

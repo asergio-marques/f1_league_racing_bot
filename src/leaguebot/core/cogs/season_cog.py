@@ -746,7 +746,7 @@ class SeasonCog(commands.Cog):
         The fault it names used to be silence. The attachment is a row in
         `season_points_links` carrying no foreign key, so a name that was never created
         counted towards the "a points configuration is attached" prerequisite and passed it,
-        and the first thing to notice was `snapshot_configs_to_season` raising
+        and the first thing to notice was the points snapshot raising
         `ConfigNotFoundError` — mid-command, after the defer, with no error handler on the
         tree to say so. The season simply stayed in setup and nothing was ever sent.
         """

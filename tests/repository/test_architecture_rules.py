@@ -1293,7 +1293,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_service.py", "SeasonService.close_raced_rounds_for_cancellation"): (1, SLICE[4]),
     ("core/cogs/season_cog.py", "_ApproveView.bind"): (1, SLICE[4]),
     ("core/cogs/season_cog.py", "_ApproveView._forget"): (1, SLICE[4]),
-    ("results/services/season_points_service.py", "snapshot_configs_to_season"): (1, SLICE[4]),
     # The season end
     ("core/services/season_service.py", "SeasonService.complete_season"): (1, SLICE[5]),
     ("core/services/season_service.py", "SeasonService.refresh_division_status"): (1, SLICE[5]),

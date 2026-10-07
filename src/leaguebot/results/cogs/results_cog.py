@@ -65,7 +65,7 @@ _SESSION_CHOICES = [
 # The two points stores a league can read, and the reason the choice is made explicit.
 #
 # A season takes its own copy of every attached configuration at approval
-# (`snapshot_configs_to_season`), and the two diverge from that moment: editing the server's
+# (`snapshot_configs_to_season_on`), and the two diverge from that moment: editing the server's
 # configuration afterwards does not change what a running season scores by. So a command that
 # guessed a store would answer a question the manager did not ask, and quietly show figures
 # from the wrong one (#200). Both `/results config list` and `/results config view` require it.
