@@ -290,7 +290,7 @@ The bot posts the configuration to the channel, a message per subject: test mode
 
 Anything wrong is listed with the command that fixes it, and no button is offered. Put it right and review again.
 
-Where nothing is wrong, the review ends by asking whether you confirm the configuration, with a **Confirm** button beneath it. It is governed exactly as the placements button in step 12 is — who may press it, the five minutes, and the refusal if anything changed since the report.
+Where nothing is wrong, the review ends by asking whether you confirm the configuration, with a **Confirm** button beneath it. It is governed exactly as the placements button in step 12 is — who may press it, the five minutes, the refusal if anything changed since the report, and a press turned away for any other reason leaving the review up for you to put it right and press again.
 
 When it goes through, the season moves on:
 
@@ -498,13 +498,13 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 
 > **The button stands for five minutes from when the question appears, and only for the season it was posted for.** Pressing it — even a press that is turned away — does not buy more time. When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season placements-review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, report and all, because the five minutes cannot have run while it was off.
 >
-> If your press fails on a fault in the bot, the button stays, and you can press it again until the five minutes are up. Press once and wait: while your press is being worked the review will not expire under you, and a second press is turned away.
+> If your press is turned away — a date gone by, a channel missing, anything else the approval checks — or you cancel at the backup question, or it fails on a fault in the bot, the review and its button stay: put it right and press again until the five minutes are up. Only a press the bot takes in hand clears the review. Press once and wait: while your press is being worked the review will not expire under you, and a second press is turned away.
 >
 > Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, the signups still waiting, test mode, the team list and its roles, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
 >
 > The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
 
-**The review disappears once you press Approve and the approval is taken in hand.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. If the approval is then refused when its turn comes on the queue, or a league admin discards it, your season stays in placements with the review gone: run `/season placements-review` again. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
+**The review disappears once you press Approve and the approval is taken in hand, and not before.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. If the approval is then refused when its turn comes on the queue, or a league admin discards it, your season stays in placements with the review gone: run `/season placements-review` again. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
 
 **These will refuse the season whatever modules you use:**
 
@@ -643,7 +643,7 @@ Things to know before you run it:
 
 ### Signing up drivers mid-season
 
-A signup window can be opened again while the season is ongoing. The same two steps follow it: closing the window moves the season to **Ongoing, placements** where anyone is left to settle — place or reject them as in step 10, then run `/season placements-review`, which in this stage reviews only the lineups and the drivers to confirm. Confirming grants the new drivers their roles, posts each lineup that changed once, and returns the season to ongoing. No division or round can be added mid-season.
+A signup window can be opened again while the season is ongoing. The same two steps follow it: closing the window moves the season to **Ongoing, placements** where anyone is left to settle — place or reject them as in step 10, then run `/season placements-review`, which in this stage reviews only the lineups and the drivers to confirm. Confirming grants the new drivers their roles, posts each lineup that changed once, and returns the season to ongoing; a press turned away leaves the review up to press again, as in step 12. No division or round can be added mid-season.
 
 **The mid-season review checks what can have changed since the season started.** It withholds its button, telling you why, while a signup is unsettled, a channel a division posts to has been deleted, the image module's configuration is at fault — the rasteriser, a template, the tier colours or the portrait settings — or a lineup it will post does not draw with the new drivers in it. Where lineups are pictures, it shows you each one it will post, new drivers included. It does not check the roles, the signup settings, the team list or the points again: the season settled those at the start. A deleted channel is put back as in step 9; nothing else about the season has to change.
 
