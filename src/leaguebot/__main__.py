@@ -123,7 +123,9 @@ def register_change_types(bot: LeagueBot) -> None:
     the real set.
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.season_approval_change import season_approval_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.points_amendment_change import points_amendment_change
@@ -164,6 +166,19 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
+    # The season's approval is judged again as it runs: the clock is the queue's, the windows the
+    # enabled modules', and the drawing program the host's, read through `converter_available`
+    # when it is judged, so a test that patches it moves the judgement.
+    bot.change_queue.register(
+        season_approval_change(
+            modules=bot.module_service,
+            windows=lambda: bot.approval_windows(),
+            rasteriser_fault=lambda: None
+            if converter_available()
+            else f"{CONVERTER_NAME} is not installed on this host.",
+            now=lambda: bot.change_queue.now(),
+        )
+    )
 
 
 async def main() -> None:

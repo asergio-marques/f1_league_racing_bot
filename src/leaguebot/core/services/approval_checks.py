@@ -9,10 +9,18 @@ reply's list of what a confirmation could not do.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.approval_window_service import (
+    AttendanceWindows,
+    WeatherWindows,
+    calendar_faults,
+)
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +31,74 @@ def not_done_section(not_done: list[str]) -> str:
         return ""
     return "\n\n⚠️ **Not everything could be done**\n" + "\n".join(
         f"• {line}" for line in not_done
+    )
+
+
+@dataclass(frozen=True)
+class DatesRefusal:
+    """A calendar holding dates gone by, as a member is told it (*reply*) and as the log's
+    refusal line states it (*reason*)."""
+
+    reply: str
+    reason: str
+
+
+def _stamp(moment: datetime) -> str:
+    """A Discord dynamic timestamp, full form, a naive moment taken as UTC. Written here and not
+    imported from the weather module's message builder, which core may not reach from a service."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return f"<t:{int(moment.timestamp())}:F>"
+
+
+def date_refusal(
+    divisions: list[Any],
+    rounds_by_division: dict[int, list[Any]],
+    *,
+    now: datetime,
+    attendance: AttendanceWindows | None,
+    weather: WeatherWindows | None,
+) -> DatesRefusal | None:
+    """The refusal for a season whose calendar holds a round already run or inside a window, or
+    None where every division's calendar is clean (Gate 2d, #121, #122, #181).
+
+    **Both confirmations of a season's placements ask this**: the press, and the change queue's
+    check as the approval comes up to run, where the clock has moved on. One bullet per division,
+    and at most two findings within it. Each division's rounds are judged by `calendar_faults`.
+    """
+    problems: list[str] = []
+    for division in divisions:
+        fault = calendar_faults(
+            rounds_by_division[division.id], now=now, attendance=attendance, weather=weather
+        )
+        if fault is None:
+            continue
+        bits = []
+        if fault.latest_past is not None:
+            bits.append(
+                f"Round {fault.latest_past.round_number} has already run "
+                f"({_stamp(fault.latest_past.scheduled_at)}), and so has every "
+                f"round before it"
+            )
+        if fault.latest_window is not None:
+            bits.append(
+                f"Round {fault.latest_window.round_number} is inside its "
+                f"{fault.latest_window.label.lower()}, due "
+                f"{_stamp(fault.latest_window.fire_at)} "
+                f"({fault.latest_window.lead})"
+            )
+        problems.append(f"• **{division.name}** — " + "; ".join(bits) + ".")
+    if not problems:
+        return None
+    body = "\n".join(problems)
+    return DatesRefusal(
+        reply=(
+            f"❌ Season cannot be approved — its calendar holds dates that have "
+            f"already gone by:\n{body}\n"
+            f"Move those rounds with `/round amend`, or shorten the windows, then run "
+            f"`/season placements-review` again. **Nothing has been approved.**"
+        ),
+        reason=f"its calendar holds dates that have already gone by:\n{body}",
     )
 
 

@@ -5674,50 +5674,16 @@ class SeasonCog(commands.Cog):
         # elsewhere — it seeds points configurations so a test season passes that
         # requirement — but a test season that loses its check-ins misreports attendance
         # exactly as a real one does, and is a worse thing to be testing against.
-        from leaguebot.core.services.approval_window_service import calendar_faults
-
         _att_windows, _wx_windows = await self._approval_windows()
-        _now = datetime.now(timezone.utc)
-        # One bullet per division, and at most two findings within it — the review annotates
-        # each division's calendar where the manager is looking at the dates, and the refusal
-        # gathers the same verdicts into one list, because by here there is no calendar on
-        # screen to annotate.
-        _date_problems: list[str] = []
-        for _div in divisions:
-            _fault = calendar_faults(
-                div_rounds[_div.id],
-                now=_now,
-                attendance=_att_windows,
-                weather=_wx_windows,
-            )
-            if _fault is None:
-                continue
-            _bits = []
-            if _fault.latest_past is not None:
-                _bits.append(
-                    f"Round {_fault.latest_past.round_number} has already run "
-                    f"({discord_ts(_fault.latest_past.scheduled_at)}), and so has every "
-                    f"round before it"
-                )
-            if _fault.latest_window is not None:
-                _bits.append(
-                    f"Round {_fault.latest_window.round_number} is inside its "
-                    f"{_fault.latest_window.label.lower()}, due "
-                    f"{discord_ts(_fault.latest_window.fire_at)} "
-                    f"({_fault.latest_window.lead})"
-                )
-            _date_problems.append(f"• **{_div.name}** — " + "; ".join(_bits) + ".")
-        if _date_problems:
-            _body = "\n".join(_date_problems)
-            await refuse(
-                interaction,
-                f"❌ Season cannot be approved — its calendar holds dates that have "
-                f"already gone by:\n{_body}\n"
-                f"Move those rounds with `/round amend`, or shorten the windows, then run "
-                f"`/season placements-review` again. **Nothing has been approved.**",
-                what=what,
-                reason=f"its calendar holds dates that have already gone by:\n{_body}",
-            )
+        _dates = approval_checks.date_refusal(
+            divisions,
+            div_rounds,
+            now=datetime.now(timezone.utc),
+            attendance=_att_windows,
+            weather=_wx_windows,
+        )
+        if _dates is not None:
+            await refuse(interaction, _dates.reply, what=what, reason=_dates.reason)
             return
 
         # Everything above is a database read. What follows reads the image module's
