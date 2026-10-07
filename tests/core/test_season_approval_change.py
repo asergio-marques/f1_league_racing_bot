@@ -1090,6 +1090,48 @@ async def test_an_earlier_opening_standings_copy_that_will_not_delete_stops_the_
     assert _tables(standings) == (1, 1)
 
 
+def _names_for_deletion_by_hand(line: str, cid: int, ids: list[int]) -> bool:
+    """Whether *line* names the messages *ids* left standing in channel *cid* for deletion by
+    hand, by the channel and the message ids, as slice 2's part-posted table is named, or by each
+    message's link."""
+    linked = all(f"https://discord.test/{cid}/{mid}" in line for mid in ids)
+    named = f"<#{cid}>" in line and all(str(mid) in line for mid in ids)
+    return "by hand" in line and (linked or named)
+
+
+_PART_POSTED_DISCARDED = (
+    "#439, code-3-1 and product-3-2: a discarded opening standings job keeps the table it posted "
+    "before it stopped, and the not-done line still says only that the standings could not be "
+    "posted; it must name the table left standing, with its link, for deletion by hand"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_PART_POSTED_DISCARDED)
+async def test_a_discarded_part_posted_opening_standings_names_the_table_left_standing(
+    tmp_path, monkeypatch,
+):
+    """Pro's drivers' table went out and its teams' table was refused, so the queue stopped at
+    the opening standings; a league admin discards it. The drivers' table still stands in Pro's
+    standings channel, so the reply's not-done section and the "Placements confirmed" line's
+    "not done:" lines name it, with its link, for deletion by hand, as slice 2 names a part-posted
+    table (#439)."""
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    press = await _pressed(league)
+    standing = await _opening_standings_posted_in_part(league, monkeypatch)
+
+    await discard_job(league.bot)
+
+    assert sorted(league.channel(PRO_CH.standings).messages) == standing
+    assert APPROVED in reply(press)
+    assert any(_names_for_deletion_by_hand(bullet, PRO_CH.standings, standing)
+               for bullet in _not_done(reply(press))), reply(press)
+    confirmed = _confirmed_lines(league)
+    assert len(confirmed) == 1
+    not_done = confirmed[0].split("\n  not done: ")[1:]
+    assert any(_names_for_deletion_by_hand(line, PRO_CH.standings, standing)
+               for line in not_done), confirmed[0]
+
+
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):
