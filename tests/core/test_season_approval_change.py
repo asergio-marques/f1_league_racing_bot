@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from contextlib import ExitStack
 from datetime import timedelta
 from types import SimpleNamespace
@@ -1093,8 +1094,9 @@ async def test_an_earlier_opening_standings_copy_that_will_not_delete_stops_the_
 def _names_for_deletion_by_hand(line: str, cid: int, ids: list[int]) -> bool:
     """Whether *line* names the messages *ids* left standing in channel *cid* for deletion by
     hand, by the channel and the message ids, as slice 2's part-posted table is named, or by each
-    message's link."""
-    linked = all(f"https://discord.test/{cid}/{mid}" in line for mid in ids)
+    message's link, in any form ending in the channel and message ids (`message_link`'s
+    `https://discord.com/channels/{server}/{channel}/{message}`, or a message's `jump_url`)."""
+    linked = all(re.search(rf"https?://\S+/{cid}/{mid}\b", line) for mid in ids)
     named = f"<#{cid}>" in line and all(str(mid) in line for mid in ids)
     return "by hand" in line and (linked or named)
 
@@ -1102,7 +1104,8 @@ def _names_for_deletion_by_hand(line: str, cid: int, ids: list[int]) -> bool:
 _PART_POSTED_DISCARDED = (
     "#439, code-3-1 and product-3-2: a discarded opening standings job keeps the table it posted "
     "before it stopped, and the not-done line still says only that the standings could not be "
-    "posted; it must name the table left standing, with its link, for deletion by hand"
+    "posted; it must name the table left standing, by its link or by its channel and message id, "
+    "for deletion by hand"
 )
 
 
@@ -1113,8 +1116,8 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
     """Pro's drivers' table went out and its teams' table was refused, so the queue stopped at
     the opening standings; a league admin discards it. The drivers' table still stands in Pro's
     standings channel, so the reply's not-done section and the "Placements confirmed" line's
-    "not done:" lines name it, with its link, for deletion by hand, as slice 2 names a part-posted
-    table (#439)."""
+    "not done:" lines name it, by its link or by its channel and message id, for deletion by hand,
+    as slice 2 names a part-posted table (#439)."""
     league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
     press = await _pressed(league)
     standing = await _opening_standings_posted_in_part(league, monkeypatch)
