@@ -351,7 +351,6 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
     assert await _stopped_at(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch,
 ):
@@ -361,12 +360,13 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "grant_roles"
-    assert f"granting <@{LEWIS}> the roles of **Pro** and Ferrari" in league.log()
+    assert f"granting `<@{LEWIS}>` the roles of **Pro** and Ferrari" in league.log()
     await discard_job(league.bot)
 
     line = f"<@{LEWIS}> — their roles could not be granted. Give them their division's and team's roles by hand."
     assert line in _not_done(reply(press))
-    assert f"not done: {line}" in league.log()
+    logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")
+    assert f"not done: {logged}" in league.log()
     assert MAX in league.granted
 
 
