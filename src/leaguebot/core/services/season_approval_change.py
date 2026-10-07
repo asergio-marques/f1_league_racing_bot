@@ -224,6 +224,7 @@ def season_approval_change(
     *,
     modules: "ModuleService",
     config: "ConfigService",
+    seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
     windows: Callable[[], Awaitable[tuple["AttendanceWindows | None", "WeatherWindows | None"]]],
@@ -235,6 +236,7 @@ def season_approval_change(
     """The change that approves a season's placements; see the module.
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
+    *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
     *scheduler* and the *placement* service, *windows* (the enabled modules' windows,
     `LeagueBot.approval_windows`), *rasteriser_fault* (what is wrong with the host's drawing
     program, None where nothing is), results' *snapshot_points_on* (the points snapshot on a
@@ -268,7 +270,6 @@ def season_approval_change(
             )
 
         # What the fingerprint does not cover: the clock, the server and the host.
-        seasons = SeasonService(ctx.db_path)
         divisions = await seasons.get_divisions(season_id)
         rounds = {each.id: await seasons.get_division_rounds(each.id) for each in divisions}
         attendance, weather = await windows()
@@ -403,7 +404,6 @@ def season_approval_change(
         """
         season_id = int(ctx.payload["season_id"])
         season_number = int(ctx.payload["season_number"])
-        seasons = SeasonService(ctx.db_path)
         divisions = await seasons.get_divisions(season_id)
         meta = {each.id: (season_number, each.tier) for each in divisions}
         rounds = [
@@ -501,7 +501,6 @@ def season_approval_change(
                 "'SEASON 0'",
                 ctx.payload["season_id"],
             )
-        seasons = SeasonService(ctx.db_path)
         division_id = int(ctx.step_payload["division_id"])
         division = next(
             each

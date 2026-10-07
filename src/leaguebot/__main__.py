@@ -186,6 +186,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_approval_change(
             modules=bot.module_service,
             config=bot.config_service,
+            seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             windows=lambda: bot.approval_windows(),
