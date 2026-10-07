@@ -1344,6 +1344,40 @@ async def test_a_retried_save_with_nothing_changed_while_it_was_stopped_approves
     assert await _stopped_at(league) is None
 
 
+_DISCARDED_REJUDGEMENT = (
+    "#439, code-2-1: a discarded `judge` leaves no refusal, so the fresh `apply` behind it saves "
+    "the season unchecked; the save must read a discarded judgement as a discarded save"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_DISCARDED_REJUDGEMENT)
+async def test_a_discarded_rejudgement_approves_nothing_and_says_to_review_again(
+    tmp_path, monkeypatch,
+):
+    """The save fails once and the queue stops at it; Retry plans the approval judged again
+    (`judge`), and that judgement stops too, its check raising; a league admin discards it.
+    Nothing was judged, so nothing is approved: the reply is the discarded save's, the season
+    stays in Placements and nothing is armed."""
+    league = await _league_for(tmp_path, monkeypatch)
+    press = await _pressed(league)
+    with _save_fails_once():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        with _check_raises():
+            await retry_job(league.bot)
+        assert await _stopped_at(league) == "judge"
+
+        await discard_job(league.bot)
+
+    assert NOT_SAVED in reply(press)
+    assert APPROVED not in reply(press)
+    assert (await league.season())["stage"] == "PLACEMENTS"
+    assert _confirmed_lines(league) == []
+    assert await _sessions(league) == {}
+    assert league.armed == [] and league.granted == {}
+    assert await _stopped_at(league) is None
+
+
 async def test_a_points_configuration_edited_out_of_order_while_the_approval_waits_is_refused_at_run(
     tmp_path, monkeypatch,
 ):
