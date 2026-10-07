@@ -791,11 +791,6 @@ async def test_a_stumbled_confirmation_still_clears_its_review(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: a mid-season Confirm placements press its own checks refuse still deletes "
-    "and forgets the review",
-)
 async def test_a_refused_confirmation_leaves_its_review_standing(db_path):
     """The core specification's "Confirming placements", as for every review's button: a press
     refused at the press (here the season no longer placing drivers) leaves the review and its

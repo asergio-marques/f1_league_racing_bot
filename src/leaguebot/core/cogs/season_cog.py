@@ -2546,8 +2546,10 @@ class SeasonCog(commands.Cog):
 
     async def _do_confirm_mid_season_placements(
         self, interaction: discord.Interaction, *, what: str | None = None
-    ) -> None:
-        """Commit the new placements and return the season to Ongoing.
+    ) -> bool:
+        """Commit the new placements and return the season to Ongoing. Returns whether they
+        were committed: False where the press was refused, which leaves the button's review
+        standing (`_ApproveView._settle_press`).
 
         A refusal is recorded under *what*, the button pressed, which the button passes in;
         the review's own Confirm placements button where the caller names none.
@@ -2572,7 +2574,7 @@ class SeasonCog(commands.Cog):
                 "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
                 what=what,
             )
-            return
+            return False
         # Judged afresh, as the first confirmation judges Gate S (#374). The review withholds
         # its button on each of these, but it stands five minutes, and a channel deleted from
         # the server meanwhile changes nothing the fingerprint reads. The lineups are not
@@ -2595,7 +2597,7 @@ class SeasonCog(commands.Cog):
                 what=what,
                 reason="placements cannot be confirmed:\n" + "\n".join(faults),
             )
-            return
+            return False
 
         outcome = await self.bot.placement_service.commit_mid_season_placements(
             season.id, interaction.guild
@@ -2675,6 +2677,7 @@ class SeasonCog(commands.Cog):
             )
         except Exception:  # noqa: BLE001 — the placements are committed and the manager told
             log.exception("mid-season placements: could not log the confirmation")
+        return True
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
@@ -6327,13 +6330,25 @@ class _ApproveView(LeagueView):
                 what=self._button,
                 fingerprint=self._fingerprint.areas if self._fingerprint is not None else None,
             )
-            # Read before `_press_worked` lets a waiting expiry go.
-            ran_out = self._expiry_waiting or datetime.now(timezone.utc) >= self._deadline
-        if not asked:
-            # The review stands, unless its five minutes ran out meanwhile, as at a backup
-            # question left unanswered, or the season has changed since it, as the queue's check
-            # may have refused it for: then it ends as an expired one does, the press having
-            # recorded its own outcome.
+            ran_out = self._ran_out()
+        await self._settle_press(asked, ran_out=ran_out)
+
+    def _ran_out(self) -> bool:
+        """Whether the review's five minutes ran out while a press was worked, as at a backup
+        question left unanswered. Read inside `_press_worked`, before it lets a waiting expiry
+        go."""
+        return self._expiry_waiting or datetime.now(timezone.utc) >= self._deadline
+
+    async def _settle_press(self, went_through: bool, *, ran_out: bool) -> None:
+        """End a press its `_do_*` helper has finished, every review's button alike.
+
+        One that went through takes the review down. One refused, or cancelled, leaves it
+        standing, to be pressed again within its five minutes, unless those ran out meanwhile
+        or the season has changed since the review, as a check at the press may have refused it
+        for: then it ends as an expired one does, the press having recorded its own outcome
+        (the core specification's "Confirming placements").
+        """
+        if not went_through:
             if ran_out or await self._changed_since_review():
                 await self._expire_now()
             return
@@ -6355,9 +6370,10 @@ class _ApproveView(LeagueView):
         return self._fingerprint.differs_from(current)
 
     async def _clear_report(self) -> None:
-        """Delete the review, the question included, once the change queue has saved the
-        approval: only then, never on a press refused at the press or by the queue's check, or
-        cancelled at the backup question, which leaves the review standing (`approve`).
+        """Delete the review, the question included, once its press has gone through (for the
+        placements review's approval, once the change queue has saved it): only then, never on a
+        press refused at the press or by the queue's check, or cancelled at the backup question,
+        which leaves the review standing (`_settle_press`).
 
         The report describes a season awaiting a decision, and the decision is now taken:
         left standing it is a long scroll of a state that has moved on, above whatever the
@@ -6458,34 +6474,26 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
         if await self._refuse_if_under_way(interaction):
             return
 
-        if self._fingerprint is not None and self._season_id is not None:
-            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-
-            current = await take_fingerprint(
-                self._cog.bot, self._season_id
+        changed = await self._changed_since_review()
+        if changed:
+            bullets = "\n".join(f"• {area}" for area in changed)
+            await refuse(
+                interaction,
+                f"⛔ The season has changed since this review:\n{bullets}\n"
+                f"Run `{self._review_command}` again and confirm from the fresh "
+                f"report. **Nothing has been confirmed.**",
+                what=self._button,
+                reason=f"the season has changed since this review:\n{bullets}",
             )
-            changed = self._fingerprint.differs_from(current)
-            if changed:
-                bullets = "\n".join(f"• {area}" for area in changed)
-                await refuse(
-                    interaction,
-                    f"⛔ The season has changed since this review:\n{bullets}\n"
-                    f"Run `{self._review_command}` again and confirm from the fresh "
-                    f"report. **Nothing has been confirmed.**",
-                    what=self._button,
-                    reason=f"the season has changed since this review:\n{bullets}",
-                )
-                await self._expire_now()
-                return
+            await self._expire_now()
+            return
 
         async with self._press_worked():
-            await self._cog._do_confirm_mid_season_placements(interaction, what=self._button)
-        # Stopped first: the review is answered, and a timer firing while the clean-up below
-        # awaits Discord would otherwise announce it expired and record a lapse.
-        self.stop()
-        await self._forget()
-        await self._clear_report()
-        self._message = None
+            confirmed = await self._cog._do_confirm_mid_season_placements(
+                interaction, what=self._button
+            )
+            ran_out = self._ran_out()
+        await self._settle_press(confirmed, ran_out=ran_out)
 
 
 class _ConfirmConfigurationView(_ApproveView):
