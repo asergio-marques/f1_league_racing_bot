@@ -547,11 +547,11 @@ The same list goes to the log channel. A driver who has left the server is simpl
 **Confirming a mid-season window's placements works the same way.** The placements stand once confirmed. Anything left undone is listed in your confirmation: a driver the bot could not give their roles, whom you give them by hand; a lineup it could not post, which is posted with the next change to that division's drivers; or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. The same one-line notice stands in for a confirmation that cannot reach you.
 
 > **The opening classification needs the results and attendance modules, not the images module.**
-> Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
+> Steps 4 and 5 draw nothing without `/images`; step 6 posts either way — as a drawing where the
 > `standings` and `attendance` outputs are switched on, and as the ordinary text tables where they
 > are not. It goes to the channels those modules already use, so a division with no standings
-> channel simply gets nothing. A division whose
-> sheets will not post stops the queue until it is retried, and once a league admin discards it, it is named in your confirmation.
+> channel simply gets nothing. A division whose sheets will not post stops the queue until it is
+> retried, and once a league admin discards it, it is named in your confirmation.
 
 ---
 
