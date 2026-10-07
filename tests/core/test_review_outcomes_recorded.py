@@ -56,15 +56,6 @@ _BUTTONS = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def _no_approval_in_hand(monkeypatch):
-    """The approve view asks whether an approval of its season is in hand, reading the change
-    queue's tables (#439); these reviews hold no database, so the answer is given here: none."""
-    monkeypatch.setattr(
-        "leaguebot.core.cogs.season_cog.approval_in_hand", AsyncMock(return_value=False)
-    )
-
-
 def _review(view_class, helper: str):
     """A review Alex ran, standing in the channel with its question bound, on the league's server.
 
