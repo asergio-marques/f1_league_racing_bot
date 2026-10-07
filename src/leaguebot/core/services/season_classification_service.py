@@ -14,9 +14,12 @@ the ordinary textual fallback stands in and *is* headed by the phrase, a bare ta
 and numbers otherwise saying nothing about what it is a table of (XIV.7 — a graphic is an
 alternative beside the text, never an exception to it).
 
-**One division never stops another.** Every problem is caught, collected and returned for the
-caller to report to the logging channel, never to a channel a driver reads (XIV.4). Season
-approval and season completion are both far too consequential to be failed by a picture.
+**The opening is posted one division at a time, by the season's approval, each posting a job
+of the change queue** that raises where it cannot post (:func:`post_opening_standings`,
+:func:`post_opening_sheet`). **The final one** catches every problem, collects and returns it for
+the caller to report to the logging channel, never to a channel a driver reads (XIV.4), and one
+division never stops another: season completion is far too consequential to be failed by a
+picture.
 """
 
 from __future__ import annotations
@@ -138,27 +141,6 @@ async def post_opening_sheet(
         raise_on_failure=True,
         as_text=as_text,
     )
-
-
-async def post_opening_classifications(
-    bot: LeagueBot, guild, db_path: str, divisions, div_rounds
-) -> list[str]:
-    """Post every division's opening standings and attendance sheet, collecting what failed.
-
-    Kept until the approval's own jobs replace its one caller: each division goes through the two
-    per-division functions above, one division never stopping another.
-    """
-    problems: list[str] = []
-    if bot is None or guild is None:
-        return problems
-    for division in divisions:
-        for what, post in (("standings", post_opening_standings), ("attendance", post_opening_sheet)):
-            try:
-                await post(bot, guild, db_path, division.id)
-            except Exception as exc:  # noqa: BLE001 — one division never stops the next
-                log.exception("opening classification: %s %s failed", division.name, what)
-                problems.append(f"{division.name} {what}: {exc}")
-    return problems
 
 
 async def post_final_classifications(bot: LeagueBot, guild, db_path: str, season_id: int) -> list[str]:
