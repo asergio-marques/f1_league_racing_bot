@@ -74,7 +74,8 @@ async def post_opening_standings(
     sent when a later one fails is named on the failure (`result`), and the job keeps it: the
     next try is handed it as *kept* and removes that copy, from the channel it was posted in, before
     it posts both again, failing again, with what it still has to remove, where a message will not
-    delete. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
+    delete. Once that copy is down, any failure of the try names what the try left, even nothing,
+    so that the job no longer keeps the copy removed. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
@@ -90,6 +91,7 @@ async def post_opening_standings(
     if opener is None:
         return
     earlier = [int(each) for each in (kept or {}).get("new") or []]
+    removed: dict[str, Any] | None = None
     if earlier:
         # Removed from the channel they were posted in, which the standings channel may since
         # have left; a channel the guild no longer holds holds none of them.
@@ -102,57 +104,76 @@ async def post_opening_standings(
                     f"{len(left)} message(s) of the earlier try could not be removed",
                     result={"new": left, "channel_id": posted_in},
                 ) from (failures[0] if failures else None)
-    async with get_connection(db_path) as db:
-        config = await (
-            await db.execute(
-                "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
-                (division_id,),
-            )
-        ).fetchone()
-    channel_id = config["standings_channel_id"] if config is not None else None
-    if not channel_id:
-        return
-    channel = guild.get_channel(int(channel_id))
-    if channel is None:
-        raise StepFailedOnDiscord(f"the standings channel (id {channel_id}) is not in the server")
-
-    # Twice, deliberately. The order is taken on the name the sheet will actually draw, and the
-    # names are resolved from Discord by user id, so the roster has to be known before it can be
-    # ordered. The first pass is read only for who is in it; the second is the one that counts.
-    roster = await standings_service.opening_driver_standings(db_path, division_id)
-    names = await _driver_names(
-        bot, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
-    )
-    driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
-    team_snaps = await standings_service.opening_team_standings(db_path, division_id)
-    if not driver_snaps:
-        return
+        # The kept copies are down, so a failure of this try names what it left, nothing where
+        # it left nothing: the job keeps the result a failure names, and otherwise the one it
+        # had, which a Discard would read as copies still standing, to be deleted by hand.
+        removed = {"new": [], "channel_id": posted_in}
     try:
-        await produce_standings(
-            db_path,
-            division_id,
-            opener["id"],
-            opener["round_number"],
-            opener["track_name"] or "",
-            channel,
-            driver_snaps,
-            team_snaps,
-            guild,
-            await _get_show_reserves(db_path, division_id),
-            "",
-            bot=None if as_text else bot,
-            occasion=ClassificationOccasion.SEASON_OPENING,
-        )
-    except Exception as failure:
-        # No id of the opening classification is recorded, so a table already sent when a later
-        # one failed is put on the failure for the job to keep, and the next try removes it.
-        stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
-        if stranded:
+        async with get_connection(db_path) as db:
+            config = await (
+                await db.execute(
+                    "SELECT standings_channel_id FROM division_results_config "
+                    "WHERE division_id = ?",
+                    (division_id,),
+                )
+            ).fetchone()
+        channel_id = config["standings_channel_id"] if config is not None else None
+        if not channel_id:
+            return
+        channel = guild.get_channel(int(channel_id))
+        if channel is None:
             raise StepFailedOnDiscord(
-                "the opening standings were posted in part and the rest was refused",
-                result={"new": stranded, "channel_id": int(channel_id)},
-            ) from failure
+                f"the standings channel (id {channel_id}) is not in the server"
+            )
+
+        # Twice, deliberately. The order is taken on the name the sheet will actually draw, and the
+        # names are resolved from Discord by user id, so the roster has to be known before it can be
+        # ordered. The first pass is read only for who is in it; the second is the one that counts.
+        roster = await standings_service.opening_driver_standings(db_path, division_id)
+        names = await _driver_names(
+            bot, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
+        )
+        driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
+        team_snaps = await standings_service.opening_team_standings(db_path, division_id)
+        if not driver_snaps:
+            return
+        try:
+            await produce_standings(
+                db_path,
+                division_id,
+                opener["id"],
+                opener["round_number"],
+                opener["track_name"] or "",
+                channel,
+                driver_snaps,
+                team_snaps,
+                guild,
+                await _get_show_reserves(db_path, division_id),
+                "",
+                bot=None if as_text else bot,
+                occasion=ClassificationOccasion.SEASON_OPENING,
+            )
+        except Exception as failure:
+            # No id of the opening classification is recorded, so a table already sent when a later
+            # one failed is put on the failure for the job to keep, and the next try removes it.
+            stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
+            if stranded:
+                raise StepFailedOnDiscord(
+                    "the opening standings were posted in part and the rest was refused",
+                    result={"new": stranded, "channel_id": int(channel_id)},
+                ) from failure
+            raise
+    except StepFailedOnDiscord as failure:
+        if removed is not None and failure.result is None:
+            failure.result = removed
         raise
+    except Exception as failure:
+        if removed is None:
+            raise
+        raise StepFailedOnDiscord(
+            "the opening standings could not be posted once the earlier try's were removed",
+            result=removed,
+        ) from failure
 
 
 async def post_opening_sheet(

@@ -1126,14 +1126,6 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
                for line in not_done), confirmed[0]
 
 
-_KEPT_AFTER_ITS_REMOVAL = (
-    "#439, code-4-1: a try that removes the kept table and then fails with nothing posted "
-    "leaves the kept ids on the job, so a Discard names for deletion by hand a table already "
-    "taken down"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_KEPT_AFTER_ITS_REMOVAL)
 async def test_a_discard_after_the_kept_table_was_removed_names_nothing_for_deletion_by_hand(
     tmp_path, monkeypatch,
 ):
