@@ -1132,6 +1132,44 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
                for line in not_done), confirmed[0]
 
 
+_KEPT_FROM_THE_CHANNEL_SET_SINCE = (
+    "#439, code-3-2: the next try removes the kept copies from the standings channel set at the "
+    "retry, not from the channel they were posted in, which is kept beside them and never read"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_KEPT_FROM_THE_CHANNEL_SET_SINCE)
+async def test_kept_opening_standings_are_removed_from_the_channel_they_were_posted_in(
+    tmp_path, monkeypatch,
+):
+    """Pro's drivers' table went out and its teams' table was refused, so the queue stopped at
+    the opening standings. Pro's standings channel is then set to another channel, and Retry.
+    The kept drivers' table comes down from the channel it was posted in, and the channel set
+    since gets one drivers' and one teams' table and has nothing deleted (#439)."""
+    from tests.support.review_league import channel
+
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    await _pressed(league)
+    earlier = await _opening_standings_posted_in_part(league, monkeypatch)
+    moved_to = 699
+    league.channels[moved_to] = league._recording(channel(moved_to, league.events))
+    league.channels[moved_to].guild = league.guild
+    await league.write(
+        "UPDATE division_results_config SET standings_channel_id = ? WHERE division_id = ?",
+        moved_to, PRO,
+    )
+
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    first = league.channel(PRO_CH.standings)
+    assert not set(earlier) & set(first.messages), "the kept drivers' table still stands"
+    assert _tables(first) == (0, 0)
+    assert _tables(league.channel(moved_to)) == (1, 1)
+    assert not [event for event in league.events
+                if event[0] == "delete" and event[1] == moved_to]
+
+
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):
