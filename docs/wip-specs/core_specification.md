@@ -283,6 +283,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A press while a confirmation of the same season's placements is waiting, being carried out or stopped on a failure, from this review or another, shall be refused at once, without naming the job, and shall not be asked whether to save the databases. Decided 2026-10-06.
 - A review standing when the bot stops shall be treated as expired when the bot next starts.
 - Placements confirmed shall have the review they were confirmed from deleted, the question and every message of the report alike. A review expired shall have its report deleted on the same terms.
+    - Where the season is in Placements, the review shall be deleted once the press has asked the queue for the confirmation, whatever then becomes of it. A confirmation then refused as it comes up to run, or discarded by a league admin, leaves the season in Placements, to be reviewed again.
 - The button shall be withheld altogether where the review found something that would prevent the placements being confirmed.
 
 #### The evidence placements are confirmed upon
@@ -307,7 +308,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A cancelled round shall be exempt from both, having no scheduled work left to lose. Refusing a season on account of one would leave a league unable to confirm until they deleted a record they may want to keep.
     - Each enabled module shall impose its own requirements, stated in its own specification.
 - A confirmation failing any requirement shall be refused with nothing committed, and every fault shall be named, save the two date requirements above, whose faults are reduced to the latest round of each kind a division holds.
-- Those requirements that can change while the confirmation waits on the queue — that state, the dates against the clock, the channels on the server, and the program that draws the graphics — shall be judged again when it is carried out.
+- Those requirements that can change while the confirmation waits on the queue — that state, the dates against the clock, the channels on the server, and the program that draws the graphics — shall be judged again when it is carried out, and again each time its save is tried after a failure.
 
 #### What confirming placements does
 - Every placement not yet committed shall be committed.
@@ -318,7 +319,7 @@ it only to place it; the rules governing it belong to its own specification.
     - Every placed driver shall be granted their division's role and their team's role. Each driver's grant shall be a job of its own. A driver Discord reports absent from the server is passed over.
     - Each division's lineup, calendar and opening classification shall be posted.
     - Each grant and each posting shall be a job on the queue: one that fails stops the queue until it is retried or discarded, never undoing the confirmation, and one discarded is named in the reply and the log channel with what puts it right.
-    - The member's reply cannot be updated once fourteen minutes have passed since it was acknowledged, nor after the bot has restarted while the confirmation was carried out; the notice in the channel below shall then say how the confirmation ended, approved or not, and shall be a job on the queue, which stops it where Discord refuses the notice. A confirmation refused as it comes up to run, its state, its dates, its channels or the program that draws its graphics having changed while it waited, shall be told there too, with the reason it was refused; so shall one a league admin discards before it began, which is told as not approved. Decided 2026-10-06, "Keep the public notice" and "Tell the review's channel too"; 2026-10-07, "Tell the review's channel".
+    - The member's reply cannot be updated once fourteen minutes have passed since it was acknowledged, nor after the bot has restarted while the confirmation was carried out; the notice in the channel below shall then say how the confirmation ended, approved or not, and shall be a job on the queue, which stops it where Discord refuses the notice. A confirmation refused as it comes up to run or as its save is tried again, its state, its dates, its channels or the program that draws its graphics having changed while it waited, shall be told there too, with the reason it was refused; so shall one a league admin discards before it began, which is told as not approved. Decided 2026-10-06, "Keep the public notice" and "Tell the review's channel too"; 2026-10-07, "Tell the review's channel".
 - Where the season is in Ongoing, placements:
     - Every driver whose placement is committed by it shall be granted their division's role and their team's role.
     - The lineup of each division holding such a driver shall be posted once.
