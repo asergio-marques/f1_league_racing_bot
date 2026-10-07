@@ -127,9 +127,10 @@ self-contained and can be restored by copying it back into place under the origi
 > **Upgrading from v0.4.0 or earlier.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
-> pending weather phases, RSVP notices and result submissions. Run `/season placements-review` and
-> approve again for each affected division to rebuild them. Upgrade between seasons and there is nothing
-> to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
+> pending weather phases, RSVP notices and result submissions. A season cannot be approved again
+> once it is under way, and no command rebuilds its scheduled work wholesale: `/round amend` arms one
+> round's work again when it moves that round, and nothing else does. So upgrade between seasons,
+> where there is nothing to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
 > leave it as you prefer.
 
 ---
