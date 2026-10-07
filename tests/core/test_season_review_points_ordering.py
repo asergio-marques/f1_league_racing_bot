@@ -27,9 +27,6 @@ SERVER_ID = 5500
 SEASON_ID = 12
 
 
-_SNAPSHOT_ON = "#439: the points snapshot has no form on a handed save yet"
-
-
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "review.db")
@@ -124,7 +121,6 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
     await snapshot_points(db_path, SEASON_ID)

@@ -20,9 +20,6 @@ from tests.support.season_points import snapshot_points
 # ---------------------------------------------------------------------------
 
 
-_SNAPSHOT_ON = "#439: the points snapshot has no form on a handed save yet"
-
-
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "sps_test.db")
@@ -405,7 +402,6 @@ async def test_attached_ordering_reports_every_attached_config(db_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_attached_ordering_and_the_season_copy_word_a_fault_the_same_way(db_path):
     """One rule, one sentence — whichever of the two checks found it."""
     season_id = await _make_season(db_path)
@@ -624,7 +620,6 @@ async def _season_points(db) -> list[tuple[str, int, int]]:
     return [(r["config_name"], r["position"], r["points"]) for r in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_the_snapshot_is_written_on_the_save_handed(db_path):
     """Results is on and a season in setup has `Standard` attached, paying 25, 18 and 15 for the
     Feature Race. Copied on a connection, the season's store holds those three on that
@@ -651,7 +646,6 @@ async def test_the_snapshot_is_written_on_the_save_handed(db_path):
         assert await _season_points(db) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 @pytest.mark.parametrize("switch", [None, 0], ids=["never switched on", "switched off"])
 async def test_the_snapshot_writes_nothing_while_results_is_off(db_path, switch):
     """A season in setup has `Standard` attached, and results has never been switched on, or

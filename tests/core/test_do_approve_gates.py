@@ -54,7 +54,6 @@ SEASON_ID = 11
 USER_ID = 77
 
 
-_SNAPSHOT_ON = "#439: the points snapshot has no form on a handed save yet"
 _NOT_ASKED = "#439: a season passing every gate is not yet asked of the change queue"
 
 
@@ -826,7 +825,6 @@ async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
     """A re-approval is looked at from both sides; the manager reads one line, not two."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])

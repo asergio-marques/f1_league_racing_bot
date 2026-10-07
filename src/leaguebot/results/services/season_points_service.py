@@ -153,6 +153,52 @@ async def snapshot_configs_to_season(
         await db.commit()
 
 
+async def snapshot_configs_to_season_on(db: aiosqlite.Connection, season_id: int) -> None:
+    """Copy the season's attached configurations onto it, on the connection it is handed.
+
+    The season's approval writes this inside its one save, so nothing is committed here and
+    nothing outside *db* is read. Results' own switch is read on *db* too, and while results is
+    off (or has never been switched on) nothing is written, so the save need not ask whether
+    results is on. A name attached but no longer held by the server's store raises
+    `ConfigNotFoundError`, as the committing form did, and the save rolls back.
+    """
+    cursor = await db.execute("SELECT module_enabled FROM results_module_config")
+    switch = await cursor.fetchone()
+    if switch is None or not switch["module_enabled"]:
+        return
+    cursor = await db.execute(
+        "SELECT config_name FROM season_points_links WHERE season_id = ? ORDER BY config_name",
+        (season_id,),
+    )
+    config_names = [r["config_name"] for r in await cursor.fetchall()]
+    for config_name in config_names:
+        cursor = await db.execute(
+            "SELECT id FROM points_config_store WHERE config_name = ?", (config_name,)
+        )
+        stored = await cursor.fetchone()
+        if stored is None:
+            raise points_config_service.ConfigNotFoundError(config_name)
+        config_id = stored["id"]
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO season_points_entries
+                (season_id, config_name, session_type, position, points)
+            SELECT ?, ?, session_type, position, points
+            FROM points_config_entries WHERE config_id = ?
+            """,
+            (season_id, config_name, config_id),
+        )
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO season_points_fl
+                (season_id, config_name, session_type, fl_points, fl_position_limit)
+            SELECT ?, ?, session_type, fl_points, fl_position_limit
+            FROM points_config_fl WHERE config_id = ?
+            """,
+            (season_id, config_name, config_id),
+        )
+
+
 async def validate_monotonic_ordering(db_path: str, season_id: int) -> list[str]:
     """Return a list of error strings for any non-monotonic config/session/position groups."""
     errors: list[str] = []

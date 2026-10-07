@@ -18,9 +18,6 @@ from leaguebot.results.services.season_points_service import (
 from tests.support.season_points import snapshot_points
 
 
-_SNAPSHOT_ON = "#439: the points snapshot has no form on a handed save yet"
-
-
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "pcl_test.db")
@@ -153,7 +150,6 @@ async def _season_in_setup(path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_list_season_configs_with_sessions_reads_the_seasons_own_store(db_path):
     await _season_in_setup(db_path)
     await create_config(db_path, "Standard")
@@ -166,7 +162,6 @@ async def test_list_season_configs_with_sessions_reads_the_seasons_own_store(db_
     assert rows == [("Standard", [SessionType.FEATURE_RACE])]
 
 
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_list_season_configs_reports_an_attached_but_unfilled_config(db_path):
     """Attached and empty must read as attached, not vanish — as on the server side."""
     await _season_in_setup(db_path)
@@ -179,7 +174,6 @@ async def test_list_season_configs_reports_an_attached_but_unfilled_config(db_pa
     assert rows == [("Never Filled", [])]
 
 
-@pytest.mark.xfail(strict=True, reason=_SNAPSHOT_ON)
 async def test_list_configs_reads_the_season_store_after_snapshot_diverges(db_path):
     """The reason `/results config list` makes the manager name the store (#200).
 
