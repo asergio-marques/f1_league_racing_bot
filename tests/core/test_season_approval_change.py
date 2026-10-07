@@ -1147,7 +1147,8 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     assert APPROVED in reply(press)
     assert any(bullet.startswith(line) for bullet in _not_done(reply(press)))
     confirmed = _confirmed_lines(league)
-    assert len(confirmed) == 1 and f"\n  not done: {line}" in confirmed[0]
+    logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")  # the log's mentions are in backticks
+    assert len(confirmed) == 1 and f"\n  not done: {logged}" in confirmed[0]
 
 
 async def test_no_separate_opening_classification_line_is_written(tmp_path, monkeypatch):
