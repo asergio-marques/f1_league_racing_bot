@@ -1197,7 +1197,6 @@ async def test_a_discarded_arming_is_named_first_and_says_the_season_has_no_time
     assert any(bullet.startswith("**Pro** — its lineup could not be posted.") for bullet in bullets)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
@@ -1206,9 +1205,10 @@ async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkey
     assert _confirmed_lines(league) == []
     await run_queue(league.bot)
 
+    # As the log channel carries every line: its mentions in backticks, the separator beneath.
     assert _confirmed_lines(league) == [
-        f"Admin (<@{ADMIN_ID}>) | /season placements-review | Placements confirmed\n"
-        "  season: 3\n  season_id: 7"
+        f"Admin (`<@{ADMIN_ID}>`) | /season placements-review | Placements confirmed\n"
+        "  season: 3\n  season_id: 7\n" + "―" * 36
     ]
 
 
