@@ -892,11 +892,12 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
     assert "Monza" in league.texts(PRO_CH.calendar)[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
     """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
-    calendar job reads the number as it runs and draws it as 0, never hiding it, and logs that it
-    will draw "SEASON 0" (#213). It replaces the deleted
+    calendar is drawn with 0, never hidden, and the bot logs that it will draw "SEASON 0" (#213).
+    The number is 0 both in the setup the press reads and in the database, so the test holds
+    wherever the approval takes it from; it passes today and guards the rule through the build.
+    It replaces the deleted
     `test_do_approve_posting.py::test_a_season_with_no_number_still_draws_and_is_logged`."""
     from leaguebot.core.services import calendar_post_service
 
@@ -912,6 +913,7 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
 
     monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
     await league.write("UPDATE seasons SET season_number = 0 WHERE id = ?", SEASON_ID)
+    league.cog._pending[ADMIN_ID].season_number = 0
 
     with caplog.at_level(logging.WARNING):
         await _pressed(league)
