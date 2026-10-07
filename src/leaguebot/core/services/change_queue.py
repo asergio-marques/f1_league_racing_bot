@@ -232,13 +232,17 @@ class StepContext(OutcomeContext):
     post as text on a retry (Constitution XIV, rule 8). *kept* is what the stopped job's last try
     left on it (the `result` of the `StepFailedOnDiscord` it raised, or the result a record that
     raised had been handed), None on a first try: a posting job reads it to remove the messages its
-    last try sent before it posts again.
+    last try sent before it posts again. *reply_updatable* is whether the change's acknowledgement
+    can still be updated, which is where it is held and under `UPDATABLE_FOR` since it was
+    acknowledged: False for a bot's change, after a restart and fourteen minutes on. A job that
+    tells a channel what the member can no longer be told reads it, never a flag of its own.
     """
 
     step_name: str = ""
     step_payload: dict[str, Any] = field(default_factory=dict)
     tries: int = 0
     kept: dict[str, Any] | None = None
+    reply_updatable: bool = False
 
 
 @dataclass(frozen=True)
@@ -636,6 +640,7 @@ class ChangeQueue:
             step_payload=json.loads(row["payload"]),
             tries=row["tries"],
             kept=json.loads(row["result"]) if row["result"] else None,
+            reply_updatable=self._held_and_updatable(change) is not None,
         )
 
     def forget_held(self) -> None:

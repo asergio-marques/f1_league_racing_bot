@@ -2187,7 +2187,6 @@ async def test_the_queue_gives_its_clock_as_now(env):
 # longer be told)
 # ---------------------------------------------------------------------------
 
-_NO_REPLY_UPDATABLE = "#439: a step's context does not yet say whether its change's reply can be updated"
 _NO_REFUSAL_HOOK = "#439: a change type cannot yet ask a change of its own when its check refuses at run"
 
 
@@ -2196,7 +2195,6 @@ def _hooked(change_type: Any, hook: Any) -> Any:
     return dataclasses.replace(change_type, on_refused=hook)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_REPLY_UPDATABLE)
 async def test_a_step_reads_whether_its_change_s_reply_can_still_be_updated(env):
     """A member's change held and acknowledged under fourteen minutes ago can still have its reply
     updated; one fourteen minutes on, a bot's change, and a change carried over a restart cannot."""
