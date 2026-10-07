@@ -104,7 +104,9 @@ league data made those writes stall everything else the bot was doing.
 
 Both files matter. `bot.db` alone is **not** a complete backup: restoring it without
 `scheduler.db` leaves a season whose pending weather phases, RSVP notices and result
-submissions will never fire, and only reviewing and approving again rebuilds them.
+submissions will never fire. A season under way cannot be approved again, and no command rebuilds
+its scheduled work wholesale: `/round amend` arms one round's work again when it moves that round,
+and nothing else does.
 
 The databases run in WAL mode, which means recent changes may sit in a `bot.db-wal` file
 beside the database. **Copying `bot.db` on its own while the bot is running can therefore
@@ -690,13 +692,17 @@ Pressing it is acknowledged at once, naming its first job, and the reply is upda
 
 **The review is deleted once Approve is pressed and the approval taken in hand** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. An approval that is then refused when its turn comes, or discarded by a league admin, leaves the season in placements and the review gone: run `/season placements-review` again. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
 
-**Once committed, the approval stands, even where something after it cannot be done.** A grant or a post that fails stops the queue until it is retried or a league admin discards it, and your confirmation lists each one discarded, under **Not everything could be done**:
+**Once committed, the approval stands, even where something after it cannot be done.** Any job after the save that fails — the arming, a grant or a post among them — stops the queue until it is retried or a league admin discards it, and your confirmation lists each one discarded, under **Not everything could be done**:
 
 - timed work that was not armed, first of all — no command arms it again, so no round will open its results submission and no forecast or check-in call will be posted;
+- the setup the bot held in memory, where it could not be let go of — `/round amend` may refuse this season until the bot restarts;
 - a driver the bot could not give their roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
-- a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar);
+- the notice that the season's posts were being made, where it could not be posted;
 - a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
-- opening standings and attendance sheets that were not posted — no command posts them again, and each round's results and attendance post them as usual.
+- a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar);
+- opening standings and attendance sheets that were not posted — no command posts them again, and each round's results and attendance post them as usual;
+- part of a division's opening standings left standing when the job stopped, naming the channel and the message — delete it by hand;
+- that notice, where it could not be deleted, with its link — delete it by hand.
 
 The same list is added to the approval's line in the log channel. A driver who has left the server is simply passed over.
 
