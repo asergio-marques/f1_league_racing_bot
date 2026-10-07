@@ -141,10 +141,14 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
     areas: dict[str, str] = {}
     try:
         async with get_connection(bot.db_path) as db:
+            # The stage as well as the status: confirming a configuration, or mid-season
+            # placements, moves the stage alone, and a review of the stage left behind no
+            # longer describes the season (#439). An approval's own review, check and
+            # re-judgement all read it in Placements, so it never moves between them.
             areas["season"] = _digest(
                 await _rows(
                     db,
-                    "SELECT start_date, status, season_number, game_edition "
+                    "SELECT start_date, status, stage, season_number, game_edition "
                     "FROM seasons WHERE id = ?",
                     season_id,
                 )

@@ -442,11 +442,6 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path):
     assert await _prompt_rows(view) == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439 M2: the fingerprint's season area reads the status and not the stage, so a "
-    "review whose season has since been confirmed is not seen as changed and stands",
-)
 async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(tmp_path):
     """Two configuration reviews of one season stand; the newer is confirmed, and Confirm is
     then pressed on the older. The season has moved on since the older was posted, so its
