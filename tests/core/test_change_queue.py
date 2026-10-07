@@ -2459,16 +2459,6 @@ async def test_a_refusal_hook_that_raises_stops_the_queue_at_the_change_and_a_di
 # of is told in the review's channel, a Discard of the unstarted approval included)
 # ---------------------------------------------------------------------------
 
-#: The hook is unbuilt. It is named here by analogy with the refusal hook (`ChangeType.on_refused`,
-#: plan 2.1b): `ChangeType.on_discarded`, reading what the refusal hook reads where it applies (the
-#: payload, the member, the request, and whether the reply can still be updated) and returning the
-#: follow-ons to ask. The name is these tests', not the plan's.
-_NO_DISCARD_HOOK = (
-    "#439: the queue has no discard hook (`ChangeType.on_discarded`, named by analogy with "
-    "`on_refused`) asking a change of its own when a member's change is discarded before it starts"
-)
-
-
 def _discard_hooked(change_type: Any, hook: Any) -> Any:
     """*change_type* with *hook* as its discard hook, `ChangeType.on_discarded` (named by analogy
     with the refusal hook, `on_refused`)."""
@@ -2500,7 +2490,6 @@ def _discard_lines(lines: list[str]) -> int:
     return sum("| Discard job #" in line and "| Discarded" in line for line in lines)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
 async def test_a_discard_hook_asks_its_follow_ons_in_the_discard_s_own_save(env):
     """A member's change stopped at its check before it started, which a league admin discards,
     whose type's discard hook (`on_discarded`, named by analogy with `on_refused`) returns a
@@ -2560,7 +2549,6 @@ async def test_a_discard_hook_asks_its_follow_ons_in_the_discard_s_own_save(env)
     assert _discard_lines(await _lines(env)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
 async def test_the_discard_hook_is_told_whether_the_reply_can_still_be_updated(env):
     """Discarded before it started: held and fresh, the reply can be updated; fourteen minutes
     on, or after a restart, it cannot. The hook is `on_discarded`, named by analogy with
@@ -2595,7 +2583,6 @@ async def test_the_discard_hook_is_told_whether_the_reply_can_still_be_updated(e
     assert await _states(env) == ["DISCARDED", "DISCARDED", "DISCARDED"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
 async def test_the_discard_hook_is_never_asked_for_a_bot_change_or_a_change_that_had_started(env):
     """A bot's change stopped at its check, whether its check raised or refused, and a member's
     change that had started and stopped at a job of its own: each discarded, and the hook
@@ -2641,7 +2628,6 @@ async def test_the_discard_hook_is_never_asked_for_a_bot_change_or_a_change_that
     assert asked == [4]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
 async def test_a_change_type_without_a_discard_hook_is_discarded_as_before(env):
     """A change type declares no discard hook (`on_discarded`, named by analogy with
     `on_refused`) unless it is given one; a member's change of it discarded before it started ends
@@ -2669,7 +2655,6 @@ async def test_a_change_type_without_a_discard_hook_is_discarded_as_before(env):
     assert ran == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_DISCARD_HOOK)
 async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_without_follow_ons(
     env, caplog,
 ):
