@@ -29,95 +29,135 @@ from leaguebot.core.utils.league_bot import LeagueBot
 log = logging.getLogger(__name__)
 
 
+async def _opening_round(db_path: str, division_id: int):
+    """The division's first round, read as the posting runs, or None where it has none.
+
+    The sheets are drawn against it: not because they stand after it, they stand after nothing,
+    but because the grid of rounds down the side of both is read from the season's calendar and
+    the heading context every posting resolves is keyed by a round. Every cell in that grid is
+    empty, which is exactly what an opening sheet should show. Approval refuses a division with no
+    rounds, so None cannot normally happen.
+    """
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        return await (
+            await db.execute(
+                "SELECT id, round_number, track_name FROM rounds WHERE division_id = ? "
+                "ORDER BY round_number LIMIT 1",
+                (division_id,),
+            )
+        ).fetchone()
+
+
+async def post_opening_standings(
+    bot: LeagueBot, guild, db_path: str, division_id: int, *, as_text: bool = False
+) -> None:
+    """Post one division's opening standings, both championships, raising where it cannot.
+
+    **The standings channel is read here, from `division_results_config`,** where
+    the results module's own settings keep it, as the posting runs. The approval used to look for
+    it on a division read that never carries it, so no opening standings were ever posted and nothing
+    said so. A division never given a channel posts nothing; one given a channel the guild no
+    longer holds raises `StepFailedOnDiscord`, for the change queue to stop on. No message id is
+    recorded (results specification: the opening classification is not kept). *as_text* leaves the
+    graphic out, which is how a job retries (Constitution XIV rule 8).
+    """
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.image.services.image_results_post import _driver_names
+    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.results_post_service import _get_show_reserves, produce_standings
+
+    opener = await _opening_round(db_path, division_id)
+    if opener is None:
+        return
+    async with get_connection(db_path) as db:
+        config = await (
+            await db.execute(
+                "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
+                (division_id,),
+            )
+        ).fetchone()
+    channel_id = config["standings_channel_id"] if config is not None else None
+    if not channel_id:
+        return
+    channel = guild.get_channel(int(channel_id))
+    if channel is None:
+        raise StepFailedOnDiscord(f"the standings channel (id {channel_id}) is not in the server")
+
+    # Twice, deliberately. The order is taken on the name the sheet will actually draw, and the
+    # names are resolved from Discord by user id, so the roster has to be known before it can be
+    # ordered. The first pass is read only for who is in it; the second is the one that counts.
+    roster = await standings_service.opening_driver_standings(db_path, division_id)
+    names = await _driver_names(
+        bot, guild, [snapshot.driver_user_id for snapshot in roster], division_id=division_id
+    )
+    driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
+    team_snaps = await standings_service.opening_team_standings(db_path, division_id)
+    if not driver_snaps:
+        return
+    await produce_standings(
+        db_path,
+        division_id,
+        opener["id"],
+        opener["round_number"],
+        opener["track_name"] or "",
+        channel,
+        driver_snaps,
+        team_snaps,
+        guild,
+        await _get_show_reserves(db_path, division_id),
+        "",
+        bot=None if as_text else bot,
+        occasion=ClassificationOccasion.SEASON_OPENING,
+    )
+
+
+async def post_opening_sheet(
+    bot: LeagueBot, guild, db_path: str, division_id: int, *, as_text: bool = False
+) -> None:
+    """Post one division's opening attendance sheet, raising where it cannot be posted.
+
+    Attendance's own posting, asked to raise (`raise_on_failure`): it saves its own message id,
+    posts nothing for a division never given a channel and raises for one given a channel the
+    guild no longer holds. *as_text* leaves the graphic out, which is how a job retries.
+    """
+    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
+
+    opener = await _opening_round(db_path, division_id)
+    if opener is None:
+        return
+    await post_attendance_sheet(
+        bot,
+        guild,
+        db_path,
+        opener["id"],
+        division_id,
+        occasion=ClassificationOccasion.SEASON_OPENING,
+        raise_on_failure=True,
+        as_text=as_text,
+    )
+
+
 async def post_opening_classifications(
     bot: LeagueBot, guild, db_path: str, divisions, div_rounds
 ) -> list[str]:
-    """Post every division's opening standings and attendance sheet.
+    """Post every division's opening standings and attendance sheet, collecting what failed.
 
-    *div_rounds* maps a division id to its rounds, as ``/season placements-review`` already assembled
-    them. The division's **first** round is what the sheets are drawn against: not because
-    they stand after it — they stand after nothing — but because the grid of rounds down the
-    side of both sheets is read from the season's calendar, and because the heading context
-    every posting resolves is keyed by a round. Every cell in that grid is empty, which is
-    exactly what an opening sheet should show.
+    Kept until the approval's own jobs replace its one caller: each division goes through the two
+    per-division functions above, one division never stopping another.
     """
-    from leaguebot.results.services import standings_service
-    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
-    from leaguebot.image.services.image_results_post import _driver_names
-    from leaguebot.results.services.results_post_service import _get_show_reserves, post_standings
-
     problems: list[str] = []
     if bot is None or guild is None:
         return problems
-
     for division in divisions:
-        rounds = div_rounds.get(division.id) or []
-        if not rounds:
-            # Approval refuses a division with no rounds, so this cannot normally happen.
-            continue
-        opener = rounds[0]
-
-        try:
-            # Twice, deliberately. The order is taken on the name the sheet will actually
-            # draw, and the names are resolved from Discord by user id — so the roster has
-            # to be known before it can be ordered. The first pass is read only for who is
-            # in it; the second is the one that counts.
-            roster = await standings_service.opening_driver_standings(db_path, division.id)
-            names = await _driver_names(
-                bot,
-                guild,
-                [snapshot.driver_user_id for snapshot in roster],
-                division_id=division.id,
-            )
-            driver_snaps = await standings_service.opening_driver_standings(
-                db_path, division.id, names
-            )
-            team_snaps = await standings_service.opening_team_standings(
-                db_path, division.id
-            )
-        except Exception as exc:  # noqa: BLE001 — one division never stops the next
-            log.exception("opening classification: %s could not be resolved", division.name)
-            problems.append(f"{division.name}: {exc}")
-            continue
-
-        channel_id = getattr(division, "standings_channel_id", None)
-        channel = guild.get_channel(int(channel_id)) if channel_id else None
-        if channel is not None and driver_snaps:
+        for what, post in (("standings", post_opening_standings), ("attendance", post_opening_sheet)):
             try:
-                await post_standings(
-                    db_path,
-                    division.id,
-                    opener.id,
-                    opener.round_number,
-                    getattr(opener, "track_name", None) or "",
-                    channel,
-                    driver_snaps,
-                    team_snaps,
-                    guild,
-                    await _get_show_reserves(db_path, division.id),
-                    "",
-                    bot=bot,
-                    occasion=ClassificationOccasion.SEASON_OPENING,
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.exception(
-                    "opening classification: %s standings failed", division.name
-                )
-                problems.append(f"{division.name} standings: {exc}")
-
-        try:
-            await post_attendance_sheet(
-                bot,
-                guild,
-                db_path,
-                opener.id,
-                division.id,
-                occasion=ClassificationOccasion.SEASON_OPENING,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.exception("opening classification: %s attendance failed", division.name)
-            problems.append(f"{division.name} attendance: {exc}")
-
+                await post(bot, guild, db_path, division.id)
+            except Exception as exc:  # noqa: BLE001 — one division never stops the next
+                log.exception("opening classification: %s %s failed", division.name, what)
+                problems.append(f"{division.name} {what}: {exc}")
     return problems
 
 

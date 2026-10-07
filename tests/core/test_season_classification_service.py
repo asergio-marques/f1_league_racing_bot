@@ -119,8 +119,6 @@ def _patched(standings=None, attendance=None):
 # `/division results-channel` keeps it; the approval used to look for it on a division read
 # that never carries it, so no opening standings were ever posted.
 
-_ONE_DIVISION = "#439: the opening classification is not yet posted one division at a time"
-
 
 def _opening_posts(standings=None, attendance=None):
     """The opening standings, through whichever of results' two posting functions it uses,
@@ -144,7 +142,6 @@ async def _first_round_id(path, division_id: int) -> int:
         return (await cursor.fetchone())["id"]
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_posts_both_sheets_for_every_division(db_path):
     _season_id, division_ids = await _seed(db_path, divisions=("Div A", "Div B"))
     standings, attendance = AsyncMock(return_value=[]), AsyncMock()
@@ -167,7 +164,6 @@ async def test_the_opening_posts_both_sheets_for_every_division(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_is_drawn_against_the_divisions_first_round(db_path):
     """Not because it stands after it — the grid of rounds is read from the calendar."""
     _season_id, division_ids = await _seed(db_path)
@@ -194,7 +190,6 @@ async def test_the_opening_is_drawn_against_the_divisions_first_round(db_path):
     assert attendance.await_args.args[3] == opener
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_carries_no_lifecycle_label(db_path):
     _season_id, division_ids = await _seed(db_path)
     standings = AsyncMock(return_value=[])
@@ -208,7 +203,6 @@ async def test_the_opening_carries_no_lifecycle_label(db_path):
     assert standings.await_args.args[10] == ""
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_a_division_with_no_rounds_is_skipped(db_path):
     _season_id, division_ids = await _seed(db_path)
     async with get_connection(db_path) as db:
@@ -229,7 +223,6 @@ async def test_a_division_with_no_rounds_is_skipped(db_path):
     assert attendance.await_count == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_standings_post_reads_the_division_s_standings_channel(db_path):
     """Div A's standings channel (900) is set with `/division results-channel`, in the results
     module's own settings: the opening classification is posted there, both championships."""
@@ -255,7 +248,6 @@ async def test_the_opening_standings_post_reads_the_division_s_standings_channel
     assert standings.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for
     the queue to stop on, rather than passing over the division in silence."""
@@ -275,7 +267,6 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     standings.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_DIVISION)
 async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     """Discord refuses Div A's opening attendance sheet: the sheet is asked for with
     `raise_on_failure`, and what it raises reaches the job, for the queue to stop on."""
