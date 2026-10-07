@@ -1057,7 +1057,9 @@ async def _gated_view(tmp_path, *, round_in_days: float = 30.0, test_mode: bool 
     cog = SeasonCog.__new__(SeasonCog)
     bot = cog.bot = MagicMock()
     bot.db_path = db_path
-    bot.change_queue.ask = AsyncMock(return_value=None)
+    # The queue's ask, as it answers an approval it saved: the change's id. A refused ask
+    # answers None, which a test says where it means one.
+    bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router.post_log = AsyncMock()
     bot.config_service.get_server_config = AsyncMock(
         return_value=ServerConfig(
@@ -1225,6 +1227,62 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     assert view.is_finished()
     assert await _prompt_rows(view) == 0
     assert cog.bot.output_router.post_log.await_count == 1
+    assert "your review has expired" in message.channel.send.await_args.args[0]
+
+
+_REFUSED_ASK_CLEARS = (
+    "#439 M1: _do_approve ignores the change queue's ask, so a press the queue's check "
+    "refuses still deletes the review"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_REFUSED_ASK_CLEARS)
+async def test_a_press_the_queue_refuses_leaves_the_review_standing(tmp_path):
+    """Every gate at the press passes, and the queue's own check of the approval refuses it (a
+    date gone by while the backup question stood open, say): nothing is saved, and the review
+    stands, to be pressed again."""
+    view, cog, message, report = await _gated_view(tmp_path)
+    cog.bot.change_queue.ask = AsyncMock(return_value=None)
+
+    await _ApproveView.approve(view, _gated_press(), MagicMock())
+
+    cog.bot.change_queue.ask.assert_awaited_once()
+    _assert_standing(view, message, report)
+    message.channel.send.assert_not_awaited()
+    assert await _prompt_rows(view) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=_REFUSED_ASK_CLEARS)
+async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review(
+    tmp_path, monkeypatch
+):
+    """The season changes after the button's own comparison and before the queue's check, which
+    refuses it as changed: the review no longer describes the season, so it ends as an expired
+    one does, the expiry notice posted (the core specification's "Confirming placements")."""
+    import leaguebot.core.services.season_fingerprint_service as _sfs
+    from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
+
+    view, cog, message, report = await _gated_view(tmp_path)
+    view._fingerprint = SeasonFingerprint({"season": "abc"})
+    taken = []
+
+    async def _fingerprint(*_args, **_kwargs):
+        # As the review described it at the button's comparison, changed at any later look.
+        taken.append(1)
+        return SeasonFingerprint({"season": "abc" if len(taken) == 1 else "def"})
+
+    monkeypatch.setattr(_sfs, "take_fingerprint", _fingerprint)
+    cog.bot.change_queue.ask = AsyncMock(return_value=None)
+
+    await _ApproveView.approve(view, _gated_press(), MagicMock())
+
+    cog.bot.change_queue.ask.assert_awaited_once()
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+    assert "your review has expired" in message.channel.send.await_args.args[0]
+    assert view.is_finished()
+    assert await _prompt_rows(view) == 0
 
 
 async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path):
