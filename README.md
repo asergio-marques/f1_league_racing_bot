@@ -692,7 +692,7 @@ Pressing it is acknowledged at once, naming its first job, and the reply is upda
 
 **Once committed, the approval stands, even where something after it cannot be done.** A grant or a post that fails stops the queue until it is retried or a league admin discards it, and your confirmation lists each one discarded, under **Not everything could be done**:
 
-- a timed work that was not armed, first of all — no command arms it again, so no round will open its results submission and no forecast or check-in call will be posted;
+- timed work that was not armed, first of all — no command arms it again, so no round will open its results submission and no forecast or check-in call will be posted;
 - a driver the bot could not give their roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
 - a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar);
 - a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
