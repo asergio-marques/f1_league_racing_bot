@@ -64,8 +64,6 @@ from tests.support.season_league import (
 )
 from tests.support.undecorate import undecorate
 
-_ON_THE_QUEUE = "#439: ✅ Approve still approves the season on the spot, not through the change queue"
-_LATE_REFUSAL = "#439: a refusal as the approval runs is not yet told in the review's channel"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
