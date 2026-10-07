@@ -688,7 +688,10 @@ to it would switch off the one failure path for every command.
    never does, as the core specification's "When a command fails" allows an amendment alone. The change queue's worker is a failure path too, and the
    fallback where a stop cannot be recorded: its catch-all (`ChangeQueue._work`) puts the error
    in the host's log, the worker pauses and looks again, and the job runs again, so that its
-   failure is recorded then;
+   failure is recorded then. So is the hook a change type may give for a Discard of a change
+   before it started (`ChangeQueue._discard_follow_ons`): its catch-all puts the error in the
+   host's log and asks no follow-on, because a Discard is the queue's last way past a stop and a
+   hook that raises must not hold it;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops the queue until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
