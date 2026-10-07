@@ -22,7 +22,9 @@ league's server.
 **Everything the approval writes is one job** (`apply`, architecture.md, "All or nothing in one
 step"): every round's sessions, the points snapshot, the commitment of the placements and the move
 to Ongoing are one save, reading nothing but the connection it is handed, so a fault leaves the
-season in Placements with nothing written and the queue stops at it to retry. **Everything else
+season in Placements with nothing written and the queue stops at it to retry. A retry judges
+the approval again before it saves (`apply`, `judge`), the setup being open meanwhile.
+**Everything else
 follows the save as a job of its own**, each of which stops the queue where it fails: letting go of
 the setup held in memory, arming the timed work (after the save, so that a stop before it leaves
 no job armed against a season still in Placements), each driver's roles, the notice that the
@@ -43,6 +45,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     AuditRecord,
+    ChangeOrigin,
     FollowOn,
     GuildUnavailable,
     PlannedStep,
@@ -50,6 +53,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    VerdictKind,
 )
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services import approval_checks, season_classification_service
@@ -109,6 +113,7 @@ STAGE_REFUSAL = "⛔ The season is no longer in placements. **Nothing has been a
 
 #: The job names, as the stop notice, the tests and `StepView` know them.
 APPLY = "apply"
+JUDGE = "judge"
 FORGET_SETUP = "forget_setup"
 ARM = "arm"
 GRANT_ROLES = "grant_roles"
@@ -302,7 +307,35 @@ def season_approval_change(
 
     # ── The jobs ────────────────────────────────────────────────────────────────
 
+    async def judge(ctx: StepContext) -> StepResult:
+        """Judge the approval again, as `check` does, and say whether it still stands."""
+        verdict = await check(
+            CheckContext(ctx.payload, ctx.bot, ctx.db_path, ChangeOrigin.MEMBER, ctx.change_id)
+        )
+        if verdict.kind is VerdictKind.GO:
+            return StepResult(result={"judged": True})
+        return StepResult(result={"judged": False, "refused": verdict.reply})
+
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The one save; see the module.
+
+        The queue judges the approval (`check`) only before it starts, and the save reads nothing
+        but its own connection, so a save stopped and tried again would otherwise commit the
+        season as it then stands, a round moved or a window passed while it was stopped included.
+        A try after a failure therefore saves nothing: it plans `judge`, then this save once more,
+        and the new save reads the judgement, refusing where it found the approval no longer
+        stands. Each retry of the save is judged afresh, since each is a first try of a new job.
+        """
+        if ctx.tries > 0:
+            return StepResult(
+                result={"rejudge": True}, then=(PlannedStep(JUDGE), PlannedStep(APPLY))
+            )
+        judged = next(
+            (view for view in reversed(ctx.steps) if view.name == JUDGE and view.done), None
+        )
+        refusal = (judged.result or {}).get("refused") if judged is not None else None
+        if refusal:
+            return StepResult(result={"refused": str(refusal)})
         season_id = int(ctx.payload["season_id"])
         season_number = int(ctx.payload["season_number"])
         cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
@@ -609,6 +642,9 @@ def season_approval_change(
     async def describe_apply(ctx: StepContext) -> str:
         return f"approving season {ctx.payload['season_number']}'s placements"
 
+    async def describe_judge(ctx: StepContext) -> str:
+        return f"judging again whether season {ctx.payload['season_number']} can still be approved"
+
     async def describe_forget(_ctx: StepContext) -> str:
         return "letting go of the setup the bot holds in memory"
 
@@ -714,6 +750,7 @@ def season_approval_change(
 
     steps: dict[str, Step] = {
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
+        JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
         FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget),
         ARM: Step(ARM, StepKind.ACT, arm, describe=describe_arm),
         GRANT_ROLES: Step(GRANT_ROLES, StepKind.ACT, grant_roles, describe=describe_grant),
@@ -810,7 +847,8 @@ async def _guild(bot: Any) -> discord.Guild:
 
 
 def _view(ctx: OutcomeContext, name: str) -> StepView | None:
-    return next((view for view in ctx.steps if view.name == name), None)
+    """The last job named *name*: the save, tried again, is planned afresh, and the last stands."""
+    return next((view for view in reversed(ctx.steps) if view.name == name), None)
 
 
 def _discarded(view: StepView) -> bool:
