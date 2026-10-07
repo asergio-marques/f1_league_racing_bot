@@ -1344,6 +1344,39 @@ async def test_a_retried_save_with_nothing_changed_while_it_was_stopped_approves
     assert await _stopped_at(league) is None
 
 
+async def test_a_points_configuration_edited_out_of_order_while_the_approval_waits_is_refused_at_run(
+    tmp_path, monkeypatch,
+):
+    """Results on; the approval waits behind a stopped blocker while the server entries of
+    `Standard`, the configuration the season scores on, are edited so P2 outscores P1. Released,
+    the approval is refused as it comes up to run, naming the points, and nothing of it is
+    written: the misordered points are never copied onto the season (#439, code-1-3)."""
+    from tests.support.review_league import block_queue
+
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    holder = await block_queue(league)
+    press = await _pressed(league)
+    assert (await _approval(league))["state"] == "QUEUED"
+    await league.write(
+        "UPDATE points_config_entries SET points = 30 WHERE position = 2 AND config_id = "
+        "(SELECT id FROM points_config_store WHERE config_name = 'Standard')"
+    )
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert _REFUSALS["a round edited"][2] in reply(press)
+    assert "• the points configurations" in reply(press)
+    assert (await _approval(league))["state"] == "REFUSED"
+    assert len([line for line in _log_lines(league) if "⛔" in line and "Approve" in line]) == 1
+    assert (await league.season())["stage"] == "PLACEMENTS"
+    assert await _sessions(league) == {}
+    assert await _committed(league) == 0
+    assert await _points_copied(league) == []
+    assert league.armed == [] and league.granted == {}
+    assert await _stopped_at(league) is None
+
+
 # ── The public notice ───────────────────────────────────────────────────────────────
 
 
