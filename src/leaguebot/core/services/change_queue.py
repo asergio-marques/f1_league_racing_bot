@@ -75,7 +75,10 @@ writes goes through the `OutputRouter` it was handed, never one looked up on the
 not use the bot to look up other services).
 
 **The check runs twice**: when the change is asked for, so that a member is refused at once, and
-when it starts, since what it checked may have changed in between.
+when it starts, since what it checked may have changed in between. A change type may ask a change
+of its own where its check refuses a member's change as it starts (`ChangeType.on_refused`), saved
+with the refusal: the season's confirmation tells the channel it was read in of a refusal its
+member can no longer be told of.
 
 **What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
 payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included
@@ -271,6 +274,20 @@ class Step:
 
 
 @dataclass(frozen=True)
+class RefusedContext:
+    """What a change type's `on_refused` reads: a member's change its check refused as it came up
+    to run. *reply* is the refusal as the member is told it and *reason* the verdict's own;
+    *reply_updatable* is whether the member can still be told it (`StepContext.reply_updatable`)."""
+
+    payload: dict[str, Any]
+    reply: str
+    reason: str
+    actor_id: int | None
+    what: str
+    reply_updatable: bool
+
+
+@dataclass(frozen=True)
 class ChangeType:
     """A kind of change: what it does, how it is checked and keyed, and what it tells the member.
 
@@ -288,6 +305,7 @@ class ChangeType:
     doing: Callable[[dict[str, Any]], str]
     outcome: Callable[[OutcomeContext], str]
     repeatable: bool = False
+    on_refused: Callable[[RefusedContext], tuple[FollowOn, ...]] | None = None
 
 
 class ChangeRefused(Exception):
@@ -905,9 +923,30 @@ class ChangeQueue:
         updated with the refusal's reply, and the line is saved with the mark.
 
         Where the check had stopped the queue on the change, the refusal clears the stop: a line
-        says so, saved with the refusal, and the stop notice loses its buttons.
+        says so, saved with the refusal, and the stop notice loses its buttons. The change type's
+        `on_refused` is asked first, and the follow-ons it returns are saved with the refusal, so
+        that the two commit together or not at all.
         """
         reply = _refusal_text(verdict)
+        follow_ons: tuple[FollowOn, ...] = ()
+        on_refused = self._types[change["kind"]].on_refused
+        if on_refused is not None:
+            try:
+                follow_ons = on_refused(
+                    RefusedContext(
+                        json.loads(change["payload"]),
+                        reply,
+                        verdict.reason,
+                        change["actor_id"],
+                        change["what"],
+                        self._held_and_updatable(change) is not None,
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 — a hook that raises stops the queue
+                log.log(self._failure_level(pending), "the refusal hook of %s raised (change %s)",
+                        change["what"], change["id"], exc_info=error)
+                await self._stop(change, pending, error)
+                return
         named = self._named(change)
         lines = [
             refusal_line(
@@ -919,7 +958,7 @@ class ChangeQueue:
         )
         if cleared is not None:
             lines.append(cleared)
-        ids = await self._end(change, ChangeState.REFUSED, *lines)
+        ids = await self._end(change, ChangeState.REFUSED, *lines, follow_ons=follow_ons)
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
         await self._strip_stop(pending)
         await self._update_reply(change, reply)
@@ -964,10 +1003,14 @@ class ChangeQueue:
             )
 
     async def _end(
-        self, change: aiosqlite.Row, state: ChangeState, *lines: str
+        self,
+        change: aiosqlite.Row,
+        state: ChangeState,
+        *lines: str,
+        follow_ons: tuple[FollowOn, ...] = (),
     ) -> list[int]:
-        """Mark the change *state*, with each of *lines* saved on the retry queue in the same
-        save. Returns the lines' ids, for delivery once saved. A change removed under the
+        """Mark the change *state*, with each of *lines* saved on the retry queue and each of
+        *follow_ons* asked for, in the same save. Returns the lines' ids, for delivery once saved. A change removed under the
         worker is left, and its lines unwritten."""
         ids: list[int] = []
         async with get_connection(self._db_path) as db:
@@ -981,6 +1024,8 @@ class ChangeQueue:
                         line_id = await self._router.queue_log_on(db, line)
                         if line_id is not None:
                             ids.append(line_id)
+                    for follow_on in follow_ons:
+                        await self._ask_on(db, change, follow_on)
                 await db.commit()
             except BaseException:
                 await db.rollback()

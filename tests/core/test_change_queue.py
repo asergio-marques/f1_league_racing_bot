@@ -2187,7 +2187,6 @@ async def test_the_queue_gives_its_clock_as_now(env):
 # longer be told)
 # ---------------------------------------------------------------------------
 
-_NO_REFUSAL_HOOK = "#439: a change type cannot yet ask a change of its own when its check refuses at run"
 
 
 def _hooked(change_type: Any, hook: Any) -> Any:
@@ -2224,7 +2223,6 @@ async def test_a_step_reads_whether_its_change_s_reply_can_still_be_updated(env)
     assert seen == [True, False, False, False]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
 async def test_a_refusal_hook_asks_its_follow_ons_in_the_refusal_s_own_save(env):
     """A member's change refused as it starts, whose type's refusal hook returns a follow-on: the
     change is refused with its line, and the follow-on is queued as the bot's for the same member,
@@ -2286,7 +2284,6 @@ async def test_a_refusal_hook_asks_its_follow_ons_in_the_refusal_s_own_save(env)
     assert "\n".join(await _lines(env)).count(f"⛔ {WHAT} refused for {NAMED}") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
 async def test_the_refusal_hook_is_told_whether_the_reply_can_still_be_updated(env):
     """Refused as it starts: held and fresh, the reply can be updated; fourteen minutes on, or after
     a restart, it cannot."""
@@ -2324,7 +2321,6 @@ async def test_the_refusal_hook_is_told_whether_the_reply_can_still_be_updated(e
     assert await _states(env) == ["REFUSED", "REFUSED", "REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
 async def test_the_refusal_hook_is_never_asked_at_the_press_for_a_bot_change_or_for_a_stop(env):
     """Refused when it is asked for, a bot's change refused (stopping the queue) or no longer due
     (dropped), and a member's change whose check raises: the hook is asked for none of them. It is
@@ -2373,7 +2369,6 @@ async def test_the_refusal_hook_is_never_asked_at_the_press_for_a_bot_change_or_
     assert asked == [5]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
 async def test_a_change_type_without_a_refusal_hook_is_refused_as_before(env):
     """A change type declares no refusal hook unless it is given one; refused as it starts, its
     member's change is refused as it always was, the reply updated where it can be, and asks no
@@ -2401,7 +2396,6 @@ async def test_a_change_type_without_a_refusal_hook_is_refused_as_before(env):
     assert ran == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_REFUSAL_HOOK)
 async def test_a_refusal_hook_that_raises_stops_the_queue_at_the_change_and_a_discard_drops_it_whole(env):
     """A member's change refused as it starts whose hook raises: the queue stops at the change's
     first job, as for a check that raises, its notice naming the change and the kind of fault;
