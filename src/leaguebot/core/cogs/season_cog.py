@@ -44,6 +44,10 @@ from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, cancellation_notice_service
+from leaguebot.core.services.season_approval_change import (
+    ungranted_line as _ungranted_line,
+    unposted_lineup_line as _unposted_lineup_line,
+)
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
 from leaguebot.results.services import season_points_service
 import leaguebot.core.services.track_service as track_service
@@ -484,31 +488,6 @@ REVIEW_IMAGE_FAULT = "FAULT"
 #: The key a setup recovered after a restart is held under. No user began it in this
 #: process, and no Discord id is 0.
 _RECOVERED = 0
-
-
-def _ungranted_line(user_ids: list[str]) -> str:
-    """The drivers a placements confirmation could not give their roles (#387).
-
-    No command grants them again — at the mid-season confirmation, confirming again finds
-    nothing left to commit — so the manager grants them by hand.
-    """
-    who = ", ".join(f"<@{user_id}>" for user_id in user_ids)
-    return (
-        f"{who} — their roles could not be granted. Give them their division's and team's "
-        f"roles by hand."
-    )
-
-
-def _unposted_lineup_line(division_name: str) -> str:
-    """A division whose lineup a placements confirmation could not post (#387).
-
-    No command posts a lineup again, so the line says when it will be: every change to the
-    division's drivers — assign, unassign, release, move, sack — posts it anew.
-    """
-    return (
-        f"**{division_name}** — its lineup could not be posted. No command posts it again; "
-        f"it is posted with the next change to its drivers."
-    )
 
 
 async def _confirm_privately(

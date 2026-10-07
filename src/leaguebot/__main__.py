@@ -115,6 +115,15 @@ async def read_approval_windows(
     return attendance, weather
 
 
+def _forget_setup(bot: LeagueBot) -> None:
+    """Let go of the setup the season cog holds in memory, as `clear_in_memory_state` does."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    cog = bot.get_cog("SeasonCog")
+    if isinstance(cog, SeasonCog):
+        cog.clear_pending()
+
+
 def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
@@ -126,6 +135,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.season_approval_change import season_approval_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
+    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.points_amendment_change import points_amendment_change
@@ -172,10 +182,15 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         season_approval_change(
             modules=bot.module_service,
+            config=bot.config_service,
+            scheduler=bot.scheduler_service,
+            placement=bot.placement_service,
             windows=lambda: bot.approval_windows(),
             rasteriser_fault=lambda: None
             if converter_available()
             else f"{CONVERTER_NAME} is not installed on this host.",
+            snapshot_points_on=snapshot_configs_to_season_on,
+            forget_setup=lambda: _forget_setup(bot),
             now=lambda: bot.change_queue.now(),
         )
     )

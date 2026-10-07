@@ -70,10 +70,6 @@ _LATE_REFUSAL = "#439: a refusal as the approval runs is not yet told in the rev
 _ARMED_WHATEVER_THE_MODULES = (
     "#439: with weather and results both off, approving a season arms no result submission"
 )
-_OPENING_STANDINGS = (
-    "#439: the opening standings read a standings channel get_divisions never fills, so none is "
-    "posted"
-)
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
@@ -348,7 +344,6 @@ async def test_a_second_approval_from_another_review_is_refused_at_once_without_
     assert len(_confirmed_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_OPENING_STANDINGS)
 async def test_the_opening_standings_are_posted_in_each_division_s_standings_channel(
     tmp_path, monkeypatch,
 ):
@@ -1006,7 +1001,6 @@ async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     assert draw.await_count == 2, "the retry reached for the picture"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):
