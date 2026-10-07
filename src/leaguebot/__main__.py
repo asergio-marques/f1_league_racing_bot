@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import discord
 from discord.ext import commands
@@ -15,6 +15,9 @@ from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 
 load_dotenv()
 
@@ -76,6 +79,40 @@ def create_bot() -> LeagueBot:
     bot.add_listener(_warn_if_serving_several, "on_guild_join")
 
     return bot
+
+
+async def read_approval_windows(
+    bot: LeagueBot,
+) -> "tuple[AttendanceWindows | None, WeatherWindows | None]":
+    """The lead times the enabled modules configure, as `(attendance, weather)`.
+
+    Either is None where that module is off: there is no window to be inside. The builder is
+    where attendance and weather meet core, so the season's approval reads them through
+    `bot.approval_windows`, which is this, and core imports neither module (#439).
+    """
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+
+    attendance = None
+    if await bot.module_service.is_attendance_enabled():
+        att = await bot.attendance_service.get_or_create_config()
+        attendance = AttendanceWindows(
+            notice_days=att.rsvp_notice_days,
+            last_notice_hours=att.rsvp_last_notice_hours,
+            deadline_hours=att.rsvp_deadline_hours,
+        )
+
+    weather = None
+    if await bot.module_service.is_weather_enabled():
+        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
+
+        wx = await get_weather_pipeline_config(bot.db_path)
+        weather = WeatherWindows(
+            phase_1_days=wx.phase_1_days,
+            phase_2_days=wx.phase_2_days,
+            phase_3_hours=wx.phase_3_hours,
+        )
+
+    return attendance, weather
 
 
 def register_change_types(bot: LeagueBot) -> None:
@@ -217,6 +254,7 @@ async def main() -> None:
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
+    bot.approval_windows = lambda: read_approval_windows(bot)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService

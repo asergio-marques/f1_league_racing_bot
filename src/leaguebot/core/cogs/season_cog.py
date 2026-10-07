@@ -1695,31 +1695,11 @@ class SeasonCog(commands.Cog):
 
         Read once rather than per division: the date faults are judged a division at a time,
         and a league with eight of them would otherwise pay eight times over for two configs
-        that cannot have changed in between.
+        that cannot have changed in between. The reader is the bot's (`LeagueBot.approval_windows`,
+        set by the builder, where the modules meet), so that the change queue's check of the
+        approval reads the same windows without a cog (#439).
         """
-        from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
-
-        attendance = None
-        if await self.bot.module_service.is_attendance_enabled():
-            _att = await self.bot.attendance_service.get_or_create_config()
-            attendance = AttendanceWindows(
-                notice_days=_att.rsvp_notice_days,
-                last_notice_hours=_att.rsvp_last_notice_hours,
-                deadline_hours=_att.rsvp_deadline_hours,
-            )
-
-        weather = None
-        if await self.bot.module_service.is_weather_enabled():
-            from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-            _wx = await get_weather_pipeline_config(self.bot.db_path)
-            weather = WeatherWindows(
-                phase_1_days=_wx.phase_1_days,
-                phase_2_days=_wx.phase_2_days,
-                phase_3_hours=_wx.phase_3_hours,
-            )
-
-        return attendance, weather
+        return await self.bot.approval_windows()
 
     def _calendar_fault_lines(self, fault) -> list[str]:
         """One division's date faults, as the error lines posted with its calendar.

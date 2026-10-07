@@ -30,6 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.__main__ import read_approval_windows
 from leaguebot.core.cogs.season_cog import SeasonCog
 
 SERVER_ID = 11808
@@ -79,6 +80,8 @@ def _make_cog(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
         )
     )
+    # The reader the builder sets on the bot, which the cog's `_approval_windows` now asks.
+    bot.approval_windows = lambda: read_approval_windows(bot)
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     cog._weather_config = weather_config or SimpleNamespace(
