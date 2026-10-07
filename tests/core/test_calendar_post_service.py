@@ -408,16 +408,12 @@ def test_a_round_still_on_is_not_struck_through():
 
 # ── The raising form a job on the change queue calls (#439, slice 4a) ────
 
-_NOT_RAISING = "#439: the calendar posting has no raising form, nor a form posted as text"
-
-
 def _discord_refusal():
     import discord
 
     return discord.HTTPException(MagicMock(status=500, reason="Server Error"), "refused")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RAISING)
 @pytest.mark.parametrize("fault", ["channel gone", "send refused"])
 @pytest.mark.asyncio
 async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, fault):
@@ -447,7 +443,6 @@ async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, 
     partial.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RAISING)
 @pytest.mark.asyncio
 async def test_a_post_as_text_draws_nothing(tmp_path, monkeypatch):
     """A retried post goes as text (Constitution XIV rule 8): with the image module and the
@@ -469,7 +464,6 @@ async def test_a_post_as_text_draws_nothing(tmp_path, monkeypatch):
     assert result.posted_as_image is False
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RAISING)
 @pytest.mark.asyncio
 async def test_the_previous_calendar_is_read_when_it_posts(tmp_path, monkeypatch):
     """The calendar replaced is the one the division holds as the job posts, not the one on a

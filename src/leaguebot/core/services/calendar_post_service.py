@@ -275,8 +275,12 @@ async def replace_calendar_message(
     content: str | None,
     image_path: Path | None,
     previous_message_id: int | None,
+    read_previous: bool = False,
 ) -> int:
     """Post the calendar and delete the message it replaces, **in that order**.
+
+    *read_previous* reads the message to replace from the division once the new one is up,
+    in place of *previous_message_id*, which a caller may hold from before it waited.
 
     *content* is None for a graphic, which carries no message text of its own, and the
     textual calendar otherwise. Discord accepts a message with an attachment and no text;
@@ -306,6 +310,14 @@ async def replace_calendar_message(
             discard_attachment(attachment)
     else:
         posted = await channel.send(content)
+
+    if read_previous:
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute(
+                "SELECT calendar_message_id FROM divisions WHERE id = ?", (division_id,)
+            )
+            held = await cursor.fetchone()
+        previous_message_id = None if held is None else held["calendar_message_id"]
 
     if previous_message_id and int(previous_message_id) != posted.id:
         try:
@@ -337,6 +349,8 @@ async def post_division_calendar(
     *,
     season_number=None,
     commanded: bool = False,
+    raise_on_failure: bool = False,
+    as_text: bool = False,
 ) -> CalendarPosting:
     """Convey one division's calendar, as a graphic where one can be produced.
 
@@ -344,11 +358,31 @@ async def post_division_calendar(
     at approval (Constitution XIV.7). An uncommanded posting falls back to the text; a
     commanded one does not — the caller is told what is at fault and nothing is posted, so
     the one person able to fix the template is given the chance.
+
+    *raise_on_failure* is the form a job on the change queue calls (a season's approval; a
+    cancellation's repost after it). A calendar channel that is set and no longer on the
+    server, or a send Discord refuses, raises `StepFailedOnDiscord` from the Discord fault,
+    and nothing goes to the old retry queue: the queue's own stop and retry are the retry.
+    The calendar replaced is read from the division as it posts (`replace_calendar_message`'s
+    *read_previous*), not taken from *division*, which a job may have read before the queue
+    waited, so an approval that waited cannot delete a calendar already gone and leave the
+    newer one standing. A calendar channel
+    never set still returns the posting with its problem, there being nothing to retry.
+
+    *as_text* posts the textual calendar without drawing: the retry of a job whose picture
+    could not be posted goes as text (Constitution XIV, rule 8).
     """
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
     result = CalendarPosting(division_id=division.id)
 
     channel = guild.get_channel(division.calendar_channel_id) if guild else None
     if channel is None:
+        if raise_on_failure and division.calendar_channel_id:
+            raise StepFailedOnDiscord(
+                f"the calendar channel <#{division.calendar_channel_id}> of {division.name} "
+                "is no longer on the server"
+            )
         result.problem = "no calendar channel is configured for this division"
         return result
 
@@ -365,7 +399,7 @@ async def post_division_calendar(
     # removed whichever way this ends — posted, refused to a commanded caller, or lost to
     # a Discord fault that sends the textual calendar to the retry queue instead.
     try:
-        if await image_calendar_wanted(bot):
+        if not as_text and await image_calendar_wanted(bot):
             try:
                 outcome = await render_calendar_image(
                     bot, division, rounds, tracks, season_number=season_number
@@ -398,8 +432,17 @@ async def post_division_calendar(
                 content=content,
                 image_path=image_path,
                 previous_message_id=getattr(division, "calendar_message_id", None),
+                read_previous=raise_on_failure,
             )
         except Exception as exc:  # noqa: BLE001
+            if raise_on_failure:
+                import discord
+
+                if isinstance(exc, discord.HTTPException):
+                    raise StepFailedOnDiscord(
+                        f"the calendar of {division.name} could not be posted: {exc}"
+                    ) from exc
+                raise
             log.exception("calendar: posting failed for division %s", division.id)
             # A Discord fault rather than a generation fault: the *textual* calendar is
             # what is enqueued for retry (FR-020).
