@@ -1771,14 +1771,6 @@ async def test_a_late_refusal_notice_discord_refuses_stops_the_queue_and_a_disca
     assert len(jobs) == 1 and "discarded" in jobs[0]["result"]
 
 
-_REJUDGED_REFUSAL_UNTOLD = (
-    "#439, code-3-3 and product-3-1 (call p8): a retried save refused by its re-judgement after "
-    "the reply expired tells the review's channel only that the season was not approved; it must "
-    "give the refusal's reason"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_REJUDGED_REFUSAL_UNTOLD)
 async def test_a_retried_save_refused_after_the_reply_expired_tells_the_review_s_channel_why(
     tmp_path, monkeypatch,
 ):

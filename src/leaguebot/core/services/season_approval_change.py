@@ -606,11 +606,15 @@ def season_approval_change(
         """Tell the channel the review was read in how the approval ended, where the member's
         reply can no longer be updated: fourteen minutes on, or after a restart."""
         number = ctx.payload["season_number"]
-        text = (
-            channel_approved(ctx.actor_id, number)
-            if _applied(ctx)
-            else channel_not_approved(ctx.actor_id, number)
-        )
+        refused = ((_view(ctx, APPLY) or _EMPTY).result or {}).get("refused")
+        if _applied(ctx):
+            text = channel_approved(ctx.actor_id, number)
+        elif refused:
+            # Refused as the save was tried again, after the reply had gone: the reason is
+            # given, as for a refusal as the approval first came up to run.
+            text = channel_refused(ctx.actor_id, number, str(refused))
+        else:
+            text = channel_not_approved(ctx.actor_id, number)
         await tell_channel(ctx.bot, int(ctx.payload["channel_id"]), text)
         return StepResult(result={"told": True})
 
