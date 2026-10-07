@@ -1383,13 +1383,6 @@ async def test_a_retried_save_with_nothing_changed_while_it_was_stopped_approves
     assert await _stopped_at(league) is None
 
 
-_DISCARDED_REJUDGEMENT = (
-    "#439, code-2-1: a discarded `judge` leaves no refusal, so the fresh `apply` behind it saves "
-    "the season unchecked; the save must read a discarded judgement as a discarded save"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_DISCARDED_REJUDGEMENT)
 async def test_a_discarded_rejudgement_approves_nothing_and_says_to_review_again(
     tmp_path, monkeypatch,
 ):

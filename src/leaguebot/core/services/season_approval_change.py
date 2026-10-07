@@ -324,7 +324,7 @@ def season_approval_change(
         season as it then stands, a round moved or a window passed while it was stopped included.
         A try after a failure therefore saves nothing: it plans `judge`, then this save once more,
         and the new save reads the judgement, refusing where it found the approval no longer
-        stands. Each retry of the save is judged afresh, since each is a first try of a new job.
+        stands, and saving nothing where a league admin discarded the judgement. Each retry of the save is judged afresh, since each is a first try of a new job.
         """
         if ctx.tries > 0:
             return StepResult(
@@ -333,9 +333,13 @@ def season_approval_change(
         judged = next(
             (view for view in reversed(ctx.steps) if view.name == JUDGE and view.done), None
         )
-        refusal = (judged.result or {}).get("refused") if judged is not None else None
-        if refusal:
-            return StepResult(result={"refused": str(refusal)})
+        judgement = (judged.result or {}) if judged is not None else {}
+        if judgement.get("refused"):
+            return StepResult(result={"refused": str(judgement["refused"])})
+        if judged is not None and not judgement.get("judged"):
+            # The judgement was discarded, so nothing found the approval standing: it is saved
+            # as nothing, the season staying in Placements, and not approved unchecked.
+            return StepResult(result={"unjudged": True})
         season_id = int(ctx.payload["season_id"])
         season_number = int(ctx.payload["season_number"])
         cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
@@ -860,7 +864,8 @@ def _applied(ctx: OutcomeContext) -> bool:
     view = _view(ctx, APPLY)
     if view is None or not view.done:
         return False
-    return not (_discarded(view) or (view.result or {}).get("refused"))
+    result = view.result or {}
+    return not (_discarded(view) or result.get("refused") or result.get("unjudged"))
 
 
 def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
