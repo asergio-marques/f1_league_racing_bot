@@ -75,7 +75,8 @@ async def post_opening_standings(
     next try is handed it as *kept* and removes that copy, from the channel it was posted in, before
     it posts both again, failing again, with what it still has to remove, where a message will not
     delete. Once that copy is down, any failure of the try names what the try left, even nothing,
-    so that the job no longer keeps the copy removed. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
+    so that the job no longer keeps the copy removed. *as_text* leaves the graphic out, which is
+    how a job retries (Constitution XIV rule 8).
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
