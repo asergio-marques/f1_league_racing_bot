@@ -5432,9 +5432,13 @@ class SeasonCog(commands.Cog):
         deadline: datetime | None = None,
         what: str | None = None,
         fingerprint: dict | None = None,
-    ) -> None:
+    ) -> bool:
         """Approve the season: every gate, then the backup question where test mode is on, then
         the approval is asked of the change queue, which carries it out (#439, slice 4a).
+
+        Returns whether the approval was asked of the queue. False where a gate refused the
+        press, or the backup question was cancelled or went unanswered: the button's review
+        then stands (`_ApproveView.approve`), and nothing has been approved.
 
         *deadline* is when the review stops being approvable, carried in from the view so
         the backup question below can be given what is left of that window rather than a
@@ -5463,7 +5467,7 @@ class SeasonCog(commands.Cog):
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
         if cfg is None:
             await refuse(interaction, "\u274c No pending season setup.", what=what)
-            return
+            return False
 
         if cfg.season_id == 0:
             await refuse(
@@ -5471,7 +5475,7 @@ class SeasonCog(commands.Cog):
                 "\u274c Season setup state is incomplete. Use `/season abort` and start again.",
                 what=what,
             )
-            return
+            return False
 
         season_svc = self.bot.season_service
 
@@ -5481,13 +5485,13 @@ class SeasonCog(commands.Cog):
                 "\u26d4 The season is no longer in placements. **Nothing has been approved.**",
                 what=what,
             )
-            return
+            return False
 
         if not await self._season_has_divisions(cfg.season_id):
             await refuse(
                 interaction, NO_DIVISIONS_REFUSAL + " **Nothing has been approved.**", what=what
             )
-            return
+            return False
 
         # ── Gate S: every signup settled, and every channel a division posts to set and on
         # the server (#220, #374) ──
@@ -5502,14 +5506,14 @@ class SeasonCog(commands.Cog):
                 what=what,
                 reason="the season cannot be approved:\n" + "\n".join([*unsettled, *channel_faults]),
             )
-            return
+            return False
 
         # Validate tier sequential integrity before committing
         try:
             await season_svc.validate_division_tiers(cfg.season_id)
         except ValueError as exc:
             await refuse(interaction, f"\u26d4 Season cannot be approved. {exc}", what=what)
-            return
+            return False
 
         divisions = await season_svc.get_divisions(cfg.season_id)
         div_rounds: dict[int, list] = {}
@@ -5526,7 +5530,7 @@ class SeasonCog(commands.Cog):
                 f"{names}. Add at least one round to each division first.",
                 what=what,
             )
-            return
+            return False
 
         # ── Gate 0b: no two rounds in the same division may share a datetime ──
         duplicate_errors: list[str] = []
@@ -5548,7 +5552,7 @@ class SeasonCog(commands.Cog):
                 what=what,
                 reason="duplicate round times detected:\n" + "\n".join(duplicate_errors),
             )
-            return
+            return False
 
         # Every channel a division posts to — the weather, results, standings, verdicts, RSVP
         # and attendance channels among them — is judged at Gate S above, by the helper the
@@ -5585,7 +5589,7 @@ class SeasonCog(commands.Cog):
                     what=what,
                     reason="R&S prerequisites not met:\n" + "\n".join(errors),
                 )
-                return
+                return False
 
             # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
             #
@@ -5602,7 +5606,7 @@ class SeasonCog(commands.Cog):
                     reason="points configuration violates monotonic ordering:\n"
                     + "\n".join(mono_errors),
                 )
-                return
+                return False
 
         # ── Gate 2b: signup module config prerequisites ───────────────────────
         # The league's two roles are not checked again: confirming the configuration
@@ -5624,7 +5628,7 @@ class SeasonCog(commands.Cog):
                         reason="signup module is enabled but missing required configuration:\n"
                         + "\n".join(missing),
                     )
-                    return
+                    return False
 
         # ── Gate 2d: no round may already have run, nor be inside a window (#121, #122, #181)
         #
@@ -5668,7 +5672,7 @@ class SeasonCog(commands.Cog):
         )
         if _dates is not None:
             await refuse(interaction, _dates.reply, what=what, reason=_dates.reason)
-            return
+            return False
 
         # Everything above is a database read. What follows reads the image module's
         # templates, artwork and settings besides — still no rasterisation, the approval
@@ -5691,7 +5695,7 @@ class SeasonCog(commands.Cog):
                 reason="these team names cannot become lineup template fields:\n"
                 + "\n".join(name_problems),
             )
-            return
+            return False
 
         # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
         #
@@ -5709,7 +5713,7 @@ class SeasonCog(commands.Cog):
                 reason="the `lineup` image aspect is on but the template cannot draw this "
                 "season:\n" + "\n".join(lineup_problems),
             )
-            return
+            return False
 
         # ── Gate 4b: the image module's configuration (#396) ──────────────────
         #
@@ -5736,7 +5740,7 @@ class SeasonCog(commands.Cog):
                     reason="the image module is not correctly configured:\n"
                     + "\n".join(image_faults),
                 )
-                return
+                return False
 
         # The graphics are **not** drawn here (withdrawn 2026-09-07). `/season
         # placements-review` draws the lineup and the calendar of every division, and the
@@ -5751,7 +5755,7 @@ class SeasonCog(commands.Cog):
         # no job.
         if await approval_in_hand(self.bot.db_path, cfg.season_id):
             await refuse(interaction, ALREADY_BEING_APPROVED, what=what)
-            return
+            return False
 
         # ── The last thing before anything is committed: a backup, under test mode ──
         #
@@ -5766,7 +5770,7 @@ class SeasonCog(commands.Cog):
         if deadline is not None and not await self._offer_backup_before_approving(
             interaction, deadline
         ):
-            return
+            return False
 
         if fingerprint is None:
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
@@ -5783,6 +5787,7 @@ class SeasonCog(commands.Cog):
             interaction=interaction,
             what=what,
         )
+        return True
 
     # ------------------------------------------------------------------
     # Guard: block messages while round is in penalty review (T014)
@@ -5972,9 +5977,10 @@ class _ApproveView(LeagueView):
 
     **A press under way is not expired under it.** Where the timer fires while a press is being
     worked (under test mode the backup question, then the approval), the expiry waits for the
-    press to end: a press that finishes has recorded its own outcome and cleared the review, and
-    one that raised leaves the review to expire then, as the timer asked. A second press while one
-    is being worked is refused, so a double-click cannot approve twice.
+    press to end: a press that finishes has recorded its own outcome and cleared the review, or,
+    refused or cancelled, expired it, and one that raised leaves the review to expire then, as the
+    timer asked. A second press while one is being worked is refused, so a double-click cannot
+    approve twice.
 
     **What the log holds.** A review left to lapse records one lapse line naming the member who
     ran it, beside the public notice. One ended by `_expire_now` (the season changed under it, or
@@ -6075,10 +6081,11 @@ class _ApproveView(LeagueView):
     async def _press_worked(self) -> AsyncIterator[None]:
         """Around a press's `_do_*` helper: an expiry that falls meanwhile waits for it.
 
-        A press that finishes has recorded its outcome and the caller clears the review, so a
-        timer that fired while it ran is let go. One whose helper raises leaves
-        `_press_failed` set and, where the timer fired meanwhile, the review is expired now;
-        the raise then reaches the view's `on_error`, which records the failure.
+        A press that finishes has recorded its outcome and the caller clears the review, or
+        expires it where the press was refused and its time ran out, so a timer that fired while
+        it ran is let go. One whose helper raises leaves `_press_failed` set and, where the timer
+        fired meanwhile, the review is expired now; the raise then reaches the view's `on_error`,
+        which records the failure.
         """
         self._pressing = True
         self._press_failed = True
@@ -6257,6 +6264,14 @@ class _ApproveView(LeagueView):
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        """Ask the change queue to approve the season, and only then take the review down.
+
+        A press refused at the press by the approval's own gates (a date gone by, a channel, the
+        rasteriser and the rest), or cancelled at the test-mode backup question, leaves the review and its button standing, to be pressed again within
+        its five minutes, as a press that fails on a fault does (the core specification's
+        "Confirming placements"). Only a press whose approval is asked of the queue deletes the
+        review and forgets its prompt.
+        """
         # Checked first, the fingerprint included: the message is public, so anyone who can
         # read the channel can press this. Nothing is read and nothing is approved for a
         # member who may not approve.
@@ -6308,12 +6323,21 @@ class _ApproveView(LeagueView):
                 return
 
         async with self._press_worked():
-            await self._cog._do_approve(
+            asked = await self._cog._do_approve(
                 interaction,
                 deadline=self._deadline,
                 what=self._button,
                 fingerprint=self._fingerprint.areas if self._fingerprint is not None else None,
             )
+            # Read before `_press_worked` lets a waiting expiry go.
+            ran_out = self._expiry_waiting or datetime.now(timezone.utc) >= self._deadline
+        if not asked:
+            # The review stands, unless its five minutes ran out meanwhile, as at a backup
+            # question left unanswered: then it ends as a timeout would, the press having
+            # recorded its own outcome.
+            if ran_out:
+                await self._expire_now()
+            return
         # Stopped first: the review is answered, and a timer firing while the clean-up below
         # awaits Discord would otherwise announce it expired and record a lapse.
         self.stop()
@@ -6322,7 +6346,9 @@ class _ApproveView(LeagueView):
         self._message = None
 
     async def _clear_report(self) -> None:
-        """Delete the review, the question included, once the season is approved.
+        """Delete the review, the question included, once the approval is asked of the change
+        queue: only then, never on a press refused at the press or cancelled at the backup
+        question, which leaves the review standing (`approve`).
 
         The report describes a season awaiting a decision, and the decision is now taken:
         left standing it is a long scroll of a state that has moved on, above whatever the

@@ -72,7 +72,9 @@ def _review(view_class, helper: str):
     every line it writes to the log channel is kept on `bot.output_router.post_log`.
     """
     cog = MagicMock()
-    setattr(cog, helper, AsyncMock())
+    # A press that reaches the helper goes through: for the approval, asked of the change queue
+    # (#439), which is the one press that takes the review down.
+    setattr(cog, helper, AsyncMock(return_value=True))
     bot = cog.bot
     bot.db_path = "/nonexistent/nowhere.db"
     bot.config_service.get_server_config = AsyncMock(
@@ -386,6 +388,8 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
         seen["notices"] = message.channel.send.await_count
         seen["lines"] = list(_logged(cog))
         await cog.bot.output_router.post_log(own_line)
+        # A press that went through: the approval was asked of the change queue (#439).
+        return True
 
     getattr(cog, helper).side_effect = _worked
 

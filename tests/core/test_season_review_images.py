@@ -1038,12 +1038,6 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest():
 # drive the real `_do_approve` behind the button, so that what the helper tells the view is
 # what is tested, not what a double says.
 
-_REFUSED_PRESS_CLEARS = (
-    "#439: a press refused by _do_approve's own gates, or cancelled at the backup question, "
-    "still deletes and forgets the review"
-)
-
-
 async def _gated_view(tmp_path, *, round_in_days: float = 30.0, test_mode: bool = False):
     """A posted review whose button reaches the real `_do_approve`, its prompt recorded in a
     migrated database. Every gate answers "nothing wrong" but the date of its one round, which
@@ -1156,7 +1150,6 @@ def _assert_standing(view, message, report) -> None:
     assert not view.is_finished(), "the view was stopped, so a second press goes unheard"
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSED_PRESS_CLEARS)
 async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path):
     """A date gone by refuses at the press: the review stands, to be pressed again."""
     view, cog, message, report = await _gated_view(tmp_path, round_in_days=-90)
@@ -1178,7 +1171,6 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path):
     assert await _prompt_rows(view) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSED_PRESS_CLEARS)
 async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standing(
     tmp_path, monkeypatch
 ):
