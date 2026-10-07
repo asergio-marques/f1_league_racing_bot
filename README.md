@@ -700,7 +700,7 @@ Pressing it is acknowledged at once, naming its first job, and the reply is upda
 
 The same list is added to the approval's line in the log channel. A driver who has left the server is simply passed over.
 
-> **If your confirmation cannot reach you** — the approval took longer than fourteen minutes, the bot restarted while it ran, the approval was refused when its turn came on the queue, or a league admin discarded it before it began — the channel the review was in is told instead, in one line that mentions you: whether the season was approved, and that the log channel has the rest. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the queue or was stopped on a failure can outlast them.
+> **If your confirmation cannot reach you** — the approval took longer than fourteen minutes, or the bot restarted while it ran — the channel the review was in is told instead, in one line that mentions you: whether the season was approved, and that the log channel has the rest. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the queue or was stopped on a failure can outlast them. Once your reply can no longer be updated, the same line follows an approval refused when its turn came on the queue, with the reason beneath it, and one a league admin discarded before it began, saying it was not approved.
 
 **Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 
