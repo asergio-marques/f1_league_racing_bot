@@ -217,6 +217,15 @@ audit record, which is how some settings came to have none.
   channel exists, the bot may post there, the text fits, the change is allowed in the season's
   current stage): once when it is asked for, and again when the worker takes it up, since changes
   ahead of it may have moved the season on. A request a person made that fails is refused, and the queue goes on.
+  A change type may ask, for a member's change its check refuses as it starts, a change of its own
+  in the refusal's save (`ChangeType.on_refused`), as a step asks a follow-on: the season's
+  confirmation uses it to tell the review's channel of a refusal its member can no longer be told
+  of. It may likewise ask one where a league admin discards a member's change stopped at its check
+  before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal hook
+  that raises stops the queue at the change's first job, as a check that raises does, and the
+  change is checked again at each try; a discard hook that raises is logged on the host and the
+  Discard goes ahead without it, Discard being the queue's last way past a stop. *Rejected:*
+  planning a step on the refused change, which would leave a refused change with jobs to run.
   A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
   its work is no longer due, as a job that fires after its work was cancelled does nothing (see
   "Timed work and restarts"). Where it is refused by its check for any reason but that its work is
