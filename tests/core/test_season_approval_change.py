@@ -1126,6 +1126,50 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
                for line in not_done), confirmed[0]
 
 
+_KEPT_AFTER_ITS_REMOVAL = (
+    "#439, code-4-1: a try that removes the kept table and then fails with nothing posted "
+    "leaves the kept ids on the job, so a Discard names for deletion by hand a table already "
+    "taken down"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_KEPT_AFTER_ITS_REMOVAL)
+async def test_a_discard_after_the_kept_table_was_removed_names_nothing_for_deletion_by_hand(
+    tmp_path, monkeypatch,
+):
+    """Pro's drivers' table went out and its teams' table was refused, so the queue stopped at
+    the opening standings. Retry, the channel now refusing the drivers' table outright: the try
+    takes the kept table down, posts nothing, and the queue stops again; a league admin
+    discards. No table stands in the channel, so neither the reply's not-done section nor the
+    "Placements confirmed" line's "not done:" lines name one for deletion by hand, while the
+    standings are still named as not posted (#439)."""
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    press = await _pressed(league)
+    earlier = await _opening_standings_posted_in_part(league, monkeypatch)
+    standings = league.channel(PRO_CH.standings)
+    standings.fail_when = lambda content, _kwargs: "**Driver Standings**" in (content or "")
+
+    await retry_job(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+    assert not set(earlier) & set(standings.messages), "the kept drivers' table still stands"
+    assert _tables(standings) == (0, 0)
+
+    await discard_job(league.bot)
+
+    assert APPROVED in reply(press)
+    not_posted = _DISCARDED["opening_standings"][1]
+    bullets = _not_done(reply(press))
+    assert any(bullet.startswith(not_posted) for bullet in bullets), reply(press)
+    assert not any("by hand" in bullet and "opening standings" in bullet
+                   for bullet in bullets), reply(press)
+    confirmed = _confirmed_lines(league)
+    assert len(confirmed) == 1
+    not_done = confirmed[0].split("\n  not done: ")[1:]
+    assert any(line.startswith(not_posted) for line in not_done), confirmed[0]
+    assert not any("by hand" in line and "opening standings" in line
+                   for line in not_done), confirmed[0]
+
+
 async def test_kept_opening_standings_are_removed_from_the_channel_they_were_posted_in(
     tmp_path, monkeypatch,
 ):
