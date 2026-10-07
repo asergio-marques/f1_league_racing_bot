@@ -520,26 +520,29 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 
 **And more, depending on what you turned on** — every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
-When it goes through, the bot:
+The approval is acknowledged at once ("⏳ Approving season 3 …", naming its first job), the review is cleared, and the rest is carried out on the change queue, each step a job of its own (see [When a job stops the queue](#when-a-job-stops-the-queue)). The bot:
 
-1. **Locks in the calendar** and schedules every job the season needs — forecasts, result collection, check-in calls.
-2. **Confirms every placement** and grants division and team roles to every placed driver.
-3. **Posts the lineup** to each division's lineup channel.
-4. **Posts the calendar** to each division's calendar channel.
-5. **Posts the opening classification** to each division's standings and attendance channels — every driver and team on zero, with the season's rounds drawn empty beside them.
+1. **Saves the season** in one go — the calendar's sessions, the confirmed placements, the points configurations and the season's state. Either all of it is saved or none of it is.
+2. **Arms the season's timed work** — forecasts with weather on, every round's result collection whatever modules you run, and check-in calls with attendance on. It is done after the save, so a season that is not approved has nothing armed.
+3. **Confirms every placement's roles**: division and team roles are granted to every placed driver, one job each.
+4. **Posts the lineup** to each division's lineup channel.
+5. **Posts the calendar** to each division's calendar channel.
+6. **Posts the opening classification** to each division's standings channel, and the opening sheet to its attendance channel — every driver and team on zero, with the season's rounds drawn empty beside them.
 
-Your season is **ongoing** from the moment the placements are confirmed in step 2, before anything is posted. So a round you spot as wrong while the calendar is still arriving can be moved with `/round amend` straight away, and `/round add` is closed from then on.
+Your season is **ongoing** from the moment it is saved in step 1, before anything is granted or posted. So a round you spot as wrong while the calendar is still arriving can be moved with `/round amend` straight away, and `/round add` is closed from then on.
 
-**If one of steps 2 to 5 cannot be done, the approval still stands.** The bot carries on with the rest, and your private confirmation lists what was left undone, under **Not everything could be done**:
+**A season already being approved is not approved twice.** Pressing Approve on another review of the same season while the approval is waiting, running or stopped on a failure is refused at once, without naming the job, and is not asked the backup question.
 
-- a division whose placed drivers could not be read, or a driver the bot could not give their roles — grant them by hand, and `/team lineup` shows who is placed where;
+**If one of steps 2 to 6 cannot be done, the approval still stands.** The job that failed stops the queue until it is retried or a league admin discards it. Your confirmation then lists each job a league admin discarded, under **Not everything could be done**, with timed work that was not armed first, for no command arms it again:
+
+- a driver the bot could not give their roles — grant them by hand, and `/team lineup` shows who is placed where;
 - a calendar that was not posted — post it with `/division calendar-sync`;
 - a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
-- opening standings and attendance sheets that were not all posted — no command posts them again, and each round's results and attendance post them as usual.
+- opening standings and attendance sheets that were not posted — no command posts them again, and each round's results and attendance post them as usual.
 
 The same list goes to the log channel. A driver who has left the server is simply passed over.
 
-> **If your confirmation never arrives**, look in the channel you ran the review in. Discord gives the bot fifteen minutes to answer a button, and a long approval can outlast them. When it does, the bot posts one line there instead, mentioning you: the season is approved, and the log channel has what the confirmation said.
+> **If your confirmation never arrives**, look in the channel you ran the review in. Discord gives the bot fifteen minutes to answer a button, and an approval that waits on a stopped queue can outlast them, as can a restart of the bot while it ran. The bot then posts one line there instead, mentioning you: whether the season was approved, and that the log channel has the rest. The same line follows an approval refused when its turn came on the queue — the season, its dates, its channels or the drawing program having changed while it waited — with the reason it was refused.
 
 **Confirming a mid-season window's placements works the same way.** The placements stand once confirmed. Anything left undone is listed in your confirmation: a driver the bot could not give their roles, whom you give them by hand; a lineup it could not post, which is posted with the next change to that division's drivers; or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. The same one-line notice stands in for a confirmation that cannot reach you.
 
@@ -547,8 +550,8 @@ The same list goes to the log channel. A driver who has left the server is simpl
 > Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
 > `standings` and `attendance` outputs are switched on, and as the ordinary text tables where they
 > are not. It goes to the channels those modules already use, so a division with no standings
-> channel simply gets nothing. Nothing here can stop a season being approved: a division whose
-> sheets will not post is named in the log channel and the rest carry on.
+> channel simply gets nothing. A division whose
+> sheets will not post stops the queue until it is retried, and once a league admin discards it, it is named in your confirmation.
 
 ---
 
@@ -784,7 +787,7 @@ command.
 
 ## When a job stops the queue
 
-Some changes are carried out as a list of jobs, one after another, each with a number of its own ("job #12"). **Any job that fails stops the queue**, and nothing behind it runs until that job is cleared. Turning `results` off is carried out this way, and so is a round's review in the results module: opening it, approving its reports and its appeals, and approving either stage of an amendment, with the attendance sheet and each sanction that follows; and approving a points amendment in the results module, with its reposts, sheet and sanctions. The rules below hold for every change that joins them.
+Some changes are carried out as a list of jobs, one after another, each with a number of its own ("job #12"). **Any job that fails stops the queue**, and nothing behind it runs until that job is cleared. Turning `results` off is carried out this way, and so is approving a season, with its arming, grants and posts, and so is a round's review in the results module: opening it, approving its reports and its appeals, and approving either stage of an amendment, with the attendance sheet and each sanction that follows; and approving a points amendment in the results module, with its reposts, sheet and sanctions. The rules below hold for every change that joins them.
 
 You will see:
 
@@ -801,7 +804,7 @@ A job that goes through says so, and its notice loses its buttons. So does a sto
 
 **After a restart a stopped queue stays stopped.** The bot makes no try of its own, one line in the log channel says so, and only Retry or Discard moves it. A change the bot was part-way through, with no job failed, is finished as the bot starts: a round whose review or approval is on the queue is left to it, and one that never reached the queue is put back through it.
 
-**A request is refused while the same one is in hand.** Approving a stage of a round's review again while the first approval is waiting, running or stopped is refused, and so is `/results rounds amend` for a division with a job of a review on the queue; the refusal names the job. Let it finish, or press Retry or Discard on its notice.
+**A request is refused while the same one is in hand.** Approving a stage of a round's review again while the first approval is waiting, running or stopped is refused, and so is `/results rounds amend` for a division with a job of a review on the queue; the refusal names the job. Approving a season again is refused too, without naming the job. Let it finish, or press Retry or Discard on its notice.
 
 A button pressed by someone who may not use it, or on a notice whose job no longer stops the queue, is refused, and the log channel records the refusal. So is Retry or Discard pressed while the bot is trying that job: press it again once the try has ended.
 
@@ -826,7 +829,7 @@ A button pressed by someone who may not use it, or on a notice whose job no long
 | Drivers placed mid-season were turned down on their own | Every division finished while their placements were still unconfirmed. There was no round left for them, so their placements were discarded and they returned to Not Signed Up |
 | "❌ … stopped on a fault in the bot, not on anything you entered" | The bot ran into a fault of its own, not a mistake in what you typed. Where the reply says it may have been partly done, check what the command was meant to change before you run it again. Some commands undo themselves and say so instead — the module is still off, nothing from the paste was saved — with what to do next. The log channel has a line naming the command and the kind of fault: if it happens again, give that line to whoever hosts the bot |
 | A ❌ message in the log channel says the queue is stopped at a job, with Retry and Discard buttons | A job failed and nothing behind it runs until it is cleared. Put right what it names, then press Retry; a league admin can press Discard instead. See [When a job stops the queue](#when-a-job-stops-the-queue) |
-| A review's approval, or an amendment's, was acknowledged and its reply never changed | Its job, or one ahead of it, has stopped the queue. Read the ❌ notice in the log channel and clear it as above |
+| A review's approval, an amendment's, or a season's was acknowledged and its reply never changed | Its job, or one ahead of it, has stopped the queue. Read the ❌ notice in the log channel and clear it as above |
 | Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in calls whose deadline has not yet passed, missed check-in deadlines, the tidying away of forecasts and check-in messages a day after a round, and a signup auto-close timer; anything else that came due while it was down is missed |
 
 Anything the bot works out, fails to find, falls back on or fails at is written to the log channel. So is every outcome of a command, button or form that changes something, whoever used it: what it set, what it refused and why (a line starting ⛔), and a confirmation cancelled (↩️) or left to lapse (⌛), each naming the member. A refusal made before `/bot init` or after `/bot pack`, in a direct message, or by someone on another server is answered as ever but goes to the host's log alone, not to this channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.
