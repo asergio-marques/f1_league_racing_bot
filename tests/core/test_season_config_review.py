@@ -442,6 +442,77 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path):
     assert await _prompt_rows(view) == 0
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439 M2: the fingerprint's season area reads the status and not the stage, so a "
+    "review whose season has since been confirmed is not seen as changed and stands",
+)
+async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(tmp_path):
+    """Two configuration reviews of one season stand; the newer is confirmed, and Confirm is
+    then pressed on the older. The season has moved on since the older was posted, so its
+    review ends as an expired one does: the expiry notice posted, one refusal line in the log
+    channel and no lapse line."""
+    from leaguebot.core.db.database import get_connection, run_migrations
+
+    bot = _bot()
+    bot.db_path = str(tmp_path / "two-reviews.db")
+    await run_migrations(bot.db_path)
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, stage, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 'CONFIGURATION', 4)",
+            (SEASON_ID,),
+        )
+        await db.commit()
+    bot.image_config_service.get_config = AsyncMock(return_value=None)
+
+    async def _set_stage(season_id, target):
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+            if (await cursor.fetchone())["stage"] != "CONFIGURATION":
+                raise InvalidStageTransition("moved on")
+            await db.execute(
+                "UPDATE seasons SET stage = ? WHERE id = ?", (target.value, season_id)
+            )
+            await db.commit()
+
+    bot.season_service.set_stage = AsyncMock(side_effect=_set_stage)
+    cog = _cog(bot)
+
+    async def _review(message_id: int):
+        view = _ConfirmConfigurationView(cog, REVIEWER)
+        view._server_id = SERVER_ID
+        await view.record_fingerprint(SEASON_ID)
+        report = [MagicMock(id=message_id - 1, delete=AsyncMock())]
+        message = MagicMock(id=message_id, delete=AsyncMock())
+        message.channel.id = 111
+        message.channel.send = AsyncMock()
+        view.carries(report)
+        await view.bind(message)
+        return view, message, report
+
+    older, older_message, older_report = await _review(901)
+    newer, _newer_message, _newer_report = await _review(903)
+    confirming = _reviewer_press()
+    confirming.client = bot
+    await _ConfirmConfigurationView.approve(newer, confirming, MagicMock())
+    assert newer.is_finished()
+    bot.output_router.post_log.reset_mock()
+
+    pressing = _reviewer_press()
+    pressing.client = bot
+    await _ConfirmConfigurationView.approve(older, pressing, MagicMock())
+
+    older_message.delete.assert_awaited_once()
+    older_report[0].delete.assert_awaited_once()
+    assert "your review has expired" in older_message.channel.send.await_args.args[0]
+    assert older.is_finished()
+    assert await _prompt_rows(older) == 0
+    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+    assert [line[:1] for line in lines] == ["⛔"], lines
+    assert not any(line.startswith("⌛") for line in lines), lines
+
+
 async def test_an_expired_configuration_review_names_its_own_command():
     view, _ = _view()
     message = MagicMock()

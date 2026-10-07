@@ -1267,9 +1267,20 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review(
         return SeasonFingerprint({"season": "abc" if len(taken) == 1 else "def"})
 
     monkeypatch.setattr(_sfs, "take_fingerprint", _fingerprint)
-    cog.bot.change_queue.ask = AsyncMock(return_value=None)
 
-    await _ApproveView.approve(view, _gated_press(), MagicMock())
+    async def _refused(_kind, _payload, *, interaction, what, **_kwargs):
+        # The queue's check refusing, as it does: the member told, the refusal recorded.
+        from leaguebot.core.utils.log_lines import refuse
+
+        await refuse(interaction, "⛔ Your season has changed since this review.", what=what)
+        return None
+
+    cog.bot.change_queue.ask = AsyncMock(side_effect=_refused)
+    press = _gated_press()
+    press.client = cog.bot
+    press.user.display_name = "Alex"
+
+    await _ApproveView.approve(view, press, MagicMock())
 
     cog.bot.change_queue.ask.assert_awaited_once()
     message.delete.assert_awaited_once()
@@ -1278,6 +1289,9 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review(
     assert "your review has expired" in message.channel.send.await_args.args[0]
     assert view.is_finished()
     assert await _prompt_rows(view) == 0
+    # The queue's refusal is the one line: the review's end records no lapse beside it.
+    lines = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    assert [line[:1] for line in lines] == ["⛔"], lines
 
 
 async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path):

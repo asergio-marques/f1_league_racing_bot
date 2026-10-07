@@ -147,6 +147,20 @@ async def test_the_season_area(season):
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439 M2: the fingerprint's season area reads the status and not the stage",
+)
+async def test_a_stage_moved_is_part_of_the_season_area(season):
+    """Confirming a configuration, or mid-season placements, moves the stage and not the
+    status: a review of the stage left behind no longer describes the season."""
+    before = await _take(season)
+    await _assert_only(
+        season, before, "season",
+        "UPDATE seasons SET stage = 'CONFIGURATION' WHERE id = ?", season.season_id,
+    )
+
+
 async def test_the_divisions_area(season):
     before = await _take(season)
     await _assert_only(
