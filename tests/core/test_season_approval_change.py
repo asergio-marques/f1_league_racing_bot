@@ -1162,6 +1162,39 @@ async def test_a_discard_after_the_kept_table_was_removed_names_nothing_for_dele
                    for line in not_done), confirmed[0]
 
 
+async def test_a_discard_after_the_standings_channel_was_deleted_names_nothing_for_deletion_by_hand(
+    tmp_path, monkeypatch,
+):
+    """Pro's drivers' table went out and its teams' table was refused, so the queue stopped at
+    the opening standings. Pro's standings channel is then deleted from the server, the kept
+    table with it, and Retry: the try finds no standings channel to post in, and the queue stops
+    again; a league admin discards. No table stands anywhere, so neither the reply's not-done
+    section nor the "Placements confirmed" line's "not done:" lines name one for deletion by
+    hand, while the standings are still named as not posted (#439)."""
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    press = await _pressed(league)
+    await _opening_standings_posted_in_part(league, monkeypatch)
+    league.remove_channel(PRO_CH.standings)
+
+    await retry_job(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+
+    await discard_job(league.bot)
+
+    assert APPROVED in reply(press)
+    not_posted = _DISCARDED["opening_standings"][1]
+    bullets = _not_done(reply(press))
+    assert any(bullet.startswith(not_posted) for bullet in bullets), reply(press)
+    assert not any("by hand" in bullet and "opening standings" in bullet
+                   for bullet in bullets), reply(press)
+    confirmed = _confirmed_lines(league)
+    assert len(confirmed) == 1
+    not_done = confirmed[0].split("\n  not done: ")[1:]
+    assert any(line.startswith(not_posted) for line in not_done), confirmed[0]
+    assert not any("by hand" in line and "opening standings" in line
+                   for line in not_done), confirmed[0]
+
+
 async def test_kept_opening_standings_are_removed_from_the_channel_they_were_posted_in(
     tmp_path, monkeypatch,
 ):
