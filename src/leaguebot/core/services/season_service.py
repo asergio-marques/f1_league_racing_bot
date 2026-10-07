@@ -760,13 +760,9 @@ class SeasonService:
         scored in results and standings.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "UPDATE driver_season_assignments SET committed = 1 "
-                "WHERE season_id = ? AND committed = 0",
-                (season_id,),
-            )
+            committed = await commit_placements_on(db, season_id)
             await db.commit()
-            return cursor.rowcount
+            return committed
 
     async def transition_to_active(self, season_id: int) -> None:
         """Set season status to ACTIVE, and its divisions with it.
@@ -1531,19 +1527,8 @@ class SeasonService:
         The old rows go with whatever phase data they held, so this is for a round no phase has
         been drawn for. Its one caller is the confirmation, before anything is armed.
         """
-        session_types: list[SessionType] = SESSIONS_BY_FORMAT.get(fmt, [])
-        sessions: list[Session] = []
-
         async with get_connection(self._db_path) as db:
-            await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
-            for st in session_types:
-                cursor = await db.execute(
-                    "INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
-                    (round_id, st.value),
-                )
-                sessions.append(
-                    Session(id=inserted_id(cursor), round_id=round_id, session_type=st)
-                )
+            sessions = await create_sessions_for_round_on(db, round_id, fmt)
             await db.commit()
 
         return sessions
@@ -1584,6 +1569,64 @@ class SeasonService:
                 (round_id,),
             )
             await db.commit()
+
+
+async def create_sessions_for_round_on(
+    db: aiosqlite.Connection, round_id: int, fmt: RoundFormat
+) -> list[Session]:
+    """:meth:`SeasonService.create_sessions_for_round` on *db*, committing nothing (issue #439).
+
+    The season's approval makes every round's sessions in the one save that also commits the
+    placements, takes the points snapshot and moves the season to Ongoing, so the sessions are
+    written on the connection that save holds and committed with it, or not at all. Replaced,
+    not added to, as the committing form is: however often a save is tried, the round holds the
+    one set its format defines.
+    """
+    session_types: list[SessionType] = SESSIONS_BY_FORMAT.get(fmt, [])
+    sessions: list[Session] = []
+    await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
+    for st in session_types:
+        cursor = await db.execute(
+            "INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+            (round_id, st.value),
+        )
+        sessions.append(Session(id=inserted_id(cursor), round_id=round_id, session_type=st))
+    return sessions
+
+
+async def commit_placements_on(db: aiosqlite.Connection, season_id: int) -> int:
+    """:meth:`SeasonService.commit_placements` on *db*, committing nothing (issue #439).
+
+    Returns how many placements it committed.
+    """
+    cursor = await db.execute(
+        "UPDATE driver_season_assignments SET committed = 1 "
+        "WHERE season_id = ? AND committed = 0",
+        (season_id,),
+    )
+    return cursor.rowcount
+
+
+async def transition_to_active_on(db: aiosqlite.Connection, season_id: int) -> bool:
+    """Set a season ACTIVE, and its divisions with it, on *db*, committing nothing (issue #439).
+
+    Guarded: only a season still being set up, in Placements, moves; one already Ongoing is left
+    as it is, and its divisions with it, and ``False`` is returned. The trigger
+    ``seasons_stage_follow_status`` takes the stage to Ongoing with the status. Divisions move
+    SETUP -> ACTIVE with the season, a cancelled one left alone, as in
+    :meth:`SeasonService.transition_to_active`.
+    """
+    cursor = await db.execute(
+        "UPDATE seasons SET status = ? WHERE id = ? AND status = 'SETUP' AND stage = 'PLACEMENTS'",
+        (SeasonStatus.ACTIVE.value, season_id),
+    )
+    if cursor.rowcount == 0:
+        return False
+    await db.execute(
+        "UPDATE divisions SET status = 'ACTIVE' WHERE season_id = ? AND status = 'SETUP'",
+        (season_id,),
+    )
+    return True
 
 
 async def set_round_status_on(

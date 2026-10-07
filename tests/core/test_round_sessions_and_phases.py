@@ -52,8 +52,6 @@ DIVISION_ID = 11
 ROUND_ID = 21
 OTHER_ROUND_ID = 22
 
-_SESSIONS_ON = "#439: a round's sessions have no form on a handed save yet"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -115,7 +113,6 @@ async def _raw_sessions(db_path: str, round_id: int = ROUND_ID) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 @pytest.mark.parametrize("fmt", sorted(SESSIONS_BY_FORMAT, key=lambda f: f.value))
 async def test_a_format_creates_exactly_the_sessions_it_defines(tmp_path, fmt):
     """Read from `SESSIONS_BY_FORMAT` rather than restated, so a format added to the model
@@ -128,7 +125,6 @@ async def test_a_format_creates_exactly_the_sessions_it_defines(tmp_path, fmt):
     assert [s.session_type for s in created] == SESSIONS_BY_FORMAT[fmt]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_normal_round_qualifies_before_it_races(tmp_path):
     """The order sessions are created in is the order they are raced in, and it is what the
     forecasts are posted in."""
@@ -142,7 +138,6 @@ async def test_a_normal_round_qualifies_before_it_races(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_sprint_round_keeps_its_four_sessions_in_racing_order(tmp_path):
     """Sprint qualifying, sprint, feature qualifying, feature. A set or a sorted list would
     put the feature qualifying after the feature race."""
@@ -158,7 +153,6 @@ async def test_a_sprint_round_keeps_its_four_sessions_in_racing_order(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_mystery_round_creates_no_sessions(tmp_path):
     """Deliberate, not a missing case: a mystery round has no phases to forecast, because
     the whole point is that the track is not known."""
@@ -170,7 +164,6 @@ async def test_a_mystery_round_creates_no_sessions(tmp_path):
     assert await _raw_sessions(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_the_created_sessions_are_written_to_the_round(tmp_path):
     db_path = await _make_db(tmp_path, name="format_written")
 
@@ -182,7 +175,6 @@ async def test_the_created_sessions_are_written_to_the_round(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_each_created_session_carries_the_id_it_was_given(tmp_path):
     """The caller schedules jobs against these ids; a zero or a duplicate would arm every
     phase of the round against one session."""
@@ -196,7 +188,6 @@ async def test_each_created_session_carries_the_id_it_was_given(tmp_path):
     assert all(s.round_id == ROUND_ID for s in created)
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_creating_a_rounds_sessions_again_leaves_one_set(tmp_path):
     """Issue #408. An approval refused after writing the sessions was followed by one writing
     them again, and the round's forecast named each session twice."""
@@ -212,7 +203,6 @@ async def test_creating_a_rounds_sessions_again_leaves_one_set(tmp_path):
     assert [s.session_type for s in created] == SESSIONS_BY_FORMAT[RoundFormat.NORMAL]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_creating_sessions_again_follows_the_rounds_format_now(tmp_path):
     """The sessions follow from the format and nothing else, so none of the earlier format's
     survives beside the new one's."""
@@ -226,7 +216,6 @@ async def test_creating_sessions_again_follows_the_rounds_format_now(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_creating_one_rounds_sessions_again_leaves_the_others_alone(tmp_path):
     """The replacement is the round's own: the next round's sessions stay as they were."""
     db_path = await _make_db(tmp_path, name="format_other_round")
@@ -244,7 +233,6 @@ async def test_creating_one_rounds_sessions_again_leaves_the_others_alone(tmp_pa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_rounds_sessions_are_read_back(tmp_path):
     db_path = await _make_db(tmp_path, name="read_back")
     service = SeasonService(db_path)
@@ -258,7 +246,6 @@ async def test_a_rounds_sessions_are_read_back(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_only_the_asked_rounds_sessions_come_back(tmp_path):
     """Every round of a division has sessions of the same types; without the filter a
     forecast for round 1 would be posted against round 2's sessions as well."""
@@ -283,7 +270,6 @@ async def test_a_round_with_no_sessions_reads_back_empty(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_two_slot_type_is_stored(tmp_path):
     db_path = await _make_db(tmp_path, name="phase2")
     service = SeasonService(db_path)
@@ -294,7 +280,6 @@ async def test_a_phase_two_slot_type_is_stored(tmp_path):
     assert (await service.get_sessions(ROUND_ID))[0].phase2_slot_type == "DRY"
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_phase_two_is_set_on_one_session_only(tmp_path):
     """The two sessions of a round are forecast separately — a qualifying may be dry and
     its race wet, which is the interesting case rather than an unusual one."""
@@ -307,7 +292,6 @@ async def test_phase_two_is_set_on_one_session_only(tmp_path):
     assert (await service.get_sessions(ROUND_ID))[1].phase2_slot_type is None
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_three_slot_list_round_trips(tmp_path):
     """Stored as JSON and read back as a list. A list stored as its `str()` reads back as a
     string that still looks right in a log and is useless to anything else."""
@@ -324,7 +308,6 @@ async def test_a_phase_three_slot_list_round_trips(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_three_list_is_stored_as_json(tmp_path):
     """Explicitly, because the column is text and anything at all would go into it."""
     db_path = await _make_db(tmp_path, name="phase3_json")
@@ -336,7 +319,6 @@ async def test_a_phase_three_list_is_stored_as_json(tmp_path):
     assert json.loads((await _raw_sessions(db_path))[0]["phase3_slots"]) == ["DRY", "WET"]
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_an_empty_phase_three_list_is_kept_as_a_list(tmp_path):
     """Distinct from never having been forecast, which is NULL — one is a session with no
     slots and the other is a session nobody has reached yet."""
@@ -349,7 +331,6 @@ async def test_an_empty_phase_three_list_is_kept_as_a_list(tmp_path):
     assert (await service.get_sessions(ROUND_ID))[0].phase3_slots == []
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_three_list_may_be_replaced(tmp_path):
     """A re-run of phase 3 rewrites the slots rather than appending to them."""
     db_path = await _make_db(tmp_path, name="phase3_replace")
@@ -367,7 +348,6 @@ async def test_a_phase_three_list_may_be_replaced(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_clearing_removes_both_phases_from_every_session(tmp_path):
     """An amendment re-runs the whole round's forecasting; a clear that missed a session
     would leave it holding slots chosen for a track the round no longer runs on."""
@@ -385,7 +365,6 @@ async def test_clearing_removes_both_phases_from_every_session(tmp_path):
         assert session.phase3_slots is None
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_clearing_leaves_the_sessions_standing(tmp_path):
     """The round is still the same round, with the same format and the same sessions — only
     the forecast against them is withdrawn."""
@@ -398,7 +377,6 @@ async def test_clearing_leaves_the_sessions_standing(tmp_path):
     assert len(await service.get_sessions(ROUND_ID)) == 4
 
 
-@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_clearing_one_round_leaves_another_alone(tmp_path):
     """Amendments are per round; clearing a division's whole calendar would throw away
     forecasts for rounds nobody amended."""

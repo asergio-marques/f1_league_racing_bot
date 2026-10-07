@@ -219,9 +219,6 @@ async def test_refresh_never_disturbs_a_setup_or_cancelled_division(tmp_path, un
     assert await _division_status(db_path, div_id) == untouchable
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the season's move to Ongoing has no form on a handed save yet"
-)
 async def test_activating_a_season_activates_its_divisions(tmp_path) -> None:
     """Nothing wrote 'ACTIVE' to a division before #154, so every one sat in SETUP for life."""
     db_path = str(tmp_path / "bot.db")

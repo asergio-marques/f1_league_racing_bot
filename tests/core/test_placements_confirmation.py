@@ -360,9 +360,6 @@ async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path
 # ── Committing ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the placements have no commit on a handed save yet"
-)
 async def test_confirming_commits_every_placement_of_the_season(db_path):
     """The approval's one save commits every placement of the season on the connection it is
     handed, and the save commits it (#439)."""

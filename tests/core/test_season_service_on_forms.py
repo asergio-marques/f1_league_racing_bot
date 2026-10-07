@@ -25,8 +25,6 @@ SEASON_ID = 7
 DIVISION_ID = 11
 ROUND_ID = 21
 
-_NOT_BUILT = "#439: the season's writes have no form on a handed connection yet"
-
 
 async def _make_db(tmp_path, *, stage: str = "PLACEMENTS") -> str:
     """Season 3 (id 7) in *stage*, Pro with one round, and two placements not yet committed."""
@@ -91,7 +89,6 @@ async def _season(db) -> tuple[str, str]:
     return row["status"], row["stage"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_sessions_are_replaced_not_added_on_the_save_handed(tmp_path):
     """Round 1 already holds a sprint's sessions, left by an earlier save. Making its sessions
     for a normal round, twice, on one connection leaves the normal round's set once; and nothing
@@ -120,7 +117,6 @@ async def test_sessions_are_replaced_not_added_on_the_save_handed(tmp_path):
         ], "nothing is committed: the save's own commit is the queue's"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_placements_are_committed_on_the_save_handed(tmp_path):
     """Lewis and Max are placed in Pro, neither committed. Committing the season's placements on
     a connection marks both committed and answers 2; nothing of it outlasts a rollback."""
@@ -136,7 +132,6 @@ async def test_placements_are_committed_on_the_save_handed(tmp_path):
         assert await _committed(db) == [0, 0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize(
     "stage,moves",
     [
