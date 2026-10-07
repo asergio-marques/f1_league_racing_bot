@@ -341,7 +341,8 @@ def _member(user_id: int, league_admin: bool = False):
 
 def _view():
     cog = MagicMock()
-    cog._do_confirm_configuration = AsyncMock()
+    # Said outright: a press that reaches the helper goes through (#439).
+    cog._do_confirm_configuration = AsyncMock(return_value=True)
     cog.bot.db_path = "/nonexistent/nowhere.db"
     cog.bot.config_service.get_server_config = AsyncMock(return_value=_server_config())
     view = _ConfirmConfigurationView(cog, REVIEWER)
@@ -369,6 +370,81 @@ async def test_another_league_manager_may_not_confirm():
 
     cog._do_confirm_configuration.assert_not_awaited()
     assert "Nothing has been confirmed" in interaction.response.send_message.await_args.args[0]
+
+
+async def _posted_review(tmp_path, bot):
+    """A posted configuration review whose button reaches the real confirmation, its prompt
+    recorded in a migrated database."""
+    from leaguebot.core.db.database import run_migrations
+
+    bot.db_path = str(tmp_path / "config-review.db")
+    await run_migrations(bot.db_path)
+    cog = _cog(bot)
+    view = _ConfirmConfigurationView(cog, REVIEWER)
+    view._server_id = SERVER_ID
+    view._season_id = SEASON_ID
+    report = [MagicMock(id=900 + n, delete=AsyncMock()) for n in range(2)]
+    message = MagicMock(id=999, delete=AsyncMock())
+    message.channel.id = 111
+    message.channel.send = AsyncMock()
+    view.carries(report)
+    await view.bind(message)
+    return view, message, report
+
+
+async def _prompt_rows(view) -> int:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(view._cog.bot.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
+        (count,) = await cursor.fetchone()
+    return count
+
+
+def _reviewer_press() -> MagicMock:
+    interaction = _interaction()
+    interaction.user = _member(REVIEWER)
+    interaction.client = None
+    return interaction
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: a Confirm configuration press its own checks refuse still deletes and "
+    "forgets the review",
+)
+async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path):
+    """Every review's button alike: a press refused at the press (here a fault found afresh)
+    leaves the review and its button standing, to be pressed again within its five minutes."""
+    bot = _bot(signup=True, signup_config=_signup_config(channel=None))
+    view, message, report = await _posted_review(tmp_path, bot)
+    interaction = _reviewer_press()
+
+    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
+
+    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
+    bot.season_service.set_stage.assert_not_awaited()
+    for posted in [*report, message]:
+        posted.delete.assert_not_awaited()
+    assert view._message is message
+    assert not view.is_finished(), "the view was stopped, so a second press goes unheard"
+    assert await _prompt_rows(view) == 1
+
+
+async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path):
+    """The one press that ends the review: the configuration confirmed and the season moved on.
+    The review is deleted, its record forgotten and the view stopped."""
+    bot = _bot()
+    view, message, report = await _posted_review(tmp_path, bot)
+    interaction = _reviewer_press()
+
+    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
+
+    bot.season_service.set_stage.assert_awaited_once()
+    for posted in [*report, message]:
+        posted.delete.assert_awaited_once()
+    assert view.is_finished()
+    assert await _prompt_rows(view) == 0
 
 
 async def test_an_expired_configuration_review_names_its_own_command():

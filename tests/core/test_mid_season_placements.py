@@ -791,6 +791,50 @@ async def test_a_stumbled_confirmation_still_clears_its_review(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: a mid-season Confirm placements press its own checks refuse still deletes "
+    "and forgets the review",
+)
+async def test_a_refused_confirmation_leaves_its_review_standing(db_path):
+    """The core specification's "Confirming placements", as for every review's button: a press
+    refused at the press (here the season no longer placing drivers) leaves the review and its
+    button standing, to be pressed again within its five minutes. Driven through the button,
+    over the real confirmation."""
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
+
+    cog = _cog(db_path, SeasonStage.ONGOING)
+    view = _ConfirmMidSeasonPlacementsView(cog, 42)
+    view._season_id = 1
+    report = [MagicMock(delete=AsyncMock()), MagicMock(delete=AsyncMock())]
+    view.carries(report)
+    view._message = prompt = MagicMock(id=800, delete=AsyncMock())
+    async with get_connection(db_path) as db:
+        await store_review_prompt(
+            db,
+            season_id=1,
+            channel_id=700,
+            message_id=800,
+            reviewer_id=42,
+            posted_at="2026-03-01T00:00:00+00:00",
+        )
+        await db.commit()
+    interaction = _interaction()
+    interaction.client = None
+
+    await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
+
+    assert "no longer placing drivers" in _replied(interaction)
+    cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
+    for message in [*report, prompt]:
+        message.delete.assert_not_awaited()
+    assert view._message is prompt
+    assert not view.is_finished(), "the view was stopped, so a second press goes unheard"
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
+        assert (await cursor.fetchone())[0] == 1
+
+
 # ── The mid-season button ──────────────────────────────────────────────────────────
 
 
@@ -804,7 +848,8 @@ def _view():
     from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
 
     cog = MagicMock()
-    cog._do_confirm_mid_season_placements = AsyncMock()
+    # Said outright: a press that reaches the helper goes through (#439).
+    cog._do_confirm_mid_season_placements = AsyncMock(return_value=True)
     cog.bot.db_path = "/nonexistent/nowhere.db"
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(league_admin_role_id=ADMIN_ROLE)
