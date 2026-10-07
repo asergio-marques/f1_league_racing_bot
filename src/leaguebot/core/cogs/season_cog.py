@@ -45,6 +45,9 @@ from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundSta
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, cancellation_notice_service
 from leaguebot.core.services.season_approval_change import (
+    ALREADY_BEING_APPROVED,
+    KIND as APPROVAL_KIND,
+    approval_in_hand,
     ungranted_line as _ungranted_line,
     unposted_lineup_line as _unposted_lineup_line,
 )
@@ -608,8 +611,6 @@ class SeasonCog(commands.Cog):
         # Keyed by user_id, or by _RECOVERED on recovery \u2192 PendingConfig. At most one
         # season is live in the league, so at most one setup is pending at a time.
         self._pending: dict[int, PendingConfig] = {}
-        #: The calendar report a review drew, carried to its approval; None until one is.
-        self._calendar_report: str | None = None
 
     # ------------------------------------------------------------------
     # /season group
@@ -5352,6 +5353,8 @@ class SeasonCog(commands.Cog):
         config = await self.bot.config_service.get_server_config()
         if config is None or not getattr(config, "test_mode_active", False):
             return True
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
 
         remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
         if remaining <= 0:
@@ -5428,28 +5431,30 @@ class SeasonCog(commands.Cog):
         *,
         deadline: datetime | None = None,
         what: str | None = None,
+        fingerprint: dict | None = None,
     ) -> None:
-        """Commit the season, having asked about a backup first where test mode is on.
+        """Approve the season: every gate, then the backup question where test mode is on, then
+        the approval is asked of the change queue, which carries it out (#439, slice 4a).
 
         *deadline* is when the review stops being approvable, carried in from the view so
         the backup question below can be given what is left of that window rather than a
         fresh one. Omitted, the question is skipped — there is no window to divide.
 
-        **Nothing after the commit may raise out of here** (issue #387). From
-        `transition_to_active` on, the season is running. An exception reaching the view's
-        error handler would tell the manager the approval did not finish, skip every grant
-        and posting not yet reached, and leave the review standing to expire. So every step
-        after it is guarded on its own, and what one could not do is named in the reply and
-        the log line: a division's roles, lineup or calendar, or the opening sheets. A role
-        Discord refuses a single driver is only logged, as everywhere roles are granted. The
-        reply itself
-        is best effort, falling back to a notice in the review's channel. Only a Discord
-        refusing both is left, and the log line, retried until delivered, still carries the
-        record.
+        *fingerprint* is the review's own, the areas of the season as the report described
+        it, which the approval is judged against again when it runs. The view always hands it
+        in; where it is not given, as the gate tests call this, the season is fingerprinted as
+        it stands, so that the check at run is never an empty one.
+
+        **The press is not deferred here.** The queue's acknowledgement is the press's own
+        response and its outcome updates it; only the backup question, which waits on a person,
+        defers first (the backup question). A refusal below answers the press
+        itself. **The in-hand check comes after the gates and before the question**, so that a
+        second approval of the season, from any review, is refused at once without being asked
+        whether to save the databases, and without naming the job (the owner's answer, "Refuse
+        but don't name the job"). Everything after it, the writes, the roles and the posts, is
+        the change's (`season_approval_change`), a job each, so that a stop leaves nothing
+        undone for good.
         """
-        # Defer immediately — approval involves heavy work (scheduling, role grants,
-        # lineup/calendar posts) that can exceed Discord's 3-second response window.
-        await interaction.response.defer(ephemeral=True)
         # Every gate below refuses through `refuse`, naming the button pressed (*what*, the
         # review's own Approve button where the caller names none) in the log channel.
         if what is None:
@@ -5741,6 +5746,13 @@ class SeasonCog(commands.Cog):
         # and repeating it would be one full rasterisation per division per aspect for an
         # answer already in hand.
 
+        # A second approval of the season, from this review or another, while the first is
+        # waiting, running or stopped on the queue: refused before the backup question, naming
+        # no job.
+        if await approval_in_hand(self.bot.db_path, cfg.season_id):
+            await refuse(interaction, ALREADY_BEING_APPROVED, what=what)
+            return
+
         # ── The last thing before anything is committed: a backup, under test mode ──
         #
         # Approving a season is the point a test run becomes hard to repeat — the schedule
@@ -5756,340 +5768,21 @@ class SeasonCog(commands.Cog):
         ):
             return
 
-        # The sessions are written here, past every gate and the backup question, and not
-        # beside the round checks above (#408): written there, every refusal between left them
-        # behind and the next approval wrote a second set, which every forecast named twice.
-        # Before the scheduling still, so no phase is ever armed against a round that has no
-        # sessions yet.
-        all_rounds = []
-        for div_db in divisions:
-            for rnd in div_rounds[div_db.id]:
-                await season_svc.create_sessions_for_round(rnd.id, rnd.format)
-                all_rounds.append(rnd)
+        if fingerprint is None:
+            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
-        # Snapshot attached points configs before transitioning (FR-007)
-        if await self.bot.module_service.is_results_enabled():
-            await season_points_service.snapshot_configs_to_season(
-                self.bot.db_path, cfg.season_id
-            )
-
-        # Schedule FIRST — if this fails the season stays SETUP in DB (fix #5)
-        weather_enabled = await self.bot.module_service.is_weather_enabled()
-        results_enabled = await self.bot.module_service.is_results_enabled()
-        # Mapping division_id → (season_number, tier) for human-readable job IDs
-        _div_meta: dict[int, tuple[int, int]] = {
-            div.id: (cfg.season_number, div.tier) for div in divisions
-        }
-        if weather_enabled:
-            # schedule_round creates weather phase jobs AND the results job together
-            from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-            _wcfg = await get_weather_pipeline_config(self.bot.db_path)
-            self.bot.scheduler_service.schedule_all_rounds(
-                all_rounds,
-                division_meta=_div_meta,
-                phase_1_days=_wcfg.phase_1_days,
-                phase_2_days=_wcfg.phase_2_days,
-                phase_3_hours=_wcfg.phase_3_hours,
-            )
-        elif results_enabled:
-            # Weather off but results on: schedule results jobs for production
-            # (real future race times).  In test mode we skip this because past-dated
-            # jobs auto-fire immediately; the advance command uses DB-state detection.
-            server_config = await self.bot.config_service.get_server_config()
-            if server_config is None or not server_config.test_mode_active:
-                self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds, division_meta=_div_meta)
-
-        if await self.bot.module_service.is_attendance_enabled():
-            _att_cfg = await self.bot.attendance_service.get_or_create_config()
-            for _rnd in all_rounds:
-                _s_num, _d_tier = _div_meta[_rnd.division_id]
-                self.bot.scheduler_service.schedule_attendance_round(
-                    _rnd,
-                    season_number=_s_num,
-                    division_tier=_d_tier,
-                    notice_days=_att_cfg.rsvp_notice_days,
-                    last_notice_hours=_att_cfg.rsvp_last_notice_hours,
-                    deadline_hours=_att_cfg.rsvp_deadline_hours,
-                )
-
-        # Only transition to ACTIVE after scheduling succeeds
-        # Every placement made in Placements is committed with the season (issue #220).
-        await season_svc.commit_placements(cfg.season_id)
-        await season_svc.transition_to_active(cfg.season_id)
-
-        # The setup held in memory ends here, with the setup, and not once the posting below
-        # is done (issue #262). The round commands read it to decide that a season is being
-        # set up, and the database refuses to sync one that has left setup — so while it was
-        # held, a round moved during the posting was refused as a fault, and a posting that
-        # raised kept it until a restart, refusing every `/round amend` of the running season
-        # until then. Everything below reads `cfg`, not the store. The one window left is
-        # inside `transition_to_active`, between its commit and its return.
-        self._pending.clear()
-
-        # What the approval could not do, told to the manager and the log channel below.
-        _not_done: list[str] = []
-
-        # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
-        _guild = interaction.guild
-        if _guild is not None:
-            _ungranted: list[str] = []
-            for _div in divisions:
-                try:
-                    async with get_connection(self.bot.db_path) as _db:
-                        _cur = await _db.execute(
-                            """
-                            SELECT dp.discord_user_id, ti.name AS team_name
-                            FROM driver_season_assignments dsa
-                            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                            JOIN team_instances ti ON ti.id = ts.team_instance_id
-                            WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                              AND dp.is_test_driver = 0
-                            """,
-                            (_div.id,),
-                        )
-                        _assign_rows = await _cur.fetchall()
-                except Exception:  # noqa: BLE001 — the season is committed (issue #387)
-                    # No command grants a division's roles again, so the division is named
-                    # and the manager grants them by hand.
-                    log.exception(
-                        "_do_approve: could not read the placed drivers of division %s",
-                        _div.id,
-                    )
-                    _not_done.append(
-                        f"**{_div.name}** — its placed drivers could not be read, so none "
-                        f"was given their division's or team's role. Grant them by hand; "
-                        f"`/team lineup` lists them."
-                    )
-                    continue
-                for _row in _assign_rows:
-                    try:
-                        _member = _guild.get_member(int(_row["discord_user_id"]))
-                        if _member is None:
-                            try:
-                                _member = await _guild.fetch_member(
-                                    int(_row["discord_user_id"])
-                                )
-                            except discord.HTTPException:
-                                # Gone from the server: there is nobody to give a role to,
-                                # as at the mid-season confirmation.
-                                log.warning(
-                                    "_do_approve: %s is not in the server; no role granted",
-                                    _row["discord_user_id"],
-                                )
-                                continue
-                        _role_ids = [_div.mention_role_id]
-                        _team_cfg = await self.bot.placement_service.get_team_role_config(
-                            _row["team_name"]
-                        )
-                        if _team_cfg is not None:
-                            _role_ids.append(_team_cfg.role_id)
-                        await self.bot.placement_service._grant_roles(_member, *_role_ids)
-                    except Exception:
-                        log.exception(
-                            "_do_approve: role grant failed for user %s", _row["discord_user_id"]
-                        )
-                        _ungranted.append(str(_row["discord_user_id"]))
-            if _ungranted:
-                _not_done.append(_ungranted_line(_ungranted))
-
-        # All three postings below draw inside their own loops, so the notice covers the
-        # set of them rather than sitting inside any one. It goes to the channel the review
-        # was read in — the approve button is ephemeral, so there is no other home, and
-        # this is where the manager is waiting.
-        async with batch_notice(
-            interaction.channel,
-            "\U0001f3a8 Posting lineups, calendars and opening classifications — "
-            "one moment.",
-        ):
-            # ── T016: Post lineup per division (FR-010) ──────────────────────
-            if _guild is not None:
-                for _div in divisions:
-                    if _div.lineup_channel_id:
-                        try:
-                            await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)
-                        except Exception:
-                            log.exception(
-                                "_do_approve: lineup post failed for division %s", _div.id
-                            )
-                            _not_done.append(_unposted_lineup_line(_div.name))
-
-            # ── T017: Post calendar per division (FR-011) ─────────────────────
-            # Conveyed as a graphic where the images module is enabled and the `calendar`
-            # aspect is toggled on; in the traditional textual manner otherwise, and as a
-            # fallback where a graphic was wanted but could not be produced. Approval is a
-            # command, but the calendar posting within it is not the thing commanded, so a
-            # failed render degrades to text rather than refusing the season (XIV.7).
-            #
-            # The season's number is passed bare and a falsy one is drawn rather than
-            # hidden (issue #213, decided 2026-09-20). It went unpassed entirely until
-            # then, so every calendar a league received lacked the number the manager saw
-            # on the preview they approved from — and lost the whole "SEASON n" line where
-            # the template groups the field. `cfg.season_number` is authoritative here,
-            # refreshed from the database by `sync_pending_config` above; a `0` can only
-            # mean a malformed row, and is logged and drawn as "SEASON 0" rather than
-            # normalised to None, which would hide the fault the same way.
-            if _guild is not None:
-                from leaguebot.core.services import calendar_post_service as _calendar
-
-                _calendar_notices: list[str] = []
-                _calendar_problems: list[str] = []
-
-                # The circuits are what a graphic is drawn from, so without them no calendar
-                # is posted (issue #387). An empty registry would fall every graphic back to
-                # text under a problem blaming each round's track for being unknown, which is
-                # false; `/division calendar-sync` draws each one properly afterwards.
-                try:
-                    _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
-                except Exception:  # noqa: BLE001 — the season is committed
-                    log.exception(
-                        "_do_approve: could not read the circuits, so no calendar was posted"
-                    )
-                    _tracks_by_name = None
-                    _unposted = [d.name for d in divisions if d.calendar_channel_id]
-                    if _unposted:
-                        _names = ", ".join(f"**{n}**" for n in _unposted)
-                        _not_done.append(
-                            f"No calendar was posted for {_names} — the circuits could not "
-                            f"be read. Run `/division calendar-sync` for each."
-                        )
-
-                if not cfg.season_number:
-                    log.warning(
-                        "_do_approve: season %s carries no number; its calendars will "
-                        "draw 'SEASON 0'",
-                        cfg.season_id,
-                    )
-
-                for _div in divisions:
-                    if _tracks_by_name is None or not _div.calendar_channel_id:
-                        continue
-                    try:
-                        _posting = await _calendar.post_division_calendar(
-                            self.bot,
-                            _guild,
-                            _div,
-                            div_rounds.get(_div.id, []),
-                            _tracks_by_name,
-                            season_number=cfg.season_number,
-                        )
-                    except Exception:  # noqa: BLE001
-                        # One division must never stop the others being posted.
-                        log.exception(
-                            "_do_approve: calendar post failed for division %s", _div.id
-                        )
-                        _not_done.append(
-                            f"**{_div.name}** — its calendar could not be posted. Run "
-                            f"`/division calendar-sync`."
-                        )
-                        continue
-
-                    _calendar_notices.extend(
-                        f"{_div.name}: {detail}" for detail in _posting.notices
-                    )
-                    if _posting.problem:
-                        _calendar_problems.append(f"{_div.name}: {_posting.problem}")
-
-                # Reported to the server's logging channel and to the manager who approved
-                # the season — and never in a division's calendar channel, which the drivers
-                # read (Constitution XIV.4).
-                for _line in _calendar_problems:
-                    log.error("_do_approve: calendar fell back to text - %s", _line)
-                if _calendar_problems or _calendar_notices:
-                    _report = [
-                        f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                        "/season placements-review | Calendar image generation"
-                    ]
-                    if _calendar_problems:
-                        _report.append("  Fell back to the textual calendar:")
-                        _report += [f"    - {line}" for line in _calendar_problems]
-                    if _calendar_notices:
-                        _report.append("  Notices:")
-                        _report += [f"    - {line}" for line in _calendar_notices]
-                    _report_text = "\n".join(_report)
-                    try:
-                        await self.bot.output_router.post_log(_report_text)
-                    except Exception:  # noqa: BLE001 — never fail an approval on the report
-                        log.exception("_do_approve: could not post the calendar report")
-                    self._calendar_report = _report_text
-
-            # ── The opening classification, per division ─────────────────────
-            # The standings and attendance sheets as they stand before a round has been
-            # run: everybody on zero, the grid empty. Posted as graphics with no text
-            # above them, falling back to the textual sheets where the images module is
-            # off or a template will not draw (XIV.7). A failure here never fails the
-            # approval — the season is already ACTIVE by this point.
-            if _guild is not None:
-                from leaguebot.core.services import season_classification_service as _classification
-
-                try:
-                    _opening_problems = await _classification.post_opening_classifications(
-                        self.bot, _guild, self.bot.db_path, divisions, div_rounds
-                    )
-                except Exception:  # noqa: BLE001 — never fail an approval on a picture
-                    log.exception("_do_approve: the opening classifications failed")
-                    _opening_problems = []
-                    # Raised from outside the service's own per-division guard, so some
-                    # divisions may have been posted and others not.
-                    _not_done.append(
-                        "The opening standings and attendance sheets could not all be "
-                        "posted. No command posts them again; each round's results and "
-                        "attendance post them as usual."
-                    )
-
-                if _opening_problems:
-                    _opening_report = "\n".join(
-                        [
-                            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                            "/season placements-review | Opening classification",
-                            *(f"    - {line}" for line in _opening_problems),
-                        ]
-                    )
-                    log.error(
-                        "_do_approve: opening classification problems - %s",
-                        "; ".join(_opening_problems),
-                    )
-                    try:
-                        await self.bot.output_router.post_log(
-                            _opening_report
-                        )
-                    except Exception:  # noqa: BLE001
-                        log.exception(
-                            "_do_approve: could not post the opening classification report"
-                        )
-
-        msg = (
-            f"\u2705 **Season approved and activated!**\n"
-            f"Season #{cfg.season_number} (ID: {cfg.season_id})"
+            fingerprint = (await take_fingerprint(self.bot, cfg.season_id)).areas
+        await self.bot.change_queue.ask(
+            APPROVAL_KIND,
+            {
+                "season_id": cfg.season_id,
+                "season_number": cfg.season_number,
+                "fingerprint": dict(fingerprint),
+                "channel_id": interaction.channel_id,
+            },
+            interaction=interaction,
+            what=what,
         )
-        msg += approval_checks.not_done_section(_not_done)
-        # The manager who approved is told what the calendar generation met, so a
-        # template that fell back to text is not discovered only by reading the channel.
-        _cal_report = getattr(self, "_calendar_report", None)
-        if _cal_report:
-            msg += f"\n\n\u26a0\ufe0f **Calendar images**\n{_cal_report.splitlines()[0]}"
-            msg += "\n" + "\n".join(_cal_report.splitlines()[1:])
-            self._calendar_report = None
-        await _confirm_privately(
-            interaction,
-            msg,
-            fallback=(
-                f"\u2705 <@{interaction.user.id}> \u2014 Season #{cfg.season_number} is approved and "
-                f"ongoing. Your confirmation could not be sent to you privately; the log "
-                f"channel has what it said."
-            ),
-        )
-
-        try:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
-                f"  season: {cfg.season_number}\n"
-                f"  season_id: {cfg.season_id}"
-                + "".join(f"\n  not done: {line}" for line in _not_done),
-            )
-        except Exception:  # noqa: BLE001 — the season is committed and the manager told
-            log.exception("_do_approve: could not log the approval")
-        log.info("Season %s activated by %s", cfg.season_id, interaction.user)
 
     # ------------------------------------------------------------------
     # Guard: block messages while round is in penalty review (T014)
@@ -6580,6 +6273,15 @@ class _ApproveView(LeagueView):
             return
         if await self._refuse_if_under_way(interaction):
             return
+        # A second approval of the season, from this review or another, is refused at once,
+        # naming no job, before the fingerprint is read: a season whose first approval has
+        # saved and is stopped at a post no longer fingerprints as it did, and the press is
+        # told what is true of it (#439).
+        if self._season_id is not None and await approval_in_hand(
+            self._cog.bot.db_path, self._season_id
+        ):
+            await refuse(interaction, ALREADY_BEING_APPROVED, what=self._button)
+            return
 
         # The report you read is the report you approve. The five-minute life makes a change
         # unlikely; this makes one detectable — and it is what lets the approval trust the
@@ -6606,7 +6308,12 @@ class _ApproveView(LeagueView):
                 return
 
         async with self._press_worked():
-            await self._cog._do_approve(interaction, deadline=self._deadline, what=self._button)
+            await self._cog._do_approve(
+                interaction,
+                deadline=self._deadline,
+                what=self._button,
+                fingerprint=self._fingerprint.areas if self._fingerprint is not None else None,
+            )
         # Stopped first: the review is answered, and a timer firing while the clean-up below
         # awaits Discord would otherwise announce it expired and record a lapse.
         self.stop()

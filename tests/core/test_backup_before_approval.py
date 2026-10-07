@@ -254,10 +254,6 @@ async def test_the_scheduler_is_resumed_after_a_failed_save(tmp_path):
 # ── Where it sits in the approval ─────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the approval does not yet check for one in hand nor ask the change queue",
-)
 def test_the_question_falls_after_every_gate_and_before_every_write():
     """Earlier it saves a season that may prove unapprovable; later, one already
     committed. It follows the check for an approval of the season already in hand, which

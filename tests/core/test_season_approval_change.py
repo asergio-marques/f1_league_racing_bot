@@ -65,11 +65,7 @@ from tests.support.season_league import (
 from tests.support.undecorate import undecorate
 
 _ON_THE_QUEUE = "#439: ✅ Approve still approves the season on the spot, not through the change queue"
-_NOTICE_AS_A_JOB = "#439: the review's channel is not yet told of the outcome by a job on the queue"
 _LATE_REFUSAL = "#439: a refusal as the approval runs is not yet told in the review's channel"
-_ARMED_WHATEVER_THE_MODULES = (
-    "#439: with weather and results both off, approving a season arms no result submission"
-)
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
@@ -251,7 +247,6 @@ async def _league_for(tmp_path: Any, monkeypatch: Any, **kwargs: Any) -> Any:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calendars_and_sheets_on_restart(
     tmp_path, monkeypatch,
 ):
@@ -275,7 +270,6 @@ async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calen
     assert len(_confirmed_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_restart_while_the_approval_is_in_hand_does_not_say_nothing_was_confirmed(
     tmp_path, monkeypatch,
 ):
@@ -292,7 +286,6 @@ async def test_a_restart_while_the_approval_is_in_hand_does_not_say_nothing_was_
     assert (await league.season())["stage"] == "ONGOING"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_stop_before_the_save_leaves_no_timed_work_armed_for_a_season_in_placements(
     tmp_path, monkeypatch,
 ):
@@ -308,7 +301,6 @@ async def test_a_stop_before_the_save_leaves_no_timed_work_armed_for_a_season_in
 
 
 @pytest.mark.parametrize("first", ["waiting", "stopped at apply", "stopped at a post"])
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_second_approval_from_another_review_is_refused_at_once_without_a_job_number(
     tmp_path, monkeypatch, first,
 ):
@@ -378,7 +370,6 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
     assert MAX in league.granted
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_lineup_discord_refuses_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch,
 ):
@@ -399,7 +390,6 @@ async def test_a_lineup_discord_refuses_stops_the_queue_and_once_discarded_is_na
 # ── The checks ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one_refuses(
     tmp_path, monkeypatch,
 ):
@@ -419,7 +409,6 @@ async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one
 
 
 @pytest.mark.parametrize("change", sorted(_REFUSALS))
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, monkeypatch, change,
 ):
@@ -442,7 +431,6 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_save_refuses_writing_nothing_where_the_season_left_placements_after_the_check(
     tmp_path, monkeypatch,
 ):
@@ -472,7 +460,6 @@ async def test_the_save_refuses_writing_nothing_where_the_season_left_placements
     assert _confirmed_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_backup_question_is_put_after_every_gate_and_before_the_approval_is_asked(
     tmp_path, monkeypatch,
 ):
@@ -501,7 +488,6 @@ async def test_cancelling_at_the_backup_question_asks_nothing(tmp_path, monkeypa
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_season_is_approved(
     tmp_path, monkeypatch,
 ):
@@ -520,7 +506,6 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_sea
     assert NOT_EVERYTHING not in reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
     tmp_path, monkeypatch,
 ):
@@ -539,7 +524,6 @@ async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
     assert (season["status"], season["stage"]) == ("SETUP", "PLACEMENTS")
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypatch):
     """From its first write on, every module flag and every season reader that opens a
     connection of its own raises: the save goes through all the same."""
@@ -579,7 +563,6 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
     assert (await league.season())["stage"] == "ONGOING"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_each_round_gets_its_sessions_once_however_often_the_save_is_tried(
     tmp_path, monkeypatch,
 ):
@@ -606,7 +589,6 @@ async def test_each_round_gets_its_sessions_once_however_often_the_save_is_tried
 
 
 @pytest.mark.parametrize("results", [True, False])
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_points_configurations_are_copied_onto_the_season_only_with_results_on(
     tmp_path, monkeypatch, results,
 ):
@@ -625,7 +607,6 @@ async def test_the_points_configurations_are_copied_onto_the_season_only_with_re
     assert (await _approval(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_approval_is_audited_with_the_season_and_the_placements_committed(
     tmp_path, monkeypatch,
 ):
@@ -644,7 +625,6 @@ async def test_the_approval_is_audited_with_the_season_and_the_placements_commit
     }
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):
@@ -672,7 +652,6 @@ async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_
         assert sends.index(pro) < sends.index(am)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_driver_discord_reports_absent_is_passed_over_and_the_queue_runs_on(
     tmp_path, monkeypatch,
 ):
@@ -688,7 +667,6 @@ async def test_a_driver_discord_reports_absent_is_passed_over_and_the_queue_runs
     assert (await _approval(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_driver_discord_cannot_fetch_for_another_reason_stops_the_queue(
     tmp_path, monkeypatch,
 ):
@@ -702,7 +680,6 @@ async def test_a_driver_discord_cannot_fetch_for_another_reason_stops_the_queue(
     assert LEWIS not in league.granted
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
     """A test driver (104) placed at McLaren in Am beside Charles."""
     league = await _league_for(tmp_path, monkeypatch, extra_drivers=True)
@@ -731,7 +708,6 @@ async def test_a_test_driver_is_granted_nothing(tmp_path, monkeypatch):
                      id="weather and results off under test mode"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
     """Each round's result submission is armed whatever the modules, save under test mode with
     results on, where `/test-mode advance` opens it by hand (owner, "Fold them in")."""
@@ -745,7 +721,6 @@ async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize("test_mode", [False, True], ids=["test mode off", "test mode on"])
-@pytest.mark.xfail(strict=True, reason=_ARMED_WHATEVER_THE_MODULES)
 async def test_a_season_with_weather_and_results_off_arms_a_result_submission_for_each_round(
     tmp_path, monkeypatch, test_mode,
 ):
@@ -763,7 +738,6 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
     }
 
 
-@pytest.mark.xfail(strict=True, reason=_ARMED_WHATEVER_THE_MODULES)
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
     tmp_path, monkeypatch,
 ):
@@ -790,7 +764,6 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     assert {cid: league.texts(cid) for cid in league.channels} == before
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_stuck_arming_leaves_the_season_ongoing_and_arms_once_retried(
     tmp_path, monkeypatch,
 ):
@@ -811,7 +784,6 @@ async def test_a_stuck_arming_leaves_the_season_ongoing_and_arms_once_retried(
     assert league.armed == [("results", _all_rounds())]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
     tmp_path, monkeypatch,
 ):
@@ -826,7 +798,6 @@ async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
     assert league.cog._get_pending() is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_season(
     tmp_path, monkeypatch,
 ):
@@ -855,7 +826,6 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_they_stand_when_it_runs(
     tmp_path, monkeypatch,
 ):
@@ -972,7 +942,6 @@ _RETRIED_POSTS = {
 
 
 @pytest.mark.parametrize("post", sorted(_RETRIED_POSTS))
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     """Images on, every aspect on: Pro's channel refuses the first send. The first try reaches
     for the picture, Pro's retry does not and posts the text, and Am's post, a first try of its
@@ -1066,7 +1035,6 @@ async def _fail_the_notice_delete(league: Any) -> None:
          "The notice that the season's posts were being made could not be deleted"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_batch_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch, half, job, line,
 ):
@@ -1083,7 +1051,6 @@ async def test_a_batch_notice_discord_refuses_stops_the_queue_and_once_discarded
     assert (await _approval(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_discarded_save_approves_nothing_and_says_to_review_again(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -1155,7 +1122,6 @@ _DISCARDED = {
 
 
 @pytest.mark.parametrize("job", list(_DISCARDED))
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     tmp_path, monkeypatch, job,
 ):
@@ -1174,7 +1140,6 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     assert len(confirmed) == 1 and f"\n  not done: {line}" in confirmed[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_no_separate_opening_classification_line_is_written(tmp_path, monkeypatch):
     """Each opening post is a job of the approval, and one discarded is named on the approval's
     own line (the test above). The separate "| Opening classification" report line goes with
@@ -1201,7 +1166,6 @@ async def test_no_separate_opening_classification_line_is_written(tmp_path, monk
     assert not any("| Opening classification" in line for line in _log_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_discarded_arming_is_named_first_and_says_the_season_has_no_timed_work(
     tmp_path, monkeypatch,
 ):
@@ -1237,7 +1201,6 @@ async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkey
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_the_review_is_cleared_and_its_prompt_forgotten_once_the_approval_is_asked(
     tmp_path, monkeypatch,
 ):
@@ -1253,7 +1216,6 @@ async def test_the_review_is_cleared_and_its_prompt_forgotten_once_the_approval_
         assert ("delete", REVIEW_CHANNEL, message.id) in league.events
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_stop_before_the_save_approves_once_on_restart(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
@@ -1277,7 +1239,6 @@ def _told(league: Any, text: str) -> int:
 
 
 @pytest.mark.parametrize("cut_off", ["fourteen minutes passed", "a restart"])
-@pytest.mark.xfail(strict=True, reason=_NOTICE_AS_A_JOB)
 async def test_an_approval_whose_reply_can_no_longer_be_updated_tells_the_review_s_channel(
     tmp_path, monkeypatch, cut_off,
 ):
@@ -1299,7 +1260,6 @@ async def test_an_approval_whose_reply_can_no_longer_be_updated_tells_the_review
                    for text in league.texts(REVIEW_CHANNEL))
 
 
-@pytest.mark.xfail(strict=True, reason=_NOTICE_AS_A_JOB)
 async def test_an_approval_whose_reply_is_updated_tells_the_channel_nothing(
     tmp_path, monkeypatch,
 ):
@@ -1313,7 +1273,6 @@ async def test_an_approval_whose_reply_is_updated_tells_the_channel_nothing(
     assert "tell_review_channel" in [job["name"] for job in await _jobs(league)]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOTICE_AS_A_JOB)
 async def test_a_not_approved_outcome_that_cannot_reach_the_member_is_told_in_the_channel(
     tmp_path, monkeypatch,
 ):
@@ -1328,7 +1287,6 @@ async def test_a_not_approved_outcome_that_cannot_reach_the_member_is_told_in_th
     assert NOT_SAVED not in reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOTICE_AS_A_JOB)
 async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_in_the_line(
     tmp_path, monkeypatch,
 ):
@@ -1360,7 +1318,6 @@ def _late_notices(league: Any) -> list[str]:
 
 
 @pytest.mark.parametrize("change", sorted(_REFUSALS))
-@pytest.mark.xfail(strict=True, reason=_LATE_REFUSAL)
 async def test_a_refusal_at_run_after_the_reply_expired_is_told_in_the_review_s_channel(
     tmp_path, monkeypatch, change,
 ):
@@ -1384,7 +1341,6 @@ async def test_a_refusal_at_run_after_the_reply_expired_is_told_in_the_review_s_
     assert words in notices[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_LATE_REFUSAL)
 async def test_a_refusal_at_run_while_the_reply_can_be_updated_tells_the_channel_nothing(
     tmp_path, monkeypatch,
 ):
@@ -1400,7 +1356,6 @@ async def test_a_refusal_at_run_while_the_reply_can_be_updated_tells_the_channel
     assert _late_notices(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_LATE_REFUSAL)
 async def test_a_refusal_at_run_after_a_restart_is_told_in_the_channel(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
@@ -1415,7 +1370,6 @@ async def test_a_refusal_at_run_after_a_restart_is_told_in_the_channel(tmp_path,
     assert "⛔ Your season has changed since this review" in notices[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_LATE_REFUSAL)
 async def test_a_stop_between_the_refusal_and_its_notice_posts_the_notice_on_restart(
     tmp_path, monkeypatch,
 ):

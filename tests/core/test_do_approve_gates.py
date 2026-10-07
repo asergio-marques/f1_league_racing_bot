@@ -54,7 +54,6 @@ SEASON_ID = 11
 USER_ID = 77
 
 
-_NOT_ASKED = "#439: a season passing every gate is not yet asked of the change queue"
 
 
 @pytest.fixture
@@ -210,7 +209,6 @@ def _replies(interaction) -> str:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_the_gate_sequence_runs_without_an_unbound_attribute(db_path):
     """The regression, blunt and on purpose.
 
@@ -226,7 +224,6 @@ async def test_the_gate_sequence_runs_without_an_unbound_attribute(db_path):
     cog.bot.change_queue.ask.assert_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_season_passing_every_gate_is_asked_of_the_queue(db_path):
     """The end of the sequence, not merely the absence of an exception.
 
@@ -333,7 +330,6 @@ def _broken(template_key: str):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_sound_image_configuration_still_approves(db_path, monkeypatch):
     cog = _images_on(_cog(db_path), monkeypatch)
 
@@ -372,7 +368,6 @@ async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_not
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_broken_template_of_a_switched_off_output_still_approves(
     db_path, monkeypatch
 ):
@@ -401,7 +396,6 @@ async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path, monk
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     """A league not drawing has no template, rasteriser or colour to be wrong about."""
     cog = _cog(
@@ -511,7 +505,6 @@ async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_season_clear_of_its_windows_still_approves(db_path):
     """The gate must not stand in the way of an ordinary season."""
     cog = _cog_with_rounds(db_path, [_round_in(30)])
@@ -521,7 +514,6 @@ async def test_a_season_clear_of_its_windows_still_approves(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     """No rounds, no windows — and so no reason to read the configs at all.
 
@@ -642,7 +634,6 @@ async def test_the_past_round_refusal_is_private(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_future_season_still_approves_with_both_modules_off(db_path):
     """The gate must not stand in the way of an ordinary season."""
     cog = _cog_with_rounds(db_path, [_round_in(30)], attendance=False, weather=False)
@@ -652,7 +643,6 @@ async def test_a_future_season_still_approves_with_both_modules_off(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
     """Refusing over one would leave a league unable to approve until they deleted it."""
     from leaguebot.core.models.round import RoundStatus
@@ -754,7 +744,6 @@ async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(d
         assert (await cursor.fetchone())["n"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_well_ordered_points_table_still_approves(db_path):
     """The other half: a gate that refuses everything is no better than one that refuses nothing."""
     await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
@@ -767,7 +756,6 @@ async def test_a_well_ordered_points_table_still_approves(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ASKED)
 async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
     """Trailing zeros are the ordinary shape of a points table, not a fault."""
     await _attach(db_path, "ZEROS", [(1, 25), (2, 18), (3, 0), (4, 0)])

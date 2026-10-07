@@ -760,7 +760,6 @@ async def test_the_blocker_never_blocks_a_season_it_could_not_read():
     assert await cog._portrait_configuration_blocker() is None
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the approval is not yet asked of the change queue")
 def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
     refusal must stop the approval rather than report and carry on, before the approval is
@@ -791,6 +790,15 @@ REVIEWER = 4242
 
 
 ADMIN_ROLE = 444
+
+
+@pytest.fixture(autouse=True)
+def _no_approval_in_hand(monkeypatch):
+    """The view asks whether an approval of its season is in hand, reading the change queue's
+    tables (#439); these views hold no database, so the answer is given here: none is."""
+    monkeypatch.setattr(
+        "leaguebot.core.cogs.season_cog.approval_in_hand", AsyncMock(return_value=False)
+    )
 
 
 def _approve_view(reviewer_id: int = REVIEWER, *, admin_role: int | None = ADMIN_ROLE):

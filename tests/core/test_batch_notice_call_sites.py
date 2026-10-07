@@ -94,10 +94,8 @@ def test_the_review_posting_loop_is_not_wrapped():
 # where it posts.
 
 _APPROVAL = "core/services/season_approval_change.py"
-_NOT_ON_THE_QUEUE = "#439: the season's confirmation is not yet a change on the queue"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ON_THE_QUEUE)
 def test_the_approve_lineup_and_calendar_posting_is_wrapped():
     """The approval's notice is posted and deleted by jobs of its own, through the batch
     notice's raising halves, and no longer wraps the press."""
@@ -109,7 +107,6 @@ def test_the_approve_lineup_and_calendar_posting_is_wrapped():
     assert not _notices(_function("core/cogs/season_cog.py", "_do_approve"))
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ON_THE_QUEUE)
 def test_the_approve_notice_goes_to_the_interaction_channel():
     """The approve button is ephemeral, so the channel the review was read in is the
     only home it has: the press keeps it in the approval's payload, which the notice's jobs
@@ -267,7 +264,6 @@ def test_every_notice_carries_plain_text_for_a_league(relative, function):
     _assert_plain_text(call.args[1].value)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_ON_THE_QUEUE)
 def test_the_confirmation_s_notice_carries_plain_text_for_a_league():
     """The confirmation's notice, now its jobs' text: today's words, a league's to read."""
     texts = [
