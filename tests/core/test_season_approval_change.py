@@ -1126,13 +1126,6 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
                for line in not_done), confirmed[0]
 
 
-_KEPT_FROM_THE_CHANNEL_SET_SINCE = (
-    "#439, code-3-2: the next try removes the kept copies from the standings channel set at the "
-    "retry, not from the channel they were posted in, which is kept beside them and never read"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_KEPT_FROM_THE_CHANNEL_SET_SINCE)
 async def test_kept_opening_standings_are_removed_from_the_channel_they_were_posted_in(
     tmp_path, monkeypatch,
 ):

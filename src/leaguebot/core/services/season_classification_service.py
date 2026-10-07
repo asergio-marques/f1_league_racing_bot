@@ -72,9 +72,9 @@ async def post_opening_standings(
     longer holds raises `StepFailedOnDiscord`, for the change queue to stop on. No message id is
     recorded (results specification: the opening classification is not kept), so a table already
     sent when a later one fails is named on the failure (`result`), and the job keeps it: the
-    next try is handed it as *kept* and removes that copy before it posts both again, failing
-    again, with what it still has to remove, where a message will not delete. *as_text* leaves
-    the graphic out, which is how a job retries (Constitution XIV rule 8).
+    next try is handed it as *kept* and removes that copy, from the channel it was posted in, before
+    it posts both again, failing again, with what it still has to remove, where a message will not
+    delete. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
@@ -89,6 +89,19 @@ async def post_opening_standings(
     opener = await _opening_round(db_path, division_id)
     if opener is None:
         return
+    earlier = [int(each) for each in (kept or {}).get("new") or []]
+    if earlier:
+        # Removed from the channel they were posted in, which the standings channel may since
+        # have left; a channel the guild no longer holds holds none of them.
+        posted_in = int((kept or {}).get("channel_id") or 0)
+        earlier_channel = guild.get_channel(posted_in) if posted_in else None
+        if earlier_channel is not None:
+            left, failures = await remove_part_posted_messages(earlier_channel, earlier)
+            if left:
+                raise StepFailedOnDiscord(
+                    f"{len(left)} message(s) of the earlier try could not be removed",
+                    result={"new": left, "channel_id": posted_in},
+                ) from (failures[0] if failures else None)
     async with get_connection(db_path) as db:
         config = await (
             await db.execute(
@@ -102,14 +115,6 @@ async def post_opening_standings(
     channel = guild.get_channel(int(channel_id))
     if channel is None:
         raise StepFailedOnDiscord(f"the standings channel (id {channel_id}) is not in the server")
-    earlier = [int(each) for each in (kept or {}).get("new") or []]
-    if earlier:
-        left, failures = await remove_part_posted_messages(channel, earlier)
-        if left:
-            raise StepFailedOnDiscord(
-                f"{len(left)} message(s) of the earlier try could not be removed",
-                result={"new": left, "channel_id": int(channel_id)},
-            ) from (failures[0] if failures else None)
 
     # Twice, deliberately. The order is taken on the name the sheet will actually draw, and the
     # names are resolved from Discord by user id, so the roster has to be known before it can be
