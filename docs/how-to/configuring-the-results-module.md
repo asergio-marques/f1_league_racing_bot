@@ -320,7 +320,7 @@ The corrections, the recalculated points, every later standing, the round's fina
 
 **The standings channel also gets a posting at each end of the season.** Approving the season posts an **opening classification** — every driver and team on zero, with the calendar drawn empty beside them — and `/season complete` posts a **final classification**, holding the last round that has results. Both go to the same channel as every round's standings, as drawings where you turned pictures on and as the ordinary text tables where you did not. Nothing has been scored when the opening one goes out, so there is no championship to order it by: it comes out under the tie-break above, by team and then by driver.
 
-Neither is a round's standings, so neither is replaced by anything and neither is touched by `/results standings sync`, which walks the rounds that have results. If a division's cannot be posted, the log channel says so, the other divisions carry on, and the season is approved or completed regardless.
+Neither is a round's standings, so neither is replaced by anything and neither is touched by `/results standings sync`, which walks the rounds that have results. If a division's cannot be posted at completion, the log channel says so, the other divisions carry on, and the season is completed regardless. At approval, each division's opening classification is a job on the change queue: one Discord refuses stops the queue until it is retried, and once a league admin discards it, your confirmation of the approval names it.
 
 ---
 

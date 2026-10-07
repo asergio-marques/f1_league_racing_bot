@@ -241,7 +241,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 **Each of these writes a line to the log channel**, success, refusal or failure, naming who ran it. `backup status` writes nothing, being a view. `advance` writes one too: the mystery notice and the submission wizard's start are recorded, and a phase that fails is recorded naming the phase, the division and the round.
 
-**The approval offers to save for you.** Under test mode, pressing Approve on `/season placements-review` pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
+**The approval offers to save for you.** Under test mode, pressing Approve on `/season placements-review` pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand. Once answered, the approval is asked of the queue; a second Approve meanwhile is refused without the question.
 
 > The question inherits what is left of the review's five minutes rather than getting its own. Leave it unanswered and the review expires and nothing is approved, exactly as if you had never pressed the button. If the save itself fails, you are told and the season is approved anyway — it was a convenience, not a condition.
 
