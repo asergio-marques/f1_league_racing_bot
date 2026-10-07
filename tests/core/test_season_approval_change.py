@@ -1017,6 +1017,79 @@ async def test_a_failed_opening_standings_post_leaves_one_copy_once_retried(
     assert sum(text.count("**Team Standings**") for text in standing) == 1, standing
 
 
+async def _opening_standings_posted_in_part(league: Any, monkeypatch: Any) -> list[int]:
+    """Images and results on, the standings aspect on, neither graphic drawn: Pro's standings
+    channel takes the drivers' table and refuses the teams', so the queue stops at
+    `opening_standings`. The refusal is then cleared. Returns the ids standing in the channel,
+    the drivers' table alone."""
+    from leaguebot.image.services import image_standings_post
+    from leaguebot.image.services.image_standings_post import (
+        FELL_BACK,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
+    )
+
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    monkeypatch.setattr(image_standings_post, "try_post", AsyncMock(
+        side_effect=lambda *_args, **_kwargs: StandingsPostOutcome(
+            drivers=ChampionshipOutcome(FELL_BACK), constructors=ChampionshipOutcome(FELL_BACK),
+        )
+    ))
+    standings = league.channel(PRO_CH.standings)
+    standings.fail_when = lambda content, _kwargs: "**Team Standings**" in (content or "")
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "opening_standings"
+    standings.fail_when = None
+    standing = sorted(standings.messages)
+    texts = [standings.messages[mid].content or "" for mid in standing]
+    assert sum("**Driver Standings**" in text for text in texts) == 1, texts
+    assert not any("**Team Standings**" in text for text in texts), texts
+    return standing
+
+
+def _tables(channel: Any) -> tuple[int, int]:
+    """How many drivers' and teams' tables stand in *channel*."""
+    texts = [message.content or "" for message in channel.messages.values()]
+    return (sum(text.count("**Driver Standings**") for text in texts),
+            sum(text.count("**Team Standings**") for text in texts))
+
+
+async def test_an_earlier_opening_standings_copy_that_will_not_delete_stops_the_queue_again(
+    tmp_path, monkeypatch,
+):
+    """Pro's drivers' table went out and its teams' table was refused, so the queue stopped at
+    the opening standings. The drivers' table is made to refuse deletion, then Retry: the earlier
+    copy cannot come down, so the job stops again, keeping the id still to remove, and posts no
+    second drivers' table beside it. Once deletion is allowed, Retry takes the copy down and
+    posts both: one drivers' and one teams' table stand (#439, issue-2-2)."""
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    await _pressed(league)
+    earlier = await _opening_standings_posted_in_part(league, monkeypatch)
+    standings = league.channel(PRO_CH.standings)
+    deleting = {mid: standings.messages[mid].delete for mid in earlier}
+    for mid in earlier:
+        standings.messages[mid].delete = AsyncMock(
+            side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+        )
+
+    await retry_job(league.bot)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "opening_standings"
+    assert sorted(stopped["result"]["new"]) == earlier
+    assert sorted(standings.messages) == earlier
+    assert _tables(standings) == (1, 0)
+
+    for mid, delete in deleting.items():
+        standings.messages[mid].delete = delete
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert not set(earlier) & set(standings.messages)
+    assert _tables(standings) == (1, 1)
+
+
 async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
     tmp_path, monkeypatch,
 ):
