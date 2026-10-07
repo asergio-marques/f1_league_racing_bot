@@ -20,8 +20,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 SERVER_ID = 22071
 SEASON_ID = 7
 
-_NOT_BUILT = "#439: the approval's checks are not yet read by a service of their own"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -72,7 +70,6 @@ def _guild(*, gone: tuple[int, ...] = ()):
     return guild
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_the_channel_faults_are_read_by_the_service(db_path):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
     deleted from the server. The service names both, with the command that sets each, and asks
@@ -87,7 +84,6 @@ async def test_the_channel_faults_are_read_by_the_service(db_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     """Alice is not yet placed, Bob awaits approval, driver 3 is correcting their signup, and
     two others are placed or signed out. The service names the three unsettled, as the review
