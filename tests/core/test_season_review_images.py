@@ -805,7 +805,9 @@ def _approve_view(reviewer_id: int = REVIEWER, *, admin_role: int | None = ADMIN
     from leaguebot.core.models.server_config import ServerConfig
 
     cog = MagicMock()
-    cog._do_approve = AsyncMock()
+    # Said outright: a press that reaches the helper has its approval asked of the change
+    # queue, which is the one press that takes the review down (#439).
+    cog._do_approve = AsyncMock(return_value=True)
     cog.bot.db_path = "/nonexistent/nowhere.db"
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=ServerConfig(
@@ -1025,6 +1027,227 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest():
     await _ApproveView.approve(view, _button_interaction(), MagicMock())
 
     survivor.delete.assert_awaited_once()
+
+
+# ── A press refused, or cancelled, leaves the review standing (#439) ───────
+#
+# The core specification's "Confirming placements": a press refused at the press by the
+# approval's own gates, or cancelled at the test-mode backup question, leaves the review and its
+# button standing, to be pressed again within its five minutes, as a press that fails on a fault
+# does. Only a press whose approval is asked of the change queue takes the review down. These
+# drive the real `_do_approve` behind the button, so that what the helper tells the view is
+# what is tested, not what a double says.
+
+_REFUSED_PRESS_CLEARS = (
+    "#439: a press refused by _do_approve's own gates, or cancelled at the backup question, "
+    "still deletes and forgets the review"
+)
+
+
+async def _gated_view(tmp_path, *, round_in_days: float = 30.0, test_mode: bool = False):
+    """A posted review whose button reaches the real `_do_approve`, its prompt recorded in a
+    migrated database. Every gate answers "nothing wrong" but the date of its one round, which
+    *round_in_days* places, and every module is off."""
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.db.database import run_migrations
+    from leaguebot.core.models.round import Round, RoundFormat
+    from leaguebot.core.models.season import SeasonStage
+    from leaguebot.core.models.server_config import ServerConfig
+
+    db_path = str(tmp_path / "review.db")
+    await run_migrations(db_path)
+
+    cog = SeasonCog.__new__(SeasonCog)
+    bot = cog.bot = MagicMock()
+    bot.db_path = db_path
+    bot.change_queue.ask = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock()
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=ServerConfig(
+            server_id=7,
+            interaction_role_id=222,
+            league_admin_role_id=ADMIN_ROLE,
+            interaction_channel_id=111,
+            log_channel_id=333,
+            test_mode_active=test_mode,
+        )
+    )
+    cog._pending = {
+        REVIEWER: SimpleNamespace(server_id=7, season_id=1, season_number=1, divisions=[])
+    }
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog._season_has_divisions = AsyncMock(return_value=True)
+    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    bot.season_service.validate_division_tiers = AsyncMock()
+    bot.season_service.get_divisions = AsyncMock(
+        return_value=[SimpleNamespace(id=1, name="Premier", tier=1)]
+    )
+    bot.season_service.get_division_rounds = AsyncMock(
+        return_value=[
+            Round(
+                id=1,
+                division_id=1,
+                round_number=1,
+                format=RoundFormat.NORMAL,
+                track_name="Silverstone",
+                scheduled_at=datetime.now(timezone.utc) + timedelta(days=round_in_days),
+            )
+        ]
+    )
+    for module in ("weather", "attendance", "results", "signup", "images"):
+        setattr(bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
+
+    async def _no_windows():
+        return None, None
+
+    bot.approval_windows = _no_windows
+    cog._team_name_problems = AsyncMock(return_value=[])
+    cog._lineup_problems = AsyncMock(return_value=[])
+
+    view = _ApproveView(cog, REVIEWER)
+    view._server_id = 7
+    view._season_id = 1
+    report = [MagicMock(id=900 + n, delete=AsyncMock()) for n in range(3)]
+    message = MagicMock(id=999, delete=AsyncMock())
+    message.channel.id = 111
+    message.channel.send = AsyncMock()
+    view.carries(report)
+    await view.bind(message)
+    return view, cog, message, report
+
+
+def _gated_press():
+    """The reviewer's press, its refusal unrecorded: the log line is not this section's."""
+    interaction = _button_interaction()
+    interaction.client = None
+    interaction.channel_id = 111
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+def _said(interaction) -> str:
+    calls = [
+        *interaction.response.send_message.await_args_list,
+        *interaction.followup.send.await_args_list,
+    ]
+    return "\n".join(str(call.args[0]) for call in calls if call.args)
+
+
+async def _prompt_rows(view) -> int:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(view._cog.bot.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
+        (count,) = await cursor.fetchone()
+    return count
+
+
+def _assert_standing(view, message, report) -> None:
+    """Every report message and the question undeleted, and the button still listening."""
+    message.delete.assert_not_awaited()
+    for posted in report:
+        posted.delete.assert_not_awaited()
+    assert view._message is message
+    assert not view.is_finished(), "the view was stopped, so a second press goes unheard"
+
+
+@pytest.mark.xfail(strict=True, reason=_REFUSED_PRESS_CLEARS)
+async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path):
+    """A date gone by refuses at the press: the review stands, to be pressed again."""
+    view, cog, message, report = await _gated_view(tmp_path, round_in_days=-90)
+    interaction = _gated_press()
+
+    await _ApproveView.approve(view, interaction, MagicMock())
+
+    assert "dates that have already gone by" in _said(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
+    _assert_standing(view, message, report)
+    assert await _prompt_rows(view) == 1
+
+    # Pressed again within its five minutes, the press is handled and judged afresh.
+    again = _gated_press()
+    await _ApproveView.approve(view, again, MagicMock())
+
+    assert "dates that have already gone by" in _said(again)
+    _assert_standing(view, message, report)
+    assert await _prompt_rows(view) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=_REFUSED_PRESS_CLEARS)
+async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standing(
+    tmp_path, monkeypatch
+):
+    """Under test mode the manager cancels at the backup question: nothing is approved, and
+    the review stands, to be pressed again."""
+    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+
+    async def _cancelled(self):
+        self.answer = "cancel"
+        return True
+
+    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", _cancelled)
+    view, cog, message, report = await _gated_view(tmp_path, test_mode=True)
+    interaction = _gated_press()
+
+    await _ApproveView.approve(view, interaction, MagicMock())
+
+    assert "Nothing has been approved, and nothing has been saved." in _said(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
+    _assert_standing(view, message, report)
+    assert await _prompt_rows(view) == 1
+
+
+async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
+    tmp_path, monkeypatch
+):
+    """The question left unanswered until the review's five minutes are up: the review is no
+    longer answerable, so it goes, its record with it, and its lapse is recorded once."""
+    from datetime import datetime, timedelta, timezone
+
+    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+
+    holder = {}
+
+    async def _unanswered(self):
+        holder["view"]._deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+        self.answer = None
+        return True
+
+    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", _unanswered)
+    view, cog, message, report = await _gated_view(tmp_path, test_mode=True)
+    holder["view"] = view
+    interaction = _gated_press()
+
+    await _ApproveView.approve(view, interaction, MagicMock())
+
+    assert "expired while the backup question went unanswered" in _said(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+    assert view.is_finished()
+    assert await _prompt_rows(view) == 0
+    assert cog.bot.output_router.post_log.await_count == 1
+
+
+async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path):
+    """The one press that ends the review: every gate passed and the approval asked of the
+    change queue. The review is deleted, its record forgotten and the view stopped."""
+    view, cog, message, report = await _gated_view(tmp_path)
+
+    await _ApproveView.approve(view, _gated_press(), MagicMock())
+
+    cog.bot.change_queue.ask.assert_awaited_once()
+    message.delete.assert_awaited_once()
+    for posted in report:
+        posted.delete.assert_awaited_once()
+    assert view.is_finished()
+    assert await _prompt_rows(view) == 0
 
 
 # ── The question the button is attached to ────────────────────────────────
