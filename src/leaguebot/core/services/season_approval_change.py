@@ -58,6 +58,7 @@ from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
     OutcomeContext,
+    DiscardedContext,
     RefusedContext,
     Step,
     StepContext,
@@ -669,6 +670,27 @@ def season_approval_change(
             ),
         )
 
+    def tell_of_discard(context: DiscardedContext) -> tuple[FollowOn, ...]:
+        """Where a league admin discards the approval stopped at its check, before anything of it
+        began, and the member can no longer be told, ask the change that tells the review's
+        channel the season was not approved (`season_approval_tell_change`)."""
+        if context.reply_updatable:
+            return ()
+        number = context.payload["season_number"]
+        channel_id = context.payload["channel_id"]
+        return (
+            FollowOn(
+                TELL_KIND,
+                {
+                    "season_number": number,
+                    "channel_id": channel_id,
+                    "actor_id": context.actor_id,
+                    "text": channel_not_approved(context.actor_id, number),
+                },
+                f"Telling <#{channel_id}> that season {number} was not approved",
+            ),
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         refusal = (_view(ctx, APPLY) or _EMPTY).result
         if refusal and refusal.get("refused"):
@@ -734,6 +756,7 @@ def season_approval_change(
         doing=doing,
         outcome=outcome,
         on_refused=tell_of_refusal,
+        on_discarded=tell_of_discard,
     )
 
 

@@ -1439,12 +1439,6 @@ async def test_a_late_refusal_notice_discord_refuses_stops_the_queue_and_a_disca
 # the log channel has the Discard's line for why. 2.1b's `LATE_REFUSAL_HEAD` frames a refusal's own
 # reply, which a Discard does not have.
 
-_DISCARD_HOOK = (
-    "#439: a Discard of an approval stopped at its check is not told in the review's channel; the "
-    "queue has no discard hook (`ChangeType.on_discarded`, named by analogy with `on_refused`)"
-)
-
-
 def _check_raises() -> ExitStack:
     """The approval's check raises as it runs, as a fault reading the season would: the
     fingerprint it takes raises. The press, already made, is not affected."""
@@ -1458,7 +1452,6 @@ async def _stopped_at_its_check(league: Any) -> None:
     assert (await _approval(league))["state"] == "QUEUED"
 
 
-@pytest.mark.xfail(strict=True, reason=_DISCARD_HOOK)
 async def test_a_discard_of_the_approval_stopped_at_its_check_after_the_reply_expired_is_told_in_the_review_s_channel(
     tmp_path, monkeypatch,
 ):
@@ -1504,7 +1497,6 @@ async def test_a_discard_of_the_approval_stopped_at_its_check_while_the_reply_ca
     assert _told(league, f"<@{ADMIN_ID}> — Season #3") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_DISCARD_HOOK)
 async def test_a_discard_of_the_approval_stopped_at_its_check_after_a_restart_is_told_in_the_channel(
     tmp_path, monkeypatch,
 ):
