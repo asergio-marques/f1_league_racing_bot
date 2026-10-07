@@ -16,6 +16,7 @@ today the press approves on the spot, inside the button.
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import ExitStack
 from datetime import timedelta
 from types import SimpleNamespace
@@ -889,6 +890,36 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
     assert pro and pro[-1]["season_number"] == 3
     assert pro[-1]["tracks"][1] == "Monza"
     assert "Monza" in league.texts(PRO_CH.calendar)[-1]
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
+    """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
+    calendar job reads the number as it runs and draws it as 0, never hiding it, and logs that it
+    will draw "SEASON 0" (#213). It replaces the deleted
+    `test_do_approve_posting.py::test_a_season_with_no_number_still_draws_and_is_logged`."""
+    from leaguebot.core.services import calendar_post_service
+
+    league = await _league_for(tmp_path, monkeypatch, images=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
+        side_effect=lambda aspect: aspect == "calendar"
+    )
+    drawn: list[dict[str, Any]] = []
+
+    async def _draw(_bot: Any, division: Any, rounds: Any, _tracks: Any, **kwargs: Any) -> Any:
+        drawn.append({"division": division.name, **kwargs})
+        return SimpleNamespace(problem=None, notices=[], png_paths=[])
+
+    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
+    await league.write("UPDATE seasons SET season_number = 0 WHERE id = ?", SEASON_ID)
+
+    with caplog.at_level(logging.WARNING):
+        await _pressed(league)
+        await run_queue(league.bot)
+
+    pro = [each for each in drawn if each["division"] == "Pro"]
+    assert pro and pro[-1]["season_number"] is not None and pro[-1]["season_number"] == 0
+    assert "SEASON 0" in caplog.text
 
 
 async def test_a_calendar_that_falls_back_to_text_is_reported_in_the_reply_and_the_log(
