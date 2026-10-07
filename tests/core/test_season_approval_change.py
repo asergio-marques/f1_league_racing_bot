@@ -419,15 +419,25 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
 
     await run_queue(league.bot)
 
-    assert words in reply(press)
+    refusals = [line for line in _log_lines(league) if "⛔" in line and "Approve" in line]
+    if change == "a date passed":
+        # The clock has moved 31 days, far past the 14 minutes the reply can be updated in, so
+        # the refusal is read from its line in the log channel, which gives it without its mark.
+        assert words.removeprefix("❌ ") in refusals[0]
+    else:
+        assert words in reply(press)
     assert (await _approval(league))["state"] == "REFUSED"
-    assert sum("⛔" in line and "Approve" in line for line in _log_lines(league)) == 1
+    assert len(refusals) == 1
     assert await _sessions(league) == {}
     assert await _committed(league) == 0
     assert league.armed == []
     assert await _stopped_at(league) is None
+    from leaguebot.core.services.season_approval_change import TELL_KIND
+
+    # Past the 14 minutes, the approval asks the change that tells the review's channel (2.1b).
+    told = [TELL_KIND] if change == "a date passed" else []
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
-        (await _approval(league))["kind"]
+        (await _approval(league))["kind"], *told
     ]
 
 
