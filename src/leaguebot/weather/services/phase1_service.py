@@ -36,12 +36,13 @@ async def run_phase1(round_id: int, bot: "LeagueBot") -> None:
     arrives at it" — can only hold for every route in if the runner itself refuses. Guarding the
     callers alone is what let issue #113 through.
 
-    Nor does it do anything for a round that is cancelled, or whose division is: the
-    cancellation removes the round's timed work before it records the round cancelled, but a
-    phase already under way, or one fired late, still arrives here. The round is read again
-    and acted on only while it is still due (architecture.md, "The database says when something
-    is due"); the skip is written to the host's log alone, the league having been told of the
-    cancellation itself.
+    Nor does it do anything for a round that is cancelled, or whose division is, where it reads
+    the round after the cancellation is recorded: the cancellation removes the round's timed work
+    before it records the round cancelled, but a phase fired late, or one that fell due in
+    between, can still arrive here. One that read the round before the save is not caught, the
+    round not yet being cancelled when it fell due. The round is read again and acted on only
+    while it is still due (architecture.md, "The database says when something is due"); the skip
+    is written to the host's log alone, the league having been told of the cancellation itself.
     """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
