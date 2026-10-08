@@ -29,24 +29,23 @@ approved with is not the tier it was built with.
 **Cancel asks for `CONFIRM` typed exactly.** It is irreversible and it stands down a division's
 whole calendar; a click-through would make it an accident rather than a decision.
 
-**Cancel's announcements cannot fail the cancellation.** The division is already stood down
-and its jobs already cancelled by the time the modules are told, so a channel that has been
-deleted or that the bot cannot post in is stepped over and named to the admin — the alternative
-is a half-cancelled division whose jobs are gone and whose status still says ACTIVE. What each
-module says, and where, is `cancellation_notice_service`'s and is tested there (#175).
+**Cancel is carried out on the change queue (#439).** The command keeps only the gates it needs
+to find the division — the word `CONFIRM`, a season being raced and not archived, the division by
+name — and then asks the queue for the change, which is its response. The gate after the lookup
+(already cancelled) is the change type's check, made when the change is asked for and again when
+it runs; it, and what the change does, are tested in `test_division_cancel_change.py`.
 """
 from __future__ import annotations
 
 import json
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
 from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
-from leaguebot.core.services.cancellation_notice_service import CancellationReport
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonImmutableError
 from tests.support.undecorate import undecorate
@@ -56,6 +55,8 @@ SERVER_ID = 10008
 SEASON_ID = 1
 DIVISION_ID = 11
 ACTOR_ID = 77
+
+NOT_ON_THE_QUEUE = "#439: /division cancel does not yet ask the change queue"
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +137,9 @@ def _make_cog(
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.scheduler_service = MagicMock()
     bot.scheduler_service.cancel_round = MagicMock(return_value=None)
+    bot.change_queue = MagicMock()
+    # The change's id, as the queue gives it once the change is asked for.
+    bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -207,12 +211,21 @@ async def _amend(cog, interaction, *, name="Pro", new_name=None, tier=None, role
     )
 
 
-async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM", failures=()):
-    """Run the command with the modules' announcements stubbed, returning the stub."""
-    announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
-    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
-        await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
-    return announce
+async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM"):
+    """Run the command. What the change does once asked is the change queue's, and is tested in
+    `test_division_cancel_change.py`; here the command is held to asking it, once, for the right
+    division."""
+    await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
+
+
+def _asked(cog) -> tuple[str, dict]:
+    """The kind and the payload of the one change the command asked the queue for."""
+    ask = cog.bot.change_queue.ask
+    ask.assert_awaited_once()
+    call = ask.await_args
+    kind = call.args[0] if call.args else call.kwargs["kind"]
+    payload = call.args[1] if len(call.args) > 1 else call.kwargs["payload"]
+    return kind, payload
 
 
 async def _division_row(db_path: str) -> dict:
@@ -604,21 +617,30 @@ async def test_cancelling_without_the_exact_word_is_refused(tmp_path, confirm):
     await _cancel(cog, interaction, confirm=confirm)
 
     assert "CONFIRM" in _replied(interaction)
-    cog.bot.season_service.cancel_division.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_division_is_cancelled(tmp_path):
+@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
+async def test_cancelling_asks_the_queue_with_the_division(tmp_path):
+    """A season being raced (season 4) holds division Pro. The manager runs /division cancel on
+    it with CONFIRM. The command asks the change queue, once, for a division's cancellation
+    (`season.division.cancel`) naming the division by id and name with the season's number, as
+    the manager's `/division cancel`. The command itself neither removes the rounds' timed work
+    nor records the division cancelled: the change does both when it runs."""
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_ok")
     cog = _make_cog(db_path)
-    interaction = _interaction()
+    interaction = _run_by_the_manager(cog, "division cancel")
 
     await _cancel(cog, interaction)
 
-    cog.bot.season_service.cancel_division.assert_awaited_once()
-    kwargs = cog.bot.season_service.cancel_division.await_args.kwargs
-    assert kwargs["division_id"] == DIVISION_ID
-    assert kwargs["actor_id"] == ACTOR_ID
-    assert "cancelled" in _replied(interaction)
+    kind, payload = _asked(cog)
+    assert kind == "season.division.cancel"
+    assert payload == {"division_id": DIVISION_ID, "division_name": "Pro", "season_number": 4}
+    call = cog.bot.change_queue.ask.await_args
+    assert call.kwargs["interaction"] is interaction
+    assert call.kwargs["what"] == "`/division cancel`"
+    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    cog.bot.season_service.cancel_division.assert_not_awaited()
 
 
 async def test_cancelling_needs_an_active_season(tmp_path):
@@ -631,7 +653,7 @@ async def test_cancelling_needs_an_active_season(tmp_path):
     await _cancel(cog, interaction)
 
     assert "only while the season is ongoing" in _replied(interaction)
-    cog.bot.season_service.cancel_division.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_an_archived_season_cannot_be_cancelled_into(tmp_path):
@@ -644,22 +666,27 @@ async def test_an_archived_season_cannot_be_cancelled_into(tmp_path):
     await _cancel(cog, interaction)
 
     assert "archived" in _replied(interaction)
-    cog.bot.season_service.cancel_division.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_the_cancellation_is_deferred_only_once_the_gates_are_past(tmp_path):
-    """Every refusal above answers through `response.send_message`, which after a defer is
-    a 404 — so the defer sits immediately before the work and not at the top."""
+@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
+async def test_the_cancellation_is_never_deferred(tmp_path):
+    """The manager runs /division cancel on Pro twice: once typing 'no' in place of CONFIRM,
+    which is refused, and once with CONFIRM, which is asked of the change queue. Neither is
+    deferred: a refusal answers through `response.send_message`, and the queue's
+    acknowledgement, naming the change's first job, is the response to the one asked."""
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_defer")
     cog = _make_cog(db_path)
     refused = _interaction()
-    allowed = _interaction()
+    allowed_cog = _make_cog(db_path)
+    allowed = _run_by_the_manager(allowed_cog, "division cancel")
 
     await _cancel(cog, refused, confirm="no")
-    await _cancel(_make_cog(db_path), allowed)
+    await _cancel(allowed_cog, allowed)
 
     refused.response.defer.assert_not_awaited()
-    allowed.response.defer.assert_awaited_once()
+    allowed.response.defer.assert_not_awaited()
+    allowed_cog.bot.change_queue.ask.assert_awaited_once()
 
 
 @pytest.mark.parametrize("stage_name", ["PLACEMENTS", "PENDING_COMPLETION"])
@@ -674,6 +701,7 @@ async def test_a_division_is_cancelled_only_while_the_season_is_ongoing(tmp_path
     await _cancel(cog, interaction)
 
     assert "only while the season is ongoing" in _replied(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1105,32 +1133,28 @@ async def _cancel_elite(cog, interaction):
             "❌ Division `Elite` not found.",
             id="an_unknown_division",
         ),
-        pytest.param(
-            _cancel, {"divisions": [_division(status="CANCELLED")]},
-            "❌ Division **Pro** is already cancelled.",
-            id="a_division_already_cancelled",
-        ),
     ],
 )
 async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged, reply):
     """A season being raced holds division Pro, unless the case says otherwise. The admin (the
-    manager here, id 77) runs /division cancel on Pro and is refused in six cases: typing
-    'confirm' rather than CONFIRM; with no season being raced; on a season whose divisions are all
-    done (pending completion); on a season archived as completed; naming division Elite, which
-    does not exist; and on Pro already cancelled. The member gets today's reply word for word and
-    nothing else; nothing is deferred, cancelled or announced. The log channel gets exactly one
-    line, "⛔ `/division cancel` refused for Manager (<@77>) — " and the reply's words."""
+    manager here, id 77) runs /division cancel on Pro and is refused before the change queue is
+    asked, in five cases: typing 'confirm' rather than CONFIRM; with no season being raced; on a
+    season whose divisions are all done (pending completion); on a season archived as completed;
+    and naming division Elite, which does not exist. The member gets today's reply word for word
+    and nothing else; nothing is deferred and nothing asked of the queue. The log channel gets
+    exactly one line, "⛔ `/division cancel` refused for Manager (<@77>) — " and the reply's
+    words. A division already cancelled is refused by the change's check, and is tested in
+    `test_division_cancel_change.py`."""
     db_path = await _make_db(tmp_path, status="ACTIVE")
     cog = _make_cog(db_path, **arranged)
     interaction = _as_discord(_run_by_the_manager(cog, "division cancel"))
 
-    announce = await run(cog, interaction)
+    await run(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
     interaction.followup.send.assert_not_awaited()
     interaction.response.defer.assert_not_awaited()
-    cog.bot.season_service.cancel_division.assert_not_awaited()
-    announce.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     assert _logged(cog) == [
         f"⛔ `/division cancel` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
     ]
@@ -1146,38 +1170,31 @@ async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged
 
 
 @pytest.mark.parametrize(
-    "arranged, answered",
+    "arranged",
     [
-        pytest.param({}, "✅ Division **Pro** cancelled.", id="cancelled"),
         pytest.param(
-            {"divisions": [_division(status="CANCELLED")]},
-            "❌ Division **Pro** is already cancelled.",
-            id="already_cancelled",
+            {}, id="cancelled",
+            marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE),
         ),
     ],
 )
 async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_named(
-    tmp_path, arranged, answered
+    tmp_path, arranged
 ):
     """A season being raced holds division Pro. The manager (id 77) runs /division cancel with
-    CONFIRM, typing the division's name as 'pro', in two cases: Pro is cancelled, or Pro was
-    already cancelled and the command is refused. The reply opens by naming the division as it
-    is named, **Pro**, and nowhere shows 'pro'; the one log line (the success line, or the
-    refusal line) names Pro and never 'pro'."""
+    CONFIRM, typing the division's name as 'pro'. The change asked of the queue names the
+    division as it is named, Pro, and nowhere 'pro', so the acknowledgement, the reply and the
+    log line the change writes from it do too. The refusal of Pro already cancelled, typed so, is
+    the change's check's, and is tested in `test_division_cancel_change.py`."""
     db_path = await _make_db(tmp_path, status="ACTIVE")
     cog = _make_cog(db_path, **arranged)
     interaction = _as_discord(_run_by_the_manager(cog, "division cancel"))
 
     await _cancel(cog, interaction, name="pro")
 
-    replied = _replied(interaction)
-    assert replied.startswith(answered), replied
-    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
-    [line] = _logged(cog)
-    words = {word.strip("*`:,.()") for word in line.split()}
-    assert "/division cancel" in line, line
-    assert "Pro" in words, line
-    assert "pro" not in words, line
+    _kind, payload = _asked(cog)
+    assert payload["division_name"] == "Pro", payload
+    assert "pro" not in {str(value) for value in payload.values()}, payload
 
 
 # ---------------------------------------------------------------------------
