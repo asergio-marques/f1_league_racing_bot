@@ -695,10 +695,7 @@ class TestTheForecastGraphicIsDiscarded:
 # message is left standing, for the next try to read, where the quiet form drops it.
 # ---------------------------------------------------------------------------
 
-_RAISING_XFAIL = "#439: delete_forecast_message has no raising form"
 
-
-@pytest.mark.xfail(strict=True, reason=_RAISING_XFAIL)
 async def test_a_raising_forecast_delete_keeps_its_record_and_raises(tmp_path):
     """Round 1's Phase 2 forecast (message 777) stands in Div A's forecast channel (999), and
     Discord refuses to delete it. Deleting it in the raising form raises StepFailedOnDiscord from
@@ -722,7 +719,6 @@ async def test_a_raising_forecast_delete_keeps_its_record_and_raises(tmp_path):
     assert await _get_stored_row(db_path, 1, 1, 2) is not None
 
 
-@pytest.mark.xfail(strict=True, reason=_RAISING_XFAIL)
 async def test_a_raising_forecast_delete_counts_a_message_already_gone_as_gone(tmp_path):
     """Round 1's Phase 2 forecast (message 777) was deleted by hand. Deleting it in the raising
     form raises nothing and drops the row."""
