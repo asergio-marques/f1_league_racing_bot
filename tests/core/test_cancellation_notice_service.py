@@ -703,7 +703,6 @@ async def _post_notice(bot, guild, module):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_FORMS_UNBUILT)
 async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
     """Pro's check-in channel is set but no longer on the server. Posting attendance's notice
     raises StepFailedOnDiscord, caused by nothing else, so the queue stops until the channel is
@@ -717,7 +716,6 @@ async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
     assert caught.value.__cause__ is None
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_FORMS_UNBUILT)
 async def test_a_raising_notice_raises_where_discord_refuses(tmp_path):
     """Discord refuses the forecast note in Pro's forecast channel (Forbidden). Posting it raises
     StepFailedOnDiscord, raised from Discord's refusal, which the stop notice names."""
@@ -734,7 +732,6 @@ async def test_a_raising_notice_raises_where_discord_refuses(tmp_path):
     assert caught.value.__cause__ is refusal
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_FORMS_UNBUILT)
 async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(tmp_path):
     """Sending the results note fails with a ValueError, a fault of the bot's own rather than
     Discord's. It is raised as it is, not turned into StepFailedOnDiscord."""
@@ -748,7 +745,6 @@ async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(
     assert not isinstance(caught.value, StepFailedOnDiscord)
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_FORMS_UNBUILT)
 async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
     """Pro has no results channel set. Posting the results note raises nothing, sends nothing
     and answers "no channel is set", which the cancellation names; a channel posted to answers
