@@ -25,6 +25,15 @@ the timed work of every round of it is removed, read as the job runs; the save c
 and each of its rounds that may still be cancelled, with the status each was cancelled from; the
 notices go once for the division in its own words, and a check-in call is taken down for each round
 called off that has one. It cancels a round whose results submission stands open with the rest.
+
+**A second cancellation is refused at once, naming the job** (owner, 2026-10-08): a cancellation
+of the round or of its division in hand refuses a round's, and one of the division a division's,
+read through `cancellation_in_hand`. The refusal is made only as the change is asked for
+(`CheckContext.change_id` is None), never as it runs: a division's cancellation asked after a
+round's of that division is legitimate and runs behind it, and the check made as the round's
+starts would find the division's later change and refuse itself. Run behind a cancellation of the
+same round, "already cancelled" is what refuses it. `cancellation_in_hand` is read, too, by
+`/round amend`, which is refused while a cancellation holds its round.
 """
 from __future__ import annotations
 
@@ -56,6 +65,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
     StepView,
+    in_hand,
 )
 from leaguebot.core.services.season_lifecycle_service import (
     WIND_DOWN,
@@ -74,7 +84,13 @@ if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
 
-__all__ = ["DIVISION_CANCEL", "ROUND_CANCEL", "division_cancel_change", "round_cancel_change"]
+__all__ = [
+    "DIVISION_CANCEL",
+    "ROUND_CANCEL",
+    "cancellation_in_hand",
+    "division_cancel_change",
+    "round_cancel_change",
+]
 
 ROUND_CANCEL = "season.round.cancel"
 DIVISION_CANCEL = "season.division.cancel"
@@ -88,6 +104,50 @@ DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the seas
 
 def _already_cancelled(payload: dict[str, Any]) -> str:
     return f"❌ Round {payload['round_number']} in **{payload['division_name']}** is already cancelled."
+
+
+_HOW_TO_CLEAR = "If it has stopped, press Retry or Discard on its notice in the log channel."
+
+
+def _job_of(job: int) -> str:
+    """" (job #N)", or nothing where only the change's close is left."""
+    return f" (job #{job})" if job else ""
+
+
+def round_being_cancelled(payload: dict[str, Any], job: int) -> str:
+    """The refusal of a second cancellation of a round."""
+    return (
+        f"⏳ Round {payload['round_number']} in **{payload['division_name']}** is already being "
+        f"cancelled{_job_of(job)}. {_HOW_TO_CLEAR}"
+    )
+
+
+def division_being_cancelled(payload: dict[str, Any], job: int) -> str:
+    """The refusal of a cancellation of a division, or of one of its rounds, while the
+    division's own is in hand."""
+    return (
+        f"⏳ **{payload['division_name']}** is being cancelled{_job_of(job)}, and its rounds with "
+        f"it. {_HOW_TO_CLEAR}"
+    )
+
+
+async def cancellation_in_hand(
+    db_path: str, *, division_id: int, round_id: int | None = None
+) -> int | None:
+    """The first job of a cancellation that holds the division or the round, or None.
+
+    Without *round_id*, a division's cancellation of *division_id*. With it, besides that, a
+    round's cancellation of that round: a round's cancellation of another round of the division
+    holds neither. A cancellation that is queued, running or stopped on a failure is in hand; one
+    with every job done and only its close left gives 0. The nearest to its turn comes first.
+    """
+    for payload, job in await in_hand(db_path, (ROUND_CANCEL, DIVISION_CANCEL)):
+        if "round_id" not in payload:
+            if payload.get("division_id") == division_id:
+                return job or 0
+        elif round_id is not None and payload.get("round_id") == round_id:
+            return job or 0
+    return None
 
 
 def _results_entered(payload: dict[str, Any]) -> str:
@@ -387,6 +447,19 @@ def round_cancel_change(
             )
         if row["status"] == RoundStatus.CANCELLED.value:
             return Verdict.refuse(_already_cancelled(payload))
+        if ctx.change_id is None:
+            # Asked, not run: a cancellation of this round or of its division in hand refuses
+            # it, but one queued behind a division's own must not refuse the division's, so the
+            # check made as the change runs leaves it out.
+            division_id = int(payload["division_id"])
+            held = await cancellation_in_hand(ctx.db_path, division_id=division_id)
+            if held is not None:
+                return Verdict.refuse(division_being_cancelled(payload, held))
+            held = await cancellation_in_hand(
+                ctx.db_path, division_id=division_id, round_id=round_id
+            )
+            if held is not None:
+                return Verdict.refuse(round_being_cancelled(payload, held))
         if row["status"] not in ROUND_CANCELLABLE:
             return Verdict.refuse(_results_entered(payload))
         if await submission_open(ctx.db_path, round_id):
@@ -572,6 +645,12 @@ def division_cancel_change(
             return Verdict.refuse(
                 f"❌ Division **{payload['division_name']}** is already cancelled."
             )
+        if ctx.change_id is None:
+            held = await cancellation_in_hand(
+                ctx.db_path, division_id=int(payload["division_id"])
+            )
+            if held is not None:
+                return Verdict.refuse(division_being_cancelled(payload, held))
         return Verdict.go()
 
     # ── The jobs ────────────────────────────────────────────────────────────────

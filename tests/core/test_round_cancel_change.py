@@ -60,7 +60,6 @@ from tests.support.season_league import (
 )
 
 NOT_ON_THE_QUEUE = "#439: /round cancel is not yet carried out on the change queue"
-SECOND_NOT_REFUSED = "#439: a second cancellation is not yet refused at once, naming the job"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3 = round_id(PRO, 3)
@@ -465,7 +464,6 @@ async def _first_waiting_behind_a_blocker(league: Any) -> int:
     pytest.param(_first_waiting_behind_a_blocker, id="waiting behind a stopped blocker"),
     pytest.param(_first_stopped_at_apply, id="stopped at its save"),
 ])
-@pytest.mark.xfail(strict=True, reason=SECOND_NOT_REFUSED)
 async def test_a_second_cancel_of_the_round_is_refused_at_once_naming_the_job(tmp_path, first):
     league = await ongoing_league(tmp_path, attendance=True)
     job = await first(league)
@@ -481,7 +479,6 @@ async def test_a_second_cancel_of_the_round_is_refused_at_once_naming_the_job(tm
     assert len(await change_rows(league.db_path)) == asked
 
 
-@pytest.mark.xfail(strict=True, reason=SECOND_NOT_REFUSED)
 async def test_a_round_cancel_while_its_division_s_cancellation_is_in_hand_is_refused_naming_the_job(
     tmp_path,
 ):

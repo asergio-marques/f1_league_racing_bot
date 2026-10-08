@@ -56,7 +56,6 @@ from tests.support.season_league import (
 )
 
 NOT_ON_THE_QUEUE = "#439: /division cancel is not yet carried out on the change queue"
-SECOND_NOT_REFUSED = "#439: a second cancellation is not yet refused at once, naming the job"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -320,7 +319,6 @@ async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=SECOND_NOT_REFUSED)
 async def test_a_second_cancel_of_the_division_is_refused_at_once_naming_the_job(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
