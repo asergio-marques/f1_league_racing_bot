@@ -34,6 +34,18 @@ runs, through the builder's reader of `converter_available`, which `season_leagu
 channel; `press_approve` presses it, answering the backup question under test mode with *backup*.
 Every import of the change type is made inside a function, so a test file using this module still
 collects while it is unbuilt.
+
+`ongoing_league(tmp_path, ...)` builds the same season as ongoing, for the cancels of slice 4b:
+status ACTIVE, stage ONGOING, both divisions ACTIVE and every placement committed. Pro's round 1
+is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_VERDICTS (raced 3 days ago), rounds 3 and 4
+NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands in Pro's check-in channel
+(603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in `rsvp_embed_messages`), Lewis having
+accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
+(`CALENDAR_MESSAGE`). The scheduler double records each `cancel_round` in `league.unarmed`, and a
+message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
+results submission for a round; `cancel_round` and `cancel_division` run `/round cancel` and
+`/division cancel` as admin 77 and give the interaction; `cancellation_changes` lists the
+cancellations asked of the queue.
 """
 from __future__ import annotations
 
@@ -60,6 +72,7 @@ from tests.support.change_queue import (
     tier_member,
 )
 from tests.support.review_league import channel
+from tests.support.undecorate import undecorate
 
 SEASON_ID = 7
 SEASON_NUMBER = 3
@@ -144,6 +157,12 @@ class SeasonLeague:
         self.roles_gone: set[int] = set()
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
+        #: The round ids `scheduler.cancel_round` was handed (`ongoing_league`), in order.
+        self.unarmed: list[int] = []
+        #: Message ids Discord refuses to delete (`ongoing_league`'s check-in call).
+        self.undeletable: set[int] = set()
+        #: The channels `remove_channel` took off the server, for `restore_channel`.
+        self._removed: dict[int, Any] = {}
         #: Each backup question answered: (the answer, how many changes were asked by then).
         self.backup_answers: list[tuple[str, int]] = []
         self.bot = bot = league_double(db_path)
@@ -287,7 +306,11 @@ class SeasonLeague:
 
     def remove_channel(self, cid: int) -> None:
         """The server no longer holds channel *cid*: it was deleted."""
-        del self.channels[cid]
+        self._removed[cid] = self.channels.pop(cid)
+
+    def restore_channel(self, cid: int) -> None:
+        """Channel *cid*, removed earlier, is on the server again, as it was."""
+        self.channels[cid] = self._removed.pop(cid)
 
     def texts(self, cid: int) -> list[str]:
         """What channel *cid* was sent, in order, its review's own messages included."""
@@ -563,3 +586,129 @@ async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     from leaguebot.core.services.season_approval_change import KIND
 
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
+
+
+# ---------------------------------------------------------------------------
+# An ongoing season, and its cancels (slice 4b)
+# ---------------------------------------------------------------------------
+
+#: Pro's round 3's check-in call: the call, its last notice and its distribution announcement.
+CALL_MESSAGES = (7001, 7002, 7003)
+#: The message Pro's calendar was last posted as, in channel 601.
+CALENDAR_MESSAGE = 6001
+#: The channel `open_submission` records a round's results submission in.
+SUBMISSION_CHANNEL = 690
+#: The kinds of a round's and a division's cancellation on the change queue.
+ROUND_CANCEL_KIND = "season.round.cancel"
+DIVISION_CANCEL_KIND = "season.division.cancel"
+
+
+async def ongoing_league(
+    tmp_path: Any, *, weather: bool = False, results: bool = True, attendance: bool = False,
+    images: bool = False,
+) -> SeasonLeague:
+    """The ongoing season of the module docstring, its modules as asked."""
+    league = await season_league(tmp_path, weather=weather, results=results,
+                                 attendance=attendance, images=images)
+    now = league.clock.now
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING' WHERE id = ?", (SEASON_ID,)
+        )
+        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE season_id = ?",
+                         (SEASON_ID,))
+        await db.execute("UPDATE driver_season_assignments SET committed = 1")
+        await db.execute("UPDATE rounds SET status = 'NOT_RUN'")
+        for number, status, when in ((1, "FINAL", now - timedelta(days=30)),
+                                     (2, "AWAITING_REPORT_VERDICTS", now - timedelta(days=3))):
+            await db.execute(
+                "UPDATE rounds SET status = ?, scheduled_at = ? WHERE id = ?",
+                (status, when.isoformat(), round_id(PRO, number)),
+            )
+        call, notice, distribution = CALL_MESSAGES
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at, last_notice_msg_id, distribution_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (round_id(PRO, 3), PRO, str(call), str(DIVISIONS[PRO][3].checkin), now.isoformat(),
+             str(notice), str(distribution)),
+        )
+        for user_id, answer in ((LEWIS, "ACCEPTED"), (MAX, "NO_RSVP")):
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status) VALUES (?, ?, ?, ?)",
+                (round_id(PRO, 3), PRO, profile_id(user_id), answer),
+            )
+        await db.execute("UPDATE divisions SET calendar_message_id = ? WHERE id = ?",
+                         (str(CALENDAR_MESSAGE), PRO))
+        await db.commit()
+
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    league.bot.attendance_service.get_embed_message = AttendanceService(
+        league.db_path
+    ).get_embed_message
+    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
+    checkin = league.channel(DIVISIONS[PRO][3].checkin)
+    for message_id in CALL_MESSAGES:
+        checkin.seed(message_id, "Round 3 check-in")
+        _refusing_delete(league, checkin.messages[message_id])
+    return league
+
+
+def _refusing_delete(league: SeasonLeague, message: Any) -> None:
+    """*message*'s deletion refused while its id is in `league.undeletable`."""
+    deleting = message.delete.side_effect
+
+    async def _delete(*args: Any, **kwargs: Any) -> None:
+        if message.id in league.undeletable:
+            raise http_error(discord.Forbidden, status=403, text="Missing Permissions")
+        await deleting(*args, **kwargs)
+
+    message.delete = AsyncMock(side_effect=_delete)
+
+
+async def open_submission(league: SeasonLeague, round_: int) -> None:
+    """A results submission for round *round_* stands open, in `SUBMISSION_CHANNEL`."""
+    await league.write(
+        "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
+        "VALUES (?, ?, ?, 0)",
+        round_, SUBMISSION_CHANNEL, league.clock.now.isoformat(),
+    )
+
+
+def _admin_interaction(league: SeasonLeague, command: str) -> Any:
+    """Admin 77's interaction with *command*, in the league's server."""
+    interaction = member_interaction(
+        league.bot, user=tier_member("admin", member_id=ADMIN_ID, display_name="Admin"),
+    )
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name=command)
+    return interaction
+
+
+async def cancel_round(league: SeasonLeague, division: str, number: int, *,
+                       confirm: str = "CONFIRM") -> Any:
+    """Run `/round cancel` for round *number* of *division*, as admin 77; the queue is not run.
+    Gives the interaction."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    interaction = _admin_interaction(league, "round cancel")
+    await undecorate(SeasonCog.round_cancel)(league.cog, interaction, division, number, confirm)
+    return interaction
+
+
+async def cancel_division(league: SeasonLeague, name: str, *, confirm: str = "CONFIRM") -> Any:
+    """Run `/division cancel` for *name*, as admin 77; the queue is not run. Gives the
+    interaction."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    interaction = _admin_interaction(league, "division cancel")
+    await undecorate(SeasonCog.division_cancel)(league.cog, interaction, name, confirm)
+    return interaction
+
+
+async def cancellation_changes(league: SeasonLeague) -> list[dict[str, Any]]:
+    """Every round's and division's cancellation asked of the queue, in the order asked."""
+    return [row for row in await change_rows(league.db_path)
+            if row["kind"] in (ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND)]
