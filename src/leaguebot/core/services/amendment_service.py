@@ -1,13 +1,11 @@
-"""The mid-season points amendment's workflow, and the mark of a round amendment being applied.
+"""The mid-season points amendment's workflow.
 
 A round amendment is a change on the queue (`round_amend_change`), not a method here.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
-from collections.abc import Iterator
 from datetime import datetime
 from itertools import groupby
 
@@ -23,38 +21,6 @@ log = logging.getLogger(__name__)
 class AmendmentService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
-        #: The divisions with a `/round amend` being applied, each with how many: from the moment
-        #: its confirmation's checks pass until its division's rounds are renumbered. Held in
-        #: memory only, as the amendment is, so that a restart clears it.
-        self._applying: dict[int, int] = {}
-
-    @contextlib.contextmanager
-    def applying(self, division_id: int) -> Iterator[None]:
-        """Mark *division_id* as having a round being amended for as long as the block runs, a
-        failure included.
-
-        A round's or a division's cancellation is refused while the mark stands, when it is
-        asked and again when it runs (`cancellation_changes`, owner 2026-10-08): an amended
-        time renumbers the division's rounds, and a cancellation that read the rounds before
-        the renumbering would announce a round by a number it no longer bears.
-        """
-        self._applying[division_id] = self._applying.get(division_id, 0) + 1
-        try:
-            yield
-        finally:
-            left = self._applying.get(division_id, 0) - 1
-            if left > 0:
-                self._applying[division_id] = left
-            else:
-                self._applying.pop(division_id, None)
-
-    def is_applying(self, division_id: int) -> bool:
-        """Whether a `/round amend` of a round of *division_id* is being applied."""
-        return division_id in self._applying
-
-    def forget_applying(self) -> None:
-        """Drop every mark, as `/bot pack` and `/bot factory-reset` let go of the league."""
-        self._applying.clear()
 
 
 # ===========================================================================

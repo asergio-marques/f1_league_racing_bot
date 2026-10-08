@@ -50,9 +50,4 @@ def clear_in_memory_state(bot: LeagueBot) -> None:
     if change_queue is not None:
         change_queue.forget_held()
 
-    # The divisions with a `/round amend` being applied, each refusing a cancellation meanwhile.
-    amendment_service = getattr(bot, "amendment_service", None)
-    if amendment_service is not None:
-        amendment_service.forget_applying()
-
     log.info("Cleared the league state held in memory")

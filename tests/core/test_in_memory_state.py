@@ -54,9 +54,6 @@ CLEARED = {
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
     ("core/services/change_queue.py", "_notice_tried"),
     ("core/services/change_queue.py", "_retrying"),
-    # The divisions with a `/round amend` being applied, each refusing a cancellation of its
-    # rounds meanwhile (#439).
-    ("core/services/amendment_service.py", "_applying"),
 }
 
 #: Stores that hold no league state, and why.
