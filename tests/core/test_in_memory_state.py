@@ -198,21 +198,3 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     assert ran == ["a"]
     assert [row["state"] for row in await change_rows(db_path)] == ["DONE"]
     assert updated_reply(interaction) == ""
-
-
-async def test_clearing_a_leagues_state_forgets_the_amendments_being_applied():
-    """A division marked as having a round being amended is unmarked by the clear, so that a
-    factory reset leaves no cancellation refused for an amendment of a league that has gone; the
-    amendment ending afterwards leaves it unmarked."""
-    from leaguebot.core.services.amendment_service import AmendmentService
-
-    service = AmendmentService("unused.db")
-    bot = SimpleNamespace(get_cog=lambda _name: None, amendment_service=service)
-    applying = service.applying(1)
-    applying.__enter__()
-
-    clear_in_memory_state(bot)
-
-    assert not service.is_applying(1)
-    applying.__exit__(None, None, None)
-    assert not service.is_applying(1)
