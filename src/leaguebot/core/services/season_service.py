@@ -1277,16 +1277,7 @@ class SeasonService:
     async def renumber_rounds(self, division_id: int) -> None:
         """Rewrite round_number for all rounds in a division, sorted ascending by scheduled_at."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
-                (division_id,),
-            )
-            rows = await cursor.fetchall()
-            for i, row in enumerate(rows, start=1):
-                await db.execute(
-                    "UPDATE rounds SET round_number = ? WHERE id = ?",
-                    (i, row[0]),
-                )
+            await renumber_rounds_on(db, division_id)
             await db.commit()
 
     async def delete_round(self, round_id: int) -> None:
@@ -1360,6 +1351,24 @@ class SeasonService:
                 (round_id,),
             )
             await db.commit()
+
+
+async def renumber_rounds_on(db: aiosqlite.Connection, division_id: int) -> None:
+    """Rewrite ``round_number`` for all rounds in a division on *db*, committing nothing.
+
+    Sorted ascending by ``scheduled_at``. A change's save calls it, so the renumbering outlasts
+    nothing the save does not (a round amendment writes the round and renumbers in one save).
+    """
+    cursor = await db.execute(
+        "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
+        (division_id,),
+    )
+    rows = await cursor.fetchall()
+    for i, row in enumerate(rows, start=1):
+        await db.execute(
+            "UPDATE rounds SET round_number = ? WHERE id = ?",
+            (i, row[0]),
+        )
 
 
 async def create_sessions_for_round_on(

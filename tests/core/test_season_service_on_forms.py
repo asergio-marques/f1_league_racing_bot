@@ -330,9 +330,6 @@ async def _round_numbers(db) -> dict[int, int]:
     return {row["id"]: row["round_number"] for row in await cursor.fetchall()}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: no renumber_rounds_on renumbering on the save it is handed"
-)
 async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
     """Pro's rounds 1, 2 and 3 (ids 21, 22, 23) are not run, and round 1 has been moved after
     round 3. Renumbering Pro on a connection numbers them by date: round 2 becomes 1, round 3
