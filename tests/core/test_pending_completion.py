@@ -70,11 +70,23 @@ async def test_a_division_still_running_holds_the_season_ongoing(tmp_path):
 
 
 async def test_cancelling_the_last_running_division_leaves_the_season_pending_completion(tmp_path):
-    path = await _db(tmp_path, divisions=(("ACTIVE", "NOT_RUN"), ("FINISHED", None)))
+    """The ongoing season of `ongoing_league`: Am finished, every round of it final, and Pro its
+    last running division. `/division cancel Pro`, the queue run: the season is Pending
+    completion. The division's cancellation on the change queue moves the season on in its save
+    (#439, slice 4b), not `cancel_division_on`, which `/season cancel` shares."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import AM, cancel_division, ongoing_league
 
-    await SeasonService(path).cancel_division(1, 1, "Admin")
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE rounds SET status = 'FINAL' WHERE division_id = ?", AM)
+    await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", AM)
 
-    assert await _stage(path) is SeasonStage.PENDING_COMPLETION
+    await cancel_division(league, "Pro")
+    await run_queue(league.bot)
+
+    assert not league.errors, league.errors
+
+    assert (await league.season())["stage"] == SeasonStage.PENDING_COMPLETION.value
 
 
 @pytest.mark.parametrize(
