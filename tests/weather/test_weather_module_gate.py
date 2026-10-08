@@ -22,7 +22,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
+from leaguebot.weather.services import (
+    mystery_notice_service,
+    phase1_service,
+    phase2_service,
+    phase3_service,
+)
 from leaguebot.core.services.amendment_service import AmendmentService
 
 SEEDED_TRACK = "Bahrain International Circuit"
@@ -363,6 +368,36 @@ async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, 
         await _RUNNERS[phase - 1](1, bot)
 
     assert await _phase_state(db_path) == before
+    posted.assert_not_awaited()
+    drawn.assert_not_awaited()
+    bot.output_router.post_log.assert_not_awaited()
+    bot.output_router.post_forecast.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the Mystery notice does not look for a cancellation")
+@pytest.mark.parametrize("what", ["round", "division"])
+async def test_a_mystery_notice_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, what):
+    """Weather is on and round 1 of Div A is a Mystery round. The round, or Div A, is cancelled,
+    and its notice falls due at the phase 1 horizon: nothing is posted and the round's Phase 1 is
+    left undone."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    await _set_weather(db_path, True)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET format = 'MYSTERY' WHERE id = 1")
+        await db.commit()
+    bot = _make_bot(db_path, weather_enabled=True)
+    await _cancel(db_path, what)
+
+    with patch(
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+    ) as posted, patch(
+        "leaguebot.image.services.image_weather_post.attach_forecast",
+        new=AsyncMock(return_value=None),
+    ) as drawn:
+        await mystery_notice_service.run_mystery_notice(1, bot)
+
+    assert await _phase_state(db_path) == (0, 0, 0, 0)
     posted.assert_not_awaited()
     drawn.assert_not_awaited()
     bot.output_router.post_log.assert_not_awaited()
