@@ -245,8 +245,14 @@ def _refusal_of(ctx: OutcomeContext) -> str | None:
 
 
 def _saved_number(ctx: OutcomeContext) -> Any:
-    """The number of the round cancelled, as the save found it, else the press's."""
-    return (_view(ctx, APPLY).result or {}).get("round_number", ctx.payload["round_number"])
+    """The number of the round cancelled, as the save found it, else as the removal of its timed
+    work did, else the press's: a discarded save never read it, and the round may have been
+    renumbered since the press."""
+    for name in (APPLY, UNARM):
+        number = (_view(ctx, name).result or {}).get("round_number")
+        if number is not None:
+            return number
+    return ctx.payload["round_number"]
 
 
 def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
@@ -523,7 +529,9 @@ def round_cancel_change(
 
     async def unarm(ctx: StepContext) -> StepResult:
         scheduler.cancel_round(int(ctx.payload["round_id"]))
-        return StepResult(result={"unarmed": True})
+        return StepResult(
+            result={"unarmed": True, "round_number": await _round_number_now(ctx)}
+        )
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
