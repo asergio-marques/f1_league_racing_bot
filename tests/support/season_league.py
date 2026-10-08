@@ -36,16 +36,26 @@ Every import of the change type is made inside a function, so a test file using 
 collects while it is unbuilt.
 
 `ongoing_league(tmp_path, ...)` builds the same season as ongoing, for the cancels of slice 4b:
-status ACTIVE, stage ONGOING, both divisions ACTIVE and every placement committed. Pro's round 1
-is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_VERDICTS (raced 3 days ago), rounds 3 and 4
-NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands in Pro's check-in channel
-(603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in `rsvp_embed_messages`), Lewis having
-accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
+status ACTIVE, stage ONGOING, both divisions ACTIVE, every placement committed and no setup held
+in memory. Pro's round 1 is FINAL (raced 30 days ago), round 2 AWAITING_REPORT_VERDICTS (raced 3
+days ago), rounds 3 and 4 NOT_RUN; Am's four rounds are NOT_RUN. Round 3's check-in call stands
+in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recorded in
+`rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
 (`CALENDAR_MESSAGE`). The scheduler double records each `cancel_round` in `league.unarmed`, and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
 results submission for a round; `cancel_round` and `cancel_division` run `/round cancel` and
 `/division cancel` as admin 77 and give the interaction; `cancellation_changes` lists the
 cancellations asked of the queue.
+
+For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
+horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
+performed (`phases_done`, by round id), and the bot reads the amendment's windows through
+`bot.amendment_windows`, as the builder's reader does: attendance's only where it is on, weather's
+always. The scheduler double records `schedule_round` as weather's arming. `amend_round` runs
+`/round amend` as admin 77 and presses the Confirm it offered, giving the press;
+`amendment_changes` lists the amendments asked of the queue; `accept_session` saves a session's
+results as the wizard does on accepting them; `posted_forecast` records a phase's forecast as
+posted, its message standing in the division's forecast channel.
 """
 from __future__ import annotations
 
@@ -137,7 +147,6 @@ class SeasonLeague:
 
     def __init__(self, db_path: str, now: datetime, *, images: bool) -> None:
         from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.amendment_service import AmendmentService
         from leaguebot.core.services.config_service import ConfigService
         from leaguebot.core.services.module_service import ModuleService
         from leaguebot.core.services.placement_service import PlacementService
@@ -201,8 +210,7 @@ class SeasonLeague:
         bot.config_service = ConfigService(db_path)
         bot.module_service = ModuleService(db_path)
         bot.season_service = SeasonService(db_path)
-        # Real, so that its record of the amendments being applied is what the cancellations read.
-        bot.amendment_service = AmendmentService(db_path)
+        _attach_amendment_service(bot, db_path)
         bot.placement_service = PlacementService(db_path, bot)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
         bot.image_config_service.get_config = AsyncMock(return_value=None)
@@ -212,8 +220,10 @@ class SeasonLeague:
         scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
         scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
         scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
+        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
         bot.scheduler_service = scheduler
         bot.approval_windows = lambda: _approval_windows(self)
+        bot.amendment_windows = lambda: _amendment_windows(self)
         self.cog = SeasonCog(bot)
         self._hold_setup(self.cog, key=ADMIN_ID)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
@@ -379,6 +389,41 @@ async def _approval_windows(league: SeasonLeague) -> Any:
             phase_2_days=wx.phase_2_days,
             phase_3_hours=wx.phase_3_hours,
         )
+    return attendance, weather
+
+
+def _attach_amendment_service(bot: Any, db_path: str) -> None:
+    """The real `AmendmentService` while it stands, so that its record of the amendments being
+    applied is what the cancellations read; nothing once `/round amend` is on the change queue and
+    the class is gone."""
+    try:
+        from leaguebot.core.services.amendment_service import AmendmentService
+    except ImportError:
+        return
+    bot.amendment_service = AmendmentService(db_path)
+
+
+async def _amendment_windows(league: SeasonLeague) -> Any:
+    """The builder's reader of the windows an amendment is judged against
+    (`LeagueBot.amendment_windows`): attendance's only where it is on, weather's always, since a
+    forecast posted while weather was on is still posted."""
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
+
+    attendance = None
+    if await league.bot.module_service.is_attendance_enabled():
+        att = await league._attendance()
+        attendance = AttendanceWindows(
+            notice_days=att.rsvp_notice_days,
+            last_notice_hours=att.rsvp_last_notice_hours,
+            deadline_hours=att.rsvp_deadline_hours,
+        )
+    wx = await get_weather_pipeline_config(league.db_path)
+    weather = WeatherWindows(
+        phase_1_days=wx.phase_1_days,
+        phase_2_days=wx.phase_2_days,
+        phase_3_hours=wx.phase_3_hours,
+    )
     return attendance, weather
 
 
@@ -608,9 +653,13 @@ DIVISION_CANCEL_KIND = "season.division.cancel"
 
 async def ongoing_league(
     tmp_path: Any, *, weather: bool = False, results: bool = True, attendance: bool = False,
-    images: bool = False,
+    images: bool = False, horizons: tuple[int, int, int] | None = None,
+    phases_done: dict[int, tuple[int, ...]] | None = None,
 ) -> SeasonLeague:
-    """The ongoing season of the module docstring, its modules as asked."""
+    """The ongoing season of the module docstring, its modules as asked.
+
+    *horizons*, where given, are the league's weather horizons (phase 1 days, phase 2 days,
+    phase 3 hours); *phases_done* marks, for each round id, the phases already performed."""
     league = await season_league(tmp_path, weather=weather, results=results,
                                  attendance=attendance, images=images)
     now = league.clock.now
@@ -643,6 +692,15 @@ async def ongoing_league(
             )
         await db.execute("UPDATE divisions SET calendar_message_id = ? WHERE id = ?",
                          (str(CALENDAR_MESSAGE), PRO))
+        if horizons is not None:
+            await db.execute(
+                "INSERT OR REPLACE INTO weather_pipeline_config "
+                "(id, phase_1_days, phase_2_days, phase_3_hours) VALUES (1, ?, ?, ?)",
+                horizons,
+            )
+        for rid, phases in (phases_done or {}).items():
+            for phase in phases:
+                await db.execute(_PHASE_DONE[phase], (rid,))
         await db.commit()
 
     from leaguebot.attendance.services.attendance_service import AttendanceService
@@ -651,6 +709,8 @@ async def ongoing_league(
         league.db_path
     ).get_embed_message
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    # Set up and approved: the cog holds no setup in memory, as after a restart.
+    league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
     checkin = league.channel(DIVISIONS[PRO][3].checkin)
     for message_id in CALL_MESSAGES:
@@ -715,3 +775,69 @@ async def cancellation_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     """Every round's and division's cancellation asked of the queue, in the order asked."""
     return [row for row in await change_rows(league.db_path)
             if row["kind"] in (ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND)]
+
+
+# ---------------------------------------------------------------------------
+# `/round amend` on the change queue (slice 4b, amendment A)
+# ---------------------------------------------------------------------------
+
+#: The kind of a round's amendment on the change queue.
+ROUND_AMEND_KIND = "season.round.amend"
+#: Each phase's flag, set by a statement of its own.
+_PHASE_DONE = {
+    1: "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
+    2: "UPDATE rounds SET phase2_done = 1 WHERE id = ?",
+    3: "UPDATE rounds SET phase3_done = 1 WHERE id = ?",
+}
+
+
+async def amend_round(league: SeasonLeague, division: str, number: int, *, track: str = "",
+                      scheduled_at: str = "", format: str = "") -> Any:
+    """Run `/round amend` for round *number* of *division* as admin 77, and press the Confirm it
+    offered, as admin 77; the queue is not run. Gives the press, or None where nothing was
+    offered (the offer refused)."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    asking = _admin_interaction(league, "round amend")
+    await undecorate(SeasonCog.round_amend)(
+        league.cog, asking, division, number, track, scheduled_at, format
+    )
+    views = [call.kwargs["view"] for call in asking.followup.send.call_args_list
+             if call.kwargs.get("view") is not None]
+    if not views:
+        return None
+    press = _admin_interaction(league, "round amend")
+    await views[-1].confirm.callback(press)
+    return press
+
+
+async def amendment_changes(league: SeasonLeague) -> list[dict[str, Any]]:
+    """Every round's amendment asked of the queue, in the order asked."""
+    return [row for row in await change_rows(league.db_path) if row["kind"] == ROUND_AMEND_KIND]
+
+
+async def accept_session(league: SeasonLeague, round_: int, *, session: str = "FEATURE_RACE",
+                         status: str = "ACTIVE") -> None:
+    """The results submission of round *round_* has accepted *session*: its results
+    (``ACTIVE``), or the session entered as not held (``CANCELLED``)."""
+    await league.write(
+        "INSERT INTO session_results (round_id, division_id, session_type, status, config_name, "
+        "submitted_by, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        round_, round_ // 10, session, status, CONFIG, ADMIN_ID, league.clock.now.isoformat(),
+    )
+
+
+async def posted_forecast(league: SeasonLeague, round_: int, phase: int, message_id: int) -> None:
+    """Phase *phase*'s forecast for round *round_* was posted as *message_id* in its division's
+    forecast channel, and the phase is marked performed; Discord refuses to delete the message
+    while its id is in `league.undeletable`."""
+    division = round_ // 10
+    await league.write(
+        "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+        "posted_at) VALUES (?, ?, ?, ?, ?)",
+        round_, division, phase, message_id, league.clock.now.isoformat(),
+    )
+    await league.write(_PHASE_DONE[phase], round_)
+    forecast = league.channel(DIVISIONS[division][3].forecast)
+    forecast.seed(message_id, f"Phase {phase} forecast")
+    _refusing_delete(league, forecast.messages[message_id])
