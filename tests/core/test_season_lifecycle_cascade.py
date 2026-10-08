@@ -37,7 +37,6 @@ SERVER_ID = 7654
 ACTOR_ID = 999
 ACTOR_NAME = "Race Director"
 
-CANCEL_ON_FORMS_UNBUILT = "#439: cancel_round_on and cancel_division_on are not built yet"
 # The moment a cancellation is recorded at, pinned.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -182,7 +181,6 @@ async def test_post_race_penalty_does_not_count_as_finished(tmp_path) -> None:
     assert [r["round_number"] for r in await svc.get_outstanding_rounds()] == [1]
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path)
@@ -341,7 +339,6 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
         assert await _round_status(db_path, rid) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     """cancel_round_on leaves alone a round whose season is already archived, giving `None`.
 

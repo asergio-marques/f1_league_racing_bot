@@ -164,9 +164,6 @@ async def test_the_season_moves_to_ongoing_only_from_placements(tmp_path, stage,
 
 # The round and division cancels (#439, slice 4b) -------------------------------------------------
 
-#: The `_on` forms of the two cancellations are not built yet.
-CANCEL_ON_FORMS_UNBUILT = "#439: cancel_round_on and cancel_division_on are not built yet"
-
 NOW = datetime(2026, 12, 2, 12, 0, tzinfo=timezone.utc)
 ACTOR = {"actor_id": 77, "actor_name": "Admin", "now": NOW}
 
@@ -222,7 +219,6 @@ async def _round_audits(db) -> list[tuple[str, str]]:
     return [(row["old_value"], row["new_value"]) for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(tmp_path):
     """Pro's round 1 is final, round 2 waits for its results (no submission open) and round 3 is
     not run. Cancelling round 2 on a connection answers the status it was cancelled from,
@@ -253,7 +249,6 @@ async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(
         pytest.param("NOT_RUN", "COMPLETED", id="archived season"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
     tmp_path, status, season_status
 ):
@@ -269,7 +264,6 @@ async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
         assert await _round_audits(db) == []
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_season_on_in_the_same_save(
     tmp_path,
 ):

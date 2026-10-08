@@ -1551,6 +1551,67 @@ async def set_round_status_on(
     return cursor.rowcount > 0
 
 
+async def cancel_round_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> str | None:
+    """Mark a round CANCELLED on *db*, committing nothing.
+
+    The round is cancelled only while it may be: its status in ``ROUND_CANCELLABLE`` and its
+    season not archived. The write is guarded on that status, so a round that moved on since the
+    caller looked is left alone; ``/round cancel``'s check judges the same rule when it is asked
+    and when it runs, and this is the save's own backstop.
+
+    The ``round.status`` audit records the status the round was really cancelled from, written
+    on *db* in the plain-string form ``end_rounds_awaiting_results_on`` writes its own in.
+    Cancelling the last outstanding round is what finishes a division, so the division is
+    refreshed here too, and the season moved on where that was the last it waited on, all in the
+    caller's save (issue #439).
+
+    Returns the status the round was cancelled from, or ``None`` where nothing was moved.
+    """
+    cursor = await db.execute(
+        """
+        SELECT r.division_id, r.status, s.status AS season_status
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        JOIN seasons s ON s.id = d.season_id
+        WHERE r.id = ?
+        """,
+        (round_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or row["season_status"] in ("COMPLETED", "CANCELLED"):
+        return None
+    previous: str = row["status"]
+    division_id: int = row["division_id"]
+
+    cursor = await db.execute(
+        f"UPDATE rounds SET status = 'CANCELLED' WHERE id = ? AND status IN ({_CANCELLABLE_SQL})",
+        (round_id,),
+    )
+    if cursor.rowcount == 0:
+        return None
+    await db.execute(
+        """
+        INSERT INTO audit_entries
+            (actor_id, actor_name, division_id, change_type,
+             old_value, new_value, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            actor_id, actor_name, division_id,
+            "round.status", previous, "CANCELLED", now.isoformat(),
+        ),
+    )
+    await refresh_division_status_on(db, division_id)
+    return previous
+
+
 async def cancel_division_on(
     db: aiosqlite.Connection,
     division_id: int,
