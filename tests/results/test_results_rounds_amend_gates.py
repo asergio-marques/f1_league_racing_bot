@@ -876,8 +876,6 @@ ROUND_AMEND_PAYLOAD = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#439: /results rounds amend does not yet read a "
-                                       "/round amend of the division as holding it")
 @pytest.mark.parametrize(
     ("state", "stopped"),
     [("QUEUED", False), ("RUNNING", True)],

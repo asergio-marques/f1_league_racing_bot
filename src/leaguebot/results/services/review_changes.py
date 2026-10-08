@@ -9,8 +9,8 @@ its division has one. It reads, besides, season-wide, the approval of a change t
 points (slice 3), which holds every division of its season: a round amendment opened while it is in
 hand would have its unapproved corrections published by the approval's reposts (owner, 2026-10-06,
 "Refuse it").
-It reads, too, a round's or a division's cancellation (slice 4b), which is a job for the division
-(r1-1, "Any job for that division").
+It reads, too, a round's or a division's cancellation and a round amendment (slice 4b), each of
+which is a job for the division (r1-1, "Any job for that division").
 
 This module only names the kinds and reads them. It is imported by those that ask and imports the
 change types for their names, so no change type imports it.
@@ -21,6 +21,7 @@ from __future__ import annotations
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
 from leaguebot.core.services.change_queue import in_hand, unfinished
+from leaguebot.core.services.round_amend_change import ROUND_AMEND
 from leaguebot.results.services import (
     amendment_stage_changes,
     appeals_approval_change,
@@ -50,8 +51,8 @@ async def round_in_hand(db_path: str, round_id: int) -> bool:
 
 async def division_job_in_hand(db_path: str, division_id: int) -> int | None:
     """The number of the first job a change holding *division_id* waits on, a review change of it,
-    a cancellation of it or of a round of it, or a points approval of its season, or None where none is in hand, the change nearest its
-    turn first.
+    a cancellation of it or of a round of it, an amendment of a round of it, or a points approval
+    of its season, or None where none is in hand, the change nearest its turn first.
 
     A change belongs to the division where its payload names the division, or names a round of it,
     or, for a points approval, names the division's season. A change with every job done and only
@@ -64,7 +65,8 @@ async def division_job_in_hand(db_path: str, division_id: int) -> int | None:
         found = await cursor.fetchone()
     season_id = int(found["season_id"]) if found else None
     for payload, job in await in_hand(
-        db_path, (*REVIEW_KINDS, ROUND_CANCEL, DIVISION_CANCEL, points_amendment_change.KIND),
+        db_path,
+        (*REVIEW_KINDS, ROUND_CANCEL, DIVISION_CANCEL, ROUND_AMEND, points_amendment_change.KIND),
     ):
         if (
             payload.get("division_id") == division_id
