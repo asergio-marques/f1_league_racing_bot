@@ -528,10 +528,11 @@ def round_cancel_change(
     # ── The jobs ────────────────────────────────────────────────────────────────
 
     async def unarm(ctx: StepContext) -> StepResult:
+        # The number is read first, so that nothing after the removal can stop this job: a
+        # removal stopped and discarded would be named as nothing done.
+        number = await _round_number_now(ctx)
         scheduler.cancel_round(int(ctx.payload["round_id"]))
-        return StepResult(
-            result={"unarmed": True, "round_number": await _round_number_now(ctx)}
-        )
+        return StepResult(result={"unarmed": True, "round_number": number})
 
     async def unarmed(ctx: StepContext) -> bool:
         """The save is due only where the timed work was removed, not where that job was
