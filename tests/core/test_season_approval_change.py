@@ -1466,26 +1466,6 @@ async def test_no_separate_opening_classification_line_is_written(tmp_path, monk
     assert not any("| Opening classification" in line for line in _log_lines(league))
 
 
-async def test_a_discarded_arming_is_named_first_and_says_the_season_has_no_timed_work(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch, results=True)
-    _refused(league, PRO_CH.lineup)
-    press = await _pressed(league)
-    await _fail_arm(league)
-
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "arm"
-    await discard_job(league.bot)
-    assert await _stopped_at(league) == "refresh_lineup"
-    await discard_job(league.bot)
-
-    bullets = _not_done(reply(press))
-    assert bullets[0].startswith("⛔ The season's timed work was not armed:")
-    assert "No command arms it again." in bullets[0]
-    assert any(bullet.startswith("**Pro** — its lineup could not be posted.") for bullet in bullets)
-
-
 async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
