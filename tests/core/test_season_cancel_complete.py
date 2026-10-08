@@ -765,7 +765,6 @@ def _accepted_reply(number: int) -> str:
             f"cancelling would lose them.")
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_cancelling_is_refused_while_a_submission_has_accepted_results_naming_the_round(
     _open_submissions,
 ):
@@ -849,7 +848,6 @@ async def test_a_submission_channel_that_cannot_be_deleted_is_named_to_the_admin
     assert f"not notified: {named}" in logged
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_cancelling_is_refused_while_a_round_is_in_its_review(_open_submissions):
     """Division 1's round 2 is in its penalty review: its sessions accepted, its submission
     (channel 8300) still open for the review. /season cancel is refused until the review is
@@ -950,7 +948,6 @@ _SEASON_REFUSALS = [
     pytest.param(
         "season cancel", {"accepted": True}, False, "CONFIRM", _accepted_reply(3),
         id="cancel-while-a-submission-has-accepted-results",
-        marks=pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL),
     ),
     pytest.param(
         "season complete", {"season": None}, False, None,

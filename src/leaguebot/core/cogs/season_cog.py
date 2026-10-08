@@ -3217,6 +3217,38 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # **Not while a results submission holds accepted results** (#439, owner 2026-10-08,
+        # amending Constitution XII): a session accepted into an open submission, or one entered
+        # as not held, is data the cascade below would lose, and a round in its review counts. An
+        # open submission with nothing accepted does not hold the cancellation; it is closed
+        # right after the defer. Refused before anything else runs, naming the round.
+        from leaguebot.results.services.result_submission_service import open_submissions
+
+        standing: dict[int, tuple[str, RoundModel]] = {}
+        for division in await self.bot.season_service.get_divisions(season.id):
+            if division.status == "CANCELLED":
+                continue
+            for each in await self.bot.season_service.get_division_rounds(division.id):
+                standing[each.id] = (division.name, each)
+        held_submissions = [
+            each
+            for each in await open_submissions(self.bot.db_path, list(standing))
+            if each.accepted
+        ]
+        if held_submissions:
+            # The first by division, then by round number, as the season lists them.
+            order = list(standing)
+            first = min(held_submissions, key=lambda each: order.index(each.round_id))
+            division_name, held_round = standing[first.round_id]
+            await refuse(
+                interaction,
+                f"\u274c Cannot cancel the season — results have already been accepted in the "
+                f"submission channel of round {held_round.round_number} of **{division_name}** "
+                f"(<#{first.channel_id}>), and cancelling would lose them.",
+                what=describe(interaction),
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         divisions = await self.bot.season_service.get_divisions(season.id)
