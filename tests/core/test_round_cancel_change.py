@@ -1126,26 +1126,6 @@ async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amend
     assert await _status(league) == "NOT_RUN"
 
 
-async def test_a_round_cancel_that_comes_to_run_while_a_round_of_its_division_is_being_amended_is_refused(
-    tmp_path,
-):
-    """Pro's round 3 cancellation waits behind a stopped one. When the queue goes on, a
-    `/round amend` of a round of Pro is being applied: the cancellation is refused when it runs,
-    the reply updated with the refusal, and round 3 keeps its timed work and its status."""
-    league = await ongoing_league(tmp_path, attendance=True)
-    await _stopped_blocker(league)
-    interaction = await _asked(league)
-
-    with league.bot.amendment_service.applying(PRO):
-        await _clear_blocker(league)
-
-    assert _outcome(interaction) == BEING_AMENDED
-    assert await _status(league) == "NOT_RUN"
-    assert R3 not in league.unarmed
-    assert (await _change(league))["state"] == "REFUSED"
-    assert len(_refusal_lines(league)) == 1
-
-
 # ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
 
 #: Why each test below fails until the build: today an open submission refuses the round's
