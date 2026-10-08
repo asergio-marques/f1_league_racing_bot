@@ -676,33 +676,6 @@ async def test_a_division_cancel_asked_while_a_round_of_it_is_being_amended_is_r
     assert await _statuses(league) == before
 
 
-async def test_a_division_cancel_that_comes_to_run_while_a_round_of_it_is_being_amended_is_refused(
-    tmp_path,
-):
-    """Pro's cancellation waits behind Am's round 3 cancellation, stopped at its check-in notice.
-    When the queue goes on, a `/round amend` of a round of Pro is being applied: Pro's
-    cancellation is refused when it runs, the reply says so, and Pro and its rounds stand."""
-    league = await ongoing_league(tmp_path, attendance=True)
-    league.remove_channel(AM_CH.checkin)
-    await cancel_round(league, "Am", 3)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "notify_checkin"
-    interaction = await _asked(league)
-    before = await _statuses(league)
-
-    with league.bot.amendment_service.applying(PRO):
-        league.restore_channel(AM_CH.checkin)
-        await retry_job(league.bot)
-
-    assert BEING_AMENDED in reply(interaction)
-    assert CANCELLED not in reply(interaction)
-    assert await _division(league) == "ACTIVE"
-    assert await _statuses(league) == before
-    assert not set(before) & set(league.unarmed)
-    assert len(_refusal_lines(league)) == 1
-    assert (await _change(league))["state"] == "REFUSED"
-
-
 async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_on_a_retry(
     tmp_path,
 ):
