@@ -607,7 +607,7 @@ class SeasonService:
         the fact and `/season cancel` can tell the running divisions apart from the called-off
         ones. Stored state can drift from the rounds it summarises, so this is called from every
         place a round's outcome settles — the appeals approval in result_submission_service and
-        `cancel_round` below — and again from the `/season complete` gate, which cannot afford to
+        `cancel_round_on` below — and again from the `/season complete` gate, which cannot afford to
         strand a league on a stale row a second time (issue #154).
 
         The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
@@ -1145,9 +1145,9 @@ class SeasonService:
     ) -> None:
         """Cancel every division of a season, then the season itself.
 
-        The order is deliberate and not merely tidy: `cancel_round` refuses to touch a round whose
-        season is already COMPLETED or CANCELLED, so a season row flipped first would lock the
-        cascade out of its own children. The season is therefore the last thing written, and the
+        The order is deliberate and not merely tidy: `cancel_round_on` refuses to touch a round whose
+        season is already COMPLETED or CANCELLED, so a season row flipped first would lock a write
+        beneath it out of its own children. The season is therefore the last thing written, and the
         whole cascade shares one transaction so a failure part-way cannot leave a season standing
         over half-cancelled divisions.
         """
@@ -1337,62 +1337,6 @@ class SeasonService:
             await db.commit()
 
         await self.renumber_rounds(division_id)
-
-    async def cancel_round(
-        self,
-        round_id: int,
-        actor_id: int,
-        actor_name: str,
-    ) -> None:
-        """Mark a round CANCELLED and write an audit entry."""
-        from datetime import timezone
-        now = datetime.now(timezone.utc)
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT r.division_id, s.status AS season_status
-                FROM rounds r
-                JOIN divisions d ON d.id = r.division_id
-                JOIN seasons s ON s.id = d.season_id
-                WHERE r.id = ?
-                """,
-                (round_id,),
-            )
-            row = await cursor.fetchone()
-            division_id = row["division_id"] if row else None
-
-            if row and row["season_status"] in ("COMPLETED", "CANCELLED"):
-                raise SeasonImmutableError(
-                    f"Round {round_id} belongs to an archived season and cannot be cancelled."
-                )
-
-            await db.execute(
-                "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?",
-                (round_id,),
-            )
-            await db.execute(
-                """
-                INSERT INTO audit_entries
-                    (actor_id, actor_name, division_id, change_type,
-                     old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    actor_id,
-                    actor_name,
-                    division_id,
-                    "round.status",
-                    "ACTIVE",
-                    "CANCELLED",
-                    now.isoformat(),
-                ),
-            )
-            await db.commit()
-
-        # Cancelling the last outstanding round is what finishes a division, so the division's
-        # own status has to be reconsidered here as well as on a result being finalised.
-        if division_id is not None:
-            await self.refresh_division_status(division_id)
 
     async def update_round_field(self, round_id: int, field: str, value: object) -> None:
         """Generic field updater used by amendment_service."""
