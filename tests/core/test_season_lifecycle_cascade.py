@@ -328,6 +328,44 @@ async def test_the_season_row_is_flipped_last(tmp_path) -> None:
         await svc.cancel_round(round_id, ACTOR_ID, ACTOR_NAME)
 
 
+async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path) -> None:
+    """Season 1 is ongoing; Div A has finished, both its rounds final, and Div B, its last
+    running division, has two rounds not run. Cancelling the season cancels Div B and its rounds
+    on the way, the last division to be done, and the season ends CANCELLED without ever having
+    been moved to Pending completion on the way (#439, slice 4b). The division's own
+    cancellation moves its season on in its save; the season's shares the division's write and
+    must not. Every stage the season is written is caught by a trigger of the test's own, since
+    the season's final stage follows its status whatever came before."""
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=2)
+    div_a, a_rounds = built["Div A"]
+    div_b, _ = built["Div B"]
+    for rid in a_rounds:
+        await _set_round_status(db_path, rid, "FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", (div_a,))
+        await db.execute("UPDATE seasons SET stage = 'ONGOING' WHERE id = ?", (season_id,))
+        await db.execute("CREATE TABLE stages_written (stage TEXT)")
+        await db.execute(
+            "CREATE TRIGGER catch_stages AFTER UPDATE OF stage ON seasons "
+            "BEGIN INSERT INTO stages_written (stage) VALUES (NEW.stage); END"
+        )
+        await db.commit()
+
+    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+
+    assert await _division_status(db_path, div_b) == "CANCELLED"
+    async with get_connection(db_path) as db:
+        cur = await db.execute("SELECT status, stage FROM seasons WHERE id = ?", (season_id,))
+        row = await cur.fetchone()
+        written = [r["stage"] for r in await (
+            await db.execute("SELECT stage FROM stages_written ORDER BY rowid")
+        ).fetchall()]
+    assert (row["status"], row["stage"]) == ("CANCELLED", "CANCELLED")
+    assert written, "the trigger caught no stage at all, so it proves nothing"
+    assert "PENDING_COMPLETION" not in written
+
+
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)

@@ -628,3 +628,98 @@ async def test_a_failed_announcement_records_no_message(tmp_path, caplog):
             (ROUND_ID,),
         )
         assert (await cursor.fetchone())["distribution_msg_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# withdraw_rsvp_call, raising (#439, slice 4b)
+#
+# A round's or a division's cancellation takes each call down as a job of the change queue, which
+# stops on a failure until it is retried. So the raising form keeps the row where any message is
+# left standing, for the next try to read, where the quiet form drops it.
+# ---------------------------------------------------------------------------
+
+#: The raising form of the withdrawal is not built yet.
+RAISING_WITHDRAWAL_UNBUILT = "#439: withdraw_rsvp_call has no raise_on_failure yet"
+
+
+def _channel_failing_on(failures: dict[str, Exception]) -> MagicMock:
+    """A channel deleting every message but those in *failures*, which raise their exception."""
+    channel = _make_channel()
+
+    async def _fetch(message_id: int) -> MagicMock:
+        message = MagicMock()
+        failure = failures.get(str(message_id))
+
+        async def _delete() -> None:
+            if failure is not None:
+                raise failure
+            channel.deleted.append(message_id)
+
+        message.delete = _delete
+        return message
+
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    return channel
+
+
+@pytest.mark.xfail(strict=True, reason=RAISING_WITHDRAWAL_UNBUILT)
+async def test_a_raising_withdrawal_keeps_the_record_and_names_the_messages_left(tmp_path):
+    """The call (900001), its last notice (900002) and its distribution (900003) stand, and
+    Discord refuses to delete the last notice. Withdrawing in the raising form deletes the other
+    two, then raises StepFailedOnDiscord naming 900002 alone, and keeps the call's row."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    channel = _channel_failing_on(
+        {LAST_NOTICE_MSG_ID: discord.Forbidden(MagicMock(status=403), "missing permissions")}
+    )
+    bot = _make_bot(db_path, channel)
+
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
+
+    assert caught.value.result == {"undeleted": [LAST_NOTICE_MSG_ID]}
+    assert sorted(str(m) for m in channel.deleted) == [CALL_MSG_ID, DISTRIBUTION_MSG_ID]
+    assert await _embed_rows(db_path) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=RAISING_WITHDRAWAL_UNBUILT)
+async def test_a_raising_withdrawal_counts_a_message_already_gone_as_gone(tmp_path):
+    """The call (900001) was deleted by hand; its last notice and distribution stand. Withdrawing
+    in the raising form raises nothing, answers True and drops the call's row."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    channel = _channel_failing_on(
+        {CALL_MSG_ID: discord.NotFound(MagicMock(status=404), "unknown message")}
+    )
+    bot = _make_bot(db_path, channel)
+
+    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True) is True
+    assert await _embed_rows(db_path) == 0
+
+
+@pytest.mark.xfail(strict=True, reason=RAISING_WITHDRAWAL_UNBUILT)
+async def test_a_raising_withdrawal_whose_channel_is_gone_keeps_the_record(tmp_path):
+    """The check-in channel holding the call, its last notice and its distribution has been
+    deleted. Withdrawing in the raising form raises StepFailedOnDiscord naming all three, and
+    keeps the call's row for the next try."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    bot = _make_bot(db_path, channel=None)
+
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
+
+    assert sorted(caught.value.result["undeleted"]) == sorted(
+        [CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID]
+    )
+    assert await _embed_rows(db_path) == 1

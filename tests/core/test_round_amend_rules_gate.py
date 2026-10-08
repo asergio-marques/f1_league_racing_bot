@@ -764,3 +764,97 @@ async def test_a_round_that_cannot_be_amended_is_refused_even_given_what_stands(
     assert "already holds those values" not in _reply(interaction)
     [line] = _lines(cog)
     assert line.startswith("⛔ "), line
+
+
+# ---------------------------------------------------------------------------
+# A cancellation in hand holds the amendment (owner, 2026-10-08, answer 1; #439 slice 4b)
+#
+# A cancellation waiting or stopped on the queue has removed, or is about to remove, the round's
+# timed work. An amendment confirmed meanwhile would arm it again, and the round, once cancelled,
+# would still have its forecasts posted. So `/round amend` is refused, naming the job, while a
+# cancellation of the round or of its division is in hand: at the offer and again at confirm.
+# ---------------------------------------------------------------------------
+
+#: `/round amend` does not yet read a cancellation in hand.
+AMEND_NOT_HELD_BY_A_CANCELLATION = "#439: /round amend is not refused while a cancellation is in hand"
+
+_CANCELLATIONS_IN_HAND = [
+    pytest.param(
+        "season.round.cancel",
+        {"round_id": 1, "round_number": 1, "track_name": "Bahrain International Circuit",
+         "division_id": 1, "division_name": DIVISION, "season_number": 1},
+        id="round-cancel",
+    ),
+    pytest.param(
+        "season.division.cancel",
+        {"division_id": 1, "division_name": DIVISION, "season_number": 1},
+        id="division-cancel",
+    ),
+]
+
+
+async def _seed_cancellation(path: str, kind: str, payload: dict) -> int:
+    """A cancellation of *kind* waiting on the queue, its first job (removing the timed work) not
+    yet done, behind an earlier change of three jobs long done, so that the job's number and its
+    change's id differ. Gives the job's number."""
+    import json
+
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('hub.refresh', 'hub.refresh', '{}', 'BOT', 'DONE', 'refreshing the hub')"
+        )
+        for position in range(3):
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, done_at) "
+                "VALUES (?, ?, 'refresh', '2026-10-05T11:00:00+00:00')",
+                (cursor.lastrowid, position),
+            )
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES (?, ?, ?, 'MEMBER', 'QUEUED', 'a cancellation of the test')",
+            (kind, f"{kind}:{json.dumps(payload, sort_keys=True)}", json.dumps(payload)),
+        )
+        change_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload) "
+            "VALUES (?, 0, 'unarm', '{}')",
+            (change_id,),
+        )
+        job = cursor.lastrowid
+        await db.commit()
+    assert job is not None and job != change_id
+    return job
+
+
+@pytest.mark.parametrize("at", ["offer", "confirm"])
+@pytest.mark.parametrize(("kind", "payload"), _CANCELLATIONS_IN_HAND)
+@pytest.mark.xfail(strict=True, reason=AMEND_NOT_HELD_BY_A_CANCELLATION)
+async def test_a_round_being_cancelled_is_not_amended_naming_the_job(tmp_path, kind, payload, at):
+    """Round 1 of Div A is a month out, and a cancellation of it, or of Div A, waits on the queue.
+    Asking to amend its track is refused before any confirmation is offered; pressing Confirm on
+    an amendment offered earlier is refused too. Either way the reply names the job and how to
+    clear it, nothing is amended, and one refusal line is written in the log channel."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = await _seed_cancellation(path, kind, payload)
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    if at == "confirm":
+        _answered(interaction)
+        await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+    else:
+        await _amend(cog, interaction, track=NEW_TRACK)
+        assert not _offered_a_confirmation(interaction)
+
+    assert (
+        f"⏸️ Round 1 in **{DIVISION}** is being cancelled (job #{job}), so it cannot be "
+        "amended. Let that finish, or press **Retry** or **Discard** on its notice if it has "
+        "stopped."
+    ) in _all_replies(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/round amend" in line and f"job #{job}" in line

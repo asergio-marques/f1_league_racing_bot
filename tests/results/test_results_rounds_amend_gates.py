@@ -783,3 +783,84 @@ async def test_a_review_job_and_a_points_approval_name_the_one_nearer_its_turn(
     replied = _replied(interaction)
     assert f"job #{first})" in replied
     assert f"job #{second})" not in replied
+
+
+# ---------------------------------------------------------------------------
+# A cancellation in the division on the queue (r1-1, "Any job for that division", #439 slice 4b)
+#
+# A round's or a division's cancellation is a job for that division, so while one is in hand no
+# round of the division is amended. The refusal is r1-1's, word for word.
+# ---------------------------------------------------------------------------
+
+#: `division_job_in_hand` does not read the cancellation kinds yet.
+CANCELLATION_NOT_HOLDING = "#439: a cancellation in the division does not hold the amendment yet"
+
+ROUND_CANCEL_KIND = "season.round.cancel"
+ROUND_CANCEL_PAYLOAD = {
+    "round_id": LATER_ROUND_ID, "round_number": 4, "track_name": None,
+    "division_id": DIVISION_ID, "division_name": "Pro", "season_number": 1,
+}
+DIVISION_CANCEL_KIND = "season.division.cancel"
+DIVISION_CANCEL_PAYLOAD = {"division_id": DIVISION_ID, "division_name": "Pro", "season_number": 1}
+
+_CANCELLATIONS = [
+    pytest.param(ROUND_CANCEL_KIND, ROUND_CANCEL_PAYLOAD, id="round-cancel"),
+    pytest.param(DIVISION_CANCEL_KIND, DIVISION_CANCEL_PAYLOAD, id="division-cancel"),
+]
+
+
+@pytest.mark.parametrize(("kind", "payload"), _CANCELLATIONS)
+@pytest.mark.parametrize(
+    ("state", "stopped"),
+    [("QUEUED", False), ("RUNNING", True)],
+    ids=["waiting", "stopped"],
+)
+@pytest.mark.xfail(strict=True, reason=CANCELLATION_NOT_HOLDING)
+async def test_a_round_is_not_amended_while_a_cancellation_in_its_division_is_in_hand(
+    tmp_path, kind, payload, state, stopped,
+):
+    """A cancellation of Pro's round 4, or of Pro itself, is on the queue, waiting or stopped at
+    a failed job. Amending Pro's round 3 is refused in r1-1's words, naming the cancellation's
+    job and how to clear it, with one refusal line in the log; no amendment is opened and no
+    channel created."""
+    db_path = await _make_db(tmp_path, name=f"amend_cancel_{kind}_{state}_{stopped}")
+    job = await _seed_queued_change(
+        db_path, kind=kind, payload=payload, state=state, stopped=stopped,
+    )
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    with contextlib.suppress(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert _replied(interaction) == (
+        f"⏸️ A round of Pro has a job on the change queue (job #{job}), so it "
+        "cannot be amended until that is done. Let it finish, or press **Retry** or **Discard** "
+        "on its notice if it has stopped, then amend again."
+    )
+    [line] = _logged(interaction)
+    assert line.startswith("⛔") and f"job #{job}" in line
+    interaction.guild.create_text_channel.assert_not_called()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        assert (await cursor.fetchone())[0] == 0
+
+
+@pytest.mark.parametrize(("kind", "payload"), _CANCELLATIONS)
+@pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
+async def test_a_finished_or_discarded_cancellation_does_not_hold_the_amendment(
+    tmp_path, kind, payload, state,
+):
+    """A cancellation of Pro's round 4, or of Pro itself, has finished, or a league admin
+    discarded it: it is no longer in hand, so amending Pro's round 3 goes on to create the
+    amendment's channel, nothing refused and nothing logged."""
+    db_path = await _make_db(tmp_path, name=f"amend_cancel_over_{kind}_{state}")
+    await _seed_queued_change(db_path, kind=kind, payload=payload, state=state)
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    with pytest.raises(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert "job #" not in _replied(interaction)
+    assert _logged(interaction) == []

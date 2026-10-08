@@ -107,3 +107,19 @@ def test_the_season_approval_is_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     assert kinds.count(KIND) == 1
     assert kinds.count(TELL_KIND) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the cancellations are not registered yet")
+def test_the_cancellations_are_registered():
+    """The builder registers the cancellation of a round and of a division, once each, as
+    "season.round.cancel" and "season.division.cancel" (#439, slice 4b)."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
+    assert (ROUND_CANCEL, DIVISION_CANCEL) == ("season.round.cancel", "season.division.cancel")
+    assert kinds.count(ROUND_CANCEL) == 1
+    assert kinds.count(DIVISION_CANCEL) == 1
