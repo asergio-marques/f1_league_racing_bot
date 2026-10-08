@@ -58,7 +58,7 @@
 - Weather shall be generated per round and posted per division. The three phases shall fire automatically; no command to generate a forecast on demand shall be provided.
 - Nothing shall be generated before the season's placements are first confirmed.
 - Each phase shall be performed at most once per round. A phase already performed shall be skipped.
-- A phase falling due for a cancelled round, or for a round of a cancelled division, shall do nothing: nothing shall be drawn, recorded or posted for it, however it came to fall due. Decided 2026-10-08.
+- A phase, or the notice of a Mystery round, falling due for a cancelled round, or for a round of a cancelled division, shall do nothing: nothing shall be drawn, recorded or posted for it, however it came to fall due. Decided 2026-10-08.
 - A round of the Mystery format shall be treated as set out under Mystery rounds below.
 
 **Phase 1 - Initial calculation of rain percentage**
