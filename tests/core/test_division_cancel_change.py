@@ -55,8 +55,6 @@ from tests.support.season_league import (
     round_id,
 )
 
-NOT_ON_THE_QUEUE = "#439: /division cancel is not yet carried out on the change queue"
-
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 CANCELLED = "✅ Division **Pro** cancelled."
@@ -540,7 +538,6 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s_then_calls_off_the_rest(
     tmp_path,
 ):
@@ -564,7 +561,12 @@ async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s
     kinds = [row["kind"] for row in await change_rows(league.db_path)
              if row["kind"] in (ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND)]
     assert kinds == [ROUND_CANCEL_KIND, ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND]
-    assert all(row["state"] == "DONE" for row in await change_rows(league.db_path))
+    # Every cancellation went through; the wind-down it asked drops itself where not due.
+    for row in await change_rows(league.db_path):
+        if row["kind"] in (ROUND_CANCEL_KIND, DIVISION_CANCEL_KIND):
+            assert row["state"] == "DONE"
+        else:
+            assert (row["kind"], row["state"]) in ((WIND_DOWN, "DONE"), (WIND_DOWN, "DROPPED"))
 
 
 async def test_a_round_with_a_submission_open_is_cancelled_with_its_division_and_nothing_is_refused(
