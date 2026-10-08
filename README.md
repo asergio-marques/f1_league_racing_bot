@@ -836,7 +836,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `round_number` | Integer | ✅ | The round number to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below.
+Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below. While a `/round amend` of a round of the same division is being applied, from its Confirm until the rounds are renumbered, the cancellation is refused, when you ask and again when it comes to run: try again in a moment.
 
 > **Who is told about a cancellation.** The bot posts no announcement of its own: telling your drivers a race is off is yours to do. What it does is stop each module carrying on as though the race were still on, each in its own channel and only where that module is turned on:
 >
@@ -861,7 +861,7 @@ Available only while the season is ongoing. Cancelling the last division still r
 Is acknowledged at once, naming its first job, and carried out on the change queue. Unschedules every round of the division, cancels each one whose results have not been entered, one whose submission channel stands open included, marks the division
 `CANCELLED`, and tells the division as `/round cancel` does. A round already raced and scored keeps its
 results and its status. A cancelled division is excluded from tier validation, from the standings,
-and from the gate on completing the season.
+and from the gate on completing the season. Like `/round cancel`, it is refused while a `/round amend` of a round of the division is being applied: try again in a moment.
 
 #### `/division lineup-channel` — Set the lineup posting channel for a division
 *Access: League manager*
