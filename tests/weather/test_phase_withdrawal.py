@@ -14,14 +14,10 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 from leaguebot.core.db.database import get_connection, run_migrations
 
 ROUND_ID = 31
 OTHER_ROUND_ID = 32
-
-XFAIL = "#439: weather has no withdraw_phases_on writing on the save it is handed"
 
 
 async def _make_db(tmp_path) -> str:
@@ -88,7 +84,6 @@ PERFORMED = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_withdrawing_phases_writes_only_those_phases_on_the_connection_handed(tmp_path):
     """Round 1 has all three phases performed. Withdrawing Phases 1 and 3 on a connection clears
     their two flags and invalidates their two results, and clears each session's Phase 3 slots;
@@ -111,7 +106,6 @@ async def test_withdrawing_phases_writes_only_those_phases_on_the_connection_han
         assert await _state(db) == PERFORMED
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_withdrawing_no_phase_writes_nothing(tmp_path):
     """Round 1 has all three phases performed. Withdrawing no phase on a connection changes no
     row: every flag, result and session stays as it was."""
