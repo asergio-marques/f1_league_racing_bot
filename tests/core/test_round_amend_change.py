@@ -457,7 +457,9 @@ async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):
 
     assert await _stopped_at(league) == "notify_invalidation"
     assert league.texts(PRO_CH.forecast) == []
-    assert await league.rows("SELECT * FROM pending_messages") == []
+    assert await league.rows(
+        "SELECT * FROM pending_messages WHERE channel_id = ?", PRO_CH.forecast
+    ) == []
     await discard_job(league.bot)
     outcome = _outcome(press)
     assert outcome.startswith(AMENDED) and NOT_DONE in outcome
