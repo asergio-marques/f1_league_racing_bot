@@ -277,7 +277,7 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
 # The core specification's "Confirming placements": "The button shall stand for five minutes from
 # the posting of the review that carries it." discord.py restarts a view's timer on every press
 # that reaches a button, a refused one included, so a review pressed now and then would never
-# expire. Here the review's five minutes are scaled down to one second, so its timer runs in earnest.
+# expire. Here the review's five minutes are scaled down to two seconds, so its timer runs in earnest.
 
 
 
@@ -285,31 +285,33 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
 async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex's review is posted and its timer starts. Four-fifths of the way through (scaled: half
-    of a one-second window) Sam, who may not answer it, presses its button and is refused.
+    """Alex's review is posted and its timer starts. Four-fifths of the way through (scaled: 1.6
+    seconds into a two-second window) Sam, who may not answer it, presses its button and is
+    refused.
 
     The review still expires at its five minutes from posting, not five minutes from Sam's press:
     the question is deleted, today's notice is posted, and the log holds Sam's refusal and then
-    Alex's lapse line.
+    Alex's lapse line. The window is two seconds rather than one, and the waits leave 0.8 seconds
+    either side of the deadline, so that a host under load cannot fail it.
     """
     from leaguebot.core.cogs import season_cog
 
-    monkeypatch.setattr(season_cog, "APPROVAL_WINDOW_SECONDS", 1.0)
+    monkeypatch.setattr(season_cog, "APPROVAL_WINDOW_SECONDS", 2.0)
     view, cog, message = _review(view_class, helper)
     loop = asyncio.get_running_loop()
     posted = loop.time()
     # What discord.py does when the question is posted with its view: the timer starts.
     view._start_listening_from_store(MagicMock())
     try:
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.6)
         button = next(item for item in view.children if isinstance(item, discord.ui.Button))
         await view._dispatch_item(button, _press(cog, BYSTANDER, "Sam"))
 
-        # Due at one second from posting; a timer restarted by the press would run to 1.5.
-        while not view.is_finished() and loop.time() < posted + 1.25:
+        # Due at two seconds from posting; a timer restarted by the press would run to 3.6.
+        while not view.is_finished() and loop.time() < posted + 2.8:
             await asyncio.sleep(0.02)
         assert view.is_finished(), "the review outlived its window after a refused press"
-        while not message.channel.send.await_count and loop.time() < posted + 2.0:
+        while not message.channel.send.await_count and loop.time() < posted + 3.6:
             await asyncio.sleep(0.02)
     finally:
         view.stop()
