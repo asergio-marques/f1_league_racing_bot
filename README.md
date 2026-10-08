@@ -320,9 +320,9 @@ outcome, as it does for any outcome that arrives after 14 minutes (an approval o
 tells the review's channel, below). **Turning `results` off
 works this way, and so does a round's review: opening it, approving either of its stages, and
 approving either stage of an amendment; and so does approving a points amendment with
-`/results amend review`, and so does approving a season with the ✅ Approve button.** Approving a stage again while the first approval is in
+`/results amend review`, and so does approving a season with the ✅ Approve button, and so do `/round cancel` and `/division cancel`.** Approving a stage again while the first approval is in
 hand, waiting, running or stopped on a failure, is refused as well, and so is approving a points
-amendment again while the first is, or approving a season again (without naming the job).
+amendment again while the first is, or approving a season again (without naming the job), or cancelling a round or division again (naming the job).
 
 **A job that fails stops the queue.** Nothing behind it runs until it is cleared. The log channel
 gets one ❌ message, with **Retry** and **Discard** buttons, naming the job's number, what it was,
@@ -815,7 +815,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 
 **An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.
 
-**Giving the values a round already holds changes nothing.** You are told nothing was changed, no confirmation is offered, and the log channel records that nothing changed. A round that cannot be amended at all — cancelled, or with its results entered — is refused as such, whatever you gave.
+**Giving the values a round already holds changes nothing.** You are told nothing was changed, no confirmation is offered, and the log channel records that nothing changed. A round that cannot be amended at all — cancelled, or with its results entered — is refused as such, whatever you gave. So is a round whose cancellation, or its division's, is waiting, being carried out or stopped on the change queue: the refusal names the job.
 
 **It tells you what it will cost before it does it.** The confirmation names the forecasts that will be withdrawn and redrawn, or says the ones already posted will stand, along with anything the round will no longer get — a reminder that can no longer fire, for instance. The rules are checked again when you press Confirm, so an amendment that was fine when offered but is not any more is abandoned rather than applied.
 
@@ -836,17 +836,17 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `round_number` | Integer | ✅ | The round number to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and tells the division — see **Who is told about a cancellation** below.
+Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below.
 
 > **Who is told about a cancellation.** The bot posts no announcement of its own: telling your drivers a race is off is yours to do. What it does is stop each module carrying on as though the race were still on, each in its own channel and only where that module is turned on:
 >
-> - **Attendance** posts the one real notification, in the division's check-in channel, mentioning the division role as the check-in call does: the round is off and there is nothing to answer. The round's check-in call is then taken down, with its reminder and its reserve-distribution message. The answers drivers gave are kept, and the log channel lists them — who accepted, was unsure, declined or never answered, and, if the reserves had been placed already, who went to which team and who was on standby. A call the bot is not allowed to delete is named in your reply for you to remove by hand, and its buttons refuse every answer meanwhile.
+> - **Attendance** posts the one real notification, in the division's check-in channel, mentioning the division role as the check-in call does: the round is off and there is nothing to answer. The round's check-in call is then taken down, with its reminder and its reserve-distribution message. The answers drivers gave are kept, and the log channel lists them beneath the cancellation's own entry — who accepted, was unsure, declined or never answered, and, if the reserves had been placed already, who went to which team and who was on standby. A call the bot is not allowed to delete stops the queue until it is retried; once a league admin discards it, your reply names it for you to remove by hand, and its buttons refuse every answer meanwhile.
 > - **Weather** posts a silent note in the forecast channel that no forecast is coming.
 > - **Results** posts a silent note in the results channel that no results are coming.
 >
 > A silent note sits in the channel for anyone reading it but pings and pushes nobody. A league with none of the three turned on is sent nothing.
 >
-> **The calendar is reposted either way**, with the cancelled round struck through in the text calendar, or covered by its cancellation overlay in the picture. The same applies to `/division cancel` and `/season cancel`, and a division already cancelled is not told twice. If anything could not be posted — a channel not set or not found, a message the bot was not allowed to send, a calendar that failed or had to fall back to text — your reply to the command lists it, and the log channel lists all of it. The cancellation itself goes through regardless.
+> **The calendar is reposted either way**, with the cancelled round struck through in the text calendar, or covered by its cancellation overlay in the picture. The same applies to `/division cancel` and `/season cancel`, and a division already cancelled is not told twice. A channel not set, or a calendar that had to fall back to text, is listed in your reply and the log channel. A notice, a call or a calendar Discord refuses, or whose channel has been deleted, stops the queue until it is retried (set the channel again, then press Retry); once a league admin discards it, it is listed too. The cancellation itself stands either way. `/season cancel` still lists everything at once.
 
 #### `/division cancel` — Cancel a division in the active season
 *Access: League admin · Ongoing only*
@@ -858,7 +858,7 @@ Available only while the season is ongoing. Cancelling the last division still r
 | `name` | String | ✅ | Name of the division to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Unschedules every round of the division, cancels each one **not yet raced**, marks the division
+Is acknowledged at once, naming its first job, and carried out on the change queue. Unschedules every round of the division, cancels each one whose results have not been entered, one whose submission channel stands open included, marks the division
 `CANCELLED`, and tells the division as `/round cancel` does. A round already raced and scored keeps its
 results and its status. A cancelled division is excluded from tier validation, from the standings,
 and from the gate on completing the season.
@@ -1921,7 +1921,7 @@ If the appeals prompt cannot be posted after the penalty stage is approved, the 
 - Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
 - A DSQ on the fastest-lap holder forfeits the bonus; no other driver receives it.
 - A round that has been submitted but has not reached **final** blocks `/test-mode advance` until both review stages are approved. The refusal names whichever review is standing.
-- `/round cancel` is refused once the round's results have been entered — from then on the drivers have reports and appeals to lodge, and cancelling would take that from them. It is also refused while a submission channel stands open. The same rule governs `/division cancel` and `/season cancel`, so a round that cannot be cancelled on its own is not cancelled by a cascade either.
+- `/round cancel` is refused once the round's results have been entered — from then on the drivers have reports and appeals to lodge, and cancelling would take that from them. It is also refused while a submission channel stands open. `/division cancel` and `/season cancel` leave a round whose results have been entered as it is, but cancel a round whose submission channel stands open with the rest: the results pasted into it are lost, and its channel is left open.
 - After a round's last session is pasted, the channel says that the penalty review is being opened, with its job number, and where the queue is stopped, which job it is stopped at: the review opens as a change on the queue, the results first, as *Provisional Results*, then the prompt. A round whose review, or approval of it, is on the queue is left to the queue on a restart, which finishes it. Otherwise, on bot restart, a channel already in penalty or appeals review is restored and its prompt put back, in place of the old one, through the queue, and one left over from before with its round already final is closed, not reviewed again. A channel still **mid-submission** is not restored: the round's submitted sessions are discarded and collection restarts from the first session, with a notice in the log channel.
 - A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over. The log channel records a lapse naming who started the resubmission.
 - A resubmission that fails before any session is pasted (the round is gone, or the division's data cannot be read) is recorded as that button's failure, naming who pressed it, and the earlier results stand.
@@ -1960,7 +1960,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
 
-**A round is not amended while its division has a job on the queue.** While any change naming a round of the division is waiting, being carried out or stopped on a failure — a penalty review opening, either approval, or an amendment's stage — or, in every division of the season, an approval of a points amendment, the command is refused, naming the job it waits on. Let it finish, or press Retry or Discard on its notice, then amend again; the refusal is recorded in the log channel. Otherwise a job queued before the amendment began would publish the amendment's unapproved corrections. Any other job for another division, or a bot-wide one, does not block it.
+**A round is not amended while its division has a job on the queue.** While any change naming a round of the division is waiting, being carried out or stopped on a failure — a penalty review opening, either approval, an amendment's stage, or a cancellation of a round of the division or of the division — or, in every division of the season, an approval of a points amendment, the command is refused, naming the job it waits on. Let it finish, or press Retry or Discard on its notice, then amend again; the refusal is recorded in the log channel. Otherwise a job queued before the amendment began would publish the amendment's unapproved corrections. Any other job for another division, or a bot-wide one, does not block it.
 
 **Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync`, `/results rounds sync` and `/attendance sync` are refused for the division too, and across the season so are approving a points change with `/results amend review`, `/season complete` and `/season cancel`. The refusal names the round being amended and its channel; try again once it has finished. It ends when approved, or is undone once half an hour has passed since its corrections were pasted — the bot checks every few minutes, so allow a little over. Each of these posts or records something from the results, which would carry the amendment's corrections before anybody had approved them.
 
