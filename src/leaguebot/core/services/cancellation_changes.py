@@ -244,6 +244,11 @@ def _refusal_of(ctx: OutcomeContext) -> str | None:
     return (_view(ctx, APPLY).result or {}).get("refused")
 
 
+def _saved_number(ctx: OutcomeContext) -> Any:
+    """The number of the round cancelled, as the save found it, else the press's."""
+    return (_view(ctx, APPLY).result or {}).get("round_number", ctx.payload["round_number"])
+
+
 def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
     """Every place the cancellation could not reach, one for each job that found none to tell or
     was discarded, in the order of the jobs, and the calendar posted as text."""
@@ -335,8 +340,8 @@ def _follow_steps(
         problem = await notices.post_module_notice(
             ctx.bot, guild, division, module,
             scope=scope,
-            round_number=ctx.payload.get("round_number"),
-            track_name=ctx.payload.get("track_name"),
+            round_number=ctx.step_payload.get("round_number", ctx.payload.get("round_number")),
+            track_name=ctx.step_payload.get("track_name", ctx.payload.get("track_name")),
         )
         return StepResult(result={"unset": True} if problem else {"sent": True})
 
@@ -524,7 +529,7 @@ def round_cancel_change(
             raise RuntimeError("cancelling a round is the act of a member, and none is recorded")
         round_id = int(ctx.payload["round_id"])
         cursor = await db.execute(
-            "SELECT d.id, d.season_id, d.status FROM rounds r "
+            "SELECT d.id, d.season_id, d.status, r.round_number, r.track_name FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
             (round_id,),
         )
@@ -543,10 +548,14 @@ def round_cancel_change(
         finished = (
             after is not None and after["status"] == "FINISHED" and division["status"] != "FINISHED"
         )
+        # The round's number and track as the save finds them: another round's date amended
+        # while this waited may have renumbered the division since the press.
         target = {
             "division_id": int(division["id"]),
             "division_name": str(ctx.payload["division_name"]),
             "season_id": int(division["season_id"]),
+            "round_number": int(division["round_number"]),
+            "track_name": division["track_name"],
         }
         cursor = await db.execute(
             "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
@@ -561,7 +570,11 @@ def round_cancel_change(
             PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id]}),
         ]
         return StepResult(
-            result={"previous": previous},
+            result={
+                "previous": previous,
+                "round_number": target["round_number"],
+                "track_name": target["track_name"],
+            },
             then=tuple(planned),
             follow_ons=(
                 (FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),)
@@ -584,7 +597,7 @@ def round_cancel_change(
         line = (
             f"{ctx.named} | /round cancel | Success\n"
             f"  division: {payload['division_name']}\n"
-            f"  round: {payload['round_number']}"
+            f"  round: {_saved_number(ctx)}"
             + checkin_audit(ctx)
             + notices.failure_log_lines(not_notified(ctx))
         )
@@ -592,7 +605,7 @@ def round_cancel_change(
 
     def outcome(ctx: OutcomeContext) -> str:
         words = {
-            "number": ctx.payload["round_number"], "division": ctx.payload["division_name"],
+            "number": _saved_number(ctx), "division": ctx.payload["division_name"],
         }
         if _discarded(_view(ctx, UNARM)):
             return UNARM_DISCARDED.format(**words)
