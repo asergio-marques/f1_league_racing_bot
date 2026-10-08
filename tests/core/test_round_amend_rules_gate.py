@@ -25,8 +25,6 @@ DIVISION = "Div A"
 NEW_TRACK = "Silverstone Circuit"
 #: The kind of change Confirm asks the queue for.
 ROUND_AMEND_KIND = "season.round.amend"
-#: Why a test of Confirm asking the queue fails until the build.
-ON_THE_QUEUE = "#439: Confirm does not yet ask the change queue for the amendment"
 
 
 async def _db(tmp_path, *, scheduled_at: datetime, phase1_done: int = 0) -> str:
@@ -323,7 +321,6 @@ async def test_results_entered_while_the_confirmation_stands_refuses_it(tmp_path
     assert await _amendments(path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_confirmation_the_rules_still_allow_goes_through(tmp_path):
     """The gate must not cost a manager an amendment that is still perfectly good: Confirm asks
     the change queue for one amendment of round 1 of Div A, carrying the whole change set."""
@@ -383,7 +380,6 @@ def _all_replies(interaction) -> str:
     return "\n".join(str(call.args[0]) for call in calls if call.args)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path):
     """A fault while the amendment is asked of the change queue is the bot's: the standard
     failure reply naming `/round amend` and the round, one line in the log channel, and the
@@ -542,7 +538,6 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
         assert f"lapsed unconfirmed (started by Manager (<@{USER_ID}>))" in head
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     """A confirmed amendment, run on the change queue with weather and attendance off, writes one
     line, saved with the amendment: it names the member, `/round amend` and the round, and states
@@ -569,7 +564,6 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     assert "track_name" not in values
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_changed(tmp_path):
     """The manager confirms moving round 1 of Div A from Bahrain International Circuit to
     Silverstone Circuit, but the acknowledgement cannot be sent. The amendment is already asked
@@ -618,9 +612,7 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
 @pytest.mark.parametrize(
     "where",
     [
-        pytest.param(
-            "the ask fails", marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
-        ),
+        "the ask fails",
         "before amending",
     ],
 )
@@ -952,7 +944,7 @@ async def test_a_round_is_not_amended_while_another_round_of_its_division_is_bei
 
 @pytest.mark.parametrize(
     "at",
-    ["offer", pytest.param("confirm", marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE))],
+    ["offer", "confirm"],
 )
 @pytest.mark.parametrize(
     ("division_id", "state"),

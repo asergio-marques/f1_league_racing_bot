@@ -308,7 +308,6 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart(tmp_path):
     """Pro's round 3 moved past round 4. The queue is stopped once the save is made; after a
     restart the round is armed against its new moment, the rounds stand renumbered and one
@@ -327,7 +326,6 @@ async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_resta
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_the_timed_work_is_removed_before_the_save_and_armed_after_it(tmp_path):
     """The save fails: the queue stops at it with round 3's timed work already removed and
     nothing armed; once the save goes through on Retry, the round is armed."""
@@ -346,7 +344,6 @@ async def test_the_timed_work_is_removed_before_the_save_and_armed_after_it(tmp_
     assert league.armed == [("results", [R3])]
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     """Round 3 moved past round 4, and the renumbering fails: nothing of the amendment is
     written — not the moment, not its record, not the numbers — and the queue stops at the
@@ -367,7 +364,6 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     """The arming fails after the save, stopping the queue, and the bot restarts: the success
     line, saved with the amendment, stands once in the log channel, and once only after the
@@ -388,7 +384,6 @@ async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_the_manager_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_round_list(
     tmp_path,
 ):
@@ -406,7 +401,6 @@ async def test_the_manager_is_told_at_once_naming_the_job_and_the_reply_is_updat
     assert _outcome(press) == AMENDED + "\n\n" + format_round_list(rounds)
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize("cleared", ["retried", "discarded"])
 async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keeping_its_record(
     tmp_path, cleared,
@@ -441,7 +435,6 @@ async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keep
     assert "8001" in bullet
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):
     """Weather on; round 3's posted phase 1 forecast is withdrawn by moving the round, and
     Discord refuses the notice that the forecasts no longer stand: the queue stops at the
@@ -467,7 +460,6 @@ async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):
             "be posted, and a league admin discarded it") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_check_in_call_discord_will_not_delete_stops_the_queue_before_the_call_is_posted_again(
     tmp_path, reposts,
 ):
@@ -487,7 +479,6 @@ async def test_a_check_in_call_discord_will_not_delete_stops_the_queue_before_th
     assert reposts.posted == []
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_still_posted_again(
     tmp_path, reposts,
 ):
@@ -512,7 +503,6 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
             f"hand (ids {CALL_MESSAGES[1]})") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize("meanwhile", [
     "the check-in deadline passes",
     "results entered",
@@ -563,7 +553,6 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
     """Pro's round 4 is moved a day later and confirmed while the queue is stopped; the round is
     deleted while the amendment waits. Once the queue goes on, the amendment is refused with
@@ -584,7 +573,6 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize("weather, attendance", [
     (True, True), (True, False), (False, True), (False, False),
 ], ids=["weather and attendance on", "weather on", "attendance on", "both off"])
@@ -617,7 +605,6 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
     assert 8002 not in league.channel(PRO_CH.forecast).messages
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize("stopped", ["judge", "unarm"])
 async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_timed_work(
     tmp_path, stopped,
@@ -644,7 +631,6 @@ async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_ti
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_was(tmp_path):
     """The save fails and a league admin discards it: the round stands as it was, its numbers
     unchanged, and its timed work is armed again against its old moment."""
@@ -665,7 +651,6 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tmp_path):
     """The arming fails and stops the queue. A league admin's Discard on it is refused,
     privately and with one line in the log channel; the queue stays stopped at the arming, and
@@ -697,7 +682,6 @@ async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tm
     assert NOT_DONE not in _outcome(press)
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path, reposts):
     """Attendance on; round 3 is brought forward inside its call's window, so its call is taken
     down and posted again. The repost fails on a fault of the bot's own and a league admin
@@ -716,7 +700,6 @@ async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path,
             "discarded it; post it with `/attendance post-check-in`") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_discarded_phase_run_says_it_is_drawn_when_the_bot_next_starts(tmp_path, phases):
     """Weather on; round 3 is brought forward to three days out, so its phase 1, never drawn,
     is due at once. Drawing it fails on a fault of the bot's own and a league admin discards it:
@@ -735,7 +718,6 @@ async def test_a_discarded_phase_run_says_it_is_drawn_when_the_bot_next_starts(t
             "when the bot next starts, while the round is still to be run") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_module_turned_off_before_its_job_drops_it(tmp_path):
     """Weather on; round 3's posted phase 1 forecast is withdrawn by moving the round. Weather is
     turned off once the round is armed again: the forecast is still deleted, but the notice that
@@ -786,7 +768,6 @@ async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumber
     assert "\n  round: 3" in line and "round: 4" not in line
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled while the arming stood stopped"),
     pytest.param("results", id="results entered while the removal stood stopped"),

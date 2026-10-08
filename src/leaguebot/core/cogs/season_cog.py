@@ -49,6 +49,7 @@ from leaguebot.core.services.cancellation_changes import (
     ROUND_CANCEL,
     cancellation_holding_amendment,
 )
+from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -6506,14 +6507,11 @@ class _ConfirmView(LeagueView):
         # before the fault.
         try:
             await interaction.response.defer(ephemeral=True)
-            scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
-
-            # Judged again, with a fresh moment, rather than trusting the verdict the summary was
-            # built on. This view stands for two minutes and a window can pass inside them: a round
-            # offered while its check-in deadline was still ahead can have it behind by the time the
-            # button is pressed, and applying the amendment then is exactly the silent loss the
-            # rules exist to prevent. The season approval re-evaluates its own gate for the same
-            # reason, a round being able to cross a window while the review stands.
+            # The round is read for its number and its division, and the rest is the change
+            # type's: the amendment is judged as it is asked for, and again as it comes up to
+            # run, since this view stands for two minutes and the queue may hold it longer, and a
+            # window can pass in either. The queue's acknowledgement is this press's answer, and
+            # the outcome updates it.
             _rnd_now = await self._cog.bot.season_service.get_round(self._round_id)
             if _rnd_now is None:
                 await refuse(
@@ -6523,61 +6521,22 @@ class _ConfirmView(LeagueView):
                 )
                 return
             what = _round_amend_named(_rnd_now.round_number)
-
-            _verdict = await _judge_round_amendment(
-                self._cog.bot,
-                _rnd_now,
-                self._amendments,
-                now=datetime.now(timezone.utc),
+            _division = await self._cog.bot.season_service.get_division(_rnd_now.division_id)
+            # One change carrying every field, not one per field. Amending a round's track and
+            # its date used to run the whole amendment twice: two invalidation notices,
+            # two cancels, two re-arms, two re-runs of every overdue phase (#115).
+            await self._cog.bot.change_queue.ask(
+                ROUND_AMEND,
+                {
+                    "round_id": self._round_id,
+                    "round_number": _rnd_now.round_number,
+                    "division_id": _rnd_now.division_id,
+                    "division_name": _division.name if _division is not None else "",
+                    "changes": payload_changes(self._amendments),
+                },
+                interaction=interaction,
+                what=what,
             )
-            if not _verdict.allowed:
-                await refuse(
-                    interaction,
-                    "\u26d4 This round can no longer be amended:\n"
-                    + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
-                    + "\n\n**Nothing has been changed.** Run `/round amend` again to start over.",
-                    what=what,
-                    reason="it can no longer be amended:\n" + "\n".join(_verdict.refusals),
-                )
-                return
-            # The division is marked as having a round being amended until its rounds are
-            # renumbered, a failure included, so that a cancellation asked or run meanwhile is
-            # refused rather than reading rounds about to be renumbered (owner, 2026-10-08). The
-            # mark is entered before the queue is read for a cancellation holding the amendment,
-            # so that a cancellation asked in between is seen by one side or the other: either it
-            # is on the queue when the amendment looks, or the mark is up when it is checked. A
-            # refusal leaves the block first, so the mark is down before the reply is sent.
-            with self._cog.bot.amendment_service.applying(_rnd_now.division_id):
-                _held = await cancellation_holding_amendment(self._cog.bot.db_path, _rnd_now)
-                if _held is None:
-                    # One call carrying every field, not one call per field. Amending a round's
-                    # track and its date used to run the whole amendment twice \u2014 two
-                    # invalidation notices, two cancels, two re-arms, two re-runs of every overdue
-                    # phase (#115).
-                    await self._cog.bot.amendment_service.amend_round(
-                        self._round_id,
-                        interaction.user,
-                        self._amendments,
-                        self._cog.bot,
-                    )
-
-                    rnd = await self._cog.bot.season_service.get_round(self._round_id)
-                    if rnd is not None and scheduled_at_changed:
-                        await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
-            if _held is not None:
-                await refuse(interaction, _held, what=what)
-                return
-
-            division_id = rnd.division_id if rnd is not None else None
-            rounds = (
-                await self._cog.bot.season_service.get_division_rounds(division_id)
-                if division_id is not None
-                else []
-            )
-            msg = "\u2705 Round amended successfully."
-            if rounds:
-                msg += "\n\n" + format_round_list(rounds)
-            await interaction.followup.send(msg, ephemeral=True)
         except Exception as exc:  # noqa: BLE001 — reported here, naming the round
             await report_failure(interaction, exc, what=what)
         finally:

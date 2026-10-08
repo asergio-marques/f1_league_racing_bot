@@ -183,8 +183,6 @@ async def test_modify_raises_when_not_active(db_path):
 # built. Today Confirm amends on the spot, which every test here but one passes as written; the
 # one marked fails until the build, since today a fault after the save stops no queue.
 
-#: Why the one `/round amend` test marked here fails until the build.
-ON_THE_QUEUE = "#439: /round amend is not yet a change on the change queue"
 BAHRAIN = "Bahrain International Circuit"
 SILVERSTONE = "Silverstone Circuit"
 AM_3 = round_id(AM, 3)
@@ -353,7 +351,6 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
     assert "track:" not in body
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("fault_in", ["arming the round's jobs", "re-running a phase"])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
     tmp_path, phases, fault_in

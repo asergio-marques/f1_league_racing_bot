@@ -959,6 +959,19 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [_row_to_division(r) for r in rows]
 
+    async def get_division(self, division_id: int) -> Division | None:
+        """Return the division *division_id*, or None where there is none."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+                "calendar_message_id "
+                "FROM divisions WHERE id = ?",
+                (division_id,),
+            )
+            row = await cursor.fetchone()
+        return _row_to_division(row) if row is not None else None
+
     async def set_division_forecast_channel(
         self, division_id: int, channel_id: int | None
     ) -> int | None:
