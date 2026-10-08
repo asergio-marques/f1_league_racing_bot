@@ -583,3 +583,63 @@ async def test_a_round_with_a_submission_open_is_cancelled_with_its_division_and
     assert await _division(league) == "CANCELLED"
     assert _refusal_lines(league) == []
     assert CANCELLED in reply(interaction)
+
+
+# ── A finished division (#439 slice 4b, F1) ────────────────────────────────────────
+
+FINISHED = "❌ Division **Pro** has finished and cannot be cancelled."
+
+
+async def _pro_finished(league: Any) -> None:
+    await league.write("UPDATE rounds SET status = 'FINAL' WHERE division_id = ?", PRO)
+    await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", PRO)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a finished division is not yet refused")
+async def test_a_finished_division_is_refused_at_once(tmp_path):
+    """Every round of Pro has its results and Pro has finished, while Am still races. Asking to
+    cancel Pro is refused at once: nothing is queued, one refusal line is written, and Pro and its
+    rounds are left as they were."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _pro_finished(league)
+    before = await _statuses(league)
+
+    interaction = await _asked(league, "pro")
+
+    assert reply(interaction) == FINISHED
+    assert len(_refusal_lines(league)) == 1
+    assert _refusal_lines(league)[0].startswith(REFUSAL)
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert league.unarmed == []
+    assert await _division(league) == "FINISHED"
+    assert await _statuses(league) == before
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a finished division is not yet refused")
+async def test_a_division_that_finishes_while_its_cancellation_waits_is_refused_when_it_runs(
+    tmp_path,
+):
+    """Pro's cancellation waits behind Am's round 3 cancellation, stopped at its check-in notice.
+    Meanwhile Pro's last results come in and Pro finishes. When the queue goes on, Pro's
+    cancellation is refused: the reply says so, Pro stays finished and its rounds untouched."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.remove_channel(AM_CH.checkin)
+    await cancel_round(league, "Am", 3)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "notify_checkin"
+    interaction = await _asked(league)
+    assert len(await cancellation_changes(league)) == 2
+    await _pro_finished(league)
+    before = await _statuses(league)
+
+    league.restore_channel(AM_CH.checkin)
+    await retry_job(league.bot)
+
+    assert FINISHED in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert await _division(league) == "FINISHED"
+    assert await _statuses(league) == before
+    assert not set(before) & set(league.unarmed)
+    assert len(_refusal_lines(league)) == 1
+    assert (await _change(league))["state"] == "REFUSED"
