@@ -245,10 +245,10 @@ def _refusal_of(ctx: OutcomeContext) -> str | None:
 
 
 def _saved_number(ctx: OutcomeContext) -> Any:
-    """The number of the round cancelled, as the save found it, else as the removal of its timed
-    work did, else the press's: a discarded save never read it, and the round may have been
-    renumbered since the press."""
-    for name in (APPLY, UNARM):
+    """The number of the round cancelled, as the closing job read it after a discarded save, else
+    as the save found it, else as the removal of its timed work did, else the press's: a
+    discarded save never read it, and the round may have been renumbered since each of them."""
+    for name in (CLOSE, APPLY, UNARM):
         number = (_view(ctx, name).result or {}).get("round_number")
         if number is not None:
             return number
@@ -617,11 +617,22 @@ def round_cancel_change(
             ),
         )
 
-    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        """Write the one line that records the cancellation, or the refusal the save met."""
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Write the one line that records the cancellation, or the refusal the save met.
+
+        Where the save was discarded, it never read the round's number: the round is read here,
+        the last job, so that the outcome names it by the number it bears now, which another
+        round's amended date may have changed while the save stood stopped."""
         payload = ctx.payload
         if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)):
-            return StepResult(result={"closed": True})
+            cursor = await db.execute(
+                "SELECT round_number FROM rounds WHERE id = ?", (int(payload["round_id"]),)
+            )
+            row = await cursor.fetchone()
+            result: dict[str, Any] = {"closed": True}
+            if row is not None:
+                result["round_number"] = row["round_number"]
+            return StepResult(result=result)
         refused = _refusal_of(ctx)
         if refused:
             return StepResult(

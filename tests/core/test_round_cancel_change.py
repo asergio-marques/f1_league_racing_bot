@@ -681,14 +681,7 @@ def _outcome(interaction: Any) -> str:
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled"),
     pytest.param("submission", id="refused, its submission opened"),
-    pytest.param(
-        "discarded",
-        id="its save discarded, renumbered while it stood stopped",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#439: a discarded save is named by the number its round bore at unarm",
-        ),
-    ),
+    pytest.param("discarded", id="its save discarded, renumbered while it stood stopped"),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
     tmp_path, case,
