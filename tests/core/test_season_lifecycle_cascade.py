@@ -197,7 +197,6 @@ async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None
     assert await svc.get_outstanding_rounds() == []
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, divisions=("Div A", "Div B"))
@@ -283,7 +282,6 @@ async def test_activating_a_season_activates_its_divisions(tmp_path) -> None:
 # Cascades
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_cancelling_a_division_takes_its_unraced_rounds(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=3)
@@ -301,7 +299,6 @@ async def test_cancelling_a_division_takes_its_unraced_rounds(tmp_path) -> None:
     assert await _round_status(db_path, in_appeals) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -> None:
     """The audit row hardcoded "ACTIVE" as the old value whatever the division actually said."""
     db_path = str(tmp_path / "bot.db")
@@ -431,7 +428,6 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
     assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -618,7 +614,6 @@ async def _history(db_path):
         return [(r["division_name"], r["cancelled"]) for r in await cur.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
     from unittest.mock import AsyncMock, MagicMock
     from leaguebot.core.services.season_end_service import _write_driver_history_entries

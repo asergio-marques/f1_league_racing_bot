@@ -1107,79 +1107,6 @@ class SeasonService:
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 
-    async def _cancel_division_on(
-        self,
-        db,
-        division_id: int,
-        actor_id: int,
-        actor_name: str,
-        now: datetime,
-    ) -> None:
-        """Cancel a division and its unraced rounds on an already-open connection.
-
-        Only rounds that may still be cancelled are — those not yet run, and those whose
-        results have not been entered. Once results are in, the drivers have reports and appeals
-        to lodge and calling the round off would take that from them, so it keeps its place and
-        its results; the division around it is what was called off. `ROUND_CANCELLABLE` carries
-        the rule, and `/round cancel` reads the same set, so one round and a whole division
-        cannot disagree about what may be called off.
-        """
-        cursor = await db.execute(
-            "SELECT status FROM divisions WHERE id = ?", (division_id,)
-        )
-        row = await cursor.fetchone()
-        previous = row["status"] if row else "ACTIVE"
-
-        cursor = await db.execute(
-            f"""
-            SELECT id FROM rounds
-            WHERE division_id = ?
-              AND status IN ({_CANCELLABLE_SQL})
-            ORDER BY round_number
-            """,
-            (division_id,),
-        )
-        unraced = [r["id"] for r in await cursor.fetchall()]
-
-        for round_id in unraced:
-            await db.execute(
-                "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,)
-            )
-            await db.execute(
-                """
-                INSERT INTO audit_entries
-                    (actor_id, actor_name, division_id, change_type,
-                     old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    actor_id, actor_name, division_id,
-                    "round.status", "ACTIVE", "CANCELLED", now.isoformat(),
-                ),
-            )
-
-        await db.execute(
-            "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?",
-            (division_id,),
-        )
-        await db.execute(
-            """
-            INSERT INTO audit_entries
-                (actor_id, actor_name, division_id, change_type,
-                 old_value, new_value, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                actor_id,
-                actor_name,
-                division_id,
-                "division.status",
-                previous,
-                "CANCELLED",
-                now.isoformat(),
-            ),
-        )
-
     async def cancel_division(
         self,
         division_id: int,
@@ -1195,8 +1122,8 @@ class SeasonService:
         from datetime import timezone
         now = datetime.now(timezone.utc)
         async with get_connection(self._db_path) as db:
-            await self._cancel_division_on(
-                db, division_id, actor_id, actor_name, now
+            await cancel_division_on(
+                db, division_id, actor_id=actor_id, actor_name=actor_name, now=now
             )
             await db.commit()
             cursor = await db.execute(
@@ -1234,8 +1161,8 @@ class SeasonService:
             division_ids = [r["id"] for r in await cursor.fetchall()]
 
             for division_id in division_ids:
-                await self._cancel_division_on(
-                    db, division_id, actor_id, actor_name, now
+                await cancel_division_on(
+                    db, division_id, actor_id=actor_id, actor_name=actor_name, now=now
                 )
 
             await db.execute(
@@ -1622,6 +1549,86 @@ async def set_round_status_on(
         f"UPDATE rounds SET status = ? WHERE id = ? AND {guard}", params
     )
     return cursor.rowcount > 0
+
+
+async def cancel_division_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> list[int]:
+    """Cancel a division and its unraced rounds on *db*, committing nothing.
+
+    Only rounds that may still be cancelled are — those not yet run, and those whose
+    results have not been entered. Once results are in, the drivers have reports and appeals
+    to lodge and calling the round off would take that from them, so it keeps its place and
+    its results; the division around it is what was called off. `ROUND_CANCELLABLE` carries
+    the rule, and `/round cancel` reads the same set, so one round and a whole division
+    cannot disagree about what may be called off.
+
+    Returns the ids of the rounds called off, in round order. The season is left as it is: moving
+    it on where this was its last running division is the division's cancellation's, in its own
+    save, because `/season cancel` shares this function and must never leave the season it
+    cancels at Pending completion (#439).
+    """
+    cursor = await db.execute(
+        "SELECT status FROM divisions WHERE id = ?", (division_id,)
+    )
+    row = await cursor.fetchone()
+    previous = row["status"] if row else "ACTIVE"
+
+    cursor = await db.execute(
+        f"""
+        SELECT id FROM rounds
+        WHERE division_id = ?
+          AND status IN ({_CANCELLABLE_SQL})
+        ORDER BY round_number
+        """,
+        (division_id,),
+    )
+    unraced = [r["id"] for r in await cursor.fetchall()]
+
+    for round_id in unraced:
+        await db.execute(
+            "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,)
+        )
+        await db.execute(
+            """
+            INSERT INTO audit_entries
+                (actor_id, actor_name, division_id, change_type,
+                 old_value, new_value, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actor_id, actor_name, division_id,
+                "round.status", "ACTIVE", "CANCELLED", now.isoformat(),
+            ),
+        )
+
+    await db.execute(
+        "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?",
+        (division_id,),
+    )
+    await db.execute(
+        """
+        INSERT INTO audit_entries
+            (actor_id, actor_name, division_id, change_type,
+             old_value, new_value, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            actor_id,
+            actor_name,
+            division_id,
+            "division.status",
+            previous,
+            "CANCELLED",
+            now.isoformat(),
+        ),
+    )
+    return unraced
 
 
 async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int) -> bool:

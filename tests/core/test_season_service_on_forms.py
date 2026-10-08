@@ -314,7 +314,6 @@ async def test_a_division_is_cancelled_on_the_save_handed(tmp_path):
         assert await _round_audits(db) == []
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_cancelling_a_division_on_the_save_handed_leaves_its_season_s_stage_alone(tmp_path):
     """Pro, the season's last running division, has round 1 final and round 2 not run. Cancelling
     Pro with the `_on` form alone leaves the season ongoing: moving it on is the division
