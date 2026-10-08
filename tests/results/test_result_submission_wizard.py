@@ -984,8 +984,6 @@ class _Gateway:
         return [event for event, _c, _t, future in self.waits if not future.done()]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the wizard's wait for a paste does not end when a "
-                                       "cancellation closes its submission and deletes its channel")
 @pytest.mark.parametrize("round_status", [
     pytest.param("CANCELLED", id="the round cancelled"),
     pytest.param("AWAITING_RESULTS", id="closed by /season cancel before its cascade"),

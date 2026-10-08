@@ -1,6 +1,7 @@
 """result_submission_service.py — Round result submission wizard and channel management."""
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import re
@@ -1613,6 +1614,34 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
             "results can no longer be entered. Nothing was saved."
         )
     return None
+
+
+#: How long the wizard waits for a paste before it asks whether a cancellation has closed its
+#: submission. Long enough to cost nothing, short enough that a wizard whose channel was deleted
+#: does not wait on for days.
+SUBMISSION_WAIT_RECHECK_SECONDS = 300
+
+
+async def next_submission_message(bot: LeagueBot, db_path: str, round_id: int, sub_channel):
+    """The next message pasted into *sub_channel*, or None once its submission is closed (#439).
+
+    **The wait ends when a cancellation closes the submission and deletes its channel**, which
+    no message will ever follow: `bot.wait_for` has no end of its own, and the wizard would wait
+    in memory until the next restart. The wait is given a time, and when it runs out the
+    submission is read again (`closed_by_cancellation`): closed, the wizard is told so with None;
+    not, it waits on. A paste landing in the instant between two waits, the length of one read,
+    is not heard, and the manager pastes it again.
+    """
+    while True:
+        try:
+            return await bot.wait_for(
+                "message",
+                check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
+                timeout=SUBMISSION_WAIT_RECHECK_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            if await closed_by_cancellation(db_path, round_id) is not None:
+                return None
 
 
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
@@ -3361,12 +3390,9 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         )
 
         while True:
-            msg = await bot.wait_for(
-                "message",
-                check=lambda m, ch=sub_channel: (
-                    m.channel.id == ch.id and not m.author.bot
-                ),
-            )
+            msg = await next_submission_message(bot, db_path, round_id, sub_channel)
+            if msg is None:
+                return
 
             last_author = msg.author
             content = msg.content.strip()
