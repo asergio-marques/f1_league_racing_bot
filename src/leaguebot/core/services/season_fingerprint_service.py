@@ -141,10 +141,14 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
     areas: dict[str, str] = {}
     try:
         async with get_connection(bot.db_path) as db:
+            # The stage as well as the status: confirming a configuration, or mid-season
+            # placements, moves the stage alone, and a review of the stage left behind no
+            # longer describes the season (#439). An approval's own review, check and
+            # re-judgement all read it in Placements, so it never moves between them.
             areas["season"] = _digest(
                 await _rows(
                     db,
-                    "SELECT start_date, status, season_number, game_edition "
+                    "SELECT start_date, status, stage, season_number, game_edition "
                     "FROM seasons WHERE id = ?",
                     season_id,
                 )
@@ -315,6 +319,29 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
                         "SELECT config_name, session_type, fl_points, fl_position_limit "
                         "FROM season_points_fl WHERE season_id = ? "
                         "ORDER BY config_name, session_type",
+                        season_id,
+                    ),
+                    # What the approval copies onto the season: the server's own entries and
+                    # fastest-lap rows of the attached configurations, which an edit before the
+                    # approval would otherwise change without the fingerprint noticing.
+                    await _rows(
+                        db,
+                        "SELECT s.config_name, e.session_type, e.position, e.points "
+                        "FROM points_config_entries e "
+                        "JOIN points_config_store s ON s.id = e.config_id "
+                        "WHERE s.config_name IN "
+                        "(SELECT config_name FROM season_points_links WHERE season_id = ?) "
+                        "ORDER BY s.config_name, e.session_type, e.position",
+                        season_id,
+                    ),
+                    await _rows(
+                        db,
+                        "SELECT s.config_name, f.session_type, f.fl_points, f.fl_position_limit "
+                        "FROM points_config_fl f "
+                        "JOIN points_config_store s ON s.id = f.config_id "
+                        "WHERE s.config_name IN "
+                        "(SELECT config_name FROM season_points_links WHERE season_id = ?) "
+                        "ORDER BY s.config_name, f.session_type",
                         season_id,
                     ),
                 ]

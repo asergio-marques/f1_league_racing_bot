@@ -47,10 +47,13 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.season_points import snapshot_points
 
 SERVER_ID = 3300
 SEASON_ID = 11
 USER_ID = 77
+
+
 
 
 @pytest.fixture
@@ -81,7 +84,7 @@ async def db_path(tmp_path):
 def _interaction():
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
-    interaction.guild = None  # no guild: the posting blocks are skipped, the gates are not
+    interaction.guild = None  # no guild: Gate S, the one gate reading the server, is stubbed
     interaction.user.id = USER_ID
     interaction.user.display_name = "Manager"
     interaction.response.defer = AsyncMock()
@@ -102,7 +105,10 @@ def _pending():
 
 
 def _cog(db_path, **overrides):
-    """A cog whose services all answer, so the gates run to the end and commit."""
+    """A cog whose services all answer, so the gates run to the end and the approval is asked
+    of the change queue (#439), whose ``ask`` is a double: what the approval then does is
+    `test_season_approval_change.py`'s. The check for an approval of the season already in
+    hand reads the real, empty, queue of this file's database."""
     cog = SeasonCog.__new__(SeasonCog)
     # A ``MagicMock`` bot with every awaited member named below, not a blanket
     # ``AsyncMock`` (issue #240). The blanket form looks like it makes the walk more
@@ -113,18 +119,14 @@ def _cog(db_path, **overrides):
     # which is the walk failing loudly, which is what this file is for.
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
-    # Synchronous: ``scheduler_service`` schedules jobs rather than awaiting them, so an
-    # ``AsyncMock`` here returns coroutines nobody awaits.
-    cog.bot.scheduler_service = MagicMock()
+    cog.bot.change_queue.ask = AsyncMock(return_value=None)
+    cog.bot.approval_windows = lambda: _approval_windows(cog)
     cog.bot.output_router.post_log = AsyncMock()
     cog._pending = {USER_ID: _pending()}
 
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
-    season_svc.transition_to_active = AsyncMock()
-    season_svc.create_sessions_for_round = AsyncMock()
-    season_svc.commit_placements = AsyncMock()
 
     # Every module off unless a test says otherwise. Said in as many words rather than left
     # to a mock's truthiness, so a gate that runs here runs because a test chose it.
@@ -162,6 +164,41 @@ def _cog(db_path, **overrides):
     return cog
 
 
+async def _approval_windows(cog):
+    """The builder's reader of the enabled modules' windows (`LeagueBot.approval_windows`), read
+    from the cog's own doubles so that a test switching a module on or off moves it too."""
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+
+    attendance = weather = None
+    if await cog.bot.module_service.is_attendance_enabled():
+        att = await cog.bot.attendance_service.get_or_create_config()
+        attendance = AttendanceWindows(
+            notice_days=att.rsvp_notice_days,
+            last_notice_hours=att.rsvp_last_notice_hours,
+            deadline_hours=att.rsvp_deadline_hours,
+        )
+    if await cog.bot.module_service.is_weather_enabled():
+        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
+
+        wx = await get_weather_pipeline_config(cog.bot.db_path)
+        weather = WeatherWindows(
+            phase_1_days=wx.phase_1_days,
+            phase_2_days=wx.phase_2_days,
+            phase_3_hours=wx.phase_3_hours,
+        )
+    return attendance, weather
+
+
+def _assert_asked(cog) -> None:
+    """The approval went through every gate and was asked of the change queue, once."""
+    from leaguebot.core.services.season_approval_change import KIND
+
+    ask = cog.bot.change_queue.ask
+    ask.assert_awaited_once()
+    call = ask.await_args
+    assert (call.args[0] if call.args else call.kwargs["kind"]) == KIND
+
+
 async def _run(cog, interaction):
     await SeasonCog._do_approve(cog, interaction)
 
@@ -176,27 +213,28 @@ async def test_the_gate_sequence_runs_without_an_unbound_attribute(db_path):
     """The regression, blunt and on purpose.
 
     `_do_approve` reads a dozen services and helpers, and an editing slip that removes one
-    while leaving its call raises only when the button is actually pressed.
+    while leaving its call raises only when the button is actually pressed. The walk ends at
+    the change queue's ask (#439), so reaching it is the proof the whole of it ran.
     """
     cog = _cog(db_path)
     interaction = _interaction()
 
     await _run(cog, interaction)
 
-    interaction.followup.send.assert_awaited()
+    cog.bot.change_queue.ask.assert_awaited()
 
 
-async def test_a_season_is_actually_approved(db_path):
+async def test_a_season_passing_every_gate_is_asked_of_the_queue(db_path):
     """The end of the sequence, not merely the absence of an exception.
 
-    `transition_to_active` is the commit: everything before it can refuse, and nothing
-    after it can un-approve.
+    The change queue's ask is where the press ends (#439): everything before it can refuse,
+    and the approval's own check and jobs follow it on the queue.
     """
     cog = _cog(db_path)
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
@@ -208,7 +246,7 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     await _run(cog, interaction)
 
     assert "No pending season setup" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
@@ -221,7 +259,7 @@ async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
     await _run(cog, interaction)
 
     assert "Tiers must be sequential" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     assert all(
         call.kwargs.get("ephemeral") is True
         for call in interaction.followup.send.await_args_list
@@ -235,7 +273,7 @@ async def test_a_team_name_gate_refuses_and_commits_nothing(db_path):
     await _run(cog, interaction)
 
     assert "cannot become" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_lineup_gate_refuses_and_commits_nothing(db_path):
@@ -245,7 +283,7 @@ async def test_a_lineup_gate_refuses_and_commits_nothing(db_path):
     await _run(cog, interaction)
 
     assert "cannot draw this season" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
@@ -297,7 +335,7 @@ async def test_a_sound_image_configuration_still_approves(db_path, monkeypatch):
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path, monkeypatch):
@@ -308,7 +346,7 @@ async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path, monkeyp
 
     assert "image module is not correctly configured" in _replies(interaction)
     assert "is not installed on this host" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(
@@ -327,7 +365,7 @@ async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_not
     await _run(cog, interaction)
 
     assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_broken_template_of_a_switched_off_output_still_approves(
@@ -342,7 +380,7 @@ async def test_a_broken_template_of_a_switched_off_output_still_approves(
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path, monkeypatch):
@@ -355,7 +393,7 @@ async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path, monk
     await _run(cog, interaction)
 
     assert "Tier colour: `calendar_template`" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
@@ -368,7 +406,7 @@ async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     await _run(cog, _interaction())
 
     cog._image_configuration_faults.assert_not_awaited()
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 # ── Gate 2d: rounds already run, or inside a window (#121, #122, #181) ───────
@@ -441,7 +479,7 @@ async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
     assert "dates that have already gone by" in replies
     assert "check-in call" in replies
     assert "Round 1" in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_the_overdue_refusal_is_private(db_path):
@@ -464,7 +502,7 @@ async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
     await _run(cog, interaction)
 
     assert "weather phase 1" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_season_clear_of_its_windows_still_approves(db_path):
@@ -473,7 +511,7 @@ async def test_a_season_clear_of_its_windows_still_approves(db_path):
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
@@ -482,7 +520,8 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     This is what keeps the rest of this file honest. Its cog answers every service with a
     `MagicMock`, so a gate that fetched the check-in config here and subtracted it from a
     round would raise `TypeError` instead of walking the sequence these tests exist to
-    walk. The season committing is the proof it did neither.
+    walk. The approval being asked of the queue is the proof it did neither, the windows
+    being read through the reader the bot carries rather than the cog's configs.
     """
     cog = _cog(db_path)
     interaction = _interaction()
@@ -490,7 +529,7 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     await _run(cog, interaction)
 
     assert "already gone by" not in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 # ── #181: the round's own moment, judged whatever the modules ────────────────
@@ -523,7 +562,7 @@ async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_pa
     assert "**Pro** has no attendance channel" in replies
     # The window gate sits after it and never ran, so its wording is absent.
     assert "already gone by" not in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_path):
@@ -556,7 +595,7 @@ async def test_a_season_in_the_past_is_refused_with_both_modules_off(db_path):
     replies = _replies(interaction)
     assert "dates that have already gone by" in replies
     assert "Round 1 has already run" in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
@@ -569,7 +608,7 @@ async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_the_latest_past_round_is_the_one_named(db_path):
@@ -601,7 +640,7 @@ async def test_a_future_season_still_approves_with_both_modules_off(db_path):
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
@@ -616,7 +655,7 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
 
     await _run(cog, _interaction())
 
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +727,7 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     replies = _replies(interaction)
     assert "violates monotonic ordering" in replies
     assert "BROKEN" in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(db_path):
@@ -714,7 +753,7 @@ async def test_a_well_ordered_points_table_still_approves(db_path):
     await _run(cog, interaction)
 
     assert "violates monotonic ordering" not in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
@@ -726,7 +765,7 @@ async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
     await _run(cog, interaction)
 
     assert "violates monotonic ordering" not in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    _assert_asked(cog)
 
 
 async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_path):
@@ -746,7 +785,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_pa
 
     assert "no points configuration is attached" in _replies(interaction)
     assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == []
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
@@ -771,15 +810,13 @@ async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     await _run(cog, interaction)
 
     assert "GONE" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
     """A re-approval is looked at from both sides; the manager reads one line, not two."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
-    from leaguebot.results.services import season_points_service
-
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
+    await snapshot_points(db_path, SEASON_ID)
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 
@@ -824,7 +861,7 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     replies = _replies(interaction)
     assert "Standrad" in replies, "the refusal must name the configuration that is missing"
     assert "does not exist" in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_phantom_points_config_is_refused_rather_than_raising(db_path):
@@ -848,7 +885,7 @@ async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
     await _run(cog, interaction)
 
     assert "Standrad" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_season_refused_for_a_phantom_config_takes_no_snapshot(db_path):
@@ -886,8 +923,9 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
 # active, and none of them gave the season a division, so none could see that the sessions of
 # every round were written ahead of most of the gates and left behind by the refusal. The next
 # approval wrote a full second set, and every forecast named each session twice. These seed a
-# real division and round and let the real `create_sessions_for_round` write, so what they
-# count is rows.
+# real division and round and count rows: since #439 the sessions are written by the
+# approval's one save on the change queue, which a refusal never asks for, and that each round
+# gets its sessions once however often the save is tried is `test_season_approval_change.py`'s.
 
 DIVISION_ID = 21
 
@@ -912,13 +950,10 @@ async def _seed_round(db_path, *, days_out: float = 30):
 
 
 def _writing_sessions(cog, db_path, rnd):
-    """Point *cog* at the seeded round, and let it write that round's sessions for real."""
-    from leaguebot.core.services.season_service import SeasonService
-
+    """Point *cog* at the seeded round, whose sessions are counted as rows."""
     season_svc = cog.bot.season_service
     season_svc.get_divisions = AsyncMock(return_value=[_division(div_id=DIVISION_ID)])
     season_svc.get_division_rounds = AsyncMock(return_value=[rnd])
-    season_svc.create_sessions_for_round = SeasonService(db_path).create_sessions_for_round
     return cog
 
 
@@ -1009,37 +1044,8 @@ async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refus
     await SeasonCog._do_approve(cog, interaction, deadline=deadline)
 
     assert refused_for in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     assert await _session_types(db_path) == []
-
-
-async def test_an_approval_after_a_refusal_creates_each_session_once(db_path):
-    """The issue's own reproduction: refused for want of a points configuration, which is
-    then attached, and approved."""
-    rnd = await _seed_round(db_path)
-    refused = _writing_sessions(_cog_with_results(db_path), db_path, rnd)
-    await _run(refused, _interaction())
-    refused.bot.season_service.transition_to_active.assert_not_awaited()
-
-    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
-    approved = _writing_sessions(_cog_with_results(db_path), db_path, rnd)
-    await _run(approved, _interaction())
-
-    approved.bot.season_service.transition_to_active.assert_awaited_once()
-    assert await _session_types(db_path) == ["SHORT_QUALIFYING", "LONG_RACE"]
-
-
-async def test_approving_twice_creates_each_session_once(db_path):
-    """An approval that fails after writing the sessions leaves the season in Placements and
-    the review standing, so Approve can be pressed again. A second full pass is the same
-    walk, and must leave one set."""
-    cog = _writing_sessions(_cog(db_path), db_path, await _seed_round(db_path))
-
-    await _run(cog, _interaction())
-    await _run(cog, _interaction())
-
-    assert cog.bot.season_service.transition_to_active.await_count == 2
-    assert await _session_types(db_path) == ["SHORT_QUALIFYING", "LONG_RACE"]
 
 
 # ── Every gate's refusal is recorded (#482) ─────────────────────────────────
@@ -1197,7 +1203,7 @@ async def test_every_approval_gate_refusal_is_recorded(db_path, monkeypatch, gat
 
     reply = _replies(interaction)
     assert reply_says in reply
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     lines = _logged(cog)
     assert len(lines) == 1, lines
     line = lines[0]

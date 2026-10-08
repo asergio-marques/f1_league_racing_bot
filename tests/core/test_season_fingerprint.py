@@ -147,6 +147,16 @@ async def test_the_season_area(season):
     )
 
 
+async def test_a_stage_moved_is_part_of_the_season_area(season):
+    """Confirming a configuration, or mid-season placements, moves the stage and not the
+    status: a review of the stage left behind no longer describes the season."""
+    before = await _take(season)
+    await _assert_only(
+        season, before, "season",
+        "UPDATE seasons SET stage = 'CONFIGURATION' WHERE id = ?", season.season_id,
+    )
+
+
 async def test_the_divisions_area(season):
     before = await _take(season)
     await _assert_only(
@@ -250,6 +260,48 @@ async def test_the_points_area(season):
         "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'Standard')",
         season.season_id,
     )
+
+
+@pytest.mark.parametrize("edit", ["a points entry", "a fastest-lap row"])
+async def test_a_server_points_entry_of_an_attached_configuration_changes_the_points_area(
+    season, edit,
+):
+    """The approval copies the attached configurations' server entries and fastest-lap rows onto
+    the season, so an edit to either between the review and the approval is a change to the
+    points; the same edit to a configuration the season does not score on is not (#439)."""
+    async with get_connection(season.path) as db:
+        ids = {}
+        for name in ("Standard", "Sprint Heavy"):
+            cursor = await db.execute(
+                "INSERT INTO points_config_store (config_name) VALUES (?)", (name,)
+            )
+            ids[name] = cursor.lastrowid
+            await db.execute(
+                "INSERT INTO points_config_entries (config_id, session_type, position, points) "
+                "VALUES (?, 'FEATURE_RACE', 1, 25)",
+                (ids[name],),
+            )
+            await db.execute(
+                "INSERT INTO points_config_fl (config_id, session_type, fl_points, "
+                "fl_position_limit) VALUES (?, 'FEATURE_RACE', 1, 10)",
+                (ids[name],),
+            )
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'Standard')",
+            (season.season_id,),
+        )
+        await db.commit()
+    sql = (
+        "UPDATE points_config_entries SET points = 30 WHERE config_id = ?"
+        if edit == "a points entry"
+        else "UPDATE points_config_fl SET fl_points = 2 WHERE config_id = ?"
+    )
+    before = await _take(season)
+
+    await _change(season, sql, ids["Sprint Heavy"])
+    assert before.differs_from(await _take(season)) == []
+
+    await _assert_only(season, before, "points", sql, ids["Standard"])
 
 
 async def test_the_signup_area(season):

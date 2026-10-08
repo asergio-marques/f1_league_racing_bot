@@ -104,7 +104,9 @@ league data made those writes stall everything else the bot was doing.
 
 Both files matter. `bot.db` alone is **not** a complete backup: restoring it without
 `scheduler.db` leaves a season whose pending weather phases, RSVP notices and result
-submissions will never fire, and only reviewing and approving again rebuilds them.
+submissions will never fire. A season under way cannot be approved again, and no command rebuilds
+its scheduled work wholesale: `/round amend` arms one round's work again when it moves that round,
+and nothing else does.
 
 The databases run in WAL mode, which means recent changes may sit in a `bot.db-wal` file
 beside the database. **Copying `bot.db` on its own while the bot is running can therefore
@@ -127,9 +129,10 @@ self-contained and can be restored by copying it back into place under the origi
 > **Upgrading from v0.4.0 or earlier.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
-> pending weather phases, RSVP notices and result submissions. Run `/season placements-review` and
-> approve again for each affected division to rebuild them. Upgrade between seasons and there is nothing
-> to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
+> pending weather phases, RSVP notices and result submissions. A season cannot be approved again
+> once it is under way, and no command rebuilds its scheduled work wholesale: `/round amend` arms one
+> round's work again when it moves that round, and nothing else does. So upgrade between seasons,
+> where there is nothing to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
 > leave it as you prefer.
 
 ---
@@ -313,12 +316,13 @@ became of it, and a longer outcome is sent in parts. Each step of a change is a 
 its own, and the jobs run in order. Asking again for a change that has not started, with nothing
 else asked for since, is refused, saying so. A change the bot was part-way through when it stopped
 is finished when it starts again, but its message is not updated then: the log channel records the
-outcome, as it does for any outcome that arrives after 14 minutes. **Turning `results` off
+outcome, as it does for any outcome that arrives after 14 minutes (an approval of a season also
+tells the review's channel, below). **Turning `results` off
 works this way, and so does a round's review: opening it, approving either of its stages, and
 approving either stage of an amendment; and so does approving a points amendment with
-`/results amend review`.** Approving a stage again while the first approval is in
+`/results amend review`, and so does approving a season with the ✅ Approve button.** Approving a stage again while the first approval is in
 hand, waiting, running or stopped on a failure, is refused as well, and so is approving a points
-amendment again while the first is.
+amendment again while the first is, or approving a season again (without naming the job).
 
 **A job that fails stops the queue.** Nothing behind it runs until it is cleared. The log channel
 gets one ❌ message, with **Retry** and **Discard** buttons, naming the job's number, what it was,
@@ -506,7 +510,7 @@ No parameters. Posts a report of the season in configuration — test mode, the 
 - where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
 - where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
 
-With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season placements-review` — save the league's base role and driver role, which confirming the configuration fixes until the season ends. This review is the only one that reports them; `/season placements-review` does not repeat them. Mid-season, `/season placements-review` repeats only the image checks: the season has settled the rest.
+With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. A press refused for any other reason leaves the review standing, to press again once you have put it right; only a confirmation that goes through takes it down. Every check is made again when you press it, and again at `/season placements-review` — save the league's base role and driver role, which confirming the configuration fixes until the season ends. This review is the only one that reports them; `/season placements-review` does not repeat them. Mid-season, `/season placements-review` repeats only the image checks: the season has settled the rest.
 
 > **Confirming fixes the configuration for the season.** From then until the season ends, the team list, the game edition, test mode and the signup module's settings cannot change.
 
@@ -684,32 +688,37 @@ The image subsection also lists the eight **asset directories** and the path eac
 >
 > Only the enabled modules' windows count — but the round's own moment is judged whichever modules are on. A cancelled round is ignored either way. **Test mode is not exempt**, so a test season has to be built with its rounds still to come and beyond every configured window.
 
-Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
+Pressing it is acknowledged at once, naming its first job, and the reply is updated when it is done. The season's sessions, placements, points and state are saved together; then the timed work is armed — every round's result collection whatever modules you run (with weather and results both off it simply closes the round at its moment, so the season can be completed), the weather phases with weather on, and with the attendance module on every round's check-in call, reminder and deadline — each driver's roles are granted, and each lineup, calendar and opening classification and sheet is posted, each a job on the queue.
 
-**The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
+**The review is deleted once Approve is pressed and the approval taken in hand**, and not before — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. An approval that is then refused when its turn comes, or discarded by a league admin, leaves the season in placements and the review gone: run `/season placements-review` again. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
 
-**Once committed, the approval stands, even where something after it cannot be done.** The bot carries on with the rest, and your confirmation lists what was left undone, under **Not everything could be done**:
+**Once committed, the approval stands, even where something after it cannot be done.** Any job after the save that fails — the arming, a grant or a post among them — stops the queue until it is retried or a league admin discards it, and your confirmation lists each one discarded, under **Not everything could be done**:
 
-- a division whose placed drivers could not be read, or a driver the bot could not give their roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
-- a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar);
+- timed work that was not armed, first of all — no command arms it again, so no round will open its results submission and no forecast or check-in call will be posted;
+- the setup the bot held in memory, where it could not be let go of — `/round amend` may refuse this season until the bot restarts;
+- a driver the bot could not give their roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
+- the notice that the season's posts were being made, where it could not be posted;
 - a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
-- opening standings and attendance sheets that were not all posted — no command posts them again, and each round's results and attendance post them as usual.
+- a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar);
+- opening standings and attendance sheets that were not posted — no command posts them again, and each round's results and attendance post them as usual;
+- part of a division's opening standings left standing when the job stopped, naming the channel and the message — delete it by hand;
+- that notice, where it could not be deleted, with its link — delete it by hand.
 
 The same list is added to the approval's line in the log channel. A driver who has left the server is simply passed over.
 
-> **If your confirmation cannot reach you**, the channel the review was in is told instead, in one line that mentions you: the season is approved, and the log channel has what the confirmation said. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the backup question below and then posted a lot of pictures can outlast them.
+> **If your confirmation cannot reach you** — the approval took longer than fourteen minutes, or the bot restarted while it ran — the channel the review was in is told instead, in one line that mentions you: whether the season was approved, and that the log channel has the rest. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the queue or was stopped on a failure can outlast them. Once your reply can no longer be updated, the same line follows an approval refused when its turn came on the queue, with the reason beneath it, and one a league admin discarded before it began, saying it was not approved.
 
 **Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 
 > **The button stands for five minutes**, counted from when the question was posted, whatever is pressed meanwhile, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question and its report are cleared at startup rather than left waiting for a press nothing would answer.
 >
-> A press that fails on a fault in the bot leaves the button standing, to be pressed again until the five minutes are up. While a press is being worked the review does not expire under it, and a second press meanwhile — a double-click — is refused, so a season is never approved twice.
+> A press that is refused — a date gone by, a channel missing, the drawing program gone, or anything else the approval checks — or that you cancel at the backup question, or that fails on a fault in the bot, leaves the review and its button standing, to be pressed again once you have put it right, until the five minutes are up. Only a press the bot takes in hand takes the review down. While a press is being worked the review does not expire under it, and a second press meanwhile — a double-click — is refused, so a season is never approved twice, and so is Approve on another review of the same season while the approval is waiting, running or stopped; that press is not asked the backup question.
 >
-> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a signup approved or turned down, test mode or the team list changed, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again.
+> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a signup approved or turned down, test mode or the team list changed, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again. The same is checked again when the approval is carried out, with the dates, the channels and the drawing program, in case it waited on the queue.
 >
-> That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
+> That is what the report is for: **what you read is what you approve.** It is also why the button needs no drawing of its own before it approves: the review already drew your calendars and lineups, and a season provably the same will draw the same. The pictures the approval posts — lineups, calendars and the opening classification and sheet — are drawn afresh as they are posted.
 
-**Under test mode, it offers to save first.** With test mode on, pressing Approve pauses just before committing anything and asks whether to back the databases up — after every check has passed, and before the schedule is armed or anything is posted. Answer it, decline it, or cancel the approval outright. The question inherits what is left of the review's five minutes, so leaving it unanswered expires the review and approves nothing. See [Testing with test mode](docs/how-to/test-mode.md).
+**Under test mode, it offers to save first.** With test mode on, pressing Approve pauses just before committing anything and asks whether to back the databases up — after every check has passed, and before the schedule is armed or anything is posted. Answer it, decline it, or cancel the approval outright, which leaves the review standing to press again. The question inherits what is left of the review's five minutes, so leaving it unanswered expires the review and approves nothing. See [Testing with test mode](docs/how-to/test-mode.md).
 
 ---
 
@@ -2295,7 +2304,7 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 **What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
 
-**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season placements-review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
+**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season placements-review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet, and approving a season draws every lineup, calendar, opening classification and sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. Where the change is carried out on the queue, as approving a season is, posting the message and deleting it are jobs like any other: one Discord refuses stops the queue until it is retried or discarded, and the reply names one discarded. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
 
 **A driver is drawn under their display name, cleaned.** A picture cannot mention anybody, so each driver is drawn under the display name of their Discord account on the server. Any emoji, Discord formatting, role mention, `@everyone` or `@here` in it is left out, because a picture cannot show them the way a message does: `Max 🏎️ Racer` is drawn `Max Racer`, and `_Max_` is drawn `Max`. A display name that is nothing but those falls back to the name they signed up under, then their username, then their user ID. Names you type yourself, a division's or a team's, are refused instead when they hold any of these, since you can pick another.
 
@@ -2343,8 +2352,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 > word and nothing should be able to replace it. Neither standings posting is touched by
 > `/results standings sync`, which walks the rounds.
 >
-> Neither can stop a season being approved or completed. If a division's sheet cannot be drawn or
-> posted, the log channel says so and the other divisions carry on.
+> Neither can stop a season being completed. If a division's sheet cannot be drawn or
+> posted, the log channel says so and the other divisions carry on. At approval, one that cannot be
+> posted stops the queue until it is retried, and once discarded is named in your reply.
 >
 > With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season placements-review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >

@@ -20,6 +20,7 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
+from tests.support.season_points import snapshot_points
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5500
@@ -122,7 +123,7 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
 @pytest.mark.asyncio
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
+    await snapshot_points(db_path, SEASON_ID)
 
     faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
 

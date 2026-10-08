@@ -56,6 +56,15 @@ _BUTTONS = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _no_approval_in_hand(monkeypatch):
+    """The approve view asks whether an approval of its season is in hand, reading the change
+    queue's tables (#439); these reviews hold no database, so the answer is given here: none."""
+    monkeypatch.setattr(
+        "leaguebot.core.cogs.season_cog.approval_in_hand", AsyncMock(return_value=False)
+    )
+
+
 def _review(view_class, helper: str):
     """A review Alex ran, standing in the channel with its question bound, on the league's server.
 
@@ -63,7 +72,9 @@ def _review(view_class, helper: str):
     every line it writes to the log channel is kept on `bot.output_router.post_log`.
     """
     cog = MagicMock()
-    setattr(cog, helper, AsyncMock())
+    # A press that reaches the helper goes through: for the approval, asked of the change queue
+    # (#439), which is the one press that takes the review down.
+    setattr(cog, helper, AsyncMock(return_value=True))
     bot = cog.bot
     bot.db_path = "/nonexistent/nowhere.db"
     bot.config_service.get_server_config = AsyncMock(
@@ -377,6 +388,8 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
         seen["notices"] = message.channel.send.await_count
         seen["lines"] = list(_logged(cog))
         await cog.bot.output_router.post_log(own_line)
+        # A press that went through: the approval was asked of the change queue (#439).
+        return True
 
     getattr(cog, helper).side_effect = _worked
 

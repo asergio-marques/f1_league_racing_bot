@@ -217,6 +217,15 @@ audit record, which is how some settings came to have none.
   channel exists, the bot may post there, the text fits, the change is allowed in the season's
   current stage): once when it is asked for, and again when the worker takes it up, since changes
   ahead of it may have moved the season on. A request a person made that fails is refused, and the queue goes on.
+  A change type may ask, for a member's change its check refuses as it starts, a change of its own
+  in the refusal's save (`ChangeType.on_refused`), as a step asks a follow-on: the season's
+  confirmation uses it to tell the review's channel of a refusal its member can no longer be told
+  of. It may likewise ask one where a league admin discards a member's change stopped at its check
+  before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal hook
+  that raises stops the queue at the change's first job, as a check that raises does, and the
+  change is checked again at each try; a discard hook that raises is logged on the host and the
+  Discard goes ahead without it, Discard being the queue's last way past a stop. *Rejected:*
+  planning a step on the refused change, which would leave a refused change with jobs to run.
   A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
   its work is no longer due, as a job that fires after its work was cancelled does nothing (see
   "Timed work and restarts"). Where it is refused by its check for any reason but that its work is
@@ -679,7 +688,11 @@ to it would switch off the one failure path for every command.
    never does, as the core specification's "When a command fails" allows an amendment alone. The change queue's worker is a failure path too, and the
    fallback where a stop cannot be recorded: its catch-all (`ChangeQueue._work`) puts the error
    in the host's log, the worker pauses and looks again, and the job runs again, so that its
-   failure is recorded then;
+   failure is recorded then. The hook a change type may give for a Discard of a change before it
+   started (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its
+   catch-all puts the error in the host's log alone, with no line to the log channel, and asks no
+   follow-on, because a Discard is the queue's last way past a stop and a hook that raises must
+   not hold it;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops the queue until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the

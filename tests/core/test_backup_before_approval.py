@@ -256,22 +256,18 @@ async def test_the_scheduler_is_resumed_after_a_failed_save(tmp_path):
 
 def test_the_question_falls_after_every_gate_and_before_every_write():
     """Earlier it saves a season that may prove unapprovable; later, one already
-    committed."""
+    committed. It follows the check for an approval of the season already in hand, which
+    refuses a second press without asking it, and comes before the approval is asked of the
+    change queue, which makes every write (#439)."""
     import inspect
 
     source = inspect.getsource(SeasonCog._do_approve)
     asked = source.index("_offer_backup_before_approving")
 
-    for gate in ("_image_configuration_faults", "_lineup_problems", "_team_name_problems"):
+    for gate in ("_image_configuration_faults", "_lineup_problems", "_team_name_problems",
+                 "approval_in_hand("):
         assert source.index(gate) < asked, f"{gate} runs after the backup question"
-    # Anchored on the `await`, not the bare name: a gate above may legitimately discuss a
-    # write in a comment — Gate 2a explains why it does not read the snapshot's table —
-    # and a search for the name alone would find the prose and read the order backwards.
-    for write in (
-        "await season_points_service.snapshot_configs_to_season",
-        "await season_svc.transition_to_active",
-    ):
-        assert asked < source.index(write), f"{write} runs before the backup question"
+    assert asked < source.index("change_queue.ask("), "the approval is asked before the question"
 
 
 async def test_the_approve_view_carries_a_deadline():

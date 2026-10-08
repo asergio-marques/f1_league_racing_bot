@@ -12,6 +12,7 @@ from leaguebot.results.services.season_points_service import (
     get_season_points_view,
     validate_monotonic_ordering,
 )
+from tests.support.season_points import snapshot_points
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +407,7 @@ async def test_attached_ordering_and_the_season_copy_word_a_fault_the_same_way(d
     season_id = await _make_season(db_path)
     await _make_bad_config(db_path, "SAME")
     await attach_config(db_path, season_id=season_id, config_name="SAME", season_status="SETUP")
-    await season_points_service.snapshot_configs_to_season(db_path, season_id)
+    await snapshot_points(db_path, season_id)
 
     from_source = await season_points_service.validate_attached_config_ordering(
         db_path, season_id
@@ -598,3 +599,74 @@ async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or
             "Nothing has been changed. The staged changes are still there to repair."
         )
         assert error in refused.value.reason
+
+
+# ---------------------------------------------------------------------------
+# snapshot_configs_to_season_on — a season's approval (#439, slice 4a)
+#
+# The approval copies the season's attached points configurations onto it inside its one save,
+# so the copy is written on the connection it is handed and committed by the save alone. It reads
+# results' own switch on that connection and writes nothing while results is off, so the save
+# need not ask whether results is on. Imported inside each test, so the file collects while it is
+# unbuilt.
+# ---------------------------------------------------------------------------
+
+
+async def _season_points(db) -> list[tuple[str, int, int]]:
+    cursor = await db.execute(
+        "SELECT config_name, position, points FROM season_points_entries "
+        "ORDER BY config_name, position"
+    )
+    return [(r["config_name"], r["position"], r["points"]) for r in await cursor.fetchall()]
+
+
+async def test_the_snapshot_is_written_on_the_save_handed(db_path):
+    """Results is on and a season in setup has `Standard` attached, paying 25, 18 and 15 for the
+    Feature Race. Copied on a connection, the season's store holds those three on that
+    connection; rolled back, it holds nothing."""
+    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+
+    season_id = await _make_season(db_path)
+    await _make_config_with_entries(db_path, "Standard")
+    await attach_config(db_path, season_id=season_id, config_name="Standard", season_status="SETUP")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
+        )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        await snapshot_configs_to_season_on(db, season_id)
+        assert await _season_points(db) == [
+            ("Standard", 1, 25), ("Standard", 2, 18), ("Standard", 3, 15)
+        ]
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _season_points(db) == []
+
+
+@pytest.mark.parametrize("switch", [None, 0], ids=["never switched on", "switched off"])
+async def test_the_snapshot_writes_nothing_while_results_is_off(db_path, switch):
+    """A season in setup has `Standard` attached, and results has never been switched on, or
+    has been switched off. Copied on a connection and committed, the season's store holds
+    nothing."""
+    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+
+    season_id = await _make_season(db_path)
+    await _make_config_with_entries(db_path, "Standard")
+    await attach_config(db_path, season_id=season_id, config_name="Standard", season_status="SETUP")
+    if switch is not None:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, ?)",
+                (switch,),
+            )
+            await db.commit()
+
+    async with get_connection(db_path) as db:
+        await snapshot_configs_to_season_on(db, season_id)
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        assert await _season_points(db) == []

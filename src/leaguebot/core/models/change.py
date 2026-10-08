@@ -130,7 +130,10 @@ class StepFailedOnDiscord(Exception):
 
     `result` is plain data the step wants kept on the job that stops the queue, such as the ids of
     what it could not remove, which a Discard then reads. Raised `from` the Discord failure that
-    caused it, the stop notice names that failure's type as the kind of fault.
+    caused it, the stop notice names that failure's type as the kind of fault. A step may also
+    raise it wrapping another fault, so that its `result` replaces the one the job kept, as
+    `post_opening_standings` does once it has removed the kept tables; the stop then names the
+    kind from that cause, as for any other.
     """
 
     def __init__(self, reason: str, *, result: dict[str, Any] | None = None) -> None:

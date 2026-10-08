@@ -341,7 +341,8 @@ def _member(user_id: int, league_admin: bool = False):
 
 def _view():
     cog = MagicMock()
-    cog._do_confirm_configuration = AsyncMock()
+    # Said outright: a press that reaches the helper goes through (#439).
+    cog._do_confirm_configuration = AsyncMock(return_value=True)
     cog.bot.db_path = "/nonexistent/nowhere.db"
     cog.bot.config_service.get_server_config = AsyncMock(return_value=_server_config())
     view = _ConfirmConfigurationView(cog, REVIEWER)
@@ -369,6 +370,142 @@ async def test_another_league_manager_may_not_confirm():
 
     cog._do_confirm_configuration.assert_not_awaited()
     assert "Nothing has been confirmed" in interaction.response.send_message.await_args.args[0]
+
+
+async def _posted_review(tmp_path, bot):
+    """A posted configuration review whose button reaches the real confirmation, its prompt
+    recorded in a migrated database."""
+    from leaguebot.core.db.database import run_migrations
+
+    bot.db_path = str(tmp_path / "config-review.db")
+    await run_migrations(bot.db_path)
+    cog = _cog(bot)
+    view = _ConfirmConfigurationView(cog, REVIEWER)
+    view._server_id = SERVER_ID
+    view._season_id = SEASON_ID
+    report = [MagicMock(id=900 + n, delete=AsyncMock()) for n in range(2)]
+    message = MagicMock(id=999, delete=AsyncMock())
+    message.channel.id = 111
+    message.channel.send = AsyncMock()
+    view.carries(report)
+    await view.bind(message)
+    return view, message, report
+
+
+async def _prompt_rows(view) -> int:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(view._cog.bot.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
+        (count,) = await cursor.fetchone()
+    return count
+
+
+def _reviewer_press() -> MagicMock:
+    interaction = _interaction()
+    interaction.user = _member(REVIEWER)
+    interaction.client = None
+    return interaction
+
+
+async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path):
+    """Every review's button alike: a press refused at the press (here a fault found afresh)
+    leaves the review and its button standing, to be pressed again within its five minutes."""
+    bot = _bot(signup=True, signup_config=_signup_config(channel=None))
+    view, message, report = await _posted_review(tmp_path, bot)
+    interaction = _reviewer_press()
+
+    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
+
+    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
+    bot.season_service.set_stage.assert_not_awaited()
+    for posted in [*report, message]:
+        posted.delete.assert_not_awaited()
+    assert view._message is message
+    assert not view.is_finished(), "the view was stopped, so a second press goes unheard"
+    assert await _prompt_rows(view) == 1
+
+
+async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path):
+    """The one press that ends the review: the configuration confirmed and the season moved on.
+    The review is deleted, its record forgotten and the view stopped."""
+    bot = _bot()
+    view, message, report = await _posted_review(tmp_path, bot)
+    interaction = _reviewer_press()
+
+    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
+
+    bot.season_service.set_stage.assert_awaited_once()
+    for posted in [*report, message]:
+        posted.delete.assert_awaited_once()
+    assert view.is_finished()
+    assert await _prompt_rows(view) == 0
+
+
+async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(tmp_path):
+    """Two configuration reviews of one season stand; the newer is confirmed, and Confirm is
+    then pressed on the older. The season has moved on since the older was posted, so its
+    review ends as an expired one does: the expiry notice posted, one refusal line in the log
+    channel and no lapse line."""
+    from leaguebot.core.db.database import get_connection, run_migrations
+
+    bot = _bot()
+    bot.db_path = str(tmp_path / "two-reviews.db")
+    await run_migrations(bot.db_path)
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, stage, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 'CONFIGURATION', 4)",
+            (SEASON_ID,),
+        )
+        await db.commit()
+    bot.image_config_service.get_config = AsyncMock(return_value=None)
+
+    async def _set_stage(season_id, target):
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+            if (await cursor.fetchone())["stage"] != "CONFIGURATION":
+                raise InvalidStageTransition("moved on")
+            await db.execute(
+                "UPDATE seasons SET stage = ? WHERE id = ?", (target.value, season_id)
+            )
+            await db.commit()
+
+    bot.season_service.set_stage = AsyncMock(side_effect=_set_stage)
+    cog = _cog(bot)
+
+    async def _review(message_id: int):
+        view = _ConfirmConfigurationView(cog, REVIEWER)
+        view._server_id = SERVER_ID
+        await view.record_fingerprint(SEASON_ID)
+        report = [MagicMock(id=message_id - 1, delete=AsyncMock())]
+        message = MagicMock(id=message_id, delete=AsyncMock())
+        message.channel.id = 111
+        message.channel.send = AsyncMock()
+        view.carries(report)
+        await view.bind(message)
+        return view, message, report
+
+    older, older_message, older_report = await _review(901)
+    newer, _newer_message, _newer_report = await _review(903)
+    confirming = _reviewer_press()
+    confirming.client = bot
+    await _ConfirmConfigurationView.approve(newer, confirming, MagicMock())
+    assert newer.is_finished()
+    bot.output_router.post_log.reset_mock()
+
+    pressing = _reviewer_press()
+    pressing.client = bot
+    await _ConfirmConfigurationView.approve(older, pressing, MagicMock())
+
+    older_message.delete.assert_awaited_once()
+    older_report[0].delete.assert_awaited_once()
+    assert "your review has expired" in older_message.channel.send.await_args.args[0]
+    assert older.is_finished()
+    assert await _prompt_rows(older) == 0
+    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+    assert [line[:1] for line in lines] == ["⛔"], lines
+    assert not any(line.startswith("⌛") for line in lines), lines
 
 
 async def test_an_expired_configuration_review_names_its_own_command():

@@ -56,7 +56,7 @@ async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_
         season_id = cur.lastrowid
 
         for tier, name in enumerate(divisions, start=1):
-            # 'ACTIVE' explicitly: a division only reaches it via transition_to_active, which
+            # 'ACTIVE' explicitly: a division only reaches it via transition_to_active_on, which
             # has its own test below.
             cur = await db.execute(
                 "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, "
@@ -225,14 +225,18 @@ async def test_activating_a_season_activates_its_divisions(tmp_path) -> None:
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), season_status="SETUP")
     div_a, _ = built["Div A"]
     div_b, _ = built["Div B"]
-    svc = SeasonService(db_path)
 
     async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", (season_id,))
         await db.execute("UPDATE divisions SET status = 'SETUP' WHERE season_id = ?", (season_id,))
         await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", (div_b,))
         await db.commit()
 
-    await svc.transition_to_active(season_id)
+    from leaguebot.core.services.season_service import transition_to_active_on
+
+    async with get_connection(db_path) as db:
+        assert await transition_to_active_on(db, season_id) is True
+        await db.commit()
 
     assert await _season_status(db_path, season_id) == "ACTIVE"
     assert await _division_status(db_path, div_a) == "ACTIVE"

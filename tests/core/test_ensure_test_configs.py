@@ -22,6 +22,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
 from leaguebot.core.services.test_roster_service import ensure_test_configs
+from tests.support.season_points import snapshot_points
 
 SERVER_ID = 9310
 
@@ -136,9 +137,7 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
     """The ordinary snapshot, not a private path — this is what scoring then reads."""
     await ensure_test_configs(season_id, db_path)
 
-    await season_points_service.snapshot_configs_to_season(
-        db_path, season_id
-    )
+    await snapshot_points(db_path, season_id)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -162,9 +161,7 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
 async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
     """The confirmation of placements refuses a non-monotonic ladder; a seeded one must not trip it."""
     await ensure_test_configs(season_id, db_path)
-    await season_points_service.snapshot_configs_to_season(
-        db_path, season_id
-    )
+    await snapshot_points(db_path, season_id)
 
     assert await season_points_service.validate_monotonic_ordering(db_path, season_id) == []
 

@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import discord
 from discord.ext import commands
@@ -15,6 +15,9 @@ from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 
 load_dotenv()
 
@@ -78,6 +81,49 @@ def create_bot() -> LeagueBot:
     return bot
 
 
+async def read_approval_windows(
+    bot: LeagueBot,
+) -> "tuple[AttendanceWindows | None, WeatherWindows | None]":
+    """The lead times the enabled modules configure, as `(attendance, weather)`.
+
+    Either is None where that module is off: there is no window to be inside. The builder is
+    where attendance and weather meet core, so the season's approval reads them through
+    `bot.approval_windows`, which is this, and core imports neither module (#439).
+    """
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+
+    attendance = None
+    if await bot.module_service.is_attendance_enabled():
+        att = await bot.attendance_service.get_or_create_config()
+        attendance = AttendanceWindows(
+            notice_days=att.rsvp_notice_days,
+            last_notice_hours=att.rsvp_last_notice_hours,
+            deadline_hours=att.rsvp_deadline_hours,
+        )
+
+    weather = None
+    if await bot.module_service.is_weather_enabled():
+        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
+
+        wx = await get_weather_pipeline_config(bot.db_path)
+        weather = WeatherWindows(
+            phase_1_days=wx.phase_1_days,
+            phase_2_days=wx.phase_2_days,
+            phase_3_hours=wx.phase_3_hours,
+        )
+
+    return attendance, weather
+
+
+def _forget_setup(bot: LeagueBot) -> None:
+    """Let go of the setup the season cog holds in memory, as `clear_in_memory_state` does."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    cog = bot.get_cog("SeasonCog")
+    if isinstance(cog, SeasonCog):
+        cog.clear_pending()
+
+
 def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
@@ -86,7 +132,13 @@ def register_change_types(bot: LeagueBot) -> None:
     the real set.
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.season_approval_change import (
+        season_approval_change,
+        season_approval_tell_change,
+    )
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
+    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.points_amendment_change import points_amendment_change
@@ -127,6 +179,26 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
+    # The season's approval is judged again as it runs: the clock is the queue's, the windows the
+    # enabled modules', and the drawing program the host's, read through `converter_available`
+    # when it is judged, so a test that patches it moves the judgement.
+    bot.change_queue.register(
+        season_approval_change(
+            modules=bot.module_service,
+            config=bot.config_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            placement=bot.placement_service,
+            windows=lambda: bot.approval_windows(),
+            rasteriser_fault=lambda: None
+            if converter_available()
+            else f"{CONVERTER_NAME} is not installed on this host.",
+            snapshot_points_on=snapshot_configs_to_season_on,
+            forget_setup=lambda: _forget_setup(bot),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(season_approval_tell_change())
 
 
 async def main() -> None:
@@ -217,6 +289,7 @@ async def main() -> None:
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
+    bot.approval_windows = lambda: read_approval_windows(bot)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService

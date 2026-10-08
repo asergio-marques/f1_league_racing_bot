@@ -26,6 +26,7 @@ the check in turn.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
@@ -34,6 +35,7 @@ from discord.ext import commands
 
 if TYPE_CHECKING:
     from leaguebot.core.services.amendment_service import AmendmentService
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
@@ -78,6 +80,10 @@ class LeagueBot(commands.Bot):
     image_config_service: ImageConfigService
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService
+    #: The lead times the enabled modules configure, `(attendance, weather)`, either None where
+    #: that module is off. The builder sets it, where the modules meet, so that core's approval
+    #: reads them without importing attendance or weather (#439).
+    approval_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows | None]]]
 
 
 def bot_of(interaction: discord.Interaction) -> LeagueBot:

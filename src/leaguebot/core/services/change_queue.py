@@ -75,7 +75,13 @@ writes goes through the `OutputRouter` it was handed, never one looked up on the
 not use the bot to look up other services).
 
 **The check runs twice**: when the change is asked for, so that a member is refused at once, and
-when it starts, since what it checked may have changed in between.
+when it starts, since what it checked may have changed in between. A change type may ask a change
+of its own where its check refuses a member's change as it starts (`ChangeType.on_refused`), saved
+with the refusal: the season's confirmation tells the channel it was read in of a refusal its
+member can no longer be told of. It may likewise ask one where a league admin discards a member's
+change stopped at its check before it started (`ChangeType.on_discarded`), saved with the Discard;
+a hook that raises is logged on the host and the Discard goes ahead without it, Discard being the
+queue's last way past a stop.
 
 **What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
 payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included
@@ -232,13 +238,17 @@ class StepContext(OutcomeContext):
     post as text on a retry (Constitution XIV, rule 8). *kept* is what the stopped job's last try
     left on it (the `result` of the `StepFailedOnDiscord` it raised, or the result a record that
     raised had been handed), None on a first try: a posting job reads it to remove the messages its
-    last try sent before it posts again.
+    last try sent before it posts again. *reply_updatable* is whether the change's acknowledgement
+    can still be updated, which is where it is held and under `UPDATABLE_FOR` since it was
+    acknowledged: False for a bot's change, after a restart and fourteen minutes on. A job that
+    tells a channel what the member can no longer be told reads it, never a flag of its own.
     """
 
     step_name: str = ""
     step_payload: dict[str, Any] = field(default_factory=dict)
     tries: int = 0
     kept: dict[str, Any] | None = None
+    reply_updatable: bool = False
 
 
 @dataclass(frozen=True)
@@ -267,6 +277,32 @@ class Step:
 
 
 @dataclass(frozen=True)
+class RefusedContext:
+    """What a change type's `on_refused` reads: a member's change its check refused as it came up
+    to run. *reply* is the refusal as the member is told it and *reason* the verdict's own;
+    *reply_updatable* is whether the member can still be told it (`StepContext.reply_updatable`)."""
+
+    payload: dict[str, Any]
+    reply: str
+    reason: str
+    actor_id: int | None
+    what: str
+    reply_updatable: bool
+
+
+@dataclass(frozen=True)
+class DiscardedContext:
+    """What a change type's `on_discarded` reads: a member's change a league admin discarded at
+    the check it was stopped at, before any job of it started. *reply_updatable* is whether the
+    member can still be told (`StepContext.reply_updatable`)."""
+
+    payload: dict[str, Any]
+    actor_id: int | None
+    what: str
+    reply_updatable: bool
+
+
+@dataclass(frozen=True)
 class ChangeType:
     """A kind of change: what it does, how it is checked and keyed, and what it tells the member.
 
@@ -284,6 +320,8 @@ class ChangeType:
     doing: Callable[[dict[str, Any]], str]
     outcome: Callable[[OutcomeContext], str]
     repeatable: bool = False
+    on_refused: Callable[[RefusedContext], tuple[FollowOn, ...]] | None = None
+    on_discarded: Callable[[DiscardedContext], tuple[FollowOn, ...]] | None = None
 
 
 class ChangeRefused(Exception):
@@ -636,6 +674,7 @@ class ChangeQueue:
             step_payload=json.loads(row["payload"]),
             tries=row["tries"],
             kept=json.loads(row["result"]) if row["result"] else None,
+            reply_updatable=self._held_and_updatable(change) is not None,
         )
 
     def forget_held(self) -> None:
@@ -900,9 +939,30 @@ class ChangeQueue:
         updated with the refusal's reply, and the line is saved with the mark.
 
         Where the check had stopped the queue on the change, the refusal clears the stop: a line
-        says so, saved with the refusal, and the stop notice loses its buttons.
+        says so, saved with the refusal, and the stop notice loses its buttons. The change type's
+        `on_refused` is asked first, and the follow-ons it returns are saved with the refusal, so
+        that the two commit together or not at all.
         """
         reply = _refusal_text(verdict)
+        follow_ons: tuple[FollowOn, ...] = ()
+        on_refused = self._types[change["kind"]].on_refused
+        if on_refused is not None:
+            try:
+                follow_ons = on_refused(
+                    RefusedContext(
+                        json.loads(change["payload"]),
+                        reply,
+                        verdict.reason,
+                        change["actor_id"],
+                        change["what"],
+                        self._held_and_updatable(change) is not None,
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 — a hook that raises stops the queue
+                log.log(self._failure_level(pending), "the refusal hook of %s raised (change %s)",
+                        change["what"], change["id"], exc_info=error)
+                await self._stop(change, pending, error)
+                return
         named = self._named(change)
         lines = [
             refusal_line(
@@ -914,7 +974,7 @@ class ChangeQueue:
         )
         if cleared is not None:
             lines.append(cleared)
-        ids = await self._end(change, ChangeState.REFUSED, *lines)
+        ids = await self._end(change, ChangeState.REFUSED, *lines, follow_ons=follow_ons)
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
         await self._strip_stop(pending)
         await self._update_reply(change, reply)
@@ -959,10 +1019,14 @@ class ChangeQueue:
             )
 
     async def _end(
-        self, change: aiosqlite.Row, state: ChangeState, *lines: str
+        self,
+        change: aiosqlite.Row,
+        state: ChangeState,
+        *lines: str,
+        follow_ons: tuple[FollowOn, ...] = (),
     ) -> list[int]:
-        """Mark the change *state*, with each of *lines* saved on the retry queue in the same
-        save. Returns the lines' ids, for delivery once saved. A change removed under the
+        """Mark the change *state*, with each of *lines* saved on the retry queue and each of
+        *follow_ons* asked for, in the same save. Returns the lines' ids, for delivery once saved. A change removed under the
         worker is left, and its lines unwritten."""
         ids: list[int] = []
         async with get_connection(self._db_path) as db:
@@ -976,6 +1040,8 @@ class ChangeQueue:
                         line_id = await self._router.queue_log_on(db, line)
                         if line_id is not None:
                             ids.append(line_id)
+                    for follow_on in follow_ons:
+                        await self._ask_on(db, change, follow_on)
                 await db.commit()
             except BaseException:
                 await db.rollback()
@@ -1494,8 +1560,10 @@ class ChangeQueue:
             name = await self._name_job(change, job, self._step_context(change, steps, job))
             started = change["state"] == ChangeState.RUNNING.value
             now = self._clock()
+            follow_ons = () if started else self._discard_follow_ons(change)
             saved = await self._save_discard(
-                interaction, change, job, name, started=started, now=now, ids=ids
+                interaction, change, job, name, started=started, now=now, ids=ids,
+                follow_ons=follow_ons,
             )
         if not saved:
             await refuse(
@@ -1519,6 +1587,28 @@ class ChangeQueue:
         else:
             self._signal.set()
 
+    def _discard_follow_ons(self, change: aiosqlite.Row) -> tuple[FollowOn, ...]:
+        """The follow-ons the change type's `on_discarded` asks for a member's change discarded
+        before it started. A hook that raises is logged and asks none: the Discard goes ahead,
+        since a Discard refused for it would be refused again at every press."""
+        change_type = self._types.get(change["kind"])  # a kind the bot no longer knows has none
+        on_discarded = None if change_type is None else change_type.on_discarded
+        if on_discarded is None or change["origin"] != ChangeOrigin.MEMBER.value:
+            return ()
+        try:
+            return on_discarded(
+                DiscardedContext(
+                    json.loads(change["payload"]),
+                    change["actor_id"],
+                    change["what"],
+                    self._held_and_updatable(change) is not None,
+                )
+            )
+        except Exception:  # noqa: BLE001 — the Discard goes ahead whatever the hook does
+            log.error("the discard hook of %s raised (change %s)", change["what"],
+                      change["id"], exc_info=True)
+            return ()
+
     async def _save_discard(
         self,
         interaction: discord.Interaction,
@@ -1529,8 +1619,10 @@ class ChangeQueue:
         started: bool,
         now: datetime,
         ids: list[int],
+        follow_ons: tuple[FollowOn, ...] = (),
     ) -> bool:
-        """Save a Discard in one save, with its line (its id added to *ids*) and audit record.
+        """Save a Discard in one save, with its line (its id added to *ids*), audit record and
+        the *follow_ons* the change type's `on_discarded` asked for.
 
         Returns False where the save matched no row: the job had cleared since it was found.
         """
@@ -1570,6 +1662,8 @@ class ChangeQueue:
                         new_value={"discarded": True, "change_ended": not started},
                         now=now,
                     )
+                    for follow_on in follow_ons:
+                        await self._ask_on(db, change, follow_on)
                 await db.commit()
             except BaseException:
                 await db.rollback()

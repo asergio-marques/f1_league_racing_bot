@@ -117,6 +117,42 @@ class PlacementService:
             except discord.HTTPException as exc:
                 log.warning("_grant_roles: failed to add role %s to %s: %s", role_id, member.id, exc)
 
+    async def grant_roles(
+        self, guild: discord.Guild, user_id: int, *role_ids: int
+    ) -> bool:
+        """Grant *role_ids* to the member *user_id*, **raising** where it could not be done.
+
+        What a job on the change queue calls (#439): a driver's roles are theirs to give and the
+        queue stops where Discord will not, where `_grant_roles` logs and carries on. A member
+        Discord reports absent (`NotFound`) has left the server and is passed over: nothing is
+        given, nothing raises, and the result is False. Anything else stops the job with
+        `StepFailedOnDiscord`, raised from the Discord fault where there is one: the member
+        could not be fetched for another reason, a role is no longer on the server (checked
+        before any is given, so no driver is left with half), or Discord refuses the grant.
+        Granting is idempotent, so a retry gives again what is already held.
+        """
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            return False
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"member {user_id} could not be fetched to be given their roles: {exc}"
+            ) from exc
+        roles = []
+        for role_id in role_ids:
+            role = guild.get_role(role_id)
+            if role is None:
+                raise StepFailedOnDiscord(f"role {role_id} is no longer on the server")
+            roles.append(role)
+        try:
+            await member.add_roles(*roles, reason="Driver placement")
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"member {user_id} could not be given their roles: {exc}"
+            ) from exc
+        return True
+
     async def grant_to_every_driver(
         self, guild: discord.Guild, role_id: int
     ) -> RoleGrantOutcome:
@@ -1967,15 +2003,22 @@ class PlacementService:
     # Division resolution helper (used by cogs)
     # ------------------------------------------------------------------
 
-    async def refresh_lineup(self, guild: discord.Guild, division_id: int) -> None:
+    async def refresh_lineup(
+        self, guild: discord.Guild, division_id: int, *, as_text: bool = False
+    ) -> None:
         """Post the division's lineup afresh, **raising** where it could not be posted.
 
         What a job on the change queue calls (#439): a lineup channel the division was given and
         the guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, for
         the queue to stop on and try again, where `_refresh_lineup_post` logs and returns. A
         division never given a lineup channel posts nothing and raises nothing.
+
+        *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
+        (Constitution XIV, rule 8).
         """
-        await self._refresh_lineup_post(guild, division_id, raise_on_failure=True)
+        await self._refresh_lineup_post(
+            guild, division_id, raise_on_failure=True, as_text=as_text
+        )
 
     async def _refresh_lineup_post(
         self,
@@ -1984,8 +2027,11 @@ class PlacementService:
         *,
         bot: LeagueBot | None = None,
         raise_on_failure: bool = False,
+        as_text: bool = False,
     ) -> None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
+
+        *as_text* leaves the image path out altogether, whatever is configured.
 
         **The image path is a guard clause in front of an untouched body.** Where the
         images module is enabled, the `lineup` aspect is on and a valid template is
@@ -1998,7 +2044,7 @@ class PlacementService:
         is deliberately not reopened by this feature: the lineup image is an alternative
         output beside the text, not a reform of it.
         """
-        owner = bot if bot is not None else getattr(self, "_bot", None)
+        owner = None if as_text else (bot if bot is not None else getattr(self, "_bot", None))
         if owner is not None:
             try:
                 from leaguebot.image.services.image_lineup_post import try_post

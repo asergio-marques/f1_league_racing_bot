@@ -87,25 +87,41 @@ def test_the_review_posting_loop_is_not_wrapped():
 # ── the confirmation of placements (the button) ────────────────────────────────────────
 
 
-def test_the_approve_lineup_and_calendar_posting_is_wrapped():
-    """Both draw inside their own loops, so one notice covers the pair."""
-    node = _function("core/cogs/season_cog.py", "_do_approve")
-    blocks = _notices(node)
+# Since #439 the confirmation is a change on the queue, and its notice a pair of jobs of its own,
+# `post_batch_notice` and `delete_batch_notice`, planned around the lineups, calendars and
+# opening posts. That they bracket the posts, in the order the queue runs them, is driven in
+# `test_season_approval_change.py`; what is read here is that the pair is there at all, and
+# where it posts.
 
-    assert len(blocks) == 1, "expected exactly one notice in _do_approve"
-    inside = _calls_within(blocks[0])
-    assert "_refresh_lineup_post" in inside
-    assert "post_division_calendar" in inside
+_APPROVAL = "core/services/season_approval_change.py"
+
+
+def test_the_approve_lineup_and_calendar_posting_is_wrapped():
+    """The approval's notice is posted and deleted by jobs of its own, through the batch
+    notice's raising halves, and no longer wraps the press."""
+    calls = _calls_within(_tree(_APPROVAL))
+    source = (SRC / _APPROVAL).read_text(encoding="utf-8")
+
+    assert {"send_notice", "delete_notice"} <= calls
+    assert "post_batch_notice" in source and "delete_batch_notice" in source
+    assert not _notices(_function("core/cogs/season_cog.py", "_do_approve"))
 
 
 def test_the_approve_notice_goes_to_the_interaction_channel():
     """The approve button is ephemeral, so the channel the review was read in is the
-    only home it has."""
-    node = _function("core/cogs/season_cog.py", "_do_approve")
-    call = _notices(node)[0].items[0].context_expr
+    only home it has: the press keeps it in the approval's payload, which the notice's jobs
+    read when they run."""
+    kept = [
+        ast.unparse(value)
+        for sub in ast.walk(_function("core/cogs/season_cog.py", "_do_approve"))
+        if isinstance(sub, ast.Dict)
+        for key, value in zip(sub.keys, sub.values)
+        if isinstance(key, ast.Constant) and key.value == "channel_id"
+    ]
+    assert kept and set(kept) <= {"interaction.channel_id", "interaction.channel.id"}, kept
 
-    target = call.args[0]
-    assert isinstance(target, ast.Attribute) and target.attr == "channel"
+    read = ast.unparse(_tree(_APPROVAL))
+    assert "payload['channel_id']" in read or "payload.get('channel_id')" in read
 
 
 # ── The results flow, on the change queue (#439) ─────────────────────────
@@ -239,10 +255,23 @@ def _assert_plain_text(text: object) -> None:
     "relative,function",
     [
         ("core/cogs/season_cog.py", "season_review"),
-        ("core/cogs/season_cog.py", "_do_approve"),
     ],
 )
 def test_every_notice_carries_plain_text_for_a_league(relative, function):
-    """The season's two notices; the review's are read as they are sent, above."""
+    """The season review's notice; the confirmation's is read below, and the results
+    review's as they are sent, above."""
     call = _notices(_function(relative, function))[0].items[0].context_expr
     _assert_plain_text(call.args[1].value)
+
+
+def test_the_confirmation_s_notice_carries_plain_text_for_a_league():
+    """The confirmation's notice, now its jobs' text: today's words, a league's to read."""
+    texts = [
+        sub.value
+        for sub in ast.walk(_tree(_APPROVAL))
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
+        and "one moment" in sub.value
+    ]
+    notice = "\U0001f3a8 Posting lineups, calendars and opening classifications — one moment."
+    assert notice in texts, texts
+    _assert_plain_text(notice)
