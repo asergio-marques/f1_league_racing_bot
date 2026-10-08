@@ -18,6 +18,7 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_amend_change import AmendHooks
 
 load_dotenv()
 
@@ -91,6 +92,7 @@ async def read_approval_windows(
     `bot.approval_windows`, which is this, and core imports neither module (#439).
     """
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_amend_change import AmendHooks
 
     attendance = None
     if await bot.module_service.is_attendance_enabled():
@@ -127,6 +129,7 @@ async def read_amendment_windows(
     is this, and so does its change on the queue, so the two cannot read different windows (#439).
     """
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
     attendance = None
@@ -156,6 +159,48 @@ def _forget_setup(bot: LeagueBot) -> None:
         cog.clear_pending()
 
 
+def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
+    """What `/round amend`'s change needs of weather and attendance, handed it here so that core
+    imports neither. Each is looked up as it is called, so that nothing is bound before it is
+    needed."""
+    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.core.services.round_amend_change import AmendHooks
+    from leaguebot.weather.services import forecast_cleanup_service, phase_withdrawal
+    from leaguebot.weather.utils.message_builder import format_round_list, invalidation_message
+
+    async def windows() -> "tuple[AttendanceWindows | None, WeatherWindows]":
+        return await bot.amendment_windows()
+
+    async def delete_forecast(bot_: Any, round_id: int, division_id: int, phase: int) -> None:
+        await forecast_cleanup_service.delete_forecast_message(
+            round_id, division_id, phase, bot_, raise_on_failure=True
+        )
+
+    async def run_phase(phase: int, round_id: int, bot_: Any) -> None:
+        from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
+
+        runner = {
+            1: phase1_service.run_phase1,
+            2: phase2_service.run_phase2,
+            3: phase3_service.run_phase3,
+        }[phase]
+        await runner(round_id, bot_)
+
+    async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
+        await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
+
+    return AmendHooks(
+        windows=windows,
+        withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
+        delete_forecast=delete_forecast,
+        invalidation_text=invalidation_message,
+        run_phase=run_phase,
+        reopen_check_in_on=rsvp_service.reopen_check_in_on,
+        repost_call=repost_call,
+        round_list=format_round_list,
+    )
+
+
 def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
@@ -168,6 +213,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change,
     )
     from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.round_amend_change import round_amend_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
         season_approval_tell_change,
@@ -236,6 +282,15 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    bot.change_queue.register(
+        round_amend_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            hooks=_amend_hooks(bot),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
     bot.change_queue.register(
         round_cancel_change(
             modules=bot.module_service,

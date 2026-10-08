@@ -124,7 +124,6 @@ def test_the_cancellations_are_registered():
     assert kinds.count(DIVISION_CANCEL) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: /round amend is not a change on the queue")
 def test_the_round_amendment_is_registered():
     """The builder registers the amendment of a round, once, as "season.round.amend" (#439,
     slice 4b, amendment A)."""
