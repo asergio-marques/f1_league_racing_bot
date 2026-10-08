@@ -59,8 +59,6 @@ from tests.support.season_league import (
     round_id,
 )
 
-NOT_ON_THE_QUEUE = "#439: /round cancel is not yet carried out on the change queue"
-
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3 = round_id(PRO, 3)
 CANCELLED = "✅ Round **3** in **Pro** cancelled."
@@ -640,7 +638,6 @@ async def test_a_refusal_found_when_the_cancel_runs_updates_the_reply_and_the_qu
     assert set(states.values()) == {"DONE"}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_cancel_waiting_behind_its_division_s_cancellation_is_refused_as_already_cancelled_when_it_runs(
     tmp_path, monkeypatch,
 ):
@@ -660,7 +657,8 @@ async def test_a_cancel_waiting_behind_its_division_s_cancellation_is_refused_as
     assert await _status(league) == "CANCELLED"
     assert "❌ Round 3 in **Pro** is already cancelled." in reply(interaction)
     assert len(_refusal_lines(league)) == 1
-    assert _success_lines(league) == []
+    # Am's round 3, the blocker, has its own success line; Pro's round 3 has none.
+    assert [line for line in _success_lines(league) if "division: Pro" in line] == []
 
 
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
