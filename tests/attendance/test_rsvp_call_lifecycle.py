@@ -638,10 +638,6 @@ async def test_a_failed_announcement_records_no_message(tmp_path, caplog):
 # left standing, for the next try to read, where the quiet form drops it.
 # ---------------------------------------------------------------------------
 
-#: The raising form of the withdrawal is not built yet.
-RAISING_WITHDRAWAL_UNBUILT = "#439: withdraw_rsvp_call has no raise_on_failure yet"
-
-
 def _channel_failing_on(failures: dict[str, Exception]) -> MagicMock:
     """A channel deleting every message but those in *failures*, which raise their exception."""
     channel = _make_channel()
@@ -662,7 +658,6 @@ def _channel_failing_on(failures: dict[str, Exception]) -> MagicMock:
     return channel
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_WITHDRAWAL_UNBUILT)
 async def test_a_raising_withdrawal_keeps_the_record_and_names_the_messages_left(tmp_path):
     """The call (900001), its last notice (900002) and its distribution (900003) stand, and
     Discord refuses to delete the last notice. Withdrawing in the raising form deletes the other
@@ -686,7 +681,6 @@ async def test_a_raising_withdrawal_keeps_the_record_and_names_the_messages_left
     assert await _embed_rows(db_path) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_WITHDRAWAL_UNBUILT)
 async def test_a_raising_withdrawal_counts_a_message_already_gone_as_gone(tmp_path):
     """The call (900001) was deleted by hand; its last notice and distribution stand. Withdrawing
     in the raising form raises nothing, answers True and drops the call's row."""
@@ -703,7 +697,6 @@ async def test_a_raising_withdrawal_counts_a_message_already_gone_as_gone(tmp_pa
     assert await _embed_rows(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_WITHDRAWAL_UNBUILT)
 async def test_a_raising_withdrawal_whose_channel_is_gone_keeps_the_record(tmp_path):
     """The check-in channel holding the call, its last notice and its distribution has been
     deleted. Withdrawing in the raising form raises StepFailedOnDiscord naming all three, and

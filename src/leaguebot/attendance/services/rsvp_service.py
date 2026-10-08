@@ -10,6 +10,7 @@ import discord
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
@@ -675,6 +676,7 @@ async def withdraw_rsvp_call(
     bot: LeagueBot,
     *,
     undeleted: list[str] | None = None,
+    raise_on_failure: bool = False,
 ) -> bool:
     """Take down the check-in call posted for *round_id*, and everything posted beside it.
 
@@ -684,6 +686,14 @@ async def withdraw_rsvp_call(
     channel gone, or Discord refusing — so a caller that must say so can. A message already
     deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
     row goes either way, since nothing would take the messages down again from it.
+
+    *raise_on_failure* is for a caller that must stop on a failure and be tried again, as a
+    round's or a division's cancellation on the change queue is. Every message is still tried;
+    then, where any could not be deleted, it raises `StepFailedOnDiscord` whose `result` is
+    `{"undeleted": [ids]}`, raised `from` the last Discord failure (none where the channel is
+    gone), and **keeps the row**, so the next try reads the ids again: a message deleted by then
+    is "already gone", which counts as gone. A fault that is not Discord's propagates unchanged.
+    *undeleted*, where also given, is filled all the same.
 
     `run_rsvp_notice` takes down no call at all, the round's own included, so a round whose call
     is posted twice would end up with both standing. This is the other half: it removes the
@@ -707,10 +717,11 @@ async def withdraw_rsvp_call(
         )
         if message_id is not None
     ]
+    left: list[str] = []
+    cause: discord.HTTPException | None = None
     channel = as_text_channel(bot.get_channel(int(stored.channel_id)))
     if channel is None:
-        if undeleted is not None:
-            undeleted.extend(str(m) for m in posted)
+        left.extend(str(m) for m in posted)
     else:
         for message_id in posted:
             try:
@@ -718,10 +729,18 @@ async def withdraw_rsvp_call(
                 await message.delete()
             except discord.NotFound:
                 pass  # Already gone — which is what was asked.
-            except discord.HTTPException:
-                # No permission, or Discord failing. The row goes either way.
-                if undeleted is not None:
-                    undeleted.append(str(message_id))
+            except discord.HTTPException as exc:
+                # No permission, or Discord failing. The quiet form drops the row either way.
+                left.append(str(message_id))
+                cause = exc
+    if undeleted is not None:
+        undeleted.extend(left)
+    if raise_on_failure and left:
+        raise StepFailedOnDiscord(
+            f"{len(left)} message(s) of the check-in call for round {round_id} could not be"
+            f" deleted (ids {', '.join(left)})",
+            result={"undeleted": left},
+        ) from cause
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
