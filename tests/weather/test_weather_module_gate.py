@@ -313,3 +313,58 @@ async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_
     bot.output_router.post_forecast.assert_not_awaited()
     # And the forecast it kept is still marked as performed.
     assert (await _phase_state(db_path))[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# A phase falling due for a cancelled round does nothing (#439 slice 4b, F2)
+# ---------------------------------------------------------------------------
+#
+# A cancellation removes the round's timed work before it records the round cancelled, but a
+# phase already running, or one fired late, reaches the runner all the same. The runner reads the
+# round again, and does nothing for a round that is cancelled or whose division is.
+
+_RUNNERS = [phase1_service.run_phase1, phase2_service.run_phase2, phase3_service.run_phase3]
+
+
+async def _cancel(db_path: str, what: str) -> None:
+    async with get_connection(db_path) as db:
+        if what == "round":
+            await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = 1")
+        else:
+            await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = 1")
+        await db.commit()
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a phase still runs for a cancelled round")
+@pytest.mark.parametrize("what", ["round", "division"])
+@pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
+async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, phase, what):
+    """Weather is on and round 1 of Div A has had every earlier phase drawn and posted. The
+    round, or Div A, is then cancelled, and the phase falls due: nothing is drawn, recorded or
+    posted, and the earlier phases' record stands as it was."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    await _set_weather(db_path, True)
+    bot = _make_bot(db_path, weather_enabled=True)
+
+    with patch(
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+    ) as posted, patch(
+        "leaguebot.image.services.image_weather_post.attach_forecast",
+        new=AsyncMock(return_value=None),
+    ) as drawn:
+        for earlier in _RUNNERS[: phase - 1]:
+            await earlier(1, bot)
+        before = await _phase_state(db_path)
+        posted.reset_mock()
+        drawn.reset_mock()
+        bot.output_router.post_log.reset_mock()
+        await _cancel(db_path, what)
+
+        await _RUNNERS[phase - 1](1, bot)
+
+    assert await _phase_state(db_path) == before
+    posted.assert_not_awaited()
+    drawn.assert_not_awaited()
+    bot.output_router.post_log.assert_not_awaited()
+    bot.output_router.post_forecast.assert_not_awaited()
