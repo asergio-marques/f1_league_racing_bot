@@ -664,9 +664,6 @@ async def test_a_division_that_finishes_while_its_cancellation_waits_is_refused_
 
 # ── While an amendment is applied (#439 slice 4b, F4) ──────────────────────────────
 
-#: Why a cancellation held by an amendment on the queue fails until the build: today
-#: `/round amend` is applied on the spot, and only an amendment being applied holds it.
-_AMEND_XFAIL = "#439: /round amend is not yet a change on the queue that holds a cancellation"
 BEING_AMENDED = (
     "⏸️ A round of **Pro** is being amended (job #{job}), so its rounds cannot be cancelled "
     "until that is done. Let that finish, or press Retry or Discard on its notice if it has "
@@ -705,7 +702,6 @@ async def _amendment_in_hand(league: Any, how: str) -> int | None:
     return next(step["id"] for step in steps if step["done_at"] is None)
 
 
-@pytest.mark.xfail(strict=True, reason=_AMEND_XFAIL)
 @pytest.mark.parametrize("how", [
     pytest.param("waiting", id="waiting behind a stopped job"),
     pytest.param("stopped", id="stopped at its own job"),

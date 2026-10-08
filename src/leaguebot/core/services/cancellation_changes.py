@@ -37,11 +37,15 @@ same round, "already cancelled" is what refuses it. `cancellation_in_hand` is re
 a division, whatever it changes, while a cancellation of the division or of any round of it is in
 hand: chiefly because an amended time renumbers the rounds under the cancellation.
 
-**The other way round, a cancellation is refused while an amendment is applied** (owner,
-2026-10-08): from the moment a `/round amend` Confirm passes its checks until the division's
-rounds are renumbered, a cancellation of the division or of any round of it is refused, asked and
-again as it runs. The mark is held in memory by the amendment service, and read through the
-*amending* the builder hands both change types, so a restart clears it with the amendment.
+**The other way round, a cancellation is refused while an amendment is in hand** (owner,
+2026-10-08): a `/round amend` of a round of the division that is queued, running or stopped on the
+queue refuses a cancellation of the division, or of any round of it, naming the job. It is read
+from the queue, through the *amendment_in_hand* the builder hands both change types (the amendment
+change imports this module, so this one cannot import it), never from a flag kept in memory
+(architecture.md), so a restart forgets nothing. Like the second cancellation it is made only as
+the change is asked for, never as it runs: the queue runs one change at a time and leaves nothing
+overtaking a stopped job, so whatever amendment was ahead of this cancellation has finished, its
+renumbering included, and the cancellation reads the round's number as it then stands.
 """
 from __future__ import annotations
 
@@ -137,12 +141,13 @@ def round_being_cancelled(payload: dict[str, Any], job: int) -> str:
     )
 
 
-def division_being_amended(payload: dict[str, Any]) -> str:
+def division_being_amended(payload: dict[str, Any], job: int) -> str:
     """The refusal of a cancellation of a division, or of one of its rounds, while a
-    `/round amend` of a round of it is being applied."""
+    `/round amend` of a round of it is in hand on the queue, naming the job it waits on."""
     return (
-        f"⏸️ A round of **{payload['division_name']}** is being amended, so its rounds cannot be "
-        "cancelled until that is done. Try again in a moment."
+        f"⏸️ A round of **{payload['division_name']}** is being amended{_job_of(job)}, so its "
+        f"rounds cannot be cancelled until that is done. Let that finish, or press Retry or "
+        "Discard on its notice if it has stopped."
     )
 
 
@@ -508,7 +513,7 @@ def round_cancel_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     submission_open: Callable[[str, int], Awaitable[bool]],
-    amending: Callable[[int], bool],
+    amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels a round; see the module.
@@ -517,8 +522,8 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, results' *submission_open*, *amending* (whether a
-    `/round amend` of a round of a division is being applied) and the queue's clock *now*.
+    *seasons* service, the *scheduler*, results' *submission_open*, *amendment_in_hand* (the job a
+    `/round amend` of a round of a division waits on, or None) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -560,8 +565,9 @@ def round_cancel_change(
             )
             if held is not None:
                 return Verdict.refuse(round_being_cancelled(payload, held))
-        if amending(int(payload["division_id"])):
-            return Verdict.refuse(division_being_amended(payload))
+            amended = await amendment_in_hand(division_id)
+            if amended is not None:
+                return Verdict.refuse(division_being_amended(payload, amended))
         if row["status"] not in ROUND_CANCELLABLE:
             return Verdict.refuse(_results_entered(payload))
         if await submission_open(ctx.db_path, round_id):
@@ -746,7 +752,7 @@ def division_cancel_change(
     modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
-    amending: Callable[[int], bool],
+    amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels a division and the rounds of it that may still be cancelled.
@@ -785,8 +791,9 @@ def division_cancel_change(
             )
             if held is not None:
                 return Verdict.refuse(division_being_cancelled(payload, held))
-        if amending(int(payload["division_id"])):
-            return Verdict.refuse(division_being_amended(payload))
+            amended = await amendment_in_hand(int(payload["division_id"]))
+            if amended is not None:
+                return Verdict.refuse(division_being_amended(payload, amended))
         return Verdict.go()
 
     # ── The jobs ────────────────────────────────────────────────────────────────

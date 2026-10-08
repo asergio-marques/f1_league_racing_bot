@@ -213,7 +213,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change,
     )
     from leaguebot.core.services.hub_service import hub_refresh_change
-    from leaguebot.core.services.round_amend_change import round_amend_change
+    from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
         season_approval_tell_change,
@@ -297,7 +297,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             submission_open=is_submission_open,
-            amending=lambda division_id: bot.amendment_service.is_applying(division_id),
+            amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -306,7 +306,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            amending=lambda division_id: bot.amendment_service.is_applying(division_id),
+            amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
     )

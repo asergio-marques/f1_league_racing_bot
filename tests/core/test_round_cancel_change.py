@@ -1123,9 +1123,6 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
 
 # ── While an amendment is applied (#439 slice 4b, F4) ──────────────────────────────
 
-#: Why a cancellation held by an amendment on the queue fails until the build: today
-#: `/round amend` is applied on the spot, and only an amendment being applied holds it.
-_AMEND_XFAIL = "#439: /round amend is not yet a change on the queue that holds a cancellation"
 BEING_AMENDED = (
     "⏸️ A round of **Pro** is being amended (job #{job}), so its rounds cannot be cancelled "
     "until that is done. Let that finish, or press Retry or Discard on its notice if it has "
@@ -1164,10 +1161,8 @@ async def _amendment_in_hand(league: Any, division: int, how: str) -> int | None
 
 
 @pytest.mark.parametrize(("marked", "how"), [
-    pytest.param(PRO, "waiting", id="its division, waiting behind a stopped job",
-                 marks=pytest.mark.xfail(strict=True, reason=_AMEND_XFAIL)),
-    pytest.param(PRO, "stopped", id="its division, stopped at its own job",
-                 marks=pytest.mark.xfail(strict=True, reason=_AMEND_XFAIL)),
+    pytest.param(PRO, "waiting", id="its division, waiting behind a stopped job"),
+    pytest.param(PRO, "stopped", id="its division, stopped at its own job"),
     pytest.param(AM, "stopped", id="another division"),
 ])
 async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amended_is_refused_at_once(
