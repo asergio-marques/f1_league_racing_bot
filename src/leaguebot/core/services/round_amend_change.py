@@ -28,12 +28,21 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
+import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.change import (
+    GuildUnavailable,
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat
 from leaguebot.core.services.amendment_rules_service import judge_amendment, status_refusal
 from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -45,6 +54,8 @@ from leaguebot.core.services.change_queue import (
     in_hand,
 )
 from leaguebot.core.services.season_service import renumber_rounds_on
+from leaguebot.core.utils.batch_notice import send_notice
+from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
@@ -68,6 +79,11 @@ UNARM = "unarm"
 APPLY = "apply"
 ARM = "arm"
 CLOSE = "close"
+TAKE_DOWN_CALL = "take_down_call"
+POST_CALL = "post_call"
+DELETE_FORECAST = "delete_forecast"
+NOTIFY_INVALIDATION = "notify_invalidation"
+RERUN_PHASE = "rerun_phase"
 
 AMENDED = "✅ Round amended successfully."
 NOTHING_AMENDED = (
@@ -346,13 +362,17 @@ def round_amend_change(
                     f"\n  {_PARAMETER_OF.get(field, field)}: "
                     f"{old if old is not None else 'none'} → {new}"
                 )
+        cursor = await db.execute(
+            "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
+        )
+        called = await cursor.fetchone() is not None
         await hooks.withdraw_phases_on(db, round_id, judgement["withdrawn"])
         if judgement["fate"] in ("repost", "take_down"):
             await hooks.reopen_check_in_on(db, round_id)
         if any(field == "scheduled_at" for field, _ in ctx.payload["changes"]):
             await renumber_rounds_on(db, division_id)
         return StepResult(
-            result={"saved": True, "round_number": row["round_number"]},
+            result={"saved": True, "round_number": row["round_number"], "called": called},
             lines=(
                 f"{ctx.named} | /round amend | Success\n"
                 f"  round {row['round_number']} (round_id: {round_id}){changed}",
@@ -411,13 +431,103 @@ def round_amend_change(
                 last_notice_hours=attendance["last_notice_hours"],
                 deadline_hours=attendance["deadline_hours"],
             )
-        return StepResult(result={"armed": True})
+        return StepResult(result={"armed": True}, then=posts(ctx, judgement))
+
+    def posts(ctx: StepContext, judgement: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        """The posts the saved amendment owes, in today's order: the check-in call taken down and
+        posted again, each withdrawn forecast that was posted deleted, the notice that the
+        forecasts no longer stand, and each phase due at once drawn. Planned once the round is
+        armed, which is where the amendment stood before them, and only for a saved amendment."""
+        if not saved(ctx):
+            return ()
+        planned: list[PlannedStep] = []
+        fate = judgement["fate"]
+        if fate in ("repost", "take_down") and (view(ctx, APPLY).result or {}).get("called"):
+            planned.append(PlannedStep(TAKE_DOWN_CALL))
+        if fate == "repost":
+            planned.append(PlannedStep(POST_CALL))
+        planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in judgement["posted"]]
+        if judgement["posted"]:
+            planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": judgement["track"]}))
+        planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in judgement["rerun"]]
+        return tuple(planned)
 
     async def never_runs(ctx: StepContext) -> str:
         return (
             f"round {await round_number_now(ctx)} in **{ctx.payload['division_name']}** "
             "would never run"
         )
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def weather_on(_ctx: StepContext) -> bool:
+        return await modules.is_weather_enabled()
+
+    async def take_down_call(ctx: StepContext) -> StepResult:
+        """Take the round's standing check-in call down, keeping its record and stopping the queue
+        where Discord will not delete a message. The check-in's audit it reads is not written."""
+        division = await seasons.get_division(int(ctx.payload["division_id"]))
+        if division is None:
+            raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
+        taken = await notices.take_down_call(ctx.bot, division, int(ctx.payload["round_id"]))
+        return StepResult(result={"taken_down": taken["taken_down"]})
+
+    async def post_call(ctx: StepContext) -> StepResult:
+        """Post the call again, carrying every answer already given. Discord refusing it fails as
+        the timer's call does, reported by attendance; a fault of the bot's own stops the queue
+        (owner, 2026-10-08: slice 6 deals with the rest)."""
+        await hooks.repost_call(
+            int(ctx.payload["round_id"]), int(ctx.payload["division_id"]), ctx.bot
+        )
+        return StepResult(result={"posted": True})
+
+    async def delete_forecast(ctx: StepContext) -> StepResult:
+        """Delete the withdrawn forecast of one phase, keeping its record and stopping the queue
+        where Discord refuses."""
+        phase = int(ctx.step_payload["phase"])
+        try:
+            await hooks.delete_forecast(
+                ctx.bot, int(ctx.payload["round_id"]), int(ctx.payload["division_id"]), phase
+            )
+        except StepFailedOnDiscord as exc:
+            guild = await league_guild(ctx.bot)
+            kept = {**(exc.result or {}), "phase": phase}
+            if guild is not None:
+                kept["guild_id"] = guild.id
+            raise StepFailedOnDiscord(exc.reason, result=kept) from exc.__cause__
+        return StepResult(result={"phase": phase})
+
+    async def notify_invalidation(ctx: StepContext) -> StepResult:
+        """Tell the division's forecast channel that its forecasts no longer stand. A channel never
+        set is done and unnamed; one set and gone, or a send Discord refuses, stops the queue."""
+        division = await seasons.get_division(int(ctx.payload["division_id"]))
+        if division is None:
+            raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
+        if not division.forecast_channel_id:
+            return StepResult(result={"unset": True})
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise GuildUnavailable("the league's server is not in the cache")
+        channel = guild.get_channel(int(division.forecast_channel_id))
+        if channel is None:
+            raise StepFailedOnDiscord(
+                f"the channel <#{division.forecast_channel_id}> is no longer on the server"
+            )
+        try:
+            await send_notice(channel, hooks.invalidation_text(str(ctx.step_payload["track"])))
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"the message could not be posted to <#{division.forecast_channel_id}>: {exc}"
+            ) from exc
+        return StepResult(result={"sent": True})
+
+    async def rerun_phase(ctx: StepContext) -> StepResult:
+        """Draw a phase whose horizon the amended moment has already passed. Discord refusing its
+        post goes the way weather's own posts go (owner, 2026-10-08: slice 6)."""
+        phase = int(ctx.step_payload["phase"])
+        await hooks.run_phase(phase, int(ctx.payload["round_id"]), ctx.bot)
+        return StepResult(result={"phase": phase})
 
     async def close_due(ctx: StepContext) -> bool:
         return saved(ctx)
@@ -438,7 +548,57 @@ def round_amend_change(
         if discarded(view(ctx, APPLY)):
             return SAVE_DISCARDED.format(**words)
         listed = (view(ctx, CLOSE).result or {}).get("round_list")
-        return AMENDED + (f"\n\n{listed}" if listed else "")
+        return AMENDED + (f"\n\n{listed}" if listed else "") + not_done(ctx)
+
+    def not_done(ctx: OutcomeContext) -> str:
+        """What the amendment could not do, one entry for each post a league admin discarded, in
+        the order of the jobs, each with what puts it right."""
+        division = str(ctx.payload["division_name"])
+        failures: list[notices.NoticeFailure] = []
+        for each in ctx.steps:
+            if not discarded(each):
+                continue
+            result = each.result or {}
+            if each.name == TAKE_DOWN_CALL:
+                ids = [str(one) for one in result.get("undeleted", [])]
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    f"{len(ids)} message(s) could not be deleted and must be removed by hand "
+                    f"(ids {', '.join(ids)})",
+                ))
+            elif each.name == POST_CALL:
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    "the call could not be posted again, and a league admin discarded it; post "
+                    "it with `/attendance post-check-in`",
+                ))
+            elif each.name == DELETE_FORECAST:
+                where = (
+                    f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/"
+                    f"{result['message_id']}"
+                    if "guild_id" in result and "message_id" in result
+                    else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
+                )
+                failures.append(notices.NoticeFailure(
+                    division, "forecast channel",
+                    f"the withdrawn Phase {result.get('phase')} forecast could not be deleted, "
+                    f"and a league admin discarded it; delete it by hand ({where})",
+                ))
+            elif each.name == NOTIFY_INVALIDATION:
+                failures.append(notices.NoticeFailure(
+                    division, "forecast channel",
+                    "the notice that its forecasts no longer stand could not be posted, and a "
+                    "league admin discarded it",
+                ))
+            elif each.name == RERUN_PHASE:
+                failures.append(notices.NoticeFailure(
+                    division, f"Phase {each.payload.get('phase')} forecast",
+                    "not drawn, and a league admin discarded it; it is drawn when the bot next "
+                    "starts, while the round is still to be run",
+                ))
+        if not failures:
+            return ""
+        return "\n⚠️ **Not done**\n" + "\n".join(f"  • {each.describe()}" for each in failures)
 
     steps: dict[str, Step] = {
         JUDGE: Step(
@@ -456,6 +616,26 @@ def round_amend_change(
         ARM: Step(
             ARM, StepKind.ACT, arm, still_due=arm_due, undiscardable=never_runs,
             describe=named("arming the timed work of round {number} in **{division}** again"),
+        ),
+        TAKE_DOWN_CALL: Step(
+            TAKE_DOWN_CALL, StepKind.ACT, take_down_call, still_due=attendance_on,
+            describe=named("taking down the check-in call of round {number} in **{division}**"),
+        ),
+        POST_CALL: Step(
+            POST_CALL, StepKind.ACT, post_call, still_due=attendance_on,
+            describe=named("posting the check-in call of round {number} in **{division}** again"),
+        ),
+        DELETE_FORECAST: Step(
+            DELETE_FORECAST, StepKind.ACT, delete_forecast,
+            describe=named("deleting a withdrawn forecast of round {number} in **{division}**"),
+        ),
+        NOTIFY_INVALIDATION: Step(
+            NOTIFY_INVALIDATION, StepKind.ACT, notify_invalidation, still_due=weather_on,
+            describe=named("telling **{division}** its forecasts no longer stand"),
+        ),
+        RERUN_PHASE: Step(
+            RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=weather_on,
+            describe=named("drawing a forecast of round {number} in **{division}** now"),
         ),
         CLOSE: Step(
             CLOSE, StepKind.ACT, close, still_due=close_due,
