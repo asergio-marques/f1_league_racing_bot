@@ -403,6 +403,34 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
     assert "PENDING_COMPLETION" not in written
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: a season's cancellation still audits each round it calls off as from 'ACTIVE'",
+)
+async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_cancelled_from(
+    tmp_path,
+) -> None:
+    """Season 1's Div A has round 1 waiting for its results, its race time passed and no
+    submission open, and round 2 not run. Cancelling the season cancels both, and each
+    round.status audit reads from the status that round really had to CANCELLED, never from
+    "ACTIVE", which is no round status at all (#439, slice 4b, A10)."""
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _seed(db_path, rounds_per_division=2)
+    _, (awaiting, not_run) = built["Div A"]
+    await _set_round_status(db_path, awaiting, "AWAITING_RESULTS")
+
+    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+
+    assert await _round_status(db_path, awaiting) == "CANCELLED"
+    assert await _round_status(db_path, not_run) == "CANCELLED"
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'round.status'"
+        )
+        audits = sorted((r["old_value"], r["new_value"]) for r in await cur.fetchall())
+    assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
+
+
 @pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
