@@ -859,20 +859,28 @@ async def test_a_division_with_a_round_in_its_review_is_refused(tmp_path):
 async def test_a_division_with_two_rounds_whose_submissions_have_accepted_results_is_refused_naming_the_lowest(
     tmp_path,
 ):
-    """Pro's rounds 3 and 4 both wait for their results, and each open submission (690 for round
-    3, 691 for round 4, round 4's recorded first) has accepted a session's results. `/division
-    cancel Pro` is refused at once naming round 3, the lowest-numbered, and its channel, with one
-    ⛔ line; nothing is queued, and Pro, its rounds and both submissions are left as they were."""
+    """Pro's two rounds after round 2 both wait for their results, and each open submission has
+    accepted a session's results. Their numbers are swapped, so that the round numbered 3 has the
+    higher id, and its submission (691) is recorded after the other's (690): neither the order of
+    the ids nor the order recorded leads to it. `/division cancel Pro` is refused at once naming
+    round 3, the lowest-numbered, and its channel 691, with one ⛔ line; nothing is queued, and
+    Pro, its rounds and both submissions are left as they were."""
     league = await ongoing_league(tmp_path, attendance=True)
-    for rid, channel_id in ((R4, R4_SUBMISSION), (R3, SUBMISSION_CHANNEL)):
+    await league.write(
+        "UPDATE rounds SET round_number = 7 - round_number WHERE id IN (?, ?)", R3, R4
+    )
+    for rid, channel_id in ((R3, SUBMISSION_CHANNEL), (R4, R4_SUBMISSION)):
         await _awaiting_results(league, rid)
         await open_submission(league, rid, channel_id=channel_id)
         await accept_session(league, rid)
+    assert await league.rows(
+        "SELECT round_number FROM rounds WHERE id IN (?, ?) ORDER BY id", R3, R4
+    ) == [{"round_number": 4}, {"round_number": 3}]
     before = await _statuses(league)
 
     interaction = await _asked(league)
 
-    assert reply(interaction) == _accepted(3)
+    assert reply(interaction) == _accepted(3, R4_SUBMISSION)
     assert len(_refusal_lines(league)) == 1
     assert _refusal_lines(league)[0].startswith(REFUSAL)
     assert await cancellation_changes(league) == []
