@@ -973,3 +973,44 @@ async def test_a_confirmed_amendment_holds_its_division_until_its_rounds_are_ren
 
     assert seen == ([("amend", True)] if fails else [("amend", True), ("renumber", True)])
     assert not service.is_applying(1)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the mark is entered only after the cancellation check")
+@pytest.mark.parametrize("held", [False, True], ids=["nothing held", "a cancellation holds it"])
+async def test_a_confirmed_amendment_marks_its_division_before_it_looks_for_a_cancellation(
+    tmp_path, monkeypatch, held
+):
+    """Round 1 of Div A is moved a day later and the manager presses Confirm. Div A is marked as
+    having a round being amended before the bot looks for a cancellation holding the amendment,
+    so that a cancellation asked in between is seen by one side or the other. Where a
+    cancellation does hold it, the amendment is refused and the mark is gone with the press."""
+    from leaguebot.core.cogs import season_cog
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path, attendance=False)
+    service = AmendmentService(path)
+    cog.bot.amendment_service = service
+    amend = AsyncMock()
+    service.amend_round = amend
+    seen: list[bool] = []
+    refusal = f"⏸️ A round of **{DIVISION}** is being cancelled (job #7), so its rounds cannot be"
+
+    async def _holding(_db_path, rnd):
+        seen.append(service.is_applying(rnd.division_id))
+        return refusal if held else None
+
+    monkeypatch.setattr(season_cog, "cancellation_holding_amendment", _holding)
+    interaction = _interaction()
+    _recording(cog, interaction)
+    later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
+
+    await _view(cog, [("scheduled_at", later)]).confirm.callback(interaction)
+
+    assert seen == [True]
+    assert not service.is_applying(1)
+    if held:
+        assert refusal in _all_replies(interaction)
+        amend.assert_not_awaited()
+    else:
+        amend.assert_awaited_once()
