@@ -301,12 +301,31 @@ def _round_id(ctx: StepContext) -> int:
     return int(ctx.payload["round_id"] if round_id is None else round_id)
 
 
-def _named(text: str) -> Callable[[StepContext], Awaitable[str]]:
-    """How a job is named in the lines that say it stopped the queue."""
+async def _round_number_now(ctx: StepContext) -> Any:
+    """The number the round bears now, which another round's amended date may have changed since
+    the press; the press's where the round cannot be read."""
+    if "round_id" not in ctx.payload:
+        return ctx.payload.get("round_number")
+    async with get_connection(ctx.db_path) as db:
+        cursor = await db.execute(
+            "SELECT round_number FROM rounds WHERE id = ?", (int(ctx.payload["round_id"]),)
+        )
+        row = await cursor.fetchone()
+    return ctx.payload.get("round_number") if row is None else row["round_number"]
+
+
+def _named(
+    text: str, *, number_now: bool = False
+) -> Callable[[StepContext], Awaitable[str]]:
+    """How a job is named in the lines that say it stopped the queue; with *number_now*, by the
+    number its round bears when the line is written, for a job that runs before the save reads it."""
 
     async def describe(ctx: StepContext) -> str:
+        number = ctx.step_payload.get("round_number")
+        if number is None:
+            number = await _round_number_now(ctx) if number_now else ctx.payload.get("round_number")
         return text.format(
-            number=ctx.step_payload.get("round_number", ctx.payload.get("round_number")),
+            number=number,
             division=ctx.payload["division_name"],
             name=ctx.step_payload.get("division_name", ctx.payload["division_name"]),
         )
@@ -467,13 +486,18 @@ def round_cancel_change(
 
         round_id = int(payload["round_id"])
         async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
+            cursor = await db.execute(
+                "SELECT status, round_number FROM rounds WHERE id = ?", (round_id,)
+            )
             row = await cursor.fetchone()
         if row is None:
             return Verdict.refuse(
                 f"❌ Round {payload['round_number']} not found in division "
                 f"`{payload['division_name']}`."
             )
+        # The number the round bears now: another round's amended date may have renumbered the
+        # division since the press, and the refusal names the round it is about.
+        payload = {**payload, "round_number": row["round_number"]}
         if row["status"] == RoundStatus.CANCELLED.value:
             return Verdict.refuse(_already_cancelled(payload))
         if ctx.change_id is None:
@@ -509,7 +533,7 @@ def round_cancel_change(
     async def refusal_in_save(db: aiosqlite.Connection, payload: dict[str, Any]) -> str:
         """Why the guarded save moved nothing: the same words the check refuses in."""
         cursor = await db.execute(
-            "SELECT status FROM rounds WHERE id = ?", (int(payload["round_id"]),)
+            "SELECT status, round_number FROM rounds WHERE id = ?", (int(payload["round_id"]),)
         )
         row = await cursor.fetchone()
         if row is None:
@@ -517,6 +541,7 @@ def round_cancel_change(
                 f"❌ Round {payload['round_number']} not found in division "
                 f"`{payload['division_name']}`."
             )
+        payload = {**payload, "round_number": row["round_number"]}
         if row["status"] == RoundStatus.CANCELLED.value:
             return _already_cancelled(payload)
         if row["status"] not in ROUND_CANCELLABLE:
@@ -623,15 +648,21 @@ def round_cancel_change(
         **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
-            describe=_named("removing the timed work of round {number} in **{division}**"),
+            describe=_named(
+                "removing the timed work of round {number} in **{division}**", number_now=True
+            ),
         ),
         APPLY: Step(
             APPLY, StepKind.SAVE, apply, still_due=unarmed,
-            describe=_named("cancelling round {number} in **{division}**"),
+            describe=_named(
+                "cancelling round {number} in **{division}**", number_now=True
+            ),
         ),
         CLOSE: Step(
             CLOSE, StepKind.SAVE, close,
-            describe=_named("recording the cancellation of round {number} in **{division}**"),
+            describe=_named(
+                "recording the cancellation of round {number} in **{division}**", number_now=True
+            ),
         ),
     }
     return ChangeType(

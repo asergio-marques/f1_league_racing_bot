@@ -680,11 +680,7 @@ def _outcome(interaction: Any) -> str:
 
 @pytest.mark.parametrize("submission", [
     pytest.param(False, id="cancelled"),
-    pytest.param(True, id="refused, its submission opened", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#439: the refusal when the cancellation runs names the round by its number at "
-               "the press",
-    )),
+    pytest.param(True, id="refused, its submission opened"),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
     tmp_path, submission,
