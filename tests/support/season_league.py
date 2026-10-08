@@ -43,9 +43,9 @@ in Pro's check-in channel (603) as messages 7001 to 7003 (`CALL_MESSAGES`, recor
 `rsvp_embed_messages`), Lewis having accepted and Max not answered; Pro's calendar was posted as message 6001 in 601
 (`CALENDAR_MESSAGE`). The scheduler double records each `cancel_round` in `league.unarmed`, and a
 message id in `league.undeletable` is one Discord refuses to delete. `open_submission` opens a
-results submission for a round; `cancel_round` and `cancel_division` run `/round cancel` and
-`/division cancel` as admin 77 and give the interaction; `cancellation_changes` lists the
-cancellations asked of the queue.
+results submission for a round, its channel standing on the server; `cancel_round` and
+`cancel_division` run `/round cancel` and `/division cancel` as admin 77 and give the interaction;
+`cancellation_changes` lists the cancellations asked of the queue.
 
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
@@ -731,13 +731,20 @@ def _refusing_delete(league: SeasonLeague, message: Any) -> None:
     message.delete = AsyncMock(side_effect=_delete)
 
 
-async def open_submission(league: SeasonLeague, round_: int) -> None:
-    """A results submission for round *round_* stands open, in `SUBMISSION_CHANNEL`."""
+async def open_submission(league: SeasonLeague, round_: int, *,
+                          channel_id: int = SUBMISSION_CHANNEL) -> None:
+    """A results submission for round *round_* stands open, in *channel_id*
+    (`SUBMISSION_CHANNEL` unless said otherwise), which stands on the league's server; Discord
+    refuses to delete the channel while its `delete_fails` is set."""
     await league.write(
         "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
         "VALUES (?, ?, ?, 0)",
-        round_, SUBMISSION_CHANNEL, league.clock.now.isoformat(),
+        round_, channel_id, league.clock.now.isoformat(),
     )
+    if channel_id not in league.channels:
+        submission = league._recording(channel(channel_id, league.events))
+        submission.guild = league.guild
+        league.channels[channel_id] = submission
 
 
 def _admin_interaction(league: SeasonLeague, command: str) -> Any:

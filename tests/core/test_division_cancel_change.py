@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib
 from contextlib import ExitStack
+import json
 from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -45,6 +46,8 @@ from tests.support.season_league import (
     PRO,
     ROUND_CANCEL_KIND,
     SEASON_ID,
+    SUBMISSION_CHANNEL,
+    accept_session,
     cancel_division,
     cancel_round,
     cancellation_changes,
@@ -725,3 +728,127 @@ async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_o
     assert _refusal_lines(league)[0].startswith(REFUSAL)
     assert _success_lines(league) == []
     assert [row for row in await change_rows(league.db_path) if row["kind"] == WIND_DOWN] == []
+
+
+# ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
+
+#: Why each test below fails until the build: today a division's cancellation cancels a round
+#: whatever its open submission holds, and leaves the submission open.
+SUBMISSION_XFAIL = (
+    "#439: a division's cancellation does not yet refuse a round whose open submission has "
+    "accepted results, nor close an empty one and delete its channel"
+)
+#: A second submission channel, for round 4.
+R4_SUBMISSION = SUBMISSION_CHANNEL + 1
+
+
+def _accepted(number: int, channel_id: int = SUBMISSION_CHANNEL) -> str:
+    return (f"❌ Cannot cancel **Pro** — results have already been accepted in the submission "
+            f"channel of round {number} (<#{channel_id}>), and cancelling would lose them.")
+
+
+async def _closed(league: Any) -> dict[int, int]:
+    rows = await league.rows("SELECT round_id, closed FROM round_submission_channels")
+    return {row["round_id"]: row["closed"] for row in rows}
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+@pytest.mark.parametrize("when", ["at ask", "at run"])
+async def test_a_division_with_a_round_whose_submission_has_accepted_results_is_refused_naming_the_round(
+    tmp_path, when,
+):
+    """Pro's round 3 waits for its results, and its open submission (channel 690) has accepted
+    a session's results. `/division cancel Pro` asked then, or asked while the queue stands
+    stopped and the session accepted while it waits: it is refused, naming round 3 and its
+    channel, with one ⛔ line; Pro and its rounds are left as they were and its submission
+    stays open."""
+    league = await ongoing_league(tmp_path, attendance=True)
+
+    async def _accepted_in_round_3() -> None:
+        await _awaiting_results(league, R3)
+        await open_submission(league, R3)
+        await accept_session(league, R3)
+
+    if when == "at ask":
+        await _accepted_in_round_3()
+        before = await _statuses(league)
+        interaction = await _asked(league)
+        assert reply(interaction) == _accepted(3)
+        assert await cancellation_changes(league) == []
+    else:
+        league.remove_channel(AM_CH.checkin)
+        await cancel_round(league, "Am", 3)
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "notify_checkin"
+        interaction = await _asked(league)
+        await _accepted_in_round_3()
+        before = await _statuses(league)
+        league.restore_channel(AM_CH.checkin)
+        await retry_job(league.bot)
+        assert _accepted(3) in reply(interaction)
+        assert CANCELLED not in reply(interaction)
+        assert (await _change(league))["state"] == "REFUSED"
+
+    assert len(_refusal_lines(league)) == 1
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    assert not set(before) & set(league.unarmed)
+    assert await _closed(league) == {R3: 0}
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_a_division_with_a_round_in_its_review_is_refused(tmp_path):
+    """Pro's round 2 is in its penalty review: its results accepted, its submission channel
+    (690) still open for the review. `/division cancel Pro` is refused until the review is
+    finished, naming round 2 and its channel, with one ⛔ line; nothing is queued, and Pro,
+    round 2 and its submission are left as they were."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    r2 = round_id(PRO, 2)
+    await open_submission(league, r2)
+    await league.write(
+        "UPDATE round_submission_channels SET in_penalty_review = 1 WHERE round_id = ?", r2
+    )
+    await accept_session(league, r2)
+    before = await _statuses(league)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == _accepted(2)
+    assert len(_refusal_lines(league)) == 1
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    assert (await _statuses(league))[r2] == "AWAITING_REPORT_VERDICTS"
+    assert await _closed(league) == {r2: 0}
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_each_closed_submission_s_channel_is_deleted_in_round_order_first_after_the_save(
+    tmp_path,
+):
+    """Pro's rounds 3 and 4 both wait for their results, each with an open submission that has
+    accepted nothing (channels 690 and 691). `/division cancel Pro`, the queue run: both
+    submissions are closed in the save, and the two jobs straight after it delete round 3's
+    channel, then round 4's, before any notice is posted."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    for rid, channel_id in ((R3, SUBMISSION_CHANNEL), (R4, R4_SUBMISSION)):
+        await _awaiting_results(league, rid)
+        await open_submission(league, rid, channel_id=channel_id)
+    interaction = await _asked(league)
+
+    await _done(league)
+
+    assert await _closed(league) == {R3: 1, R4: 1}
+    jobs = await _jobs(league)
+    names = [job["name"] for job in jobs]
+    after_save = names.index("apply") + 1
+    assert names[after_save:after_save + 2] == ["delete_channel", "delete_channel"]
+    assert [json.loads(job["payload"])["channel_id"]
+            for job in jobs[after_save:after_save + 2]] == [SUBMISSION_CHANNEL, R4_SUBMISSION]
+    deleted = [cid for kind, cid, _ in league.events if kind == "delete_channel"]
+    assert deleted == [SUBMISSION_CHANNEL, R4_SUBMISSION]
+    first_send = next(i for i, event in enumerate(league.events) if event[0] == "send")
+    last_delete = max(i for i, event in enumerate(league.events) if event[0] == "delete_channel")
+    assert last_delete < first_send
+    assert CANCELLED in reply(interaction)

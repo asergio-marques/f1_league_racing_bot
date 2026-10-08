@@ -50,6 +50,8 @@ from tests.support.season_league import (
     PRO,
     ROUND_CANCEL_KIND,
     SEASON_ID,
+    SUBMISSION_CHANNEL,
+    accept_session,
     cancel_division,
     cancel_round,
     cancellation_changes,
@@ -1142,3 +1144,159 @@ async def test_a_round_cancel_that_comes_to_run_while_a_round_of_its_division_is
     assert R3 not in league.unarmed
     assert (await _change(league))["state"] == "REFUSED"
     assert len(_refusal_lines(league)) == 1
+
+
+# ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
+
+#: Why each test below fails until the build: today an open submission refuses the round's
+#: cancellation whatever it holds.
+SUBMISSION_XFAIL = (
+    "#439: an open submission that has accepted nothing is not yet closed and its channel "
+    "deleted with the round, nor one that has accepted a session refused in the new words"
+)
+ACCEPTED = (
+    f"❌ Cannot cancel Round 3 — results have already been accepted in its submission channel "
+    f"<#{SUBMISSION_CHANNEL}>, and cancelling would lose them."
+)
+
+
+async def _empty_submission(league: Any) -> None:
+    """Round 3's race time has passed and its results submission stands open, nothing accepted."""
+    await _awaiting_results(league)
+    await open_submission(league, R3)
+
+
+async def _submission_closed(league: Any) -> int:
+    rows = await league.rows("SELECT closed FROM round_submission_channels WHERE round_id = ?", R3)
+    return rows[0]["closed"]
+
+
+def _channel_deleted(league: Any) -> bool:
+    return ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) in league.events
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_and_its_channel_deleted(
+    tmp_path,
+):
+    """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
+    accepted. `/round cancel Pro 3`, the queue run: round 3 is cancelled, its submission closed,
+    and deleting its channel is the first job after the save; the channel is deleted and the
+    reply says the round was cancelled."""
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    interaction = await _asked(league)
+
+    await _done(league)
+
+    assert await _status(league) == "CANCELLED"
+    assert await _submission_closed(league) == 1
+    names = await _names(league)
+    assert names[names.index("apply") + 1] == "delete_channel"
+    assert json.loads((await _job(league, "delete_channel"))["payload"])["channel_id"] == (
+        SUBMISSION_CHANNEL
+    )
+    assert _channel_deleted(league)
+    assert CANCELLED in reply(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+@pytest.mark.parametrize("session_status", ["ACTIVE", "CANCELLED"])
+@pytest.mark.parametrize("when", ["at ask", "at run"])
+async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
+    tmp_path, when, session_status,
+):
+    """Round 3's open submission has accepted a session: its results (ACTIVE), or the session
+    entered as not held (CANCELLED). Asked then, or accepted while the cancellation waits behind
+    a stopped one: the cancellation is refused in the new words, naming the channel, with one ⛔
+    line, and nothing is written: the round still awaits its results, its submission stays open
+    and its timed work stands."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    if when == "at ask":
+        await _empty_submission(league)
+        await accept_session(league, R3, status=session_status)
+        interaction = await _asked(league)
+        assert reply(interaction) == ACCEPTED
+        assert await cancellation_changes(league) == []
+    else:
+        await _stopped_blocker(league)
+        interaction = await _asked(league)
+        await _empty_submission(league)
+        await accept_session(league, R3, status=session_status)
+        await _clear_blocker(league)
+        assert ACCEPTED in reply(interaction)
+        assert CANCELLED not in reply(interaction)
+        assert (await _change(league))["state"] == "REFUSED"
+
+    assert len(_refusal_lines(league)) == 1
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert await _submission_closed(league) == 0
+    assert R3 not in league.unarmed
+    assert await _round_audits(league) == []
+    assert not _channel_deleted(league)
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
+    tmp_path, cleared,
+):
+    """Round 3's open, empty submission is closed with the round, but Discord refuses to delete
+    its channel: the queue stops at that job, the round already cancelled. Retried once Discord
+    allows it, the channel is deleted and nothing is named; discarded, the reply's Not notified
+    section and the success line name the channel to delete by hand."""
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "delete_channel"
+    assert await _status(league) == "CANCELLED"
+    assert await _submission_closed(league) == 1
+
+    if cleared == "retried":
+        league.channel(SUBMISSION_CHANNEL).delete_fails = None
+        await retry_job(league.bot)
+        assert _channel_deleted(league)
+        assert CANCELLED in reply(interaction)
+        assert "Not notified" not in reply(interaction)
+    else:
+        await discard_job(league.bot)
+        named = (f"**Pro** — results submission channel of round 3: it could not be deleted, and "
+                 f"a league admin discarded it; delete <#{SUBMISSION_CHANNEL}> by hand")
+        assert CANCELLED in reply(interaction)
+        assert named in _not_notified(reply(interaction))
+        [line] = _success_lines(league)
+        assert f"\n  not notified: {named}" in line
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_path):
+    """Round 3's open submission has accepted nothing when the cancellation is asked and when it
+    starts to run, but removing its timed work fails and stops the queue; meanwhile the
+    submission accepts a session's results. Retried, the save refuses in the new words and
+    writes nothing: the round still awaits its results and its submission stays open."""
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    interaction = await _asked(league)
+    league.bot.scheduler_service.cancel_round = MagicMock(
+        side_effect=RuntimeError("the job store is locked")
+    )
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "unarm"
+    await accept_session(league, R3)
+
+    league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
+    await retry_job(league.bot)
+
+    assert ACCEPTED in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert (await _change(league))["state"] == "REFUSED"
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert await _submission_closed(league) == 0
+    assert await _round_audits(league) == []
+    assert len(_refusal_lines(league)) == 1
+    assert not _channel_deleted(league)
