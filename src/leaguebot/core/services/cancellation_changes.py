@@ -103,6 +103,12 @@ DIVISION_COMMAND = "`/division cancel`"
 DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the season is ongoing."
 
 
+def _division_finished(name: str) -> str:
+    """The refusal of a division's cancellation once every round of it is over: there is
+    nothing left to call off, and its results stand."""
+    return f"❌ Division **{name}** has finished and cannot be cancelled."
+
+
 def _already_cancelled(payload: dict[str, Any]) -> str:
     return f"❌ Round {payload['round_number']} in **{payload['division_name']}** is already cancelled."
 
@@ -740,7 +746,7 @@ def division_cancel_change(
             return Verdict.refuse(ARCHIVED)
         async with get_connection(ctx.db_path) as db:
             cursor = await db.execute(
-                "SELECT status FROM divisions WHERE id = ?", (int(payload["division_id"]),)
+                "SELECT status, name FROM divisions WHERE id = ?", (int(payload["division_id"]),)
             )
             row = await cursor.fetchone()
         if row is None:
@@ -749,6 +755,8 @@ def division_cancel_change(
             return Verdict.refuse(
                 f"❌ Division **{payload['division_name']}** is already cancelled."
             )
+        if row["status"] == "FINISHED":
+            return Verdict.refuse(_division_finished(str(row["name"])))
         if ctx.change_id is None:
             held = await cancellation_in_hand(
                 ctx.db_path, division_id=int(payload["division_id"])
@@ -780,7 +788,7 @@ def division_cancel_change(
         payload = ctx.payload
         division_id = int(payload["division_id"])
         cursor = await db.execute(
-            "SELECT d.season_id, d.status, s.status AS season_status FROM divisions d "
+            "SELECT d.season_id, d.status, d.name, s.status AS season_status FROM divisions d "
             "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
             (division_id,),
         )
@@ -790,6 +798,8 @@ def division_cancel_change(
             refusal = f"❌ Division `{payload['division_name']}` not found."
         elif division["status"] == "CANCELLED":
             refusal = f"❌ Division **{payload['division_name']}** is already cancelled."
+        elif division["status"] == "FINISHED":
+            refusal = _division_finished(str(division["name"]))
         elif division["season_status"] in ("COMPLETED", "CANCELLED"):
             refusal = ARCHIVED
         if refusal is not None or division is None:

@@ -595,7 +595,6 @@ async def _pro_finished(league: Any) -> None:
     await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", PRO)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a finished division is not yet refused")
 async def test_a_finished_division_is_refused_at_once(tmp_path):
     """Every round of Pro has its results and Pro has finished, while Am still races. Asking to
     cancel Pro is refused at once: nothing is queued, one refusal line is written, and Pro and its
@@ -616,7 +615,6 @@ async def test_a_finished_division_is_refused_at_once(tmp_path):
     assert await _statuses(league) == before
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a finished division is not yet refused")
 async def test_a_division_that_finishes_while_its_cancellation_waits_is_refused_when_it_runs(
     tmp_path,
 ):
