@@ -821,13 +821,6 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         assert await _moment(league) != _when(league, days=91)
 
 
-#: Why the mystery round's test fails until its own fix.
-MYSTERY_XFAIL = (
-    "#439: a mystery round moved inside its first horizon is armed with no results submission"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=MYSTERY_XFAIL)
 async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_submission(
     tmp_path,
 ):

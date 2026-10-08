@@ -405,19 +405,21 @@ def round_amend_change(
             raise LookupError(f"division {rnd.division_id} is no longer there")
         season_number, tier = int(found["season_number"]), int(found["tier"])
         weather = judgement["windows"]["weather"]
-        if await modules.is_weather_enabled():
-            # A mystery round is armed again only while its first horizon is ahead: past it, the
-            # notice already told the drivers, and it must not be fired retroactively.
-            if rnd.format != RoundFormat.MYSTERY or judgement["first_horizon_ahead"]:
-                scheduler.schedule_round(
-                    rnd,
-                    season_number=season_number,
-                    division_tier=tier,
-                    phase_1_days=weather["phase_1_days"],
-                    phase_2_days=weather["phase_2_days"],
-                    phase_3_hours=weather["phase_3_hours"],
-                )
+        if await modules.is_weather_enabled() and (
+            rnd.format != RoundFormat.MYSTERY or judgement["first_horizon_ahead"]
+        ):
+            scheduler.schedule_round(
+                rnd,
+                season_number=season_number,
+                division_tier=tier,
+                phase_1_days=weather["phase_1_days"],
+                phase_2_days=weather["phase_2_days"],
+                phase_3_hours=weather["phase_3_hours"],
+            )
         else:
+            # Weather off, or a mystery round moved inside its first horizon, whose notice already
+            # told the drivers and which must not be fired retroactively: its forecasts are not
+            # armed, but its results submission is, or the round would never leave Not run (#133).
             scheduler.schedule_result_submission_jobs(
                 [rnd], division_meta={rnd.division_id: (season_number, tier)}
             )
