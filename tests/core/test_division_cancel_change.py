@@ -576,11 +576,6 @@ async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s
             assert (row["kind"], row["state"]) in ((WIND_DOWN, "DONE"), (WIND_DOWN, "DROPPED"))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: a division's cancellation does not yet close a round's open, empty submission "
-    "and delete its channel",
-)
 async def test_a_round_with_a_submission_open_is_cancelled_with_its_division_and_nothing_is_refused(
     tmp_path,
 ):
@@ -760,12 +755,6 @@ async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_o
 
 # ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
 
-#: Why each test below fails until the build: today a division's cancellation cancels a round
-#: whatever its open submission holds, and leaves the submission open.
-SUBMISSION_XFAIL = (
-    "#439: a division's cancellation does not yet refuse a round whose open submission has "
-    "accepted results, nor close an empty one and delete its channel"
-)
 #: A second submission channel, for round 4.
 R4_SUBMISSION = SUBMISSION_CHANNEL + 1
 
@@ -780,7 +769,6 @@ async def _closed(league: Any) -> dict[int, int]:
     return {row["round_id"]: row["closed"] for row in rows}
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 @pytest.mark.parametrize("when", ["at ask", "at run"])
 async def test_a_division_with_a_round_whose_submission_has_accepted_results_is_refused_naming_the_round(
     tmp_path, when,
@@ -824,7 +812,6 @@ async def test_a_division_with_a_round_whose_submission_has_accepted_results_is_
     assert await _closed(league) == {R3: 0}
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_a_division_with_a_round_in_its_review_is_refused(tmp_path):
     """Pro's round 2 is in its penalty review: its results accepted, its submission channel
     (690) still open for the review. `/division cancel Pro` is refused until the review is
@@ -851,7 +838,6 @@ async def test_a_division_with_a_round_in_its_review_is_refused(tmp_path):
     assert await _closed(league) == {r2: 0}
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_a_division_with_two_rounds_whose_submissions_have_accepted_results_is_refused_naming_the_lowest(
     tmp_path,
 ):
@@ -887,7 +873,6 @@ async def test_a_division_with_two_rounds_whose_submissions_have_accepted_result
     assert await _closed(league) == {R3: 0, R4: 0}
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_each_closed_submission_s_channel_is_deleted_in_round_order_first_after_the_save(
     tmp_path,
 ):
@@ -918,7 +903,6 @@ async def test_each_closed_submission_s_channel_is_deleted_in_round_order_first_
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):

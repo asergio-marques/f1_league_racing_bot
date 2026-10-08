@@ -321,6 +321,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            submissions=_submission_hooks(),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
