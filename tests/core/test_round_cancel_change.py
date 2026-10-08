@@ -771,6 +771,41 @@ async def test_the_timed_work_is_removed_before_the_round_is_recorded_cancelled(
     assert await _status(league) == "CANCELLED"
 
 
+async def test_a_round_number_that_cannot_be_read_stops_the_job_before_its_timed_work_is_removed(
+    tmp_path, monkeypatch,
+):
+    """The round's number is read before its timed work is removed, so a failure reading it
+    stops the job with the timed work still in place, and a league admin who discards the job is
+    told truly that the round stands as it was. Read after the removal, the same failure would
+    leave the round without its timed work and the reply saying it stands."""
+    from leaguebot.core.services import cancellation_changes as module
+
+    league = await ongoing_league(tmp_path, attendance=True)
+    interaction = await _asked(league)
+    read = module._round_number_now
+    calls = 0
+
+    async def _fails_once(ctx: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("disk I/O error")
+        return await read(ctx)
+
+    monkeypatch.setattr(module, "_round_number_now", _fails_once)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "unarm"
+    assert league.unarmed == []
+
+    await discard_job(league.bot)
+
+    assert _outcome(interaction) == UNARM_DISCARDED
+    assert league.unarmed == []
+    assert await _status(league) == "NOT_RUN"
+
+
 #: Each set of modules on: the channels told, in order, after the round is cancelled.
 _MODULES = {
     "every module": ({"attendance": True, "weather": True, "results": True},
