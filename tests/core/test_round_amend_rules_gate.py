@@ -856,10 +856,6 @@ async def test_a_round_being_cancelled_is_not_amended_naming_the_job(tmp_path, k
     assert "/round amend" in line and f"job #{job}" in line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: only a cancellation of the round itself, or of its division, holds an amend",
-)
 @pytest.mark.parametrize("at", ["offer", "confirm"])
 async def test_a_round_is_not_amended_while_another_round_of_its_division_is_being_cancelled(
     tmp_path, at

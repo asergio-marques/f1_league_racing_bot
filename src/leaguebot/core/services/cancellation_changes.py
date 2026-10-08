@@ -152,26 +152,42 @@ async def cancellation_in_hand(
 
 
 async def cancellation_holding_amendment(db_path: str, rnd: Round) -> str | None:
-    """The refusal of `/round amend` while a cancellation of *rnd*, or of its division, is
-    waiting, being carried out or stopped on the change queue, or None where none is.
+    """The refusal of `/round amend` while a cancellation of *rnd*, of its division, or of
+    another round of its division is waiting, being carried out or stopped on the change queue,
+    or None where none is.
 
     An amendment confirmed meanwhile would arm the round's timed work again, after the
     cancellation removed it, and forecasts would be posted for a round that is then cancelled
-    (owner, 2026-10-08). Asked at the offer and again at the confirmation, as the rules are. It
-    names the job, and leaves the name out where only the cancellation's close is left.
+    (owner, 2026-10-08). An amended date of another round would renumber the division, and the
+    round being cancelled would be announced by a number it no longer bears: so every round of
+    the division is held (owner, 2026-10-08, "Hold amends in the division"). Asked at the offer
+    and again at the confirmation, as the rules are. It names the job, and leaves the name out
+    where only the cancellation's close is left.
     """
     job = await cancellation_in_hand(db_path, division_id=rnd.division_id, round_id=rnd.id)
-    if job is None:
-        return None
+    if job is not None:
+        return (
+            f"⏸️ Round {rnd.round_number} in **{await _division_name(db_path, rnd)}** is being "
+            f"cancelled{_job_of(job)}, so it cannot be amended. Let that finish, or press "
+            "**Retry** or **Discard** on its notice if it has stopped."
+        )
+    for payload, other in await in_hand(db_path, (ROUND_CANCEL,)):
+        if payload.get("division_id") == rnd.division_id:
+            return (
+                f"⏸️ A round of **{await _division_name(db_path, rnd)}** is being "
+                f"cancelled{_job_of(other or 0)}, so its rounds cannot be amended until that is "
+                "done. Let that finish, or press **Retry** or **Discard** on its notice if it has "
+                "stopped."
+            )
+    return None
+
+
+async def _division_name(db_path: str, rnd: Round) -> str:
+    """The name of *rnd*'s division, as a refusal names it."""
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (rnd.division_id,))
         found = await cursor.fetchone()
-    division = found["name"] if found else "its division"
-    return (
-        f"⏸️ Round {rnd.round_number} in **{division}** is being cancelled{_job_of(job)}, so it "
-        "cannot be amended. Let that finish, or press **Retry** or **Discard** on its notice if "
-        "it has stopped."
-    )
+    return str(found["name"]) if found else "its division"
 
 
 def _results_entered(payload: dict[str, Any]) -> str:
