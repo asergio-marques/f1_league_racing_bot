@@ -593,19 +593,6 @@ class _ReviewPoster:
         return message
 
 
-# What a cancellation says when the season it may have finished could not be wound down. The
-# cancellation stands; the season is still in its ongoing stage, and `/season complete` moves it on.
-# The host log keeps the fault itself (`log.exception`); the member is told what is left to do.
-_WIND_DOWN_NOT_DONE_REPLY = (
-    "\n\u26a0\ufe0f The season could not be moved to pending completion afterwards. "
-    "`/season complete` does it."
-)
-_WIND_DOWN_NOT_DONE_LOG = (
-    "\n  not done: the season could not be moved to pending completion; "
-    "`/season complete` does it"
-)
-
-
 class SeasonCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
