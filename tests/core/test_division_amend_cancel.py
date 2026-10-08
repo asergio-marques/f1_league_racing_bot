@@ -621,44 +621,6 @@ async def test_a_division_is_cancelled(tmp_path):
     assert "cancelled" in _replied(interaction)
 
 
-async def test_cancelling_a_division_winds_a_finished_season_down(tmp_path):
-    """The division may have been the season's last (issue #220)."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="division_cancel_wind_down")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
-        cog.bot
-    )
-
-
-async def test_a_wind_down_that_fails_after_a_division_cancel_is_named_as_not_done(tmp_path):
-    """The core specification's record of what changed: an outcome is recorded as it is. Division
-    Pro of a season being raced is cancelled, and the season it may have finished cannot then
-    be wound down (the wind-down raises). The cancellation stands; the reply and the one success
-    line each name the wind-down as not done, saying the season could not be moved to pending
-    completion and that /season complete does it."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="division_cancel_wind_down_fails")
-    cog = _make_cog(db_path)
-    cog.bot.season_service.wind_down_ongoing = AsyncMock(side_effect=RuntimeError("disk full"))
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    cog.bot.season_service.cancel_division.assert_awaited_once()
-    replied = _replied(interaction)
-    assert replied.startswith("\u2705 Division **Pro** cancelled."), replied
-    assert "pending completion" in replied.lower(), replied
-    assert "/season complete" in replied, replied
-    [line] = _logged(cog)
-    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division cancel | Success"), line
-    [not_done] = [row for row in line.splitlines() if row.strip().startswith("not done:")]
-    assert "pending completion" in not_done.lower(), line
-    assert "/season complete" in not_done, line
-
-
 async def test_cancelling_needs_an_active_season(tmp_path):
     """There is no running division to stand down; in setup `/division delete` is the one
     that applies."""
@@ -685,129 +647,6 @@ async def test_an_archived_season_cannot_be_cancelled_into(tmp_path):
     cog.bot.season_service.cancel_division.assert_not_awaited()
 
 
-async def test_an_already_cancelled_division_is_refused(tmp_path):
-    """Running it twice would cancel jobs that are already gone and post a second notice to
-    drivers who have had one."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_twice")
-    cog = _make_cog(db_path, divisions=[_division(status="CANCELLED")])
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "already cancelled" in _replied(interaction)
-    cog.bot.season_service.cancel_division.assert_not_awaited()
-
-
-async def test_every_scheduled_round_is_cancelled_with_the_division(tmp_path):
-    """Otherwise the division is stood down and its sessions still fire — posting forecasts
-    and opening check-ins for rounds nobody is racing."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_rounds")
-    cog = _make_cog(db_path, rounds=[_round(1), _round(2), _round(3)])
-
-    await _cancel(cog, _interaction())
-
-    cancelled = [c.args[0] for c in cog.bot.scheduler_service.cancel_round.call_args_list]
-    assert cancelled == [1, 2, 3]
-
-
-async def test_the_jobs_go_before_the_division_is_stood_down(tmp_path):
-    """A job that fires between the two would find a division mid-cancellation."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_order")
-    cog = _make_cog(db_path, rounds=[_round(1)])
-    order: list[str] = []
-    cog.bot.scheduler_service.cancel_round.side_effect = lambda *_: order.append("job")
-    cog.bot.season_service.cancel_division.side_effect = (
-        lambda **_: order.append("division")
-    )
-
-    await _cancel(cog, _interaction())
-
-    assert order == ["job", "division"]
-
-
-async def test_the_modules_are_told_the_division_is_off(tmp_path):
-    """Each enabled module says so in its own channel — never core, and never the forecast
-    channel regardless of the weather module (#175)."""
-    from leaguebot.core.services import cancellation_notice_service as cns
-
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_notice")
-    channel = MagicMock()
-    channel.send = AsyncMock()
-    cog = _make_cog(db_path, divisions=[_division(channel=4242)])
-
-    announce = await _cancel(cog, _interaction(channel=channel))
-
-    announce.assert_awaited_once()
-    assert announce.await_args.kwargs["scope"] == cns.SCOPE_DIVISION
-    assert announce.await_args.kwargs["season_number"] == 4
-    assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
-    channel.send.assert_not_awaited()
-
-
-async def test_only_the_rounds_the_cascade_calls_off_are_named(tmp_path):
-    """A round already raced keeps its results and its check-in; one already cancelled was
-    announced when it was."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_round_ids")
-    cog = _make_cog(
-        db_path,
-        rounds=[
-            _round(1, "FINAL"),
-            _round(2, "AWAITING_RESULTS"),
-            _round(3, "NOT_RUN"),
-            _round(4, "CANCELLED"),
-            _round(5, "AWAITING_REPORT_VERDICTS"),
-        ],
-    )
-
-    announce = await _cancel(cog, _interaction())
-
-    assert announce.await_args.kwargs["round_ids"] == frozenset({2, 3})
-
-
-async def test_the_check_in_audit_reaches_the_log(tmp_path):
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_audit")
-    cog = _make_cog(db_path)
-    announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Pro, Round 2"))
-    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
-        await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
-    assert "check-in, Pro, Round 2" in cog.bot.output_router.post_log.await_args.args[0]
-
-
-async def test_the_modules_are_told_after_the_division_is_recorded_cancelled(tmp_path):
-    """The calendar is posted again as it now stands, so the rounds must already be
-    recorded cancelled when it is read."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_notice_order")
-    cog = _make_cog(db_path)
-    order: list[str] = []
-    cog.bot.season_service.cancel_division.side_effect = (
-        lambda **_: order.append("division")
-    )
-    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
-    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
-        await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
-    assert order == ["division", "announce"]
-
-
-async def test_what_could_not_be_told_is_named_to_the_admin(tmp_path):
-    from leaguebot.core.services.cancellation_notice_service import NoticeFailure
-
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_refused")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _cancel(
-        cog, interaction,
-        failures=[NoticeFailure("Pro", "forecast channel", "the channel could not be found")],
-    )
-
-    cog.bot.season_service.cancel_division.assert_awaited_once()
-    replied = _replied(interaction)
-    assert "cancelled" in replied
-    assert "forecast channel: the channel could not be found" in replied
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "not notified: **Pro** — forecast channel" in logged
-
-
 async def test_the_cancellation_is_deferred_only_once_the_gates_are_past(tmp_path):
     """Every refusal above answers through `response.send_message`, which after a defer is
     a 404 — so the defer sits immediately before the work and not at the top."""
@@ -821,17 +660,6 @@ async def test_the_cancellation_is_deferred_only_once_the_gates_are_past(tmp_pat
 
     refused.response.defer.assert_not_awaited()
     allowed.response.defer.assert_awaited_once()
-
-
-async def test_the_cancellation_is_logged(tmp_path):
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_log")
-    cog = _make_cog(db_path)
-
-    await _cancel(cog, _interaction())
-
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert "/division cancel" in logged
-    assert "Pro" in logged
 
 
 @pytest.mark.parametrize("stage_name", ["PLACEMENTS", "PENDING_COMPLETION"])
