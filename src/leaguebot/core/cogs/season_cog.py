@@ -44,7 +44,11 @@ from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, cancellation_notice_service
-from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
+from leaguebot.core.services.cancellation_changes import (
+    DIVISION_CANCEL,
+    ROUND_CANCEL,
+    cancellation_holding_amendment,
+)
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -4897,6 +4901,13 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        _held = await cancellation_holding_amendment(self.bot.db_path, rnd)
+        if _held is not None:
+            await refuse(
+                interaction, _held, what=_round_amend_named(rnd.round_number, div.name),
+            )
+            return
+
         # The values that stand are no amendment: nothing is offered, and nothing changes. Asked
         # after the rules, so a round that cannot be amended at all is refused as such, whatever
         # was given (owner, 2026-09-30).
@@ -6544,6 +6555,10 @@ class _ConfirmView(LeagueView):
                     what=what,
                     reason="it can no longer be amended:\n" + "\n".join(_verdict.refusals),
                 )
+                return
+            _held = await cancellation_holding_amendment(self._cog.bot.db_path, _rnd_now)
+            if _held is not None:
+                await refuse(interaction, _held, what=what)
                 return
 
             # One call carrying every field, not one call per field. Amending a round's track and

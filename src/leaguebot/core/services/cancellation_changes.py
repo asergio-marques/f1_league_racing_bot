@@ -53,7 +53,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
+from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundStatus
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services import cancellation_notice_service as notices
@@ -87,6 +87,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DIVISION_CANCEL",
     "ROUND_CANCEL",
+    "cancellation_holding_amendment",
     "cancellation_in_hand",
     "division_cancel_change",
     "round_cancel_change",
@@ -148,6 +149,29 @@ async def cancellation_in_hand(
         elif round_id is not None and payload.get("round_id") == round_id:
             return job or 0
     return None
+
+
+async def cancellation_holding_amendment(db_path: str, rnd: Round) -> str | None:
+    """The refusal of `/round amend` while a cancellation of *rnd*, or of its division, is
+    waiting, being carried out or stopped on the change queue, or None where none is.
+
+    An amendment confirmed meanwhile would arm the round's timed work again, after the
+    cancellation removed it, and forecasts would be posted for a round that is then cancelled
+    (owner, 2026-10-08). Asked at the offer and again at the confirmation, as the rules are. It
+    names the job, and leaves the name out where only the cancellation's close is left.
+    """
+    job = await cancellation_in_hand(db_path, division_id=rnd.division_id, round_id=rnd.id)
+    if job is None:
+        return None
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (rnd.division_id,))
+        found = await cursor.fetchone()
+    division = found["name"] if found else "its division"
+    return (
+        f"⏸️ Round {rnd.round_number} in **{division}** is being cancelled{_job_of(job)}, so it "
+        "cannot be amended. Let that finish, or press **Retry** or **Discard** on its notice if "
+        "it has stopped."
+    )
 
 
 def _results_entered(payload: dict[str, Any]) -> str:

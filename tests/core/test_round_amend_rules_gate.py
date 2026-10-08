@@ -775,9 +775,6 @@ async def test_a_round_that_cannot_be_amended_is_refused_even_given_what_stands(
 # cancellation of the round or of its division is in hand: at the offer and again at confirm.
 # ---------------------------------------------------------------------------
 
-#: `/round amend` does not yet read a cancellation in hand.
-AMEND_NOT_HELD_BY_A_CANCELLATION = "#439: /round amend is not refused while a cancellation is in hand"
-
 _CANCELLATIONS_IN_HAND = [
     pytest.param(
         "season.round.cancel",
@@ -829,7 +826,6 @@ async def _seed_cancellation(path: str, kind: str, payload: dict) -> int:
 
 @pytest.mark.parametrize("at", ["offer", "confirm"])
 @pytest.mark.parametrize(("kind", "payload"), _CANCELLATIONS_IN_HAND)
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_HELD_BY_A_CANCELLATION)
 async def test_a_round_being_cancelled_is_not_amended_naming_the_job(tmp_path, kind, payload, at):
     """Round 1 of Div A is a month out, and a cancellation of it, or of Div A, waits on the queue.
     Asking to amend its track is refused before any confirmation is offered; pressing Confirm on
