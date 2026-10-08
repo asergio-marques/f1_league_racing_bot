@@ -202,7 +202,13 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(season_approval_tell_change())
     bot.change_queue.register(
-        round_cancel_change(seasons=bot.season_service, submission_open=is_submission_open)
+        round_cancel_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            submission_open=is_submission_open,
+            now=lambda: bot.change_queue.now(),
+        )
     )
 
 
