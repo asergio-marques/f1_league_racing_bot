@@ -27,7 +27,8 @@ the approval again before it saves (`apply`, `judge`), the setup being open mean
 **Everything else
 follows the save as a job of its own**, each of which stops the queue where it fails: letting go of
 the setup held in memory, arming the timed work (after the save, so that a stop before it leaves
-no job armed against a season still in Placements), each driver's roles, the notice that the
+no job armed against a season still in Placements; it cannot be discarded, since without it no
+round would ever run, and only Retry moves the queue on), each driver's roles, the notice that the
 season's posts are being made, each division's lineup, calendar, opening standings and opening
 sheet, and the notice's deletion. The closing job writes the one line that records the approval
 and what a league admin discarded. A job tried again posts as text (Constitution XIV, rule 8).
@@ -134,10 +135,6 @@ NOT_SAVED = (
 NOT_FORGOTTEN = (
     "The setup the bot held in memory could not be let go of: `/round amend` may refuse this "
     "season until the bot restarts."
-)
-NOT_ARMED = (
-    "⛔ The season's timed work was not armed: no round will open its results submission, and "
-    "no forecast or check-in call will be posted. No command arms it again."
 )
 NOTICE_NOT_POSTED = "The notice that the season's posts were being made could not be posted."
 _NOTICE_NOT_DELETED = "The notice that the season's posts were being made could not be deleted"
@@ -653,6 +650,9 @@ def season_approval_change(
     async def describe_judge(ctx: StepContext) -> str:
         return f"judging again whether season {ctx.payload['season_number']} can still be approved"
 
+    async def never_runs(ctx: StepContext) -> str:
+        return f"no round of season {ctx.payload['season_number']} would ever run"
+
     async def describe_forget(_ctx: StepContext) -> str:
         return "letting go of the setup the bot holds in memory"
 
@@ -760,7 +760,9 @@ def season_approval_change(
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
         FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget),
-        ARM: Step(ARM, StepKind.ACT, arm, describe=describe_arm),
+        ARM: Step(
+            ARM, StepKind.ACT, arm, describe=describe_arm, undiscardable=never_runs
+        ),
         GRANT_ROLES: Step(GRANT_ROLES, StepKind.ACT, grant_roles, describe=describe_grant),
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
@@ -874,20 +876,16 @@ def _applied(ctx: OutcomeContext) -> bool:
 
 def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
     """What was not done, one line for each job a league admin discarded, in the order of the
-    jobs, the drivers whose roles were not granted gathered into one line, and a discarded
-    arming first. *told* adds the review's channel not told, which the member's reply cannot
-    carry."""
+    jobs, the drivers whose roles were not granted gathered into one line. *told* adds the review's
+    channel not told, which the member's reply cannot carry."""
     lines: list[str] = []
     ungranted: list[str] = []
     ungranted_at: int | None = None
-    armed = True
     for view in ctx.steps:
         if not _discarded(view):
             continue
         each = view.payload
-        if view.name == ARM:
-            armed = False
-        elif view.name == FORGET_SETUP:
+        if view.name == FORGET_SETUP:
             lines.append(NOT_FORGOTTEN)
         elif view.name == GRANT_ROLES:
             if ungranted_at is None:
@@ -933,7 +931,7 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
             lines.append(f"<#{ctx.payload['channel_id']}> was not told how the approval ended")
     if ungranted_at is not None:
         lines[ungranted_at] = ungranted_line(ungranted)
-    return [NOT_ARMED, *lines] if not armed else lines
+    return lines
 
 
 def _calendar_report(ctx: OutcomeContext) -> str:

@@ -138,7 +138,6 @@ def test_the_round_amendment_is_registered():
     assert kinds.count(ROUND_AMEND) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: no job is marked undiscardable")
 def test_only_the_two_armings_are_undiscardable():
     """Over every change type the builder registers, the jobs marked as never to be discarded
     are exactly two: the arming of an approved season's timed work ("season.approve", its "arm")

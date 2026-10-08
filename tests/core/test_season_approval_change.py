@@ -807,7 +807,6 @@ def _said_to(interaction: Any) -> list[str]:
     return [str(call.args[0] if call.args else call.kwargs.get("content", "")) for call in calls]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the season's arming can still be discarded")
 async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_every_round(
     tmp_path, monkeypatch,
 ):
