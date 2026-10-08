@@ -238,7 +238,6 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes_its_call_down_and_reposts_its_calendar_on_restart(
     tmp_path,
 ):
@@ -263,7 +262,6 @@ async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes
     assert len(lines) == 1 and CHECKIN_LOGGED in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_stop_after_the_timed_work_is_removed_cancels_the_round_on_restart(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     await _asked(league)
@@ -280,7 +278,6 @@ async def test_a_stop_after_the_timed_work_is_removed_cancels_the_round_on_resta
     assert len(league.texts(PRO_CH.results)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_cancelling_the_last_outstanding_round_winds_the_season_down_as_a_change_of_its_own_even_across_a_restart(
     tmp_path,
 ):
@@ -305,8 +302,8 @@ async def test_cancelling_the_last_outstanding_round_winds_the_season_down_as_a_
 
 
 @pytest.mark.parametrize("status", [
-    pytest.param("NOT_RUN", marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)),
-    pytest.param("AWAITING_RESULTS", marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)),
+    "NOT_RUN",
+    "AWAITING_RESULTS",
 ])
 async def test_the_round_s_audit_records_the_status_it_was_cancelled_from(tmp_path, status):
     league = await ongoing_league(tmp_path)
@@ -319,7 +316,6 @@ async def test_the_round_s_audit_records_the_status_it_was_cancelled_from(tmp_pa
     assert await _round_audits(league) == [{"old_value": status, "new_value": "CANCELLED"}]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_not_notified(
     tmp_path,
 ):
@@ -347,7 +343,6 @@ async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_na
     assert len(lines) == 1 and f"\n  not notified: {named}" in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_notice_channel_deleted_stops_the_queue_and_goes_through_once_it_is_set_again(
     tmp_path,
 ):
@@ -368,7 +363,6 @@ async def test_a_notice_channel_deleted_stops_the_queue_and_goes_through_once_it
 
 
 @pytest.mark.parametrize("cleared", ["retried", "discarded"])
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_the_call_s_record(
     tmp_path, cleared,
 ):
@@ -395,7 +389,6 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     assert CHECKIN_LOGGED in _success_lines(league)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_path):
     """Discord refuses the check-in notice for Pro's round 3, so the queue stops at it, and a
     league admin discards it. The call still comes down whether or not the notice could be posted
@@ -419,7 +412,6 @@ async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_pat
     assert f"\n  not notified: {named}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_the_old_retry_queue(
     tmp_path,
 ):
@@ -439,7 +431,6 @@ async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_th
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_outcome(
     tmp_path,
 ):
@@ -668,7 +659,6 @@ async def test_a_cancel_waiting_behind_its_division_s_cancellation_is_refused_as
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
     tmp_path,
 ):
@@ -691,7 +681,6 @@ async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_t
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_timed_work_is_removed_before_the_round_is_recorded_cancelled(tmp_path):
     league = await ongoing_league(tmp_path)
     seen: list[str] = []
@@ -724,7 +713,6 @@ _MODULES = {
 
 
 @pytest.mark.parametrize("modules", sorted(_MODULES))
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of_its_own(
     tmp_path, modules,
 ):
@@ -747,7 +735,6 @@ async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of
     assert sent == told
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(tmp_path):
     league = await ongoing_league(tmp_path, weather=True)
     await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
@@ -762,7 +749,6 @@ async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(tmp_p
     assert len(league.texts(PRO_CH.calendar)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_call_comes_down_after_the_check_in_notice_and_its_answers_are_kept(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     await _asked(league)
@@ -794,7 +780,6 @@ async def test_the_check_in_is_written_beneath_the_success_line(tmp_path):
     assert entry == SUCCESS + "\n  division: Pro\n  round: 3" + CHECKIN_LOGGED
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_calendar_never_posted_is_left_alone(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET calendar_message_id = NULL WHERE id = ?", PRO)
@@ -807,7 +792,6 @@ async def test_a_calendar_never_posted_is_left_alone(tmp_path):
     assert "calendar" not in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_calendar_is_posted_again_with_the_round_shown_cancelled(tmp_path):
     league = await ongoing_league(tmp_path)
     seasons = league.bot.season_service
@@ -830,7 +814,6 @@ async def test_the_calendar_is_posted_again_with_the_round_shown_cancelled(tmp_p
     assert held[0]["calendar_message_id"] != str(CALENDAR_MESSAGE)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
     from leaguebot.core.services import calendar_post_service
 
@@ -854,7 +837,6 @@ async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
     assert draw.await_count == 1, "the retry reached for the picture"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch):
     from leaguebot.core.services import calendar_post_service
 
@@ -876,7 +858,6 @@ async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch
     assert result["fell_back"] and result["problem"] == "the template has no rows"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_discarded_save_cancels_nothing_and_says_the_timed_work_is_gone(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
@@ -893,7 +874,6 @@ async def test_a_discarded_save_cancels_nothing_and_says_the_timed_work_is_gone(
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path)
     league.bot.scheduler_service.cancel_round = MagicMock(
@@ -915,7 +895,6 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     league = await ongoing_league(tmp_path, weather=True)
     interaction = await _asked(league)
@@ -930,7 +909,6 @@ async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     assert len(league.texts(PRO_CH.results)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_one_success_line_records_the_cancellation_after_the_last_job(tmp_path):
     league = await ongoing_league(tmp_path)
     _refused(league, PRO_CH.calendar)
@@ -948,10 +926,8 @@ async def test_one_success_line_records_the_cancellation_after_the_last_job(tmp_
 
 
 @pytest.mark.parametrize("finishes", [
-    pytest.param(True, id="the round finishes its division",
-                 marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)),
-    pytest.param(False, id="the division goes on",
-                 marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)),
+    pytest.param(True, id="the round finishes its division"),
+    pytest.param(False, id="the division goes on"),
 ])
 async def test_the_wind_down_is_asked_only_where_the_round_finished_its_division(
     tmp_path, finishes,
@@ -969,7 +945,6 @@ async def test_the_wind_down_is_asked_only_where_the_round_finished_its_division
     assert len(wind_downs) == (1 if finishes else 0)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_wind_down_that_stops_stops_at_its_own_job_and_the_cancellation_reports_success(
     tmp_path,
 ):
@@ -997,7 +972,6 @@ async def test_a_wind_down_that_stops_stops_at_its_own_job_and_the_cancellation_
     assert "not done" not in _success_lines(league)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_cancelled_round_keeps_its_number(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)

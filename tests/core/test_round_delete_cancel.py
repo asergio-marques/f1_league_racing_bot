@@ -37,8 +37,6 @@ DIVISION_ID = 11
 ROUND_ID = 55
 ACTOR_ID = 77
 
-NOT_ON_THE_QUEUE = "#439: /round cancel does not yet ask the change queue"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -347,7 +345,6 @@ async def test_cancelling_in_an_archived_season_is_refused():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_cancelling_asks_the_queue_with_the_round(tmp_path):
     """A season being raced (season 3) holds round 5 of Division 1, at Monza, not yet run. The
     admin runs /round cancel on it with CONFIRM. The command asks the change queue, once, for a
@@ -505,10 +502,7 @@ async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
 @pytest.mark.parametrize(
     "arranged",
     [
-        pytest.param(
-            {}, id="cancelled",
-            marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE),
-        ),
+        pytest.param({}, id="cancelled"),
     ],
 )
 async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as_it_is_named(

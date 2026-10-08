@@ -44,6 +44,7 @@ from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, cancellation_notice_service
+from leaguebot.core.services.cancellation_changes import ROUND_CANCEL
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -5137,89 +5138,21 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if rnd.status == RoundStatus.CANCELLED.value:
-            await refuse(
-                interaction,
-                f"\u274c Round {round_number} in **{div.name}** is already cancelled.",
-                what=describe(interaction),
-            )
-            return
-
-        # A round may only be called off before its results are entered. Afterwards the drivers
-        # have reports and appeals to lodge, and cancelling would take that from them.
-        #
-        # This reads `ROUND_CANCELLABLE`, the same set the cascade in season_service reads. Before
-        # the round states were united, this command tested for submitted results while the
-        # cascade tested a status that could not tell "not yet raced" from "raced but unjudged" —
-        # so `/round cancel` refused a round that `/division cancel` would quietly cancel, taking
-        # a raced result with it. One rule, read from one place, is what stops them disagreeing.
-        if rnd.status not in ROUND_CANCELLABLE:
-            await refuse(
-                interaction,
-                f"\u274c Cannot cancel Round {round_number} — its results have already been "
-                "entered, and the drivers' reports and appeals depend on it.",
-                what=describe(interaction),
-            )
-            return
-
-        # A submission channel standing open is a separate matter: the round may still be
-        # cancellable, but the wizard would be writing into it as it went (FR-020).
-        from leaguebot.results.services.result_submission_service import is_submission_open
-        if await is_submission_open(self.bot.db_path, rnd.id):
-            await refuse(
-                interaction,
-                f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
-                "currently open. Close the submission first.",
-                what=describe(interaction),
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        self.bot.scheduler_service.cancel_round(rnd.id)
-
-        await self.bot.season_service.cancel_round(
-            round_id=rnd.id,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-        )
-
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        wound_down = True
-        try:
-            await self.bot.season_service.wind_down_ongoing(self.bot)
-        except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
-            log.exception("could not wind the season down")
-            wound_down = False
-
-        # Each enabled module says what the cancellation means for it, in its own channel, and
-        # the calendar is posted again with the round struck through (#175). Core posts
-        # nothing of its own; what could not be reached is named to the admin below.
-        report = await cancellation_notice_service.announce_cancellation(
-            self.bot,
-            interaction.guild,
-            [div],
-            scope=cancellation_notice_service.SCOPE_ROUND,
-            round_number=round_number,
-            track_name=rnd.track_name,
-            season_number=season.season_number,
-            round_ids=frozenset({rnd.id}),
-        )
-
-        await interaction.followup.send(
-            f"\u2705 Round **{round_number}** in **{div.name}** cancelled."
-            + cancellation_notice_service.failure_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
-            f"  division: {div.name}\n"
-            f"  round: {round_number}"
-            + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
+        # The rest of the gates (already cancelled, results entered, a submission open) are the
+        # change type's check, made now and again as the cancellation comes up to run. The
+        # queue's acknowledgement is this command's response, so nothing is deferred.
+        await self.bot.change_queue.ask(
+            ROUND_CANCEL,
+            {
+                "round_id": rnd.id,
+                "round_number": round_number,
+                "track_name": rnd.track_name,
+                "division_id": div.id,
+                "division_name": div.name,
+                "season_number": season.season_number,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
