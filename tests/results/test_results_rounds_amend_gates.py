@@ -860,3 +860,72 @@ async def test_a_finished_or_discarded_cancellation_does_not_hold_the_amendment(
 
     assert "job #" not in _replied(interaction)
     assert _logged(interaction) == []
+
+
+# ---------------------------------------------------------------------------
+# r1-1 for a `/round amend` (#439 slice 4b, amendment A, 2.6)
+#
+# A round's amendment with `/round amend` is a job for its division, so while one is in hand no
+# round of the division has its results amended. The refusal is r1-1's, word for word.
+# ---------------------------------------------------------------------------
+
+ROUND_AMEND_KIND = "season.round.amend"
+ROUND_AMEND_PAYLOAD = {
+    "round_id": LATER_ROUND_ID, "round_number": 4, "division_id": DIVISION_ID,
+    "division_name": "Pro", "changes": [["track_name", "Monza"]],
+}
+
+
+@pytest.mark.xfail(strict=True, reason="#439: /results rounds amend does not yet read a "
+                                       "/round amend of the division as holding it")
+@pytest.mark.parametrize(
+    ("state", "stopped"),
+    [("QUEUED", False), ("RUNNING", True)],
+    ids=["waiting", "stopped"],
+)
+async def test_a_round_is_not_amended_while_a_round_amend_of_its_division_is_in_hand(
+    tmp_path, state, stopped,
+):
+    """A `/round amend` of Pro's round 4 is on the queue, waiting or stopped at a failed job.
+    Amending the results of Pro's round 3 is refused in r1-1's words, naming the amendment's job
+    and how to clear it, with one refusal line in the log; no amendment is opened and no channel
+    created."""
+    db_path = await _make_db(tmp_path, name=f"amend_round_amend_{state}_{stopped}")
+    job = await _seed_queued_change(
+        db_path, kind=ROUND_AMEND_KIND, payload=ROUND_AMEND_PAYLOAD, state=state, stopped=stopped,
+    )
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    with contextlib.suppress(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert _replied(interaction) == (
+        f"⏸️ A round of Pro has a job on the change queue (job #{job}), so it "
+        "cannot be amended until that is done. Let it finish, or press **Retry** or **Discard** "
+        "on its notice if it has stopped, then amend again."
+    )
+    [line] = _logged(interaction)
+    assert line.startswith("⛔") and f"job #{job}" in line
+    interaction.guild.create_text_channel.assert_not_called()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        assert (await cursor.fetchone())[0] == 0
+
+
+@pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
+async def test_a_finished_or_discarded_round_amend_does_not_hold_the_amendment(tmp_path, state):
+    """A `/round amend` of Pro's round 4 has finished, or a league admin discarded it: it is no
+    longer in hand, so amending the results of Pro's round 3 goes on to create the amendment's
+    channel, nothing refused and nothing logged."""
+    db_path = await _make_db(tmp_path, name=f"amend_round_amend_over_{state}")
+    await _seed_queued_change(db_path, kind=ROUND_AMEND_KIND, payload=ROUND_AMEND_PAYLOAD,
+                              state=state)
+    cog = _make_cog(db_path)
+    interaction = _gate_interaction()
+
+    with pytest.raises(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert "job #" not in _replied(interaction)
+    assert _logged(interaction) == []

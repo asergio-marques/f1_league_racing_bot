@@ -868,3 +868,77 @@ async def test_an_amendment_in_another_division_holds_nothing(tmp_path):
 
     assert len(await _sessions(db_path)) == 2
     assert "is being amended" not in _said(stubs["sub"])
+
+
+# ---------------------------------------------------------------------------
+# A submission closed by a cancellation (#439 slice 4b, amendment A, 2.9)
+# ---------------------------------------------------------------------------
+
+_CLOSED_BY = {
+    "the round cancelled": (
+        "CANCELLED",
+        "⛔ Round 3 has been cancelled, so its results can no longer be entered. Nothing was saved.",
+    ),
+    "the submission closed, the round not cancelled": (
+        "AWAITING_RESULTS",
+        "⛔ Round 3's results submission has been closed, so its results can no longer be "
+        "entered. Nothing was saved.",
+    ),
+}
+
+
+def _closing_before_the_first_paste(db_path, pastes, round_status: str):
+    """Each paste in turn; before the first arrives, round 3's submission is recorded closed and
+    the round put in *round_status*, as a cancellation's save (or `/season cancel`'s closing
+    before its cascade) leaves them while the wizard waits."""
+    messages = iter([_message(p) for p in pastes])
+    calls = 0
+
+    async def wait_for(*_a, **_k):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+                    "closed) VALUES (?, ?, '2026-02-01T18:00:00+00:00', 1)",
+                    (ROUND_ID, SUB_CHANNEL),
+                )
+                await db.execute(
+                    "UPDATE rounds SET status = ? WHERE id = ?", (round_status, ROUND_ID)
+                )
+                await db.commit()
+        return next(messages)
+
+    return AsyncMock(side_effect=wait_for)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the wizard does not yet refuse a paste once a "
+                                       "cancellation has closed its submission")
+@pytest.mark.parametrize("closed_by", sorted(_CLOSED_BY))
+@pytest.mark.parametrize("pastes", [
+    pytest.param((QUALI_PASTE, RACE_PASTE), id="results"),
+    pytest.param(("CANCELLED", "CANCELLED"), id="CANCELLED"),
+])
+async def test_a_paste_into_a_submission_closed_by_a_cancellation_is_refused_and_nothing_is_saved(
+    tmp_path, closed_by, pastes,
+):
+    """Round 3's submission channel is open and asks for the qualifying results. While it waits,
+    a cancellation closes the submission: the round is cancelled, or (closed by `/season cancel`
+    before its cascade, or by results being turned off) the round is not yet cancelled. The
+    manager then pastes the qualifying results, or types `CANCELLED`. The wizard answers once in
+    the channel, saying the round is cancelled or its submission closed and that nothing was
+    saved, and stops collecting: no session is saved, nothing is said in the results channel,
+    no review is asked, and it waits for nothing more."""
+    status, refusal = _CLOSED_BY[closed_by]
+    db_path = await _make_db(tmp_path, name="closed_by_cancellation")
+    bot = _bot(db_path, [])
+    bot.wait_for = _closing_before_the_first_paste(db_path, list(pastes), status)
+
+    stubs = await _run(bot)
+
+    assert _said(stubs["sub"]).count(refusal) == 1
+    assert bot.wait_for.await_count == 1
+    assert await _sessions(db_path) == []
+    assert "was cancelled" not in _said(bot._results)
+    assert stubs["opened"] == []
