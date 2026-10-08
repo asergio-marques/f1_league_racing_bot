@@ -28,6 +28,7 @@ import pytest
 
 from leaguebot.core.services.season_service import SeasonImmutableError
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     discard_job,
     retry_job,
@@ -62,6 +63,10 @@ R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 CANCELLED = "✅ Division **Pro** cancelled."
 SUCCESS = "Admin (`<@77>`) | /division cancel | Success"
 REFUSAL = "⛔ `/division cancel` refused for Admin (`<@77>`) — "
+ACK = (
+    "⏳ Cancelling **Pro**. This message will be updated when it is done; if it takes longer, the "
+    "log channel will say so. It begins with job #"
+)
 SAVE_DISCARDED = (
     "Nothing was cancelled, but the rounds of **Pro** no longer have their timed work: run "
     "`/division cancel` again."
@@ -295,6 +300,22 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue(tmp_path):
     await retry_job(league.bot)
 
     assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    assert CANCELLED in reply(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
+async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_outcome(
+    tmp_path,
+):
+    league = await ongoing_league(tmp_path)
+    interaction = await _asked(league)
+
+    assert acknowledgement(interaction).startswith(ACK)
+    interaction.response.defer.assert_not_awaited()
+    assert await _division(league) == "ACTIVE"
+
+    await _done(league)
+
     assert CANCELLED in reply(interaction)
 
 
