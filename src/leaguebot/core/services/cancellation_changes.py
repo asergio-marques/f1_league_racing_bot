@@ -1,4 +1,4 @@
-"""Cancelling a round on the change queue (#439, slice 4b).
+"""Cancelling a round or a division on the change queue (#439, slice 4b).
 
 `/round cancel` checks its confirmation word, the season and the names at the press, in the season
 cog, then asks the queue for this change. Every other gate it had is the change type's `check`,
@@ -19,6 +19,12 @@ enabled module's notice, the check-in call's take-down, the calendar's repost, a
 that writes the one line. The wind-down is a change of its own, asked in the save where the
 division finished. A job is planned whether or not its module is on, and drops itself as it runs
 where it is not; a notice job whose channel was never set is done, and named in the reply.
+
+**A division's cancellation is the same change over a whole division** (`division_cancel_change`):
+the timed work of every round of it is removed, read as the job runs; the save cancels the division
+and each of its rounds that may still be cancelled, with the status each was cancelled from; the
+notices go once for the division in its own words, and a check-in call is taken down for each round
+called off that has one. It cancels a round whose results submission stands open with the rest.
 """
 from __future__ import annotations
 
@@ -55,6 +61,7 @@ from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
     SeasonService,
+    cancel_division_on,
     cancel_round_on,
 )
 from leaguebot.core.utils.league_server import league_guild
@@ -72,7 +79,8 @@ DIVISION_CANCEL = "season.division.cancel"
 _COMMAND = "`/round cancel`"
 NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."
 ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
-DIVISION_NOT_ONGOING = "❌ `/division cancel` is available only while the season is ongoing."
+DIVISION_COMMAND = "`/division cancel`"
+DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the season is ongoing."
 
 
 def _already_cancelled(payload: dict[str, Any]) -> str:
@@ -110,6 +118,13 @@ UNARM_DISCARDED = (
 SAVE_DISCARDED = (
     "Nothing was cancelled, but round {number} in **{division}** no longer has its timed work: "
     "run `/round cancel` again."
+)
+DIVISION_UNARM_DISCARDED = (
+    "Nothing was cancelled: **{division}** stands as it was. Run `/division cancel` again."
+)
+DIVISION_SAVE_DISCARDED = (
+    "Nothing was cancelled, but the rounds of **{division}** no longer have their timed work: "
+    "run `/division cancel` again."
 )
 _DISCARDED_NOTICE = "the notice could not be posted, and a league admin discarded it"
 _DISCARDED_CALENDAR = (
@@ -188,6 +203,149 @@ def checkin_audit(ctx: OutcomeContext) -> str:
     )
 
 
+def _round_id(ctx: StepContext) -> int:
+    """The round a job is about: its own, where a division called off several, else the change's."""
+    round_id = ctx.step_payload.get("round_id")
+    return int(ctx.payload["round_id"] if round_id is None else round_id)
+
+
+def _named(text: str) -> Callable[[StepContext], Awaitable[str]]:
+    """How a job is named in the lines that say it stopped the queue."""
+
+    async def describe(ctx: StepContext) -> str:
+        return text.format(
+            number=ctx.step_payload.get("round_number", ctx.payload.get("round_number")),
+            division=ctx.payload["division_name"],
+            name=ctx.step_payload.get("division_name", ctx.payload["division_name"]),
+        )
+
+    return describe
+
+
+def _follow_steps(
+    *, modules: "ModuleService", seasons: SeasonService, scope: str
+) -> dict[str, Step]:
+    """The jobs both cancellations carry out after the save: each module's notice, a check-in
+    call's take-down and the calendar's repost. *scope* is the notices' (`SCOPE_ROUND` or
+    `SCOPE_DIVISION`). A job reads its division from its own payload (`division_id`,
+    `division_name`, `season_id`), and a take-down its round from `round_id` there or, for a
+    round's cancellation, from the change's.
+    """
+
+    async def division_of(season_id: int, division_id: int) -> Division | None:
+        return next(
+            (each for each in await seasons.get_divisions(season_id) if each.id == division_id),
+            None,
+        )
+
+    async def notify(ctx: StepContext, module: str) -> StepResult:
+        guild = await _guild(ctx.bot)
+        division = await division_of(
+            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        )
+        if division is None:
+            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
+        problem = await notices.post_module_notice(
+            ctx.bot, guild, division, module,
+            scope=scope,
+            round_number=ctx.payload.get("round_number"),
+            track_name=ctx.payload.get("track_name"),
+        )
+        return StepResult(result={"unset": True} if problem else {"sent": True})
+
+    async def notify_checkin(ctx: StepContext) -> StepResult:
+        return await notify(ctx, "attendance")
+
+    async def notify_forecast(ctx: StepContext) -> StepResult:
+        return await notify(ctx, "weather")
+
+    async def notify_results(ctx: StepContext) -> StepResult:
+        return await notify(ctx, "results")
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def weather_on(_ctx: StepContext) -> bool:
+        return await modules.is_weather_enabled()
+
+    async def results_on(_ctx: StepContext) -> bool:
+        return await modules.is_results_enabled()
+
+    async def take_down(ctx: StepContext) -> StepResult:
+        division = await division_of(
+            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        )
+        if division is None:
+            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
+        return StepResult(
+            result=await notices.take_down_call(ctx.bot, division, _round_id(ctx))
+        )
+
+    async def calendar_posted(ctx: StepContext) -> bool:
+        """The calendar is posted again only where it was ever posted."""
+        division = await division_of(
+            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        )
+        return division is not None and bool(division.calendar_message_id)
+
+    async def post_calendar(ctx: StepContext) -> StepResult:
+        """Post the division's calendar again, its division and rounds read as the job runs, the
+        rounds called off drawn as cancelled."""
+        guild = await _guild(ctx.bot)
+        division = await division_of(
+            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
+        )
+        if division is None:
+            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
+        called_off = {int(each) for each in ctx.step_payload["round_ids"]}
+        rounds = [
+            dataclasses.replace(each, status=RoundStatus.CANCELLED.value)
+            if each.id in called_off
+            else each
+            for each in await seasons.get_division_rounds(division.id)
+        ]
+        posting = await post_division_calendar(
+            ctx.bot,
+            guild,
+            division,
+            rounds,
+            await tracks_by_name(ctx.db_path),
+            season_number=ctx.payload["season_number"],
+            raise_on_failure=True,
+            as_text=ctx.tries > 0,
+        )
+        return StepResult(
+            result={
+                "division": division.name,
+                "problem": posting.problem,
+                "fell_back": posting.fell_back,
+            }
+        )
+
+    return {
+        NOTIFY_CHECKIN: Step(
+            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
+            describe=_named("posting the check-in notice for **{name}**"),
+        ),
+        TAKE_DOWN_CALL: Step(
+            TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on,
+            describe=_named("taking down the check-in call of round {number} in **{name}**"),
+        ),
+        NOTIFY_FORECAST: Step(
+            NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
+            describe=_named("posting the forecast note for **{name}**"),
+        ),
+        NOTIFY_RESULTS: Step(
+            NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
+            describe=_named("posting the results note for **{name}**"),
+        ),
+        POST_CALENDAR: Step(
+            POST_CALENDAR, StepKind.ACT, post_calendar, still_due=calendar_posted,
+            describe=_named("posting the calendar of **{name}**"),
+        ),
+    }
+
+
 def round_cancel_change(
     *,
     modules: "ModuleService",
@@ -204,12 +362,6 @@ def round_cancel_change(
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
     *seasons* service, the *scheduler*, results' *submission_open* and the queue's clock *now*.
     """
-
-    async def division_of(season_id: int, division_id: int) -> Division | None:
-        return next(
-            (each for each in await seasons.get_divisions(season_id) if each.id == division_id),
-            None,
-        )
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -318,90 +470,6 @@ def round_cancel_change(
             ),
         )
 
-    async def notify(ctx: StepContext, module: str) -> StepResult:
-        guild = await _guild(ctx.bot)
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
-        )
-        if division is None:
-            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
-        problem = await notices.post_module_notice(
-            ctx.bot, guild, division, module,
-            scope=notices.SCOPE_ROUND,
-            round_number=int(ctx.payload["round_number"]),
-            track_name=ctx.payload["track_name"],
-        )
-        return StepResult(result={"unset": True} if problem else {"sent": True})
-
-    async def notify_checkin(ctx: StepContext) -> StepResult:
-        return await notify(ctx, "attendance")
-
-    async def notify_forecast(ctx: StepContext) -> StepResult:
-        return await notify(ctx, "weather")
-
-    async def notify_results(ctx: StepContext) -> StepResult:
-        return await notify(ctx, "results")
-
-    async def attendance_on(_ctx: StepContext) -> bool:
-        return await modules.is_attendance_enabled()
-
-    async def weather_on(_ctx: StepContext) -> bool:
-        return await modules.is_weather_enabled()
-
-    async def results_on(_ctx: StepContext) -> bool:
-        return await modules.is_results_enabled()
-
-    async def take_down(ctx: StepContext) -> StepResult:
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
-        )
-        if division is None:
-            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
-        return StepResult(
-            result=await notices.take_down_call(ctx.bot, division, int(ctx.payload["round_id"]))
-        )
-
-    async def calendar_posted(ctx: StepContext) -> bool:
-        """The calendar is posted again only where it was ever posted."""
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
-        )
-        return division is not None and bool(division.calendar_message_id)
-
-    async def post_calendar(ctx: StepContext) -> StepResult:
-        """Post the division's calendar again, its division and rounds read as the job runs, the
-        rounds called off drawn as cancelled."""
-        guild = await _guild(ctx.bot)
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
-        )
-        if division is None:
-            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
-        called_off = {int(each) for each in ctx.step_payload["round_ids"]}
-        rounds = [
-            dataclasses.replace(each, status=RoundStatus.CANCELLED.value)
-            if each.id in called_off
-            else each
-            for each in await seasons.get_division_rounds(division.id)
-        ]
-        posting = await post_division_calendar(
-            ctx.bot,
-            guild,
-            division,
-            rounds,
-            await tracks_by_name(ctx.db_path),
-            season_number=ctx.payload["season_number"],
-            raise_on_failure=True,
-            as_text=ctx.tries > 0,
-        )
-        return StepResult(
-            result={
-                "division": division.name,
-                "problem": posting.problem,
-                "fell_back": posting.fell_back,
-            }
-        )
-
     async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Write the one line that records the cancellation, or the refusal the save met."""
         payload = ctx.payload
@@ -438,50 +506,19 @@ def round_cancel_change(
             + notices.failure_lines(not_notified(ctx))
         )
 
-    # ── How each job is named, in the lines that say it stopped the queue ──────
-
-    def named(round_text: str) -> Callable[[StepContext], Awaitable[str]]:
-        async def describe(ctx: StepContext) -> str:
-            return round_text.format(
-                number=ctx.payload["round_number"],
-                division=ctx.payload["division_name"],
-                name=ctx.step_payload.get("division_name", ctx.payload["division_name"]),
-            )
-
-        return describe
-
     steps: dict[str, Step] = {
+        **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND),
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
-            describe=named("removing the timed work of round {number} in **{division}**"),
+            describe=_named("removing the timed work of round {number} in **{division}**"),
         ),
         APPLY: Step(
             APPLY, StepKind.SAVE, apply, still_due=unarmed,
-            describe=named("cancelling round {number} in **{division}**"),
-        ),
-        NOTIFY_CHECKIN: Step(
-            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
-            describe=named("posting the check-in notice for **{name}**"),
-        ),
-        TAKE_DOWN_CALL: Step(
-            TAKE_DOWN_CALL, StepKind.ACT, take_down, still_due=attendance_on,
-            describe=named("taking down the check-in call of round {number} in **{name}**"),
-        ),
-        NOTIFY_FORECAST: Step(
-            NOTIFY_FORECAST, StepKind.ACT, notify_forecast, still_due=weather_on,
-            describe=named("posting the forecast note for **{name}**"),
-        ),
-        NOTIFY_RESULTS: Step(
-            NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
-            describe=named("posting the results note for **{name}**"),
-        ),
-        POST_CALENDAR: Step(
-            POST_CALENDAR, StepKind.ACT, post_calendar, still_due=calendar_posted,
-            describe=named("posting the calendar of **{name}**"),
+            describe=_named("cancelling round {number} in **{division}**"),
         ),
         CLOSE: Step(
             CLOSE, StepKind.SAVE, close,
-            describe=named("recording the cancellation of round {number} in **{division}**"),
+            describe=_named("recording the cancellation of round {number} in **{division}**"),
         ),
     }
     return ChangeType(
@@ -534,12 +571,130 @@ def division_cancel_change(
             )
         return Verdict.go()
 
+    # ── The jobs ────────────────────────────────────────────────────────────────
+
+    async def unarm(ctx: StepContext) -> StepResult:
+        """Remove the timed work of every round of the division, read as the job runs: a round
+        whose results are in loses its jobs too, as the division it belongs to is called off."""
+        for each in await seasons.get_division_rounds(int(ctx.payload["division_id"])):
+            scheduler.cancel_round(each.id)
+        return StepResult(result={"unarmed": True})
+
+    async def unarmed(ctx: StepContext) -> bool:
+        """The save is due only where the timed work was removed, not where that job was
+        discarded."""
+        return not _discarded(_view(ctx, UNARM))
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The one save: the division and every round of it that may still be cancelled, each
+        round with the status it was cancelled from, and the season moved on where this was the
+        last division it waited on."""
+        if ctx.actor_id is None or ctx.actor_name is None:
+            raise RuntimeError("cancelling a division is the act of a member, and none is recorded")
+        payload = ctx.payload
+        division_id = int(payload["division_id"])
+        cursor = await db.execute(
+            "SELECT d.season_id, d.status, s.status AS season_status FROM divisions d "
+            "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
+            (division_id,),
+        )
+        division = await cursor.fetchone()
+        refusal = None
+        if division is None:
+            refusal = f"❌ Division `{payload['division_name']}` not found."
+        elif division["status"] == "CANCELLED":
+            refusal = f"❌ Division **{payload['division_name']}** is already cancelled."
+        elif division["season_status"] in ("COMPLETED", "CANCELLED"):
+            refusal = ARCHIVED
+        if refusal is not None or division is None:
+            # A backstop: the check passed, and something wrote the database after it.
+            return StepResult(result={"refused": refusal})
+
+        called_off = await cancel_division_on(
+            db, division_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
+        )
+        target = {
+            "division_id": division_id,
+            "division_name": str(payload["division_name"]),
+            "season_id": int(division["season_id"]),
+        }
+        planned = [PlannedStep(NOTIFY_CHECKIN, target)]
+        if called_off:
+            marks = ",".join("?" * len(called_off))
+            cursor = await db.execute(
+                f"SELECT r.id, r.round_number FROM rounds r WHERE r.id IN ({marks}) "  # noqa: S608
+                "AND EXISTS (SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) "
+                "ORDER BY r.round_number",
+                called_off,
+            )
+            planned += [
+                PlannedStep(
+                    TAKE_DOWN_CALL,
+                    {**target, "round_id": int(row["id"]), "round_number": int(row["round_number"])},
+                )
+                for row in await cursor.fetchall()
+            ]
+        planned += [
+            PlannedStep(NOTIFY_FORECAST, target),
+            PlannedStep(NOTIFY_RESULTS, target),
+            PlannedStep(POST_CALENDAR, {**target, "round_ids": called_off}),
+        ]
+        return StepResult(
+            result={"called_off": called_off},
+            then=tuple(planned),
+            follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
+        )
+
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Write the one line that records the cancellation, or the refusal the save met."""
+        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)):
+            return StepResult(result={"closed": True})
+        refused = _refusal_of(ctx)
+        if refused:
+            return StepResult(
+                result={"closed": True},
+                lines=(refusal_line(ctx.named, DIVISION_COMMAND, reply_reason(refused)),),
+            )
+        line = (
+            f"{ctx.named} | /division cancel | Success\n"
+            f"  division: {ctx.payload['division_name']}"
+            + checkin_audit(ctx)
+            + notices.failure_log_lines(not_notified(ctx))
+        )
+        return StepResult(result={"closed": True}, lines=(line,))
+
+    def outcome(ctx: OutcomeContext) -> str:
+        name = ctx.payload["division_name"]
+        if _discarded(_view(ctx, UNARM)):
+            return DIVISION_UNARM_DISCARDED.format(division=name)
+        refused = _refusal_of(ctx)
+        if refused:
+            return refused
+        if _discarded(_view(ctx, APPLY)):
+            return DIVISION_SAVE_DISCARDED.format(division=name)
+        return f"✅ Division **{name}** cancelled." + notices.failure_lines(not_notified(ctx))
+
+    steps: dict[str, Step] = {
+        **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_DIVISION),
+        UNARM: Step(
+            UNARM, StepKind.ACT, unarm,
+            describe=_named("removing the timed work of the rounds of **{division}**"),
+        ),
+        APPLY: Step(
+            APPLY, StepKind.SAVE, apply, still_due=unarmed,
+            describe=_named("cancelling **{division}**"),
+        ),
+        CLOSE: Step(
+            CLOSE, StepKind.SAVE, close,
+            describe=_named("recording the cancellation of **{division}**"),
+        ),
+    }
     return ChangeType(
         kind=DIVISION_CANCEL,
-        opening=(),
-        steps={},
+        opening=(PlannedStep(UNARM), PlannedStep(APPLY), PlannedStep(CLOSE)),
+        steps=steps,
         check=check,
         key=lambda payload: f"{DIVISION_CANCEL}:{payload['division_id']}",
         doing=lambda payload: f"Cancelling **{payload['division_name']}**",
-        outcome=lambda _ctx: "",
+        outcome=outcome,
     )
