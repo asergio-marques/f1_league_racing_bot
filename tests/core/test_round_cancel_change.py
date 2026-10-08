@@ -1100,7 +1100,6 @@ BEING_AMENDED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
 @pytest.mark.parametrize("marked", [PRO, AM], ids=["its division", "another division"])
 async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amended_is_refused_at_once(
     tmp_path, marked,
@@ -1125,7 +1124,6 @@ async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amend
     assert await _status(league) == "NOT_RUN"
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
 async def test_a_round_cancel_that_comes_to_run_while_a_round_of_its_division_is_being_amended_is_refused(
     tmp_path,
 ):

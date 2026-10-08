@@ -651,7 +651,6 @@ BEING_AMENDED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
 async def test_a_division_cancel_asked_while_a_round_of_it_is_being_amended_is_refused_at_once(
     tmp_path,
 ):
@@ -674,7 +673,6 @@ async def test_a_division_cancel_asked_while_a_round_of_it_is_being_amended_is_r
     assert await _statuses(league) == before
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
 async def test_a_division_cancel_that_comes_to_run_while_a_round_of_it_is_being_amended_is_refused(
     tmp_path,
 ):

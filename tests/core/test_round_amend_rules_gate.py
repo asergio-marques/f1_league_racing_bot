@@ -936,7 +936,6 @@ async def test_a_cancellation_elsewhere_or_done_lets_the_amendment_through(
     assert not any(line.startswith("⛔ ") for line in _lines(cog))
 
 
-@pytest.mark.xfail(strict=True, reason="#439: an amendment being applied is not yet marked")
 @pytest.mark.parametrize("fails", [False, True], ids=["amended", "the amendment fails"])
 async def test_a_confirmed_amendment_holds_its_division_until_its_rounds_are_renumbered(
     tmp_path, fails

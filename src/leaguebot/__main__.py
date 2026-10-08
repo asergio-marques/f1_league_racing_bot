@@ -210,6 +210,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             submission_open=is_submission_open,
+            amending=lambda division_id: bot.amendment_service.is_applying(division_id),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -218,6 +219,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
+            amending=lambda division_id: bot.amendment_service.is_applying(division_id),
             now=lambda: bot.change_queue.now(),
         )
     )

@@ -54,6 +54,9 @@ CLEARED = {
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
     ("core/services/change_queue.py", "_notice_tried"),
     ("core/services/change_queue.py", "_retrying"),
+    # The divisions with a `/round amend` being applied, each refusing a cancellation of its
+    # rounds meanwhile (#439).
+    ("core/services/amendment_service.py", "_applying"),
 }
 
 #: Stores that hold no league state, and why.
@@ -197,7 +200,6 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     assert updated_reply(interaction) == ""
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the amendments being applied are not yet held")
 async def test_clearing_a_leagues_state_forgets_the_amendments_being_applied():
     """A division marked as having a round being amended is unmarked by the clear, so that a
     factory reset leaves no cancellation refused for an amendment of a league that has gone; the

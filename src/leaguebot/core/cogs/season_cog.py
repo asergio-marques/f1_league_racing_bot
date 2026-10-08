@@ -6561,19 +6561,23 @@ class _ConfirmView(LeagueView):
                 await refuse(interaction, _held, what=what)
                 return
 
-            # One call carrying every field, not one call per field. Amending a round's track and
-            # its date used to run the whole amendment twice \u2014 two invalidation notices, two
-            # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
-            await self._cog.bot.amendment_service.amend_round(
-                self._round_id,
-                interaction.user,
-                self._amendments,
-                self._cog.bot,
-            )
+            # The division is marked as having a round being amended until its rounds are
+            # renumbered, a failure included, so that a cancellation asked or run meanwhile is
+            # refused rather than reading rounds about to be renumbered (owner, 2026-10-08).
+            with self._cog.bot.amendment_service.applying(_rnd_now.division_id):
+                # One call carrying every field, not one call per field. Amending a round's track
+                # and its date used to run the whole amendment twice \u2014 two invalidation
+                # notices, two cancels, two re-arms, two re-runs of every overdue phase (#115).
+                await self._cog.bot.amendment_service.amend_round(
+                    self._round_id,
+                    interaction.user,
+                    self._amendments,
+                    self._cog.bot,
+                )
 
-            rnd = await self._cog.bot.season_service.get_round(self._round_id)
-            if rnd is not None and scheduled_at_changed:
-                await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
+                rnd = await self._cog.bot.season_service.get_round(self._round_id)
+                if rnd is not None and scheduled_at_changed:
+                    await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
 
             division_id = rnd.division_id if rnd is not None else None
             rounds = (

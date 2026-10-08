@@ -33,7 +33,15 @@ read through `cancellation_in_hand`. The refusal is made only as the change is a
 round's of that division is legitimate and runs behind it, and the check made as the round's
 starts would find the division's later change and refuse itself. Run behind a cancellation of the
 same round, "already cancelled" is what refuses it. `cancellation_in_hand` is read, too, by
-`/round amend`, which is refused while a cancellation holds its round.
+`/round amend` (`cancellation_holding_amendment`), which refuses every amendment of any round of
+a division, whatever it changes, while a cancellation of the division or of any round of it is in
+hand: chiefly because an amended time renumbers the rounds under the cancellation.
+
+**The other way round, a cancellation is refused while an amendment is applied** (owner,
+2026-10-08): from the moment a `/round amend` Confirm passes its checks until the division's
+rounds are renumbered, a cancellation of the division or of any round of it is refused, asked and
+again as it runs. The mark is held in memory by the amendment service, and read through the
+*amending* the builder hands both change types, so a restart clears it with the amendment.
 """
 from __future__ import annotations
 
@@ -126,6 +134,15 @@ def round_being_cancelled(payload: dict[str, Any], job: int) -> str:
     return (
         f"⏳ Round {payload['round_number']} in **{payload['division_name']}** is already being "
         f"cancelled{_job_of(job)}. {_HOW_TO_CLEAR}"
+    )
+
+
+def division_being_amended(payload: dict[str, Any]) -> str:
+    """The refusal of a cancellation of a division, or of one of its rounds, while a
+    `/round amend` of a round of it is being applied."""
+    return (
+        f"⏸️ A round of **{payload['division_name']}** is being amended, so its rounds cannot be "
+        "cancelled until that is done. Try again in a moment."
     )
 
 
@@ -491,6 +508,7 @@ def round_cancel_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     submission_open: Callable[[str, int], Awaitable[bool]],
+    amending: Callable[[int], bool],
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels a round; see the module.
@@ -499,7 +517,8 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, results' *submission_open* and the queue's clock *now*.
+    *seasons* service, the *scheduler*, results' *submission_open*, *amending* (whether a
+    `/round amend` of a round of a division is being applied) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -541,6 +560,8 @@ def round_cancel_change(
             )
             if held is not None:
                 return Verdict.refuse(round_being_cancelled(payload, held))
+        if amending(int(payload["division_id"])):
+            return Verdict.refuse(division_being_amended(payload))
         if row["status"] not in ROUND_CANCELLABLE:
             return Verdict.refuse(_results_entered(payload))
         if await submission_open(ctx.db_path, round_id):
@@ -725,6 +746,7 @@ def division_cancel_change(
     modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
+    amending: Callable[[int], bool],
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels a division and the rounds of it that may still be cancelled.
@@ -763,6 +785,8 @@ def division_cancel_change(
             )
             if held is not None:
                 return Verdict.refuse(division_being_cancelled(payload, held))
+        if amending(int(payload["division_id"])):
+            return Verdict.refuse(division_being_amended(payload))
         return Verdict.go()
 
     # ── The jobs ────────────────────────────────────────────────────────────────
