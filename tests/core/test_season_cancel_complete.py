@@ -728,12 +728,6 @@ async def test_cancelling_waits_while_a_round_is_being_amended(_open_amendment):
 # /season cancel and an open results submission (#439 slice 4b, amendment A, A2)
 # ---------------------------------------------------------------------------
 
-#: Why each test below fails until the build: today the cascade cancels every round whatever its
-#: open submission holds, and leaves the submission open.
-SUBMISSION_XFAIL = (
-    "#439: /season cancel does not yet refuse a round whose open submission has accepted "
-    "results, nor close an empty one first"
-)
 SUBMISSION = 8300
 
 
@@ -790,7 +784,6 @@ async def test_cancelling_is_refused_while_a_submission_has_accepted_results_nam
     cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_an_open_submission_that_has_accepted_nothing_is_closed_before_anything_else(
     _open_submissions,
 ):
@@ -822,7 +815,6 @@ async def test_an_open_submission_that_has_accepted_nothing_is_closed_before_any
     assert "Season cancelled" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_a_submission_channel_that_cannot_be_deleted_is_named_to_the_admin(
     _open_submissions,
 ):

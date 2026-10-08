@@ -79,7 +79,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView, guild_of, is_foreign_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
@@ -3228,13 +3228,10 @@ class SeasonCog(commands.Cog):
         for division in await self.bot.season_service.get_divisions(season.id):
             if division.status == "CANCELLED":
                 continue
-            for each in await self.bot.season_service.get_division_rounds(division.id):
-                standing[each.id] = (division.name, each)
-        held_submissions = [
-            each
-            for each in await open_submissions(self.bot.db_path, list(standing))
-            if each.accepted
-        ]
+            for division_round in await self.bot.season_service.get_division_rounds(division.id):
+                standing[division_round.id] = (division.name, division_round)
+        open_ones = await open_submissions(self.bot.db_path, list(standing))
+        held_submissions = [each for each in open_ones if each.accepted]
         if held_submissions:
             # The first by division, then by round number, as the season lists them.
             order = list(standing)
@@ -3250,6 +3247,31 @@ class SeasonCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
+
+        # **The empty open submissions are closed first**, before the timed work goes and before
+        # the history is written, so that the wizard waiting in each refuses any paste from here
+        # on (it asks `closed_by_cancellation`). Each is marked closed and its channel deleted.
+        # A run this command's failure cut short finds them closed already, and the cascade
+        # cancels their rounds when it is run again. A channel Discord will not delete is named
+        # at once, as every failure of this command is.
+        from leaguebot.results.services.result_submission_service import (
+            close_submission_channel,
+        )
+
+        channel_failures: list[cancellation_notice_service.NoticeFailure] = []
+        for each in open_ones:
+            gone = await close_submission_channel(
+                each.channel_id, each.round_id, guild_of(interaction), self.bot.db_path
+            )
+            if not gone:
+                division_name, closed_round = standing[each.round_id]
+                channel_failures.append(
+                    cancellation_notice_service.NoticeFailure(
+                        division_name,
+                        f"results submission channel of round {closed_round.round_number}",
+                        f"could not be deleted; delete <#{each.channel_id}> by hand",
+                    )
+                )
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         # Told: every division still running. A division already cancelled was told when it
@@ -3308,6 +3330,7 @@ class SeasonCog(commands.Cog):
             season_number=season.season_number,
             round_ids=frozenset(to_cancel),
         )
+        report.failures = channel_failures + report.failures
 
         # A round that was raced but whose verdicts are still open is closed as FINAL, and must
         # be **before the driver pass**. The cascade below cannot cancel it — its results are
