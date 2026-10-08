@@ -485,6 +485,31 @@ async def test_a_check_in_call_discord_will_not_delete_stops_the_queue_before_th
 
 
 @pytest.mark.xfail(strict=True, reason=XFAIL)
+async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_still_posted_again(
+    tmp_path, reposts,
+):
+    """Attendance on; round 3's call stands (messages 7001 to 7003) and the round is brought
+    forward to three days out, inside its call's window. Discord refuses to delete the last
+    notice (7002) and a league admin discards the take-down: the amendment goes on, the call is
+    posted again beside the message left standing, and the reply names 7002 to remove by hand."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.undeletable.add(CALL_MESSAGES[1])
+    press = await _amended(league, scheduled_at=_at(league, days=3))
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert reposts.posted == [(R3, PRO)]
+    assert CALL_MESSAGES[1] in league.channel(PRO_CH.checkin).messages
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    assert (f"**Pro** — check-in call: 1 message(s) could not be deleted and must be removed by "
+            f"hand (ids {CALL_MESSAGES[1]})") in outcome
+
+
+@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize("meanwhile", [
     "the check-in deadline passes",
     "results entered",
