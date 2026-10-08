@@ -748,7 +748,7 @@ Abandons a season in configuration, waiting for its signup window, in signups, o
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
 Tells each division that is not already cancelled — see **Who is told about a cancellation** below —
-then cascades: every division of the season is cancelled, and with each one every round of it **not yet raced**. A round
+then cascades: every division of the season is cancelled, and with each one every round of it **whose results have not been entered**, one whose submission channel stands open included: the results pasted into it are lost. A round
 that has been raced and scored keeps its results — cancelling a season never
 discards a result. A round whose results are in but whose reports or appeals were still open is
 **closed as final**, since the verdict commands are refused from then on and it would otherwise
@@ -836,7 +836,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `round_number` | Integer | ✅ | The round number to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below. While a `/round amend` of a round of the same division is being applied, from its Confirm until the amendment is applied (its renumbering included), the cancellation is refused, when you ask and again when it comes to run: try again in a moment.
+Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below. While a `/round amend` of a round of the same division is being applied, from its Confirm until the amendment is applied (its renumbering included), the cancellation is refused, when you ask and again when it comes to run: try again in a moment. Asking again while the round's cancellation, or its division's, is waiting, running or stopped on the queue is refused, naming the job. A round whose results are entered, or whose submission channel opens, while its cancellation waits is refused when it comes to run, as it would have been when you asked. If a league admin discards the job that removes the round's scheduled jobs, or the one that records it cancelled, nothing is cancelled and your reply says so: run the command again. Where the scheduled jobs were already removed, the reply says that too: the round is still on, but no forecast, check-in call or results submission will come for it. A discarded job of `/division cancel` is told the same way, for the division's rounds.
 
 > **Who is told about a cancellation.** The bot posts no announcement of its own: telling your drivers a race is off is yours to do. What it does is stop each module carrying on as though the race were still on, each in its own channel and only where that module is turned on:
 >
