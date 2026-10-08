@@ -290,7 +290,6 @@ async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_sea
         assert await _season(db) == ("ACTIVE", "ONGOING")
 
 
-@pytest.mark.xfail(strict=True, reason=CANCEL_ON_FORMS_UNBUILT)
 async def test_a_division_is_cancelled_on_the_save_handed(tmp_path):
     """Pro's round 1 is final, round 2 waits for its results and round 3 is not run. Cancelling Pro
     on a connection answers the ids of rounds 2 and 3, the ones it called off; Pro and those two

@@ -400,10 +400,6 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
     assert "PENDING_COMPLETION" not in written
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: a season's cancellation still audits each round it calls off as from 'ACTIVE'",
-)
 async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_cancelled_from(
     tmp_path,
 ) -> None:

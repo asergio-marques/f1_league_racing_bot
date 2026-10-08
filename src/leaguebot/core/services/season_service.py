@@ -1581,16 +1581,16 @@ async def cancel_division_on(
 
     cursor = await db.execute(
         f"""
-        SELECT id FROM rounds
+        SELECT id, status FROM rounds
         WHERE division_id = ?
           AND status IN ({_CANCELLABLE_SQL})
         ORDER BY round_number
         """,
         (division_id,),
     )
-    unraced = [r["id"] for r in await cursor.fetchall()]
+    unraced = [(r["id"], r["status"]) for r in await cursor.fetchall()]
 
-    for round_id in unraced:
+    for round_id, round_status in unraced:
         await db.execute(
             "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,)
         )
@@ -1603,7 +1603,7 @@ async def cancel_division_on(
             """,
             (
                 actor_id, actor_name, division_id,
-                "round.status", "ACTIVE", "CANCELLED", now.isoformat(),
+                "round.status", round_status, "CANCELLED", now.isoformat(),
             ),
         )
 
@@ -1628,7 +1628,7 @@ async def cancel_division_on(
             now.isoformat(),
         ),
     )
-    return unraced
+    return [round_id for round_id, _ in unraced]
 
 
 async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int) -> bool:
