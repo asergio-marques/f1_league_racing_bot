@@ -57,7 +57,10 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+from leaguebot.core.services.season_lifecycle_service import (
+    WIND_DOWN,
+    advance_to_pending_completion_on,
+)
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
     SeasonService,
@@ -613,6 +616,9 @@ def division_cancel_change(
         called_off = await cancel_division_on(
             db, division_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
         )
+        # Cancelling the last division still running leaves the season pending completion, in this
+        # same save: `cancel_division_on` leaves the season's stage alone, for `/season cancel`.
+        await advance_to_pending_completion_on(db, int(division["season_id"]))
         target = {
             "division_id": division_id,
             "division_name": str(payload["division_name"]),
