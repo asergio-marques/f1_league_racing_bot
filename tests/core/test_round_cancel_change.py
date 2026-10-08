@@ -678,17 +678,42 @@ def _outcome(interaction: Any) -> str:
     return str(call.args[0]) if call.args else str(call.kwargs.get("content", ""))
 
 
-@pytest.mark.parametrize("submission", [
-    pytest.param(False, id="cancelled"),
-    pytest.param(True, id="refused, its submission opened"),
+@pytest.mark.parametrize("case", [
+    pytest.param("cancelled", id="cancelled"),
+    pytest.param("submission", id="refused, its submission opened"),
+    pytest.param(
+        "discarded",
+        id="its save discarded, renumbered while it stood stopped",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#439: a discarded save is named by the number its round bore at unarm",
+        ),
+    ),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
-    tmp_path, submission,
+    tmp_path, case,
 ):
     league = await ongoing_league(tmp_path, attendance=True)
+    if case == "discarded":
+        # The save stops on a fault after the timed work came off; the round is renumbered
+        # while it stands stopped, and a league admin then discards it.
+        interaction = await _asked(league)
+        with _failing("cancel_round_on"):
+            await run_queue(league.bot)
+            assert await _stopped_at(league) == "apply"
+            await _renumbered(league)
+            await discard_job(league.bot)
+        outcome = _outcome(interaction)
+        assert outcome == SAVE_DISCARDED.replace("round 3", "round 2")
+        assert "round 3" not in outcome
+        assert await _status(league) == "NOT_RUN"
+        assert _success_lines(league) == []
+        return
+
     await _stopped_blocker(league)
     interaction = await _asked(league)
     await _renumbered(league)
+    submission = case == "submission"
     if submission:
         await open_submission(league, R3)
 
