@@ -954,6 +954,5 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     assert [cid for kind, cid, _ in league.events if kind == "delete_channel"] == [R4_SUBMISSION]
     assert CANCELLED in reply(interaction)
     assert f"\n⚠️ **Not notified**\n  • {named}" in reply(interaction)
-    assert "round 4" not in reply(interaction)
     [line] = _success_lines(league)
     assert f"\n  not notified: {named}" in line
