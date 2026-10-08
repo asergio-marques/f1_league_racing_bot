@@ -83,6 +83,8 @@ CHECKIN_R4 = (
 #: Round 4's check-in call, seeded by `_second_call`.
 R4_CALL = (7101, 7102, 7103)
 WIND_DOWN = "season.wind_down"
+#: Every channel a cancellation of Pro posts in: its check-in, forecast, results and calendar.
+_PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
@@ -371,7 +373,7 @@ async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     await run_queue(league.bot)
     assert league.unarmed == []
     assert await _statuses(league) == before
-    assert league.texts(PRO_CH.checkin) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
 # ── What it does ────────────────────────────────────────────────────────────────────
@@ -486,7 +488,7 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
     assert await _division(league) == "ACTIVE"
     assert (await _statuses(league))[R3] == "NOT_RUN"
     assert _success_lines(league) == []
-    assert league.texts(PRO_CH.checkin) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)

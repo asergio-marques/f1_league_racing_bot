@@ -90,6 +90,8 @@ SAVE_DISCARDED = (
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "close"]
 WIND_DOWN = "season.wind_down"
+#: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
+_PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
@@ -545,7 +547,7 @@ async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     await run_queue(league.bot)
     assert league.unarmed == []
     assert await league.rows("SELECT id, status FROM rounds ORDER BY id") == before
-    assert league.texts(PRO_CH.checkin) == [] and league.texts(PRO_CH.calendar) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
 @pytest.mark.parametrize("status", sorted(s.value for s in RoundStatus))
@@ -859,7 +861,7 @@ async def test_a_discarded_save_cancels_nothing_and_says_the_timed_work_is_gone(
     assert await _status(league) == "NOT_RUN"
     assert league.unarmed == [R3]
     assert _success_lines(league) == []
-    assert league.texts(PRO_CH.checkin) == [] and league.texts(PRO_CH.calendar) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
