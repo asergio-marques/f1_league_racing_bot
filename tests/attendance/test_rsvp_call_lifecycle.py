@@ -745,9 +745,6 @@ async def _cleared(db) -> int:
     return (await cursor.fetchone())["checkin_cleared"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: attendance has no reopen_check_in_on writing on the save handed"
-)
 async def test_reopening_a_check_in_on_the_connection_handed_commits_nothing(tmp_path):
     """Round 1's check-in has been cleared and its reserves distributed: Stand In placed in
     Alpha, and a second reserve on standby, both having accepted. Reopening the check-in on a

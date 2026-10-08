@@ -6,6 +6,7 @@ import logging
 import weakref
 from datetime import datetime, timezone
 
+import aiosqlite
 import discord
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
@@ -665,6 +666,30 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
             "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
             round_id, division_id, msg.id,
         )
+
+
+# ── reopen_check_in_on ────────────────────────────────────────────────────────
+
+
+async def reopen_check_in_on(db: aiosqlite.Connection, round_id: int) -> None:
+    """Reopen a round's check-in on *db*, committing nothing.
+
+    `/round amend` on the change queue writes everything an amendment changes in one save. Where
+    the amended moment leaves the check-in open again, what attendance resets is attendance's
+    own, so attendance writes it on the connection the save hands it.
+
+    A round whose check-in had been taken down a day after it is so no longer (#425), and the
+    reserves are placed no longer (#429): the answers carry over to the call that replaces the
+    old one, but the distribution was made against the old one, and the new call's own deadline
+    makes it afresh. Left standing, a reserve that deadline puts on standby would keep the old
+    team, and be charged as a no-show for not racing in it.
+    """
+    await db.execute("UPDATE rounds SET checkin_cleared = 0 WHERE id = ?", (round_id,))
+    await db.execute(
+        "UPDATE driver_round_attendance "
+        "SET assigned_team_id = NULL, is_standby = 0 WHERE round_id = ?",
+        (round_id,),
+    )
 
 
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
