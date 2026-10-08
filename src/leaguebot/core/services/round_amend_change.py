@@ -20,6 +20,7 @@ refused while one is waiting, running or stopped. It is read from the queue, nev
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -28,12 +29,23 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.models.change import Verdict
-from leaguebot.core.models.round import Round, RoundFormat
-from leaguebot.core.services.amendment_rules_service import judge_amendment
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat
+from leaguebot.core.services.amendment_rules_service import judge_amendment, status_refusal
 from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 from leaguebot.core.services.cancellation_changes import cancellation_holding_amendment
-from leaguebot.core.services.change_queue import ChangeType, CheckContext, in_hand
+from leaguebot.core.services.change_queue import (
+    ChangeType,
+    CheckContext,
+    OutcomeContext,
+    Step,
+    StepContext,
+    StepView,
+    in_hand,
+)
+from leaguebot.core.services.season_service import renumber_rounds_on
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -49,6 +61,28 @@ __all__ = [
 ]
 
 ROUND_AMEND = "season.round.amend"
+
+#: The job names, as the stop notice, the tests and `StepView` know them.
+JUDGE = "judge"
+UNARM = "unarm"
+APPLY = "apply"
+ARM = "arm"
+CLOSE = "close"
+
+AMENDED = "✅ Round amended successfully."
+NOTHING_AMENDED = (
+    "Nothing was amended: round {number} in **{division}** stands as it was. Run "
+    "`/round amend` again."
+)
+SAVE_DISCARDED = (
+    "Nothing was amended: round {number} in **{division}** stands as it was, its timed work "
+    "armed again. Run `/round amend` again."
+)
+
+#: How a field of a round is named in the success line, where it differs from its column.
+_PARAMETER_OF = {"track_name": "track"}
+
+_EMPTY = StepView(name="", payload={}, result=None, done=False)
 
 ROUND_GONE = "⛔ That round no longer exists. **Nothing has been changed.**"
 _NOTHING_CHANGED = "**Nothing has been changed.** Run `/round amend` again to start over."
@@ -165,10 +199,273 @@ def round_amend_change(
                 return Verdict.refuse(held)
         return Verdict.go()
 
+    # ── Reading the change as its jobs have left it ─────────────────────────────
+
+    def view(ctx: OutcomeContext, name: str) -> StepView:
+        return next((each for each in reversed(ctx.steps) if each.name == name), _EMPTY)
+
+    def discarded(each: StepView) -> bool:
+        return "discarded" in (each.result or {})
+
+    def judged(ctx: OutcomeContext) -> dict[str, Any] | None:
+        """What `judge` kept, or None where it was discarded or has not run."""
+        result = view(ctx, JUDGE).result
+        return result if result and result.get("judged") else None
+
+    def unarmed(ctx: OutcomeContext) -> bool:
+        result = view(ctx, UNARM).result
+        return bool(result and result.get("unarmed"))
+
+    def saved(ctx: OutcomeContext) -> bool:
+        result = view(ctx, APPLY).result
+        return bool(result and result.get("saved"))
+
+    async def round_number_now(ctx: OutcomeContext) -> Any:
+        """The number the round bears now, the press's where it cannot be read."""
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        return ctx.payload["round_number"] if rnd is None else rnd.round_number
+
+    def named(text: str) -> Callable[[StepContext], Awaitable[str]]:
+        async def describe(ctx: StepContext) -> str:
+            return text.format(
+                number=await round_number_now(ctx), division=ctx.payload["division_name"]
+            )
+
+        return describe
+
+    # ── The jobs ────────────────────────────────────────────────────────────────
+
+    async def judge(ctx: StepContext) -> StepResult:
+        """Judge the amendment against the round as it stands, and keep what the later jobs need.
+
+        It writes nothing. The windows are read here, outside any save, because a save reads no
+        other connection."""
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        if rnd is None:
+            raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
+        values = amended_values(ctx.payload["changes"])
+        attendance, weather = await hooks.windows()
+        moment = now()
+        verdict = judge_amendment(
+            rnd, values, now=moment, attendance=attendance, weather=weather
+        )
+        flags = {1: rnd.phase1_done, 2: rnd.phase2_done, 3: rnd.phase3_done}
+        withdrawn = sorted(n for n, outcome in verdict.phases.items() if not outcome.stands)
+        weather_on = await modules.is_weather_enabled()
+        mystery = values.get("format", rnd.format) == RoundFormat.MYSTERY
+        if attendance is None:
+            fate = None
+        elif verdict.check_in_stays_closed:
+            fate = "settled"
+        else:
+            fate = "repost" if verdict.check_in["call"].stands else "take_down"
+        first = verdict.phases.get(1)
+        return StepResult(
+            result={
+                "judged": True,
+                "withdrawn": withdrawn,
+                "posted": [n for n in withdrawn if flags[n]],
+                "rerun": [
+                    n for n, outcome in verdict.phases.items()
+                    if outcome.stands and not flags[n]
+                ] if weather_on and not mystery else [],
+                "fate": fate,
+                "weather_on": weather_on,
+                "first_horizon_ahead": first is not None and moment < first.fire_at,
+                "track": values.get("track_name") or rnd.track_name or "Unknown",
+                "windows": {
+                    "attendance": dataclasses.asdict(attendance) if attendance else None,
+                    "weather": dataclasses.asdict(weather),
+                },
+            }
+        )
+
+    async def judge_went_through(ctx: StepContext) -> bool:
+        return judged(ctx) is not None
+
+    async def unarm(ctx: StepContext) -> StepResult:
+        scheduler.cancel_round(int(ctx.payload["round_id"]))
+        return StepResult(result={"unarmed": True})
+
+    async def apply_due(ctx: StepContext) -> bool:
+        """The save is due only where the judgement and the removal of the timed work went
+        through, not where either was discarded."""
+        return judged(ctx) is not None and unarmed(ctx)
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The one save: the audit, the round's fields, what the amendment withdraws, the
+        division's renumbering and the success line, reading nothing but the connection."""
+        if ctx.actor_id is None or ctx.actor_name is None:
+            raise RuntimeError("amending a round is the act of a member, and none is recorded")
+        judgement = judged(ctx) or {}
+        round_id = int(ctx.payload["round_id"])
+        cursor = await db.execute(
+            "SELECT status, round_number, division_id, track_name, format, scheduled_at "
+            "FROM rounds WHERE id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+        refusal = None
+        if row is None:
+            refusal = ROUND_GONE
+        elif row["status"] not in ROUND_CANCELLABLE:
+            refusal = no_longer_amendable([status_refusal(row["status"])])
+        if row is None or refusal is not None:
+            # A backstop: the check passed, and something wrote the database after it.
+            return StepResult(
+                result={"refused": refusal},
+                lines=(refusal_line(ctx.named, "`/round amend`", reply_reason(refusal or "")),),
+            )
+
+        division_id = int(row["division_id"])
+        stamp = now().isoformat()
+        changed = ""
+        for field, new in ctx.payload["changes"]:
+            old = row[field]
+            await db.execute(
+                "INSERT INTO audit_entries (actor_id, actor_name, division_id, change_type, "
+                "old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ctx.actor_id, ctx.actor_name, division_id, f"round.{field}",
+                    str(old) if old is not None else "", str(new), stamp,
+                ),
+            )
+            # Each field by a statement naming its column, so that nothing is spliced in.
+            if field == "track_name":
+                await db.execute("UPDATE rounds SET track_name = ? WHERE id = ?", (new, round_id))
+            elif field == "format":
+                await db.execute("UPDATE rounds SET format = ? WHERE id = ?", (new, round_id))
+            elif field == "scheduled_at":
+                await db.execute(
+                    "UPDATE rounds SET scheduled_at = ? WHERE id = ?", (new, round_id)
+                )
+            else:
+                raise ValueError(f"Field {field!r} is not amendable")
+            if old != new:
+                changed += (
+                    f"\n  {_PARAMETER_OF.get(field, field)}: "
+                    f"{old if old is not None else 'none'} → {new}"
+                )
+        await hooks.withdraw_phases_on(db, round_id, judgement["withdrawn"])
+        if judgement["fate"] in ("repost", "take_down"):
+            await hooks.reopen_check_in_on(db, round_id)
+        if any(field == "scheduled_at" for field, _ in ctx.payload["changes"]):
+            await renumber_rounds_on(db, division_id)
+        return StepResult(
+            result={"saved": True, "round_number": row["round_number"]},
+            lines=(
+                f"{ctx.named} | /round amend | Success\n"
+                f"  round {row['round_number']} (round_id: {round_id}){changed}",
+            ),
+        )
+
+    async def arm_due(ctx: StepContext) -> bool:
+        """The arming is due where the timed work was removed and the round may still be
+        cancelled, whatever became of the save: a round cancelled, or whose results were entered,
+        while the amendment waited or stood stopped is armed with nothing."""
+        if not unarmed(ctx):
+            return False
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        return rnd is not None and rnd.status in ROUND_CANCELLABLE
+
+    async def arm(ctx: StepContext) -> StepResult:
+        """Arm the round's timed work as the round stands now, at the windows `judge` read."""
+        judgement = judged(ctx) or {}
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        if rnd is None:
+            raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute(
+                "SELECT d.tier, s.season_number FROM divisions d "
+                "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
+                (rnd.division_id,),
+            )
+            found = await cursor.fetchone()
+        if found is None:
+            raise LookupError(f"division {rnd.division_id} is no longer there")
+        season_number, tier = int(found["season_number"]), int(found["tier"])
+        weather = judgement["windows"]["weather"]
+        if await modules.is_weather_enabled():
+            # A mystery round is armed again only while its first horizon is ahead: past it, the
+            # notice already told the drivers, and it must not be fired retroactively.
+            if rnd.format != RoundFormat.MYSTERY or judgement["first_horizon_ahead"]:
+                scheduler.schedule_round(
+                    rnd,
+                    season_number=season_number,
+                    division_tier=tier,
+                    phase_1_days=weather["phase_1_days"],
+                    phase_2_days=weather["phase_2_days"],
+                    phase_3_hours=weather["phase_3_hours"],
+                )
+        else:
+            scheduler.schedule_result_submission_jobs(
+                [rnd], division_meta={rnd.division_id: (season_number, tier)}
+            )
+        attendance = judgement["windows"]["attendance"]
+        if attendance is not None and await modules.is_attendance_enabled():
+            scheduler.schedule_attendance_round(
+                rnd,
+                season_number=season_number,
+                division_tier=tier,
+                notice_days=attendance["notice_days"],
+                last_notice_hours=attendance["last_notice_hours"],
+                deadline_hours=attendance["deadline_hours"],
+            )
+        return StepResult(result={"armed": True})
+
+    async def never_runs(ctx: StepContext) -> str:
+        return (
+            f"round {await round_number_now(ctx)} in **{ctx.payload['division_name']}** "
+            "would never run"
+        )
+
+    async def close_due(ctx: StepContext) -> bool:
+        return saved(ctx)
+
+    async def close(ctx: StepContext) -> StepResult:
+        """Read the division's rounds for the reply."""
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        rounds = [] if rnd is None else await seasons.get_division_rounds(rnd.division_id)
+        return StepResult(result={"round_list": hooks.round_list(rounds) if rounds else ""})
+
+    def outcome(ctx: OutcomeContext) -> str:
+        words = {"number": ctx.payload["round_number"], "division": ctx.payload["division_name"]}
+        if discarded(view(ctx, JUDGE)) or discarded(view(ctx, UNARM)):
+            return NOTHING_AMENDED.format(**words)
+        refused = (view(ctx, APPLY).result or {}).get("refused")
+        if refused:
+            return str(refused)
+        if discarded(view(ctx, APPLY)):
+            return SAVE_DISCARDED.format(**words)
+        listed = (view(ctx, CLOSE).result or {}).get("round_list")
+        return AMENDED + (f"\n\n{listed}" if listed else "")
+
+    steps: dict[str, Step] = {
+        JUDGE: Step(
+            JUDGE, StepKind.ACT, judge,
+            describe=named("judging the amendment of round {number} in **{division}**"),
+        ),
+        UNARM: Step(
+            UNARM, StepKind.ACT, unarm, still_due=judge_went_through,
+            describe=named("removing the timed work of round {number} in **{division}**"),
+        ),
+        APPLY: Step(
+            APPLY, StepKind.SAVE, apply, still_due=apply_due,
+            describe=named("amending round {number} in **{division}**"),
+        ),
+        ARM: Step(
+            ARM, StepKind.ACT, arm, still_due=arm_due, undiscardable=never_runs,
+            describe=named("arming the timed work of round {number} in **{division}** again"),
+        ),
+        CLOSE: Step(
+            CLOSE, StepKind.ACT, close, still_due=close_due,
+            describe=named("listing the rounds of **{division}** for the reply"),
+        ),
+    }
     return ChangeType(
         kind=ROUND_AMEND,
-        opening=(),
-        steps={},
+        opening=tuple(PlannedStep(name) for name in (JUDGE, UNARM, APPLY, ARM, CLOSE)),
+        steps=steps,
         check=check,
         key=lambda payload: (
             f"{ROUND_AMEND}:{payload['round_id']}:{json.dumps(payload['changes'])}"
@@ -176,6 +473,5 @@ def round_amend_change(
         doing=lambda payload: (
             f"Amending round {payload['round_number']} in **{payload['division_name']}**"
         ),
-        outcome=lambda ctx: "✅ Round amended successfully.",
+        outcome=outcome,
     )
-
