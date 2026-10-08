@@ -661,6 +661,61 @@ async def test_a_cancel_waiting_behind_its_division_s_cancellation_is_refused_as
     assert [line for line in _success_lines(league) if "division: Pro" in line] == []
 
 
+async def _renumbered(league: Any) -> None:
+    """Pro's round 2's date moved past round 4's, and the division renumbered by date, as an
+    amended date renumbers it: the round asked for as round 3 is now round 2."""
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       (league.clock.now + timedelta(days=200)).isoformat(), round_id(PRO, 2))
+    await league.bot.season_service.renumber_rounds(PRO)
+    assert (await league.rows("SELECT round_number FROM rounds WHERE id = ?", R3)) == [
+        {"round_number": 2}
+    ]
+
+
+def _outcome(interaction: Any) -> str:
+    """What the acknowledgement was last updated to say."""
+    call = interaction.edit_original_response.await_args
+    return str(call.args[0]) if call.args else str(call.kwargs.get("content", ""))
+
+
+@pytest.mark.parametrize("submission", [
+    pytest.param(False, id="cancelled"),
+    pytest.param(True, id="refused, its submission opened", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#439: the refusal when the cancellation runs names the round by its number at "
+               "the press",
+    )),
+])
+async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
+    tmp_path, submission,
+):
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _stopped_blocker(league)
+    interaction = await _asked(league)
+    await _renumbered(league)
+    if submission:
+        await open_submission(league, R3)
+
+    await _clear_blocker(league)
+
+    outcome = _outcome(interaction)
+    if submission:
+        assert outcome == ("❌ Cannot cancel Round 2 — a results submission channel is currently "
+                           "open. Close the submission first.")
+        assert await _status(league) == "NOT_RUN"
+        refusals = _refusal_lines(league)
+        assert len(refusals) == 1 and "Round 2" in refusals[0] and "Round 3" not in refusals[0]
+        return
+    assert outcome == "✅ Round **2** in **Pro** cancelled."
+    checkin = league.texts(PRO_CH.checkin)
+    assert len(checkin) == 1 and checkin[0].startswith("<@&801>\n📢 **Round 2 Cancelled: Pro**")
+    assert "Round 3" not in checkin[0]
+    lines = [line for line in _success_lines(league) if "division: Pro" in line]
+    assert len(lines) == 1
+    assert "\n  round: 2" in lines[0] and "round: 3" not in lines[0]
+    assert "Round 3" not in lines[0]
+
+
 async def test_the_save_refuses_writing_nothing_where_the_round_moved_on_after_the_check(
     tmp_path,
 ):
