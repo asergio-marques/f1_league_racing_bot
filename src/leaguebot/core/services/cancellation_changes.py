@@ -64,13 +64,15 @@ if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
 
-__all__ = ["ROUND_CANCEL", "round_cancel_change"]
+__all__ = ["DIVISION_CANCEL", "ROUND_CANCEL", "division_cancel_change", "round_cancel_change"]
 
 ROUND_CANCEL = "season.round.cancel"
+DIVISION_CANCEL = "season.division.cancel"
 
 _COMMAND = "`/round cancel`"
 NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."
 ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
+DIVISION_NOT_ONGOING = "❌ `/division cancel` is available only while the season is ongoing."
 
 
 def _already_cancelled(payload: dict[str, Any]) -> str:
@@ -492,4 +494,52 @@ def round_cancel_change(
             f"Cancelling round {payload['round_number']} in **{payload['division_name']}**"
         ),
         outcome=outcome,
+    )
+
+
+def division_cancel_change(
+    *,
+    modules: "ModuleService",
+    seasons: SeasonService,
+    scheduler: "SchedulerService",
+    now: Callable[[], datetime],
+) -> ChangeType:
+    """The change that cancels a division and the rounds of it that may still be cancelled.
+
+    The payload is ``{"division_id", "division_name", "season_number"}``. It is the round's
+    cancellation over a whole division: the same jobs, with the timed work of every round
+    removed first. A round whose results submission stands open is cancelled with the rest, so
+    the change is handed no *submission_open* (the owner decided so, 2026-10-08).
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        payload = ctx.payload
+        season = await seasons.get_confirmed_season()
+        if season is None or season.stage not in ONGOING_STAGES:
+            return Verdict.refuse(DIVISION_NOT_ONGOING)
+        try:
+            await seasons.assert_season_mutable(season)
+        except SeasonImmutableError:
+            return Verdict.refuse(ARCHIVED)
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute(
+                "SELECT status FROM divisions WHERE id = ?", (int(payload["division_id"]),)
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return Verdict.refuse(f"❌ Division `{payload['division_name']}` not found.")
+        if row["status"] == "CANCELLED":
+            return Verdict.refuse(
+                f"❌ Division **{payload['division_name']}** is already cancelled."
+            )
+        return Verdict.go()
+
+    return ChangeType(
+        kind=DIVISION_CANCEL,
+        opening=(),
+        steps={},
+        check=check,
+        key=lambda payload: f"{DIVISION_CANCEL}:{payload['division_id']}",
+        doing=lambda payload: f"Cancelling **{payload['division_name']}**",
+        outcome=lambda _ctx: "",
     )

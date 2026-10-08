@@ -109,7 +109,6 @@ def test_the_season_approval_is_registered():
     assert kinds.count(TELL_KIND) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the cancellations are not registered yet")
 def test_the_cancellations_are_registered():
     """The builder registers the cancellation of a round and of a division, once each, as
     "season.round.cancel" and "season.division.cancel" (#439, slice 4b)."""
