@@ -22,8 +22,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 ROUND_ID, SECOND_ROUND_ID, THIRD_ROUND_ID = 31, 32, 33
 CHANNELS = {ROUND_ID: 690, SECOND_ROUND_ID: 691, THIRD_ROUND_ID: 692}
 
-XFAIL = "#439: results has no reader or closer of the open submissions a cancellation meets"
-
 
 async def _make_db(tmp_path) -> str:
     """Pro's rounds 1 to 3 (ids 31 to 33), each awaiting its results, none with a submission."""
@@ -81,7 +79,6 @@ def _read(found) -> list[tuple]:
     return [(each.round_id, each.channel_id, each.accepted) for each in found]
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 @pytest.mark.parametrize(("case", "expected"), [
     pytest.param("nothing accepted", [(ROUND_ID, 690, False)], id="nothing accepted"),
     pytest.param("ACTIVE", [(ROUND_ID, 690, True)], id="a session's results accepted"),
@@ -115,7 +112,6 @@ async def test_an_open_submission_counts_as_accepted_once_any_session_is_saved(
         assert _read(await open_submissions_on(db, [ROUND_ID, THIRD_ROUND_ID])) == expected
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_closing_the_submissions_writes_on_the_connection_handed_and_commits_nothing(
     tmp_path,
 ):

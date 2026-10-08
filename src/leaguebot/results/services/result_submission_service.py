@@ -251,6 +251,68 @@ async def is_submission_open(db_path: str, round_id: int) -> bool:
     return row is not None and row["closed"] == 0
 
 
+class OpenSubmission(NamedTuple):
+    """A round's results submission standing open: its channel, and whether it has accepted
+    anything (a `session_results` row of the round, of either status)."""
+
+    round_id: int
+    channel_id: int
+    accepted: bool
+
+
+async def open_submissions_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> list[OpenSubmission]:
+    """Each open submission among *round_ids*, in round order, read on the connection handed.
+
+    **Accepted means any session saved** (#439): the wizard saves each session as it accepts it
+    (`save_session_result`), with ``status`` ``ACTIVE`` for results and ``CANCELLED`` for a
+    session entered as not held, so any `session_results` row of the round, of either status,
+    while the submission stands open, is data a cancellation would lose. A round in its review
+    keeps its submission open with its sessions accepted, so it counts. Fixed SQL, one round at
+    a time, so nothing is spliced.
+    """
+    found: list[OpenSubmission] = []
+    for round_id in sorted(set(round_ids)):
+        cursor = await db.execute(
+            "SELECT channel_id FROM round_submission_channels WHERE round_id = ? AND closed = 0",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            continue
+        cursor = await db.execute(
+            "SELECT 1 FROM session_results WHERE round_id = ? LIMIT 1", (round_id,)
+        )
+        found.append(
+            OpenSubmission(round_id, int(row["channel_id"]), await cursor.fetchone() is not None)
+        )
+    return found
+
+
+async def open_submissions(db_path: str, round_ids: Iterable[int]) -> list[OpenSubmission]:
+    """`open_submissions_on` on a connection of its own."""
+    async with get_connection(db_path) as db:
+        return await open_submissions_on(db, round_ids)
+
+
+async def close_submissions_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> list[tuple[int, int]]:
+    """Mark each open submission among *round_ids* closed on the connection handed, committing
+    nothing, and give ``(round_id, channel_id)`` for each so that its channel can be deleted.
+
+    The channel's deletion is a job of its own after the save (`delete_channel`); this is the
+    save's half of `close_submission_channel`.
+    """
+    closed = [(each.round_id, each.channel_id) for each in await open_submissions_on(db, round_ids)]
+    for round_id, _channel_id in closed:
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?", (round_id,)
+        )
+    return closed
+
+
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
     """Return True if *channel_id* belongs to an open submission channel in
     penalty-review state (all sessions submitted/cancelled, round not yet finalized).
