@@ -611,11 +611,14 @@ _RUN_REFUSALS = {
 
 
 @pytest.mark.parametrize("case", sorted(_RUN_REFUSALS))
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_refusal_found_when_the_cancel_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, case,
 ):
+    """Pro's round 3 cancellation waits behind a stopped one and something changes meanwhile; it
+    is refused when it runs, and Am's round 4 cancellation behind it still runs. Where the season
+    itself moved to Pending completion, Am's round 4 is refused for the same reason."""
     change, text = _RUN_REFUSALS[case]
+    season_moved_on = case == "the season moved to pending completion"
     league = await ongoing_league(tmp_path, attendance=True)
     await _stopped_blocker(league)
     interaction = await _asked(league)
@@ -626,11 +629,15 @@ async def test_a_refusal_found_when_the_cancel_runs_updates_the_reply_and_the_qu
 
     assert text in reply(interaction)
     assert CANCELLED not in reply(interaction)
-    assert len(_refusal_lines(league)) == 1
+    assert len(_refusal_lines(league)) == (2 if season_moved_on else 1)
     assert R3 not in league.unarmed
-    assert round_id(AM, 4) in league.unarmed
+    assert (round_id(AM, 4) in league.unarmed) is not season_moved_on
     assert await _stopped_at(league) is None
-    assert all(row["state"] == "DONE" for row in await change_rows(league.db_path))
+    states = {row["dedup_key"]: row["state"] for row in await change_rows(league.db_path)}
+    assert states.pop(f"{ROUND_CANCEL_KIND}:{R3}") == "REFUSED"
+    if season_moved_on:
+        assert states.pop(f"{ROUND_CANCEL_KIND}:{round_id(AM, 4)}") == "REFUSED"
+    assert set(states.values()) == {"DONE"}
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
