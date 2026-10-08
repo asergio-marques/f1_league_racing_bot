@@ -1090,3 +1090,57 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
     assert [(row["round_number"], row["status"]) for row in rows] == [
         (1, "FINAL"), (2, "AWAITING_REPORT_VERDICTS"), (3, "CANCELLED"), (4, "NOT_RUN"),
     ]
+
+
+# ── While an amendment is applied (#439 slice 4b, F4) ──────────────────────────────
+
+BEING_AMENDED = (
+    "⏸️ A round of **Pro** is being amended, so its rounds cannot be cancelled until that is "
+    "done. Try again in a moment."
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
+@pytest.mark.parametrize("marked", [PRO, AM], ids=["its division", "another division"])
+async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amended_is_refused_at_once(
+    tmp_path, marked,
+):
+    """A `/round amend` of a round of Pro has been confirmed and is being applied: its new date
+    may yet renumber Pro's rounds. Asking to cancel Pro's round 3 meanwhile is refused at once,
+    nothing queued and one refusal line written; an amendment in Am holds nothing in Pro."""
+    league = await ongoing_league(tmp_path, attendance=True)
+
+    with league.bot.amendment_service.applying(marked):
+        interaction = await _asked(league)
+
+    if marked == AM:
+        assert acknowledgement(interaction).startswith(ACK)
+        assert len(await _changes_of(league)) == 1
+        return
+    assert reply(interaction) == BEING_AMENDED
+    assert len(_refusal_lines(league)) == 1
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert league.unarmed == []
+    assert await _status(league) == "NOT_RUN"
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
+async def test_a_round_cancel_that_comes_to_run_while_a_round_of_its_division_is_being_amended_is_refused(
+    tmp_path,
+):
+    """Pro's round 3 cancellation waits behind a stopped one. When the queue goes on, a
+    `/round amend` of a round of Pro is being applied: the cancellation is refused when it runs,
+    the reply updated with the refusal, and round 3 keeps its timed work and its status."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _stopped_blocker(league)
+    interaction = await _asked(league)
+
+    with league.bot.amendment_service.applying(PRO):
+        await _clear_blocker(league)
+
+    assert _outcome(interaction) == BEING_AMENDED
+    assert await _status(league) == "NOT_RUN"
+    assert R3 not in league.unarmed
+    assert (await _change(league))["state"] == "REFUSED"
+    assert len(_refusal_lines(league)) == 1

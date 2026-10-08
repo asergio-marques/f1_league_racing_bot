@@ -641,3 +641,62 @@ async def test_a_division_that_finishes_while_its_cancellation_waits_is_refused_
     assert not set(before) & set(league.unarmed)
     assert len(_refusal_lines(league)) == 1
     assert (await _change(league))["state"] == "REFUSED"
+
+
+# ── While an amendment is applied (#439 slice 4b, F4) ──────────────────────────────
+
+BEING_AMENDED = (
+    "⏸️ A round of **Pro** is being amended, so its rounds cannot be cancelled until that is "
+    "done. Try again in a moment."
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
+async def test_a_division_cancel_asked_while_a_round_of_it_is_being_amended_is_refused_at_once(
+    tmp_path,
+):
+    """A `/round amend` of a round of Pro has been confirmed and is being applied. Asking to
+    cancel Pro meanwhile is refused at once: nothing is queued, one refusal line is written, and
+    Pro and its rounds are left as they were."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    before = await _statuses(league)
+
+    with league.bot.amendment_service.applying(PRO):
+        interaction = await _asked(league)
+
+    assert reply(interaction) == BEING_AMENDED
+    assert len(_refusal_lines(league)) == 1
+    assert _refusal_lines(league)[0].startswith(REFUSAL)
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert league.unarmed == []
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a cancel is not yet refused while an amendment is applied")
+async def test_a_division_cancel_that_comes_to_run_while_a_round_of_it_is_being_amended_is_refused(
+    tmp_path,
+):
+    """Pro's cancellation waits behind Am's round 3 cancellation, stopped at its check-in notice.
+    When the queue goes on, a `/round amend` of a round of Pro is being applied: Pro's
+    cancellation is refused when it runs, the reply says so, and Pro and its rounds stand."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.remove_channel(AM_CH.checkin)
+    await cancel_round(league, "Am", 3)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "notify_checkin"
+    interaction = await _asked(league)
+    before = await _statuses(league)
+
+    with league.bot.amendment_service.applying(PRO):
+        league.restore_channel(AM_CH.checkin)
+        await retry_job(league.bot)
+
+    assert BEING_AMENDED in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    assert not set(before) & set(league.unarmed)
+    assert len(_refusal_lines(league)) == 1
+    assert (await _change(league))["state"] == "REFUSED"

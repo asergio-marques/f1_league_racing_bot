@@ -934,3 +934,43 @@ async def test_a_cancellation_elsewhere_or_done_lets_the_amendment_through(
 
     assert "⏸️" not in _all_replies(interaction)
     assert not any(line.startswith("⛔ ") for line in _lines(cog))
+
+
+@pytest.mark.xfail(strict=True, reason="#439: an amendment being applied is not yet marked")
+@pytest.mark.parametrize("fails", [False, True], ids=["amended", "the amendment fails"])
+async def test_a_confirmed_amendment_holds_its_division_until_its_rounds_are_renumbered(
+    tmp_path, fails
+):
+    """Round 1 of Div A is moved a day later and the manager presses Confirm. From the moment the
+    confirmation's checks pass until the division's rounds are renumbered, Div A is marked as
+    having a round being amended, so that a cancellation of it or of its rounds is refused
+    meanwhile; the mark is gone once the press is done, and gone too where the amendment fails."""
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path, attendance=False)
+    service = AmendmentService(path)
+    cog.bot.amendment_service = service
+    seen: list[tuple[str, bool]] = []
+
+    async def _amend(*_args, **_kwargs):
+        seen.append(("amend", service.is_applying(1)))
+        if fails:
+            raise RuntimeError("disk I/O error")
+
+    renumber = cog.bot.season_service.renumber_rounds
+
+    async def _renumber(division_id):
+        seen.append(("renumber", service.is_applying(1)))
+        await renumber(division_id)
+
+    service.amend_round = _amend
+    cog.bot.season_service.renumber_rounds = _renumber
+    interaction = _interaction()
+    _recording(cog, interaction)
+    later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
+
+    await _view(cog, [("scheduled_at", later)]).confirm.callback(interaction)
+
+    assert seen == ([("amend", True)] if fails else [("amend", True), ("renumber", True)])
+    assert not service.is_applying(1)

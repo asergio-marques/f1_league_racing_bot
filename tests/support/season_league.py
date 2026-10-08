@@ -137,6 +137,7 @@ class SeasonLeague:
 
     def __init__(self, db_path: str, now: datetime, *, images: bool) -> None:
         from leaguebot.core.cogs.season_cog import SeasonCog
+        from leaguebot.core.services.amendment_service import AmendmentService
         from leaguebot.core.services.config_service import ConfigService
         from leaguebot.core.services.module_service import ModuleService
         from leaguebot.core.services.placement_service import PlacementService
@@ -200,6 +201,8 @@ class SeasonLeague:
         bot.config_service = ConfigService(db_path)
         bot.module_service = ModuleService(db_path)
         bot.season_service = SeasonService(db_path)
+        # Real, so that its record of the amendments being applied is what the cancellations read.
+        bot.amendment_service = AmendmentService(db_path)
         bot.placement_service = PlacementService(db_path, bot)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
         bot.image_config_service.get_config = AsyncMock(return_value=None)
