@@ -56,8 +56,6 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ACTOR_ID = 77
 
-NOT_ON_THE_QUEUE = "#439: /division cancel does not yet ask the change queue"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -620,7 +618,6 @@ async def test_cancelling_without_the_exact_word_is_refused(tmp_path, confirm):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_cancelling_asks_the_queue_with_the_division(tmp_path):
     """A season being raced (season 4) holds division Pro. The manager runs /division cancel on
     it with CONFIRM. The command asks the change queue, once, for a division's cancellation
@@ -669,7 +666,6 @@ async def test_an_archived_season_cannot_be_cancelled_into(tmp_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_cancellation_is_never_deferred(tmp_path):
     """The manager runs /division cancel on Pro twice: once typing 'no' in place of CONFIRM,
     which is refused, and once with CONFIRM, which is asked of the change queue. Neither is
@@ -1172,10 +1168,7 @@ async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged
 @pytest.mark.parametrize(
     "arranged",
     [
-        pytest.param(
-            {}, id="cancelled",
-            marks=pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE),
-        ),
+        pytest.param({}, id="cancelled"),
     ],
 )
 async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_named(

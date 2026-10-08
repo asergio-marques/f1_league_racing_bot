@@ -220,7 +220,6 @@ async def _asked(league: Any, name: str = "Pro", **kwargs: Any) -> Any:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_stop_after_the_division_is_cancelled_tells_it_and_reposts_its_calendar_on_restart(
     tmp_path,
 ):
@@ -243,7 +242,6 @@ async def test_a_stop_after_the_division_is_cancelled_tells_it_and_reposts_its_c
     assert len(lines) == 1 and CHECKIN_R3 in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_stop_after_the_timed_work_is_removed_cancels_the_division_on_restart(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -258,7 +256,6 @@ async def test_a_stop_after_the_timed_work_is_removed_cancels_the_division_on_re
     assert (await _statuses(league))[R4] == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_cancelling_the_last_division_moves_the_season_on_in_the_same_save(tmp_path):
     league = await ongoing_league(tmp_path)
     await _am_finished(league)
@@ -278,7 +275,6 @@ async def test_cancelling_the_last_division_moves_the_season_on_in_the_same_save
     assert (await league.season())["stage"] == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled_from(tmp_path):
     league = await ongoing_league(tmp_path)
     await _awaiting_results(league, R4)
@@ -289,7 +285,6 @@ async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled
     assert sorted(await _round_audits(league)) == ["AWAITING_RESULTS", "NOT_RUN"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_call_message_discord_will_not_delete_stops_the_queue(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     league.undeletable.add(CALL_MESSAGES[1])
@@ -310,7 +305,6 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue(tmp_path):
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_outcome(
     tmp_path,
 ):
@@ -407,7 +401,6 @@ async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_raced_round_keeps_its_results_and_its_status(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -421,7 +414,6 @@ async def test_a_raced_round_keeps_its_results_and_its_status(tmp_path):
     assert await _division(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_each_round_called_off_has_its_call_taken_down_and_its_check_in_written(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     await _second_call(league)
@@ -437,7 +429,6 @@ async def test_each_round_called_off_has_its_call_taken_down_and_its_check_in_wr
     assert CHECKIN_R3 + CHECKIN_R4 in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_round_whose_call_was_never_posted_is_neither_taken_down_nor_written(tmp_path):
     """Pro's round 3 has its check-in call standing and round 4 has none. Cancelling Pro takes
     round 3's call down and writes its check-in beneath the line; round 4 gets no take-down job
@@ -453,7 +444,6 @@ async def test_a_round_whose_call_was_never_posted_is_neither_taken_down_nor_wri
     assert "check-in, Pro, Round 4" not in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_division_is_told_in_the_division_s_words(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, results=True, attendance=True)
     await _asked(league)
@@ -473,7 +463,6 @@ async def test_the_division_is_told_in_the_division_s_words(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_jobs_run_in_today_s_order(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, results=True, attendance=True)
     await _second_call(league)
@@ -492,7 +481,6 @@ async def test_the_jobs_run_in_today_s_order(tmp_path):
     assert sent == [PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -503,7 +491,6 @@ async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
     assert (await _jobs(league))[0]["name"] == "unarm"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
@@ -518,7 +505,6 @@ async def test_the_wind_down_follows_as_a_change_of_its_own(tmp_path):
     assert (await league.season())["stage"] == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_discarded_save_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
@@ -535,7 +521,6 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     league.bot.scheduler_service.cancel_round = MagicMock(

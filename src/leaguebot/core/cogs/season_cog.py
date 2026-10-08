@@ -44,7 +44,7 @@ from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, cancellation_notice_service
-from leaguebot.core.services.cancellation_changes import ROUND_CANCEL
+from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -4090,61 +4090,18 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if div.status == "CANCELLED":
-            await refuse(
-                interaction,
-                f"\u274c Division **{div.name}** is already cancelled.",
-                what=describe(interaction),
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        rounds = await self.bot.season_service.get_division_rounds(div.id)
-        for rnd in rounds:
-            self.bot.scheduler_service.cancel_round(rnd.id)
-        # The rounds the cascade below calls off, read before it does: those whose results are
-        # not yet in, exactly as `ROUND_CANCELLABLE` has it for the cascade itself.
-        called_off = frozenset(r.id for r in rounds if r.status in ROUND_CANCELLABLE)
-
-        await self.bot.season_service.cancel_division(
-            division_id=div.id,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-        )
-
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        wound_down = True
-        try:
-            await self.bot.season_service.wind_down_ongoing(self.bot)
-        except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
-            log.exception("could not wind the season down")
-            wound_down = False
-
-        # Each enabled module says what the cancellation means for it, in its own channel, and
-        # the calendar is posted again with the division's rounds struck through (#175).
-        report = await cancellation_notice_service.announce_cancellation(
-            self.bot,
-            interaction.guild,
-            [div],
-            scope=cancellation_notice_service.SCOPE_DIVISION,
-            season_number=season.season_number,
-            round_ids=called_off,
-        )
-
-        await interaction.followup.send(
-            f"\u2705 Division **{div.name}** cancelled."
-            + cancellation_notice_service.failure_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
-            f"  division: {div.name}"
-            + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
+        # Whether the division is already cancelled is the change type's check, made now and again
+        # as the cancellation comes up to run. The queue's acknowledgement is this command's
+        # response, so nothing is deferred.
+        await self.bot.change_queue.ask(
+            DIVISION_CANCEL,
+            {
+                "division_id": div.id,
+                "division_name": div.name,
+                "season_number": season.season_number,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
