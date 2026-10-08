@@ -46,6 +46,7 @@ read from the queue's table and the review itself is left to `test_review_open_c
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -939,6 +940,85 @@ async def test_a_paste_into_a_submission_closed_by_a_cancellation_is_refused_and
 
     assert _said(stubs["sub"]).count(refusal) == 1
     assert bot.wait_for.await_count == 1
+    assert await _sessions(db_path) == []
+    assert "was cancelled" not in _said(bot._results)
+    assert stubs["opened"] == []
+
+
+class _Gateway:
+    """`bot.wait_for` as discord.py's own: each wait is a future that only an event dispatched to
+    it resolves, and no message ever arrives. `close` does what a cancellation does to a
+    submission it meets open and empty: it records round 3's submission closed, with the round in
+    *round_status*, then deletes its channel, so the `guild_channel_delete` event reaches every wait
+    whose check takes the channel, and the time any wait was given runs out. It does not say how
+    the wizard learns of the closing, only that it has every means to."""
+
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.waits: list[tuple[str, Any, float | None, asyncio.Future]] = []
+        self.waiting = asyncio.Event()
+
+    async def wait_for(self, event, *, check=None, timeout=None):
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        self.waits.append((event, check, timeout, future))
+        self.waiting.set()
+        return await future
+
+    async def close(self, round_status: str) -> None:
+        async with get_connection(self.db_path) as db:
+            await db.execute(
+                "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+                "closed) VALUES (?, ?, '2026-02-01T18:00:00+00:00', 1)",
+                (ROUND_ID, SUB_CHANNEL),
+            )
+            await db.execute("UPDATE rounds SET status = ? WHERE id = ?", (round_status, ROUND_ID))
+            await db.commit()
+        deleted = SimpleNamespace(id=SUB_CHANNEL)
+        for event, check, timeout, future in list(self.waits):
+            if future.done():
+                continue
+            if event == "guild_channel_delete" and (check is None or check(deleted)):
+                future.set_result(deleted)
+            elif timeout is not None:
+                future.set_exception(asyncio.TimeoutError())
+
+    def pending(self) -> list[str]:
+        return [event for event, _c, _t, future in self.waits if not future.done()]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the wizard's wait for a paste does not end when a "
+                                       "cancellation closes its submission and deletes its channel")
+@pytest.mark.parametrize("round_status", [
+    pytest.param("CANCELLED", id="the round cancelled"),
+    pytest.param("AWAITING_RESULTS", id="closed by /season cancel before its cascade"),
+])
+async def test_a_wizard_waiting_on_a_submission_a_cancellation_closes_stops_waiting(
+    tmp_path, round_status,
+):
+    """Round 3's submission channel is open, has accepted nothing, and is waiting for the
+    qualifying results. A cancellation then closes the submission and deletes its channel: the
+    round's own or its division's (the round recorded cancelled), or `/season cancel`'s, which
+    closes it before its cascade cancels the round. No paste ever comes. The wizard stops waiting
+    and returns, without a restart: no wait of its own is left pending, no session is saved,
+    nothing is said in the results channel and no review is asked."""
+    db_path = await _make_db(tmp_path, name="wait_ends_on_closing")
+    bot = _bot(db_path, [])
+    gateway = _Gateway(db_path)
+    bot.wait_for = gateway.wait_for
+
+    wizard = asyncio.create_task(_run(bot))
+    try:
+        await asyncio.wait_for(gateway.waiting.wait(), timeout=5)
+        await gateway.close(round_status)
+        done, _ = await asyncio.wait({wizard}, timeout=3)
+        assert wizard in done, "the wizard is still waiting on a closed submission"
+        stubs = wizard.result()
+    finally:
+        if not wizard.done():
+            wizard.cancel()
+            await asyncio.gather(wizard, return_exceptions=True)
+
+    assert gateway.pending() == []
     assert await _sessions(db_path) == []
     assert "was cancelled" not in _said(bot._results)
     assert stubs["opened"] == []
