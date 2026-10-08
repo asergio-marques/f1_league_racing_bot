@@ -800,3 +800,28 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         outcome = _outcome(press)
         assert outcome.startswith(NO_LONGER) and "**Nothing has been changed.**" in outcome
         assert await _moment(league) != _when(league, days=91)
+
+
+#: Why the mystery round's test fails until its own fix.
+MYSTERY_XFAIL = (
+    "#439: a mystery round moved inside its first horizon is armed with no results submission"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=MYSTERY_XFAIL)
+async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_submission(
+    tmp_path,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours; Pro's round 3 is a mystery round. It is
+    brought forward to three days out, inside its first horizon, so its forecasts are not armed
+    again. Its results submission is armed all the same, so that the round still opens its
+    submission and can finish."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", R3)
+    await _amended(league, scheduled_at=_at(league, days=3))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert ("results", [R3]) in league.armed
+    assert ("weather", [R3]) not in league.armed
