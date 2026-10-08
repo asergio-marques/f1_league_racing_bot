@@ -975,7 +975,6 @@ async def test_a_confirmed_amendment_holds_its_division_until_its_rounds_are_ren
     assert not service.is_applying(1)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the mark is entered only after the cancellation check")
 @pytest.mark.parametrize("held", [False, True], ids=["nothing held", "a cancellation holds it"])
 async def test_a_confirmed_amendment_marks_its_division_before_it_looks_for_a_cancellation(
     tmp_path, monkeypatch, held
