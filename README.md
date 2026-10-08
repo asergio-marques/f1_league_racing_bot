@@ -836,7 +836,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `round_number` | Integer | ✅ | The round number to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below. While a `/round amend` of a round of the same division is being applied, from its Confirm until the rounds are renumbered, the cancellation is refused, when you ask and again when it comes to run: try again in a moment.
+Is acknowledged at once, naming its first job, and carried out on the change queue: the round's scheduled jobs are removed, its status set to `CANCELLED` and the division told, the reply updated when it is done — see **Who is told about a cancellation** below. While a `/round amend` of a round of the same division is being applied, from its Confirm until the amendment is applied (its renumbering included), the cancellation is refused, when you ask and again when it comes to run: try again in a moment.
 
 > **Who is told about a cancellation.** The bot posts no announcement of its own: telling your drivers a race is off is yours to do. What it does is stop each module carrying on as though the race were still on, each in its own channel and only where that module is turned on:
 >
