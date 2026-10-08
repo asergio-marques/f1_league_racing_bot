@@ -1576,6 +1576,45 @@ async def held_by_amendment(
     )
 
 
+async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
+    """Why the wizard may take nothing more for *round_id*, or None when it may (#439).
+
+    **A submission a cancellation has closed takes nothing** (decided 2026-10-08). The wizard
+    saves each session as it is accepted, so a paste landing between a cancellation's save and
+    the deletion of its channel (which a stopped `delete_channel` can stretch to the hour) would
+    be saved against a cancelled round. Two causes are told apart: the round cancelled, its own
+    status or its division's or its season's, and the submission closed with the round not
+    cancelled, which `/season cancel` does between its closing and its cascade, and turning
+    results off does by its purge. The words say which. A round with no submission row at all
+    is not closed by this: a resubmission's round, which has its results entered, cannot be
+    cancelled and is not asked.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
+            "s.status AS season_status, rsc.closed "
+            "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
+            "WHERE r.id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    if "CANCELLED" in (row["round_status"], row["division_status"], row["season_status"]):
+        return (
+            f"⛔ Round {row['round_number']} has been cancelled, so its results can no longer be "
+            "entered. Nothing was saved."
+        )
+    if row["closed"]:
+        return (
+            f"⛔ Round {row['round_number']}'s results submission has been closed, so its "
+            "results can no longer be entered. Nothing was saved."
+        )
+    return None
+
+
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
     """Whether an approval of one of the amendment's stages is in hand on the change queue for
     *round_id*, queued, running or stopped on a failure. Nothing overtakes it, so the sweep,
@@ -3333,12 +3372,15 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
-                held = await held_by_amendment(
+                closed = await closed_by_cancellation(db_path, round_id)
+                held = closed or await held_by_amendment(
                     db_path, round_id, division_id,
                     then=f"Type `CANCELLED` for **{label}** again then.",
                 )
                 if held:
                     await sub_channel.send(held)
+                    if closed:
+                        return
                     continue
                 await save_session_result(
                     db_path=db_path,
@@ -3438,11 +3480,14 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                     "Results will be saved without a config."
                 )
 
-            held = await held_by_amendment(
+            closed = await closed_by_cancellation(db_path, round_id)
+            held = closed or await held_by_amendment(
                 db_path, round_id, division_id, then=f"Paste **{label}** again then."
             )
             if held:
                 await sub_channel.send(held)
+                if closed:
+                    return
                 continue
 
             # Log accepted input (with raw content for auditability)

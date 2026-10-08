@@ -914,8 +914,6 @@ def _closing_before_the_first_paste(db_path, pastes, round_status: str):
     return AsyncMock(side_effect=wait_for)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the wizard does not yet refuse a paste once a "
-                                       "cancellation has closed its submission")
 @pytest.mark.parametrize("closed_by", sorted(_CLOSED_BY))
 @pytest.mark.parametrize("pastes", [
     pytest.param((QUALI_PASTE, RACE_PASTE), id="results"),
