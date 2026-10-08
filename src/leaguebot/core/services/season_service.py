@@ -1107,36 +1107,6 @@ class SeasonService:
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 
-    async def cancel_division(
-        self,
-        division_id: int,
-        actor_id: int,
-        actor_name: str,
-    ) -> None:
-        """Mark a division CANCELLED, cancelling every round of it not yet raced.
-
-        Before issue #154 this set the division's status alone: its rounds were unscheduled by the
-        caller but kept saying ACTIVE for ever, so a cancelled division still read as one holding
-        outstanding rounds.
-        """
-        from datetime import timezone
-        now = datetime.now(timezone.utc)
-        async with get_connection(self._db_path) as db:
-            await cancel_division_on(
-                db, division_id, actor_id=actor_id, actor_name=actor_name, now=now
-            )
-            await db.commit()
-            cursor = await db.execute(
-                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
-            )
-            season_row = await cursor.fetchone()
-
-        # Cancelling the last division still running leaves the season pending completion.
-        if season_row is not None:
-            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
-
-            await advance_to_pending_completion(self._db_path, season_row["season_id"])
-
     async def cancel_season_cascade(
         self,
         season_id: int,

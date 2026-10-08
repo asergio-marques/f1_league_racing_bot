@@ -1287,8 +1287,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    # The round and division cancels (slice 4b)
-    ("core/services/season_service.py", "SeasonService.cancel_division"): (1, SLICE[4]),
     # The season end
     ("core/services/season_service.py", "SeasonService.complete_season"): (1, SLICE[5]),
     ("core/services/season_service.py", "SeasonService.refresh_division_status"): (1, SLICE[5]),
