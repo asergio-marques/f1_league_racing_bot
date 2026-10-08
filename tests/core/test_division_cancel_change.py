@@ -698,3 +698,30 @@ async def test_a_division_cancel_that_comes_to_run_while_a_round_of_it_is_being_
     assert not set(before) & set(league.unarmed)
     assert len(_refusal_lines(league)) == 1
     assert (await _change(league))["state"] == "REFUSED"
+
+
+async def test_a_division_that_finishes_after_its_check_is_refused_by_the_save_on_a_retry(
+    tmp_path,
+):
+    """Pro's cancellation passed its check and removed the timed work, and its save failed, so the
+    queue stopped at the save. Meanwhile Pro's last results come in and Pro finishes. On Retry the
+    save itself refuses: the reply says Pro has finished, Pro stays finished, its rounds keep the
+    statuses they had, one refusal line is written and no wind-down is asked."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    interaction = await _asked(league)
+    with _failing("cancel_division_on"):
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+    await _pro_finished(league)
+    before = await _statuses(league)
+
+    await retry_job(league.bot)
+
+    assert FINISHED in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert await _division(league) == "FINISHED"
+    assert await _statuses(league) == before
+    assert len(_refusal_lines(league)) == 1
+    assert _refusal_lines(league)[0].startswith(REFUSAL)
+    assert _success_lines(league) == []
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == WIND_DOWN] == []
