@@ -684,9 +684,6 @@ async def test_only_the_division_s_own_rounds_are_withdrawn_and_audited(tmp_path
 # division's cancellation posts each notice and takes each call down as a job of the change
 # queue, which stops on a failure Discord caused; so each has a raising form here.
 
-#: The raising forms are not built yet.
-RAISING_FORMS_UNBUILT = "#439: post_module_notice and take_down_call are not built yet"
-
 AUDIT_OF_ROUND_3 = (
     "\n  check-in, Pro, Round 3 (Monza):"
     "\n    accepted: <@101>"
@@ -758,7 +755,6 @@ async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
     channels[FORECAST].send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_FORMS_UNBUILT)
 async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(
     tmp_path, monkeypatch
 ):
@@ -789,7 +785,6 @@ async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_FORMS_UNBUILT)
 async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(tmp_path):
     """Round 3's call, its last notice and its distribution (9001-9003) stand, and Discord
     refuses to delete any of them. The take-down raises StepFailedOnDiscord carrying the check-in

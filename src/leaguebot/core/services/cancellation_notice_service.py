@@ -392,6 +392,29 @@ async def _withdraw_call(bot: LeagueBot, round_id: int, division_id: int) -> str
     return None
 
 
+async def take_down_call(bot: LeagueBot, division, round_id: int) -> dict:
+    """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
+
+    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`_checkin_audit`),
+    read **before** the call comes down, and whether a call stood. Where a message cannot be
+    deleted it raises `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the
+    audit is kept on the job whether it goes through or is discarded, and the call's record
+    stays for the next try, which reads the audit again. The raise is `from` the Discord failure
+    that caused it, as `withdraw_rsvp_call` raises it.
+    """
+    from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
+
+    audit = await _checkin_audit(bot, division, round_id)
+    try:
+        taken_down = await withdraw_rsvp_call(round_id, division.id, bot, raise_on_failure=True)
+    except StepFailedOnDiscord as exc:
+        undeleted = (exc.result or {}).get("undeleted", [])
+        raise StepFailedOnDiscord(
+            exc.reason, result={"audit": audit, "undeleted": undeleted}
+        ) from exc.__cause__
+    return {"audit": audit, "taken_down": taken_down}
+
+
 async def announce_cancellation(
     bot: LeagueBot,
     guild,
