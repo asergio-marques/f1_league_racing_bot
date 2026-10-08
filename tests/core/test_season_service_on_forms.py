@@ -321,3 +321,40 @@ async def test_cancelling_a_division_on_the_save_handed_leaves_its_season_s_stag
         await cancel_division_on(db, DIVISION_ID, **ACTOR)
         assert await _division_status(db) == "CANCELLED"
         assert await _season(db) == ("ACTIVE", "ONGOING")
+
+
+async def _round_numbers(db) -> dict[int, int]:
+    cursor = await db.execute(
+        "SELECT id, round_number FROM rounds WHERE division_id = ?", (DIVISION_ID,)
+    )
+    return {row["id"]: row["round_number"] for row in await cursor.fetchall()}
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: no renumber_rounds_on renumbering on the save it is handed"
+)
+async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
+    """Pro's rounds 1, 2 and 3 (ids 21, 22, 23) are not run, and round 1 has been moved after
+    round 3. Renumbering Pro on a connection numbers them by date: round 2 becomes 1, round 3
+    becomes 2 and the moved round 3. Nothing of it outlasts a rollback."""
+    from leaguebot.core.services.season_service import renumber_rounds_on
+
+    db_path = await _ongoing_db(tmp_path, ("NOT_RUN", "NOT_RUN", "NOT_RUN"))
+    async with get_connection(db_path) as db:
+        for round_id, moment in (
+            (ROUND_ID, "2026-12-20T18:00:00+00:00"),
+            (ROUND_ID + 1, "2026-12-06T18:00:00+00:00"),
+            (ROUND_ID + 2, "2026-12-13T18:00:00+00:00"),
+        ):
+            await db.execute(
+                "UPDATE rounds SET scheduled_at = ? WHERE id = ?", (moment, round_id)
+            )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        await renumber_rounds_on(db, DIVISION_ID)
+        assert await _round_numbers(db) == {ROUND_ID: 3, ROUND_ID + 1: 1, ROUND_ID + 2: 2}
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _round_numbers(db) == {ROUND_ID: 1, ROUND_ID + 1: 2, ROUND_ID + 2: 3}

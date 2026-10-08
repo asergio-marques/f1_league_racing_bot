@@ -716,3 +716,73 @@ async def test_a_raising_withdrawal_whose_channel_is_gone_keeps_the_record(tmp_p
         [CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID]
     )
     assert await _embed_rows(db_path) == 1
+
+
+# ---------------------------------------------------------------------------
+# reopen_check_in_on (#439, slice 4b, amendment A)
+#
+# `/round amend` on the change queue writes everything an amendment changes in one save. Where it
+# reopens a round's check-in, what attendance resets — the round's cleared mark and the reserves'
+# distribution — is attendance's own, so attendance writes it, on the connection the save hands
+# it, committing nothing.
+# ---------------------------------------------------------------------------
+
+#: A second reserve, put on standby by the distribution.
+STANDBY_PROFILE = 203
+
+
+async def _distributed(db) -> dict[int, tuple]:
+    cursor = await db.execute(
+        "SELECT driver_profile_id, rsvp_status, assigned_team_id, is_standby "
+        "FROM driver_round_attendance WHERE round_id = ?",
+        (ROUND_ID,),
+    )
+    return {r["driver_profile_id"]: tuple(r)[1:] for r in await cursor.fetchall()}
+
+
+async def _cleared(db) -> int:
+    cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = ?", (ROUND_ID,))
+    return (await cursor.fetchone())["checkin_cleared"]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: attendance has no reopen_check_in_on writing on the save handed"
+)
+async def test_reopening_a_check_in_on_the_connection_handed_commits_nothing(tmp_path):
+    """Round 1's check-in has been cleared and its reserves distributed: Stand In placed in
+    Alpha, and a second reserve on standby, both having accepted. Reopening the check-in on a
+    connection marks the round not cleared and undoes the distribution, keeping both answers.
+    Nothing of it outlasts a rollback."""
+    from leaguebot.attendance.services.rsvp_service import reopen_check_in_on
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (ROUND_ID,))
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ACTIVE', 1, 'Second Reserve')",
+            (STANDBY_PROFILE, str(STANDBY_PROFILE)),
+        )
+        for profile_id, team_id, standby in ((RESERVE_PROFILE, 10, 0), (STANDBY_PROFILE, None, 1)):
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status, assigned_team_id, is_standby) VALUES (?, ?, ?, 'ACCEPTED', ?, ?)",
+                (ROUND_ID, DIVISION_ID, profile_id, team_id, standby),
+            )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        await reopen_check_in_on(db, ROUND_ID)
+        assert await _cleared(db) == 0
+        assert await _distributed(db) == {
+            RESERVE_PROFILE: ("ACCEPTED", None, 0),
+            STANDBY_PROFILE: ("ACCEPTED", None, 0),
+        }
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _cleared(db) == 1
+        assert await _distributed(db) == {
+            RESERVE_PROFILE: ("ACCEPTED", 10, 0),
+            STANDBY_PROFILE: ("ACCEPTED", None, 1),
+        }
