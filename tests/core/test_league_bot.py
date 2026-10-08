@@ -122,3 +122,39 @@ def test_the_cancellations_are_registered():
     assert (ROUND_CANCEL, DIVISION_CANCEL) == ("season.round.cancel", "season.division.cancel")
     assert kinds.count(ROUND_CANCEL) == 1
     assert kinds.count(DIVISION_CANCEL) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: /round amend is not a change on the queue")
+def test_the_round_amendment_is_registered():
+    """The builder registers the amendment of a round, once, as "season.round.amend" (#439,
+    slice 4b, amendment A)."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.round_amend_change import ROUND_AMEND
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
+    assert ROUND_AMEND == "season.round.amend"
+    assert kinds.count(ROUND_AMEND) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: no job is marked undiscardable")
+def test_only_the_two_armings_are_undiscardable():
+    """Over every change type the builder registers, the jobs marked as never to be discarded
+    are exactly two: the arming of an approved season's timed work ("season.approve", its "arm")
+    and the arming of an amended round's ("season.round.amend", its "arm"). Without either a
+    round would never run; every other job a league admin may discard (#439, slice 4b,
+    amendment A)."""
+    from leaguebot.__main__ import register_change_types
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    marked = sorted(
+        (change_type.kind, name)
+        for change_type in (call.args[0] for call in bot.change_queue.register.call_args_list)
+        for name, step in change_type.steps.items()
+        if getattr(step, "undiscardable", None) is not None
+    )
+    assert marked == [("season.approve", "arm"), ("season.round.amend", "arm")]
