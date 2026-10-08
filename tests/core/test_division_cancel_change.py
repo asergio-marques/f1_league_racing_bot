@@ -22,7 +22,7 @@ import importlib
 from contextlib import ExitStack
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -66,6 +66,9 @@ REFUSAL = "⛔ `/division cancel` refused for Admin (`<@77>`) — "
 ACK = (
     "⏳ Cancelling **Pro**. This message will be updated when it is done; if it takes longer, the "
     "log channel will say so. It begins with job #"
+)
+UNARM_DISCARDED = (
+    "Nothing was cancelled: **Pro** stands as it was. Run `/division cancel` again."
 )
 SAVE_DISCARDED = (
     "Nothing was cancelled, but the rounds of **Pro** no longer have their timed work: run "
@@ -508,6 +511,28 @@ async def test_a_discarded_save_cancels_nothing(tmp_path):
     assert CANCELLED not in reply(interaction)
     assert await _division(league) == "ACTIVE"
     assert (await _statuses(league))[R3] == "NOT_RUN"
+    assert _success_lines(league) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
+async def test_a_discarded_unarming_cancels_nothing(tmp_path):
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.scheduler_service.cancel_round = MagicMock(
+        side_effect=RuntimeError("the job store is locked")
+    )
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "unarm"
+    await discard_job(league.bot)
+
+    assert UNARM_DISCARDED in reply(interaction)
+    assert CANCELLED not in reply(interaction)
+    assert await _division(league) == "ACTIVE"
+    assert (await _statuses(league))[R3] == "NOT_RUN"
+    assert (await _statuses(league))[R4] == "NOT_RUN"
+    assert await _round_audits(league) == []
     assert _success_lines(league) == []
     assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
