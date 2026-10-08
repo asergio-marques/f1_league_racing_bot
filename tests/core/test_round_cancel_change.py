@@ -21,7 +21,7 @@ import importlib
 import json
 import sqlite3
 from contextlib import ExitStack
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -52,6 +52,8 @@ from tests.support.season_league import (
     SEASON_ID,
     SUBMISSION_CHANNEL,
     accept_session,
+    amend_round,
+    amendment_changes,
     cancel_division,
     cancel_round,
     cancellation_changes,
@@ -523,8 +525,36 @@ async def _submission_open(league: Any) -> None:
     await open_submission(league, R3)
 
 
+async def _session_accepted(league: Any) -> None:
+    """Round 3's submission stands open and has accepted a session's results."""
+    await _submission_open(league)
+    await accept_session(league, R3)
+
+
 async def _nothing(_league: Any) -> None:
     return None
+
+
+#: Why a refusal for an open submission fails until the build: today any open submission
+#: refuses the round's cancellation, in the old words.
+_ACCEPTED_XFAIL = (
+    "#439: an open submission that has accepted a session does not yet refuse the round's "
+    "cancellation in the new words"
+)
+#: The refusal for round 3 once its open submission has accepted a session.
+_ACCEPTED_R3 = (
+    f"❌ Cannot cancel Round 3 — results have already been accepted in its submission channel "
+    f"<#{SUBMISSION_CHANNEL}>, and cancelling would lose them."
+)
+
+
+def _cases(table: dict[str, Any], marked: str) -> list[Any]:
+    """The keys of *table* in order, the one *marked* failing until the build."""
+    return [
+        pytest.param(case, marks=pytest.mark.xfail(strict=True, reason=_ACCEPTED_XFAIL))
+        if case == marked else case
+        for case in sorted(table)
+    ]
 
 
 #: Each refusal at the press: what sets it up, the division and round typed, the confirmation
@@ -543,13 +573,11 @@ _PRESS_REFUSALS = {
     "results entered": (_nothing, "Pro", 2, "CONFIRM",
                         "❌ Cannot cancel Round 2 — its results have already been entered, and "
                         "the drivers' reports and appeals depend on it."),
-    "submission open": (_submission_open, "Pro", 3, "CONFIRM",
-                        "❌ Cannot cancel Round 3 — a results submission channel is currently "
-                        "open. Close the submission first."),
+    "a session accepted": (_session_accepted, "Pro", 3, "CONFIRM", _ACCEPTED_R3),
 }
 
 
-@pytest.mark.parametrize("case", sorted(_PRESS_REFUSALS))
+@pytest.mark.parametrize("case", _cases(_PRESS_REFUSALS, "a session accepted"))
 async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     setup, division, number, word, text = _PRESS_REFUSALS[case]
     league = await ongoing_league(tmp_path, attendance=True, weather=True)
@@ -599,9 +627,7 @@ _RUN_REFUSALS = {
     "results entered": (_results_entered,
                         "❌ Cannot cancel Round 3 — its results have already been entered, and "
                         "the drivers' reports and appeals depend on it."),
-    "a submission opened": (_submission_open,
-                            "❌ Cannot cancel Round 3 — a results submission channel is "
-                            "currently open. Close the submission first."),
+    "a session accepted while it waited": (_session_accepted, _ACCEPTED_R3),
     "the round written cancelled": (_already_cancelled,
                                     "❌ Round 3 in **Pro** is already cancelled."),
     "the season moved to pending completion": (
@@ -610,7 +636,7 @@ _RUN_REFUSALS = {
 }
 
 
-@pytest.mark.parametrize("case", sorted(_RUN_REFUSALS))
+@pytest.mark.parametrize("case", _cases(_RUN_REFUSALS, "a session accepted while it waited"))
 async def test_a_refusal_found_when_the_cancel_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, case,
 ):
@@ -682,7 +708,8 @@ def _outcome(interaction: Any) -> str:
 
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled"),
-    pytest.param("submission", id="refused, its submission opened"),
+    pytest.param("submission", id="refused, its submission has accepted a session",
+                 marks=pytest.mark.xfail(strict=True, reason=_ACCEPTED_XFAIL)),
     pytest.param("discarded", id="its save discarded, renumbered while it stood stopped"),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
@@ -711,13 +738,13 @@ async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_i
     submission = case == "submission"
     if submission:
         await open_submission(league, R3)
+        await accept_session(league, R3)
 
     await _clear_blocker(league)
 
     outcome = _outcome(interaction)
     if submission:
-        assert outcome == ("❌ Cannot cancel Round 2 — a results submission channel is currently "
-                           "open. Close the submission first.")
+        assert outcome == _ACCEPTED_R3.replace("Round 3", "Round 2")
         assert await _status(league) == "NOT_RUN"
         refusals = _refusal_lines(league)
         assert len(refusals) == 1 and "Round 2" in refusals[0] and "Round 3" not in refusals[0]
@@ -1096,33 +1123,76 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
 
 # ── While an amendment is applied (#439 slice 4b, F4) ──────────────────────────────
 
+#: Why a cancellation held by an amendment on the queue fails until the build: today
+#: `/round amend` is applied on the spot, and only an amendment being applied holds it.
+_AMEND_XFAIL = "#439: /round amend is not yet a change on the queue that holds a cancellation"
 BEING_AMENDED = (
-    "⏸️ A round of **Pro** is being amended, so its rounds cannot be cancelled until that is "
-    "done. Try again in a moment."
+    "⏸️ A round of **Pro** is being amended (job #{job}), so its rounds cannot be cancelled "
+    "until that is done. Let that finish, or press Retry or Discard on its notice if it has "
+    "stopped."
 )
 
 
-@pytest.mark.parametrize("marked", [PRO, AM], ids=["its division", "another division"])
-async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amended_is_refused_at_once(
-    tmp_path, marked,
-):
-    """A `/round amend` of a round of Pro has been confirmed and is being applied: its new date
-    may yet renumber Pro's rounds. Asking to cancel Pro's round 3 meanwhile is refused at once,
-    nothing queued and one refusal line written; an amendment in Am holds nothing in Pro."""
-    league = await ongoing_league(tmp_path, attendance=True)
+async def _a_day_later(league: Any, rid: int) -> str:
+    """Round *rid*'s moment a day later, as `/round amend` takes it."""
+    [row] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", rid)
+    moment = datetime.fromisoformat(row["scheduled_at"]) + timedelta(days=1)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S")
 
-    with league.bot.amendment_service.applying(marked):
-        interaction = await _asked(league)
+
+async def _amendment_in_hand(league: Any, division: int, how: str) -> int | None:
+    """Round 4 of *division* moved a day later with `/round amend`, confirmed and in hand on the
+    queue: waiting behind Am's round 3 cancellation, stopped at its check-in notice, or stopped
+    at its own job removing the round's timed work, which the scheduler refuses. Gives the job it
+    waits on, its first not done; None where no amendment is on the queue."""
+    if how == "waiting":
+        await _stopped_blocker(league)
+    else:
+        league.bot.scheduler_service.cancel_round = MagicMock(
+            side_effect=RuntimeError("job store unavailable")
+        )
+    rid = round_id(division, 4)
+    name = "Pro" if division == PRO else "Am"
+    await amend_round(league, name, 4, scheduled_at=await _a_day_later(league, rid))
+    if how == "stopped":
+        await run_queue(league.bot)
+    changes = await amendment_changes(league)
+    if not changes:
+        return None
+    steps = await step_rows(league.db_path, changes[0]["id"])
+    return next(step["id"] for step in steps if step["done_at"] is None)
+
+
+@pytest.mark.parametrize(("marked", "how"), [
+    pytest.param(PRO, "waiting", id="its division, waiting behind a stopped job",
+                 marks=pytest.mark.xfail(strict=True, reason=_AMEND_XFAIL)),
+    pytest.param(PRO, "stopped", id="its division, stopped at its own job",
+                 marks=pytest.mark.xfail(strict=True, reason=_AMEND_XFAIL)),
+    pytest.param(AM, "stopped", id="another division"),
+])
+async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amended_is_refused_at_once(
+    tmp_path, marked, how,
+):
+    """A `/round amend` moving round 4 of Pro a day later has been confirmed and is on the change
+    queue, waiting behind a stopped job or stopped at its own: its new date may yet renumber
+    Pro's rounds. Asking to cancel Pro's round 3 meanwhile is refused at once, naming the job the
+    amendment waits on, nothing queued and one refusal line written; an amendment of a round of
+    Am holds nothing in Pro."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    job = await _amendment_in_hand(league, marked, how)
+    unarmed = list(league.unarmed)
+
+    interaction = await _asked(league)
 
     if marked == AM:
         assert acknowledgement(interaction).startswith(ACK)
         assert len(await _changes_of(league)) == 1
         return
-    assert reply(interaction) == BEING_AMENDED
+    assert job is not None
+    assert reply(interaction) == BEING_AMENDED.format(job=job)
     assert len(_refusal_lines(league)) == 1
-    assert await cancellation_changes(league) == []
-    await run_queue(league.bot)
-    assert league.unarmed == []
+    assert await _changes_of(league) == []
+    assert league.unarmed == unarmed
     assert await _status(league) == "NOT_RUN"
 
 

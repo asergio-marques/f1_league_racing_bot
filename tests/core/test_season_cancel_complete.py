@@ -948,6 +948,11 @@ _SEASON_REFUSALS = [
         id="cancel-while-a-round-is-being-amended",
     ),
     pytest.param(
+        "season cancel", {"accepted": True}, False, "CONFIRM", _accepted_reply(3),
+        id="cancel-while-a-submission-has-accepted-results",
+        marks=pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL),
+    ),
+    pytest.param(
         "season complete", {"season": None}, False, None,
         "❌ No season is being raced, so there is none to complete.",
         id="complete-with-no-season-being-raced",
@@ -986,7 +991,7 @@ _SEASON_REFUSALS = [
 
 @pytest.mark.parametrize("command, built, amending, word, reply", _SEASON_REFUSALS)
 async def test_every_season_cancel_and_complete_refusal_is_recorded(
-    _open_amendment, command, built, amending, word, reply
+    _open_amendment, _open_submissions, command, built, amending, word, reply
 ):
     """The core specification's record of what changed: a refusal is one line naming the member,
     what was refused and why. The admin runs /season cancel or /season complete and is refused:
@@ -997,7 +1002,14 @@ async def test_every_season_cancel_and_complete_refusal_is_recorded(
         built = {**built, "season": _in_signups()}
     if amending:
         _amended_round(_open_amendment)
+    built = dict(built)
+    accepted = built.pop("accepted", False)
+    if accepted:
+        # Division 1's round 3 waits for its results, its open submission holding a session.
+        _open_submissions.submissions.append(OpenSubmission(1, SUBMISSION, True))
     cog = _make_cog(**built)
+    if accepted:
+        _with_round(cog, "AWAITING_RESULTS")
     interaction = _run_by_the_admin(cog, _interaction(), command)
     history, roles = _season_end()
 

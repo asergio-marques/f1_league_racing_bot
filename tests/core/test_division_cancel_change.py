@@ -21,7 +21,7 @@ from __future__ import annotations
 import importlib
 from contextlib import ExitStack
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -48,6 +48,8 @@ from tests.support.season_league import (
     SEASON_ID,
     SUBMISSION_CHANNEL,
     accept_session,
+    amend_round,
+    amendment_changes,
     cancel_division,
     cancel_round,
     cancellation_changes,
@@ -572,9 +574,17 @@ async def test_a_round_s_cancellation_queued_first_runs_first_and_the_division_s
             assert (row["kind"], row["state"]) in ((WIND_DOWN, "DONE"), (WIND_DOWN, "DROPPED"))
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: a division's cancellation does not yet close a round's open, empty submission "
+    "and delete its channel",
+)
 async def test_a_round_with_a_submission_open_is_cancelled_with_its_division_and_nothing_is_refused(
     tmp_path,
 ):
+    """Pro's round 3 waits for its results, its submission open in its channel with nothing
+    accepted. /division cancel Pro, queue run: round 3 and Pro are cancelled, nothing is
+    refused, and round 3's submission is closed and its channel deleted."""
     league = await ongoing_league(tmp_path)
     await _awaiting_results(league, R3)
     await open_submission(league, R3)
@@ -586,6 +596,10 @@ async def test_a_round_with_a_submission_open_is_cancelled_with_its_division_and
     assert await _division(league) == "CANCELLED"
     assert _refusal_lines(league) == []
     assert CANCELLED in reply(interaction)
+    assert (await _closed(league))[R3] == 1
+    assert [cid for kind, cid, _ in league.events if kind == "delete_channel"] == [
+        SUBMISSION_CHANNEL
+    ]
 
 
 # ── A finished division (#439 slice 4b, F1) ────────────────────────────────────────
@@ -648,30 +662,73 @@ async def test_a_division_that_finishes_while_its_cancellation_waits_is_refused_
 
 # ── While an amendment is applied (#439 slice 4b, F4) ──────────────────────────────
 
+#: Why a cancellation held by an amendment on the queue fails until the build: today
+#: `/round amend` is applied on the spot, and only an amendment being applied holds it.
+_AMEND_XFAIL = "#439: /round amend is not yet a change on the queue that holds a cancellation"
 BEING_AMENDED = (
-    "⏸️ A round of **Pro** is being amended, so its rounds cannot be cancelled until that is "
-    "done. Try again in a moment."
+    "⏸️ A round of **Pro** is being amended (job #{job}), so its rounds cannot be cancelled "
+    "until that is done. Let that finish, or press Retry or Discard on its notice if it has "
+    "stopped."
 )
 
 
+async def _a_day_later(league: Any, rid: int) -> str:
+    """Round *rid*'s moment a day later, as `/round amend` takes it."""
+    [row] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", rid)
+    moment = datetime.fromisoformat(row["scheduled_at"]) + timedelta(days=1)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+async def _amendment_in_hand(league: Any, how: str) -> int | None:
+    """Pro's round 4 moved a day later with `/round amend`, confirmed and in hand on the queue:
+    waiting behind Am's round 3 cancellation, stopped at its check-in notice, or stopped at its
+    own job removing the round's timed work, which the scheduler refuses. Gives the job it waits
+    on, its first not done; None where no amendment is on the queue."""
+    if how == "waiting":
+        league.remove_channel(AM_CH.checkin)
+        await cancel_round(league, "Am", 3)
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "notify_checkin"
+    else:
+        league.bot.scheduler_service.cancel_round = MagicMock(
+            side_effect=RuntimeError("job store unavailable")
+        )
+    await amend_round(league, "Pro", 4, scheduled_at=await _a_day_later(league, R4))
+    if how == "stopped":
+        await run_queue(league.bot)
+    changes = await amendment_changes(league)
+    if not changes:
+        return None
+    steps = await step_rows(league.db_path, changes[0]["id"])
+    return next(step["id"] for step in steps if step["done_at"] is None)
+
+
+@pytest.mark.xfail(strict=True, reason=_AMEND_XFAIL)
+@pytest.mark.parametrize("how", [
+    pytest.param("waiting", id="waiting behind a stopped job"),
+    pytest.param("stopped", id="stopped at its own job"),
+])
 async def test_a_division_cancel_asked_while_a_round_of_it_is_being_amended_is_refused_at_once(
-    tmp_path,
+    tmp_path, how,
 ):
-    """A `/round amend` of a round of Pro has been confirmed and is being applied. Asking to
-    cancel Pro meanwhile is refused at once: nothing is queued, one refusal line is written, and
-    Pro and its rounds are left as they were."""
+    """A `/round amend` moving Pro's round 4 a day later has been confirmed and is on the change
+    queue, waiting behind a stopped job or stopped at its own. Asking to cancel Pro meanwhile is
+    refused at once, naming the job the amendment waits on: nothing is queued, one refusal line is
+    written, and Pro and its rounds are left as they were."""
     league = await ongoing_league(tmp_path, attendance=True)
+    job = await _amendment_in_hand(league, how)
     before = await _statuses(league)
+    unarmed = list(league.unarmed)
 
-    with league.bot.amendment_service.applying(PRO):
-        interaction = await _asked(league)
+    interaction = await _asked(league)
 
-    assert reply(interaction) == BEING_AMENDED
+    assert job is not None
+    assert reply(interaction) == BEING_AMENDED.format(job=job)
     assert len(_refusal_lines(league)) == 1
     assert _refusal_lines(league)[0].startswith(REFUSAL)
-    assert await cancellation_changes(league) == []
-    await run_queue(league.bot)
-    assert league.unarmed == []
+    assert [row for row in await cancellation_changes(league)
+            if row["kind"] == DIVISION_CANCEL_KIND] == []
+    assert league.unarmed == unarmed
     assert await _division(league) == "ACTIVE"
     assert await _statuses(league) == before
 
