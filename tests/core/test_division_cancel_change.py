@@ -298,6 +298,10 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue(tmp_path):
     await run_queue(league.bot)
     assert await _stopped_at(league) == "take_down_call"
     assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
+    [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert "check-in call" in stop and "round 3" in stop and "**Pro**" in stop
+    assert "`/division cancel`" in stop
+    assert "Admin (`<@77>`)" in stop
 
     league.undeletable.clear()
     await retry_job(league.bot)

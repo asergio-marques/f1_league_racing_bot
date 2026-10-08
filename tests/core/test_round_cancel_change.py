@@ -330,6 +330,11 @@ async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_na
     await run_queue(league.bot)
     assert await _stopped_at(league) == "notify_forecast"
     assert league.texts(PRO_CH.calendar) == []
+    [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert "posting the forecast note for **Pro**" in stop
+    assert "`/round cancel`" in stop
+    assert "Admin (`<@77>`)" in stop
+    assert "failed (Forbidden)" in stop
 
     await discard_job(league.bot)
 
@@ -874,6 +879,9 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "unarm"
+    [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert "removing the timed work of round 3 in **Pro**" in stop
+    assert "`/round cancel`" in stop
     await discard_job(league.bot)
 
     assert UNARM_DISCARDED in reply(interaction)
