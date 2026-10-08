@@ -854,3 +854,45 @@ async def test_a_round_being_cancelled_is_not_amended_naming_the_job(tmp_path, k
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "/round amend" in line and f"job #{job}" in line
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: only a cancellation of the round itself, or of its division, holds an amend",
+)
+@pytest.mark.parametrize("at", ["offer", "confirm"])
+async def test_a_round_is_not_amended_while_another_round_of_its_division_is_being_cancelled(
+    tmp_path, at
+):
+    """Round 1 of Div A is a month out, and a cancellation of round 2 of Div A waits on the queue.
+    An amended date could renumber the division while it waits, and the cancelled round would be
+    announced by a number it no longer bears (owner, 2026-10-08: hold amends in the division).
+    Asking to amend round 1's track is refused before any confirmation is offered; pressing
+    Confirm on an amendment offered earlier is refused too. The reply names the job, nothing is
+    amended, and one refusal line is written in the log channel."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = await _seed_cancellation(path, "season.round.cancel", {
+        "round_id": 2, "round_number": 2, "track_name": "Bahrain International Circuit",
+        "division_id": 1, "division_name": DIVISION, "season_number": 1,
+    })
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    if at == "confirm":
+        _answered(interaction)
+        await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+    else:
+        await _amend(cog, interaction, track=NEW_TRACK)
+        assert not _offered_a_confirmation(interaction)
+
+    assert (
+        f"⏸️ A round of **{DIVISION}** is being cancelled (job #{job}), so its rounds cannot be "
+        "amended until that is done. Let that finish, or press **Retry** or **Discard** on its "
+        "notice if it has stopped."
+    ) in _all_replies(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/round amend" in line and f"job #{job}" in line
