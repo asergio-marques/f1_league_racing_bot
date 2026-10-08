@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from leaguebot.core.services.season_service import SeasonImmutableError
@@ -32,6 +33,7 @@ from tests.support.change_queue import (
     acknowledgement,
     change_rows,
     discard_job,
+    http_error,
     retry_job,
     run_queue,
     step_rows,
@@ -882,3 +884,40 @@ async def test_each_closed_submission_s_channel_is_deleted_in_round_order_first_
     last_delete = max(i for i, event in enumerate(league.events) if event[0] == "delete_channel")
     assert last_delete < first_send
     assert CANCELLED in reply(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
+    tmp_path,
+):
+    """Pro's rounds 3 and 4 both wait for their results, each with an open submission that has
+    accepted nothing (channels 690 and 691), and Discord refuses to delete round 3's. `/division
+    cancel Pro`, the queue run: it stops at that deletion, Pro already cancelled and both
+    submissions closed. A league admin discards the job: round 4's channel is still deleted, and
+    the reply's Not notified section and the success line name round 3's channel to delete by
+    hand, in the words `/round cancel` uses."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    for rid, channel_id in ((R3, SUBMISSION_CHANNEL), (R4, R4_SUBMISSION)):
+        await _awaiting_results(league, rid)
+        await open_submission(league, rid, channel_id=channel_id)
+    league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "delete_channel"
+    assert await _division(league) == "CANCELLED"
+    assert await _closed(league) == {R3: 1, R4: 1}
+
+    await discard_job(league.bot)
+
+    named = (f"**Pro** — results submission channel of round 3: it could not be deleted, and "
+             f"a league admin discarded it; delete <#{SUBMISSION_CHANNEL}> by hand")
+    assert (await _change(league))["state"] == "DONE"
+    assert [cid for kind, cid, _ in league.events if kind == "delete_channel"] == [R4_SUBMISSION]
+    assert CANCELLED in reply(interaction)
+    assert f"\n⚠️ **Not notified**\n  • {named}" in reply(interaction)
+    assert "round 4" not in reply(interaction)
+    [line] = _success_lines(league)
+    assert f"\n  not notified: {named}" in line
