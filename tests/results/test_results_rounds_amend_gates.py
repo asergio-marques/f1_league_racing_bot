@@ -792,9 +792,6 @@ async def test_a_review_job_and_a_points_approval_name_the_one_nearer_its_turn(
 # round of the division is amended. The refusal is r1-1's, word for word.
 # ---------------------------------------------------------------------------
 
-#: `division_job_in_hand` does not read the cancellation kinds yet.
-CANCELLATION_NOT_HOLDING = "#439: a cancellation in the division does not hold the amendment yet"
-
 ROUND_CANCEL_KIND = "season.round.cancel"
 ROUND_CANCEL_PAYLOAD = {
     "round_id": LATER_ROUND_ID, "round_number": 4, "track_name": None,
@@ -815,7 +812,6 @@ _CANCELLATIONS = [
     [("QUEUED", False), ("RUNNING", True)],
     ids=["waiting", "stopped"],
 )
-@pytest.mark.xfail(strict=True, reason=CANCELLATION_NOT_HOLDING)
 async def test_a_round_is_not_amended_while_a_cancellation_in_its_division_is_in_hand(
     tmp_path, kind, payload, state, stopped,
 ):

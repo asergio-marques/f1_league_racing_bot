@@ -9,6 +9,8 @@ its division has one. It reads, besides, season-wide, the approval of a change t
 points (slice 3), which holds every division of its season: a round amendment opened while it is in
 hand would have its unapproved corrections published by the approval's reposts (owner, 2026-10-06,
 "Refuse it").
+It reads, too, a round's or a division's cancellation (slice 4b), which is a job for the division
+(r1-1, "Any job for that division").
 
 This module only names the kinds and reads them. It is imported by those that ask and imports the
 change types for their names, so no change type imports it.
@@ -17,6 +19,7 @@ change types for their names, so no change type imports it.
 from __future__ import annotations
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
 from leaguebot.core.services.change_queue import in_hand, unfinished
 from leaguebot.results.services import (
     amendment_stage_changes,
@@ -46,8 +49,8 @@ async def round_in_hand(db_path: str, round_id: int) -> bool:
 
 
 async def division_job_in_hand(db_path: str, division_id: int) -> int | None:
-    """The number of the first job a change holding *division_id* waits on, a review change of it
-    or a points approval of its season, or None where none is in hand, the change nearest its
+    """The number of the first job a change holding *division_id* waits on, a review change of it,
+    a cancellation of it or of a round of it, or a points approval of its season, or None where none is in hand, the change nearest its
     turn first.
 
     A change belongs to the division where its payload names the division, or names a round of it,
@@ -60,7 +63,9 @@ async def division_job_in_hand(db_path: str, division_id: int) -> int | None:
         cursor = await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
         found = await cursor.fetchone()
     season_id = int(found["season_id"]) if found else None
-    for payload, job in await in_hand(db_path, (*REVIEW_KINDS, points_amendment_change.KIND)):
+    for payload, job in await in_hand(
+        db_path, (*REVIEW_KINDS, ROUND_CANCEL, DIVISION_CANCEL, points_amendment_change.KIND),
+    ):
         if (
             payload.get("division_id") == division_id
             or payload.get("round_id") in rounds
