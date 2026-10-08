@@ -3,10 +3,17 @@
 `/round cancel` checks its confirmation word, the season and the names at the press, in the season
 cog, then asks the queue for this change. Every other gate it had is the change type's `check`,
 which judges the request when it is asked and again when it comes up to run, in the words the
-command used, so that a round whose results were entered, or whose submission opened, while the
-cancellation waited is refused with the same reply. It imports nothing from a module and no cog:
-results' `is_submission_open` reaches it through the builder, and it reads the season through the
-service it is handed.
+command used, so that a round whose results were entered, or whose submission accepted a session,
+while the cancellation waited is refused with the same reply. It imports nothing from a module and
+no cog: results' readers and closer of the open submissions (`SubmissionHooks`) reach it through
+the builder, and it reads the season through the service it is handed.
+
+**A round whose submission stands open is cancelled only while it has accepted nothing** (owner,
+2026-10-08, amending Constitution XII): any `session_results` row, of either status, is data the
+cancellation would lose, and refuses it, at ask, as it runs and in the save as a backstop (`unarm`
+lies between the check and the save). With nothing accepted, the save closes the submission, and
+deleting its channel is results' own `delete_channel` job, the first after the save, because the
+channel is where a manager pastes.
 
 **The timed work is removed first, then everything the cancellation writes is one save**
 (`apply`, architecture.md, "All or nothing in one step"): the round recorded cancelled with the
@@ -50,9 +57,9 @@ renumbering included, and the cancellation reads the round's number as it then s
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import aiosqlite
 
@@ -225,11 +232,41 @@ def _results_entered(payload: dict[str, Any]) -> str:
     )
 
 
-def _submission_open(payload: dict[str, Any]) -> str:
+def _accepted(payload: dict[str, Any], channel_id: int) -> str:
     return (
-        f"❌ Cannot cancel Round {payload['round_number']} — a results submission channel is "
-        "currently open. Close the submission first."
+        f"❌ Cannot cancel Round {payload['round_number']} — results have already been accepted "
+        f"in its submission channel <#{channel_id}>, and cancelling would lose them."
     )
+
+
+class OpenSubmissionRead(Protocol):
+    """A round's results submission standing open, as results reads it: its round, its channel,
+    and whether it has accepted any session's results (or a session entered as not held)."""
+
+    @property
+    def round_id(self) -> int: ...
+    @property
+    def channel_id(self) -> int: ...
+    @property
+    def accepted(self) -> bool: ...
+
+
+@dataclasses.dataclass(frozen=True)
+class SubmissionHooks:
+    """What a cancellation needs of results' submissions, handed it by the builder so that this
+    module imports no module (architecture.md, "How modules and core fit together").
+
+    *open_submissions* reads, on a connection of its own, each open submission among some rounds;
+    *open_submissions_on* does so on the save's connection; *close_submissions_on* marks each one
+    closed on it, committing nothing, and gives ``(round_id, channel_id)`` for each; *delete_step*
+    is results' own `delete_channel` job, which deletes a channel and completes where it is
+    already gone.
+    """
+
+    open_submissions: Callable[[str, Iterable[int]], Awaitable[list[Any]]]
+    open_submissions_on: Callable[[aiosqlite.Connection, Iterable[int]], Awaitable[list[Any]]]
+    close_submissions_on: Callable[[aiosqlite.Connection, Iterable[int]], Awaitable[list[tuple[int, int]]]]
+    delete_step: Step
 
 
 #: The job names, as the stop notice, the tests and `StepView` know them.
@@ -241,6 +278,7 @@ NOTIFY_FORECAST = "notify_forecast"
 NOTIFY_RESULTS = "notify_results"
 POST_CALENDAR = "post_calendar"
 CLOSE = "close"
+DELETE_CHANNEL = "delete_channel"
 
 UNARM_DISCARDED = (
     "Nothing was cancelled: round {number} in **{division}** stands as it was. Run "
@@ -258,6 +296,9 @@ DIVISION_SAVE_DISCARDED = (
     "run `/division cancel` again."
 )
 _DISCARDED_NOTICE = "the notice could not be posted, and a league admin discarded it"
+_DISCARDED_CHANNEL = (
+    "it could not be deleted, and a league admin discarded it; delete <#{channel_id}> by hand"
+)
 _DISCARDED_CALENDAR = (
     "the calendar could not be posted, and a league admin discarded it; run "
     "`/division calendar-sync`"
@@ -316,6 +357,13 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                 failures.append(notices.NoticeFailure(name, target, _DISCARDED_NOTICE))
             elif result.get("unset"):
                 failures.append(notices.NoticeFailure(name, target, "no channel is set"))
+        elif view.name == DELETE_CHANNEL:
+            if _discarded(view):
+                failures.append(notices.NoticeFailure(
+                    name,
+                    f"results submission channel of round {view.payload.get('round_number')}",
+                    _DISCARDED_CHANNEL.format(channel_id=view.payload["channel_id"]),
+                ))
         elif view.name == TAKE_DOWN_CALL and _discarded(view):
             ids = [str(each) for each in result.get("undeleted", [])]
             failures.append(notices.NoticeFailure(
@@ -512,7 +560,7 @@ def round_cancel_change(
     modules: "ModuleService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
-    submission_open: Callable[[str, int], Awaitable[bool]],
+    submissions: SubmissionHooks,
     amendment_in_hand: Callable[[int], Awaitable[int | None]],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -522,7 +570,7 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *modules* (each notice's `still_due`), the
-    *seasons* service, the *scheduler*, results' *submission_open*, *amendment_in_hand* (the job a
+    *seasons* service, the *scheduler*, results' *submissions* (`SubmissionHooks`), *amendment_in_hand* (the job a
     `/round amend` of a round of a division waits on, or None) and the queue's clock *now*.
     """
 
@@ -570,8 +618,9 @@ def round_cancel_change(
                 return Verdict.refuse(division_being_amended(payload, amended))
         if row["status"] not in ROUND_CANCELLABLE:
             return Verdict.refuse(_results_entered(payload))
-        if await submission_open(ctx.db_path, round_id):
-            return Verdict.refuse(_submission_open(payload))
+        for each in await submissions.open_submissions(ctx.db_path, [round_id]):
+            if each.accepted:
+                return Verdict.refuse(_accepted(payload, each.channel_id))
         return Verdict.go()
 
     # ── The jobs ────────────────────────────────────────────────────────────────
@@ -619,6 +668,14 @@ def round_cancel_change(
         division = await cursor.fetchone()
         previous = None
         if division is not None:
+            # A backstop for the check: `unarm` lies between them, and a session may have been
+            # accepted since. Nothing is written then.
+            for each in await submissions.open_submissions_on(db, [round_id]):
+                if each.accepted:
+                    return StepResult(result={"refused": _accepted(
+                        {**ctx.payload, "round_number": division["round_number"]},
+                        each.channel_id,
+                    )})
             previous = await cancel_round_on(
                 db, round_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
             )
@@ -644,7 +701,20 @@ def round_cancel_change(
             "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
         )
         called = await cursor.fetchone() is not None
-        planned = [PlannedStep(NOTIFY_CHECKIN, target)]
+        # An open submission with nothing accepted is closed in this save, and its channel
+        # deleted first of all after it, since that is where a manager pastes.
+        planned = [
+            PlannedStep(DELETE_CHANNEL, {
+                "channel_id": channel_id,
+                "round_id": closed_round,
+                "what": "results submission channel",
+                "reason": "Round cancelled",
+                "division_name": target["division_name"],
+                "round_number": target["round_number"],
+            })
+            for closed_round, channel_id in await submissions.close_submissions_on(db, [round_id])
+        ]
+        planned.append(PlannedStep(NOTIFY_CHECKIN, target))
         if called:
             planned.append(PlannedStep(TAKE_DOWN_CALL, target))
         planned += [
@@ -715,6 +785,7 @@ def round_cancel_change(
 
     steps: dict[str, Step] = {
         **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_ROUND),
+        DELETE_CHANNEL: submissions.delete_step,
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=_named(

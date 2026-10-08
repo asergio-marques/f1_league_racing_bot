@@ -535,26 +535,11 @@ async def _nothing(_league: Any) -> None:
     return None
 
 
-#: Why a refusal for an open submission fails until the build: today any open submission
-#: refuses the round's cancellation, in the old words.
-_ACCEPTED_XFAIL = (
-    "#439: an open submission that has accepted a session does not yet refuse the round's "
-    "cancellation in the new words"
-)
 #: The refusal for round 3 once its open submission has accepted a session.
 _ACCEPTED_R3 = (
     f"❌ Cannot cancel Round 3 — results have already been accepted in its submission channel "
     f"<#{SUBMISSION_CHANNEL}>, and cancelling would lose them."
 )
-
-
-def _cases(table: dict[str, Any], marked: str) -> list[Any]:
-    """The keys of *table* in order, the one *marked* failing until the build."""
-    return [
-        pytest.param(case, marks=pytest.mark.xfail(strict=True, reason=_ACCEPTED_XFAIL))
-        if case == marked else case
-        for case in sorted(table)
-    ]
 
 
 #: Each refusal at the press: what sets it up, the division and round typed, the confirmation
@@ -577,7 +562,7 @@ _PRESS_REFUSALS = {
 }
 
 
-@pytest.mark.parametrize("case", _cases(_PRESS_REFUSALS, "a session accepted"))
+@pytest.mark.parametrize("case", sorted(_PRESS_REFUSALS))
 async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     setup, division, number, word, text = _PRESS_REFUSALS[case]
     league = await ongoing_league(tmp_path, attendance=True, weather=True)
@@ -636,7 +621,7 @@ _RUN_REFUSALS = {
 }
 
 
-@pytest.mark.parametrize("case", _cases(_RUN_REFUSALS, "a session accepted while it waited"))
+@pytest.mark.parametrize("case", sorted(_RUN_REFUSALS))
 async def test_a_refusal_found_when_the_cancel_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, case,
 ):
@@ -708,8 +693,7 @@ def _outcome(interaction: Any) -> str:
 
 @pytest.mark.parametrize("case", [
     pytest.param("cancelled", id="cancelled"),
-    pytest.param("submission", id="refused, its submission has accepted a session",
-                 marks=pytest.mark.xfail(strict=True, reason=_ACCEPTED_XFAIL)),
+    pytest.param("submission", id="refused, its submission has accepted a session"),
     pytest.param("discarded", id="its save discarded, renumbered while it stood stopped"),
 ])
 async def test_a_round_renumbered_while_its_cancellation_waits_is_announced_by_its_number_when_it_runs(
@@ -1193,12 +1177,6 @@ async def test_a_round_cancel_asked_while_a_round_of_its_division_is_being_amend
 
 # ── An open submission (#439 slice 4b, amendment A, A2) ─────────────────────────────
 
-#: Why each test below fails until the build: today an open submission refuses the round's
-#: cancellation whatever it holds.
-SUBMISSION_XFAIL = (
-    "#439: an open submission that has accepted nothing is not yet closed and its channel "
-    "deleted with the round, nor one that has accepted a session refused in the new words"
-)
 ACCEPTED = (
     f"❌ Cannot cancel Round 3 — results have already been accepted in its submission channel "
     f"<#{SUBMISSION_CHANNEL}>, and cancelling would lose them."
@@ -1220,7 +1198,6 @@ def _channel_deleted(league: Any) -> bool:
     return ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) in league.events
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_and_its_channel_deleted(
     tmp_path,
 ):
@@ -1245,7 +1222,6 @@ async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_a
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 @pytest.mark.parametrize("session_status", ["ACTIVE", "CANCELLED"])
 @pytest.mark.parametrize("when", ["at ask", "at run"])
 async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
@@ -1281,7 +1257,6 @@ async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
     assert not _channel_deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 @pytest.mark.parametrize("cleared", ["retried", "discarded"])
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path, cleared,
@@ -1318,7 +1293,10 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
         assert f"\n  not notified: {named}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: asserts the change ends REFUSED, which the queue gives only a check's refusal; a "
+    "save's refusal ends it DONE (proposed test change)"
+))
 async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_path):
     """Round 3's open submission has accepted nothing when the cancellation is asked and when it
     starts to run, but removing its timed work fails and stops the queue; meanwhile the

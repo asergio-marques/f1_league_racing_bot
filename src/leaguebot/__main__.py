@@ -17,6 +17,7 @@ from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, 
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.cancellation_changes import SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
 
@@ -159,6 +160,21 @@ def _forget_setup(bot: LeagueBot) -> None:
         cog.clear_pending()
 
 
+def _submission_hooks() -> "SubmissionHooks":
+    """What a cancellation needs of results' submissions, handed it here so that core imports no
+    module."""
+    from leaguebot.core.services.cancellation_changes import SubmissionHooks
+    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
+
+    return SubmissionHooks(
+        open_submissions=result_submission_service.open_submissions,
+        open_submissions_on=result_submission_service.open_submissions_on,
+        close_submissions_on=result_submission_service.close_submissions_on,
+        delete_step=posting_steps()[DELETE_CHANNEL],
+    )
+
+
 def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     """What `/round amend`'s change needs of weather and attendance, handed it here so that core
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
@@ -220,7 +236,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
-    from leaguebot.results.services.result_submission_service import is_submission_open
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
@@ -296,7 +311,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            submission_open=is_submission_open,
+            submissions=_submission_hooks(),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
