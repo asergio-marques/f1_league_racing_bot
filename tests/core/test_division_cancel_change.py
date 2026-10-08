@@ -856,6 +856,34 @@ async def test_a_division_with_a_round_in_its_review_is_refused(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_a_division_with_two_rounds_whose_submissions_have_accepted_results_is_refused_naming_the_lowest(
+    tmp_path,
+):
+    """Pro's rounds 3 and 4 both wait for their results, and each open submission (690 for round
+    3, 691 for round 4, round 4's recorded first) has accepted a session's results. `/division
+    cancel Pro` is refused at once naming round 3, the lowest-numbered, and its channel, with one
+    ⛔ line; nothing is queued, and Pro, its rounds and both submissions are left as they were."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    for rid, channel_id in ((R4, R4_SUBMISSION), (R3, SUBMISSION_CHANNEL)):
+        await _awaiting_results(league, rid)
+        await open_submission(league, rid, channel_id=channel_id)
+        await accept_session(league, rid)
+    before = await _statuses(league)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == _accepted(3)
+    assert len(_refusal_lines(league)) == 1
+    assert _refusal_lines(league)[0].startswith(REFUSAL)
+    assert await cancellation_changes(league) == []
+    await run_queue(league.bot)
+    assert league.unarmed == []
+    assert await _division(league) == "ACTIVE"
+    assert await _statuses(league) == before
+    assert await _closed(league) == {R3: 0, R4: 0}
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
 async def test_each_closed_submission_s_channel_is_deleted_in_round_order_first_after_the_save(
     tmp_path,
 ):
