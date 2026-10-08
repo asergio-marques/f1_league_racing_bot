@@ -808,8 +808,6 @@ async def test_a_stopped_job_found_no_longer_due_at_its_try_writes_a_line(env):
 # A job no one may discard (#439, slice 4b, amendment A)
 # ---------------------------------------------------------------------------
 
-#: Why the tests below fail until a step can be marked undiscardable.
-UNDISCARDABLE = "#439: a job cannot yet be marked undiscardable, nor its Discard refused"
 #: What the undiscardable job of the tests below says would follow from dropping it.
 WOULD_NEVER_RUN = "the dummy would never run"
 #: The refusal of a Discard on it, privately and in the log channel.
@@ -856,7 +854,6 @@ async def _discard_audits(env) -> list[dict]:
         return [dict(row) for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=UNDISCARDABLE)
 async def test_discard_of_an_undiscardable_job_is_refused_and_it_stays_stopped(env):
     """A league admin's Discard on a job marked undiscardable is refused: they are told
     privately that it cannot be discarded and what would follow, the log channel gets one ⛔
@@ -879,7 +876,6 @@ async def test_discard_of_an_undiscardable_job_is_refused_and_it_stays_stopped(e
     assert ran == ["first", "arm"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNDISCARDABLE)
 async def test_retry_still_clears_an_undiscardable_job(env):
     """An undiscardable job is cleared by Retry as any job is: once what stopped it is mended, a
     Retry tries it at once, and its request and the change behind it run."""
@@ -896,7 +892,6 @@ async def test_retry_still_clears_an_undiscardable_job(env):
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNDISCARDABLE)
 async def test_the_stop_notice_of_an_undiscardable_job_keeps_both_buttons(env):
     """The stop notice of an undiscardable job carries Retry and Discard as any notice does, the
     one persistent view serving every notice, and keeps both after a Discard is refused."""
@@ -911,7 +906,6 @@ async def test_the_stop_notice_of_an_undiscardable_job_keeps_both_buttons(env):
     assert _buttons(notice) == {"queue:retry", "queue:discard"}
 
 
-@pytest.mark.xfail(strict=True, reason=UNDISCARDABLE)
 async def test_an_undiscardable_job_whose_reason_cannot_be_read_is_still_refused(env, caplog):
     """Where what would follow from dropping the job cannot be read, the Discard is refused all
     the same, naming the job in its place; the error is on the host's log, and nothing is

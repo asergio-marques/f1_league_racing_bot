@@ -58,6 +58,15 @@ the queue's own records, never as changes of their own: the queue is stopped, so
 behind it could not run. Each is a press on the stop notice (`QueueStopView`) and is refused, with
 a line, where the presser may not use it or the notice's job no longer stops the queue.
 
+**A job without which a round would never run cannot be discarded** (`Step.undiscardable`): the
+arming of a season's timed work once it is approved, and of an amended round's. Dropping it would
+leave no repair a league could make, since nothing else arms a round again. Its Discard is refused
+and recorded as any refused press is, the job stays stopped, and only Retry, or the bot's own
+tries, clears it. The notice keeps its Discard button all the same: `QueueStopView` is one
+persistent view with fixed `custom_id`s, found again after a restart, and a notice without the
+button would need a second view chosen per notice. A change stopped at its check, before any job
+ran, is still discarded whole, since no arming job can be its check.
+
 **The stop notice is one log-channel message** carrying the stop line and the buttons. It is
 posted by the router's `post_notice`, after the stop's save and never on the log-line retry queue
 (that would send it again without its buttons), and posted again by the queue, at start-up and on
@@ -265,6 +274,13 @@ class Step:
     *db* without committing: a post's message id is saved with the post's mark. It is run, too,
     where a `DELETE` or `EDIT` completes because its message is gone, and not for a job found no
     longer due. A record that raises stops the queue at the job, and *result* is kept on it.
+
+    *undiscardable*, where set, marks a job that cannot be discarded because dropping it would
+    leave a round never to run (the arming of a season's timed work, of an amended round's). It
+    gives what would follow, in the job's own terms ("round 3 in **Pro** would never run"), which
+    Discard's refusal quotes. A reader rather than a flag, so the refusal can name the round or
+    the season; every other step is discardable. The mark never changes for a step, so a press
+    reads it before taking the queue's lock.
     """
 
     name: str
@@ -274,6 +290,7 @@ class Step:
     describe: Callable[[StepContext], Awaitable[str]] | None = None
     gone_line: Callable[[StepContext], str] | str | None = None
     record: Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]] | None = None
+    undiscardable: Callable[[StepContext], Awaitable[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -1509,9 +1526,12 @@ class ChangeQueue:
         Like Retry it works directly on the queue's own records, and it is refused in the same
         two cases, and also to anyone who is not a league admin, and where the worker is trying
         the job's change at that moment (the press is then to be made again once the try has
-        ended: a job being tried is not dropped under the worker). Otherwise one save drops the
-        job alone: it is marked done with the result `{"discarded": {"by", "at"}}` and what a
-        failure had kept of its partial result, so that the change's outcome tells what was not
+        ended: a job being tried is not dropped under the worker). It is refused, too, where the
+        job's step is marked undiscardable (`Step.undiscardable`): the refusal is private, with
+        one line in the log channel as any refused press has, says what would follow from
+        dropping the job, and saves nothing, so that the job stays stopped and only Retry moves
+        the queue on. Otherwise one save drops the job alone: it is marked done with the result
+        `{"discarded": {"by", "at"}}` and what a failure had kept of its partial result, so that the change's outcome tells what was not
         done and the request's later jobs run on; a change that had not started, which stopped
         at its check, ends DISCARDED whole. The same save writes the log line naming the admin,
         job #N and what was not done, and the `CHANGE_JOB_DISCARDED` audit record. Then the
@@ -1534,6 +1554,10 @@ class ChangeQueue:
             )
             return
         change = found[0]
+        refusal = await self._undiscardable_refusal(*found)
+        if refusal is not None:
+            await refuse(interaction, refusal, what=what)
+            return
         ids: list[int] = []
         # Under `_asking`, which the worker holds as it chooses a change: a Discard is saved
         # before the worker chooses, or finds the change in hand and waits for the try to end.
@@ -1586,6 +1610,30 @@ class ChangeQueue:
             self._release(change)
         else:
             self._signal.set()
+
+    async def _undiscardable_refusal(
+        self, change: aiosqlite.Row, steps: list[aiosqlite.Row], job: aiosqlite.Row
+    ) -> str | None:
+        """The refusal of a Discard on *job*, or None where its step may be discarded.
+
+        A reader that raises is logged on the host and the press is still refused, the job named
+        in its place: an undiscardable job is never dropped for want of its reason.
+        """
+        change_type = self._types.get(change["kind"])
+        step = None if change_type is None else change_type.steps.get(job["name"])
+        if step is None or step.undiscardable is None:
+            return None
+        ctx = self._step_context(change, steps, job)
+        try:
+            follows = await step.undiscardable(ctx)
+        except Exception:  # noqa: BLE001 — the press is refused whatever the reader does
+            log.error("could not say what dropping job %r of %s would leave", job["name"],
+                      change["what"], exc_info=True)
+            name = await self._name_job(change, job, ctx)
+            return (f"⛔ Job #{job['id']} ({name}) can't be discarded. Fix what stopped it and "
+                    f"press **Retry**.")
+        return (f"⛔ This job can't be discarded: without it {follows}. Fix what stopped it and "
+                f"press **Retry**.")
 
     def _discard_follow_ons(self, change: aiosqlite.Row) -> tuple[FollowOn, ...]:
         """The follow-ons the change type's `on_discarded` asks for a member's change discarded
