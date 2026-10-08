@@ -316,7 +316,6 @@ async def main() -> None:
     from leaguebot.core.db.database import run_migrations
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.season_service import SeasonService
-    from leaguebot.core.services.amendment_service import AmendmentService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.output_router import OutputRouter
 
@@ -359,7 +358,6 @@ async def main() -> None:
 
     bot.config_service = ConfigService(DB_PATH)
     bot.season_service = SeasonService(DB_PATH)
-    bot.amendment_service = AmendmentService(DB_PATH)
     bot.scheduler_service = SchedulerService(
         DB_PATH, SCHEDULER_DB_PATH or None
     )
@@ -728,7 +726,7 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
     5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
-    config — the confirmation of placements and ``amend_round`` — and a restart judging by the defaults made the same league see one set of
+    config — the confirmation of placements and a round amendment's judgement — and a restart judging by the defaults made the same league see one set of
     timings on an enable and another on a restart: a longer phase 1 was never published at all,
     a shorter one was published days early.
 

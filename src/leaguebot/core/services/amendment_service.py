@@ -18,11 +18,6 @@ from leaguebot.core.utils.league_server import league_guild
 log = logging.getLogger(__name__)
 
 
-class AmendmentService:
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-
-
 # ===========================================================================
 # Mid-season points amendment workflow (T024)
 # ===========================================================================

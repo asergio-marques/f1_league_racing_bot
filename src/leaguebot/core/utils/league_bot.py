@@ -34,7 +34,6 @@ import discord
 from discord.ext import commands
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.amendment_service import AmendmentService
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.config_service import ConfigService
@@ -64,7 +63,6 @@ class LeagueBot(commands.Bot):
 
     config_service: ConfigService
     season_service: SeasonService
-    amendment_service: AmendmentService
     scheduler_service: SchedulerService
     output_router: OutputRouter
     change_queue: ChangeQueue
