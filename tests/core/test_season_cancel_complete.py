@@ -25,6 +25,7 @@ Both commands are `CONFIRM`-gated or irreversible, and both are a league admin's
 """
 from __future__ import annotations
 
+from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -68,6 +69,30 @@ def _open_amendment():
         "leaguebot.results.services.result_submission_service.open_amendment_in_season",
         new=AsyncMock(return_value=None),
     ) as mocked:
+        yield mocked
+
+
+#: An open results submission as results reports it to `/season cancel`: its round, its channel,
+#: and whether it has accepted any session's results or a session entered as not held.
+OpenSubmission = namedtuple("OpenSubmission", "round_id channel_id accepted")
+
+
+@pytest.fixture(autouse=True)
+def _open_submissions():
+    """No round's results submission stands open unless a test says so: a test sets
+    `.submissions`, and the reader gives those among the rounds it is handed. The reader is
+    results' own and has tests of its own (test_submission_cancellation_reads.py)."""
+    submissions: list[OpenSubmission] = []
+
+    async def _read(*args, **kwargs):
+        round_ids = kwargs.get("round_ids", args[1] if len(args) > 1 else ())
+        return [each for each in submissions if each.round_id in set(round_ids)]
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.open_submissions",
+        new=AsyncMock(side_effect=_read), create=True,
+    ) as mocked:
+        mocked.submissions = submissions
         yield mocked
 
 
@@ -697,6 +722,152 @@ async def test_cancelling_waits_while_a_round_is_being_amended(_open_amendment):
     replied = _replied(interaction)
     assert "Cannot cancel the season" in replied
     assert "round 2 of **Division 1** is being amended in <#8200>" in replied
+
+
+# ---------------------------------------------------------------------------
+# /season cancel and an open results submission (#439 slice 4b, amendment A, A2)
+# ---------------------------------------------------------------------------
+
+#: Why each test below fails until the build: today the cascade cancels every round whatever its
+#: open submission holds, and leaves the submission open.
+SUBMISSION_XFAIL = (
+    "#439: /season cancel does not yet refuse a round whose open submission has accepted "
+    "results, nor close an empty one first"
+)
+SUBMISSION = 8300
+
+
+def _with_round(cog, status: str, number: int = 3, rid: int = 1) -> None:
+    """Division 1's one round, *rid*, numbered *number*, in *status*."""
+    cog.bot.season_service.get_division_rounds = AsyncMock(return_value=[
+        SimpleNamespace(id=rid, round_number=number, track_name="Monza", status=status),
+    ])
+
+
+def _closing(order=None, *, deleted: bool = True):
+    """Results' `close_submission_channel`, recorded in *order*, giving whether the channel
+    is gone."""
+
+    async def _close(*_args, **_kwargs):
+        if order is not None:
+            order.append("close")
+        return deleted
+
+    return patch(
+        "leaguebot.results.services.result_submission_service.close_submission_channel",
+        new=AsyncMock(side_effect=_close),
+    )
+
+
+def _accepted_reply(number: int) -> str:
+    return (f"❌ Cannot cancel the season — results have already been accepted in the "
+            f"submission channel of round {number} of **Division 1** (<#{SUBMISSION}>), and "
+            f"cancelling would lose them.")
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_cancelling_is_refused_while_a_submission_has_accepted_results_naming_the_round(
+    _open_submissions,
+):
+    """Division 1's round 3 waits for its results, and its open submission (channel 8300) has
+    accepted a session. /season cancel is refused, naming round 3, its division and its channel,
+    before anything else runs: nothing is unscheduled, written, announced, closed or cancelled."""
+    _open_submissions.submissions.append(OpenSubmission(1, SUBMISSION, True))
+    cog = _make_cog()
+    _with_round(cog, "AWAITING_RESULTS")
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history as history_mock, roles, _closing() as close:
+        announce = await _cancel(cog, interaction)
+
+    assert _replied(interaction) == _accepted_reply(3)
+    history_mock.assert_not_awaited()
+    announce.assert_not_awaited()
+    close.assert_not_awaited()
+    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    cog.bot.season_service.discard_uncommitted_placements.assert_not_awaited()
+    cog.bot.season_service.close_raced_rounds_for_cancellation.assert_not_awaited()
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_an_open_submission_that_has_accepted_nothing_is_closed_before_anything_else(
+    _open_submissions,
+):
+    """Division 1's round 3 waits for its results, its submission open in channel 8300 with
+    nothing accepted. /season cancel closes the submission and deletes its channel first, before
+    the timed work is removed, the history written, the season announced or the cascade run;
+    the season is then cancelled."""
+    _open_submissions.submissions.append(OpenSubmission(1, SUBMISSION, False))
+    order: list[str] = []
+    cog = _make_cog(order=order)
+    _with_round(cog, "AWAITING_RESULTS")
+    cog.bot.scheduler_service.cancel_round = MagicMock(
+        side_effect=lambda *_a, **_k: order.append("unarm")
+    )
+    interaction = _interaction()
+    history, roles = _season_end(order=order)
+    announce = AsyncMock(
+        side_effect=lambda *a, **kw: order.append("announce") or CancellationReport()
+    )
+
+    with history, roles, _closing(order) as close, patch(
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
+        await undecorate(SeasonCog.season_cancel)(cog, interaction, "CONFIRM")
+
+    close.assert_awaited_once_with(SUBMISSION, 1, interaction.guild, cog.bot.db_path)
+    assert order[0] == "close"
+    assert {"unarm", "history", "announce", "cascade"} <= set(order[1:])
+    assert "Season cancelled" in _replied(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_a_submission_channel_that_cannot_be_deleted_is_named_to_the_admin(
+    _open_submissions,
+):
+    """Round 3's open, empty submission is closed, but Discord will not delete its channel
+    (8300). The season is still cancelled, and the reply's not-notified list and the log line
+    name the channel to delete by hand."""
+    _open_submissions.submissions.append(OpenSubmission(1, SUBMISSION, False))
+    cog = _make_cog()
+    _with_round(cog, "AWAITING_RESULTS")
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles, _closing(deleted=False):
+        await _cancel(cog, interaction)
+
+    named = (f"**Division 1** — results submission channel of round 3: could not be deleted; "
+             f"delete <#{SUBMISSION}> by hand")
+    cog.bot.season_service.cancel_season_cascade.assert_awaited_once()
+    replied = _replied(interaction)
+    assert "Season cancelled" in replied
+    assert named in replied
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert f"not notified: {named}" in logged
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_XFAIL)
+async def test_cancelling_is_refused_while_a_round_is_in_its_review(_open_submissions):
+    """Division 1's round 2 is in its penalty review: its sessions accepted, its submission
+    (channel 8300) still open for the review. /season cancel is refused until the review is
+    finished, naming round 2: the round is not made final and nothing is cancelled."""
+    _open_submissions.submissions.append(OpenSubmission(2, SUBMISSION, True))
+    cog = _make_cog()
+    _with_round(cog, "AWAITING_REPORT_VERDICTS", number=2, rid=2)
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles, _closing() as close:
+        announce = await _cancel(cog, interaction)
+
+    assert _replied(interaction) == _accepted_reply(2)
+    announce.assert_not_awaited()
+    close.assert_not_awaited()
+    cog.bot.season_service.close_raced_rounds_for_cancellation.assert_not_awaited()
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
