@@ -793,10 +793,10 @@ async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumber
 async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(tmp_path, case):
     """(cancelled) The arming stops; meanwhile `/season cancel`, off the queue, records round 3
     cancelled; on Retry the arming is dropped as no longer due, one line says the stopped job no
-    longer stops the queue, nothing is armed and the queue goes on. (results) The removal of the timed work stops; meanwhile round 3's results are
-    entered; on Retry the save refuses in today's Confirm words, the arming is dropped and
-    nothing is armed. (control) The removal stops and the round is still to be run: on Retry the
-    arming runs."""
+    longer stops the queue, nothing is armed and the queue goes on. (results) The removal of the
+    timed work stops; meanwhile round 3's results are entered; on Retry the save refuses in
+    today's Confirm words, the arming is dropped and nothing is armed. (control) The removal stops
+    and the round is still to be run: on Retry the arming runs."""
     league = await ongoing_league(tmp_path)
     press = await _amended(league, scheduled_at=_at(league, days=91))
     if case == "cancelled":
@@ -829,7 +829,8 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         assert len(cleared) == 1, cleared
         assert cleared[0].startswith(f"ℹ️ Job #{arming['id']} (")
         assert cleared[0].endswith(
-            "): it is no longer due, so it was dropped. The queue runs on."
+            ") no longer stops the queue: it is no longer due, so it was dropped. The queue runs "
+            "on."
         )
     if case == "results":
         outcome = _outcome(press)
