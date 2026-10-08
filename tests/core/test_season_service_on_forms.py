@@ -170,7 +170,8 @@ ACTOR = {"actor_id": 77, "actor_name": "Admin", "now": NOW}
 
 async def _ongoing_db(tmp_path, statuses, *, season_status: str = "ACTIVE") -> str:
     """Season 3 (id 7) ongoing, Pro (id 11) active alone, its rounds 1, 2, … (ids 21, 22, …) in
-    *statuses*, in order."""
+    *statuses*, in order. A season given as archived (`COMPLETED` or `CANCELLED`) carries that
+    status as its stage too, as the schema requires of an archived season."""
     db_path = os.path.join(str(tmp_path), "cancel_on_forms.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -181,8 +182,9 @@ async def _ongoing_db(tmp_path, statuses, *, season_status: str = "ACTIVE") -> s
         )
         await db.execute(
             "INSERT INTO seasons (id, season_number, start_date, status, stage) "
-            "VALUES (?, 3, '2026-11-01', ?, 'ONGOING')",
-            (SEASON_ID, season_status),
+            "VALUES (?, 3, '2026-11-01', ?, ?)",
+            (SEASON_ID, season_status,
+             "ONGOING" if season_status == "ACTIVE" else season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status) "
