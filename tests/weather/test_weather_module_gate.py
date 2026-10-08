@@ -374,7 +374,6 @@ async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, 
     bot.output_router.post_forecast.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the Mystery notice does not look for a cancellation")
 @pytest.mark.parametrize("what", ["round", "division"])
 async def test_a_mystery_notice_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, what):
     """Weather is on and round 1 of Div A is a Mystery round. The round, or Div A, is cancelled,

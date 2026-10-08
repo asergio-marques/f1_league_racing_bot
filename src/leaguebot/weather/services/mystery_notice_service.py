@@ -16,6 +16,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.weather.utils.message_builder import mystery_notice_message
 from leaguebot.weather.services.forecast_cleanup_service import store_forecast_message
 
@@ -29,10 +30,17 @@ async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
     """Post the mystery round notice for *round_id* to its forecast channel.
 
     Posts nothing, and leaves the round's Phase 1 undone, while the weather module is off.
+
+    Nor does it do anything for a round that is cancelled, or whose division is, where it reads
+    the round after the cancellation is recorded, for the reason ``run_phase1`` gives: the
+    cancellation removes the round's timed work before it records the round cancelled, but a
+    notice fired late, or one that fell due in between, can still arrive here. One that read the
+    round before the save is not caught. The skip is written to the host's log alone.
     """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT r.id, r.format, d.id AS division_id, d.forecast_channel_id "
+            "SELECT r.id, r.format, r.status AS round_status, d.id AS division_id, "
+            "       d.status AS division_status, d.forecast_channel_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
             "JOIN seasons s ON s.id = d.season_id "
@@ -43,6 +51,17 @@ async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
 
     if row is None:
         log.warning("Mystery notice: round_id=%s not found — skipping.", round_id)
+        return
+
+    # A cancelled round, or a round of a cancelled division — see the docstring.
+    if (
+        row["round_status"] == RoundStatus.CANCELLED.value
+        or row["division_status"] == "CANCELLED"
+    ):
+        log.info(
+            "Mystery notice: round %s or its division is cancelled — round left untouched.",
+            round_id,
+        )
         return
 
     # Guard: if the round was amended away from MYSTERY before the job fired,
