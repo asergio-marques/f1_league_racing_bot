@@ -1396,13 +1396,11 @@ async def _fail_sheet(league: Any) -> None:
     _refused(league, PRO_CH.attendance)
 
 
-#: Each job after the save, made to fail; the line naming it once discarded.
+#: Each job after the save, made to fail; the line naming it once discarded. The arming is not
+#: among them: it cannot be discarded (#439, slice 4b, amendment A).
 _DISCARDED = {
     "forget_setup": (_fail_forget, "The setup the bot held in memory could not be let go of: "
                      "`/round amend` may refuse this season until the bot restarts."),
-    "arm": (_fail_arm, "⛔ The season's timed work was not armed: no round will open its "
-            "results submission, and no forecast or check-in call will be posted. No command "
-            "arms it again."),
     "grant_roles": (_fail_grant, f"<@{LEWIS}> — their roles could not be granted. Give them "
                     "their division's and team's roles by hand."),
     "post_batch_notice": (_fail_the_notice_post, "The notice that the season's posts were being "
