@@ -793,6 +793,51 @@ async def test_a_stuck_arming_leaves_the_season_ongoing_and_arms_once_retried(
     assert league.armed == [("results", _all_rounds())]
 
 
+#: The refusal of a Discard on the season's arming, privately and in the log channel.
+CANNOT_DISCARD_ARMING = (
+    "⛔ This job can't be discarded: without it no round of season 3 would ever run. Fix what "
+    "stopped it and press **Retry**."
+)
+
+
+def _said_to(interaction: Any) -> list[str]:
+    """What the presser was told."""
+    calls = (interaction.response.send_message.await_args_list
+             + interaction.followup.send.await_args_list)
+    return [str(call.args[0] if call.args else call.kwargs.get("content", "")) for call in calls]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the season's arming can still be discarded")
+async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_every_round(
+    tmp_path, monkeypatch,
+):
+    """The arming fails and stops the queue. A league admin's Discard on it is refused, privately
+    and with one line in the log channel, and the queue stays stopped at the arming. Once the
+    arming is mended, Retry arms every round, and the reply names no timed work left unarmed."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    press = await _pressed(league)
+    await _fail_arm(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "arm"
+
+    discarding = await discard_job(league.bot)
+
+    assert CANNOT_DISCARD_ARMING in _said_to(discarding)
+    refusals = [line for line in _log_lines(league)
+                if line.startswith("⛔") and "can't be discarded" in line]
+    assert len(refusals) == 1
+    assert await _stopped_at(league) == "arm"
+    assert league.armed == []
+
+    league.arming_fails = None
+    await retry_job(league.bot)
+
+    assert league.armed == [("results", _all_rounds())]
+    assert await stopped_job(league.db_path) is None
+    assert APPROVED in reply(press)
+    assert "timed work was not armed" not in reply(press)
+
+
 async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
     tmp_path, monkeypatch,
 ):
