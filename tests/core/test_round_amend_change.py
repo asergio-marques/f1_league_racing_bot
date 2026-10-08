@@ -457,6 +457,7 @@ async def test_an_invalidation_notice_discord_refuses_stops_the_queue(tmp_path):
 
     assert await _stopped_at(league) == "notify_invalidation"
     assert league.texts(PRO_CH.forecast) == []
+    assert await league.rows("SELECT * FROM pending_messages") == []
     await discard_job(league.bot)
     outcome = _outcome(press)
     assert outcome.startswith(AMENDED) and NOT_DONE in outcome
@@ -791,8 +792,8 @@ async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumber
 ])
 async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(tmp_path, case):
     """(cancelled) The arming stops; meanwhile `/season cancel`, off the queue, records round 3
-    cancelled; on Retry the arming is dropped as no longer due, nothing is armed and the queue
-    goes on. (results) The removal of the timed work stops; meanwhile round 3's results are
+    cancelled; on Retry the arming is dropped as no longer due, one line says the stopped job no
+    longer stops the queue, nothing is armed and the queue goes on. (results) The removal of the timed work stops; meanwhile round 3's results are
     entered; on Retry the save refuses in today's Confirm words, the arming is dropped and
     nothing is armed. (control) The removal stops and the round is still to be run: on Retry the
     arming runs."""
@@ -820,7 +821,16 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         assert (await _change(league))["state"] == "DONE"
         return
     assert league.armed == []
-    assert (await _job(league, "arm"))["result"] == {"dropped": True}
+    arming = await _job(league, "arm")
+    assert arming["result"] == {"dropped": True}
+    if case == "cancelled":
+        cleared = [line.split("\n")[0] for line in _log_lines(league)
+                   if "no longer stops the queue" in line]
+        assert len(cleared) == 1, cleared
+        assert cleared[0].startswith(f"ℹ️ Job #{arming['id']} (")
+        assert cleared[0].endswith(
+            "): it is no longer due, so it was dropped. The queue runs on."
+        )
     if case == "results":
         outcome = _outcome(press)
         assert outcome.startswith(NO_LONGER) and "**Nothing has been changed.**" in outcome
