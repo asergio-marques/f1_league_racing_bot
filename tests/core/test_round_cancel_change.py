@@ -396,6 +396,30 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
+async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_path):
+    """Discord refuses the check-in notice for Pro's round 3, so the queue stops at it, and a
+    league admin discards it. The call still comes down whether or not the notice could be posted
+    (attendance spec, Cancellation): messages 7001-7003 are deleted and the call's record is gone,
+    its check-in is still written beneath the success line, and the discarded notice is named."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _refused(league, PRO_CH.checkin)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "notify_checkin"
+    await discard_job(league.bot)
+
+    assert not set(CALL_MESSAGES) & set(league.channel(PRO_CH.checkin).messages)
+    assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    named = "**Pro** — check-in channel: the notice could not be posted, and a league admin discarded it"
+    assert CANCELLED in reply(interaction)
+    assert named in _not_notified(reply(interaction))
+    [line] = _success_lines(league)
+    assert CHECKIN_LOGGED in line
+    assert f"\n  not notified: {named}" in line
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_the_old_retry_queue(
     tmp_path,
 ):

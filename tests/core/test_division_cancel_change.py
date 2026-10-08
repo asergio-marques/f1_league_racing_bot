@@ -438,6 +438,22 @@ async def test_each_round_called_off_has_its_call_taken_down_and_its_check_in_wr
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
+async def test_a_round_whose_call_was_never_posted_is_neither_taken_down_nor_written(tmp_path):
+    """Pro's round 3 has its check-in call standing and round 4 has none. Cancelling Pro takes
+    round 3's call down and writes its check-in beneath the line; round 4 gets no take-down job
+    and no check-in written (attendance spec, Cancellation)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _asked(league)
+
+    await _done(league)
+
+    assert [job["name"] for job in await _jobs(league)].count("take_down_call") == 1
+    [line] = _success_lines(league)
+    assert CHECKIN_R3 in line
+    assert "check-in, Pro, Round 4" not in line
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_division_is_told_in_the_division_s_words(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, results=True, attendance=True)
     await _asked(league)
