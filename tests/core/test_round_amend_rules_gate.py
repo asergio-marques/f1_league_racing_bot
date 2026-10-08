@@ -772,7 +772,8 @@ async def test_a_round_that_cannot_be_amended_is_refused_even_given_what_stands(
 # A cancellation waiting or stopped on the queue has removed, or is about to remove, the round's
 # timed work. An amendment confirmed meanwhile would arm it again, and the round, once cancelled,
 # would still have its forecasts posted. So `/round amend` is refused, naming the job, while a
-# cancellation of the round or of its division is in hand: at the offer and again at confirm.
+# cancellation of the round, of its division or of another round of its division is in hand: at
+# the offer and again at confirm.
 # ---------------------------------------------------------------------------
 
 _CANCELLATIONS_IN_HAND = [
@@ -790,10 +791,13 @@ _CANCELLATIONS_IN_HAND = [
 ]
 
 
-async def _seed_cancellation(path: str, kind: str, payload: dict) -> int:
+async def _seed_cancellation(
+    path: str, kind: str, payload: dict, *, state: str = "QUEUED"
+) -> int:
     """A cancellation of *kind* waiting on the queue, its first job (removing the timed work) not
     yet done, behind an earlier change of three jobs long done, so that the job's number and its
-    change's id differ. Gives the job's number."""
+    change's id differ. Gives the job's number. With *state* 'DONE', the cancellation is over
+    instead, its job done."""
     import json
 
     async with get_connection(path) as db:
@@ -809,14 +813,14 @@ async def _seed_cancellation(path: str, kind: str, payload: dict) -> int:
             )
         cursor = await db.execute(
             "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
-            "VALUES (?, ?, ?, 'MEMBER', 'QUEUED', 'a cancellation of the test')",
-            (kind, f"{kind}:{json.dumps(payload, sort_keys=True)}", json.dumps(payload)),
+            "VALUES (?, ?, ?, 'MEMBER', ?, 'a cancellation of the test')",
+            (kind, f"{kind}:{json.dumps(payload, sort_keys=True)}", json.dumps(payload), state),
         )
         change_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO queued_change_steps (change_id, position, name, payload) "
-            "VALUES (?, 0, 'unarm', '{}')",
-            (change_id,),
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, done_at) "
+            "VALUES (?, 0, 'unarm', '{}', ?)",
+            (change_id, "2026-10-05T12:00:00+00:00" if state == "DONE" else None),
         )
         job = cursor.lastrowid
         await db.commit()
@@ -892,3 +896,41 @@ async def test_a_round_is_not_amended_while_another_round_of_its_division_is_bei
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "/round amend" in line and f"job #{job}" in line
+
+
+@pytest.mark.parametrize("at", ["offer", "confirm"])
+@pytest.mark.parametrize(
+    ("division_id", "state"),
+    [
+        pytest.param(2, "QUEUED", id="another-division-waiting"),
+        pytest.param(1, "DONE", id="same-division-done"),
+    ],
+)
+async def test_a_cancellation_elsewhere_or_done_lets_the_amendment_through(
+    tmp_path, at, division_id, state
+):
+    """Round 1 of Div A is a month out. A cancellation of a round of another division waits on
+    the queue, or one of round 2 of Div A has already been carried out. Neither holds the
+    amendment: the hold stays inside the division, and only while the cancellation is in hand.
+    Asking to amend round 1's track is offered for confirmation; pressing Confirm amends it."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    await _seed_cancellation(path, "season.round.cancel", {
+        "round_id": 2, "round_number": 2, "track_name": "Bahrain International Circuit",
+        "division_id": division_id, "division_name": DIVISION if division_id == 1 else "Div B",
+        "season_number": 1,
+    }, state=state)
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    if at == "confirm":
+        _answered(interaction)
+        await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+        cog.bot.amendment_service.amend_round.assert_awaited_once()
+    else:
+        await _amend(cog, interaction, track=NEW_TRACK)
+        assert _offered_a_confirmation(interaction)
+
+    assert "⏸️" not in _all_replies(interaction)
+    assert not any(line.startswith("⛔ ") for line in _lines(cog))
