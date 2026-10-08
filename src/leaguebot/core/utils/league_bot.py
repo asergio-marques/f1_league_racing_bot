@@ -84,6 +84,10 @@ class LeagueBot(commands.Bot):
     #: that module is off. The builder sets it, where the modules meet, so that core's approval
     #: reads them without importing attendance or weather (#439).
     approval_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows | None]]]
+    #: The lead times a round amendment is judged against, `(attendance, weather)`: attendance's
+    #: None where that module is off, weather's always set. The builder sets it, as it does
+    #: `approval_windows`, so that `/round amend` and its change read the same windows (#439).
+    amendment_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
 
 
 def bot_of(interaction: discord.Interaction) -> LeagueBot:

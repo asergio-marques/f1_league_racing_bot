@@ -115,6 +115,38 @@ async def read_approval_windows(
     return attendance, weather
 
 
+async def read_amendment_windows(
+    bot: LeagueBot,
+) -> "tuple[AttendanceWindows | None, WeatherWindows]":
+    """The lead times a round amendment is judged against, as `(attendance, weather)`.
+
+    Attendance's is None where that module is off: a league without attendance has no check-in
+    to lose. Weather's is read whatever the module's state, because a forecast posted while
+    weather was on is still posted, and whether it survives the amendment is what the track and
+    format rules turn on. `/round amend` offers and judges through `bot.amendment_windows`, which
+    is this, and so does its change on the queue, so the two cannot read different windows (#439).
+    """
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
+
+    attendance = None
+    if await bot.module_service.is_attendance_enabled():
+        att = await bot.attendance_service.get_or_create_config()
+        attendance = AttendanceWindows(
+            notice_days=att.rsvp_notice_days,
+            last_notice_hours=att.rsvp_last_notice_hours,
+            deadline_hours=att.rsvp_deadline_hours,
+        )
+
+    wx = await get_weather_pipeline_config(bot.db_path)
+    weather = WeatherWindows(
+        phase_1_days=wx.phase_1_days,
+        phase_2_days=wx.phase_2_days,
+        phase_3_hours=wx.phase_3_hours,
+    )
+    return attendance, weather
+
+
 def _forget_setup(bot: LeagueBot) -> None:
     """Let go of the setup the season cog holds in memory, as `clear_in_memory_state` does."""
     from leaguebot.core.cogs.season_cog import SeasonCog
@@ -314,6 +346,7 @@ async def main() -> None:
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     bot.approval_windows = lambda: read_approval_windows(bot)
+    bot.amendment_windows = lambda: read_amendment_windows(bot)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService

@@ -6309,27 +6309,11 @@ async def _judge_round_amendment(
     a league without attendance has no check-in to lose.
     """
     from leaguebot.core.services.amendment_rules_service import judge_amendment
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
-    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
-    attendance = None
-    if await bot.module_service.is_attendance_enabled():
-        _acfg = await bot.attendance_service.get_or_create_config()
-        attendance = AttendanceWindows(
-            notice_days=_acfg.rsvp_notice_days,
-            last_notice_hours=_acfg.rsvp_last_notice_hours,
-            deadline_hours=_acfg.rsvp_deadline_hours,
-        )
-
-    # The forecast horizons are read whatever the module's state: a forecast posted while
-    # weather was on is still posted, and whether it survives the amendment is what the track
-    # and format rules turn on.
-    _wcfg = await get_weather_pipeline_config(bot.db_path)
-    weather = WeatherWindows(
-        phase_1_days=_wcfg.phase_1_days,
-        phase_2_days=_wcfg.phase_2_days,
-        phase_3_hours=_wcfg.phase_3_hours,
-    )
+    # The windows are the builder's (`LeagueBot.amendment_windows`), the same reader the change
+    # on the queue judges through; weather's are read whatever the module's state, as a forecast
+    # posted while weather was on is still posted.
+    attendance, weather = await bot.amendment_windows()
 
     return judge_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather
