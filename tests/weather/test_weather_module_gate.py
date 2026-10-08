@@ -335,7 +335,6 @@ async def _cancel(db_path: str, what: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a phase still runs for a cancelled round")
 @pytest.mark.parametrize("what", ["round", "division"])
 @pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
 async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, phase, what):
