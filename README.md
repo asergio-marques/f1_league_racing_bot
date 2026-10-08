@@ -851,7 +851,7 @@ Is acknowledged at once, naming its first job, and carried out on the change que
 #### `/division cancel` — Cancel a division in the active season
 *Access: League admin · Ongoing only*
 
-Available only while the season is ongoing. Cancelling the last division still running leaves the season pending completion.
+Available only while the season is ongoing. Cancelling the last division still running leaves the season pending completion. A division that has finished is refused, when you ask and again when the cancellation comes to run, should the division finish while it waits.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
