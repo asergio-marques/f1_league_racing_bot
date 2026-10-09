@@ -1,8 +1,10 @@
 """Taking a season's roles back from its drivers when the season ends.
 
-Issue #208. `_revoke_season_roles` was patched out wherever it was reached, so its own body never
-ran. It is called on both `/season complete` and `/season cancel`, and it is what stops a
-finished season's drivers carrying its division and team roles into the next one.
+Issue #208, and #439's slice 5. On the change queue a season's end reads, in its save, which
+drivers lose which roles (`season_role_targets_on`), and takes each driver's back as a job of its
+own (`PlacementService.revoke_roles`). It is done on `/season complete` and `/season cancel`, and
+it is what stops a finished season's drivers carrying its division and team roles into the next
+one.
 
 **Every real driver assigned in the season loses their placement roles and the driver role.**
 Placement roles are the division and the team; the driver role was granted at approval and
@@ -30,12 +32,16 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_end_service import _revoke_season_roles
 
 SERVER_ID = 13908
 SEASON_ID = 1
 OTHER_SEASON_ID = 2
 DRIVER_ROLE = 555
+#: The role of each season's division, `Pro`.
+DIVISION_MENTION = 600
+
+_XFAIL_TARGETS = "#439: there is no season_role_targets_on"
+_XFAIL_REVOKE = "#439: a season's roles cannot yet be taken back by a job that raises"
 
 
 async def _make_db(tmp_path, *, name="revoke_roles", driver_role=DRIVER_ROLE, drivers=None):
@@ -80,147 +86,124 @@ async def _make_db(tmp_path, *, name="revoke_roles", driver_role=DRIVER_ROLE, dr
     return db_path
 
 
-#: One object for the role, as Discord's own role equality is by id: a member "holds" it by
-#: carrying this same object, which is what `driver_role in member.roles` tests.
-_DRIVER = MagicMock()
-_DRIVER.id = DRIVER_ROLE
+async def _targets(db_path, season_id=SEASON_ID) -> dict[int, set[int]]:
+    """What a season's end reads in its save: each driver whose roles are taken back, by user
+    id, with the role ids taken from them (`season_role_targets_on`, committing nothing)."""
+    from leaguebot.core.services.season_end_service import season_role_targets_on
+
+    async with get_connection(db_path) as db:
+        targets = await season_role_targets_on(db, season_id)
+    return {int(t["user_id"]): set(t["role_ids"]) for t in targets}
 
 
-def _member(uid, *, has_driver_role=True):
-    member = MagicMock()
-    member.id = uid
-    member.roles = [_DRIVER] if has_driver_role else []
-    return member
-
-
-def _guild(members: dict, *, missing=(), fetch_fails=()):
-    guild = MagicMock()
-    guild.get_member = MagicMock(side_effect=lambda uid: None if uid in missing else members.get(uid))
-
-    async def _fetch(uid):
-        if uid in fetch_fails:
-            raise discord.HTTPException(MagicMock(status=404), "unknown member")
-        return members.get(uid)
-
-    guild.fetch_member = AsyncMock(side_effect=_fetch)
-    guild.get_role = MagicMock(return_value=_DRIVER)
-    return guild
-
-
-def _bot(db_path):
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.placement_service = MagicMock()
-    bot.placement_service.revoke_all_placement_roles = AsyncMock()
-    bot.placement_service._revoke_roles = AsyncMock()
-    return bot
-
-
-def _revoked_placement(bot) -> list[int]:
-    return sorted(c.args[0] for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
-
-
+@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_every_driver_loses_their_placement_roles(tmp_path):
+    """Drivers 101 and 102 are placed in season 1's division, whose role is 600: both are to
+    lose it."""
     db_path = await _make_db(tmp_path)
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
+    targets = await _targets(db_path)
 
-    assert _revoked_placement(bot) == [31, 32]
-    assert all(c.args[1] == SEASON_ID for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
+    assert sorted(targets) == [101, 102]
+    assert all(DIVISION_MENTION in roles for roles in targets.values())
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_the_driver_role_is_taken_back_too(tmp_path):
     """Otherwise a league enters its next signup window with half its server still marked
     as signed up."""
     db_path = await _make_db(tmp_path, name="revoke_signedup")
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
+    targets = await _targets(db_path)
 
-    assert bot.placement_service._revoke_roles.await_count == 2
-    assert all(c.args[1] == DRIVER_ROLE for c in bot.placement_service._revoke_roles.await_args_list)
+    assert sorted(targets) == [101, 102]
+    assert all(DRIVER_ROLE in roles for roles in targets.values())
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
-    db_path = await _make_db(tmp_path, name="revoke_norole")
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102, has_driver_role=False)}
+    """Driver 101 holds the division's role but not the driver role: the job takes the
+    division's alone, and asks Discord nothing of the driver role."""
+    from leaguebot.core.services.placement_service import PlacementService
 
-    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
+    guild, member = _revocation_guild()
+    member.roles = [role for role in member.roles if role.id != DRIVER_ROLE]
 
-    assert bot.placement_service._revoke_roles.await_count == 1
+    await PlacementService(str(tmp_path / "db.sqlite")).revoke_roles(
+        guild, 101, _DIVISION_ROLE, DRIVER_ROLE, reason="Season ended"
+    )
+
+    assert _taken(member) == {_DIVISION_ROLE}
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_a_league_with_no_driver_role_revokes_placement_only(tmp_path):
     db_path = await _make_db(tmp_path, name="revoke_noconfig", driver_role=None)
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
+    targets = await _targets(db_path)
 
-    assert _revoked_placement(bot) == [31, 32]
-    bot.placement_service._revoke_roles.assert_not_awaited()
+    assert targets == {101: {DIVISION_MENTION}, 102: {DIVISION_MENTION}}
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_a_test_driver_is_skipped(tmp_path):
     """No Discord member behind them."""
     db_path = await _make_db(
         tmp_path, name="revoke_test", drivers=[(31, 101, 0, SEASON_ID), (32, 900000001, 1, SEASON_ID)]
     )
-    bot = _bot(db_path)
 
-    await _revoke_season_roles(SEASON_ID, _guild({101: _member(101)}), bot)
-
-    assert _revoked_placement(bot) == [31]
+    assert sorted(await _targets(db_path)) == [101]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
-    db_path = await _make_db(tmp_path, name="revoke_fetch")
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102)}
-    guild = _guild(members, missing={102})
+    """Driver 101 is not in the bot's member cache: the job fetches them from Discord and takes
+    their roles all the same."""
+    from leaguebot.core.services.placement_service import PlacementService
 
-    await _revoke_season_roles(SEASON_ID, guild, bot)
+    guild, member = _revocation_guild()
+    guild.get_member = MagicMock(return_value=None)
 
-    guild.fetch_member.assert_awaited_once_with(102)
-    assert _revoked_placement(bot) == [31, 32]
+    await PlacementService(str(tmp_path / "db.sqlite")).revoke_roles(
+        guild, 101, _DIVISION_ROLE, DRIVER_ROLE, reason="Season ended"
+    )
+
+    guild.fetch_member.assert_awaited_once_with(101)
+    assert _taken(member) == {_DIVISION_ROLE, DRIVER_ROLE}
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_driver_who_has_left_the_server_is_stepped_over(tmp_path):
-    """The roles went with them, and one departed member must not stop the rest."""
-    db_path = await _make_db(tmp_path, name="revoke_left")
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102)}
-    guild = _guild(members, missing={101}, fetch_fails={101})
+    """The roles went with them, and one departed member must not stop the rest: Discord
+    answers the fetch of driver 101 "unknown member", and the job is done, raising nothing."""
+    from leaguebot.core.services.placement_service import PlacementService
 
-    await _revoke_season_roles(SEASON_ID, guild, bot)
+    gone = discord.NotFound(MagicMock(status=404, reason="Not Found"), "unknown member")
+    guild, member = _revocation_guild(fetch_error=gone)
 
-    assert _revoked_placement(bot) == [32]
+    taken = await PlacementService(str(tmp_path / "db.sqlite")).revoke_roles(
+        guild, 101, _DIVISION_ROLE, DRIVER_ROLE, reason="Season ended"
+    )
+
+    assert taken is False
+    member.remove_roles.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_another_seasons_drivers_are_left_alone(tmp_path):
     """A driver placed only last season keeps whatever the current season gave them."""
     db_path = await _make_db(
         tmp_path, name="revoke_other", drivers=[(31, 101, 0, SEASON_ID), (32, 102, 0, OTHER_SEASON_ID)]
     )
-    bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
-
-    assert _revoked_placement(bot) == [31]
+    assert sorted(await _targets(db_path)) == [101]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_a_season_with_no_drivers_revokes_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="revoke_empty", drivers=[])
-    bot = _bot(db_path)
 
-    await _revoke_season_roles(SEASON_ID, _guild({}), bot)
-
-    bot.placement_service.revoke_all_placement_roles.assert_not_awaited()
+    assert await _targets(db_path) == {}
 
 
 # ── `PlacementService.revoke_roles`, the job's body (#439, slice 5) ──────────────────
@@ -229,8 +212,6 @@ async def test_a_season_with_no_drivers_revokes_nothing(tmp_path):
 # job that cannot do its work stops the queue rather than logging and carrying on. The mirror of
 # `grant_roles`: a member who has left is passed over; a member who cannot be fetched for any
 # other reason, or a removal Discord refuses, raises `StepFailedOnDiscord` from the fault.
-
-_XFAIL_REVOKE = "#439: a season's roles cannot yet be taken back by a job that raises"
 
 _DIVISION_ROLE, _TEAM_ROLE = 801, 811
 
