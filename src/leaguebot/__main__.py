@@ -894,7 +894,9 @@ async def _recover_missed_check_in_calls(
                   CROSS JOIN attendance_config ac
                  WHERE ac.module_enabled = 1
                    AND s.stage IN ({",".join("?" for _ in ongoing)})
-                   AND r.status IN ({",".join("?" for _ in to_run)})
+                   AND (r.status IN ({",".join("?" for _ in to_run)})
+                        OR (r.status = 'FINAL' AND NOT EXISTS (
+                            SELECT 1 FROM results_module_config WHERE module_enabled = 1)))
                    AND d.status != 'CANCELLED'
                    AND r.checkin_cleared = 0
                    AND NOT EXISTS (
@@ -975,7 +977,11 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     the save itself, whichever caller asks. A round further on has had its attendance charged
     and its pardons granted, and a check-in over is settled; clearing either would erase a
     record a league has acted on. Nothing is written and nothing told for such a round
-    (`test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over`).
+    (`test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over`). The one
+    exception is a round final because the results module is off, which a round becomes as its
+    moment passes: its missed call is still reported, and its check-in marked over so that it is
+    reported once, but nothing of its attendance is cleared and the note says what is kept
+    (owner, 2026-10-09: "Yes, still mention it").
 
     **It raises** where the mark cannot be saved, and the mark is saved before the log channel
     is told, so that a give-up tried again tells it once. The start-up recovery catches the
@@ -995,19 +1001,28 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     round_id: int = row["round_id"]
     to_run = sorted(ROUND_CANCELLABLE)
     async with get_connection(bot.db_path) as db:
+        # One statement judges, marks and reads what the report needs, so that nothing can
+        # change the round between them (RETURNING needs SQLite 3.35, which every host carries).
         cursor = await db.execute(
             "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
-            f"AND status IN ({', '.join('?' for _ in to_run)})",
+            f"AND (status IN ({', '.join('?' for _ in to_run)}) OR (status = 'FINAL' "
+            "AND NOT EXISTS (SELECT 1 FROM results_module_config WHERE module_enabled = 1))) "
+            "RETURNING status, EXISTS (SELECT 1 FROM driver_round_attendance a "
+            "WHERE a.round_id = rounds.id) AS answered",
             (round_id, *to_run),
         )
-        if cursor.rowcount != 1:
+        found = await cursor.fetchone()
+        if found is None:
             log.info(
                 "_recover_missed_check_in_calls: round %d's results are in or its check-in is "
                 "over — nothing given up",
                 round_id,
             )
             return
-        await clear_check_in_answers_on(db, round_id)
+        # A round final with results off keeps its attendance as it stands.
+        clearing = found["status"] in ROUND_CANCELLABLE
+        if clearing:
+            await clear_check_in_answers_on(db, round_id)
         await db.commit()
     log.info(
         "_recover_missed_check_in_calls: round %d's deadline has passed — call not posted",
@@ -1023,6 +1038,9 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
         note=(
             "a call posted now could not be answered, so none was posted. No attendance "
             "rows were opened, and this round will count nothing against anyone."
+            if clearing or not found["answered"] else
+            "a call posted now could not be answered, so none was posted. The answers "
+            "already recorded for this round are kept as they stand."
         ),
     )
 

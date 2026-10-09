@@ -462,7 +462,6 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
     assert await _checkin_cleared(db_path) == cleared
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a results-off round's missed call goes unreported")
 async def test_a_missed_call_of_a_round_final_with_results_off_is_reported_once_its_data_kept(
     tmp_path,
 ):
