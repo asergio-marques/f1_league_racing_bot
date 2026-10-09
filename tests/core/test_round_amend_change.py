@@ -107,16 +107,29 @@ def phases(monkeypatch):
 @pytest.fixture
 def reposts(monkeypatch):
     """Attendance's posts of a check-in call, recording `(round id, division id)` in `posted`,
-    raising `fault` instead where it is set: its repost (`repost_rsvp_call`), and its first post
+    raising `fault` instead where it is set: its repost (`repost_rsvp_call`), which, as the real
+    one does, records the call it posts in place of any standing; and its first post
     (`run_rsvp_notice`), which, as the real one does, posts nothing where a call stands for the
     round and records the call it posts as standing."""
     from leaguebot.attendance.services import rsvp_service
 
     record = SimpleNamespace(posted=[], fault=None)
 
-    async def _repost(rid: int, division_id: int, *_args: Any, **_kwargs: Any) -> None:
+    async def _repost(rid: int, division_id: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
         if record.fault is not None:
             raise record.fault
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, "
+                "channel_id, posted_at) SELECT ?, ?, ?, rsvp_channel_id, ? "
+                "FROM attendance_division_config WHERE division_id = ? "
+                "ON CONFLICT(round_id, division_id) DO UPDATE SET "
+                "message_id = excluded.message_id, channel_id = excluded.channel_id, "
+                "posted_at = excluded.posted_at, last_notice_msg_id = NULL, "
+                "distribution_msg_id = NULL",
+                (rid, division_id, str(LATE_CALL), "2026-01-01T00:00:00", division_id),
+            )
+            await db.commit()
         record.posted.append((rid, division_id))
 
     async def _post(rid: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
@@ -1723,7 +1736,6 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
     assert "no attendance rows were opened" not in line
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the reply bids the live call be deleted by hand")
 async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_call_be_deleted(
     tmp_path, monkeypatch,
 ):

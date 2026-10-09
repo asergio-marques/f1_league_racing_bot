@@ -662,6 +662,15 @@ def round_amend_change(
             return False, False
         return bool(found["called"]), bool(found["checkin_cleared"])
 
+    async def call_message(db_path: str, round_id: int) -> str | None:
+        """The message the round's standing call is recorded as, or None where none stands."""
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
+            )
+            found = await cursor.fetchone()
+        return None if found is None else str(found["message_id"])
+
     async def call_still_due(ctx: StepContext) -> bool:
         """The call is posted only while attendance is on and the call has fallen due as the
         round stands when this job runs, and, as the start-up recovery of a missed call judges it
@@ -757,7 +766,12 @@ def round_amend_change(
             await hooks.give_up_call(ctx.bot, dict(found))
             return StepResult(result={"given_up": True})
         if reposting(ctx):
+            earlier = await call_message(ctx.db_path, rnd.id) if replacing(ctx) else None
             await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
+            if earlier is not None and await call_message(ctx.db_path, rnd.id) == earlier:
+                # The repost failed and left the earlier call standing, the round's only one:
+                # the reply must not bid it be deleted by hand (`not_done`).
+                return StepResult(result={"posted": False, "earlier_left": True})
         else:
             await hooks.post_call(rnd.id, ctx.bot)
         return StepResult(result={"posted": True})
@@ -870,6 +884,15 @@ def round_amend_change(
             result = each.result or {}
             if each.name == TAKE_DOWN_CALL:
                 ids = [str(one) for one in result.get("undeleted", [])]
+                if (view(ctx, POST_CALL).result or {}).get("earlier_left"):
+                    # Posting the call again failed too, and the earlier call was kept: it is the
+                    # round's only call, not one to delete.
+                    failures.append(notices.NoticeFailure(
+                        division, "check-in call",
+                        "it could not be taken down, and posting it again failed, so the "
+                        "earlier call was kept and its answers count; see the log channel",
+                    ))
+                    continue
                 failures.append(notices.NoticeFailure(
                     division, "check-in call",
                     f"{len(ids)} message(s) could not be deleted and must be removed by hand "
