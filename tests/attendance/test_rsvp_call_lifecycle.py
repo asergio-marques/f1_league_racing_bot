@@ -450,35 +450,67 @@ def _refusing_channel() -> MagicMock:
     return channel
 
 
-@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+#: A channel the earlier call stands in, other than the one the division is set to now.
+EARLIER_CHANNEL_ID = 770078
+
+
+@pytest.mark.parametrize("fault", [
+    "Discord refuses the post",
+    pytest.param("the channel is gone", marks=pytest.mark.xfail(
+        strict=True, reason="#439: a repost keeps the record of a call no one can see",
+    )),
+    "the channel set is gone, the earlier call's stands",
+])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
-    it again fails, Discord refusing the new message or the check-in channel gone: the earlier
-    call stands, its record and messages untouched, its answers kept, and the log channel says
-    the earlier call still stands and its answers count, never that no attendance rows were
-    opened (owner, 2026-10-09: "Fold it in")."""
+    it again fails. (Discord refuses the post; the channel set is gone, the earlier call's
+    stands, the division's channel having been changed since) The earlier call stands, its
+    record and messages untouched, its answers kept, and the log channel says the earlier call
+    still stands and its answers count, never that no attendance rows were opened (owner,
+    2026-10-09: "Fold it in"). (the channel is gone, the earlier call's with it) No call can be
+    seen: its record is dropped, its answers kept, and the log channel says no call can be seen
+    and to post it by hand once the channel is set (owner, 2026-10-09: "Drop the record, say
+    so")."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
     channel = _refusing_channel() if fault == "Discord refuses the post" else None
     bot = _make_bot(db_path, channel)
+    if fault == "the channel set is gone, the earlier call's stands":
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET channel_id = ? WHERE round_id = ?",
+                (str(EARLIER_CHANNEL_ID), ROUND_ID),
+            )
+            await db.commit()
+        channel = _make_channel()
+        bot.get_channel = MagicMock(
+            side_effect=lambda cid: channel if int(cid) == EARLIER_CHANNEL_ID else None
+        )
 
     with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
         await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
 
     stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
-    assert stored is not None and stored.message_id == CALL_MSG_ID
-    assert stored.last_notice_msg_id == LAST_NOTICE_MSG_ID
-    if channel is not None:
-        assert channel.deleted == []
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
     [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
     assert "NOT POSTED" in line
-    assert "the earlier call still stands, and the answers given to it count" in line
     assert "no attendance rows were opened" not in line
+    if fault == "the channel is gone":
+        assert stored is None
+        assert "no call for this round can be seen" in line
+        assert "the answers given to it are kept, and count" in line
+        assert "`/attendance post-check-in division: Division 1 round: 1`" in line
+        assert "the earlier call still stands" not in line
+        return
+    assert stored is not None and stored.message_id == CALL_MSG_ID
+    assert stored.last_notice_msg_id == LAST_NOTICE_MSG_ID
+    if channel is not None:
+        assert channel.deleted == []
+    assert "the earlier call still stands, and the answers given to it count" in line
 
 
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
