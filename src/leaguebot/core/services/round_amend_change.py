@@ -524,8 +524,8 @@ def round_amend_change(
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
                 "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
                 "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
-                "AND f.phase_number = 3) AS phase3_posted, EXISTS ("
-                "SELECT 1 FROM server_configs c WHERE c.test_mode_active = 1) AS test_mode "
+                "AND f.phase_number = 3) AS phase3_posted, "
+                "EXISTS (SELECT 1 FROM server_configs c WHERE c.test_mode_active = 1) AS test_mode "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
                 (rnd.id,),
