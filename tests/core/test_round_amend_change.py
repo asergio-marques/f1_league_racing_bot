@@ -114,6 +114,21 @@ def reposts(monkeypatch):
     return record
 
 
+@pytest.fixture
+def deadlines(monkeypatch):
+    """Attendance's check-in deadline (the reserves' distribution), recording the round ids it
+    was run for in `ran`."""
+    from leaguebot.attendance.services import rsvp_service
+
+    record = SimpleNamespace(ran=[])
+
+    async def _run(rid: int, *_args: Any, **_kwargs: Any) -> None:
+        record.ran.append(rid)
+
+    monkeypatch.setattr(rsvp_service, "run_rsvp_deadline", _run)
+    return record
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
@@ -1140,3 +1155,162 @@ async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_it
     assert await _status(league) == "NOT_RUN"
     opened = league.bot.scheduler_service.run_result_submission_now
     assert [call.args[0].id for call in opened.call_args_list] == [R3]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the arming catches up a check-in deadline that "
+                                       "passed while the save stood stopped")
+async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_run_once_it_is_discarded(
+    tmp_path, reposts, deadlines,
+):
+    """Attendance on, its deadline two hours before the round. Pro's round 3 is two hours and
+    five minutes out, its call standing and its reserves not yet distributed. It is moved a day
+    later; the save stops, and ten minutes on, past the old deadline, a league admin discards it.
+    The round stands at its old moment, its deadline gone by with its call standing: the deadline
+    is run at once, as a restart runs it, and no call is posted."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await league.write(
+        "UPDATE rsvp_embed_messages SET distribution_msg_id = NULL WHERE round_id = ?", R3
+    )
+    await _place_r3(league, hours=2, minutes=5)
+    before = await _moment(league)
+    await _amended(league, scheduled_at=_at(league, days=1, hours=2))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _moment(league) == before
+    assert deadlines.ran == [R3]
+    assert reposts.posted == []
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the arming catches up the post-race clean-ups "
+                                       "that fell due while the save stood stopped")
+async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_once_it_is_discarded(
+    tmp_path,
+):
+    """Weather and attendance on. Pro's round 3 is thirty minutes out, its Phase 3 forecast
+    (message 8003) posted and its call standing (7001 to 7003). It is moved a day later; the save
+    stops, and a day and forty minutes on, past the clean-ups due a day after the old moment, a
+    league admin discards it. The round stands at its old moment: its Phase 3 forecast is deleted
+    and its check-in taken down, as a restart takes them down."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await _place_r3(league, minutes=30)
+    await posted_forecast(league, R3, 3, 8003)
+    before = await _moment(league)
+    await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(days=1, minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _moment(league) == before
+    assert 8003 not in league.channel(PRO_CH.forecast).messages
+    checkin = league.channel(PRO_CH.checkin)
+    assert all(mid not in checkin.messages for mid in CALL_MESSAGES)
+    assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a discarded catch-up is named whatever became of "
+                                       "the save")
+@pytest.mark.parametrize("ending", ["discarded", "refused"])
+async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
+    tmp_path, phases, ending,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3 is two days and five minutes
+    out, its Phase 1 drawn, its Phase 2 five minutes ahead. It is brought forward to ten minutes
+    out and the save stops. Twelve minutes on, past the old Phase 2 horizon, (discarded) a league
+    admin discards the save, or (refused) Retry is pressed and the save refuses it, its new moment
+    having passed. The round is armed again at its old moment and its Phase 2, due meanwhile, is
+    drawn at once; drawing it fails and a league admin discards it. The reply names it under
+    "Not done" beneath what became of the save, and the log channel names the job discarded."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS,
+                                  phases_done={R3: (1,)})
+    await _place_r3(league, days=2, minutes=5)
+    press = await _amended(league, scheduled_at=_at(league, minutes=10))
+    phases.failing[2] = RuntimeError("forecast could not be drawn")
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=12)
+        if ending == "discarded":
+            await discard_job(league.bot)
+    if ending == "refused":
+        await retry_job(league.bot)
+    assert await _stopped_at(league) == "rerun_phase"
+
+    await discard_job(league.bot)
+
+    head = SAVE_DISCARDED if ending == "discarded" else (
+        NO_LONGER
+        + "A round cannot be moved into the past. Its result submission would never open, and "
+        "the round could never take results at all. Give it a moment still to come."
+        + NOTHING_CHANGED
+    )
+    outcome = _outcome(press)
+    assert outcome.startswith(head) and NOT_DONE in outcome
+    assert ("**Pro** — Phase 2 forecast: not drawn, and a league admin discarded it; it is drawn "
+            "when the bot next starts, while the round is still to be run") in outcome
+    assert any("| Discard job #" in line
+               and "not done: drawing a forecast of round 3 in **Pro** now" in line
+               for line in _log_lines(league))
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a repost dropped for its deadline is given up as "
+                                       "a restart gives it up")
+async def test_a_call_whose_deadline_passed_while_its_take_down_stood_stopped_is_given_up_as_a_restart_does(
+    tmp_path, reposts,
+):
+    """Attendance on, its deadline two hours before the round. Pro's round 3, its call standing,
+    is brought forward to three hours out, so its call is to be taken down and posted again.
+    Discord refuses to delete the last notice (7002), stopping the take-down. An hour and ten
+    minutes on, past the new deadline, the fault is mended and Retry is pressed: the call comes
+    down and is not posted again, the log channel says so in the words a restart uses, and the
+    round's check-in is marked closed."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _amended(league, scheduled_at=_at(league, hours=3))
+    league.undeletable.add(CALL_MESSAGES[1])
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+
+    league.clock.advance(hours=1, minutes=10)
+    league.undeletable.clear()
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert reposts.posted == []
+    assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 1
+    [line] = [line for line in _log_lines(league)
+              if line.startswith("ATTENDANCE | check-in call | NOT POSTED")]
+    assert ("reason: the round's check-in deadline passed before its call could be posted"
+            in line)
+    assert "round: 3" in line
+
+
+async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_under_test_mode_too(
+    tmp_path, reposts,
+):
+    """As the call caught up once a stopped save is discarded, under test mode: the amendment
+    posts it all the same, unlike the start-up recovery, which leaves a test season's calls to
+    `/test-mode advance` (owner, 2026-10-09: "Post it anyway")."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await league.set_test_mode(True)
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    await _place_r3(league, days=5, minutes=30)
+    await _amended(league, scheduled_at=_at(league, days=6, minutes=30))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert reposts.posted == [(R3, PRO)]
