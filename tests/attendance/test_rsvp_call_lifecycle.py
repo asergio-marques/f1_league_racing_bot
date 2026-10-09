@@ -976,3 +976,30 @@ async def test_clearing_a_round_s_answers_on_the_connection_handed_commits_nothi
             RESERVE_PROFILE: ("ACCEPTED", 10, 0),
             STANDBY_PROFILE: ("ACCEPTED", None, 1),
         }
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a quiet take-down drops refused messages unnamed")
+async def test_a_quiet_withdrawal_names_in_the_log_the_messages_discord_refused_to_delete(
+    tmp_path,
+):
+    """The call (900001) and its last notice (900002) stand, and Discord refuses to delete the
+    last notice. Taken down in the quiet form, as a repost and the clean-up a day after the round
+    take it down, the call's record goes and the call is deleted, and the log channel names the
+    last notice left standing, for a league admin to delete by hand (owner, 2026-10-09: "Fold it
+    in")."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    channel = _channel_failing_on({
+        LAST_NOTICE_MSG_ID: discord.Forbidden(MagicMock(status=403), "missing permissions"),
+    })
+    bot = _make_bot(db_path, channel)
+
+    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is True
+
+    assert await _embed_rows(db_path) == 0
+    assert channel.deleted == [int(CALL_MSG_ID)]
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "NOT DELETED" in line
+    assert "division: Division 1" in line and "round: 1" in line
+    assert LAST_NOTICE_MSG_ID in line and CALL_MSG_ID not in line
+    assert "delete" in line and "by hand" in line
