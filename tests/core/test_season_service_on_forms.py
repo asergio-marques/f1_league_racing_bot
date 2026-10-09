@@ -355,3 +355,339 @@ async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
 
     async with get_connection(db_path) as db:
         assert await _round_numbers(db) == {ROUND_ID: 1, ROUND_ID + 1: 2, ROUND_ID + 2: 3}
+
+
+# ---------------------------------------------------------------------------
+# A season's end (#439, slice 5)
+#
+# A season's completion, cancellation and abort are changes on the queue: each writes its record
+# in one save, so every write it makes has a form taking the save's connection and committing
+# nothing. As above, each test reads its writes back on the connection, then rolls it back and
+# finds nothing written.
+# ---------------------------------------------------------------------------
+
+_XFAIL = "#439: the season's end has no form writing on the save it is handed"
+
+ACTOR_ID = 999
+ACTOR_NAME = "Race Director"
+
+# The moment the season's end is recorded at, pinned.
+END_NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
+
+async def _end_seed(db_path, *, season_status="ACTIVE", divisions=(("Div A", "ACTIVE"),)):
+    """One season of *season_status* with *divisions*, each (name, status) holding two rounds
+    not yet run. Returns (season_id, {name: (division_id, [round_ids])})."""
+    await run_migrations(db_path)
+    built: dict[str, tuple[int, list[int]]] = {}
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (?, 100, 200, 300)",
+            (SERVER_ID,),
+        )
+        # A season set up has no number yet: it takes one when its placements are confirmed.
+        number = 0 if season_status == "SETUP" else 1
+        cur = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01', ?, ?)",
+            (season_status, number),
+        )
+        season_id = cur.lastrowid
+        for tier, (name, status) in enumerate(divisions, start=1):
+            cur = await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id, "
+                "status, tier) VALUES (?, ?, ?, ?, ?, ?)",
+                (season_id, name, 10 + tier, 20 + tier, status, tier),
+            )
+            division_id = cur.lastrowid
+            round_ids = []
+            for i in (1, 2):
+                cur = await db.execute(
+                    "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
+                    "format) VALUES (?, ?, 'Bahrain', ?, 'NORMAL')",
+                    (division_id, i, f"2026-0{i + 3}-01T12:00:00"),
+                )
+                round_ids.append(cur.lastrowid)
+            built[name] = (division_id, round_ids)
+        await db.commit()
+    return season_id, built
+
+
+async def _one(db, sql, *args):
+    cur = await db.execute(sql, args)
+    return await cur.fetchone()
+
+
+async def _season_status(db, season_id):
+    return (await _one(db, "SELECT status FROM seasons WHERE id = ?", season_id))["status"]
+
+
+async def _statuses(db, table, ids):
+    marks = ",".join("?" * len(ids))
+    cur = await db.execute(f"SELECT id, status FROM {table} WHERE id IN ({marks})", ids)
+    return {row["id"]: row["status"] for row in await cur.fetchall()}
+
+
+# ---------------------------------------------------------------------------
+# The completion
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_season_is_completed_on_the_save_handed(tmp_path) -> None:
+    from leaguebot.core.services.season_service import complete_season_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, _ = await _end_seed(db_path)
+
+    async with get_connection(db_path) as db:
+        assert await complete_season_on(db, season_id) is True
+        assert await _season_status(db, season_id) == "COMPLETED"
+        await db.rollback()
+        assert await _season_status(db, season_id) == "ACTIVE"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+@pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
+async def test_a_season_no_longer_active_is_left_and_gives_false(tmp_path, status) -> None:
+    from leaguebot.core.services.season_service import complete_season_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, _ = await _end_seed(db_path, season_status=status)
+
+    async with get_connection(db_path) as db:
+        assert await complete_season_on(db, season_id) is False
+        assert await _season_status(db, season_id) == status
+
+
+ROUNDS_OUTSTANDING = (
+    "❌ Cannot complete season — the following rounds are not yet finalised:\n"
+    "• Div A — Round 2 (Bahrain)"
+)
+DIVISION_IN_SETUP = (
+    "❌ Cannot complete season — no round is outstanding, but these divisions have not "
+    "finished: **Div B**. Cancel a division that will never run, or report this."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+@pytest.mark.parametrize(
+    "case, expected",
+    [
+        ("rounds outstanding", ROUNDS_OUTSTANDING),
+        ("a division in setup", DIVISION_IN_SETUP),
+        ("none", None),
+    ],
+    ids=["rounds outstanding", "a division in setup", "none"],
+)
+async def test_the_completion_refusal_is_read_on_the_save_handed(tmp_path, case, expected) -> None:
+    """Div A runs two rounds and Div B, set up and never run, holds none of its own. Each case
+    makes its decisive writes on the save, uncommitted, so only a read on that save sees them.
+    An ACTIVE division with nothing outstanding refuses nothing: the completion finishes it."""
+    from leaguebot.core.services.season_service import completion_refusal_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _end_seed(
+        db_path, divisions=(("Div A", "ACTIVE"), ("Div B", "SETUP"))
+    )
+    (_, (r1, r2)) = built["Div A"]
+    (div_b, b_rounds) = built["Div B"]
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"DELETE FROM rounds WHERE id IN ({','.join('?' * len(b_rounds))})", b_rounds
+        )
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (r1,))
+        if case != "rounds outstanding":
+            await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (r2,))
+        if case == "none":
+            await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", (div_b,))
+
+        assert await completion_refusal_on(db, season_id) == expected
+        await db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# The cancellation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_season_is_marked_cancelled_on_the_save_handed_and_nothing_else(tmp_path) -> None:
+    from leaguebot.core.services.season_service import cancel_season_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _end_seed(db_path)
+    division_id, round_ids = built["Div A"]
+
+    async with get_connection(db_path) as db:
+        assert await cancel_season_on(db, season_id) is True
+        assert await _season_status(db, season_id) == "CANCELLED"
+        assert await _statuses(db, "divisions", [division_id]) == {division_id: "ACTIVE"}
+        assert await _statuses(db, "rounds", round_ids) == {r: "NOT_RUN" for r in round_ids}
+        await db.rollback()
+        assert await _season_status(db, season_id) == "ACTIVE"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its_row(
+    tmp_path,
+) -> None:
+    """Pro runs two rounds, the first raced and final; Am was cancelled before. Only Pro is
+    cancelled, with its round not yet run; the season's row is the cancellation's last save's."""
+    from leaguebot.core.services.season_service import cancel_season_divisions_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _end_seed(
+        db_path, divisions=(("Pro", "ACTIVE"), ("Am", "CANCELLED"))
+    )
+    pro, (raced, unraced) = built["Pro"]
+    am, am_rounds = built["Am"]
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (raced,))
+        await db.commit()
+
+        called_off = await cancel_season_divisions_on(
+            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=END_NOW
+        )
+
+        assert called_off == {pro: [unraced]}
+        assert await _statuses(db, "divisions", [pro, am]) == {pro: "CANCELLED", am: "CANCELLED"}
+        assert await _statuses(db, "rounds", [raced, unraced]) == {
+            raced: "FINAL",
+            unraced: "CANCELLED",
+        }
+        assert await _season_status(db, season_id) == "ACTIVE"
+        await db.rollback()
+        assert await _statuses(db, "divisions", [pro]) == {pro: "ACTIVE"}
+        assert await _statuses(db, "rounds", [unraced]) == {unraced: "NOT_RUN"}
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
+    """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
+    audited at the moment handed; round 2 is left to the divisions' cancellation."""
+    from leaguebot.core.services.season_service import close_raced_rounds_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _end_seed(db_path)
+    division_id, (awaiting, unraced) = built["Div A"]
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", (awaiting,)
+        )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        closed = await close_raced_rounds_on(
+            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=END_NOW
+        )
+
+        assert closed == [awaiting]
+        assert await _statuses(db, "rounds", [awaiting, unraced]) == {
+            awaiting: "FINAL",
+            unraced: "NOT_RUN",
+        }
+        audit = await _one(
+            db,
+            "SELECT actor_id, division_id, old_value, new_value, timestamp FROM audit_entries "
+            "WHERE change_type = 'round.status'",
+        )
+        assert dict(audit) == {
+            "actor_id": ACTOR_ID,
+            "division_id": division_id,
+            "old_value": "AWAITING_REPORT_VERDICTS",
+            "new_value": "FINAL",
+            "timestamp": END_NOW.isoformat(),
+        }
+        await db.rollback()
+        assert await _statuses(db, "rounds", [awaiting]) == {awaiting: "AWAITING_REPORT_VERDICTS"}
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path) -> None:
+    """Driver 1 holds a committed seat, driver 2 one placed but not yet committed. Driver 2's
+    placement goes and their seat is freed; driver 1's stands."""
+    from leaguebot.core.services.season_service import discard_uncommitted_placements_on
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _end_seed(db_path)
+    division_id, _ = built["Div A"]
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name) VALUES (?, 'ALP', 'Alpha')",
+            (division_id,),
+        )
+        team = cur.lastrowid
+        for profile, committed in ((1, 1), (2, 0)):
+            await db.execute(
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (profile, str(100 + profile)),
+            )
+            cur = await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                "VALUES (?, ?, ?)",
+                (team, profile, profile),
+            )
+            await db.execute(
+                "INSERT INTO driver_season_assignments "
+                "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (profile, season_id, division_id, cur.lastrowid, committed),
+            )
+        await db.commit()
+
+    async def _held(db):
+        cur = await db.execute(
+            "SELECT driver_profile_id FROM team_seats WHERE driver_profile_id IS NOT NULL "
+            "ORDER BY driver_profile_id"
+        )
+        return [row[0] for row in await cur.fetchall()]
+
+    async def _placed(db):
+        cur = await db.execute(
+            "SELECT driver_profile_id FROM driver_season_assignments ORDER BY driver_profile_id"
+        )
+        return [row[0] for row in await cur.fetchall()]
+
+    async with get_connection(db_path) as db:
+        assert await discard_uncommitted_placements_on(db, season_id) == 1
+        assert await _held(db) == [1]
+        assert await _placed(db) == [1]
+        await db.rollback()
+        assert await _held(db) == [1, 2]
+        assert await _placed(db) == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# The abort
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_path) -> None:
+    """A season being set up, its division and its rounds, deleted on the save; rolled back,
+    every row of it is still there."""
+    from leaguebot.core.services.season_service import SeasonService
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _end_seed(
+        db_path, season_status="SETUP", divisions=(("Pro", "SETUP"),)
+    )
+    division_id, round_ids = built["Pro"]
+
+    async def _left(db):
+        return (
+            await _one(db, "SELECT COUNT(*) FROM seasons WHERE id = ?", season_id),
+            await _one(db, "SELECT COUNT(*) FROM divisions WHERE id = ?", division_id),
+            await _one(db, "SELECT COUNT(*) FROM rounds WHERE division_id = ?", division_id),
+        )
+
+    async with get_connection(db_path) as db:
+        await SeasonService.delete_season(db, season_id)
+        assert [row[0] for row in await _left(db)] == [0, 0, 0]
+        await db.rollback()
+        assert [row[0] for row in await _left(db)] == [1, 1, len(round_ids)]
