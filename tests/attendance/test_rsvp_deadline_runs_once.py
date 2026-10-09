@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
@@ -190,3 +191,69 @@ async def test_a_deadline_with_no_call_standing_posts_nothing(tmp_path):
     await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
 
     channel.send.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Past the deadline with no call standing, nothing counts (owner, 2026-10-09)
+# ---------------------------------------------------------------------------
+
+
+async def _answer_kept(db_path: str) -> None:
+    """A driver's answer to an earlier call of the round, kept after it was taken down."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (201, '201', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (?, ?, 201, 'ACCEPTED')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+
+
+async def _round_state(db_path: str) -> tuple[int, int]:
+    """How many answers the round holds, and whether its check-in is marked over."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
+        )
+        answers = (await cursor.fetchone())["n"]
+        cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = ?", (ROUND_ID,))
+        cleared = (await cursor.fetchone())["checkin_cleared"]
+    return answers, cleared
+
+
+@pytest.mark.xfail(strict=True, reason="#439: answers kept past the deadline with no call count")
+async def test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so(tmp_path):
+    """No call stands for the round, its earlier call having been taken down, but a driver's
+    answer to it is kept. The deadline fires, the bot running throughout: the answer is cleared,
+    the check-in marked over, and the log channel says the round counts nothing against anyone,
+    as a restart past the deadline would (owner, 2026-10-09: "Past the deadline, nothing
+    counts"). Nothing is posted in the check-in channel."""
+    db_path = await _make_db(tmp_path, with_call=False)
+    await _answer_kept(db_path)
+    channel = _make_channel()
+    bot = _make_bot(db_path, channel)
+
+    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+
+    assert await _round_state(db_path) == (0, 1)
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert line.startswith("ATTENDANCE | check-in call | NOT POSTED")
+    assert "this round will count nothing against anyone" in line
+    channel.send.assert_not_awaited()
+
+
+async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
+    """With the call standing, the deadline runs as it always has: the answers given to it are
+    kept, its check-in is not marked over, and nothing says the call was not posted."""
+    db_path = await _make_db(tmp_path)
+    await _answer_kept(db_path)
+    bot = _make_bot(db_path, _make_channel())
+
+    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+
+    assert await _round_state(db_path) == (1, 0)
+    assert not any("NOT POSTED" in c.args[0] for c in bot.output_router.post_log.await_args_list)
