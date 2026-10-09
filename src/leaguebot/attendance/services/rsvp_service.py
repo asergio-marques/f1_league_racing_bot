@@ -6,6 +6,7 @@ import logging
 import weakref
 from datetime import datetime, timezone
 
+import aiohttp
 import aiosqlite
 import discord
 
@@ -458,8 +459,9 @@ VANISHED_CALL = (
 
 async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
     """Whether nobody can see *call* any more: its channel gone, or its own message deleted, as
-    a take-down that deleted the call but not its last notice leaves it. Discord failing to say
-    is not taken for gone."""
+    a take-down that deleted the call but not its last notice leaves it. Discord failing to say,
+    or the connection to it failing (a timeout, a dropped connection, the network), is not
+    taken for gone: the call is left standing, as when the post alone is refused."""
     channel = as_text_channel(bot.get_channel(int(call.channel_id)))
     if channel is None:
         return True
@@ -467,7 +469,7 @@ async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
         await channel.fetch_message(int(call.message_id))
     except discord.NotFound:
         return True
-    except discord.HTTPException:
+    except (discord.HTTPException, asyncio.TimeoutError, aiohttp.ClientError, OSError):
         return False
     return False
 

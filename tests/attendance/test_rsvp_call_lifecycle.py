@@ -471,7 +471,7 @@ PROBE_FAULTS = {
         OSError("network unreachable"),
 }
 
-#: The lookup faults that are not Discord's own, which `_call_vanished` does not yet catch.
+#: The lookup faults that are not Discord's own but the connection's.
 TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
 
 
@@ -480,9 +480,7 @@ TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
     "the channel is gone",
     "the channel set is gone, the earlier call's stands",
     *list(PROBE_FAULTS)[:2],
-    *(pytest.param(fault, marks=pytest.mark.xfail(
-        strict=True, reason="#439: a transport fault on the lookup escapes the repost",
-    )) for fault in TRANSPORT_FAULTS),
+    *TRANSPORT_FAULTS,
 ])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
