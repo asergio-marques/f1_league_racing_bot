@@ -1460,7 +1460,6 @@ async def _closing_the_check_in_fails(league: Any) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a give-up that could not be saved reports success")
 async def test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried(
     tmp_path, reposts,
 ):

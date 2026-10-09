@@ -133,9 +133,10 @@ class AmendHooks:
     Discord refuses. *run_phase* draws a phase now, *repost_call* takes down whatever call stands
     and posts the check-in call again, *post_call* posts it where none stands, posting nothing
     where one does (judged under the round's check-in lock, so that a call posted by its timer or
-    a restart at the same moment is not posted twice), *give_up_call* reports a call whose deadline passed before it could be posted and closes the
-    round's check-in, as the start-up recovery does, handed the bot and the round's
-    ``round_id``, ``round_number``, ``division_id``, ``division_name`` and ``season_number``.
+    a restart at the same moment is not posted twice), *give_up_call* reports a call whose
+    deadline passed before it could be posted and closes the round's check-in, as the start-up
+    recovery does, raising where the close cannot be saved so that the queue stops rather than
+    report a give-up never made, handed the bot and the round's ``round_id``, ``round_number``, ``division_id``, ``division_name`` and ``season_number``.
     *run_deadline* runs the round's check-in deadline, *clean_up_forecast* deletes its Phase 3
     forecast and *clean_up_check_in* takes its check-in down, each as its timer would, for a
     moment that passed while the amendment stood stopped. *round_list* formats the division's

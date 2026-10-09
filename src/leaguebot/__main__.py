@@ -923,7 +923,12 @@ async def _recover_missed_check_in_calls(
         round_id: int = row["round_id"]
         division_id: int = row["division_id"]
         if moment >= deadline_at:
-            await _give_up_missed_check_in_call(bot, row)
+            try:
+                await _give_up_missed_check_in_call(bot, row)
+            except Exception:
+                log.exception(
+                    "_recover_missed_check_in_calls: could not give up round %d's call", round_id
+                )
             continue
 
         log.info("_recover_missed_check_in_calls: posting round %d's call late", round_id)
@@ -953,9 +958,16 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     having answered. The log channel is told instead, with a note in place of the usual advice,
     since `/attendance post-check-in` refuses a round past its deadline too.
 
-    The round is then marked ``checkin_cleared``: no call is owed it any more, which is what the
+    The round is marked ``checkin_cleared``: no call is owed it any more, which is what the
     mark says, and it is what keeps the next start from reporting it again. An amendment that
     reopens the round's check-in clears the mark, as it does after a cleanup.
+
+    **It raises** where the mark cannot be saved, and the mark is saved before the log channel
+    is told, so that a give-up tried again tells it once. The start-up recovery catches the
+    fault, logs it on the host and goes on to the next round; an amendment's catch-up on the
+    change queue (`_amend_hooks`) lets it stop the queue, a fault of the bot's own, so that
+    Retry gives the call up in earnest rather than reporting a give-up never saved
+    (`test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried`).
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.attendance.services.rsvp_service import _report_call_failure
@@ -965,26 +977,21 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
         "_recover_missed_check_in_calls: round %d's deadline has passed — call not posted",
         round_id,
     )
-    try:
-        await _report_call_failure(
-            bot,
-            division_id=row["division_id"],
-            division_name=row["division_name"],
-            season_number=row["season_number"],
-            round_number=row["round_number"],
-            reason="the round's check-in deadline passed before its call could be posted",
-            note=(
-                "a call posted now could not be answered, so none was posted. No attendance "
-                "rows were opened, and this round will count nothing against anyone."
-            ),
-        )
-        async with get_connection(bot.db_path) as db:
-            await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
-            await db.commit()
-    except Exception:
-        log.exception(
-            "_recover_missed_check_in_calls: could not give up round %d's call", round_id
-        )
+    async with get_connection(bot.db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        await db.commit()
+    await _report_call_failure(
+        bot,
+        division_id=row["division_id"],
+        division_name=row["division_name"],
+        season_number=row["season_number"],
+        round_number=row["round_number"],
+        reason="the round's check-in deadline passed before its call could be posted",
+        note=(
+            "a call posted now could not be answered, so none was posted. No attendance "
+            "rows were opened, and this round will count nothing against anyone."
+        ),
+    )
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
