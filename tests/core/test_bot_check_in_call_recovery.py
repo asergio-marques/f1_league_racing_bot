@@ -353,7 +353,6 @@ async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_
     assert not await _checkin_cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a call given up at start-up keeps the answers left")
 async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
     """No call stands for the round and its deadline has passed, but answers are left for it, as
     a call taken down by an amendment that the bot restarted before posting again leaves them:
