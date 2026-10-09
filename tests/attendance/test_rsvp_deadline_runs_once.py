@@ -288,3 +288,28 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     assert await _round_state(db_path) == (0, 1)
     lines = [c.args[0] for c in bot.output_router.post_log.await_args_list]
     assert len([line for line in lines if "NOT POSTED" in line]) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a call is posted for a round whose check-in is over")
+async def test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_posts_nothing(
+    tmp_path,
+):
+    """No call stands for the round and an answer is kept; the deadline closes its check-in,
+    clearing the answer. A post of the round's call that was waiting meanwhile (a repost after a
+    take-down, a late post) then runs: the check-in is over, so nothing is posted and no
+    attendance rows are opened (owner, 2026-10-09: "Fold it in")."""
+    from unittest.mock import patch
+
+    db_path = await _make_db(tmp_path, with_call=False)
+    await _answer_kept(db_path)
+    channel = _make_channel()
+    bot = _make_bot(db_path, channel)
+    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+    assert await _round_state(db_path) == (0, 1)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    channel.send.assert_not_awaited()
+    assert await _round_state(db_path) == (0, 1)
+    assert await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID) is None
