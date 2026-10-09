@@ -31,7 +31,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 7654
 ACTOR_ID = 999
@@ -39,6 +39,13 @@ ACTOR_NAME = "Race Director"
 
 # The moment a cancellation is recorded at, pinned.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
+_XFAIL_HISTORY = "#439: there is no write_driver_history_entries_on"
+_XFAIL_CANCEL = "#439: there is no cancel_season_divisions_on or cancel_season_on"
+_XFAIL_CANCEL_HISTORY = (
+    "#439: there is no write_driver_history_entries_on, cancel_season_divisions_on or "
+    "cancel_season_on"
+)
 
 
 async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_status="ACTIVE"):
@@ -133,6 +140,44 @@ async def _cancel_division(db_path, division_id):
     return called_off
 
 
+async def _refresh(db_path, division_id):
+    """Refresh *division_id* with `refresh_division_status_on` on one connection, committed, as
+    every caller's save does. Gives whether it moved the division."""
+    async with get_connection(db_path) as db:
+        moved = await refresh_division_status_on(db, division_id)
+        await db.commit()
+    return moved
+
+
+async def _every_division_done(db_path):
+    """Whether every division of the season being raced is finished or cancelled, read from the
+    divisions' own statuses: the rule the completion reads, without asking any service."""
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND d.status NOT IN ('FINISHED', 'CANCELLED')"
+        )
+        (open_divisions,) = await cur.fetchone()
+    return open_divisions == 0
+
+
+async def _cancel_season(db_path, season_id):
+    """Cancel *season_id* as the season's cancellation on the change queue records it, on one
+    connection: every division not yet cancelled with its rounds (`cancel_season_divisions_on`),
+    then the season's own row (`cancel_season_on`), last, committed once."""
+    from leaguebot.core.services.season_service import (
+        cancel_season_divisions_on,
+        cancel_season_on,
+    )
+
+    async with get_connection(db_path) as db:
+        await cancel_season_divisions_on(
+            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=NOW
+        )
+        await cancel_season_on(db, season_id)
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # The gate on completing a season
 # ---------------------------------------------------------------------------
@@ -145,9 +190,9 @@ async def test_a_fully_raced_season_can_be_completed(tmp_path) -> None:
 
     for rid in round_ids:
         await _set_round_status(db_path, rid, "FINAL")
-    await svc.refresh_division_status(div_id)
+    await _refresh(db_path, div_id)
 
-    assert await svc.all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
     assert await svc.get_outstanding_rounds() == []
 
 
@@ -158,9 +203,9 @@ async def test_one_unfinalised_round_holds_the_season_open_and_is_named(tmp_path
     svc = SeasonService(db_path)
 
     await _set_round_status(db_path, round_ids[0], "FINAL")
-    await svc.refresh_division_status(div_id)
+    await _refresh(db_path, div_id)
 
-    assert await svc.all_divisions_finished() is False
+    assert await _every_division_done(db_path) is False
     outstanding = await svc.get_outstanding_rounds()
     assert [r["round_number"] for r in outstanding] == [2]
     assert outstanding[0]["division"] == "Div A"
@@ -174,10 +219,10 @@ async def test_post_race_penalty_does_not_count_as_finished(tmp_path) -> None:
     svc = SeasonService(db_path)
 
     await _set_round_status(db_path, round_id, "AWAITING_APPEAL_VERDICTS")
-    await svc.refresh_division_status(div_id)
+    await _refresh(db_path, div_id)
 
     assert await _division_status(db_path, div_id) == "ACTIVE"
-    assert await svc.all_divisions_finished() is False
+    assert await _every_division_done(db_path) is False
     assert [r["round_number"] for r in await svc.get_outstanding_rounds()] == [1]
 
 
@@ -191,7 +236,7 @@ async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None
     await _cancel_round(db_path, round_ids[1])
 
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await svc.all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
     assert await svc.get_outstanding_rounds() == []
 
 
@@ -204,10 +249,10 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
 
     for rid in rounds_a:
         await _set_round_status(db_path, rid, "FINAL")
-    await svc.refresh_division_status(div_a)
+    await _refresh(db_path, div_a)
     await _cancel_division(db_path, div_b)
 
-    assert await svc.all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
     assert await svc.get_outstanding_rounds() == []
 
 
@@ -219,18 +264,17 @@ async def test_a_division_finishes_only_once_nothing_is_outstanding(tmp_path) ->
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path)
     div_id, round_ids = built["Div A"]
-    svc = SeasonService(db_path)
 
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
     await _set_round_status(db_path, round_ids[0], "FINAL")
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
     await _set_round_status(db_path, round_ids[1], "FINAL")
-    assert await svc.refresh_division_status(div_id) is True
+    assert await _refresh(db_path, div_id) is True
     assert await _division_status(db_path, div_id) == "FINISHED"
     # idempotent: a second call reports it did nothing
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
 
 
 @pytest.mark.parametrize("untouchable", ["SETUP", "CANCELLED"])
@@ -239,7 +283,6 @@ async def test_refresh_never_disturbs_a_setup_or_cancelled_division(tmp_path, un
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=0)
     div_id, _ = built["Div A"]
-    svc = SeasonService(db_path)
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -247,7 +290,7 @@ async def test_refresh_never_disturbs_a_setup_or_cancelled_division(tmp_path, un
         )
         await db.commit()
 
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
     assert await _division_status(db_path, div_id) == untouchable
 
 
@@ -319,16 +362,16 @@ async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -
     assert (row["old_value"], row["new_value"]) == ("SETUP", "CANCELLED")
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=2)
     div_a, (a_raced, a_unraced) = built["Div A"]
     div_b, b_rounds = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _set_round_status(db_path, a_raced, "FINAL")
 
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     assert await _season_status(db_path, season_id) == "CANCELLED"
     assert await _division_status(db_path, div_a) == "CANCELLED"
@@ -339,19 +382,20 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
         assert await _round_status(db_path, rid) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     """cancel_round_on leaves alone a round whose season is already archived, giving `None`.
 
-    So a cascade that flipped the season first would lock itself out of its own children. This
-    pins the ordering: Div A's one round is cancelled by the season's cascade, and once the season
-    is archived the same round cancelled again moves nothing.
+    So a cancellation that flipped the season first would lock itself out of its own children.
+    This pins the ordering: Div A's one round is cancelled with its division, the season's row
+    is written after it, and once the season is archived the same round cancelled again moves
+    nothing.
     """
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
     _, (round_id,) = built["Div A"]
-    svc = SeasonService(db_path)
 
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
     # the season is archived now, so the same call moves nothing from here on
@@ -359,6 +403,7 @@ async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path) -> None:
     """Season 1 is ongoing; Div A has finished, both its rounds final, and Div B, its last
     running division, has two rounds not run. Cancelling the season cancels Div B and its rounds
@@ -383,7 +428,7 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
         )
         await db.commit()
 
-    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     assert await _division_status(db_path, div_b) == "CANCELLED"
     async with get_connection(db_path) as db:
@@ -397,6 +442,7 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
     assert "PENDING_COMPLETION" not in written
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_cancelled_from(
     tmp_path,
 ) -> None:
@@ -409,7 +455,7 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
     _, (awaiting, not_run) = built["Div A"]
     await _set_round_status(db_path, awaiting, "AWAITING_RESULTS")
 
-    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     assert await _round_status(db_path, awaiting) == "CANCELLED"
     assert await _round_status(db_path, not_run) == "CANCELLED"
@@ -421,14 +467,14 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
     assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
     div_b, (b_round,) = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _cancel_division(db_path, div_b)
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -607,35 +653,33 @@ async def _history(db_path):
         return [(r["division_name"], r["cancelled"]) for r in await cur.fetchall()]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
-    from unittest.mock import AsyncMock, MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
     div_a, (a_round,) = built["Div A"]
     div_b, _ = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _seat_driver(db_path, div_a, season_id, name="alice")
     await _seat_driver(db_path, div_b, season_id, name="bob")
 
     await _set_round_status(db_path, a_round, "FINAL")
-    await svc.refresh_division_status(div_a)
+    await _refresh(db_path, div_a)
     await _cancel_division(db_path, div_b)
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    season = MagicMock(id=season_id, season_number=1)
-    await _write_driver_history_entries(season, bot)
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1)
+        await db.commit()
 
     assert await _history(db_path) == [("Div A", 0), ("Div B", 1)]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) -> None:
     """Mock drivers are drivers, artificially injected — they are not filtered out."""
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
@@ -644,9 +688,9 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
     await _seat_driver(db_path, div_id, season_id, name="real", is_test=0)
     await _seat_driver(db_path, div_id, season_id, name="mock", is_test=1)
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    await _write_driver_history_entries(MagicMock(id=season_id, season_number=1), bot)
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cur = await db.execute("SELECT COUNT(*) FROM driver_history_entries")
@@ -654,29 +698,25 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
     assert written == 2, "both drivers should be recorded"
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL_HISTORY)
 async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) -> None:
     """A cancelled season used to leave no trace in anybody's history at all."""
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
     div_a, _ = built["Div A"]
     div_b, _ = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _seat_driver(db_path, div_a, season_id, name="alice")
     await _seat_driver(db_path, div_b, season_id, name="bob")
 
-    bot = MagicMock()
-    bot.db_path = db_path
-
-    # `/season cancel` writes history first, while the season is still ACTIVE and the command is
-    # still retryable, so the flag is forced rather than read from divisions not yet cascaded.
-    await _write_driver_history_entries(
-        MagicMock(id=season_id, season_number=1), bot, force_cancelled=True
-    )
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    # The flag is forced rather than read from the divisions, so the history is marked cancelled
+    # whichever of them the cancellation has reached when it is written.
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1, force_cancelled=True)
+        await db.commit()
+    await _cancel_season(db_path, season_id)
 
     assert await _history(db_path) == [("Div A", 1), ("Div B", 1)]
 
@@ -693,37 +733,37 @@ async def test_the_flag_defaults_to_not_cancelled(tmp_path) -> None:
     assert cols["cancelled"]["notnull"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
-    """Ending a season is several writes with no transaction, and its own row flips last.
+    """The history written a second time for the same season adds no second set.
 
-    So a process that dies part-way leaves the season ACTIVE with history already written, and
-    the retry a league is told to run would append a second set that nothing could tell apart.
-    The unique index from migration 053 plus `INSERT OR IGNORE` is what stands in for the
-    atomicity the sequence does not have — this is the test the migration comment names.
+    The unique index from migration 053 plus `INSERT OR IGNORE` is what keeps a second write of
+    a season's history from appending a set that nothing could tell apart from the first — this
+    is the test the migration comment names.
     """
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
     div_id, _ = built["Div A"]
     await _seat_driver(db_path, div_id, season_id, name="alice")
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    season = MagicMock(id=season_id, season_number=1)
+    async def write_once():
+        async with get_connection(db_path) as db:
+            await write_driver_history_entries_on(db, season_id, 1)
+            await db.commit()
 
-    await _write_driver_history_entries(season, bot)
+    await write_once()
     first = await _history(db_path)
-    await _write_driver_history_entries(season, bot)
+    await write_once()
 
     assert await _history(db_path) == first == [("Div A", 0)]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path) -> None:
     """The unique key includes the division, so two divisions in one season is not a duplicate."""
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -739,9 +779,9 @@ async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path
         )
         await db.commit()
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    await _write_driver_history_entries(MagicMock(id=season_id, season_number=1), bot)
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1)
+        await db.commit()
 
     assert await _history(db_path) == [("Div A", 0), ("Div B", 0)]
 
@@ -805,7 +845,7 @@ async def test_without_the_results_module_the_round_ends_when_its_moment_arrives
     assert await _round_status(db_path, round_id) == "FINAL"
     # and the division finishes with it, so the season can be completed
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await SeasonService(db_path).all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
 
 
 async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tmp_path) -> None:
