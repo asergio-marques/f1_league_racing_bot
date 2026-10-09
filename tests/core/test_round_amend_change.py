@@ -883,3 +883,28 @@ async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_
     assert (await _change(league))["state"] == "DONE"
     assert ("results", [R3]) in league.armed
     assert ("weather", [R3]) not in league.armed
+
+
+async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_mystery_notice(
+    tmp_path,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours; Pro's round 3 is a mystery round 90 days
+    out, its first horizon days ahead. It is brought forward to three days out, inside that
+    horizon; the save stops and a league admin discards it. The round stands at its old moment,
+    its first horizon still ahead, so it is armed again with its forecasts (`schedule_round`, which
+    arms its mystery notice and its results submission), not its results submission alone, and the
+    reply says its timed work was armed again."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", R3)
+    before = await _moment(league)
+    press = await _amended(league, scheduled_at=_at(league, days=3))
+
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        await discard_job(league.bot)
+
+    assert _outcome(press) == SAVE_DISCARDED
+    assert await _moment(league) == before
+    assert league.unarmed == [R3]
+    assert league.armed == [("weather", [R3])]
