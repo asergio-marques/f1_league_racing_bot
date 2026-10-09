@@ -456,9 +456,7 @@ EARLIER_CHANNEL_ID = 770078
 
 @pytest.mark.parametrize("fault", [
     "Discord refuses the post",
-    pytest.param("the channel is gone", marks=pytest.mark.xfail(
-        strict=True, reason="#439: a repost keeps the record of a call no one can see",
-    )),
+    "the channel is gone",
     "the channel set is gone, the earlier call's stands",
 ])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):

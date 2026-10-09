@@ -445,6 +445,16 @@ ANSWERS_KEPT = (
 )
 
 
+#: What a failed repost's report says where the earlier call's own channel is gone as well, so
+#: that no call for the round can be seen and its record, pointing at nothing, is dropped.
+VANISHED_CALL = (
+    "no call for this round can be seen, the channel it was posted in being gone, so its record "
+    "was dropped; the answers given to it are kept, and count. Once the check-in channel is "
+    "set, post the call by hand with `/attendance post-check-in division: {division} round: "
+    "{round}`."
+)
+
+
 async def _answers_kept(db_path: str, round_id: int) -> bool:
     """Whether any check-in answer is recorded for *round_id*."""
     async with get_connection(db_path) as db:
@@ -482,7 +492,9 @@ async def run_rsvp_notice(
     only once the new one has landed is the earlier one withdrawn, its messages and its record,
     its answers carried over. A post that fails, Discord refusing it or the channel gone, leaves
     the earlier call and its record standing, and the report says so (`EARLIER_CALL_STANDS`)
-    rather than that no attendance rows were opened, which would no longer be true. Where no
+    rather than that no attendance rows were opened, which would no longer be true; where the
+    earlier call's own channel is gone as well, no call can be seen, so its record is dropped,
+    its answers kept, and the report says so (`VANISHED_CALL`). Where no
     call stands but answers to an earlier one are kept for the round, as after an amendment took
     its call down, a failure's report says they are kept and count (`ANSWERS_KEPT`). A call
     standing that is not *replacing* was posted since, and is left as any standing call is.
@@ -590,6 +602,13 @@ async def run_rsvp_notice(
                 "run_rsvp_notice: RSVP channel %s not found for division %d",
                 channel_id_str, division_id,
             )
+            if (earlier is not None
+                    and as_text_channel(bot.get_channel(int(earlier.channel_id))) is None):
+                # The earlier call's own channel is gone too: no call can be seen, and a record
+                # left would say one stands, refusing `/attendance post-check-in` (owner,
+                # 2026-10-09: "Drop the record, say so"). Its answers are kept.
+                await withdraw_rsvp_call(round_id, division_id, bot)
+                failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
             await _report_call_failure(
                 bot,
                 division_id=division_id,
