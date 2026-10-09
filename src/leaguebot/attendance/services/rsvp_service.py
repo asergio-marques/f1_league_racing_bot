@@ -469,7 +469,7 @@ async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
         await channel.fetch_message(int(call.message_id))
     except discord.NotFound:
         return True
-    except (discord.HTTPException, asyncio.TimeoutError, aiohttp.ClientError, OSError):
+    except (discord.HTTPException, aiohttp.ClientError, OSError):  # a timeout is an OSError
         return False
     return False
 
@@ -1026,9 +1026,10 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool
 
     Fired 24 hours after the round's scheduled start by its ``rsvp_cleanup`` job, by the restart
     recovery where that moment passed while the bot was down, and by ``/test-mode advance``
-    (#425). The answers are kept: `withdraw_rsvp_call` never touches them.
+    (#425). As a clean-up, the answers are kept: `withdraw_rsvp_call` never touches them.
 
-    The round is then marked ``checkin_cleared``, whether or not a call was standing. Test mode
+    As a clean-up, the round is then marked ``checkin_cleared``, whether or not a call was
+    standing. Test mode
     reads a round with no ``rsvp_embed_messages`` row as one whose call is still to be posted,
     and without the mark it would post the call of a round a day past all over again.
 
