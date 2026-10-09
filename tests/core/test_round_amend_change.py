@@ -1651,7 +1651,6 @@ async def test_no_phase_is_drawn_for_a_round_whose_race_passed_while_its_save_st
     assert phases.ran == []
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded take-down skips the check-in-over test")
 async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take_down_is_discarded(
     tmp_path, reposts,
 ):

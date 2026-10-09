@@ -669,7 +669,8 @@ def round_amend_change(
         is not over, both read then (owner, 2026-10-09). A call posted between the arming and
         this job, by its timer, a restart or `/attendance post-check-in`, is the round's live
         call, and posting again would call the division twice. The one exception is the old call
-        a discarded take-down left standing, which a repost replaces (`replacing`). A call still to
+        a discarded take-down left standing, which a repost replaces (`replacing`), unless the
+        check-in is over by then, as a clean-up a day after the round leaves it. A call still to
         come is posted by its timer, armed with the round; one whose deadline has passed is given
         up (`post_call`)."""
         if not await modules.is_attendance_enabled():
@@ -678,10 +679,10 @@ def round_amend_change(
         judgement = judged(ctx) or {}
         if rnd is None or not call_fell_due(rnd, judgement.get("windows", {}).get("attendance")):
             return False
-        if replacing(ctx):
-            return True
         standing, cleared = await call_state(ctx.db_path, rnd.id)
-        return not standing and not cleared
+        if cleared:
+            return False
+        return replacing(ctx) or not standing
 
     async def weather_on(_ctx: StepContext) -> bool:
         return await modules.is_weather_enabled()
@@ -726,8 +727,9 @@ def round_amend_change(
         Where the round's check-in deadline has passed by the time it runs, as after a stop,
         nothing is posted: the log channel is told and the round's check-in closed, as the
         start-up recovery gives up a missed call (`give_up_call`; owner, 2026-10-09). A call is
-        given up only where none stands: one standing is the round's live call, or the old one a
-        discarded take-down left, and is left as it is. Given up, any answers left to a call the
+        given up only where none stands and the check-in is not over: one standing is the round's
+        live call, or the old one a discarded take-down left, and a check-in over is settled, and
+        either is left as it is. Given up, any answers left to a call the
         amendment took down, and the placements made on them, are cleared in the same save, so
         that the log channel's line that the round counts nothing against anyone
         holds true (owner, 2026-10-09: "Clear the answers, keep the line true"). The call is
@@ -738,8 +740,8 @@ def round_amend_change(
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
         attendance = (judged(ctx) or {}).get("windows", {}).get("attendance")
         if attendance is not None and deadline_passed(rnd, attendance):
-            standing, _cleared = await call_state(ctx.db_path, rnd.id)
-            if standing:
+            standing, cleared = await call_state(ctx.db_path, rnd.id)
+            if standing or cleared:
                 return StepResult(result={"left": True})
             async with get_connection(ctx.db_path) as db:
                 cursor = await db.execute(
