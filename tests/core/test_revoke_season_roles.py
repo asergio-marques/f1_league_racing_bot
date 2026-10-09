@@ -221,3 +221,88 @@ async def test_a_season_with_no_drivers_revokes_nothing(tmp_path):
     await _revoke_season_roles(SEASON_ID, _guild({}), bot)
 
     bot.placement_service.revoke_all_placement_roles.assert_not_awaited()
+
+
+# ── `PlacementService.revoke_roles`, the job's body (#439, slice 5) ──────────────────
+#
+# On the change queue a season's end takes each driver's roles back as a job of its own, and a
+# job that cannot do its work stops the queue rather than logging and carrying on. The mirror of
+# `grant_roles`: a member who has left is passed over; a member who cannot be fetched for any
+# other reason, or a removal Discord refuses, raises `StepFailedOnDiscord` from the fault.
+
+_XFAIL_REVOKE = "#439: a season's roles cannot yet be taken back by a job that raises"
+
+_DIVISION_ROLE, _TEAM_ROLE = 801, 811
+
+
+def _revocation_guild(*, roles=(_DIVISION_ROLE, _TEAM_ROLE, DRIVER_ROLE), fetch_error=None):
+    """A server holding *roles*, whose member 101 holds every one of them, or *fetch_error*."""
+    guild = MagicMock()
+    known = {role_id: MagicMock(id=role_id) for role_id in roles}
+    guild.get_role = MagicMock(side_effect=known.get)
+    member = MagicMock(id=101)
+    member.roles = list(known.values())
+    member.remove_roles = AsyncMock()
+    if fetch_error is not None:
+        guild.fetch_member = AsyncMock(side_effect=fetch_error)
+    else:
+        guild.fetch_member = AsyncMock(return_value=member)
+    return guild, member
+
+
+def _taken(member) -> set[int]:
+    return {role.id for call in member.remove_roles.await_args_list for role in call.args}
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
+async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
+    """Discord answers the fetch of driver 101 with a server error, not "unknown member": the
+    job stops, raised from the fault, and nothing is taken."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services.placement_service import PlacementService
+
+    fault = discord.HTTPException(MagicMock(status=503, reason="Unavailable"), "try later")
+    guild, member = _revocation_guild(fetch_error=fault)
+
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await PlacementService(str(tmp_path / "db.sqlite")).revoke_roles(
+            guild, 101, _DIVISION_ROLE, _TEAM_ROLE, DRIVER_ROLE, reason="Season ended"
+        )
+
+    assert raised.value.__cause__ is fault
+    member.remove_roles.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
+async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
+    """Driver 101 is fetched, but Discord refuses to take their roles (403): the job stops,
+    raised from the refusal."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services.placement_service import PlacementService
+
+    guild, member = _revocation_guild()
+    refusal = discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Permissions")
+    member.remove_roles = AsyncMock(side_effect=refusal)
+
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await PlacementService(str(tmp_path / "db.sqlite")).revoke_roles(
+            guild, 101, _DIVISION_ROLE, _TEAM_ROLE, DRIVER_ROLE, reason="Season ended"
+        )
+
+    assert raised.value.__cause__ is refusal
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
+async def test_a_role_no_longer_on_the_server_is_passed_over(tmp_path):
+    """The team's role (811) was deleted from the server: driver 101 still loses the division's
+    role and the driver role, nothing raises, and the job is done."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    guild, member = _revocation_guild(roles=(_DIVISION_ROLE, DRIVER_ROLE))
+
+    taken = await PlacementService(str(tmp_path / "db.sqlite")).revoke_roles(
+        guild, 101, _DIVISION_ROLE, _TEAM_ROLE, DRIVER_ROLE, reason="Season ended"
+    )
+
+    assert taken is True
+    assert _taken(member) == {_DIVISION_ROLE, DRIVER_ROLE}
