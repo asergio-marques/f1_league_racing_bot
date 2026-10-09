@@ -1550,3 +1550,21 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
     assert await _status(league) == "NOT_RUN"
     assert league.armed == [("results", [R3])]
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a phase drawn at once is armed as well")
+async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
+    """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its Phase 1 never drawn, is
+    brought forward to four days, twenty-three hours and fifty-eight minutes out: its Phase 1
+    horizon passed two minutes ago, so a job of the amendment's draws it at once. The round is
+    armed again without a Phase 1 timer, which, its moment passed by less than the scheduler's
+    five minutes' grace, would run at once and draw the phase a second time."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _amended(league, scheduled_at=_at(league, days=4, hours=23, minutes=58))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    [armed] = league.bot.scheduler_service.schedule_round.call_args_list
+    assert armed.kwargs.get("skip_phases") == frozenset({1})
+    assert phases.ran == [(1, R3)]
