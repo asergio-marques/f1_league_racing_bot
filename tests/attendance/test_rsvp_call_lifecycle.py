@@ -438,6 +438,47 @@ async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_pat
     notice.assert_awaited_once()
 
 
+def _refusing_channel() -> MagicMock:
+    """A channel whose messages delete, and which refuses every new post."""
+    channel = _make_channel()
+    channel.send = AsyncMock(
+        side_effect=discord.HTTPException(MagicMock(status=403), "Missing Permissions")
+    )
+    return channel
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a failed repost drops the earlier call's record")
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
+    """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
+    it again fails, Discord refusing the new message or the check-in channel gone: the earlier
+    call stands, its record and messages untouched, its answers kept, and the log channel says
+    the earlier call still stands and its answers count, never that no attendance rows were
+    opened (owner, 2026-10-09: "Fold it in")."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == CALL_MSG_ID
+    assert stored.last_notice_msg_id == LAST_NOTICE_MSG_ID
+    if channel is not None:
+        assert channel.deleted == []
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "NOT POSTED" in line
+    assert "the earlier call still stands, and the answers given to it count" in line
+    assert "no attendance rows were opened" not in line
+
+
 # ---------------------------------------------------------------------------
 # _post_no_reserve_notice
 # ---------------------------------------------------------------------------
