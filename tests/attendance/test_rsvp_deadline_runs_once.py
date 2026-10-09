@@ -259,10 +259,9 @@ async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
 
 async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_path, monkeypatch):
     """No call stands for the round and an answer is kept. The deadline closes its check-in
-    while a restart's give-up of the same round runs too, committing at the deadline's first
-    chance to let it (or else just after it). Whichever closes the check-in first clears the
-    answer and tells the log channel; the other finds it over and says nothing: the round is
-    reported once."""
+    while a restart's give-up of the same round runs too, committing first, inside the close,
+    before its guarded save. The give-up clears the answer and tells the log channel; the
+    deadline's close finds the check-in over and says nothing: the round is reported once."""
     import leaguebot.__main__ as bot_module
 
     db_path = await _make_db(tmp_path, with_call=False)
@@ -281,8 +280,8 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     monkeypatch.setattr(rsvp_service, "withdraw_rsvp_call", _give_up_first)
 
     await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
-    if not gave_up:
-        gave_up.append(await bot_module._give_up_missed_check_in_call(bot, row))
+    # The give-up committed inside the deadline's close, so the race is the one exercised.
+    assert gave_up == [True]
 
     assert await _round_state(db_path) == (0, 1)
     lines = [c.args[0] for c in bot.output_router.post_log.await_args_list]
