@@ -260,6 +260,102 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     assert "101" in failed
 
 
+_XFAIL_NAMED = (
+    "#439: a close off the queue locks before its notice and does not name a driver whose "
+    "closing notice was refused"
+)
+_XFAIL_UNHELD = "#439: the close cannot be asked to hold no channel and give the drivers it returned"
+
+WIZARD_CHANNEL = 555
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_NAMED)
+async def test_a_close_off_the_queue_still_locks_and_arms_a_channel_whose_notice_is_refused(tmp_path):
+    """`/signup close` turns away driver 101, still filling in the wizard, whose signup channel
+    refuses the closing notice. Off the queue the window's close keeps today's lock and
+    deletion, and names the driver: their typing is locked, the channel's deletion is armed
+    24 hours on, and the close's reply and log line say "<@101> was not told signups had
+    closed." The notice is tried before the lock."""
+    from leaguebot.core.cogs.module_cog import failed_steps_lines, failed_steps_reply
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    db_path = await _make_db(
+        tmp_path, name="fc_refused", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    bot = _bot(db_path)
+    order: list[str] = []
+    wizard_channel = MagicMock(spec=discord.TextChannel)
+    wizard_channel.id = WIZARD_CHANNEL
+
+    async def _refuse(*_a, **_k):
+        order.append("send")
+        raise discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+
+    async def _lock(*_a, **_k):
+        order.append("lock")
+
+    wizard_channel.send = AsyncMock(side_effect=_refuse)
+    wizard_channel.set_permissions = AsyncMock(side_effect=_lock)
+    guild = bot.get_guild.return_value
+    guild.get_channel = MagicMock(
+        side_effect=lambda cid: wizard_channel if cid == WIZARD_CHANNEL else bot._channel
+    )
+    guild.get_member = MagicMock(return_value=MagicMock(spec=discord.Member))
+    wizards = WizardService.__new__(WizardService)
+    wizards._correction_tasks = {}
+    wizards._scheduler = MagicMock()
+    wizards._scheduler._scheduler = MagicMock()
+    wizards._scheduler._scheduler.add_job = MagicMock(
+        side_effect=lambda *a, **k: order.append("arm")
+    )
+    wizards._output_router = MagicMock()
+    wizards._output_router.post_log = AsyncMock()
+    wizards._bot = MagicMock()
+    wizards._bot.signup_module_service.get_wizard = AsyncMock(
+        return_value=SimpleNamespace(signup_channel_id=WIZARD_CHANNEL)
+    )
+    bot.wizard_service = wizards
+
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    assert wizard_channel.set_permissions.await_args.kwargs["send_messages"] is False
+    job = wizards._scheduler._scheduler.add_job.call_args
+    assert job.kwargs["id"] == "wizard_channel_delete_101"
+    assert order == ["send", "lock", "arm"]
+    assert outcome.returned == 1
+    assert list(outcome.failed) == ["<@101> was not told signups had closed."]
+    assert "• <@101> was not told signups had closed." in failed_steps_reply(outcome)
+    assert failed_steps_lines(outcome) == (
+        "\n  failed_step: <@101> was not told signups had closed."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_UNHELD)
+async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
+    """The season's end closes the window on the change queue, where each driver's notice and
+    lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling
+    in the wizard) to Not Signed Up and gives their id, leaves 102 (awaiting approval) alone,
+    and holds no channel itself."""
+    db_path = await _make_db(
+        tmp_path,
+        name="fc_unheld",
+        drivers=[
+            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
+            ("102", DriverState.PENDING_ADMIN_APPROVAL),
+        ],
+    )
+    bot = _bot(db_path)
+
+    outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
+
+    bot.driver_service.transition.assert_awaited_once_with("101", DriverState.NOT_SIGNED_UP)
+    bot.wizard_service.trigger_channel_hold.assert_not_awaited()
+    assert outcome.returned == 1
+    assert [str(uid) for uid in outcome.returned_ids] == ["101"]
+    assert list(outcome.failed) == []
+    bot.signup_module_service.set_window_closed.assert_awaited_once()
+
+
 async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
     """The confirm button reports this number (issue #128). A driver awaiting approval is not
     turned away, so is not counted."""
