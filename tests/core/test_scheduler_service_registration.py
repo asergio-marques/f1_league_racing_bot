@@ -232,6 +232,24 @@ def test_a_naive_round_time_is_read_as_utc():
     assert _added(service)[0].kwargs["trigger"].run_date.utcoffset() == timedelta(0)
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a round's results submission can be run at once")
+def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():
+    """A round whose moment passed while its timed work stood removed (an amendment stopped on
+    the change queue) has its results submission run at once: the round's own job, under its
+    id, armed with no trigger, which APScheduler runs at once, and with no lateness limit."""
+    service = _service()
+
+    service.run_result_submission_now(_round(21, number=3), season_number=7, division_tier=1)
+
+    [added] = _added(service)
+    assert added.args[0] is scheduler_module._result_submission_job_wrapper
+    assert added.kwargs.get("trigger") is None
+    assert added.kwargs["id"] == "results_s7_d1_r3_id21"
+    assert added.kwargs["replace_existing"] is True
+    assert added.kwargs["misfire_grace_time"] is None
+    assert added.kwargs["kwargs"] == {"round_id": 21}
+
+
 # ---------------------------------------------------------------------------
 # The check-in cleanup (#425)
 # ---------------------------------------------------------------------------
