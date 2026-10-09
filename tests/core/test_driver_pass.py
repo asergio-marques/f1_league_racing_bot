@@ -4,6 +4,10 @@ Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed
 driver then at Not Signed Up without the former-driver flag is deleted, with their placements and
 history entries; their signups remain. A former driver is kept. A driver created by test mode is
 left for test mode to delete. A banned driver is left untouched.
+
+A season's end runs the pass on the change queue (#439, slice 5): on the connection the save
+that records the end hands it (`run_driver_pass_on`), each driver's Discord side a job of its own
+after that save, and the portraits of the drivers deleted discarded by a job after it too.
 """
 from __future__ import annotations
 
@@ -12,9 +16,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_lifecycle_service import run_driver_pass
 
 SERVER_ID = 22130
+
+_XFAIL_ON = "#439: the driver pass cannot yet run on the save handed"
+_XFAIL_JOBS = "#439: a driver's Discord side is not yet a job that raises"
 
 
 @pytest.fixture
@@ -94,18 +100,59 @@ async def _states(db_path) -> dict[int, str]:
         return {r["id"]: r["current_state"] for r in await cursor.fetchall()}
 
 
+async def _pass(db_path):
+    """Run the pass with `run_driver_pass_on` on one connection, as the save that records a
+    season's end does, and commit it, which the form does not. Gives its result."""
+    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+
+    async with get_connection(db_path) as db:
+        result = await run_driver_pass_on(db)
+        await db.commit()
+    return result
+
+
+def _hooks(**overrides):
+    """A `SeasonEndHooks` double holding the three a driver's signup reaches, each recording
+    its calls: the closing notice, the channel's lock and the inactivity timeout."""
+    from types import SimpleNamespace
+
+    hooks = {
+        "post_signup_notice": AsyncMock(),
+        "lock_signup_channel": AsyncMock(),
+        "cancel_signup_timeout": MagicMock(),
+    }
+    hooks.update(overrides)
+    return SimpleNamespace(**hooks)
+
+
+def _member_holding(role_id: int, user_id: int):
+    """A guild whose member *user_id* holds the role *role_id*, and the member."""
+    role = MagicMock(id=role_id)
+    member = MagicMock(id=user_id)
+    member.roles = [role]
+    member.remove_roles = AsyncMock()
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=member)
+    guild.fetch_member = AsyncMock(return_value=member)
+    guild.get_role = MagicMock(return_value=role)
+    return guild, member, role
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_the_pass_resets_and_deletes_as_the_rules_say(db_path):
-    result = await run_driver_pass(db_path)
+    result = await _pass(db_path)
 
     assert await _states(db_path) == {
         1: "NOT_SIGNED_UP",
         7: "NOT_SIGNED_UP",
     }
-    assert result == {"reset": 5, "deleted": 4}
+    assert result.reset == 5
+    assert sorted(result.deleted) == [2, 3, 4, 5]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_deleted_driver_leaves_no_placement_or_history_but_keeps_their_signup(db_path):
-    await run_driver_pass(db_path)
+    await _pass(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -122,8 +169,9 @@ async def test_a_deleted_driver_leaves_no_placement_or_history_but_keeps_their_s
         assert (await cursor.fetchone())[0] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_former_driver_keeps_their_placement_and_history(db_path):
-    await run_driver_pass(db_path)
+    await _pass(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -136,116 +184,105 @@ async def test_a_former_driver_keeps_their_placement_and_history(db_path):
         assert (await cursor.fetchone())[0] == 1
 
 
-async def test_a_signup_in_review_has_its_channel_closed(db_path):
-    bot = MagicMock()
-    bot.wizard_service.trigger_channel_hold = AsyncMock()
+@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
+async def test_a_signup_in_review_has_its_channel_closed():
+    """Driver 1004's signup is in review when the season ends. Their `signup_notice` job posts
+    the closing notice in their signup channel, then their `close_signup` job locks the channel
+    (its deletion armed 24 hours on) and cancels their inactivity timeout."""
+    from leaguebot.core.services.season_lifecycle_service import (
+        close_driver_signup,
+        post_driver_notice,
+    )
+
+    hooks = _hooks()
     guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
+    driver = {"user_id": "1004", "state": "PENDING_ADMIN_APPROVAL", "is_test_driver": 0}
+    notice = "🔒 This season has ended. This channel will be automatically deleted in 24 hours."
 
-    await run_driver_pass(db_path, bot=bot, guild=guild)
+    await post_driver_notice(guild, driver, hooks=hooks, notice=notice)
+    await close_driver_signup(guild, driver, hooks=hooks)
 
-    held = [c.args[0] for c in bot.wizard_service.trigger_channel_hold.await_args_list]
-    assert held == ["1004"]
+    (posted,) = hooks.post_signup_notice.await_args_list
+    assert str(posted.args[0]) == "1004" and posted.args[2] == notice
+    (locked,) = hooks.lock_signup_channel.await_args_list
+    assert str(locked.args[0]) == "1004"
+    (cancelled,) = hooks.cancel_signup_timeout.call_args_list
+    assert str(cancelled.args[0]) == "1004"
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE server_configs SET driver_role_id = 555"
-        )
-        await db.commit()
-    role = MagicMock()
-    member = MagicMock()
-    member.roles = [role]
-    member.remove_roles = AsyncMock()
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=member)
-    guild.get_role = MagicMock(return_value=role)
+    """Max (1002) was Assigned when the season ended, and holds the league's driver role 555:
+    his `take_driver_role` job takes it back."""
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.season_lifecycle_service import take_driver_role
 
-    await run_driver_pass(db_path, guild=guild)
+    guild, member, role = _member_holding(555, 1002)
+    driver = {"user_id": "1002", "state": "ASSIGNED", "is_test_driver": 0}
 
-    # The two Assigned real drivers and the Unassigned one; not the test driver.
-    assert member.remove_roles.await_count == 3
+    await take_driver_role(
+        guild, driver, placement=PlacementService(db_path), driver_role_id=555,
+        reason="Season ended",
+    )
+
+    member.remove_roles.assert_awaited_once()
+    assert role in member.remove_roles.await_args.args
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db_path):
     """The driver role is the league's (issue #276). It lived in the signup module's
     configuration row, which disabling the module deletes, so the season's end then found no
     role to revoke and every driver carried it into the next season. Here there is no signup
-    configuration at all, as after `/module disable signup`."""
+    configuration at all, as after `/module disable signup`, and the league's role 555 is still
+    taken from Max (1002) by his `take_driver_role` job."""
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.season_lifecycle_service import take_driver_role
+
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET driver_role_id = 555")
         await db.commit()
         cursor = await db.execute("SELECT COUNT(*) FROM signup_module_config")
         assert (await cursor.fetchone())[0] == 0
-    role = MagicMock()
-    member = MagicMock()
-    member.roles = [role]
-    member.remove_roles = AsyncMock()
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=member)
-    guild.get_role = MagicMock(return_value=role)
+        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+        driver_role_id = (await cursor.fetchone())[0]
+    guild, member, role = _member_holding(555, 1002)
+    driver = {"user_id": "1002", "state": "ASSIGNED", "is_test_driver": 0}
 
-    await run_driver_pass(db_path, guild=guild)
+    await take_driver_role(
+        guild, driver, placement=PlacementService(db_path), driver_role_id=driver_role_id,
+        reason="Season ended",
+    )
 
     guild.get_role.assert_called_with(555)
-    assert member.remove_roles.await_count == 3
+    member.remove_roles.assert_awaited_once()
 
 
-async def test_a_signup_channel_that_cannot_be_closed_does_not_stop_the_pass(db_path):
-    """A signup channel is never worth a season's end: the drivers still move on."""
-    bot = MagicMock()
-    bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
-
-    await run_driver_pass(db_path, bot=bot, guild=guild)
-
-    assert (await _states(db_path)).get(4) is None, "the driver in review is still deleted"
-
-
-async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
+@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
+async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass():
+    """Driver 1004's inactivity timeout has already fired, so the scheduler no longer holds it:
+    their `close_signup` job still locks the channel and is done, raising nothing."""
     from apscheduler.jobstores.base import JobLookupError
 
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.season_lifecycle_service import close_driver_signup
+    from leaguebot.signup.services.wizard_service import inactivity_job_id
 
     # The real scheduler service, over an APScheduler that no longer holds the job.
     scheduler = SchedulerService.__new__(SchedulerService)
     scheduler._scheduler = MagicMock()
     scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
+    hooks = _hooks(
+        cancel_signup_timeout=lambda user_id: scheduler.cancel_job(inactivity_job_id(user_id))
+    )
+    driver = {"user_id": "1004", "state": "PENDING_ADMIN_APPROVAL", "is_test_driver": 0}
 
-    bot = MagicMock()
-    bot.wizard_service.trigger_channel_hold = AsyncMock()
-    bot.scheduler_service = scheduler
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
+    await close_driver_signup(MagicMock(), driver, hooks=hooks)
 
-    await run_driver_pass(db_path, bot=bot, guild=guild)
-
-    bot.wizard_service.trigger_channel_hold.assert_awaited_once()
-    assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
+    hooks.lock_signup_channel.assert_awaited_once()
 
 
-async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path):
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE server_configs SET driver_role_id = 555"
-        )
-        await db.commit()
-    role = MagicMock()
-    member = MagicMock()
-    member.roles = [role]
-    member.remove_roles = AsyncMock(side_effect=RuntimeError("Missing Permissions"))
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=member)
-    guild.get_role = MagicMock(return_value=role)
-
-    await run_driver_pass(db_path, guild=guild)
-
-    assert member.remove_roles.await_count == 3
-    assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
-
-
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatch):
     """Constitution VIII: no code path sets a driver's state directly."""
     import leaguebot.core.services.driver_service as driver_service
@@ -259,7 +296,7 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
 
     monkeypatch.setattr(driver_service, "write_transition", recording)
 
-    await run_driver_pass(db_path)
+    await _pass(db_path)
 
     assert sorted(seen) == [
         (1, "ASSIGNED", "NOT_SIGNED_UP"),
@@ -270,10 +307,11 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
     import json
 
-    await run_driver_pass(db_path)
+    await _pass(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -290,9 +328,10 @@ async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
 # The portraits of the drivers deleted (issue #235)
 # ---------------------------------------------------------------------------
 #
-# A portrait is keyed by account, so nothing of it goes with the profile. The pass discards
-# those the bot obtained for a deleted driver once the deletion has committed. The configured
-# directory is the league's own, so these resolve one under `tmp_path` instead.
+# A portrait is keyed by account, so nothing of it goes with the profile. The pass gives the
+# accounts of every driver it deleted, and a season's end discards the portraits the bot
+# obtained for them in a job after the save (`discard_portraits`). The configured directory is
+# the league's own, so these resolve one under `tmp_path` instead.
 
 
 @pytest.fixture
@@ -314,7 +353,6 @@ def _bot_for(db_path, directory):
 
     bot = MagicMock()
     bot.db_path = db_path
-    bot.wizard_service.trigger_channel_hold = AsyncMock()
     bot.image_config_service.get_config = AsyncMock(
         return_value=SimpleNamespace(driver_image_directory=str(directory))
     )
@@ -346,15 +384,27 @@ def _files(directory) -> list[str]:
     return sorted(p.name for p in directory.iterdir())
 
 
+async def _pass_and_discard(db_path, directory):
+    """The pass on the save handed, committed, then the `discard_portraits` job's work: the
+    portraits of the accounts it gives discarded. Gives the pass's result."""
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
+
+    result = await _pass(db_path)
+    await discard_portraits(_bot_for(db_path, directory), result.accounts)
+    return result
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_deleted_driver_s_portrait_is_discarded_with_them(db_path, portraits):
     await _obtained(db_path, portraits, "1001", "1002", "1005")
 
-    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+    await _pass_and_discard(db_path, portraits)
 
     assert await _owned(db_path) == ["1001"], "the former driver keeps theirs"
     assert _files(portraits) == ["1001.svg"]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
     """A reassign that could not resolve the directory leaves the replaced account's portrait
     behind. The driver's deletion is the last chance to discard it."""
@@ -365,21 +415,23 @@ async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
         await db.commit()
     await _obtained(db_path, portraits, "1002", "2002")
 
-    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+    await _pass_and_discard(db_path, portraits)
 
     assert await _owned(db_path) == []
     assert _files(portraits) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_deleted_driver_s_own_artwork_is_left(db_path, portraits):
     """A file with no row was placed by the league, and is never the bot's to delete."""
     (portraits / "1003.svg").write_text("<svg>the league's own</svg>")
 
-    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+    await _pass_and_discard(db_path, portraits)
 
     assert (portraits / "1003.svg").read_text() == "<svg>the league's own</svg>"
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     db_path, portraits, monkeypatch
 ):
@@ -393,37 +445,14 @@ async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
         lambda *a, **k: ({}, {"driver": "outside the project root"}),
     )
 
-    result = await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+    result = await _pass_and_discard(db_path, portraits)
 
-    assert result["deleted"] == 4
+    assert len(result.deleted) == 4
     assert await _owned(db_path) == ["1002"]
     assert _files(portraits) == ["1002.svg"]
 
 
-async def test_portraits_are_discarded_only_once_the_deletion_has_committed(
-    db_path, portraits, monkeypatch
-):
-    """A deletion that fails must leave every portrait where it was, so the discarding waits
-    for the commit. The remover reads the database as another connection would."""
-    from leaguebot.image.services import driver_portrait_service
-
-    seen = []
-
-    async def remover(path, user_id, directory):
-        async with get_connection(path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM driver_accounts WHERE discord_user_id = ?", (user_id,)
-            )
-            seen.append((user_id, (await cursor.fetchone())[0]))
-        return True
-
-    monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
-
-    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
-
-    assert seen == [("1002", 0), ("1003", 0), ("1004", 0), ("1005", 0)]
-
-
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
     db_path, portraits, monkeypatch
 ):
@@ -435,9 +464,9 @@ async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
         AsyncMock(side_effect=PermissionError("read-only")),
     )
 
-    result = await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+    result = await _pass_and_discard(db_path, portraits)
 
-    assert result == {"reset": 5, "deleted": 4}
+    assert result.reset == 5 and len(result.deleted) == 4
     assert await _states(db_path) == {1: "NOT_SIGNED_UP", 7: "NOT_SIGNED_UP"}
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -452,9 +481,6 @@ async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
 # save hands it, and each driver's Discord side is a job of its own after it: the closing
 # notice (`signup_notice`), the channel held (`close_signup`) and the driver role taken
 # (`take_driver_role`). A job that cannot do its work raises, for the queue to stop on.
-
-_XFAIL_ON = "#439: the driver pass cannot yet run on the save handed"
-_XFAIL_JOBS = "#439: a driver's Discord side is not yet a job that raises"
 
 
 @pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
