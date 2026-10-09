@@ -278,8 +278,9 @@ def round_amend_change(
         return StepResult(
             result={
                 "judged": True,
-                # The check judged the amendment as it started. A job that stopped here and was
-                # tried again later is judged again, and the save refuses what is no longer allowed.
+                # The check judged the amendment as it started; this is the verdict reached as
+                # `judge` ran, retried or not, and the save refuses on it. The save judges it once
+                # more against what it reads (`judged_again`), for a stop at a later job.
                 "refused": None if verdict.allowed else no_longer_amendable(verdict.refusals),
                 "withdrawn": withdrawn,
                 "posted": [n for n in withdrawn if flags[n]],
@@ -309,16 +310,51 @@ def round_amend_change(
         through, not where either was discarded."""
         return judged(ctx) is not None and unarmed(ctx)
 
+    def judged_again(
+        row: aiosqlite.Row, changes: Iterable[Sequence[str]], judgement: dict[str, Any]
+    ) -> str | None:
+        """The refusal of *changes* judged once more, against the round as the save reads it,
+        at the windows `judge` kept and at the queue's clock, or None where it is still allowed.
+
+        `judge` reached its verdict when it ran, and a job after it can stop and be tried again
+        hours later: the save would otherwise write an amendment whose window has since passed."""
+        windows = judgement["windows"]
+        attendance = windows["attendance"]
+        rnd = Round(
+            id=int(row["id"]),
+            division_id=int(row["division_id"]),
+            round_number=int(row["round_number"]),
+            format=RoundFormat(row["format"]),
+            track_name=row["track_name"],
+            scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
+            phase1_done=bool(row["phase1_done"]),
+            phase2_done=bool(row["phase2_done"]),
+            phase3_done=bool(row["phase3_done"]),
+            status=row["status"],
+        )
+        verdict = judge_amendment(
+            rnd,
+            amended_values(changes),
+            now=now(),
+            attendance=AttendanceWindows(**attendance) if attendance is not None else None,
+            weather=WeatherWindows(**windows["weather"]),
+        )
+        return None if verdict.allowed else no_longer_amendable(verdict.refusals)
+
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save: the audit, the round's fields, what the amendment withdraws, the
-        division's renumbering and the success line, reading nothing but the connection."""
+        division's renumbering and the success line, reading nothing but the connection.
+
+        It judges the amendment again before it writes (`judged_again`), and refuses, writing
+        nothing, where the round's status, `judge`'s verdict or that judgement says it may no
+        longer be made."""
         if ctx.actor_id is None or ctx.actor_name is None:
             raise RuntimeError("amending a round is the act of a member, and none is recorded")
         judgement = judged(ctx) or {}
         round_id = int(ctx.payload["round_id"])
         cursor = await db.execute(
-            "SELECT status, round_number, division_id, track_name, format, scheduled_at "
-            "FROM rounds WHERE id = ?",
+            "SELECT id, status, round_number, division_id, track_name, format, scheduled_at, "
+            "phase1_done, phase2_done, phase3_done FROM rounds WHERE id = ?",
             (round_id,),
         )
         row = await cursor.fetchone()
@@ -329,6 +365,8 @@ def round_amend_change(
             refusal = no_longer_amendable([status_refusal(row["status"])])
         elif judgement.get("refused"):
             refusal = str(judgement["refused"])
+        else:
+            refusal = judged_again(row, ctx.payload["changes"], judgement)
         if row is None or refusal is not None:
             # A backstop: the check passed, and something wrote the database after it.
             return StepResult(

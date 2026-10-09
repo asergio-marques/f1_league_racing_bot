@@ -600,11 +600,6 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the save refuses on the verdict `judge` reached before the stop, never judging "
-    "the amendment again when it is retried",
-)
 @pytest.mark.parametrize("stopped", ["apply", "unarm"])
 async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_deadline_passed_is_refused_by_the_save(
     tmp_path, reposts, stopped,
