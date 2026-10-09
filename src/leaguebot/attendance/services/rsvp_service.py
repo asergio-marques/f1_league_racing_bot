@@ -448,11 +448,27 @@ ANSWERS_KEPT = (
 #: What a failed repost's report says where the earlier call's own channel is gone as well, so
 #: that no call for the round can be seen and its record, pointing at nothing, is dropped.
 VANISHED_CALL = (
-    "no call for this round can be seen, the channel it was posted in being gone, so its record "
-    "was dropped; the answers given to it are kept, and count. Once the check-in channel is "
+    "no call for this round can be seen, its message or the channel it was posted in being "
+    "gone, so its record was dropped; the answers given to it are kept, and count. Once the check-in channel is "
     "set, post the call by hand with `/attendance post-check-in division: {division} round: "
     "{round}`."
 )
+
+
+async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
+    """Whether nobody can see *call* any more: its channel gone, or its own message deleted, as
+    a take-down that deleted the call but not its last notice leaves it. Discord failing to say
+    is not taken for gone."""
+    channel = as_text_channel(bot.get_channel(int(call.channel_id)))
+    if channel is None:
+        return True
+    try:
+        await channel.fetch_message(int(call.message_id))
+    except discord.NotFound:
+        return True
+    except discord.HTTPException:
+        return False
+    return False
 
 
 async def _answers_kept(db_path: str, round_id: int) -> bool:
@@ -493,8 +509,9 @@ async def run_rsvp_notice(
     its answers carried over. A post that fails, Discord refusing it or the channel gone, leaves
     the earlier call and its record standing, and the report says so (`EARLIER_CALL_STANDS`)
     rather than that no attendance rows were opened, which would no longer be true; where the
-    earlier call's own channel is gone as well, no call can be seen, so its record is dropped,
-    its answers kept, and the report says so (`VANISHED_CALL`). Where no
+    earlier call cannot be seen either, its message or its channel gone (`_call_vanished`), its
+    record is dropped, what is left of it deleted or named, its answers kept, and the report
+    says so (`VANISHED_CALL`). Where no
     call stands but answers to an earlier one are kept for the round, as after an amendment took
     its call down, a failure's report says they are kept and count (`ANSWERS_KEPT`). A call
     standing that is not *replacing* was posted since, and is left as any standing call is.
@@ -602,11 +619,10 @@ async def run_rsvp_notice(
                 "run_rsvp_notice: RSVP channel %s not found for division %d",
                 channel_id_str, division_id,
             )
-            if (earlier is not None
-                    and as_text_channel(bot.get_channel(int(earlier.channel_id))) is None):
-                # The earlier call's own channel is gone too: no call can be seen, and a record
-                # left would say one stands, refusing `/attendance post-check-in` (owner,
-                # 2026-10-09: "Drop the record, say so"). Its answers are kept.
+            if earlier is not None and await _call_vanished(bot, earlier):
+                # The earlier call cannot be seen either: a record left would say one stands,
+                # refusing `/attendance post-check-in` (owner, 2026-10-09: "Drop the record, say
+                # so"). Its answers are kept; what is left of it is deleted or named.
                 await withdraw_rsvp_call(round_id, division_id, bot)
                 failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
             await _report_call_failure(
@@ -700,6 +716,11 @@ async def run_rsvp_notice(
                 "run_rsvp_notice: failed to post embed for division %d: %s",
                 division_id, exc,
             )
+            if earlier is not None and await _call_vanished(bot, earlier):
+                # As above: a take-down that deleted the call but not its last notice leaves a
+                # record of a call nobody can see (owner, 2026-10-09: "Make it").
+                await withdraw_rsvp_call(round_id, division_id, bot)
+                failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
             await _report_call_failure(
                 bot,
                 division_id=division_id,

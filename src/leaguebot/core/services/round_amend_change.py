@@ -773,10 +773,15 @@ def round_amend_change(
         if reposting(ctx):
             earlier = await call_message(ctx.db_path, rnd.id) if replacing(ctx) else None
             await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
-            if earlier is not None and await call_message(ctx.db_path, rnd.id) == earlier:
+            after = await call_message(ctx.db_path, rnd.id) if earlier is not None else None
+            if earlier is not None and after == earlier:
                 # The repost failed and left the earlier call standing, the round's only one:
                 # the reply must not bid it be deleted by hand (`not_done`).
                 return StepResult(result={"posted": False, "earlier_left": True})
+            if earlier is not None and after is None:
+                # The repost failed and the earlier call could not be seen either, its record
+                # dropped: the reply says none can be seen (`not_done`).
+                return StepResult(result={"posted": False, "vanished": True})
         else:
             await hooks.post_call(rnd.id, ctx.bot)
         return StepResult(result={"posted": True})
@@ -889,6 +894,16 @@ def round_amend_change(
             result = each.result or {}
             if each.name == TAKE_DOWN_CALL:
                 ids = [str(one) for one in result.get("undeleted", [])]
+                if (view(ctx, POST_CALL).result or {}).get("vanished"):
+                    # The call itself was deleted, posting it again failed, and no call can be
+                    # seen: what is left of it is named in the log channel.
+                    failures.append(notices.NoticeFailure(
+                        division, "check-in call",
+                        "it could not be posted again and none can be seen; post it by hand "
+                        "with `/attendance post-check-in` once the check-in channel is set, "
+                        "and see the log channel",
+                    ))
+                    continue
                 if (view(ctx, POST_CALL).result or {}).get("earlier_left"):
                     # Posting the call again failed too, and the earlier call was kept: it is the
                     # round's only call, not one to delete.

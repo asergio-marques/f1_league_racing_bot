@@ -1738,9 +1738,7 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
 
 @pytest.mark.parametrize("refused", [
     pytest.param(CALL_MESSAGES[0], id="the call itself refused, so it stands"),
-    pytest.param(CALL_MESSAGES[1], id="the last notice refused, the call gone", marks=(
-        pytest.mark.xfail(strict=True, reason="#439: a call gone is said to be kept")
-    )),
+    pytest.param(CALL_MESSAGES[1], id="the last notice refused, the call gone"),
 ])
 async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_call_be_deleted(
     tmp_path, monkeypatch, refused,
