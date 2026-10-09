@@ -695,6 +695,111 @@ async def test_no_wizard_means_no_hold(tmp_path):
     svc._scheduler._scheduler.add_job.assert_not_called()
 
 
+def _refused():
+    return discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the channel is locked before its notice is posted")
+async def test_the_notice_is_posted_before_the_channel_is_locked(tmp_path):
+    """The driver is told why their signup ended before their typing is taken away and the
+    channel's deletion armed, so they are never locked out of a channel that says nothing."""
+    order: list[str] = []
+    channel = _channel(OLD_CHANNEL)
+    channel.send = AsyncMock(side_effect=lambda *a, **k: order.append("send"))
+    channel.set_permissions = AsyncMock(side_effect=lambda *a, **k: order.append("lock"))
+    svc = _service(existing=_wizard())
+    svc._scheduler._scheduler.add_job = MagicMock(side_effect=lambda *a, **k: order.append("arm"))
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    await svc.trigger_channel_hold(DRIVER, guild, "Signups have closed.")
+
+    assert order == ["send", "lock", "arm"]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a refused notice still arms the channel's deletion")
+async def test_a_notice_that_cannot_be_posted_locks_typing_and_arms_no_deletion(tmp_path):
+    """By default (a withdrawal, approval, rejection or expiry), a notice Discord refuses leaves
+    the channel readable with the driver's typing locked and no deletion armed, and says so."""
+    channel = _channel(OLD_CHANNEL)
+    channel.send = AsyncMock(side_effect=_refused())
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    outcome = await svc.trigger_channel_hold(DRIVER, guild, "ended")
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    svc._scheduler._scheduler.add_job.assert_not_called()
+    assert outcome.channel_id == OLD_CHANNEL
+    assert outcome.posted is False
+    assert outcome.locked is True
+    assert outcome.reason
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the hold cannot be asked to raise on a refused notice")
+async def test_a_raising_hold_raises_before_locking_where_the_notice_is_refused(tmp_path):
+    """Asked to raise (the change queue's notice job), a refused notice raises from Discord's
+    fault, having locked nothing and armed nothing, so a Retry finds the channel as it was."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    refusal = _refused()
+    channel = _channel(OLD_CHANNEL)
+    channel.send = AsyncMock(side_effect=refusal)
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await svc.trigger_channel_hold(DRIVER, guild, "ended", raise_on_failure=True)
+
+    assert raised.value.__cause__ is refusal
+    channel.set_permissions.assert_not_awaited()
+    svc._scheduler._scheduler.add_job.assert_not_called()
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the hold cannot post its notice without locking")
+async def test_a_notice_only_hold_posts_without_locking(tmp_path):
+    """Asked only for the notice (`lock=False`), the hold posts it and leaves the channel and its
+    deletion to the job after it."""
+    channel = _channel(OLD_CHANNEL)
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    outcome = await svc.trigger_channel_hold(DRIVER, guild, "ended", lock=False)
+
+    channel.send.assert_awaited_once_with("ended")
+    channel.set_permissions.assert_not_awaited()
+    svc._scheduler._scheduler.add_job.assert_not_called()
+    assert outcome.posted is True
+
+
+@pytest.mark.xfail(strict=True, reason="#439: there is no lock_signup_channel")
+async def test_locking_a_signup_channel_revokes_writing_and_arms_its_deletion(tmp_path):
+    """Locking a signup channel takes away the driver's typing and arms its deletion 24 hours on,
+    posting nothing; a permission write Discord refuses raises from its fault."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    channel = _channel(OLD_CHANNEL)
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    await svc.lock_signup_channel(DRIVER, guild)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    channel.send.assert_not_awaited()
+    job = svc._scheduler._scheduler.add_job.call_args
+    assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
+
+    refusal = _refused()
+    channel.set_permissions = AsyncMock(side_effect=refusal)
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await svc.lock_signup_channel(DRIVER, guild)
+    assert raised.value.__cause__ is refusal
+
+
 async def test_the_scheduled_deletion_removes_channel_and_wizard(tmp_path):
     channel = _channel(OLD_CHANNEL)
     svc = _service(existing=_wizard())
