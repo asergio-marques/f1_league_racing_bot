@@ -486,9 +486,9 @@ def round_amend_change(
         The amendment can stand stopped for hours, at the save or before it, and a discard or a
         refusal arms the round again at its old moment: a timer armed for a moment already past
         is skipped by the scheduler. So, judged at the queue's clock: a round still to be run
-        whose moment has passed has its results submission run at once (`run_result_submission_
-        now`), its phases due are drawn at once (`phases_due`), and its call, where none stands
-        and its check-in is not over, is posted where it is due (`call_due`)."""
+        whose moment has passed has its results submission run at once through the scheduler,
+        its phases due are drawn at once (`phases_due`), and its call, where none stands and its
+        check-in is not over, is posted where it is due (`call_due`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
