@@ -1649,3 +1649,34 @@ async def test_no_phase_is_drawn_for_a_round_whose_race_passed_while_its_save_st
 
     assert "rerun_phase" not in [job["name"] for job in await _jobs(league)]
     assert phases.ran == []
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a discarded take-down skips the check-in-over test")
+async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take_down_is_discarded(
+    tmp_path, reposts,
+):
+    """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not),
+    is brought forward to three hours out, so its call is to be taken down and posted again.
+    Discord refuses to delete the last notice (7002), stopping the take-down. While it stands
+    stopped, the round is run and its check-in taken down a day after it, as its clean-up does
+    (the call's record gone, the check-in marked over). A day and four hours on, a league admin
+    discards the take-down: the check-in is over, so the call is neither posted nor given up, no
+    line says it was not posted, and the answers stand."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.undeletable.add(CALL_MESSAGES[1])
+    await _amended(league, scheduled_at=_at(league, hours=3))
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    await league.write("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", R3)
+    league.clock.advance(days=1, hours=4)
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _job(league, "post_call"))["result"] == {"dropped": True}
+    assert _given_up_lines(league) == []
+    assert reposts.posted == []
+    assert len(await league.rows(
+        "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
+    )) == 2
