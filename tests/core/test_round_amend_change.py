@@ -1019,8 +1019,6 @@ async def _place_r3(league: Any, **delta: float) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the arming catches up a phase that fell due "
-                                       "while the save stood stopped")
 async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_once(
     tmp_path, phases,
 ):
@@ -1089,8 +1087,6 @@ async def test_a_call_that_fell_due_while_the_amendment_stood_stopped_is_posted_
     assert reposts.posted == [(R3, PRO)]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the arming catches up a call that fell due while "
-                                       "the save stood stopped")
 async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_once_it_is_discarded(
     tmp_path, reposts,
 ):
@@ -1115,8 +1111,6 @@ async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_once_
     assert reposts.posted == [(R3, PRO)]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the arming opens the results submission of a "
-                                       "round whose moment passed while the save stood stopped")
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_its_results_submission(
     tmp_path, ending,

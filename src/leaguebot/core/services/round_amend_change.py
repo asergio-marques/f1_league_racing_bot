@@ -39,7 +39,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat
+from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
 from leaguebot.core.services.amendment_rules_service import (
     AmendmentVerdict,
     judge_amendment,
@@ -261,8 +261,9 @@ def round_amend_change(
 
         It writes nothing. The windows are read here, outside any save, because a save reads no
         other connection. What the amendment withdraws and what becomes of the check-in call are
-        not kept here: the save plans them from what it reads when it runs, and a stop between the
-        two can last for hours (owner, 2026-10-09)."""
+        not kept here, nor the phases to draw at once: the save plans the first from what it
+        reads when it runs and the arming the rest, and a stop between them can last for hours
+        (owner, 2026-10-09)."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -272,9 +273,6 @@ def round_amend_change(
         verdict = judge_amendment(
             rnd, values, now=moment, attendance=attendance, weather=weather
         )
-        flags = {1: rnd.phase1_done, 2: rnd.phase2_done, 3: rnd.phase3_done}
-        weather_on = await modules.is_weather_enabled()
-        mystery = values.get("format", rnd.format) == RoundFormat.MYSTERY
         return StepResult(
             result={
                 "judged": True,
@@ -282,10 +280,6 @@ def round_amend_change(
                 # `judge` ran, retried or not, and the save refuses on it. The save judges it once
                 # more against what it reads (`judged_again`), for a stop at a later job.
                 "refused": None if verdict.allowed else no_longer_amendable(verdict.refusals),
-                "rerun": [
-                    n for n, outcome in verdict.phases.items()
-                    if outcome.stands and not flags[n]
-                ] if weather_on and not mystery else [],
                 "windows": {
                     "attendance": dataclasses.asdict(attendance) if attendance else None,
                     "weather": dataclasses.asdict(weather),
@@ -461,6 +455,21 @@ def round_amend_change(
             < moment - timedelta(hours=attendance["deadline_hours"])
         )
 
+    def phases_due(rnd: Round, weather: dict[str, Any]) -> list[int]:
+        """The forecast phases to draw at once, as the round stands at the queue's clock and the
+        windows `judge` read: each not yet drawn whose horizon has passed, for a round whose moment
+        is still ahead and which is no mystery round, as the start-up recovery judges a missed
+        phase (`_recover_missed_phases`)."""
+        moment, at = moment_of(rnd), now()
+        if rnd.format == RoundFormat.MYSTERY or moment <= at:
+            return []
+        horizons = {
+            1: (rnd.phase1_done, moment - timedelta(days=weather["phase_1_days"])),
+            2: (rnd.phase2_done, moment - timedelta(days=weather["phase_2_days"])),
+            3: (rnd.phase3_done, moment - timedelta(hours=weather["phase_3_hours"])),
+        }
+        return [n for n, (done, horizon) in horizons.items() if not done and horizon <= at]
+
     async def arm_due(ctx: StepContext) -> bool:
         """The arming is due where the timed work was removed and the round may still be
         cancelled, whatever became of the save: a round cancelled, or whose results were entered,
@@ -471,23 +480,34 @@ def round_amend_change(
         return rnd is not None and rnd.status in ROUND_CANCELLABLE
 
     async def arm(ctx: StepContext) -> StepResult:
-        """Arm the round's timed work as the round stands now, at the windows `judge` read."""
+        """Arm the round's timed work as the round stands now, at the windows `judge` read, and
+        catch up what fell due while it stood removed, as a restart does (owner, 2026-10-09).
+
+        The amendment can stand stopped for hours, at the save or before it, and a discard or a
+        refusal arms the round again at its old moment: a timer armed for a moment already past
+        is skipped by the scheduler. So, judged at the queue's clock: a round still to be run
+        whose moment has passed has its results submission run at once (`run_result_submission_
+        now`), its phases due are drawn at once (`phases_due`), and its call, where none stands
+        and its check-in is not over, is posted where it is due (`call_due`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
         async with get_connection(ctx.db_path) as db:
             cursor = await db.execute(
-                "SELECT d.tier, s.season_number FROM divisions d "
-                "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
-                (rnd.division_id,),
+                "SELECT d.tier, s.season_number, r.checkin_cleared, EXISTS ("
+                "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) AS called "
+                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+                "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+                (rnd.id,),
             )
             found = await cursor.fetchone()
         if found is None:
             raise LookupError(f"division {rnd.division_id} is no longer there")
         season_number, tier = int(found["season_number"]), int(found["tier"])
         weather = judgement["windows"]["weather"]
-        if await modules.is_weather_enabled() and (
+        weather_on = await modules.is_weather_enabled()
+        if weather_on and (
             rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)
         ):
             scheduler.schedule_round(
@@ -515,36 +535,45 @@ def round_amend_change(
                 last_notice_hours=attendance["last_notice_hours"],
                 deadline_hours=attendance["deadline_hours"],
             )
-        return StepResult(result={"armed": True}, then=posts(ctx, rnd, judgement))
+        if rnd.status == RoundStatus.NOT_RUN.value and moment_of(rnd) <= now():
+            # After the arming above, whose job for this moment it replaces.
+            scheduler.run_result_submission_now(
+                rnd, season_number=season_number, division_tier=tier
+            )
+        planned = posts(
+            ctx, rnd, judgement,
+            call_owed=not found["called"] and not found["checkin_cleared"],
+            draw=phases_due(rnd, weather) if weather_on else [],
+        )
+        return StepResult(result={"armed": True}, then=planned)
 
     def posts(
-        ctx: StepContext, rnd: Round, judgement: dict[str, Any]
+        ctx: StepContext, rnd: Round, judgement: dict[str, Any], *, call_owed: bool,
+        draw: list[int],
     ) -> tuple[PlannedStep, ...]:
-        """The posts the saved amendment owes, in today's order: the check-in call taken down and
+        """The posts the amendment owes, in today's order: the check-in call taken down and
         posted again, each withdrawn forecast that was posted deleted, the notice that the
-        forecasts no longer stand, and each phase due at once drawn. Planned once the round is
-        armed, which is where the amendment stood before them, and only for a saved amendment,
-        from what its save read (`apply`).
+        forecasts no longer stand, and each phase in *draw* drawn. Planned once the round is
+        armed, which is where the amendment stood before them; what the save withdraws, from what
+        it read (`apply`), and only where it was saved.
 
-        A call that stood is taken down and its repost planned with it, the repost judging when
-        it runs whether the call is due then (`call_still_due`): the take-down can stop on
-        Discord and be retried after the new call's moment, which the timer armed meanwhile has
-        found taken by the old call. A call that did not stand is planned only where it is due
-        as the round is armed; one still to come is the timer's."""
-        if not saved(ctx):
-            return ()
-        after = view(ctx, APPLY).result or {}
+        A call that stood at the save is taken down and its repost planned with it, the repost
+        judging when it runs whether the call is due then (`call_still_due`): the take-down can
+        stop on Discord and be retried after the new call's moment, which the timer armed
+        meanwhile has found taken by the old call. Otherwise the call is planned only where none
+        stands and the check-in is not over (*call_owed*) and it is due as the round is armed,
+        saved or not; one still to come is the timer's."""
+        after = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
         planned: list[PlannedStep] = []
-        if after.get("reopened"):
-            if after.get("called"):
-                planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL)]
-            elif call_due(rnd, judgement["windows"]["attendance"]):
-                planned.append(PlannedStep(POST_CALL))
+        if after.get("reopened") and after.get("called"):
+            planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL)]
+        elif call_owed and call_due(rnd, judgement["windows"]["attendance"]):
+            planned.append(PlannedStep(POST_CALL))
         posted = after.get("posted", [])
         planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
         if posted:
             planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
-        planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in judgement["rerun"]]
+        planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
         return tuple(planned)
 
     async def never_runs(ctx: StepContext) -> str:
@@ -631,8 +660,9 @@ def round_amend_change(
         return StepResult(result={"sent": True})
 
     async def rerun_phase(ctx: StepContext) -> StepResult:
-        """Draw a phase whose horizon the amended moment has already passed. Discord refusing its
-        post goes the way weather's own posts go (owner, 2026-10-08: slice 6)."""
+        """Draw a phase whose horizon has already passed, by the amended moment or while the
+        amendment stood stopped. Discord refusing its post goes the way weather's own posts go
+        (owner, 2026-10-08: slice 6)."""
         phase = int(ctx.step_payload["phase"])
         await hooks.run_phase(phase, int(ctx.payload["round_id"]), ctx.bot)
         return StepResult(result={"phase": phase})
