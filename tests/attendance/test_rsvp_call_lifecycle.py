@@ -28,11 +28,13 @@ delete but kept its row is a round that can never be reposted.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import discord
 import pytest
 
@@ -462,14 +464,25 @@ PROBE_FAULTS = {
         discord.Forbidden(MagicMock(status=403), "missing access"),
     "Discord refuses the post, the call's lookup failing with a 503":
         discord.HTTPException(MagicMock(status=503), "service unavailable"),
+    "Discord refuses the post, the call's lookup timing out": asyncio.TimeoutError(),
+    "Discord refuses the post, the connection dropped on the call's lookup":
+        aiohttp.ClientConnectionError("connection reset"),
+    "Discord refuses the post, the network failing on the call's lookup":
+        OSError("network unreachable"),
 }
+
+#: The lookup faults that are not Discord's own, which `_call_vanished` does not yet catch.
+TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
 
 
 @pytest.mark.parametrize("fault", [
     "Discord refuses the post",
     "the channel is gone",
     "the channel set is gone, the earlier call's stands",
-    *PROBE_FAULTS,
+    *list(PROBE_FAULTS)[:2],
+    *(pytest.param(fault, marks=pytest.mark.xfail(
+        strict=True, reason="#439: a transport fault on the lookup escapes the repost",
+    )) for fault in TRANSPORT_FAULTS),
 ])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
