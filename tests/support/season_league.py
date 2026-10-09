@@ -66,10 +66,13 @@ driver roles, each role taken back recorded in `league.revoked` and refused for 
 `pending_completion_league` builds the season with every round final and both divisions finished,
 results accepted for three rounds; `setup_league` the season before its placements are confirmed,
 for the abort. `complete_season`, `cancel_season` and `abort_season` run the three commands as
-admin 77 and give the interaction; `season_end_changes` lists the season's ends asked of the queue.
+admin 77 and give the interaction; `season_end_changes` lists the season's ends asked of the queue;
+`seed_season_end` puts one in hand on the queue, as another request would find it, and
+`SEASON_END_IN_HAND` holds the refusal of a request about the season while it is.
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -1155,3 +1158,66 @@ async def season_end_changes(league: SeasonLeague, kind: str | None = None) -> l
     *kind*), in the order asked."""
     kinds = (kind,) if kind else SEASON_END_KINDS
     return [row for row in await change_rows(league.db_path) if row["kind"] in kinds]
+
+
+#: The refusal of a request about season 3 while its end of each kind is in hand (#439 slice 5,
+#: answer B), its job's number put in for ``{job}``.
+SEASON_END_IN_HAND = {
+    SEASON_COMPLETE_KIND: (
+        "⏳ Season 3 is being completed (job #{job}), so this cannot be done until that is "
+        "finished. If it has stopped, press Retry or Discard on its notice in the log channel."
+    ),
+    SEASON_CANCEL_KIND: (
+        "⏳ Season 3 is being cancelled (job #{job}), so this cannot be done until that is "
+        "finished. If it has stopped, press Retry or Discard on its notice in the log channel."
+    ),
+    SEASON_ABORT_KIND: (
+        "⏳ The season being set up is being aborted (job #{job}), so this cannot be done until "
+        "that is finished. If it has stopped, press Retry or Discard on its notice in the log "
+        "channel."
+    ),
+}
+
+
+async def seed_season_end(db_path: str, kind: str, *, season_id: int = SEASON_ID,
+                          state: str = "QUEUED", stopped: bool = False,
+                          first_done: bool = False) -> int:
+    """A season's end of *kind* for season *season_id* on the queue, as its change type would
+    ask it, and give the number of its first job.
+
+    The change stands in *state* behind an earlier change of three jobs long done, so that its
+    job's number and its change's id differ. Its first job is not done unless *first_done* says
+    so, which leaves only the change's own close; where *stopped*, the queue stands stopped at it.
+    Written straight to the queue's tables, so it needs no change type registered."""
+    payload: dict[str, Any] = {"season_id": season_id}
+    if kind != SEASON_ABORT_KIND:
+        payload["season_number"] = SEASON_NUMBER
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('hub.refresh', 'hub.refresh', '{}', 'BOT', 'DONE', 'refreshing the hub')"
+        )
+        for position in range(3):
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, done_at) "
+                "VALUES (?, ?, 'refresh', '2026-10-05T11:00:00+00:00')",
+                (cursor.lastrowid, position),
+            )
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES (?, ?, ?, 'MEMBER', ?, 'a season''s end of the test')",
+            (kind, f"{kind}:{season_id}", json.dumps(payload), state),
+        )
+        change_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, tries, "
+            "failing_since, last_failure, done_at) VALUES (?, 0, 'first', '{}', ?, ?, ?, ?)",
+            (change_id, 1 if stopped else 0,
+             "2026-10-05T12:00:00+00:00" if stopped else None,
+             "OperationalError" if stopped else None,
+             "2026-10-05T12:00:00+00:00" if first_done else None),
+        )
+        job = cursor.lastrowid
+        await db.commit()
+    assert job is not None and job != change_id
+    return job

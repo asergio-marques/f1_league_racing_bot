@@ -7,7 +7,8 @@ one save records the round cancelled with the status it was cancelled from, fini
 and moves the season on; then each enabled module's notice, the check-in call's take-down and the
 calendar's repost follow as jobs of their own, each of which stops the queue when it fails; then
 one closing line, the check-in written beneath it. A second cancellation of the round, or one
-while its division's is in hand, is refused at once, naming the job.
+while its division's is in hand, is refused at once, naming the job; so is one while its season's
+completion, cancellation or abort is in hand (slice 5).
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned. The change type is unbuilt until the build, so each test that
@@ -49,6 +50,10 @@ from tests.support.season_league import (
     DIVISIONS,
     PRO,
     ROUND_CANCEL_KIND,
+    SEASON_ABORT_KIND,
+    SEASON_CANCEL_KIND,
+    SEASON_COMPLETE_KIND,
+    SEASON_END_IN_HAND,
     SEASON_ID,
     SUBMISSION_CHANNEL,
     accept_session,
@@ -61,6 +66,7 @@ from tests.support.season_league import (
     open_submission,
     reply,
     round_id,
+    seed_season_end,
 )
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
@@ -499,6 +505,34 @@ async def test_a_round_cancel_while_its_division_s_cancellation_is_in_hand_is_re
     )
     assert len(_refusal_lines(league)) == 1
     assert await _changes_of(league) == []
+    assert await _status(league) == "NOT_RUN"
+
+
+@pytest.mark.parametrize(("kind", "stage"), [
+    pytest.param(SEASON_COMPLETE_KIND, "PENDING_COMPLETION",
+                 id="its completion, the season pending completion"),
+    pytest.param(SEASON_CANCEL_KIND, "ONGOING", id="its cancellation"),
+    pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
+])
+@pytest.mark.xfail(strict=True, reason="#439: /round cancel does not yet read a season's end in hand")
+async def test_a_round_cancel_is_refused_at_once_while_its_season_s_end_is_in_hand(
+    tmp_path, kind, stage,
+):
+    """Season 3's completion, its cancellation or its abort waits on the queue; for the
+    completion, the season has moved to pending completion, as it has by then. Cancelling Pro's
+    round 3 is refused at once, naming the season's end and its job, ahead of the refusal of a
+    season no longer ongoing: nothing is asked, nothing unarmed, the round stands, and one
+    refusal line is written."""
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE seasons SET stage = ? WHERE id = ?", stage, SEASON_ID)
+    job = await seed_season_end(league.db_path, kind)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == SEASON_END_IN_HAND[kind].format(job=job)
+    assert len(_refusal_lines(league)) == 1
+    assert await _changes_of(league) == []
+    assert league.unarmed == []
     assert await _status(league) == "NOT_RUN"
 
 
