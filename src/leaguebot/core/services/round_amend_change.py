@@ -40,7 +40,11 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat
-from leaguebot.core.services.amendment_rules_service import judge_amendment, status_refusal
+from leaguebot.core.services.amendment_rules_service import (
+    AmendmentVerdict,
+    judge_amendment,
+    status_refusal,
+)
 from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import cancellation_holding_amendment
@@ -252,10 +256,13 @@ def round_amend_change(
     # ── The jobs ────────────────────────────────────────────────────────────────
 
     async def judge(ctx: StepContext) -> StepResult:
-        """Judge the amendment against the round as it stands, and keep what the later jobs need.
+        """Judge the amendment against the round as it stands, and keep the windows the later
+        jobs judge it by.
 
         It writes nothing. The windows are read here, outside any save, because a save reads no
-        other connection."""
+        other connection. What the amendment withdraws and what becomes of the check-in call are
+        not kept here: the save plans them from what it reads when it runs, and a stop between the
+        two can last for hours (owner, 2026-10-09)."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -266,15 +273,8 @@ def round_amend_change(
             rnd, values, now=moment, attendance=attendance, weather=weather
         )
         flags = {1: rnd.phase1_done, 2: rnd.phase2_done, 3: rnd.phase3_done}
-        withdrawn = sorted(n for n, outcome in verdict.phases.items() if not outcome.stands)
         weather_on = await modules.is_weather_enabled()
         mystery = values.get("format", rnd.format) == RoundFormat.MYSTERY
-        if attendance is None:
-            fate = None
-        elif verdict.check_in_stays_closed:
-            fate = "settled"
-        else:
-            fate = "repost" if verdict.check_in["call"].stands else "take_down"
         return StepResult(
             result={
                 "judged": True,
@@ -282,15 +282,10 @@ def round_amend_change(
                 # `judge` ran, retried or not, and the save refuses on it. The save judges it once
                 # more against what it reads (`judged_again`), for a stop at a later job.
                 "refused": None if verdict.allowed else no_longer_amendable(verdict.refusals),
-                "withdrawn": withdrawn,
-                "posted": [n for n in withdrawn if flags[n]],
                 "rerun": [
                     n for n, outcome in verdict.phases.items()
                     if outcome.stands and not flags[n]
                 ] if weather_on and not mystery else [],
-                "fate": fate,
-                "weather_on": weather_on,
-                "track": values.get("track_name") or rnd.track_name or "Unknown",
                 "windows": {
                     "attendance": dataclasses.asdict(attendance) if attendance else None,
                     "weather": dataclasses.asdict(weather),
@@ -312,12 +307,13 @@ def round_amend_change(
 
     def judged_again(
         row: aiosqlite.Row, changes: Iterable[Sequence[str]], judgement: dict[str, Any]
-    ) -> str | None:
-        """The refusal of *changes* judged once more, against the round as the save reads it,
-        at the windows `judge` kept and at the queue's clock, or None where it is still allowed.
+    ) -> AmendmentVerdict:
+        """*changes* judged once more, against the round as the save reads it, at the windows
+        `judge` kept and at the queue's clock.
 
         `judge` reached its verdict when it ran, and a job after it can stop and be tried again
-        hours later: the save would otherwise write an amendment whose window has since passed."""
+        hours later: the save would otherwise write an amendment whose window has since passed,
+        or plan what follows it from windows that have since gone by."""
         windows = judgement["windows"]
         attendance = windows["attendance"]
         rnd = Round(
@@ -332,14 +328,13 @@ def round_amend_change(
             phase3_done=bool(row["phase3_done"]),
             status=row["status"],
         )
-        verdict = judge_amendment(
+        return judge_amendment(
             rnd,
             amended_values(changes),
             now=now(),
             attendance=AttendanceWindows(**attendance) if attendance is not None else None,
             weather=WeatherWindows(**windows["weather"]),
         )
-        return None if verdict.allowed else no_longer_amendable(verdict.refusals)
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save: the audit, the round's fields, what the amendment withdraws, the
@@ -347,7 +342,12 @@ def round_amend_change(
 
         It judges the amendment again before it writes (`judged_again`), and refuses, writing
         nothing, where the round's status, `judge`'s verdict or that judgement says it may no
-        longer be made."""
+        longer be made. What follows the save is planned from that judgement, made when the save
+        runs, and kept with it for the arming to read: the forecasts it withdraws (`withdrawn`),
+        those of them that were posted (`posted`, by the flags it reads), whether it reopens the
+        check-in (`reopened`) and whether a call stood (`called`). Planned from `judge`'s instead,
+        a save tried again after a window passed would withdraw a forecast that now stands, or
+        leave a call to a schedule whose moment has gone (owner, 2026-10-09)."""
         if ctx.actor_id is None or ctx.actor_name is None:
             raise RuntimeError("amending a round is the act of a member, and none is recorded")
         judgement = judged(ctx) or {}
@@ -359,6 +359,7 @@ def round_amend_change(
         )
         row = await cursor.fetchone()
         refusal = None
+        verdict: AmendmentVerdict | None = None
         if row is None:
             refusal = ROUND_GONE
         elif row["status"] not in ROUND_CANCELLABLE:
@@ -366,8 +367,10 @@ def round_amend_change(
         elif judgement.get("refused"):
             refusal = str(judgement["refused"])
         else:
-            refusal = judged_again(row, ctx.payload["changes"], judgement)
-        if row is None or refusal is not None:
+            verdict = judged_again(row, ctx.payload["changes"], judgement)
+            if not verdict.allowed:
+                refusal = no_longer_amendable(verdict.refusals)
+        if row is None or verdict is None or refusal is not None:
             # A backstop: the check passed, and something wrote the database after it.
             return StepResult(
                 result={"refused": refusal},
@@ -407,27 +410,56 @@ def round_amend_change(
             "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
         )
         called = await cursor.fetchone() is not None
-        await hooks.withdraw_phases_on(db, round_id, judgement["withdrawn"])
-        if judgement["fate"] in ("repost", "take_down"):
+        flags = {1: row["phase1_done"], 2: row["phase2_done"], 3: row["phase3_done"]}
+        withdrawn = sorted(n for n, outcome in verdict.phases.items() if not outcome.stands)
+        # With attendance on, an allowed amendment always leaves the check-in open: one whose
+        # deadline has passed is refused above.
+        reopened = bool(verdict.check_in) and not verdict.check_in_stays_closed
+        await hooks.withdraw_phases_on(db, round_id, withdrawn)
+        if reopened:
             await hooks.reopen_check_in_on(db, round_id)
         if any(field == "scheduled_at" for field, _ in ctx.payload["changes"]):
             await renumber_rounds_on(db, division_id)
+        values = amended_values(ctx.payload["changes"])
         return StepResult(
-            result={"saved": True, "round_number": row["round_number"], "called": called},
+            result={
+                "saved": True,
+                "round_number": row["round_number"],
+                "called": called,
+                "reopened": reopened,
+                "withdrawn": withdrawn,
+                "posted": [n for n in withdrawn if flags[n]],
+                "track": values.get("track_name") or row["track_name"] or "Unknown",
+            },
             lines=(
                 f"{ctx.named} | /round amend | Success\n"
                 f"  round {row['round_number']} (round_id: {round_id}){changed}",
             ),
         )
 
+    def moment_of(rnd: Round) -> datetime:
+        """The round's moment, a naive one read as UTC, as it is stored."""
+        moment = rnd.scheduled_at
+        return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
     def first_horizon_ahead(rnd: Round, weather: dict[str, Any]) -> bool:
         """Whether the round as it stands now still has its first forecast horizon to come. Read
         when the arming runs, not when the amendment was judged: a discarded save arms the round
         at its old moment, and a stop can hold the arming for hours."""
-        moment = rnd.scheduled_at
-        if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=timezone.utc)
-        return now() < moment - timedelta(days=weather["phase_1_days"])
+        return now() < moment_of(rnd) - timedelta(days=weather["phase_1_days"])
+
+    def call_due(rnd: Round, attendance: dict[str, Any] | None) -> bool:
+        """Whether the round's check-in call is due now, at the queue's clock and the windows
+        `judge` read: its moment has passed and its deadline is still ahead, the boundary the
+        start-up recovery of a missed call holds to (`_recover_missed_check_in_calls`)."""
+        if attendance is None:
+            return False
+        moment = moment_of(rnd)
+        return (
+            moment - timedelta(days=attendance["notice_days"])
+            <= now()
+            < moment - timedelta(hours=attendance["deadline_hours"])
+        )
 
     async def arm_due(ctx: StepContext) -> bool:
         """The arming is due where the timed work was removed and the round may still be
@@ -483,24 +515,35 @@ def round_amend_change(
                 last_notice_hours=attendance["last_notice_hours"],
                 deadline_hours=attendance["deadline_hours"],
             )
-        return StepResult(result={"armed": True}, then=posts(ctx, judgement))
+        return StepResult(result={"armed": True}, then=posts(ctx, rnd, judgement))
 
-    def posts(ctx: StepContext, judgement: dict[str, Any]) -> tuple[PlannedStep, ...]:
+    def posts(
+        ctx: StepContext, rnd: Round, judgement: dict[str, Any]
+    ) -> tuple[PlannedStep, ...]:
         """The posts the saved amendment owes, in today's order: the check-in call taken down and
         posted again, each withdrawn forecast that was posted deleted, the notice that the
         forecasts no longer stand, and each phase due at once drawn. Planned once the round is
-        armed, which is where the amendment stood before them, and only for a saved amendment."""
+        armed, which is where the amendment stood before them, and only for a saved amendment,
+        from what its save read (`apply`).
+
+        A call that stood is taken down and its repost planned with it, the repost judging when
+        it runs whether the call is due then (`call_still_due`): the take-down can stop on
+        Discord and be retried after the new call's moment, which the timer armed meanwhile has
+        found taken by the old call. A call that did not stand is planned only where it is due
+        as the round is armed; one still to come is the timer's."""
         if not saved(ctx):
             return ()
+        after = view(ctx, APPLY).result or {}
         planned: list[PlannedStep] = []
-        fate = judgement["fate"]
-        if fate in ("repost", "take_down") and (view(ctx, APPLY).result or {}).get("called"):
-            planned.append(PlannedStep(TAKE_DOWN_CALL))
-        if fate == "repost":
-            planned.append(PlannedStep(POST_CALL))
-        planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in judgement["posted"]]
-        if judgement["posted"]:
-            planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": judgement["track"]}))
+        if after.get("reopened"):
+            if after.get("called"):
+                planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL)]
+            elif call_due(rnd, judgement["windows"]["attendance"]):
+                planned.append(PlannedStep(POST_CALL))
+        posted = after.get("posted", [])
+        planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
+        if posted:
+            planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in judgement["rerun"]]
         return tuple(planned)
 
@@ -513,12 +556,25 @@ def round_amend_change(
     async def attendance_on(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()
 
+    async def call_still_due(ctx: StepContext) -> bool:
+        """The call is posted again only while attendance is on and the call is due as the round
+        stands when this job runs: its moment passed, its deadline still ahead (owner,
+        2026-10-09). One still to come is posted by its timer, armed with the round."""
+        if not await modules.is_attendance_enabled():
+            return False
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        judgement = judged(ctx) or {}
+        return rnd is not None and call_due(
+            rnd, judgement.get("windows", {}).get("attendance")
+        )
+
     async def weather_on(_ctx: StepContext) -> bool:
         return await modules.is_weather_enabled()
 
     async def take_down_call(ctx: StepContext) -> StepResult:
         """Take the round's standing check-in call down, keeping its record and stopping the queue
-        where Discord will not delete a message. The check-in's audit it reads is not written."""
+        where Discord will not delete a message. The check-in's audit it reads is not written.
+        Whether the call is posted again is not settled here but by the next job, when it runs."""
         division = await seasons.get_division(int(ctx.payload["division_id"]))
         if division is None:
             raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
@@ -685,7 +741,7 @@ def round_amend_change(
             describe=named("taking down the check-in call of round {number} in **{division}**"),
         ),
         POST_CALL: Step(
-            POST_CALL, StepKind.ACT, post_call, still_due=attendance_on,
+            POST_CALL, StepKind.ACT, post_call, still_due=call_still_due,
             describe=named("posting the check-in call of round {number} in **{division}** again"),
         ),
         DELETE_FORECAST: Step(

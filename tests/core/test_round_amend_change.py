@@ -1050,8 +1050,6 @@ async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_on
     assert phases.ran == [(2, R3)]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the call's take-down-or-repost is decided when "
-                                       "its job runs")
 @pytest.mark.parametrize("stopped", [
     pytest.param("apply", id="the save stopped"),
     pytest.param("take_down_call", id="the take-down stopped after the arming"),
