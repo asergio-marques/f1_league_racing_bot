@@ -1424,3 +1424,30 @@ async def test_a_call_standing_when_the_amendment_s_post_runs_past_its_deadline_
     assert row["checkin_cleared"] == 0
     assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
     assert reposts.posted == []
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a phase is drawn for a round already raced")
+async def test_a_phase_whose_race_passed_while_a_job_before_it_stood_stopped_is_not_drawn(
+    tmp_path, phases, reposts,
+):
+    """Weather and attendance on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its call
+    standing, is brought forward to a day out: its Phase 1 and Phase 2, never drawn, are to be
+    drawn at once, and its call taken down and posted again. Discord refuses to delete the last
+    notice (7002), stopping the take-down ahead of them. A day and an hour on, past the race, the
+    fault is mended and Retry is pressed: each phase is judged again as its job runs, and no
+    forecast is drawn for a round already raced."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    league.undeletable.add(CALL_MESSAGES[1])
+    await _amended(league, scheduled_at=_at(league, days=1))
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    assert [json.loads(job["payload"]) for job in await _jobs(league)
+            if job["name"] == "rerun_phase"] == [{"phase": 1}, {"phase": 2}]
+
+    league.clock.advance(days=1, hours=1)
+    league.undeletable.clear()
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert phases.ran == []
