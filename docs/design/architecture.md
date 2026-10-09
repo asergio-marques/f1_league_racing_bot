@@ -340,6 +340,20 @@ audit record, which is how some settings came to have none.
   review to open again (core specification, "How a change is carried out"; the results
   specification says which jobs).
 
+  A step may be marked *undiscardable* (`Step.undiscardable`), where dropping its job would leave a
+  round that would never run and a league no repair: the arming of a season's timed work once it is
+  approved, and of an amended round's. It is a reader, not a flag, that gives what would follow
+  from dropping the job, in the job's own terms, so that the refusal can name the round or the
+  season. Discard on such a job is refused through the queue's own refusal, privately and with one
+  line in the log channel, and saves nothing: no discarded mark, no line, no audit record, no
+  follow-on, and the queue stays stopped at the job. Retry, and the bot's own tries, are
+  unchanged, and are the only way on. The notice keeps both buttons: it is one persistent view
+  with fixed identities, found again after a restart, and a notice without Discard would need a
+  second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
+  discard that drops the job and names the loss, which leaves a league with nothing it can do to
+  put it right. A change stopped at its check, before any job of it ran, is still dropped whole:
+  no arming is its check.
+
   Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
   and names the job. They work directly on the queue's own records, and are not changes put on the
   queue: the queue is stopped, so a change put on it could not run. Each press is saved with its own record (the line, and
@@ -508,7 +522,8 @@ Start-up:
    member or a Discord event asks for it, waits until the sweep has put its own on the queue, so
    none overtakes a missed event that would have happened first;
 6. starts the queue, which carries on with any change a stop cut off, leaves a job that was stopped
-   on a failure stopped, to be cleared by Retry or Discard, and posts again any stop notice that
+   on a failure stopped, to be cleared by Retry, or by Discard where the job may be discarded,
+   and posts again any stop notice that
    never landed;
 7. only then lets scheduled jobs run.
 
@@ -693,6 +708,11 @@ to it would switch off the one failure path for every command.
    catch-all puts the error in the host's log alone, with no line to the log channel, and asks no
    follow-on, because a Discard is the queue's last way past a stop and a hook that raises must
    not hold it;
+   the reader that says what dropping an undiscardable job would leave
+   (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
+   error in the host's log with the full details, and the Discard is refused all the same, naming
+   the job in place of the reason, because an undiscardable job is never dropped for want of
+   its reason;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops the queue until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
