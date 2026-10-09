@@ -511,22 +511,42 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     assert "the earlier call still stands, and the answers given to it count" in line
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the new call is recorded after the old one goes")
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. The call
     is posted again and lands, as message 990099: only then does the earlier call come down, its
-    messages deleted and its record replaced by the new call's, the answers carried over."""
+    messages deleted and its record replaced by the new call's, the answers carried over. The new
+    call is recorded before the first of the earlier call's messages is deleted, so that a press
+    on the new call meanwhile finds it, and a stop between them cannot leave it untracked."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
     channel = _make_channel()
     channel.send.return_value.channel.id = RSVP_CHANNEL_ID
     bot = _make_bot(db_path, channel)
+    recorded_at_delete: list[str | None] = []
+    fetch = channel.fetch_message.side_effect
+
+    async def _fetch(message_id: int) -> MagicMock:
+        message = await fetch(message_id)
+        deleting = message.delete.side_effect
+
+        async def _delete() -> None:
+            stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+            recorded_at_delete.append(stored.message_id if stored else None)
+            deleting()
+
+        message.delete = AsyncMock(side_effect=_delete)
+        return message
+
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
 
     with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
         await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
 
     channel.send.assert_awaited_once()
     assert sorted(channel.deleted) == [int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)]
+    assert recorded_at_delete == ["990099", "990099"]
     stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
     assert stored is not None and stored.message_id == "990099"
     assert stored.last_notice_msg_id is None
