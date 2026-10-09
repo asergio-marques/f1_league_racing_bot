@@ -347,9 +347,9 @@ audit record, which is how some settings came to have none.
   the round or the season. Discard on the job is refused as any refused press is, and saves
   nothing else: no discarded mark, no Discard line, no audit record, no follow-on, and the job
   stays the one the queue is stopped at. Retry, and the bot's own tries, clear it as they clear
-  any job. The notice keeps both buttons, and it is the button that refuses: the notice is one persistent view
-  with fixed identities, found again after a restart, and a notice without Discard would need a
-  second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
+  any job. The notice keeps both buttons, and it is the button that refuses: the notice is one
+  persistent view with fixed identities, found again after a restart, and a notice without Discard
+  would need a second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
   discard that drops the job and names the loss, which leaves a league with nothing it can do to
   put it right. A change stopped at its check, before any job of it ran, is still dropped whole,
   since a stop at the check sits on the change's first job, and no arming is a first job.
