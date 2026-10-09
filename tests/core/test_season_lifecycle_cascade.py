@@ -794,7 +794,9 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
     async def refused(*args, **kwargs):
         raise RuntimeError("the division could not be refreshed")
 
-    monkeypatch.setattr(season_service.SeasonService, "refresh_division_status", refused)
+    monkeypatch.setattr(
+        season_service.SeasonService, "refresh_division_status", refused, raising=False
+    )
     monkeypatch.setattr(season_service, "refresh_division_status_on", refused)
     monkeypatch.setattr(
         result_submission_service, "refresh_division_status_on", refused, raising=False
