@@ -512,10 +512,11 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     tmp_path, meanwhile,
 ):
     """Attendance on; the queue is stopped at Am's round 3 cancellation. Pro's round 3 is moved
-    to three hours out and confirmed, and waits; Am's round 4 is cancelled behind it. While they
-    wait, the check-in deadline (two hours before the round) passes, or round 3's results are
-    entered, or it is cancelled. Once the queue goes on, the amendment is refused in today's
-    Confirm words, nothing of it written and nothing unarmed, and Am's round 4 is cancelled."""
+    to two hours and ten minutes out and confirmed, and waits; Am's round 4 is cancelled behind
+    it. While they wait, the check-in deadline (two hours before the round) passes eleven minutes
+    on, while the reply can still be updated, or round 3's results are entered, or it is
+    cancelled. Once the queue goes on, the amendment is refused in today's Confirm words, nothing
+    of it written and nothing unarmed, and Am's round 4 is cancelled."""
     reasons = {
         "the check-in deadline passes": (
             "The check-in deadline for that moment has already passed, so the round would have "
@@ -530,11 +531,11 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     league = await ongoing_league(tmp_path, attendance=True)
     await _stopped_blocker(league)
     before = await _moment(league)
-    press = await _amended(league, scheduled_at=_at(league, hours=3))
+    press = await _amended(league, scheduled_at=_at(league, hours=2, minutes=10))
     behind = await cancel_round(league, "Am", 4)
     assert not league.errors, league.errors
     if meanwhile == "the check-in deadline passes":
-        league.clock.advance(hours=2)
+        league.clock.advance(minutes=11)
     elif meanwhile == "results entered":
         await _set_status(league, "AWAITING_REPORT_VERDICTS")
     else:
