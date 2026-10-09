@@ -614,7 +614,10 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
 @pytest.mark.parametrize("fault", [
     pytest.param(OSError("network unreachable"), id="the network failing"),
     pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),
-    pytest.param(asyncio.TimeoutError(), id="the send timing out"),
+    pytest.param(
+        asyncio.TimeoutError(), id="the send timing out",
+        marks=pytest.mark.xfail(strict=True, reason="#439: a bare timeout logs an empty reason"),
+    ),
 ])
 async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_posted(
     tmp_path, fault,
@@ -637,6 +640,11 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
     assert "no attendance rows were opened for this round" in line
     timed_out = isinstance(fault, TimeoutError)
     assert ("may have reached Discord all the same; check the channel" in line) == timed_out
+    # A bare timeout carries no message: the reason names the fault's kind rather than nothing.
+    assert "could not be posted: ;" not in line
+    if timed_out:
+        assert "could not be posted: TimeoutError" in line
+        assert "if it is there, delete it before posting the call again" in line
 
 
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
