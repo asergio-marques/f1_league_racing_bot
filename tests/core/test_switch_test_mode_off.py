@@ -164,3 +164,61 @@ async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_hi
             "WHERE discord_user_id = '9000000000000000001'"
         )
         assert tuple(await cursor.fetchone()) == ("9000000000000000001", None)
+
+
+# ── On the save handed (#439, slice 5) ──────────────────────────────────────────────
+#
+# A season's end switches test mode off inside the save that records its end, just before the
+# season itself is written (decided 2026-10-09): the test drivers deleted and the flag cleared
+# with the rest of the record, or not at all. The forecasts are flushed by a job of their own
+# before that save, so the form on the save flushes nothing.
+
+_XFAIL_ON = "#439: test mode cannot be switched off on the save a season's end hands it"
+
+
+async def _profiles_on(db):
+    cursor = await db.execute("SELECT id FROM driver_profiles ORDER BY id")
+    return [r["id"] for r in await cursor.fetchall()]
+
+
+async def _flag_on(db):
+    cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+    return (await cursor.fetchone())[0]
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
+async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
+    """The two test drivers go and the flag is cleared on the save, the forecasts untouched;
+    rolled back, both drivers and the flag are as they were."""
+    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+
+    with patch(
+        "leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions",
+        new=AsyncMock(),
+    ) as flushed:
+        async with get_connection(db_path) as db:
+            assert await switch_test_mode_off_on(db) == 2
+            assert await _profiles_on(db) == [3]
+            assert await _flag_on(db) == 0
+            await db.rollback()
+            assert await _profiles_on(db) == [1, 2, 3]
+            assert await _flag_on(db) == 1
+
+    flushed.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
+async def test_clearing_the_test_drivers_on_the_save_handed_commits_nothing(db_path):
+    """The two test drivers go on the save, their history kept by identifier; rolled back, they
+    are back."""
+    from leaguebot.core.services.test_roster_service import clear_all_test_drivers_on
+
+    async with get_connection(db_path) as db:
+        assert await clear_all_test_drivers_on(db) == 2
+        assert await _profiles_on(db) == [3]
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM driver_history_entries WHERE driver_profile_id IS NULL"
+        )
+        assert (await cursor.fetchone())[0] == 2
+        await db.rollback()
+        assert await _profiles_on(db) == [1, 2, 3]
