@@ -24,7 +24,7 @@ import dataclasses
 import json
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -275,7 +275,6 @@ def round_amend_change(
             fate = "settled"
         else:
             fate = "repost" if verdict.check_in["call"].stands else "take_down"
-        first = verdict.phases.get(1)
         return StepResult(
             result={
                 "judged": True,
@@ -290,7 +289,6 @@ def round_amend_change(
                 ] if weather_on and not mystery else [],
                 "fate": fate,
                 "weather_on": weather_on,
-                "first_horizon_ahead": first is not None and moment < first.fire_at,
                 "track": values.get("track_name") or rnd.track_name or "Unknown",
                 "windows": {
                     "attendance": dataclasses.asdict(attendance) if attendance else None,
@@ -384,6 +382,15 @@ def round_amend_change(
             ),
         )
 
+    def first_horizon_ahead(rnd: Round, weather: dict[str, Any]) -> bool:
+        """Whether the round as it stands now still has its first forecast horizon to come. Read
+        when the arming runs, not when the amendment was judged: a discarded save arms the round
+        at its old moment, and a stop can hold the arming for hours."""
+        moment = rnd.scheduled_at
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return now() < moment - timedelta(days=weather["phase_1_days"])
+
     async def arm_due(ctx: StepContext) -> bool:
         """The arming is due where the timed work was removed and the round may still be
         cancelled, whatever became of the save: a round cancelled, or whose results were entered,
@@ -411,7 +418,7 @@ def round_amend_change(
         season_number, tier = int(found["season_number"]), int(found["tier"])
         weather = judgement["windows"]["weather"]
         if await modules.is_weather_enabled() and (
-            rnd.format != RoundFormat.MYSTERY or judgement["first_horizon_ahead"]
+            rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)
         ):
             scheduler.schedule_round(
                 rnd,
