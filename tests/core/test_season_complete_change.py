@@ -965,7 +965,6 @@ async def test_every_real_driver_of_the_season_loses_their_roles_and_a_test_driv
     assert ("revoke_roles", TEST_DRIVER) not in await _names(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(tmp_path):
     league = await pending_completion_league(tmp_path)
     league.absent.add(MAX)

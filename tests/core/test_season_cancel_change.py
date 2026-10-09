@@ -1106,7 +1106,6 @@ async def test_test_mode_is_switched_off_and_its_saved_state_kept(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_roles_are_taken_back_after_the_notices(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True, held=True)
     await _am_calendar_posted(league)

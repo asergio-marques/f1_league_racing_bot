@@ -179,6 +179,7 @@ class SeasonLeague:
         self.fetch_fails: dict[int, BaseException] = {}
         self.grant_fails: dict[int, BaseException] = {}
         self.roles_gone: set[int] = set()
+        self._role_doubles: dict[int, Any] = {}
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
         #: The round ids `scheduler.cancel_round` was handed (`ongoing_league`), in order.
@@ -280,11 +281,17 @@ class SeasonLeague:
         return chan
 
     def _role(self, role_id: int) -> Any:
+        """The one double of role *role_id*, or None where it is gone from the server.
+
+        One double per id, so that `role in member.roles` holds as it does for a real
+        `discord.Role`, which compares by id."""
         if role_id in self.roles_gone:
             return None
-        role = MagicMock(spec=discord.Role)
-        role.id = role_id
-        return role
+        if role_id not in self._role_doubles:
+            role = MagicMock(spec=discord.Role)
+            role.id = role_id
+            self._role_doubles[role_id] = role
+        return self._role_doubles[role_id]
 
     def _member(self, user_id: int) -> Any:
         person = MagicMock(spec=discord.Member)
