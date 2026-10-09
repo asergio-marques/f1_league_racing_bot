@@ -506,6 +506,50 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
     }
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a failed call says no rows were opened beside answers")
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, fault):
+    """No call stands for round 1, but answers to an earlier call are kept for it (both drivers
+    answered it before it was taken down). Its timer's post fails, Discord refusing it or the
+    check-in channel gone: the log channel says the answers are kept and count, and names
+    `/attendance post-check-in` to post the call by hand, never that no attendance rows were
+    opened (owner, 2026-10-09: "Make the line tell the truth")."""
+    db_path = await _make_db(tmp_path)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    assert await _embed_rows(db_path) == 0
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "answers given to an earlier call of this round are kept, and count" in line
+    assert "`/attendance post-check-in division: Division 1 round: 1`" in line
+    assert "no attendance rows were opened" not in line
+
+
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(tmp_path, fault):
+    """No call and no answers for round 1: a post that fails says, as it always has, that no
+    attendance rows were opened and the round will count nothing against anyone until the call
+    is posted with `/attendance post-check-in`."""
+    db_path = await _make_db(tmp_path)
+    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "no attendance rows were opened for this round" in line
+    assert "`/attendance post-check-in division: Division 1 round: 1`" in line
+
+
 # ---------------------------------------------------------------------------
 # _post_no_reserve_notice
 # ---------------------------------------------------------------------------

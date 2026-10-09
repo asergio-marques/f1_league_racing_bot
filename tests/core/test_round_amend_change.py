@@ -1679,3 +1679,46 @@ async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take
     assert len(await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
     )) == 2
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a failed repost says no attendance rows were opened")
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answers_are_kept(
+    tmp_path, monkeypatch, fault,
+):
+    """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not),
+    is brought forward to three days out, so its call is taken down, which goes through, and
+    posted again. Posting it fails, Discord refusing the message or the check-in channel gone,
+    as a call's own timer fails, and the queue goes on. The answers to the earlier call are kept,
+    and the log channel says so, and that they count, naming `/attendance post-check-in` to post
+    the call by hand, never that no attendance rows were opened (owner, 2026-10-09: "Make the
+    line tell the truth")."""
+    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.attendance_service.get_division_config = AttendanceService(
+        league.db_path
+    ).get_division_config
+    await _amended(league, scheduled_at=_at(league, days=3))
+    await _run_through(league, "take_down_call")
+    if fault == "Discord refuses the post":
+        league.channel(PRO_CH.checkin).send_fails = http_error(
+            discord.Forbidden, status=403, text="Missing Permissions"
+        )
+    else:
+        league.remove_channel(PRO_CH.checkin)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    assert len(await league.rows(
+        "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
+    )) == 2
+    [line] = _given_up_lines(league)
+    assert "answers given to an earlier call of this round are kept, and count" in line
+    assert "`/attendance post-check-in division: Pro round: 3`" in line
+    assert "no attendance rows were opened" not in line
