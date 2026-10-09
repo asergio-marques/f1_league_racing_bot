@@ -5,16 +5,16 @@ together with what holds them, and their history entries are kept by identifier.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_mode_service import switch_test_mode_off
 from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 
 SERVER_ID = 22140
+
+_XFAIL_ON = "#439: test mode cannot be switched off on the save a season's end hands it"
 
 
 @pytest.fixture
@@ -114,14 +114,20 @@ async def test_their_history_is_kept_by_identifier(db_path):
     ]
 
 
-async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
-    bot = SimpleNamespace(db_path=db_path)
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()
-    ) as flushed:
-        assert await switch_test_mode_off(bot) == 2
+async def _switch_off(db_path):
+    """Switch test mode off on one save and commit it, as a season's end save does."""
+    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
 
-    flushed.assert_awaited_once()
+    async with get_connection(db_path) as db:
+        deleted = await switch_test_mode_off_on(db)
+        await db.commit()
+    return deleted
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
+async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
+    assert await _switch_off(db_path) == 2
+
     assert await _profiles(db_path) == [3]
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -130,25 +136,14 @@ async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_server_not_in_test_mode_is_left_alone(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET test_mode_active = 0")
         await db.commit()
 
-    assert await switch_test_mode_off(SimpleNamespace(db_path=db_path)) == 0
+    assert await _switch_off(db_path) == 0
     assert await _profiles(db_path) == [1, 2, 3]
-
-
-async def test_a_flush_that_fails_still_switches_test_mode_off(db_path):
-    """A stale forecast is not worth staying in test mode for."""
-    bot = SimpleNamespace(db_path=db_path)
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions",
-        new=AsyncMock(side_effect=RuntimeError("channel gone")),
-    ):
-        assert await switch_test_mode_off(bot) == 2
-
-    assert await _profiles(db_path) == [3]
 
 
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
@@ -172,9 +167,6 @@ async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_hi
 # season itself is written (decided 2026-10-09): the test drivers deleted and the flag cleared
 # with the rest of the record, or not at all. The forecasts are flushed by a job of their own
 # before that save, so the form on the save flushes nothing.
-
-_XFAIL_ON = "#439: test mode cannot be switched off on the save a season's end hands it"
-
 
 async def _profiles_on(db):
     cursor = await db.execute("SELECT id FROM driver_profiles ORDER BY id")
