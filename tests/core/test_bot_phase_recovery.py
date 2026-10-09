@@ -5,9 +5,10 @@ bot therefore asks which horizons have passed without their phase having run, an
 
 **The horizons are the league's own** (issue #111), read from `weather_pipeline_config` rather
 than the packaged 5 / 2 / 2. Every other path that decides whether a phase is overdue reads that
-config — the confirmation of placements and `amend_round` — and a restart
-judging by the defaults made the same league see one set of timings on an enable and another on
-a restart: a longer phase 1 was never published at all, a shorter one was published days early.
+config — the confirmation of placements and `/round amend`'s change on the change queue — and a
+restart judging by the defaults made the same league see one set of timings on an enable and
+another on a restart: a longer phase 1 was never published at all, a shorter one was published
+days early.
 `test_the_league_s_own_horizons_are_used_not_the_packaged_ones` is the regression test.
 
 **The config is resolved once per server, not once per round.** A season's rounds all share one,

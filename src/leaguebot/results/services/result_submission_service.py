@@ -1,6 +1,7 @@
 """result_submission_service.py — Round result submission wizard and channel management."""
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import re
@@ -249,6 +250,68 @@ async def is_submission_open(db_path: str, round_id: int) -> bool:
         )
         row = await cursor.fetchone()
     return row is not None and row["closed"] == 0
+
+
+class OpenSubmission(NamedTuple):
+    """A round's results submission standing open: its channel, and whether it has accepted
+    anything (a `session_results` row of the round, of either status)."""
+
+    round_id: int
+    channel_id: int
+    accepted: bool
+
+
+async def open_submissions_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> list[OpenSubmission]:
+    """Each open submission among *round_ids*, in round order, read on the connection handed.
+
+    **Accepted means any session saved** (#439): the wizard saves each session as it accepts it
+    (`save_session_result`), with ``status`` ``ACTIVE`` for results and ``CANCELLED`` for a
+    session entered as not held, so any `session_results` row of the round, of either status,
+    while the submission stands open, is data a cancellation would lose. A round in its review
+    keeps its submission open with its sessions accepted, so it counts. Fixed SQL, one round at
+    a time, so nothing is spliced.
+    """
+    found: list[OpenSubmission] = []
+    for round_id in sorted(set(round_ids)):
+        cursor = await db.execute(
+            "SELECT channel_id FROM round_submission_channels WHERE round_id = ? AND closed = 0",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            continue
+        cursor = await db.execute(
+            "SELECT 1 FROM session_results WHERE round_id = ? LIMIT 1", (round_id,)
+        )
+        found.append(
+            OpenSubmission(round_id, int(row["channel_id"]), await cursor.fetchone() is not None)
+        )
+    return found
+
+
+async def open_submissions(db_path: str, round_ids: Iterable[int]) -> list[OpenSubmission]:
+    """`open_submissions_on` on a connection of its own."""
+    async with get_connection(db_path) as db:
+        return await open_submissions_on(db, round_ids)
+
+
+async def close_submissions_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> list[tuple[int, int]]:
+    """Mark each open submission among *round_ids* closed on the connection handed, committing
+    nothing, and give ``(round_id, channel_id)`` for each so that its channel can be deleted.
+
+    The channel's deletion is a job of its own after the save (`delete_channel`); this is the
+    save's half of `close_submission_channel`.
+    """
+    closed = [(each.round_id, each.channel_id) for each in await open_submissions_on(db, round_ids)]
+    for round_id, _channel_id in closed:
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?", (round_id,)
+        )
+    return closed
 
 
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
@@ -1512,6 +1575,102 @@ async def held_by_amendment(
         f"<#{row['channel_id']}>, so nothing can be committed for another of its rounds until "
         f"that ends — {amendment_wait_text()}. " + then
     )
+
+
+async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
+    """Why the wizard may take nothing more for *round_id*, or None when it may (#439).
+
+    **A submission a cancellation has closed takes nothing** (decided 2026-10-08). The wizard
+    saves each session as it is accepted, so a paste landing between a cancellation's save and
+    the deletion of its channel (which a stopped `delete_channel` can stretch to the hour) would
+    be saved against a cancelled round. Two causes are told apart: the round cancelled, its own
+    status or its division's or its season's, and the submission closed with the round not
+    cancelled, which `/season cancel` does between its closing and its cascade, and turning
+    results off does by its purge. The words say which. A round with no submission row at all
+    is not closed by this: a resubmission's round, which has its results entered, cannot be
+    cancelled and is not asked.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
+            "s.status AS season_status, rsc.closed "
+            "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
+            "WHERE r.id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    if "CANCELLED" in (row["round_status"], row["division_status"], row["season_status"]):
+        return (
+            f"⛔ Round {row['round_number']} has been cancelled, so its results can no longer be "
+            "entered. Nothing was saved."
+        )
+    if row["closed"]:
+        return (
+            f"⛔ Round {row['round_number']}'s results submission has been closed, so its "
+            "results can no longer be entered. Nothing was saved."
+        )
+    return None
+
+
+#: How long one listener for a paste is given before the submission is read again. Long enough to
+#: cost nothing, short enough that a wizard whose channel was deleted does not wait on for days.
+SUBMISSION_WAIT_RECHECK_SECONDS = 300
+
+
+async def next_submission_message(bot: LeagueBot, db_path: str, round_id: int, sub_channel):
+    """The next message pasted into *sub_channel*, or None once its submission is closed (#439).
+
+    **The wait ends when a cancellation closes the submission and deletes its channel**, which
+    no message will ever follow: `bot.wait_for` has no end of its own, and the wizard would wait
+    in memory until the next restart. So each listener is given a time
+    (`SUBMISSION_WAIT_RECHECK_SECONDS`), and when one runs out the submission is read again
+    (`closed_by_cancellation`): closed, the wizard is told so with None; not, it waits on.
+
+    **The wizard never stops listening to do it** (decided 2026-10-09): a paste sent while the
+    submission was being read would otherwise be heard by nobody, and the manager would have to
+    paste it again. Two listeners are kept, the second begun half a time after the first, and a
+    replacement is registered the moment one runs out, before the read. A paste is therefore
+    always heard by at least one listener; where it reaches two, they hold the same message.
+    """
+    def listen() -> asyncio.Future:
+        return asyncio.ensure_future(
+            bot.wait_for(
+                "message",
+                check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
+                timeout=SUBMISSION_WAIT_RECHECK_SECONDS,
+            )
+        )
+
+    live = {listen()}
+    try:
+        while True:
+            done, _ = await asyncio.wait(
+                live, timeout=SUBMISSION_WAIT_RECHECK_SECONDS / 2,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                if len(live) < 2:
+                    live.add(listen())
+                continue
+            expired = False
+            for task in done:
+                live.discard(task)
+                try:
+                    return task.result()
+                except asyncio.TimeoutError:
+                    expired = True
+            if expired:
+                live.add(listen())
+                if await closed_by_cancellation(db_path, round_id) is not None:
+                    return None
+    finally:
+        for task in live:
+            task.cancel()
+        await asyncio.gather(*live, return_exceptions=True)
 
 
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
@@ -3260,23 +3419,23 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         )
 
         while True:
-            msg = await bot.wait_for(
-                "message",
-                check=lambda m, ch=sub_channel: (
-                    m.channel.id == ch.id and not m.author.bot
-                ),
-            )
+            msg = await next_submission_message(bot, db_path, round_id, sub_channel)
+            if msg is None:
+                return
 
             last_author = msg.author
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
-                held = await held_by_amendment(
+                closed = await closed_by_cancellation(db_path, round_id)
+                held = closed or await held_by_amendment(
                     db_path, round_id, division_id,
                     then=f"Type `CANCELLED` for **{label}** again then.",
                 )
                 if held:
                     await sub_channel.send(held)
+                    if closed:
+                        return
                     continue
                 await save_session_result(
                     db_path=db_path,
@@ -3376,11 +3535,14 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                     "Results will be saved without a config."
                 )
 
-            held = await held_by_amendment(
+            closed = await closed_by_cancellation(db_path, round_id)
+            held = closed or await held_by_amendment(
                 db_path, round_id, division_id, then=f"Paste **{label}** again then."
             )
             if held:
                 await sub_channel.send(held)
+                if closed:
+                    return
                 continue
 
             # Log accepted input (with raw content for auditability)

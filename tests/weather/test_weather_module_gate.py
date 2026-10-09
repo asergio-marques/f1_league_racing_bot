@@ -10,20 +10,33 @@ that module's work, so that enabling the module later does not find its work alr
 whether weather was on, and marked the phase done, so the later enable skipped it for good.
 
 These tests hold the gate at both ends — inside the three phase runners, where it holds for every
-route in, and at the `amend_round` call site — and pin the enabled path alongside, so the gate
-cannot be over-applied and quietly switch the feature off for everyone.
+route in, and in `/round amend`'s change on the change queue — and pin the enabled path
+alongside, so the gate cannot be over-applied and quietly switch the feature off for everyone.
 """
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
-from leaguebot.core.services.amendment_service import AmendmentService
+from leaguebot.weather.services import (
+    mystery_notice_service,
+    phase1_service,
+    phase2_service,
+    phase3_service,
+)
+from tests.support.change_queue import run_queue
+from tests.support.season_league import (
+    AM,
+    DIVISIONS,
+    amend_round,
+    ongoing_league,
+    round_id,
+)
 
 SEEDED_TRACK = "Bahrain International Circuit"
 
@@ -164,44 +177,80 @@ async def test_phase_runner_runs_when_weather_is_enabled(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The gate at the amend_round call site — issue #113 as reported
+# The gate in /round amend's change on the change queue — issue #113 as reported
 # ---------------------------------------------------------------------------
+#
+# These tests once called `AmendmentService.amend_round` on a bot double. The amendment is now a
+# change on the queue (#439), so each runs `/round amend` through the cog on
+# `tests/support/season_league.py`'s ongoing season, as admin 77, presses its Confirm and runs the
+# queue, "now" pinned to the league's clock. The round amended is Am's round 3 (id 223), at
+# Bahrain International Circuit, with attendance off throughout so that the amendment's check-in
+# re-arm has nothing to do. Today Confirm amends on the spot, and each passes as written.
 
-def _make_actor() -> MagicMock:
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    return actor
-
-
-def _amend_bot(db_path: str, *, weather_enabled: bool) -> MagicMock:
-    bot = _make_bot(db_path, weather_enabled=weather_enabled)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-    return bot
+AM_3 = round_id(AM, 3)
+AM_FORECAST = DIVISIONS[AM][3].forecast
 
 
-async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_path):
-    """The reported defect: amending a round drew and posted a forecast with weather off."""
-    db_path = await _make_db(str(tmp_path))
-    await _seed(db_path)
-    bot = _amend_bot(db_path, weather_enabled=False)
+@pytest.fixture
+def phases(monkeypatch):
+    """Weather's three phase runners, recording `(phase, round id)` in `ran` rather than
+    drawing anything; patched before the league is built."""
+    record = SimpleNamespace(ran=[])
+    for number, module in ((1, phase1_service), (2, phase2_service), (3, phase3_service)):
 
-    with patch(
-        "leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()
-    ) as p1, patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ) as p2, patch(
-        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
-    ) as p3:
-        await AmendmentService(db_path).amend_round(
-            1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
-        )
+        async def _run(rid, *_args, _number=number, **_kwargs):
+            record.ran.append((_number, rid))
 
-    p1.assert_not_awaited()
-    p2.assert_not_awaited()
-    p3.assert_not_awaited()
-    bot.scheduler_service.schedule_round.assert_not_called()
+        monkeypatch.setattr(module, f"run_phase{number}", _run)
+    return record
+
+
+async def _amended_league(tmp_path, *, weather: bool, at: timedelta, phase1_done: int = 0):
+    """The ongoing league with weather as asked, Am's round 3 falling *at* from "now" at
+    `SEEDED_TRACK`, its Phase 1 marked performed where *phase1_done*."""
+    league = await ongoing_league(tmp_path, weather=weather)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ?, track_name = ?, phase1_done = ? WHERE id = ?",
+        (league.clock.now + at).replace(tzinfo=None).isoformat(), SEEDED_TRACK, phase1_done,
+        AM_3,
+    )
+    return league
+
+
+async def _amend(league, **fields: str) -> None:
+    """Run `/round amend` for Am's round 3, press its Confirm, and run the queue."""
+    press = await amend_round(league, "Am", 3, **fields)
+    assert press is not None, "nothing was offered"
+    assert not league.errors, league.errors
+    await run_queue(league.bot)
+
+
+def _moment(league, delta: timedelta) -> str:
+    return (league.clock.now + delta).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+#: Where a round is brought forward to, so that every phase's horizon has passed: an hour from
+#: now, still to come (a round cannot be moved into the past, and one already started cannot have
+#: its track amended).
+_AN_HOUR = timedelta(hours=1)
+
+
+def _success_lines(league) -> list[str]:
+    return [line for line in league.bot.log_channel.sent if "| /round amend | Success" in line]
+
+
+async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_path, phases):
+    """The reported defect: amending a round drew and posted a forecast with weather off.
+
+    Weather off; Am's round 3, 90 days out with no phase performed, has its track amended and is
+    brought forward to an hour from now, every phase's horizon passed: no phase is run and
+    nothing of weather's is armed."""
+    league = await _amended_league(tmp_path, weather=False, at=timedelta(days=90))
+
+    await _amend(league, track="Silverstone Circuit", scheduled_at=_moment(league, _AN_HOUR))
+
+    assert phases.ran == []
+    league.bot.scheduler_service.schedule_round.assert_not_called()
 
 
 async def test_amend_round_leaves_the_phases_for_a_later_enable(tmp_path):
@@ -209,39 +258,25 @@ async def test_amend_round_leaves_the_phases_for_a_later_enable(tmp_path):
 
     Run for real rather than with the runners patched out, so the whole path is exercised —
     the flags must be left at 0, so that a later enable does not find the phase already performed.
+    Weather off; Am's round 3 has its track amended and is brought forward to an hour from now.
     """
-    db_path = await _make_db(str(tmp_path))
-    await _seed(db_path)
-    bot = _amend_bot(db_path, weather_enabled=False)
+    league = await _amended_league(tmp_path, weather=False, at=timedelta(days=90))
 
-    await AmendmentService(db_path).amend_round(
-        1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
-    )
+    await _amend(league, track="Silverstone Circuit", scheduled_at=_moment(league, _AN_HOUR))
 
-    assert await _phase_state(db_path) == (0, 0, 0, 0)
+    assert await _phase_state(league.db_path, AM_3) == (0, 0, 0, 0)
 
 
-async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path):
-    """The gate must not cost a league that has weather on its re-run."""
-    db_path = await _make_db(str(tmp_path))
-    await _seed(db_path)
-    await _set_weather(db_path, True)
-    bot = _amend_bot(db_path, weather_enabled=True)
+async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path, phases):
+    """The gate must not cost a league that has weather on its re-run.
 
-    with patch(
-        "leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()
-    ) as p1, patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ) as p2, patch(
-        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
-    ) as p3:
-        await AmendmentService(db_path).amend_round(
-            1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
-        )
+    Weather on; Am's round 3, 90 days out with no phase performed, has its track amended and is
+    brought forward to an hour from now: each of its three phases is run once."""
+    league = await _amended_league(tmp_path, weather=True, at=timedelta(days=90))
 
-    p1.assert_awaited_once()
-    p2.assert_awaited_once()
-    p3.assert_awaited_once()
+    await _amend(league, track="Silverstone Circuit", scheduled_at=_moment(league, _AN_HOUR))
+
+    assert sorted(phases.ran) == [(1, AM_3), (2, AM_3), (3, AM_3)]
 
 
 #: A round close enough that its first forecast is out, and the delay that withdraws it.
@@ -255,61 +290,135 @@ _NOTICE_DELAYED_TO = timedelta(days=30)
 
 
 async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disabled(tmp_path):
-    """The same rule by a second route: weather on, phases run, weather off, round amended."""
-    db_path = await _make_db(str(tmp_path))
-    now = datetime.now(timezone.utc)
-    await _seed(db_path, scheduled_at=now + _NOTICE_ROUND_AT, phase1_done=1)
-    bot = _amend_bot(db_path, weather_enabled=False)
+    """The same rule by a second route: weather on, phases run, weather off, round amended.
 
-    await AmendmentService(db_path).amend_round(
-        1, _make_actor(), [("scheduled_at", now + _NOTICE_DELAYED_TO)], bot, now=now
+    Am's round 3, three days out with its Phase 1 performed, is moved a month out with weather
+    off: nothing is posted to Am's forecast channel, and the amendment's own line, which is not
+    weather output, is written once."""
+    league = await _amended_league(
+        tmp_path, weather=False, at=_NOTICE_ROUND_AT, phase1_done=1
     )
 
-    bot.output_router.post_forecast.assert_not_awaited()
-    # The amendment's own audit line is not weather output and is posted either way.
-    bot.output_router.post_log.assert_awaited_once()
+    await _amend(league, scheduled_at=_moment(league, _NOTICE_DELAYED_TO))
+
+    assert league.texts(AM_FORECAST) == []
+    assert len(_success_lines(league)) == 1
 
 
-async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enabled(tmp_path):
-    """A league with weather on must still be told which forecasts were thrown away."""
-    db_path = await _make_db(str(tmp_path))
-    now = datetime.now(timezone.utc)
-    await _seed(db_path, scheduled_at=now + _NOTICE_ROUND_AT, phase1_done=1)
-    await _set_weather(db_path, True)
-    bot = _amend_bot(db_path, weather_enabled=True)
+async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enabled(
+    tmp_path, phases
+):
+    """A league with weather on must still be told which forecasts were thrown away: the same
+    amendment with weather on posts one notice to Am's forecast channel."""
+    league = await _amended_league(
+        tmp_path, weather=True, at=_NOTICE_ROUND_AT, phase1_done=1
+    )
 
-    with patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()), patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ), patch("leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()):
-        await AmendmentService(db_path).amend_round(
-            1, _make_actor(), [("scheduled_at", now + _NOTICE_DELAYED_TO)], bot, now=now
-        )
+    await _amend(league, scheduled_at=_moment(league, _NOTICE_DELAYED_TO))
 
-    bot.output_router.post_forecast.assert_awaited_once()
+    assert len(league.texts(AM_FORECAST)) == 1
 
 
-async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_path):
+async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_path, phases):
     """Nothing withdrawn, nothing announced.
 
     A round whose phases would all have run under its new moment loses no forecast, so the
     division is told nothing — the one in its channel is still the one that stands. Before the
     phases were judged one at a time, every amendment announced that the forecasts had been
     thrown away whether or not any had.
+
+    Weather on; Am's round 3, an hour out with its Phase 1 performed, is moved an hour later on
+    the same day: every horizon stays behind us, so nothing is withdrawn.
     """
-    db_path = await _make_db(str(tmp_path))
-    now = datetime.now(timezone.utc)
-    # An hour later on the same day: every horizon stays behind us, so nothing is withdrawn.
-    await _seed(db_path, scheduled_at=now + timedelta(hours=1), phase1_done=1)
-    await _set_weather(db_path, True)
-    bot = _amend_bot(db_path, weather_enabled=True)
+    league = await _amended_league(
+        tmp_path, weather=True, at=timedelta(hours=1), phase1_done=1
+    )
 
-    with patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()), patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ), patch("leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()):
-        await AmendmentService(db_path).amend_round(
-            1, _make_actor(), [("scheduled_at", now + timedelta(hours=2))], bot, now=now
-        )
+    await _amend(league, scheduled_at=_moment(league, timedelta(hours=2)))
 
-    bot.output_router.post_forecast.assert_not_awaited()
+    assert league.texts(AM_FORECAST) == []
     # And the forecast it kept is still marked as performed.
-    assert (await _phase_state(db_path))[0] == 1
+    assert (await _phase_state(league.db_path, AM_3))[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# A phase falling due for a cancelled round does nothing (#439 slice 4b, F2)
+# ---------------------------------------------------------------------------
+#
+# A cancellation removes the round's timed work before it records the round cancelled, but a
+# phase already running, or one fired late, reaches the runner all the same. The runner reads the
+# round again, and does nothing for a round that is cancelled or whose division is.
+
+_RUNNERS = [phase1_service.run_phase1, phase2_service.run_phase2, phase3_service.run_phase3]
+
+
+async def _cancel(db_path: str, what: str) -> None:
+    async with get_connection(db_path) as db:
+        if what == "round":
+            await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = 1")
+        else:
+            await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = 1")
+        await db.commit()
+
+
+@pytest.mark.parametrize("what", ["round", "division"])
+@pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
+async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, phase, what):
+    """Weather is on and round 1 of Div A has had every earlier phase drawn and posted. The
+    round, or Div A, is then cancelled, and the phase falls due: nothing is drawn, recorded or
+    posted, and the earlier phases' record stands as it was."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    await _set_weather(db_path, True)
+    bot = _make_bot(db_path, weather_enabled=True)
+
+    with patch(
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+    ) as posted, patch(
+        "leaguebot.image.services.image_weather_post.attach_forecast",
+        new=AsyncMock(return_value=None),
+    ) as drawn:
+        for earlier in _RUNNERS[: phase - 1]:
+            await earlier(1, bot)
+        before = await _phase_state(db_path)
+        posted.reset_mock()
+        drawn.reset_mock()
+        bot.output_router.post_log.reset_mock()
+        await _cancel(db_path, what)
+
+        await _RUNNERS[phase - 1](1, bot)
+
+    assert await _phase_state(db_path) == before
+    posted.assert_not_awaited()
+    drawn.assert_not_awaited()
+    bot.output_router.post_log.assert_not_awaited()
+    bot.output_router.post_forecast.assert_not_awaited()
+
+
+@pytest.mark.parametrize("what", ["round", "division"])
+async def test_a_mystery_notice_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, what):
+    """Weather is on and round 1 of Div A is a Mystery round. The round, or Div A, is cancelled,
+    and its notice falls due at the phase 1 horizon: nothing is posted and the round's Phase 1 is
+    left undone."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed(db_path)
+    await _set_weather(db_path, True)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET format = 'MYSTERY' WHERE id = 1")
+        await db.commit()
+    bot = _make_bot(db_path, weather_enabled=True)
+    await _cancel(db_path, what)
+
+    with patch(
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+    ) as posted, patch(
+        "leaguebot.image.services.image_weather_post.attach_forecast",
+        new=AsyncMock(return_value=None),
+    ) as drawn:
+        await mystery_notice_service.run_mystery_notice(1, bot)
+
+    assert await _phase_state(db_path) == (0, 0, 0, 0)
+    posted.assert_not_awaited()
+    drawn.assert_not_awaited()
+    bot.output_router.post_log.assert_not_awaited()
+    bot.output_router.post_forecast.assert_not_awaited()

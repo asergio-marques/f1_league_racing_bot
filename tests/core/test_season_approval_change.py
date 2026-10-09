@@ -793,6 +793,50 @@ async def test_a_stuck_arming_leaves_the_season_ongoing_and_arms_once_retried(
     assert league.armed == [("results", _all_rounds())]
 
 
+#: The refusal of a Discard on the season's arming, privately and in the log channel.
+CANNOT_DISCARD_ARMING = (
+    "⛔ This job can't be discarded: without it no round of season 3 would ever run. Fix what "
+    "stopped it and press **Retry**."
+)
+
+
+def _said_to(interaction: Any) -> list[str]:
+    """What the presser was told."""
+    calls = (interaction.response.send_message.await_args_list
+             + interaction.followup.send.await_args_list)
+    return [str(call.args[0] if call.args else call.kwargs.get("content", "")) for call in calls]
+
+
+async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_every_round(
+    tmp_path, monkeypatch,
+):
+    """The arming fails and stops the queue. A league admin's Discard on it is refused, privately
+    and with one line in the log channel, and the queue stays stopped at the arming. Once the
+    arming is mended, Retry arms every round, and the reply names no timed work left unarmed."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    press = await _pressed(league)
+    await _fail_arm(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "arm"
+
+    discarding = await discard_job(league.bot)
+
+    assert CANNOT_DISCARD_ARMING in _said_to(discarding)
+    refusals = [line for line in _log_lines(league)
+                if line.startswith("⛔") and "can't be discarded" in line]
+    assert len(refusals) == 1
+    assert await _stopped_at(league) == "arm"
+    assert league.armed == []
+
+    league.arming_fails = None
+    await retry_job(league.bot)
+
+    assert league.armed == [("results", _all_rounds())]
+    assert await stopped_job(league.db_path) is None
+    assert APPROVED in reply(press)
+    assert "timed work was not armed" not in reply(press)
+
+
 async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
     tmp_path, monkeypatch,
 ):
@@ -1351,13 +1395,11 @@ async def _fail_sheet(league: Any) -> None:
     _refused(league, PRO_CH.attendance)
 
 
-#: Each job after the save, made to fail; the line naming it once discarded.
+#: Each job after the save, made to fail; the line naming it once discarded. The arming is not
+#: among them: it cannot be discarded (#439, slice 4b, amendment A).
 _DISCARDED = {
     "forget_setup": (_fail_forget, "The setup the bot held in memory could not be let go of: "
                      "`/round amend` may refuse this season until the bot restarts."),
-    "arm": (_fail_arm, "⛔ The season's timed work was not armed: no round will open its "
-            "results submission, and no forecast or check-in call will be posted. No command "
-            "arms it again."),
     "grant_roles": (_fail_grant, f"<@{LEWIS}> — their roles could not be granted. Give them "
                     "their division's and team's roles by hand."),
     "post_batch_notice": (_fail_the_notice_post, "The notice that the season's posts were being "
@@ -1421,26 +1463,6 @@ async def test_no_separate_opening_classification_line_is_written(tmp_path, monk
     assert sorted(discarded) == ["opening_sheet", "opening_standings"]
     assert len(_confirmed_lines(league)) == 1
     assert not any("| Opening classification" in line for line in _log_lines(league))
-
-
-async def test_a_discarded_arming_is_named_first_and_says_the_season_has_no_timed_work(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch, results=True)
-    _refused(league, PRO_CH.lineup)
-    press = await _pressed(league)
-    await _fail_arm(league)
-
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "arm"
-    await discard_job(league.bot)
-    assert await _stopped_at(league) == "refresh_lineup"
-    await discard_job(league.bot)
-
-    bullets = _not_done(reply(press))
-    assert bullets[0].startswith("⛔ The season's timed work was not armed:")
-    assert "No command arms it again." in bullets[0]
-    assert any(bullet.startswith("**Pro** — its lineup could not be posted.") for bullet in bullets)
 
 
 async def test_one_line_records_the_approval_after_the_last_job(tmp_path, monkeypatch):
@@ -1518,7 +1540,8 @@ async def _window_opening_soon(league: Any) -> None:
     opens five minutes after "now": the press and the first try find nothing gone by."""
     soon = league.clock.now + timedelta(days=5, minutes=5)
     await league.write(
-        "UPDATE rounds SET scheduled_at = ? WHERE id = ?", soon.isoformat(), round_id(PRO, 1)
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+        soon.replace(tzinfo=None).isoformat(), round_id(PRO, 1),
     )
 
 

@@ -719,10 +719,10 @@ class AttendanceCog(commands.Cog):
 
         **This is the first path that posts a call without first taking one down.** The
         scheduler, the restart recovery and `/test-mode advance` all post a call the round is
-        not expected to have; `repost_rsvp_call` withdraws before it posts. So the standing-call
-        check is load-bearing here in a way it is nowhere else, and it is made twice — once to
-        answer the manager, and again immediately before posting, because the scheduled call
-        falls due at the very moment this command's window opens.
+        not expected to have; `repost_rsvp_call` replaces the call it was handed once the new one
+        has landed. So the standing-call check is load-bearing here in a way it is nowhere else,
+        and it is made twice — once to answer the manager, and again immediately before posting,
+        because the scheduled call falls due at the very moment this command's window opens.
 
         The window left between that second check and the `channel.send` inside
         `run_rsvp_notice` is closed in the shared posting path (#429): `run_rsvp_notice` checks
@@ -757,7 +757,7 @@ class AttendanceCog(commands.Cog):
         db_path = self.bot.db_path
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "SELECT id, status, scheduled_at FROM rounds "
+                "SELECT id, status, scheduled_at, checkin_cleared FROM rounds "
                 "WHERE division_id = ? AND round_number = ?",
                 (div.id, round),
             )
@@ -774,6 +774,17 @@ class AttendanceCog(commands.Cog):
                 interaction,
                 f"⛔ Round {round} of **{div.name}** is cancelled, so it has no check-in "
                 f"to answer.",
+                what=describe(interaction),
+            )
+            return
+        # Its deadline passed with no call standing, a restart gave its call up, or it was
+        # cleared a day after the round: `run_rsvp_notice` would post nothing, and the reply
+        # would send the manager to a log channel that says nothing of it.
+        if round_row["checkin_cleared"]:
+            await refuse(
+                interaction,
+                f"⛔ Round {round} of **{div.name}** has no check-in left to answer: the "
+                f"round's check-in is over. Nothing was posted.",
                 what=describe(interaction),
             )
             return

@@ -104,7 +104,6 @@ ignore_imports =
     # #283: core reaches a module directly where it is to offer a hook the module signs up to
     # (architecture.md, "How modules and core fit together"). Attendance:
     leaguebot.core.cogs.test_mode_cog -> leaguebot.attendance.services.rsvp_service
-    leaguebot.core.services.amendment_service -> leaguebot.attendance.services.rsvp_service
     leaguebot.core.services.cancellation_notice_service -> leaguebot.attendance.services.rsvp_service
     leaguebot.core.services.season_classification_service -> leaguebot.attendance.services.attendance_service
     # #283: image, which core is to ask for its graphics through a hook:
@@ -163,12 +162,6 @@ ignore_imports =
     leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase2_service
     leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase3_service
     leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.utils.message_builder
-    leaguebot.core.services.amendment_service -> leaguebot.weather.services.forecast_cleanup_service
-    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase1_service
-    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase2_service
-    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase3_service
-    leaguebot.core.services.amendment_service -> leaguebot.weather.services.weather_config_service
-    leaguebot.core.services.amendment_service -> leaguebot.weather.utils.message_builder
     leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
     leaguebot.core.services.test_mode_service -> leaguebot.weather.services.forecast_cleanup_service
     # #284: the points amendment in the amendment service is results' code, to move there.

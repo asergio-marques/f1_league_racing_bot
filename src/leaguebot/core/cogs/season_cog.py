@@ -44,6 +44,12 @@ from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, cancellation_notice_service
+from leaguebot.core.services.cancellation_changes import (
+    DIVISION_CANCEL,
+    ROUND_CANCEL,
+    cancellation_holding_amendment,
+)
+from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -73,7 +79,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView, guild_of, is_foreign_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
@@ -590,19 +596,6 @@ class _ReviewPoster:
         )
         self.posted.append(message)
         return message
-
-
-# What a cancellation says when the season it may have finished could not be wound down. The
-# cancellation stands; the season is still in its ongoing stage, and `/season complete` moves it on.
-# The host log keeps the fault itself (`log.exception`); the member is told what is left to do.
-_WIND_DOWN_NOT_DONE_REPLY = (
-    "\n\u26a0\ufe0f The season could not be moved to pending completion afterwards. "
-    "`/season complete` does it."
-)
-_WIND_DOWN_NOT_DONE_LOG = (
-    "\n  not done: the season could not be moved to pending completion; "
-    "`/season complete` does it"
-)
 
 
 class SeasonCog(commands.Cog):
@@ -3224,7 +3217,61 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # **Not while a results submission holds accepted results** (#439, owner 2026-10-08,
+        # amending Constitution XII): a session accepted into an open submission, or one entered
+        # as not held, is data the cascade below would lose, and a round in its review counts. An
+        # open submission with nothing accepted does not hold the cancellation; it is closed
+        # right after the defer. Refused before anything else runs, naming the round.
+        from leaguebot.results.services.result_submission_service import open_submissions
+
+        standing: dict[int, tuple[str, RoundModel]] = {}
+        for division in await self.bot.season_service.get_divisions(season.id):
+            if division.status == "CANCELLED":
+                continue
+            for division_round in await self.bot.season_service.get_division_rounds(division.id):
+                standing[division_round.id] = (division.name, division_round)
+        open_ones = await open_submissions(self.bot.db_path, list(standing))
+        held_submissions = [each for each in open_ones if each.accepted]
+        if held_submissions:
+            # The first by division, then by round number, as the season lists them.
+            order = list(standing)
+            first = min(held_submissions, key=lambda each: order.index(each.round_id))
+            division_name, held_round = standing[first.round_id]
+            await refuse(
+                interaction,
+                f"\u274c Cannot cancel the season — results have already been accepted in the "
+                f"submission channel of round {held_round.round_number} of **{division_name}** "
+                f"(<#{first.channel_id}>), and cancelling would lose them.",
+                what=describe(interaction),
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
+
+        # **The empty open submissions are closed first**, before the timed work goes and before
+        # the history is written, so that the wizard waiting in each refuses any paste from here
+        # on (it asks `closed_by_cancellation`). Each is marked closed and its channel deleted.
+        # A run this command's failure cut short finds them closed already, and the cascade
+        # cancels their rounds when it is run again. A channel Discord will not delete is named
+        # at once, as every failure of this command is.
+        from leaguebot.results.services.result_submission_service import (
+            close_submission_channel,
+        )
+
+        channel_failures: list[cancellation_notice_service.NoticeFailure] = []
+        for each in open_ones:
+            gone = await close_submission_channel(
+                each.channel_id, each.round_id, guild_of(interaction), self.bot.db_path
+            )
+            if not gone:
+                division_name, closed_round = standing[each.round_id]
+                channel_failures.append(
+                    cancellation_notice_service.NoticeFailure(
+                        division_name,
+                        f"results submission channel of round {closed_round.round_number}",
+                        f"could not be deleted; delete <#{each.channel_id}> by hand",
+                    )
+                )
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         # Told: every division still running. A division already cancelled was told when it
@@ -3283,6 +3330,7 @@ class SeasonCog(commands.Cog):
             season_number=season.season_number,
             round_ids=frozenset(to_cancel),
         )
+        report.failures = channel_failures + report.failures
 
         # A round that was raced but whose verdicts are still open is closed as FINAL, and must
         # be **before the driver pass**. The cascade below cannot cancel it — its results are
@@ -4089,61 +4137,18 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if div.status == "CANCELLED":
-            await refuse(
-                interaction,
-                f"\u274c Division **{div.name}** is already cancelled.",
-                what=describe(interaction),
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        rounds = await self.bot.season_service.get_division_rounds(div.id)
-        for rnd in rounds:
-            self.bot.scheduler_service.cancel_round(rnd.id)
-        # The rounds the cascade below calls off, read before it does: those whose results are
-        # not yet in, exactly as `ROUND_CANCELLABLE` has it for the cascade itself.
-        called_off = frozenset(r.id for r in rounds if r.status in ROUND_CANCELLABLE)
-
-        await self.bot.season_service.cancel_division(
-            division_id=div.id,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-        )
-
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        wound_down = True
-        try:
-            await self.bot.season_service.wind_down_ongoing(self.bot)
-        except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
-            log.exception("could not wind the season down")
-            wound_down = False
-
-        # Each enabled module says what the cancellation means for it, in its own channel, and
-        # the calendar is posted again with the division's rounds struck through (#175).
-        report = await cancellation_notice_service.announce_cancellation(
-            self.bot,
-            interaction.guild,
-            [div],
-            scope=cancellation_notice_service.SCOPE_DIVISION,
-            season_number=season.season_number,
-            round_ids=called_off,
-        )
-
-        await interaction.followup.send(
-            f"\u2705 Division **{div.name}** cancelled."
-            + cancellation_notice_service.failure_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
-            f"  division: {div.name}"
-            + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
+        # Whether the division is already cancelled is the change type's check, made now and again
+        # as the cancellation comes up to run. The queue's acknowledgement is this command's
+        # response, so nothing is deferred.
+        await self.bot.change_queue.ask(
+            DIVISION_CANCEL,
+            {
+                "division_id": div.id,
+                "division_name": div.name,
+                "season_number": season.season_number,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -4952,6 +4957,13 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        _held = await cancellation_holding_amendment(self.bot.db_path, rnd)
+        if _held is not None:
+            await refuse(
+                interaction, _held, what=_round_amend_named(rnd.round_number, div.name),
+            )
+            return
+
         # The values that stand are no amendment: nothing is offered, and nothing changes. Asked
         # after the rules, so a round that cannot be amended at all is refused as such, whatever
         # was given (owner, 2026-09-30).
@@ -5137,89 +5149,21 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if rnd.status == RoundStatus.CANCELLED.value:
-            await refuse(
-                interaction,
-                f"\u274c Round {round_number} in **{div.name}** is already cancelled.",
-                what=describe(interaction),
-            )
-            return
-
-        # A round may only be called off before its results are entered. Afterwards the drivers
-        # have reports and appeals to lodge, and cancelling would take that from them.
-        #
-        # This reads `ROUND_CANCELLABLE`, the same set the cascade in season_service reads. Before
-        # the round states were united, this command tested for submitted results while the
-        # cascade tested a status that could not tell "not yet raced" from "raced but unjudged" —
-        # so `/round cancel` refused a round that `/division cancel` would quietly cancel, taking
-        # a raced result with it. One rule, read from one place, is what stops them disagreeing.
-        if rnd.status not in ROUND_CANCELLABLE:
-            await refuse(
-                interaction,
-                f"\u274c Cannot cancel Round {round_number} — its results have already been "
-                "entered, and the drivers' reports and appeals depend on it.",
-                what=describe(interaction),
-            )
-            return
-
-        # A submission channel standing open is a separate matter: the round may still be
-        # cancellable, but the wizard would be writing into it as it went (FR-020).
-        from leaguebot.results.services.result_submission_service import is_submission_open
-        if await is_submission_open(self.bot.db_path, rnd.id):
-            await refuse(
-                interaction,
-                f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
-                "currently open. Close the submission first.",
-                what=describe(interaction),
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        self.bot.scheduler_service.cancel_round(rnd.id)
-
-        await self.bot.season_service.cancel_round(
-            round_id=rnd.id,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-        )
-
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        wound_down = True
-        try:
-            await self.bot.season_service.wind_down_ongoing(self.bot)
-        except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
-            log.exception("could not wind the season down")
-            wound_down = False
-
-        # Each enabled module says what the cancellation means for it, in its own channel, and
-        # the calendar is posted again with the round struck through (#175). Core posts
-        # nothing of its own; what could not be reached is named to the admin below.
-        report = await cancellation_notice_service.announce_cancellation(
-            self.bot,
-            interaction.guild,
-            [div],
-            scope=cancellation_notice_service.SCOPE_ROUND,
-            round_number=round_number,
-            track_name=rnd.track_name,
-            season_number=season.season_number,
-            round_ids=frozenset({rnd.id}),
-        )
-
-        await interaction.followup.send(
-            f"\u2705 Round **{round_number}** in **{div.name}** cancelled."
-            + cancellation_notice_service.failure_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
-            f"  division: {div.name}\n"
-            f"  round: {round_number}"
-            + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures)
-            + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
+        # The rest of the gates (already cancelled, results entered, a submission open) are the
+        # change type's check, made now and again as the cancellation comes up to run. The
+        # queue's acknowledgement is this command's response, so nothing is deferred.
+        await self.bot.change_queue.ask(
+            ROUND_CANCEL,
+            {
+                "round_id": rnd.id,
+                "round_number": round_number,
+                "track_name": rnd.track_name,
+                "division_id": div.id,
+                "division_name": div.name,
+                "season_number": season.season_number,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -6421,27 +6365,11 @@ async def _judge_round_amendment(
     a league without attendance has no check-in to lose.
     """
     from leaguebot.core.services.amendment_rules_service import judge_amendment
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
-    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
-    attendance = None
-    if await bot.module_service.is_attendance_enabled():
-        _acfg = await bot.attendance_service.get_or_create_config()
-        attendance = AttendanceWindows(
-            notice_days=_acfg.rsvp_notice_days,
-            last_notice_hours=_acfg.rsvp_last_notice_hours,
-            deadline_hours=_acfg.rsvp_deadline_hours,
-        )
-
-    # The forecast horizons are read whatever the module's state: a forecast posted while
-    # weather was on is still posted, and whether it survives the amendment is what the track
-    # and format rules turn on.
-    _wcfg = await get_weather_pipeline_config(bot.db_path)
-    weather = WeatherWindows(
-        phase_1_days=_wcfg.phase_1_days,
-        phase_2_days=_wcfg.phase_2_days,
-        phase_3_hours=_wcfg.phase_3_hours,
-    )
+    # The windows are the builder's (`LeagueBot.amendment_windows`), the same reader the change
+    # on the queue judges through; weather's are read whatever the module's state, as a forecast
+    # posted while weather was on is still posted.
+    attendance, weather = await bot.amendment_windows()
 
     return judge_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather
@@ -6634,14 +6562,11 @@ class _ConfirmView(LeagueView):
         # before the fault.
         try:
             await interaction.response.defer(ephemeral=True)
-            scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
-
-            # Judged again, with a fresh moment, rather than trusting the verdict the summary was
-            # built on. This view stands for two minutes and a window can pass inside them: a round
-            # offered while its check-in deadline was still ahead can have it behind by the time the
-            # button is pressed, and applying the amendment then is exactly the silent loss the
-            # rules exist to prevent. The season approval re-evaluates its own gate for the same
-            # reason, a round being able to cross a window while the review stands.
+            # The round is read for its number and its division, and the rest is the change
+            # type's: the amendment is judged as it is asked for, and again as it comes up to
+            # run, since this view stands for two minutes and the queue may hold it longer, and a
+            # window can pass in either. The queue's acknowledgement is this press's answer, and
+            # the outcome updates it.
             _rnd_now = await self._cog.bot.season_service.get_round(self._round_id)
             if _rnd_now is None:
                 await refuse(
@@ -6651,48 +6576,22 @@ class _ConfirmView(LeagueView):
                 )
                 return
             what = _round_amend_named(_rnd_now.round_number)
-
-            _verdict = await _judge_round_amendment(
-                self._cog.bot,
-                _rnd_now,
-                self._amendments,
-                now=datetime.now(timezone.utc),
+            _division = await self._cog.bot.season_service.get_division(_rnd_now.division_id)
+            # One change carrying every field, not one per field. Amending a round's track and
+            # its date used to run the whole amendment twice: two invalidation notices,
+            # two cancels, two re-arms, two re-runs of every overdue phase (#115).
+            await self._cog.bot.change_queue.ask(
+                ROUND_AMEND,
+                {
+                    "round_id": self._round_id,
+                    "round_number": _rnd_now.round_number,
+                    "division_id": _rnd_now.division_id,
+                    "division_name": _division.name if _division is not None else "",
+                    "changes": payload_changes(self._amendments),
+                },
+                interaction=interaction,
+                what=what,
             )
-            if not _verdict.allowed:
-                await refuse(
-                    interaction,
-                    "\u26d4 This round can no longer be amended:\n"
-                    + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
-                    + "\n\n**Nothing has been changed.** Run `/round amend` again to start over.",
-                    what=what,
-                    reason="it can no longer be amended:\n" + "\n".join(_verdict.refusals),
-                )
-                return
-
-            # One call carrying every field, not one call per field. Amending a round's track and
-            # its date used to run the whole amendment twice \u2014 two invalidation notices, two
-            # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
-            await self._cog.bot.amendment_service.amend_round(
-                self._round_id,
-                interaction.user,
-                self._amendments,
-                self._cog.bot,
-            )
-
-            rnd = await self._cog.bot.season_service.get_round(self._round_id)
-            if rnd is not None and scheduled_at_changed:
-                await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
-
-            division_id = rnd.division_id if rnd is not None else None
-            rounds = (
-                await self._cog.bot.season_service.get_division_rounds(division_id)
-                if division_id is not None
-                else []
-            )
-            msg = "\u2705 Round amended successfully."
-            if rounds:
-                msg += "\n\n" + format_round_list(rounds)
-            await interaction.followup.send(msg, ephemeral=True)
         except Exception as exc:  # noqa: BLE001 — reported here, naming the round
             await report_failure(interaction, exc, what=what)
         finally:

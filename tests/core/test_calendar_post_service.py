@@ -141,6 +141,35 @@ def test_textual_calendar_matches_the_posting_it_replaced():
     assert cps.textual_calendar("Elite", rounds) == expected
 
 
+@pytest.fixture
+def summer_time_host(monkeypatch):
+    """The host's clock set to a zone an hour ahead of UTC in summer, as a Pi in Britain runs;
+    restored after the test."""
+    import time
+
+    if not hasattr(time, "tzset"):
+        pytest.skip("setting the host's zone needs time.tzset, which this platform lacks")
+    monkeypatch.setenv("TZ", "Europe/London")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_a_round_stored_as_plain_utc_is_shown_at_its_utc_moment(summer_time_host):
+    """Rounds are stored as plain UTC, with no zone. On a host in British Summer Time, a round
+    at 20:00 UTC on 30 July shows that moment, not one an hour early."""
+    import calendar
+
+    rounds = [NS(round_number=4, track_name="Silverstone Circuit",
+                 scheduled_at=datetime(2026, 7, 30, 20, 0))]
+    epoch = calendar.timegm((2026, 7, 30, 20, 0, 0))
+
+    assert f"Round 4: Silverstone Circuit — <t:{epoch}:F>" in cps.textual_calendar(
+        "Elite", rounds
+    )
+
+
 def test_a_mystery_round_reads_as_mystery_in_the_text():
     rounds = [
         NS(

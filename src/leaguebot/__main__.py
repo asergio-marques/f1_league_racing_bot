@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import discord
@@ -17,7 +18,9 @@ from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, 
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.cancellation_changes import SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_amend_change import AmendHooks
 
 load_dotenv()
 
@@ -91,6 +94,7 @@ async def read_approval_windows(
     `bot.approval_windows`, which is this, and core imports neither module (#439).
     """
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_amend_change import AmendHooks
 
     attendance = None
     if await bot.module_service.is_attendance_enabled():
@@ -115,6 +119,39 @@ async def read_approval_windows(
     return attendance, weather
 
 
+async def read_amendment_windows(
+    bot: LeagueBot,
+) -> "tuple[AttendanceWindows | None, WeatherWindows]":
+    """The lead times a round amendment is judged against, as `(attendance, weather)`.
+
+    Attendance's is None where that module is off: a league without attendance has no check-in
+    to lose. Weather's is read whatever the module's state, because a forecast posted while
+    weather was on is still posted, and whether it survives the amendment is what the track and
+    format rules turn on. `/round amend` offers and judges through `bot.amendment_windows`, which
+    is this, and so does its change on the queue, so the two cannot read different windows (#439).
+    """
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.core.services.round_amend_change import AmendHooks
+    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
+
+    attendance = None
+    if await bot.module_service.is_attendance_enabled():
+        att = await bot.attendance_service.get_or_create_config()
+        attendance = AttendanceWindows(
+            notice_days=att.rsvp_notice_days,
+            last_notice_hours=att.rsvp_last_notice_hours,
+            deadline_hours=att.rsvp_deadline_hours,
+        )
+
+    wx = await get_weather_pipeline_config(bot.db_path)
+    weather = WeatherWindows(
+        phase_1_days=wx.phase_1_days,
+        phase_2_days=wx.phase_2_days,
+        phase_3_hours=wx.phase_3_hours,
+    )
+    return attendance, weather
+
+
 def _forget_setup(bot: LeagueBot) -> None:
     """Let go of the setup the season cog holds in memory, as `clear_in_memory_state` does."""
     from leaguebot.core.cogs.season_cog import SeasonCog
@@ -124,6 +161,83 @@ def _forget_setup(bot: LeagueBot) -> None:
         cog.clear_pending()
 
 
+def _submission_hooks() -> "SubmissionHooks":
+    """What a cancellation needs of results' submissions, handed it here so that core imports no
+    module."""
+    from leaguebot.core.services.cancellation_changes import SubmissionHooks
+    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
+
+    return SubmissionHooks(
+        open_submissions=result_submission_service.open_submissions,
+        open_submissions_on=result_submission_service.open_submissions_on,
+        close_submissions_on=result_submission_service.close_submissions_on,
+        delete_step=posting_steps()[DELETE_CHANNEL],
+    )
+
+
+def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
+    """What `/round amend`'s change needs of weather and attendance, handed it here so that core
+    imports neither. Each is looked up as it is called, so that nothing is bound before it is
+    needed."""
+    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.core.services.round_amend_change import AmendHooks
+    from leaguebot.weather.services import forecast_cleanup_service, phase_withdrawal
+    from leaguebot.weather.utils.message_builder import format_round_list, invalidation_message
+
+    async def windows() -> "tuple[AttendanceWindows | None, WeatherWindows]":
+        return await bot.amendment_windows()
+
+    async def delete_forecast(bot_: Any, round_id: int, division_id: int, phase: int) -> None:
+        await forecast_cleanup_service.delete_forecast_message(
+            round_id, division_id, phase, bot_, raise_on_failure=True
+        )
+
+    async def run_phase(phase: int, round_id: int, bot_: Any) -> None:
+        from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
+
+        runner = {
+            1: phase1_service.run_phase1,
+            2: phase2_service.run_phase2,
+            3: phase3_service.run_phase3,
+        }[phase]
+        await runner(round_id, bot_)
+
+    async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
+        await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
+
+    async def post_call(round_id: int, bot_: Any) -> None:
+        await rsvp_service.run_rsvp_notice(round_id, bot_)
+
+    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> bool:
+        return await _give_up_missed_check_in_call(bot_, row)
+
+    async def run_deadline(round_id: int, bot_: Any) -> None:
+        await rsvp_service.run_rsvp_deadline(round_id, bot_)
+
+    async def clean_up_forecast(round_id: int, bot_: Any) -> None:
+        await forecast_cleanup_service.run_post_race_cleanup(round_id, bot_)
+
+    async def clean_up_check_in(round_id: int, bot_: Any) -> None:
+        await rsvp_service.run_rsvp_cleanup(round_id, bot_)
+
+    return AmendHooks(
+        windows=windows,
+        withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
+        delete_forecast=delete_forecast,
+        invalidation_text=invalidation_message,
+        run_phase=run_phase,
+        reopen_check_in_on=rsvp_service.reopen_check_in_on,
+        repost_call=repost_call,
+        post_call=post_call,
+        give_up_call=give_up_call,
+        run_deadline=run_deadline,
+        clean_up_forecast=clean_up_forecast,
+        clean_up_check_in=clean_up_check_in,
+        round_list=format_round_list,
+    )
+
+
 def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
@@ -131,7 +245,12 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.core.services.cancellation_changes import (
+        division_cancel_change,
+        round_cancel_change,
+    )
     from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
         season_approval_tell_change,
@@ -199,13 +318,41 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    bot.change_queue.register(
+        round_amend_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            hooks=_amend_hooks(bot),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(
+        round_cancel_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            submissions=_submission_hooks(),
+            amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(
+        division_cancel_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            submissions=_submission_hooks(),
+            amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
+            now=lambda: bot.change_queue.now(),
+        )
+    )
 
 
 async def main() -> None:
     from leaguebot.core.db.database import run_migrations
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.season_service import SeasonService
-    from leaguebot.core.services.amendment_service import AmendmentService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.output_router import OutputRouter
 
@@ -248,7 +395,6 @@ async def main() -> None:
 
     bot.config_service = ConfigService(DB_PATH)
     bot.season_service = SeasonService(DB_PATH)
-    bot.amendment_service = AmendmentService(DB_PATH)
     bot.scheduler_service = SchedulerService(
         DB_PATH, SCHEDULER_DB_PATH or None
     )
@@ -290,6 +436,7 @@ async def main() -> None:
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     bot.approval_windows = lambda: read_approval_windows(bot)
+    bot.amendment_windows = lambda: read_amendment_windows(bot)
 
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
@@ -616,7 +763,7 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
     5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
-    config — the confirmation of placements and ``amend_round`` — and a restart judging by the defaults made the same league see one set of
+    config — the confirmation of placements and a round amendment's judgement — and a restart judging by the defaults made the same league see one set of
     timings on an enable and another on a restart: a longer phase 1 was never published at all,
     a shorter one was published days early.
 
@@ -726,11 +873,13 @@ async def _recover_missed_check_in_calls(
     from datetime import timedelta, timezone
 
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.round import ROUND_CANCELLABLE
     from leaguebot.core.models.season import ONGOING_STAGES
     from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
 
     moment = now or datetime.now(timezone.utc)
     ongoing = [stage.value for stage in ONGOING_STAGES]
+    to_run = sorted(ROUND_CANCELLABLE)
     try:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
@@ -745,7 +894,7 @@ async def _recover_missed_check_in_calls(
                   CROSS JOIN attendance_config ac
                  WHERE ac.module_enabled = 1
                    AND s.stage IN ({",".join("?" for _ in ongoing)})
-                   AND r.status != 'CANCELLED'
+                   AND r.status IN ({",".join("?" for _ in to_run)})
                    AND d.status != 'CANCELLED'
                    AND r.checkin_cleared = 0
                    AND NOT EXISTS (
@@ -754,7 +903,7 @@ async def _recover_missed_check_in_calls(
                    AND NOT EXISTS (SELECT 1 FROM server_configs WHERE test_mode_active = 1)
                  ORDER BY r.scheduled_at, r.id
                 """,
-                ongoing,
+                [*ongoing, *to_run],
             )
             rows = await cursor.fetchall()
     except Exception:
@@ -776,7 +925,12 @@ async def _recover_missed_check_in_calls(
         round_id: int = row["round_id"]
         division_id: int = row["division_id"]
         if moment >= deadline_at:
-            await _give_up_missed_check_in_call(bot, row)
+            try:
+                await _give_up_missed_check_in_call(bot, row)
+            except Exception:
+                log.exception(
+                    "_recover_missed_check_in_calls: could not give up round %d's call", round_id
+                )
             continue
 
         log.info("_recover_missed_check_in_calls: posting round %d's call late", round_id)
@@ -798,46 +952,81 @@ async def _recover_missed_check_in_calls(
             )
 
 
-async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
-    """Report a round whose call and deadline both went by unposted, and close its check-in.
+async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> bool:
+    """Report a round whose call and deadline both went by unposted, and close its check-in;
+    say whether it did, False where the round was left as it stood.
 
     Decided 2026-09-24 (#429): no call is posted once the deadline has passed. A call nobody
     could answer would open the round's attendance rows only to record every driver as not
     having answered. The log channel is told instead, with a note in place of the usual advice,
     since `/attendance post-check-in` refuses a round past its deadline too.
 
-    The round is then marked ``checkin_cleared``: no call is owed it any more, which is what the
+    The round is marked ``checkin_cleared``: no call is owed it any more, which is what the
     mark says, and it is what keeps the next start from reporting it again. An amendment that
     reopens the round's check-in clears the mark, as it does after a cleanup.
+
+    Any check-in answers left for the round, and the placements made on them, are deleted in the
+    same save (`clear_check_in_answers_on`), whoever gives the call up, so that the line below
+    is always true (owner, 2026-10-09: "Yes, clear them"). No call stands for a round given up,
+    but answers can: an amendment that took its call down and stopped, or the bot restarted,
+    before posting it again leaves the answers to the old call.
+
+    **It gives up, and clears, only a round whose results are not in** (its status in
+    `ROUND_CANCELLABLE`) **and whose check-in is not over** (``checkin_cleared = 0``), judged in
+    the save itself, whichever caller asks. A round further on has had its attendance charged
+    and its pardons granted, and a check-in over is settled; clearing either would erase a
+    record a league has acted on. Nothing is written and nothing told for such a round
+    (`test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over`).
+
+    **It raises** where the mark cannot be saved, and the mark is saved before the log channel
+    is told, so that a give-up tried again tells it once. The start-up recovery catches the
+    fault, logs it on the host and goes on to the next round; an amendment's catch-up on the
+    change queue (`_amend_hooks`) lets it stop the queue, a fault of the bot's own, so that
+    Retry gives the call up in earnest rather than reporting a give-up never saved
+    (`test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried`).
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.attendance.services.rsvp_service import _report_call_failure
+    from leaguebot.attendance.services.rsvp_service import (
+        _report_call_failure,
+        clear_check_in_answers_on,
+    )
+
+    from leaguebot.core.models.round import ROUND_CANCELLABLE
 
     round_id: int = row["round_id"]
+    to_run = sorted(ROUND_CANCELLABLE)
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
+            f"AND status IN ({', '.join('?' for _ in to_run)})",
+            (round_id, *to_run),
+        )
+        if cursor.rowcount != 1:
+            log.info(
+                "_give_up_missed_check_in_call: round %d's results are in or its check-in is "
+                "over — nothing given up",
+                round_id,
+            )
+            return False
+        await clear_check_in_answers_on(db, round_id)
+        await db.commit()
     log.info(
-        "_recover_missed_check_in_calls: round %d's deadline has passed — call not posted",
+        "_give_up_missed_check_in_call: round %d's deadline has passed — call not posted",
         round_id,
     )
-    try:
-        await _report_call_failure(
-            bot,
-            division_id=row["division_id"],
-            division_name=row["division_name"],
-            season_number=row["season_number"],
-            round_number=row["round_number"],
-            reason="the round's check-in deadline passed before its call could be posted",
-            note=(
-                "a call posted now could not be answered, so none was posted. No attendance "
-                "rows were opened, and this round will count nothing against anyone."
-            ),
-        )
-        async with get_connection(bot.db_path) as db:
-            await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
-            await db.commit()
-    except Exception:
-        log.exception(
-            "_recover_missed_check_in_calls: could not give up round %d's call", round_id
-        )
+    await _report_call_failure(
+        bot,
+        division_id=row["division_id"],
+        division_name=row["division_name"],
+        season_number=row["season_number"],
+        round_number=row["round_number"],
+        reason="the round's check-in deadline passed before its call could be posted",
+        note=(
+            "a call posted now could not be answered, so none was posted. No attendance "
+            "rows were opened, and this round will count nothing against anyone."
+        ),
+    )
+    return True
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:

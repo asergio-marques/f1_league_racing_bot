@@ -28,10 +28,13 @@ delete but kept its row is a round that can never be reposted.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import discord
 import pytest
 
@@ -425,7 +428,10 @@ async def test_a_repost_posts_the_call_again(tmp_path, notice):
 
     await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
 
-    notice.assert_awaited_once_with(ROUND_ID, bot)
+    notice.assert_awaited_once_with(
+        ROUND_ID, bot,
+        replacing=await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID),
+    )
 
 
 async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_path, notice):
@@ -436,6 +442,249 @@ async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_pat
     await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
 
     notice.assert_awaited_once()
+
+
+def _refusing_channel() -> MagicMock:
+    """A channel whose messages delete, and which refuses every new post."""
+    channel = _make_channel()
+    channel.send = AsyncMock(
+        side_effect=discord.HTTPException(MagicMock(status=403), "Missing Permissions")
+    )
+    return channel
+
+
+#: A channel the earlier call stands in, other than the one the division is set to now.
+EARLIER_CHANNEL_ID = 770078
+
+
+#: What the earlier call's message answers when it is looked up after a refused post: an error
+#: that is not Discord saying it is gone, so the call is not read as gone (`_call_vanished`).
+PROBE_FAULTS = {
+    "Discord refuses the post, the call's lookup forbidden":
+        discord.Forbidden(MagicMock(status=403), "missing access"),
+    "Discord refuses the post, the call's lookup failing with a 503":
+        discord.HTTPException(MagicMock(status=503), "service unavailable"),
+    "Discord refuses the post, the call's lookup timing out": asyncio.TimeoutError(),
+    "Discord refuses the post, the connection dropped on the call's lookup":
+        aiohttp.ClientConnectionError("connection reset"),
+    "Discord refuses the post, the network failing on the call's lookup":
+        OSError("network unreachable"),
+}
+
+#: The lookup faults that are not Discord's own but the connection's.
+TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
+
+
+@pytest.mark.parametrize("fault", [
+    "Discord refuses the post",
+    "the channel is gone",
+    "the channel set is gone, the earlier call's stands",
+    *list(PROBE_FAULTS)[:2],
+    *TRANSPORT_FAULTS,
+])
+async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
+    """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
+    it again fails. (Discord refuses the post; the channel set is gone, the earlier call's
+    stands, the division's channel having been changed since) The earlier call stands, its
+    record and messages untouched, its answers kept, and the log channel says the earlier call
+    still stands and its answers count, never that no attendance rows were opened (owner,
+    2026-10-09: "Fold it in"). (the channel is gone, the earlier call's with it) No call can be
+    seen: its record is dropped, its answers kept, and the log channel says no call can be seen
+    and to post it by hand once the channel is set (owner, 2026-10-09: "Drop the record, say
+    so"). (the call's lookup forbidden, or failing) Discord does not say the earlier call is gone,
+    so it is taken to stand, as when the post alone is refused."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _refusing_channel() if fault.startswith("Discord refuses the post") else None
+    if fault in PROBE_FAULTS and channel is not None:
+        channel.fetch_message = AsyncMock(side_effect=PROBE_FAULTS[fault])
+    bot = _make_bot(db_path, channel)
+    if fault == "the channel set is gone, the earlier call's stands":
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET channel_id = ? WHERE round_id = ?",
+                (str(EARLIER_CHANNEL_ID), ROUND_ID),
+            )
+            await db.commit()
+        channel = _make_channel()
+        bot.get_channel = MagicMock(
+            side_effect=lambda cid: channel if int(cid) == EARLIER_CHANNEL_ID else None
+        )
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "NOT POSTED" in line
+    assert "no attendance rows were opened" not in line
+    if fault == "the channel is gone":
+        assert stored is None
+        assert "no call for this round can be seen" in line
+        assert "Once the cause is cleared (or the check-in channel is set)" in line
+        assert "the answers given to it are kept, and count" in line
+        assert "`/attendance post-check-in division: Division 1 round: 1`" in line
+        assert "the earlier call still stands" not in line
+        return
+    assert stored is not None and stored.message_id == CALL_MSG_ID
+    assert stored.last_notice_msg_id == LAST_NOTICE_MSG_ID
+    if channel is not None:
+        assert channel.deleted == []
+    assert "the earlier call still stands, and the answers given to it count" in line
+
+
+async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
+    """Round 1's call stands (900001, its last notice 900002), answered by both drivers. The call
+    is posted again and lands, as message 990099: only then does the earlier call come down, its
+    messages deleted and its record replaced by the new call's, the answers carried over. The new
+    call is recorded before the first of the earlier call's messages is deleted, so that a press
+    on the new call meanwhile finds it, and a stop between them cannot leave it untracked."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _make_channel()
+    channel.send.return_value.channel.id = RSVP_CHANNEL_ID
+    bot = _make_bot(db_path, channel)
+    recorded_at_delete: list[str | None] = []
+    fetch = channel.fetch_message.side_effect
+
+    async def _fetch(message_id: int) -> MagicMock:
+        message = await fetch(message_id)
+        deleting = message.delete.side_effect
+
+        async def _delete() -> None:
+            stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+            recorded_at_delete.append(stored.message_id if stored else None)
+            deleting()
+
+        message.delete = AsyncMock(side_effect=_delete)
+        return message
+
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+
+    channel.send.assert_awaited_once()
+    assert sorted(channel.deleted) == [int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)]
+    assert recorded_at_delete == ["990099", "990099"]
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == "990099"
+    assert stored.last_notice_msg_id is None
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
+
+
+async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the_earlier_call(
+    tmp_path,
+):
+    """Round 1's call stands (900001) with no last notice yet. While its repost is being sent,
+    the last notice's timer, which takes no lock, posts and records its message (900005) on the
+    earlier call. Once the repost lands, that last notice comes down with the earlier call, read
+    as it stands just before the new call takes its record."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    channel = _make_channel()
+    sent = channel.send.return_value
+    sent.channel.id = RSVP_CHANNEL_ID
+    bot = _make_bot(db_path, channel)
+
+    async def _send(*_args: Any, **_kwargs: Any) -> MagicMock:
+        await bot.attendance_service.update_embed_last_notice_msg(ROUND_ID, DIVISION_ID, "900005")
+        return sent
+
+    channel.send = AsyncMock(side_effect=_send)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+
+    assert sorted(channel.deleted) == [int(CALL_MSG_ID), 900005]
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == "990099"
+    assert stored.last_notice_msg_id is None
+
+
+@pytest.mark.parametrize("fault", [
+    pytest.param(OSError("network unreachable"), id="the network failing"),
+    pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),
+    pytest.param(asyncio.TimeoutError(), id="the send timing out"),
+])
+async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_posted(
+    tmp_path, fault,
+):
+    """No call stands for round 1 and none is kept. Its timer's post fails on the connection
+    rather than on Discord: as a refusal is, it is reported in one NOT POSTED line and nothing is
+    raised, no call recorded. A send that timed out may have reached Discord all the same, and
+    the line says to check the channel (owner, 2026-10-09: "Fold it in")."""
+    db_path = await _make_db(tmp_path)
+    channel = _make_channel()
+    channel.send = AsyncMock(side_effect=fault)
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    assert await _embed_rows(db_path) == 0
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert line.startswith("ATTENDANCE | check-in call | NOT POSTED")
+    assert "no attendance rows were opened for this round" in line
+    timed_out = isinstance(fault, TimeoutError)
+    assert ("may have reached Discord all the same; check the channel" in line) == timed_out
+    # A bare timeout carries no message: the reason names the fault's kind rather than nothing.
+    assert "could not be posted: ;" not in line
+    if timed_out:
+        assert "could not be posted: TimeoutError" in line
+        assert "if it is there, delete it before posting the call again" in line
+
+
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, fault):
+    """No call stands for round 1, but answers to an earlier call are kept for it (both drivers
+    answered it before it was taken down). Its timer's post fails, Discord refusing it or the
+    check-in channel gone: the log channel says the answers are kept and count, and names
+    `/attendance post-check-in` to post the call by hand, never that no attendance rows were
+    opened (owner, 2026-10-09: "Make the line tell the truth")."""
+    db_path = await _make_db(tmp_path)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    assert await _embed_rows(db_path) == 0
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "answers given to an earlier call of this round are kept, and count" in line
+    assert "`/attendance post-check-in division: Division 1 round: 1`" in line
+    assert "no attendance rows were opened" not in line
+
+
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(tmp_path, fault):
+    """No call and no answers for round 1: a post that fails says, as it always has, that no
+    attendance rows were opened and the round will count nothing against anyone until the call
+    is posted with `/attendance post-check-in`."""
+    db_path = await _make_db(tmp_path)
+    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "no attendance rows were opened for this round" in line
+    assert "`/attendance post-check-in division: Division 1 round: 1`" in line
 
 
 # ---------------------------------------------------------------------------
@@ -628,3 +877,217 @@ async def test_a_failed_announcement_records_no_message(tmp_path, caplog):
             (ROUND_ID,),
         )
         assert (await cursor.fetchone())["distribution_msg_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# withdraw_rsvp_call, raising (#439, slice 4b)
+#
+# A round's or a division's cancellation takes each call down as a job of the change queue, which
+# stops on a failure until it is retried. So the raising form keeps the row where any message is
+# left standing, for the next try to read, where the quiet form drops it.
+# ---------------------------------------------------------------------------
+
+def _channel_failing_on(failures: dict[str, Exception]) -> MagicMock:
+    """A channel deleting every message but those in *failures*, which raise their exception."""
+    channel = _make_channel()
+
+    async def _fetch(message_id: int) -> MagicMock:
+        message = MagicMock()
+        failure = failures.get(str(message_id))
+
+        async def _delete() -> None:
+            if failure is not None:
+                raise failure
+            channel.deleted.append(message_id)
+
+        message.delete = _delete
+        return message
+
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    return channel
+
+
+async def test_a_raising_withdrawal_keeps_the_record_and_names_the_messages_left(tmp_path):
+    """The call (900001), its last notice (900002) and its distribution (900003) stand, and
+    Discord refuses to delete the last notice. Withdrawing in the raising form deletes the other
+    two, then raises StepFailedOnDiscord naming 900002 alone, and keeps the call's row."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    channel = _channel_failing_on(
+        {LAST_NOTICE_MSG_ID: discord.Forbidden(MagicMock(status=403), "missing permissions")}
+    )
+    bot = _make_bot(db_path, channel)
+
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
+
+    assert caught.value.result == {"undeleted": [LAST_NOTICE_MSG_ID]}
+    assert sorted(str(m) for m in channel.deleted) == [CALL_MSG_ID, DISTRIBUTION_MSG_ID]
+    assert await _embed_rows(db_path) == 1
+
+
+async def test_a_raising_withdrawal_counts_a_message_already_gone_as_gone(tmp_path):
+    """The call (900001) was deleted by hand; its last notice and distribution stand. Withdrawing
+    in the raising form raises nothing, answers True and drops the call's row."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    channel = _channel_failing_on(
+        {CALL_MSG_ID: discord.NotFound(MagicMock(status=404), "unknown message")}
+    )
+    bot = _make_bot(db_path, channel)
+
+    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True) is True
+    assert await _embed_rows(db_path) == 0
+
+
+async def test_a_raising_withdrawal_whose_channel_is_gone_keeps_the_record(tmp_path):
+    """The check-in channel holding the call, its last notice and its distribution has been
+    deleted. Withdrawing in the raising form raises StepFailedOnDiscord naming all three, and
+    keeps the call's row for the next try."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    bot = _make_bot(db_path, channel=None)
+
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
+
+    assert sorted(caught.value.result["undeleted"]) == sorted(
+        [CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID]
+    )
+    assert await _embed_rows(db_path) == 1
+
+
+# ---------------------------------------------------------------------------
+# reopen_check_in_on (#439, slice 4b, amendment A)
+#
+# `/round amend` on the change queue writes everything an amendment changes in one save. Where it
+# reopens a round's check-in, what attendance resets — the round's cleared mark and the reserves'
+# distribution — is attendance's own, so attendance writes it, on the connection the save hands
+# it, committing nothing.
+# ---------------------------------------------------------------------------
+
+#: A second reserve, put on standby by the distribution.
+STANDBY_PROFILE = 203
+
+
+async def _distributed(db) -> dict[int, tuple]:
+    cursor = await db.execute(
+        "SELECT driver_profile_id, rsvp_status, assigned_team_id, is_standby "
+        "FROM driver_round_attendance WHERE round_id = ?",
+        (ROUND_ID,),
+    )
+    return {r["driver_profile_id"]: tuple(r)[1:] for r in await cursor.fetchall()}
+
+
+async def _cleared(db) -> int:
+    cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = ?", (ROUND_ID,))
+    return (await cursor.fetchone())["checkin_cleared"]
+
+
+async def test_reopening_a_check_in_on_the_connection_handed_commits_nothing(tmp_path):
+    """Round 1's check-in has been cleared and its reserves distributed: Stand In placed in
+    Alpha, and a second reserve on standby, both having accepted. Reopening the check-in on a
+    connection marks the round not cleared and undoes the distribution, keeping both answers.
+    Nothing of it outlasts a rollback."""
+    from leaguebot.attendance.services.rsvp_service import reopen_check_in_on
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (ROUND_ID,))
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ACTIVE', 1, 'Second Reserve')",
+            (STANDBY_PROFILE, str(STANDBY_PROFILE)),
+        )
+        for profile_id, team_id, standby in ((RESERVE_PROFILE, 10, 0), (STANDBY_PROFILE, None, 1)):
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status, assigned_team_id, is_standby) VALUES (?, ?, ?, 'ACCEPTED', ?, ?)",
+                (ROUND_ID, DIVISION_ID, profile_id, team_id, standby),
+            )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        await reopen_check_in_on(db, ROUND_ID)
+        assert await _cleared(db) == 0
+        assert await _distributed(db) == {
+            RESERVE_PROFILE: ("ACCEPTED", None, 0),
+            STANDBY_PROFILE: ("ACCEPTED", None, 0),
+        }
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _cleared(db) == 1
+        assert await _distributed(db) == {
+            RESERVE_PROFILE: ("ACCEPTED", 10, 0),
+            STANDBY_PROFILE: ("ACCEPTED", None, 1),
+        }
+
+
+async def test_clearing_a_round_s_answers_on_the_connection_handed_commits_nothing(tmp_path):
+    """Round 1's reserve placed in Alpha, a second reserve on standby, both having accepted.
+    Clearing the round's check-in answers on a connection deletes both answers, their placements
+    with them. Nothing of it outlasts a rollback."""
+    from leaguebot.attendance.services.rsvp_service import clear_check_in_answers_on
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ACTIVE', 1, 'Second Reserve')",
+            (STANDBY_PROFILE, str(STANDBY_PROFILE)),
+        )
+        for profile_id, team_id, standby in ((RESERVE_PROFILE, 10, 0), (STANDBY_PROFILE, None, 1)):
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status, assigned_team_id, is_standby) VALUES (?, ?, ?, 'ACCEPTED', ?, ?)",
+                (ROUND_ID, DIVISION_ID, profile_id, team_id, standby),
+            )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        await clear_check_in_answers_on(db, ROUND_ID)
+        assert await _distributed(db) == {}
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _distributed(db) == {
+            RESERVE_PROFILE: ("ACCEPTED", 10, 0),
+            STANDBY_PROFILE: ("ACCEPTED", None, 1),
+        }
+
+
+async def test_a_quiet_withdrawal_names_in_the_log_the_messages_discord_refused_to_delete(
+    tmp_path,
+):
+    """The call (900001) and its last notice (900002) stand, and Discord refuses to delete the
+    last notice. Taken down in the quiet form, as a repost and the clean-up a day after the round
+    take it down, the call's record goes and the call is deleted, and the log channel names the
+    last notice left standing, for a league admin to delete by hand (owner, 2026-10-09: "Fold it
+    in")."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    channel = _channel_failing_on({
+        LAST_NOTICE_MSG_ID: discord.Forbidden(MagicMock(status=403), "missing permissions"),
+    })
+    bot = _make_bot(db_path, channel)
+
+    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is True
+
+    assert await _embed_rows(db_path) == 0
+    assert channel.deleted == [int(CALL_MSG_ID)]
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert "NOT DELETED" in line
+    assert "division: Division 1" in line and "round: 1" in line
+    assert LAST_NOTICE_MSG_ID in line and CALL_MSG_ID not in line
+    assert "delete" in line and "by hand" in line

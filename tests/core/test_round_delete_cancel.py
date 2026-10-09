@@ -5,26 +5,16 @@ alike and are not: **delete** removes a round that has never existed to a driver
 and renumbers the rest; **cancel** calls off a round the league is living through, and is
 irreversible.
 
-**A round may only be called off before its results are entered**, and the rule is read from one
-place. `ROUND_CANCELLABLE` is the same frozenset the cascade in `season_service` reads — before
-the round states were united, this command tested for submitted results while the cascade tested
-a status that could not tell "not yet raced" from "raced but unjudged", so `/round cancel`
-refused a round that `/division cancel` would quietly cancel, taking a raced result with it.
-`test_every_cancellable_state_is_the_shared_set` holds the two together by reading the set
-itself, so a state added to one and not the other fails here.
-
-**An open submission channel is a separate refusal.** The round may still be cancellable, but
-the wizard would be writing into it as it went (FR-020) — so the two checks are distinct and
-both are tested, with different messages, because a manager told the wrong one would go and
-close the wrong thing.
-
 **Delete renumbers; cancel does not.** A deleted round never happened, so the rounds after it
 move up. A cancelled round did happen — it is on the calendar, the drivers planned around it,
 and renumbering would rewrite the season's history around an event everybody remembers.
 
-**The cancellation is announced to the division.** Drivers have arranged their week around the
-round, and the forecast channel is where they would otherwise be waiting for a forecast that
-will never come.
+**`/round cancel` is carried out on the change queue (#439).** The command keeps only the gates it
+needs to find the round — the word `CONFIRM`, a season being raced and not archived, the division
+and the round by name — and then asks the queue for the change, which is its response. Every gate
+after the lookups (already cancelled, results entered, a submission open) is the change type's
+check, made when the change is asked for and again when it runs; those, and what the change does,
+are tested in `test_round_cancel_change.py`.
 """
 from __future__ import annotations
 
@@ -35,8 +25,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
-from leaguebot.core.services.cancellation_notice_service import CancellationReport
-from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
+from leaguebot.core.db.database import run_migrations
+from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.season_service import SeasonImmutableError
 from tests.support.undecorate import undecorate
 from leaguebot.core.models.season import SeasonStage
@@ -110,6 +100,9 @@ def _make_cog(
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
 
     bot.scheduler_service = MagicMock()
+    bot.change_queue = MagicMock()
+    # The change's id, as the queue gives it once the change is asked for.
+    bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -162,35 +155,36 @@ def _setup_id(cog):
     )
 
 
-def _submission(open_: bool = False):
-    return patch(
-        "leaguebot.results.services.result_submission_service.is_submission_open",
-        new=AsyncMock(return_value=open_),
-    )
-
-
 async def _delete(cog, interaction, division: str = "Division 1", number: int = 5):
     with _setup_id(cog):
         await undecorate(SeasonCog.round_delete)(cog, interaction, division, number)
 
 
 async def _cancel(
-    cog, interaction, division: str = "Division 1", number: int = 5,
-    confirm: str = "CONFIRM", submission_open: bool = False, failures=(),
+    cog, interaction, division: str = "Division 1", number: int = 5, confirm: str = "CONFIRM",
 ):
-    """Run the command with the modules' announcements stubbed, returning the stub.
+    """Run the command. What the change does once asked is the change queue's, and is tested in
+    `test_round_cancel_change.py`; here the command is held to asking it, once, for the right
+    round."""
+    await undecorate(SeasonCog.round_cancel)(cog, interaction, division, number, confirm)
 
-    What each module says is `cancellation_notice_service`'s and is tested there; here the
-    command is held only to calling it, once, for the right round (#175).
-    """
-    announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
-    with _submission(submission_open), patch(
-        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
-    ):
-        await undecorate(SeasonCog.round_cancel)(
-            cog, interaction, division, number, confirm
-        )
-    return announce
+
+async def _migrated(tmp_path) -> str:
+    """A league database built from the migrations, holding nothing: the bot's database, for a
+    command that may read it."""
+    db_path = str(tmp_path / "league.db")
+    await run_migrations(db_path)
+    return db_path
+
+
+def _asked(cog) -> tuple[str, dict]:
+    """The kind and the payload of the one change the command asked the queue for."""
+    ask = cog.bot.change_queue.ask
+    ask.assert_awaited_once()
+    call = ask.await_args
+    kind = call.args[0] if call.args else call.kwargs["kind"]
+    payload = call.args[1] if len(call.args) > 1 else call.kwargs["payload"]
+    return kind, payload
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +316,7 @@ async def test_cancelling_needs_the_exact_confirmation_word(word):
     await _cancel(cog, interaction, confirm=word)
 
     assert "Type exactly" in _replied(interaction)
-    cog.bot.season_service.cancel_round.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_cancelling_without_an_active_season_is_refused():
@@ -333,6 +327,7 @@ async def test_cancelling_without_an_active_season_is_refused():
     await _cancel(cog, interaction)
 
     assert "only while the season is ongoing" in _replied(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_cancelling_in_an_archived_season_is_refused():
@@ -342,66 +337,7 @@ async def test_cancelling_in_an_archived_season_is_refused():
     await _cancel(cog, interaction)
 
     assert "archived" in _replied(interaction)
-
-
-async def test_cancelling_a_round_already_cancelled_says_so():
-    """Distinct from refusing it — nothing is wrong, it is simply already done."""
-    cog = _make_cog(rounds=[_round(status=RoundStatus.CANCELLED.value)])
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "already cancelled" in _replied(interaction)
-    cog.bot.season_service.cancel_round.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# /round cancel — the rule about results
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("status", sorted(ROUND_CANCELLABLE))
-async def test_every_cancellable_state_is_the_shared_set(status):
-    """Read from `ROUND_CANCELLABLE` itself, which is what the cascade in `season_service`
-    reads too. A state added to one and not the other fails here — which is the bug that
-    let `/division cancel` quietly cancel a round `/round cancel` refused."""
-    cog = _make_cog(rounds=[_round(status=status)])
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    cog.bot.season_service.cancel_round.assert_awaited_once()
-
-
-@pytest.mark.parametrize(
-    "status",
-    sorted(s.value for s in RoundStatus if s.value not in ROUND_CANCELLABLE
-           and s.value != RoundStatus.CANCELLED.value),
-)
-async def test_a_round_whose_results_are_in_cannot_be_called_off(status):
-    """Afterwards the drivers have reports and appeals to lodge, and cancelling would take
-    that from them."""
-    cog = _make_cog(rounds=[_round(status=status)])
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "results have already been entered" in _replied(interaction)
-    cog.bot.season_service.cancel_round.assert_not_awaited()
-
-
-async def test_an_open_submission_channel_is_a_separate_refusal():
-    """The round may still be cancellable, but the wizard would be writing into it as it
-    went — and a manager told the wrong refusal would go and close the wrong thing."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _cancel(cog, interaction, submission_open=True)
-
-    replied = _replied(interaction)
-    assert "submission channel is currently open" in replied
-    assert "results have already been entered" not in replied
-    cog.bot.season_service.cancel_round.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -409,147 +345,32 @@ async def test_an_open_submission_channel_is_a_separate_refusal():
 # ---------------------------------------------------------------------------
 
 
-async def test_a_cancelled_round_has_its_jobs_cancelled():
-    """A cancelled round must produce nothing further — no forecast, no check-in, no
-    result submission."""
+async def test_cancelling_asks_the_queue_with_the_round(tmp_path):
+    """A season being raced (season 3) holds round 5 of Division 1, at Monza, not yet run. The
+    admin runs /round cancel on it with CONFIRM. The command asks the change queue, once, for a
+    round's cancellation (`season.round.cancel`) naming the round, its number and track, and its
+    division by id and name with the season's number, and no season id; it is asked as the
+    admin's `/round cancel`. Nothing is deferred, since the queue's acknowledgement is the
+    response, and the command itself neither removes the round's timed work nor records it
+    cancelled: the change does both when it runs."""
     cog = _make_cog()
-
-    await _cancel(cog, _interaction())
-
-    cog.bot.scheduler_service.cancel_round.assert_called_once_with(ROUND_ID)
-
-
-async def test_cancelling_a_round_winds_a_finished_season_down():
-    """The round may have been the last its season waited on (issue #220)."""
-    cog = _make_cog()
-    interaction = _interaction()
+    cog.bot.db_path = await _migrated(tmp_path)
+    interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
 
     await _cancel(cog, interaction)
 
-    cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
-        cog.bot
-    )
-
-
-async def test_a_wind_down_that_fails_after_a_round_cancel_is_named_as_not_done():
-    """The core specification's record of what changed: an outcome is recorded as it is. Round 5
-    of Division 1, in a season being raced, is cancelled, and the season it may have finished
-    cannot then be wound down (the wind-down raises). The cancellation stands; the reply and the
-    one success line each name the wind-down as not done, saying the season could not be moved
-    to pending completion and that /season complete does it."""
-    cog = _make_cog()
-    cog.bot.season_service.wind_down_ongoing = AsyncMock(side_effect=RuntimeError("disk full"))
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    cog.bot.season_service.cancel_round.assert_awaited_once()
-    replied = _replied(interaction)
-    assert replied.startswith("\u2705 Round **5** in **Division 1** cancelled."), replied
-    assert "pending completion" in replied.lower(), replied
-    assert "/season complete" in replied, replied
-    [line] = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
-    assert line.startswith(f"Admin (<@{ACTOR_ID}>) | /round cancel | Success"), line
-    [not_done] = [row for row in line.splitlines() if row.strip().startswith("not done:")]
-    assert "pending completion" in not_done.lower(), line
-    assert "/season complete" in not_done, line
-
-
-async def test_the_jobs_go_before_the_round_is_recorded_cancelled():
-    """A job firing between the two would post a forecast for a round the league has just
-    called off."""
-    cog = _make_cog()
-    order: list[str] = []
-    cog.bot.scheduler_service.cancel_round = MagicMock(
-        side_effect=lambda _id: order.append("jobs")
-    )
-    cog.bot.season_service.cancel_round = AsyncMock(
-        side_effect=lambda **kw: order.append("record")
-    )
-
-    await _cancel(cog, _interaction())
-
-    assert order == ["jobs", "record"]
-
-
-async def test_the_modules_are_told_the_round_is_off():
-    """Each enabled module says what the cancellation means for it — never core, and never
-    the forecast channel regardless of the weather module (#175)."""
-    from leaguebot.core.services import cancellation_notice_service as cns
-
-    cog = _make_cog()
-    interaction = _interaction()
-
-    announce = await _cancel(cog, interaction)
-
-    announce.assert_awaited_once()
-    assert announce.await_args.kwargs["scope"] == cns.SCOPE_ROUND
-    assert announce.await_args.kwargs["round_number"] == 5
-    assert announce.await_args.kwargs["track_name"] == "Monza"
-    assert announce.await_args.kwargs["season_number"] == 3
-    assert announce.await_args.kwargs["round_ids"] == frozenset({ROUND_ID})
-    assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
-    interaction._channel.send.assert_not_awaited()
-
-
-async def test_the_announcement_follows_the_round_being_recorded_cancelled():
-    """The calendar is posted again as it now stands, so the round must already be
-    recorded cancelled when it is read."""
-    cog = _make_cog()
-    order: list[str] = []
-    cog.bot.season_service.cancel_round = AsyncMock(
-        side_effect=lambda **kw: order.append("record")
-    )
-    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
-    with _submission(False), patch(
-        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
-    ):
-        await undecorate(SeasonCog.round_cancel)(
-            cog, _interaction(), "Division 1", 5, "CONFIRM"
-        )
-    assert order == ["record", "announce"]
-
-
-async def test_the_check_in_audit_reaches_the_log():
-    cog = _make_cog()
-    announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Division 1"))
-    with _submission(False), patch(
-        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
-    ):
-        await undecorate(SeasonCog.round_cancel)(
-            cog, _interaction(), "Division 1", 5, "CONFIRM"
-        )
-    assert "check-in, Division 1" in cog.bot.output_router.post_log.await_args.args[0]
-
-
-async def test_what_could_not_be_told_is_named_to_the_admin():
-    from leaguebot.core.services.cancellation_notice_service import NoticeFailure
-
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _cancel(
-        cog, interaction,
-        failures=[NoticeFailure("Division 1", "check-in channel", "no channel is set")],
-    )
-
-    replied = _replied(interaction)
-    assert "cancelled" in replied
-    assert "Not notified" in replied
-    assert "check-in channel: no channel is set" in replied
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "not notified: **Division 1** — check-in channel: no channel is set" in logged
-
-
-async def test_a_cancelled_round_keeps_its_number():
-    """It happened — it is on the calendar and the drivers planned around it. Renumbering
-    would rewrite the season's history around an event everybody remembers."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    await _cancel(cog, interaction)
-
-    assert "renumbered" not in _replied(interaction)
+    kind, payload = _asked(cog)
+    assert kind == "season.round.cancel"
+    assert payload == {
+        "round_id": ROUND_ID, "round_number": 5, "track_name": "Monza",
+        "division_id": DIVISION_ID, "division_name": "Division 1", "season_number": 3,
+    }
+    call = cog.bot.change_queue.ask.await_args
+    assert call.kwargs["interaction"] is interaction
+    assert call.kwargs["what"] == "`/round cancel`"
+    interaction.response.defer.assert_not_awaited()
+    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    cog.bot.season_service.cancel_round.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -577,12 +398,6 @@ def _run_by_the_admin(cog, interaction, command: str):
 def _logged(cog) -> list[str]:
     """The lines the command wrote to the log channel, in order."""
     return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
-
-
-_RESULTS_IN = sorted(
-    s.value for s in RoundStatus
-    if s.value not in ROUND_CANCELLABLE and s.value != RoundStatus.CANCELLED.value
-)[0]
 
 
 @pytest.mark.parametrize(
@@ -654,38 +469,22 @@ async def test_every_other_round_delete_refusal_is_recorded(arranged, asked, rep
             "❌ Round 9 not found in division `Division 1`.",
             id="an_unknown_round",
         ),
-        pytest.param(
-            {"rounds": [_round(status=RoundStatus.CANCELLED.value)]}, {},
-            "❌ Round 5 in **Division 1** is already cancelled.",
-            id="a_round_already_cancelled",
-        ),
-        pytest.param(
-            {"rounds": [_round(status=_RESULTS_IN)]}, {},
-            "❌ Cannot cancel Round 5 — its results have already been entered, and "
-            "the drivers' reports and appeals depend on it.",
-            id="a_round_whose_results_are_in",
-        ),
-        pytest.param(
-            {}, {"submission_open": True},
-            "❌ Cannot cancel Round 5 — a results submission channel is currently "
-            "open. Close the submission first.",
-            id="a_submission_channel_open",
-        ),
     ],
 )
 async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
     """A season being raced with round 5 in Division 1, unless the case says otherwise. Each
-    refusal answers as today, cancels nothing, and writes one refusal line (#482, criterion 1)."""
+    refusal the command makes before it asks the queue answers as today, asks the queue for
+    nothing, and writes one refusal line (#482, criterion 1). The refusals the change's check
+    makes are tested in `test_round_cancel_change.py`."""
     cog = _make_cog(**arranged)
     interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
 
-    announce = await _cancel(cog, interaction, **asked)
+    await _cancel(cog, interaction, **asked)
 
     interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
     interaction.followup.send.assert_not_awaited()
     interaction.response.defer.assert_not_awaited()
-    cog.bot.season_service.cancel_round.assert_not_awaited()
-    announce.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     assert _logged(cog) == [
         f"⛔ `/round cancel` refused for Admin (<@{ACTOR_ID}>) — {reply[2:]}"
     ]
@@ -701,37 +500,28 @@ async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
 
 
 @pytest.mark.parametrize(
-    "arranged, answered",
+    "arranged",
     [
-        pytest.param({}, "✅ Round **5** in **Pro** cancelled.", id="cancelled"),
-        pytest.param(
-            {"rounds": [_round(status=RoundStatus.CANCELLED.value)]},
-            "❌ Round 5 in **Pro** is already cancelled.",
-            id="already_cancelled",
-        ),
+        pytest.param({}, id="cancelled"),
     ],
 )
 async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as_it_is_named(
-    arranged, answered
+    tmp_path, arranged
 ):
     """A season being raced holds division Pro with round 5. The admin (id 77) runs /round
-    cancel on round 5 with CONFIRM, typing the division's name as 'pro', in two cases: the round
-    is cancelled, or it was already cancelled and the command is refused. The reply opens by
-    naming the division as it is named, **Pro**, and nowhere shows 'pro'; the one log line (the
-    success line, or the refusal line) names Pro and never 'pro'."""
+    cancel on round 5 with CONFIRM, typing the division's name as 'pro'. The change asked of the
+    queue names the division as it is named, Pro, and nowhere 'pro', so the acknowledgement, the
+    reply and the log line the change writes from it do too. The refusal of a round already
+    cancelled, typed so, is the change's check's, and is tested in `test_round_cancel_change.py`."""
     cog = _make_cog(divisions=[_division("Pro")], **arranged)
+    cog.bot.db_path = await _migrated(tmp_path)
     interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
 
     await _cancel(cog, interaction, division="pro")
 
-    replied = _replied(interaction)
-    assert replied.startswith(answered), replied
-    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
-    [line] = _logged(cog)
-    words = {word.strip("*`:,.()") for word in line.split()}
-    assert "/round cancel" in line, line
-    assert "Pro" in words, line
-    assert "pro" not in words, line
+    _kind, payload = _asked(cog)
+    assert payload["division_name"] == "Pro", payload
+    assert "pro" not in {str(value) for value in payload.values()}, payload
 
 
 # ---------------------------------------------------------------------------

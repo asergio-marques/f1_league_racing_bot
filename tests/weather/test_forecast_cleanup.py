@@ -685,3 +685,51 @@ class TestTheForecastGraphicIsDiscarded:
 
         assert result is None
         assert not png.exists(), "a picture abandoned before its send must still be removed"
+
+
+# ---------------------------------------------------------------------------
+# delete_forecast_message, raising (#439, slice 4b, amendment A)
+#
+# `/round amend` on the change queue deletes each withdrawn forecast as a job of its own, which
+# stops the queue on a failure until it is retried. So the raising form keeps the row where the
+# message is left standing, for the next try to read, where the quiet form drops it.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_raising_forecast_delete_keeps_its_record_and_raises(tmp_path):
+    """Round 1's Phase 2 forecast (message 777) stands in Div A's forecast channel (999), and
+    Discord refuses to delete it. Deleting it in the raising form raises StepFailedOnDiscord from
+    Discord's refusal, keeping the channel and the message on its result, and keeps the row."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(str(tmp_path))
+    await _seed_base(db_path)
+    await store_forecast_message(1, 1, 2, _make_mock_message(777), db_path)
+    bot = _make_bot(db_path)
+    refusal = discord.Forbidden(MagicMock(status=403), "missing access")
+    bot.get_channel.return_value.get_partial_message.return_value.delete = AsyncMock(
+        side_effect=refusal
+    )
+
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await delete_forecast_message(1, 1, 2, bot, raise_on_failure=True)
+
+    assert caught.value.result == {"channel_id": 999, "message_id": 777}
+    assert caught.value.__cause__ is refusal
+    assert await _get_stored_row(db_path, 1, 1, 2) is not None
+
+
+async def test_a_raising_forecast_delete_counts_a_message_already_gone_as_gone(tmp_path):
+    """Round 1's Phase 2 forecast (message 777) was deleted by hand. Deleting it in the raising
+    form raises nothing and drops the row."""
+    db_path = await _make_db(str(tmp_path))
+    await _seed_base(db_path)
+    await store_forecast_message(1, 1, 2, _make_mock_message(777), db_path)
+    bot = _make_bot(db_path)
+    bot.get_channel.return_value.get_partial_message.return_value.delete = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "unknown message")
+    )
+
+    await delete_forecast_message(1, 1, 2, bot, raise_on_failure=True)
+
+    assert await _get_stored_row(db_path, 1, 1, 2) is None

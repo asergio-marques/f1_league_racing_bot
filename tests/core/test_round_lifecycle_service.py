@@ -13,9 +13,11 @@ what pins that.
 carries the round id as well as its number — the two files are two halves of one rule, and this
 is the half that causes the problem.
 
-**Cancelling a round refuses on an archived season.** A COMPLETED or CANCELLED season is the
-championship's record; a round inside it cannot be called off after the fact, and the refusal
-comes from the service so every route to it agrees.
+**Cancelling a round leaves an archived season alone.** A COMPLETED or CANCELLED season is the
+championship's record; a round inside it cannot be called off after the fact. `cancel_round_on`
+writes on the save it is handed, as the round's cancellation on the change queue (#439) gives it,
+and where the round may no longer be cancelled it writes nothing and gives `None`, so the change
+names the refusal rather than the save raising.
 
 **Cancelling reconsiders the division.** Cancelling the last outstanding round is what finishes
 a division, so the division's own status is refreshed here as well as on a result being
@@ -35,7 +37,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonImmutableError, SeasonService
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 12808
 SEASON_ID = 1
@@ -112,6 +114,23 @@ async def _division_status(db_path: str) -> str:
 
 NOT_RUN = RoundStatus.NOT_RUN.value
 FINAL = RoundStatus.FINAL.value
+
+# The moment the cancellation is recorded at, pinned.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
+
+async def _cancel(db_path: str, round_id: int) -> str | None:
+    """Cancel *round_id* on one connection with `cancel_round_on`, as the round's cancellation
+    does in its save, and commit it, which `cancel_round_on` does not. Gives what it gives: the
+    round's old status, or `None` where it moved nothing."""
+    from leaguebot.core.services.season_service import cancel_round_on
+
+    async with get_connection(db_path) as db:
+        old = await cancel_round_on(
+            db, round_id, actor_id=ACTOR_ID, actor_name="Manager", now=NOW
+        )
+        await db.commit()
+    return old
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +218,7 @@ async def test_a_round_is_marked_cancelled(tmp_path):
         tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
+    await _cancel(db_path, 1)
 
     assert await _status(db_path, 1) == RoundStatus.CANCELLED.value
 
@@ -211,7 +230,7 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
         tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
+    await _cancel(db_path, 1)
 
     assert await _numbers(db_path) == [(1, 1), (2, 2)]
 
@@ -219,7 +238,7 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
 async def test_cancelling_is_audited_against_its_division(tmp_path):
     db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
 
-    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
+    await _cancel(db_path, 1)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -235,13 +254,14 @@ async def test_cancelling_is_audited_against_its_division(tmp_path):
 @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
 async def test_a_round_in_an_archived_season_cannot_be_cancelled(tmp_path, status):
     """The season is the championship's record; a round inside it cannot be called off
-    after the fact, and the refusal lives here so every route to it agrees."""
+    after the fact. A season archived as completed, or cancelled, holds round 1, not yet run:
+    cancelling it gives `None` and the round stays not run."""
     db_path = await _make_db(
         tmp_path, season_status=status, rounds=((1, 1, 7, NOT_RUN),)
     )
 
-    with pytest.raises(SeasonImmutableError, match="archived season"):
-        await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
+    assert await _cancel(db_path, 1) is None
+    assert await _status(db_path, 1) == NOT_RUN
 
 
 async def test_a_refused_cancellation_changes_nothing(tmp_path):
@@ -249,8 +269,7 @@ async def test_a_refused_cancellation_changes_nothing(tmp_path):
         tmp_path, season_status="COMPLETED", rounds=((1, 1, 7, NOT_RUN),)
     )
 
-    with pytest.raises(SeasonImmutableError):
-        await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
+    assert await _cancel(db_path, 1) is None
 
     assert await _status(db_path, 1) == NOT_RUN
     async with get_connection(db_path) as db:
@@ -266,7 +285,7 @@ async def test_cancelling_the_last_round_finishes_the_division(tmp_path):
         tmp_path, rounds=((1, 1, 7, FINAL), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(2, ACTOR_ID, "Manager")
+    await _cancel(db_path, 2)
 
     assert await _division_status(db_path) == "FINISHED"
 
@@ -276,7 +295,7 @@ async def test_cancelling_one_of_several_rounds_leaves_the_division_running(tmp_
         tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
+    await _cancel(db_path, 1)
 
     assert await _division_status(db_path) == "ACTIVE"
 

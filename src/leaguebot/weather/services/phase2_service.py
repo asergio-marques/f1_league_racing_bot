@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
 from leaguebot.weather.utils.message_builder import phase2_message, phase_log_message, session_type_label
 
@@ -34,11 +35,20 @@ async def run_phase2(round_id: int, bot: "LeagueBot") -> None:
     and the core specification's rule — a disabled module produces nothing, "whatever the path
     arrives at it" — can only hold for every route in if the runner itself refuses. Guarding the
     callers alone is what let issue #113 through.
+
+    Nor does it do anything for a round that is cancelled, or whose division is, where it reads
+    the round after the cancellation is recorded: the cancellation removes the round's timed work
+    before it records the round cancelled, but a phase fired late, or one that fell due in
+    between, can still arrive here. One that read the round before the save is not caught, the
+    round not yet being cancelled when it fell due. The round is read again and acted on only
+    while it is still due (architecture.md, "The database says when something is due"); the skip
+    is written to the host's log alone, the league having been told of the cancellation itself.
     """
     # --- Load context ---
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT r.id, r.track_name, r.phase1_done, r.phase2_done, r.division_id, "
+            "       r.status AS round_status, d.status AS division_status, "
             "       d.forecast_channel_id, d.mention_role_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
@@ -50,6 +60,17 @@ async def run_phase2(round_id: int, bot: "LeagueBot") -> None:
 
     if row is None:
         log.error("Phase 2: round_id=%s not found", round_id)
+        return
+
+    # A cancelled round, or a round of a cancelled division — see the docstring.
+    if (
+        row["round_status"] == RoundStatus.CANCELLED.value
+        or row["division_status"] == "CANCELLED"
+    ):
+        log.info(
+            "Phase 2: round %s or its division is cancelled — round left untouched.",
+            round_id,
+        )
         return
 
     # The module gate — see the docstring for why it sits here.

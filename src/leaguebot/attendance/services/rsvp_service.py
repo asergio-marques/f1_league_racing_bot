@@ -6,11 +6,15 @@ import logging
 import weakref
 from datetime import datetime, timezone
 
+import aiohttp
+import aiosqlite
 import discord
 
+from leaguebot.attendance.models.attendance import RsvpEmbedMessage
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection, sole_row
-from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
 
@@ -426,7 +430,72 @@ async def _checkin_attachment(
 # ── run_rsvp_notice ───────────────────────────────────────────────────────────
 
 
-async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
+#: What a failed repost's report says in place of the usual advice: the earlier call was left.
+EARLIER_CALL_STANDS = (
+    "the earlier call still stands, and the answers given to it count, those of drivers no "
+    "longer of the division excepted, which were dropped; it does not show what changed."
+)
+
+#: What a failed call's report says where no call stands but answers to an earlier one are
+#: kept for the round, as after an amendment took its call down: they count, so "no attendance
+#: rows were opened" would be untrue.
+ANSWERS_KEPT = (
+    "answers given to an earlier call of this round are kept, and count if the call is posted "
+    "before the check-in deadline; past it they are cleared. Once the cause is cleared, post "
+    "the call by hand with `/attendance post-check-in division: {division} round: {round}`."
+)
+
+
+#: What a failed repost's report says where the earlier call's own channel is gone as well, so
+#: that no call for the round can be seen and its record, pointing at nothing, is dropped.
+VANISHED_CALL = (
+    "no call for this round can be seen, its message or the channel it was posted in being "
+    "gone, so its record was dropped; the answers given to it are kept, and count if the call is "
+    "posted before the check-in deadline; past it they are cleared. Once the cause is cleared "
+    "(or the check-in channel is set), post the call by hand with `/attendance post-check-in "
+    "division: {division} round: {round}`."
+)
+
+
+async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
+    """Whether nobody can see *call* any more: its channel gone, or its own message deleted, as
+    a take-down that deleted the call but not its last notice leaves it. Discord failing to say,
+    or the connection to it failing (a timeout, a dropped connection, the network), is not
+    taken for gone: the call is left standing, as when the post alone is refused."""
+    channel = as_text_channel(bot.get_channel(int(call.channel_id)))
+    if channel is None:
+        return True
+    try:
+        await channel.fetch_message(int(call.message_id))
+    except discord.NotFound:
+        return True
+    except (discord.HTTPException, aiohttp.ClientError, OSError):  # a timeout is an OSError
+        return False
+    return False
+
+
+async def _check_in_over(db_path: str, round_id: int) -> bool:
+    """Whether *round_id*'s check-in is marked over (``checkin_cleared``)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT checkin_cleared FROM rounds WHERE id = ?", (round_id,)
+        )
+        found = await cursor.fetchone()
+    return found is not None and bool(found["checkin_cleared"])
+
+
+async def _answers_kept(db_path: str, round_id: int) -> bool:
+    """Whether any check-in answer is recorded for *round_id*."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM driver_round_attendance WHERE round_id = ? LIMIT 1", (round_id,)
+        )
+        return await cursor.fetchone() is not None
+
+
+async def run_rsvp_notice(
+    round_id: int, bot: LeagueBot, *, replacing: RsvpEmbedMessage | None = None
+) -> None:
     """Post the RSVP embed for *round_id* to all configured RSVP channels.
 
     Called by the APScheduler job (and by /test-mode advance for phase 5).
@@ -445,8 +514,26 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
 
     It posts nothing where the round's call already stands (#429), judged under the round's
     check-in lock so that two posters reaching the round at once post one call between them.
-    `test_two_calls_posted_at_once_for_one_round_post_one` pins it. `repost_rsvp_call` takes
-    the standing call down before it comes here.
+    `test_two_calls_posted_at_once_for_one_round_post_one` pins it. Nor does it post, judged
+    under the same lock, where the round's check-in is already over (``checkin_cleared``): a post
+    that waited while the deadline, a give-up or the clean-up closed it would open attendance
+    rows nobody could answer (owner, 2026-10-09: "Fold it in";
+    `test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_posts_nothing`).
+
+    *replacing* is the call `repost_rsvp_call` posts this one in place of (owner, 2026-10-09:
+    "Fold it in"). Where it is the call found standing, the new call is posted beside it, and
+    only once the new one has landed is the earlier one withdrawn, its messages and its record,
+    its answers carried over. A post that fails, Discord refusing it, the connection to Discord
+    failing (a timeout among them) or the channel gone, leaves
+    the earlier call and its record standing, and the report says so (`EARLIER_CALL_STANDS`)
+    rather than that no attendance rows were opened, which would no longer be true; where the
+    earlier call cannot be seen either, its message or its channel gone (`_call_vanished`), its
+    record is dropped, what is left of it deleted or named, its answers kept, and the report
+    says so (`VANISHED_CALL`). Where no
+    call stands but answers to an earlier one are kept for the round, as after an amendment took
+    its call down, a failure's report says they are kept and count (`ANSWERS_KEPT`). A call
+    standing that is not *replacing* was posted since, and is left as any standing call is.
+    `test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so` pins it.
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
@@ -508,12 +595,33 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     # lock, a call found standing is left as it is: a second one beside it would be answered by
     # drivers and tracked by nothing.
     async with _check_in_lock(round_id):
-        if await bot.attendance_service.get_embed_message(round_id, division_id) is not None:
+        if await _check_in_over(bot.db_path, round_id):
+            # A deadline with no call standing, a give-up or the clean-up a day after the round
+            # closed it while this post waited: nothing counts for the round any more, and a
+            # call posted now would open attendance rows nobody could answer.
+            log.info(
+                "run_rsvp_notice: round %d's check-in is over — no call posted", round_id
+            )
+            return
+        standing = await bot.attendance_service.get_embed_message(round_id, division_id)
+        if standing is not None and (
+            replacing is None or standing.message_id != replacing.message_id
+        ):
             log.info(
                 "run_rsvp_notice: a check-in call already stands for round %d — nothing posted",
                 round_id,
             )
             return
+        # The earlier call, standing until the new one lands; its answers count meanwhile.
+        earlier = standing
+        # What a failure says is what is really there (owner, 2026-10-09: "Make the line tell
+        # the truth"): the earlier call standing; or, with none, answers to an earlier call kept
+        # for the round, which count; or nothing at all, the report's own words.
+        failure_note: str | None = None
+        if earlier is not None:
+            failure_note = EARLIER_CALL_STANDS
+        elif await _answers_kept(bot.db_path, round_id):
+            failure_note = ANSWERS_KEPT.format(division=division_name, round=round_number)
 
         # Get division RSVP channel
         att_div_cfg = await bot.attendance_service.get_division_config(division_id)
@@ -537,6 +645,12 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
                 "run_rsvp_notice: RSVP channel %s not found for division %d",
                 channel_id_str, division_id,
             )
+            if earlier is not None and await _call_vanished(bot, earlier):
+                # The earlier call cannot be seen either: a record left would say one stands,
+                # refusing `/attendance post-check-in` (owner, 2026-10-09: "Drop the record, say
+                # so"). Its answers are kept; what is left of it is deleted or named.
+                await withdraw_rsvp_call(round_id, division_id, bot)
+                failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
             await _report_call_failure(
                 bot,
                 division_id=division_id,
@@ -544,6 +658,7 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
                 season_number=season_number,
                 round_number=round_number,
                 reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
+                note=failure_note,
             )
             return
 
@@ -622,18 +737,34 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
                 view=view,
                 allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
             )
-        except discord.HTTPException as exc:
+        except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
+            # A fault on the connection (a timeout among them, an OSError) is handled as Discord
+            # refusing is (owner, 2026-10-09: "Fold it in"): reported, the earlier call left as
+            # it stands, and no queue stopped. A send that timed out may have landed all the same.
             log.error(
-                "run_rsvp_notice: failed to post embed for division %d: %s",
+                "run_rsvp_notice: failed to post embed for division %d: %r",
                 division_id, exc,
             )
+            # A bare timeout carries no message, so the fault's kind is named in its place.
+            reason = f"the call could not be posted: {str(exc) or type(exc).__name__}"
+            if isinstance(exc, TimeoutError):
+                reason += (
+                    "; it may have reached Discord all the same; check the channel, and if it is"
+                    " there, delete it before posting the call again"
+                )
+            if earlier is not None and await _call_vanished(bot, earlier):
+                # As above: a take-down that deleted the call but not its last notice leaves a
+                # record of a call nobody can see (owner, 2026-10-09: "Make it").
+                await withdraw_rsvp_call(round_id, division_id, bot)
+                failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
             await _report_call_failure(
                 bot,
                 division_id=division_id,
                 division_name=division_name,
                 season_number=season_number,
                 round_number=round_number,
-                reason=f"the call could not be posted: {exc}",
+                reason=reason,
+                note=failure_note,
             )
             return
         finally:
@@ -644,6 +775,23 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
 
             discard_attachment(attachment)
 
+        if earlier is not None:
+            # Read again just before the new call takes its record: the last notice's timer
+            # takes no lock, and one recorded during the send must come down with the rest.
+            earlier = (
+                await bot.attendance_service.get_embed_message(round_id, division_id) or earlier
+            )
+
+        # Store message reference at once: replacing an earlier call, the new one takes its
+        # record in the same statement, so that a press on the new call finds it and a stop
+        # cannot leave it untracked.
+        await bot.attendance_service.insert_embed_message(
+            round_id=round_id,
+            division_id=division_id,
+            message_id=str(msg.id),
+            channel_id=str(msg.channel.id),
+        )
+
         # Bulk-insert DRA rows
         if all_driver_profile_ids:
             await bot.attendance_service.bulk_insert_attendance_rows(
@@ -652,18 +800,57 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
                 driver_profile_ids=all_driver_profile_ids,
             )
 
-        # Store message reference
-        await bot.attendance_service.insert_embed_message(
-            round_id=round_id,
-            division_id=division_id,
-            message_id=str(msg.id),
-            channel_id=str(msg.channel.id),
-        )
+        if earlier is not None:
+            # The new call has landed and is recorded: the earlier one's messages come down,
+            # its answers carried over to the new one.
+            await withdraw_rsvp_call(round_id, division_id, bot, call=earlier)
 
         log.info(
             "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
             round_id, division_id, msg.id,
         )
+
+
+# ── reopen_check_in_on ────────────────────────────────────────────────────────
+
+
+async def reopen_check_in_on(db: aiosqlite.Connection, round_id: int) -> None:
+    """Reopen a round's check-in on *db*, committing nothing.
+
+    `/round amend` on the change queue writes everything an amendment changes in one save. Where
+    the amended moment leaves the check-in open again, what attendance resets is attendance's
+    own, so attendance writes it on the connection the save hands it.
+
+    A round whose check-in had been taken down a day after it is so no longer (#425), and the
+    reserves are placed no longer (#429): the answers carry over to the call that replaces the
+    old one, but the distribution was made against the old one, and the new call's own deadline
+    makes it afresh. Left standing, a reserve that deadline puts on standby would keep the old
+    team, and be charged as a no-show for not racing in it.
+    """
+    await db.execute("UPDATE rounds SET checkin_cleared = 0 WHERE id = ?", (round_id,))
+    await db.execute(
+        "UPDATE driver_round_attendance "
+        "SET assigned_team_id = NULL, is_standby = 0 WHERE round_id = ?",
+        (round_id,),
+    )
+
+
+# ── clear_check_in_answers_on ─────────────────────────────────────────────────
+
+
+async def clear_check_in_answers_on(db: aiosqlite.Connection, round_id: int) -> None:
+    """Delete a round's check-in answers on *db*, and the reserve placements made on them,
+    committing nothing.
+
+    For a round whose call is given up, its deadline having passed with no call standing, at
+    start-up or by an amendment that took the old call down (owner, 2026-10-09: "Clear the
+    answers, keep the line true", "Yes, clear them"). Any answers left were given to a call that
+    no longer stands, and any placements made from them, by a deadline run meanwhile, against
+    it: left, the round would charge a driver with not answering, or a reserve with not racing,
+    for a check-in the log channel has said opened no attendance rows and counts nothing against
+    anyone. A placement is a column of its answer's row, so it goes with it.
+    """
+    await db.execute("DELETE FROM driver_round_attendance WHERE round_id = ?", (round_id,))
 
 
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
@@ -675,6 +862,8 @@ async def withdraw_rsvp_call(
     bot: LeagueBot,
     *,
     undeleted: list[str] | None = None,
+    raise_on_failure: bool = False,
+    call: RsvpEmbedMessage | None = None,
 ) -> bool:
     """Take down the check-in call posted for *round_id*, and everything posted beside it.
 
@@ -685,16 +874,28 @@ async def withdraw_rsvp_call(
     deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
     row goes either way, since nothing would take the messages down again from it.
 
-    `run_rsvp_notice` takes down no call at all, the round's own included, so a round whose call
-    is posted twice would end up with both standing. This is the other half: it removes the
-    call, its last notice and its distribution announcement for one round, so a fresh call can
-    take their place. It is also how `run_rsvp_cleanup` takes them down after the round.
+    *call*, where given, is the call to take down in place of the one recorded: a repost's
+    earlier call, whose record the new call has already taken (`run_rsvp_notice`). Its messages
+    are deleted, and the record only where it is still that call's.
+
+    *raise_on_failure* is for a caller that must stop on a failure and be tried again, as a
+    round's or a division's cancellation on the change queue is. Every message is still tried;
+    then, where any could not be deleted, it raises `StepFailedOnDiscord` whose `result` is
+    `{"undeleted": [ids]}`, raised `from` the last Discord failure (none where the channel is
+    gone), and **keeps the row**, so the next try reads the ids again: a message deleted by then
+    is "already gone", which counts as gone. A fault that is not Discord's propagates unchanged.
+    *undeleted*, where also given, is filled all the same.
+
+    It removes a call, its last notice and its distribution announcement for one round:
+    `run_rsvp_notice` calls it for the earlier call once a repost has landed (with *call*), and
+    `run_rsvp_cleanup` to take them down after the round. Where Discord refuses a message in the
+    quiet form, the log channel names it (`_report_messages_left`).
 
     The recorded answers are **not** touched. They are what a repost carries over — a driver who
     said they were racing has not unsaid it because the round moved, and asking the division to
     answer again from nothing is how an amendment comes to look like nobody replied.
     """
-    stored = await bot.attendance_service.get_embed_message(round_id, division_id)
+    stored = call or await bot.attendance_service.get_embed_message(round_id, division_id)
     if stored is None:
         return False
 
@@ -707,10 +908,12 @@ async def withdraw_rsvp_call(
         )
         if message_id is not None
     ]
+    left: list[str] = []
+    refused: list[str] = []
+    cause: discord.HTTPException | None = None
     channel = as_text_channel(bot.get_channel(int(stored.channel_id)))
     if channel is None:
-        if undeleted is not None:
-            undeleted.extend(str(m) for m in posted)
+        left.extend(str(m) for m in posted)
     else:
         for message_id in posted:
             try:
@@ -718,18 +921,63 @@ async def withdraw_rsvp_call(
                 await message.delete()
             except discord.NotFound:
                 pass  # Already gone — which is what was asked.
-            except discord.HTTPException:
-                # No permission, or Discord failing. The row goes either way.
-                if undeleted is not None:
-                    undeleted.append(str(message_id))
+            except discord.HTTPException as exc:
+                # No permission, or Discord failing. The quiet form drops the row either way.
+                left.append(str(message_id))
+                refused.append(str(message_id))
+                cause = exc
+    if undeleted is not None:
+        undeleted.extend(left)
+    if raise_on_failure and left:
+        raise StepFailedOnDiscord(
+            f"{len(left)} message(s) of the check-in call for round {round_id} could not be"
+            f" deleted (ids {', '.join(left)})",
+            result={"undeleted": left},
+        ) from cause
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
-            "DELETE FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
-            (round_id, division_id),
+            "DELETE FROM rsvp_embed_messages "
+            "WHERE round_id = ? AND division_id = ? AND message_id = ?",
+            (round_id, division_id, stored.message_id),
         )
         await db.commit()
+    if refused and undeleted is None:
+        await _report_messages_left(bot, round_id, division_id, stored.channel_id, refused)
     return True
+
+
+async def _report_messages_left(
+    bot: LeagueBot, round_id: int, division_id: int, channel_id: str, message_ids: list[str]
+) -> None:
+    """Name in the log channel the messages of a call Discord refused to delete, for a league
+    admin to delete by hand.
+
+    For the quiet form of `withdraw_rsvp_call` (a repost, the clean-up a day after the round),
+    which drops the call's record whatever is left, so that nothing would take those messages
+    down again and nobody would know they stand (owner, 2026-10-09: "Fold it in"). A caller
+    handing in *undeleted*, or raising, says so itself. Reporting never masks the take-down.
+    """
+    try:
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute(
+                "SELECT r.round_number, d.name FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                (round_id,),
+            )
+            found = await cursor.fetchone()
+        division = found["name"] if found else f"id={division_id}"
+        number = found["round_number"] if found else f"id={round_id}"
+        await bot.output_router.post_log(
+            f"ATTENDANCE | check-in call | NOT DELETED\n"
+            f"  division: {division}\n"
+            f"  round: {number}\n"
+            f"  messages: {', '.join(message_ids)} in <#{channel_id}>\n"
+            f"  note: Discord refused to delete them as the call was taken down; delete them "
+            f"by hand.",
+        )
+    except Exception:  # noqa: BLE001 — reporting must never mask the take-down
+        log.exception("withdraw_rsvp_call: failed to report the messages left standing")
 
 
 async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> None:
@@ -743,8 +991,15 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
     left is discarded, so the new call cannot show a name the division no longer holds.
     `bulk_insert_attendance_rows` inserts-or-ignores, so the rows that remain are left exactly
     as the drivers set them.
+
+    The call standing is withdrawn only once the new one has landed (`run_rsvp_notice`'s
+    *replacing*; owner, 2026-10-09: "Fold it in"). A repost that fails, Discord refusing it or
+    the channel gone, leaves the earlier call and its record standing, so its answers stand with
+    a call and the report says so; it fails as a call does when its timer fires, and stops no
+    queue. Withdrawn first, as it once was, a failed repost left answers with no call while the
+    report said no attendance rows were opened.
     """
-    await withdraw_rsvp_call(round_id, division_id, bot)
+    standing = await bot.attendance_service.get_embed_message(round_id, division_id)
 
     # Drop answers belonging to drivers the division no longer holds.
     roster = await query_division_roster(bot.db_path, division_id)
@@ -763,20 +1018,29 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
             )
         await db.commit()
 
-    await run_rsvp_notice(round_id, bot)
+    await run_rsvp_notice(round_id, bot, replacing=standing)
 
 
 # ── run_rsvp_cleanup ──────────────────────────────────────────────────────────
 
 
-async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
-    """Take down *round_id*'s check-in call, last notice and distribution message.
+async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool = False) -> bool:
+    """Take down *round_id*'s check-in call, last notice and distribution message; whether the
+    round's check-in was marked over.
+
+    With *clear_answers*, the deadline closing a check-in with no call standing
+    (`_close_check_in_without_a_call`), the mark is one guarded save: it is set only where the
+    round's results are not in, its check-in is not over and answers are kept for it, and the
+    answers and the placements made on them are cleared with it (`clear_check_in_answers_on`).
+    A give-up of the same round committing first leaves it nothing to do, so the round is
+    reported once.
 
     Fired 24 hours after the round's scheduled start by its ``rsvp_cleanup`` job, by the restart
     recovery where that moment passed while the bot was down, and by ``/test-mode advance``
-    (#425). The answers are kept: `withdraw_rsvp_call` never touches them.
+    (#425). As a clean-up, the answers are kept: `withdraw_rsvp_call` never touches them.
 
-    The round is then marked ``checkin_cleared``, whether or not a call was standing. Test mode
+    As a clean-up, the round is then marked ``checkin_cleared``, whether or not a call was
+    standing. Test mode
     reads a round with no ``rsvp_embed_messages`` row as one whose call is still to be posted,
     and without the mark it would post the call of a round a day past all over again.
 
@@ -789,7 +1053,7 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
             "round %d — nothing taken down",
             round_id,
         )
-        return
+        return False
 
     # The gate above has just found the round, so it is there to be read.
     async with get_connection(bot.db_path) as db:
@@ -798,10 +1062,23 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
 
     await withdraw_rsvp_call(round_id, division_id, bot)
 
+    to_run = sorted(ROUND_CANCELLABLE)
     async with get_connection(bot.db_path) as db:
-        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        if clear_answers:
+            cursor = await db.execute(
+                "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
+                f"AND status IN ({', '.join('?' for _ in to_run)}) AND EXISTS (SELECT 1 FROM "
+                "driver_round_attendance a WHERE a.round_id = rounds.id)",
+                (round_id, *to_run),
+            )
+            if cursor.rowcount != 1:
+                return False
+            await clear_check_in_answers_on(db, round_id)
+        else:
+            await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
         await db.commit()
     log.info("run_rsvp_cleanup: check-in taken down for round %d", round_id)
+    return True
 
 
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
@@ -934,6 +1211,9 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
 
     **It runs once for each call** (#429), under the round's check-in lock — see the note on
     `_check_in_lock`. `test_two_deadline_runs_at_once_post_one_announcement` pins it.
+
+    Where no call stands, any answers kept for the round from an earlier call are cleared and the
+    round reported as counting nothing (`_close_check_in_without_a_call`).
     """
     if not await _check_in_runs_for_round(round_id, bot):
         log.info(
@@ -964,11 +1244,13 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
         if stored is None:
             # A deadline closes the call standing, and with none there is nothing to close. Run
             # anyway, it posted a notice with no call to record it on, which nothing ever took
-            # down (#429).
-            log.info(
-                "run_rsvp_deadline: no check-in call stands for round %d — nothing done",
-                round_id,
-            )
+            # down (#429). But answers kept from an earlier call no longer count once the
+            # deadline has passed (`_close_check_in_without_a_call`).
+            if not await _close_check_in_without_a_call(round_id, bot):
+                log.info(
+                    "run_rsvp_deadline: no check-in call stands for round %d — nothing done",
+                    round_id,
+                )
             return
         if stored.distribution_msg_id is not None:
             log.info(
@@ -1001,6 +1283,50 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
             await _post_distribution_announcement(round_id, division_id, bot)
         else:
             await _post_no_reserve_notice(round_id, division_id, bot)
+
+
+async def _close_check_in_without_a_call(round_id: int, bot: LeagueBot) -> bool:
+    """At the deadline of a round with no call standing, clear the answers kept for it and say
+    so; whether it did.
+
+    Answers to an earlier call are kept where the call was taken down and its repost failed or
+    is yet to come, so that they count if a call is posted before the deadline. Past it, nothing
+    counts (owner, 2026-10-09: "Past the deadline, nothing counts"): the answers and the
+    placements made on them are cleared and the check-in marked over, as a restart past the
+    deadline gives a missed call up, whether or not the bot restarts. Only a round whose results
+    are not in and whose check-in is not over, holding answers, is touched.
+    `test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so` pins it.
+    """
+    # The guard is in the close's own save, so that a give-up committing first leaves it
+    # nothing to do and the round is reported once.
+    if not await run_rsvp_cleanup(round_id, bot, clear_answers=True):
+        return False
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.round_number, d.id AS division_id, d.name AS division_name, "
+            "s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+            (round_id,),
+        )
+        found = await sole_row(cursor)
+    log.info(
+        "run_rsvp_deadline: round %d's deadline passed with no call standing — answers cleared",
+        round_id,
+    )
+    await _report_call_failure(
+        bot,
+        division_id=found["division_id"],
+        division_name=found["division_name"],
+        season_number=found["season_number"],
+        round_number=found["round_number"],
+        reason="the round's check-in deadline passed with no call standing",
+        note=(
+            "the answers given to an earlier call of this round no longer count, so they were "
+            "cleared. No attendance rows are left, and this round will count nothing against "
+            "anyone."
+        ),
+    )
+    return True
 
 
 async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:

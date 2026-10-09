@@ -1,8 +1,9 @@
-"""Unit tests for amendment_service (T034) — points-amendment workflow."""
+"""Unit tests for amendment_service (T034) — the points-amendment workflow — and for `/round amend`,
+carried out on the change queue (#439)."""
 from __future__ import annotations
 
 import itertools
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -15,6 +16,20 @@ from leaguebot.core.services.amendment_service import (
     get_amendment_state,
     modify_session_points,
     revert_modification_store,
+)
+from tests.support.change_queue import run_queue, stopped_job
+from tests.support.season_league import (
+    AM,
+    CALL_MESSAGES,
+    CHARLES,
+    DIVISIONS,
+    MCLAREN,
+    PRO,
+    amend_round,
+    ongoing_league,
+    posted_forecast,
+    profile_id,
+    round_id,
 )
 
 
@@ -155,250 +170,213 @@ async def test_modify_raises_when_not_active(db_path):
 
 
 # ---------------------------------------------------------------------------
+# /round amend, carried out on the change queue (#439, slice 4b, amendment A)
+# ---------------------------------------------------------------------------
+#
+# These tests once called `AmendmentService.amend_round` on a bot double. The amendment is now a
+# change on the queue, so each runs `/round amend` through the cog on
+# `tests/support/season_league.py`'s ongoing season (season 3: Pro tier 1, Am tier 2), presses
+# the Confirm it offered as admin 77 and runs the queue, "now" pinned to the league's clock. Am's
+# round 3 (id 223), with no check-in call, is the round amended unless a test says otherwise;
+# Pro's round 3 (id 213) is used where its call must stand. Weather's phase runners and
+# attendance's repost of a call are recorded rather than run, patched before the league is
+# built. Today Confirm amends on the spot, which every test here but one passes as written; the
+# one marked fails until the build, since today a fault after the save stops no queue.
+
+BAHRAIN = "Bahrain International Circuit"
+SILVERSTONE = "Silverstone Circuit"
+AM_3 = round_id(AM, 3)
+PRO_3 = round_id(PRO, 3)
+
+
+@pytest.fixture
+def phases(monkeypatch):
+    """Weather's three phase runners, recording `(phase, round id)` in `ran`; a phase in
+    `failing` raises its fault instead, as a fault of the bot's own."""
+    import importlib
+    from types import SimpleNamespace
+
+    record = SimpleNamespace(ran=[], failing={})
+    for number in (1, 2, 3):
+        module = importlib.import_module(f"leaguebot.weather.services.phase{number}_service")
+
+        async def _run(rid, *_args, _number=number, **_kwargs):
+            if _number in record.failing:
+                raise record.failing[_number]
+            record.ran.append((_number, rid))
+
+        monkeypatch.setattr(module, f"run_phase{number}", _run)
+    return record
+
+
+@pytest.fixture
+def reposts(monkeypatch):
+    """Attendance's repost of a check-in call, recording `(round id, division id)` in `posted`."""
+    from types import SimpleNamespace
+
+    from leaguebot.attendance.services import rsvp_service
+
+    record = SimpleNamespace(posted=[])
+
+    async def _repost(rid, division_id, *_args, **_kwargs):
+        record.posted.append((rid, division_id))
+
+    monkeypatch.setattr(rsvp_service, "repost_rsvp_call", _repost)
+    return record
+
+
+def _at(league, delta: timedelta) -> str:
+    """The moment *delta* from "now", as `/round amend` takes it."""
+    return (league.clock.now + delta).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _utc(moment) -> datetime:
+    moment = datetime.fromisoformat(moment) if isinstance(moment, str) else moment
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+async def _place(league, rid: int = AM_3, *, at: timedelta, track: str = BAHRAIN) -> None:
+    """Round *rid* falls *at* from "now", at *track*, in the NORMAL format."""
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ?, track_name = ? WHERE id = ?",
+        (league.clock.now + at).replace(tzinfo=None).isoformat(), track, rid,
+    )
+
+
+async def _amend(league, division: str = "Am", number: int = 3, *, offered: bool = True,
+                 **fields: str):
+    """Run `/round amend` for *division*'s round *number*, press its Confirm and run the queue;
+    gives the press. Where not *offered*, the offer is expected to refuse, and nothing is
+    pressed."""
+    press = await amend_round(league, division, number, **fields)
+    assert (press is not None) is offered, "nothing was offered" if offered else "it was offered"
+    assert not league.errors, league.errors
+    await run_queue(league.bot)
+    return press
+
+
+async def _round(league, rid: int = AM_3) -> dict:
+    return (await league.rows("SELECT * FROM rounds WHERE id = ?", rid))[0]
+
+
+async def _round_audits(league) -> list[dict]:
+    return await league.rows(
+        "SELECT change_type, old_value, new_value FROM audit_entries "
+        "WHERE change_type LIKE 'round.%' ORDER BY change_type"
+    )
+
+
+def _success_lines(league) -> list[str]:
+    return [line for line in league.bot.log_channel.sent if "| /round amend | Success" in line]
+
+
+async def _stopped_at(league) -> str | None:
+    job = await stopped_job(league.db_path)
+    return job["name"] if job else None
+
+
+# ---------------------------------------------------------------------------
 # amend_round actually amends — the query it opens with must name real columns
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_amend_round_changes_the_field(tmp_path):
     """`/round amend` was dead on arrival: its opening SELECT asked `divisions` for a
     `division_id` column, which that table has never had, so every amendment of an active
     season's round raised `no such column: d.division_id` and the league was told the
     amendment failed. Nothing else in the suite executed this path.
+
+    Am's round 3, at Bahrain International Circuit, is amended to Silverstone Circuit and the
+    queue run: the round holds the new track, and its record names the change from the old.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    league = await ongoing_league(tmp_path)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, track=SILVERSTONE)
 
-    path = str(tmp_path / "amend_round.db")
-    await run_migrations(path)
-    scheduled_at = datetime.now(timezone.utc) + timedelta(days=30)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 10, 20, 30)"
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
-            "VALUES (1, 1, 'Div A', 1, 999, 555)"
-        )
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
-            (scheduled_at.isoformat(),),
-        )
-        await db.commit()
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.db_path = path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("track_name", "Silverstone Circuit")], bot
-    )
-
-    async with get_connection(path) as db:
-        cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
-        row = await cursor.fetchone()
-        audit = await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries"
-        )
-        entry = await audit.fetchone()
-
-    assert row["track_name"] == "Silverstone Circuit"
+    assert (await _round(league))["track_name"] == SILVERSTONE
+    [entry] = await _round_audits(league)
     assert entry["change_type"] == "round.track_name"
-    assert entry["old_value"] == "Bahrain International Circuit"
-    assert entry["new_value"] == "Silverstone Circuit"
+    assert entry["old_value"] == BAHRAIN
+    assert entry["new_value"] == SILVERSTONE
 
 
 # ---------------------------------------------------------------------------
-# One line for a confirmed /round amend, written straight after the save (#482)
+# One line for a confirmed /round amend, saved with the amendment (#482; #439)
 # ---------------------------------------------------------------------------
 #
-# `/round amend` wrote two success lines for one amendment: this service's "/round amend (field)"
-# line, naming the fields by their columns, and the confirmation's own. The one line now stays
-# here, in the cogs' success form, and is written as soon as the amendment is saved, so it stands
-# whatever fails after the save: the core specification's "The record of what changed".
-
-#: The moment these amendments are made at, pinned so that the round's phases are judged alike
-#: on every run.
-_AMEND_NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
+# `/round amend` wrote two success lines for one amendment: the service's "/round amend (field)"
+# line, naming the fields by their columns, and the confirmation's own. The one line is in the
+# cogs' success form, and is saved with the amendment, so it stands whatever fails after the
+# save: the core specification's "The record of what changed".
 
 
-async def _round_to_amend(tmp_path, *, scheduled_at: datetime) -> str:
-    """Round 1 of division Div A in season 1, raced, at Bahrain International Circuit in the
-    NORMAL format, at *scheduled_at*, with no forecast drawn yet."""
-    path = str(tmp_path / "amend_line.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 10, 20, 30)"
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, "
-            "mention_role_id) VALUES (1, 1, 'Div A', 1, 999, 555)"
-        )
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
-            (scheduled_at.isoformat(),),
-        )
-        await db.commit()
-    return path
-
-
-def _amending_bot(path: str, *, weather: bool = False):
-    """The bot an amendment is made through: attendance off, weather as asked, every line the
-    amendment writes kept."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    bot = MagicMock()
-    bot.db_path = path
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-    return bot
-
-
-def _race_control():
-    from unittest.mock import MagicMock
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    return actor
-
-
-@pytest.mark.asyncio
 async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and_each_change(
     tmp_path,
 ):
-    """Race Control amends round 1 from Bahrain International Circuit in the NORMAL format to
+    """Admin amends Am's round 3 from Bahrain International Circuit in the NORMAL format to
     Silverstone Circuit in the SPRINT format. One line is written, in the success form, naming
-    Race Control and `/round amend`, the round, and each field from what to what, named as the
+    Admin and `/round amend`, the round, and each field from what to what, named as the
     command's parameter (`track`) rather than by its column."""
-    from datetime import timedelta
+    league = await ongoing_league(tmp_path)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.models.round import RoundFormat
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, track=SILVERSTONE, format="SPRINT")
 
-    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW + timedelta(days=30))
-    bot = _amending_bot(path)
-
-    await AmendmentService(path).amend_round(
-        1,
-        _race_control(),
-        [("track_name", "Silverstone Circuit"), ("format", RoundFormat.SPRINT)],
-        bot,
-        now=_AMEND_NOW,
-    )
-
-    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    [line] = _success_lines(league)
     head, _, body = line.partition("\n")
-    assert head == "Race Control (<@4242>) | /round amend | Success"
-    assert "round 1" in body.lower()
+    assert head == "Admin (`<@77>`) | /round amend | Success"
+    assert "round 3" in body.lower()
     changes = body.splitlines()
-    assert "  track: Bahrain International Circuit → Silverstone Circuit" in changes
+    assert f"  track: {BAHRAIN} → {SILVERSTONE}" in changes
     assert "  format: NORMAL → SPRINT" in changes
     assert "track_name" not in body
 
 
-@pytest.mark.asyncio
 async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_held(tmp_path):
-    """Race Control amends round 1, which stands at Bahrain International Circuit in the NORMAL
+    """Admin amends Am's round 3, which stands at Bahrain International Circuit in the NORMAL
     format, giving the track it already has and the SPRINT format. The one line names the format
     from what to what, and says nothing of the track, which did not change: a line reading
     'track: Bahrain International Circuit → Bahrain International Circuit' would record a change
     that was never made."""
-    from datetime import timedelta
+    league = await ongoing_league(tmp_path)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.models.round import RoundFormat
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, track=BAHRAIN, format="SPRINT")
 
-    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW + timedelta(days=30))
-    bot = _amending_bot(path)
-
-    await AmendmentService(path).amend_round(
-        1,
-        _race_control(),
-        [("track_name", "Bahrain International Circuit"), ("format", RoundFormat.SPRINT)],
-        bot,
-        now=_AMEND_NOW,
-    )
-
-    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    [line] = _success_lines(league)
     head, _, body = line.partition("\n")
-    assert head == "Race Control (<@4242>) | /round amend | Success"
+    assert head == "Admin (`<@77>`) | /round amend | Success"
     assert "  format: NORMAL → SPRINT" in body.splitlines()
     assert "track:" not in body
 
 
-@pytest.mark.parametrize("fault_in", ["cancelling the round's jobs", "re-running a phase"])
-@pytest.mark.asyncio
+@pytest.mark.parametrize("fault_in", ["arming the round's jobs", "re-running a phase"])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
-    tmp_path, fault_in
+    tmp_path, phases, fault_in
 ):
-    """Race Control moves round 1, raced a day ago with no forecast drawn, from Bahrain
-    International Circuit to Silverstone Circuit, with weather on. The amendment is saved, then
-    fails: the scheduler cannot cancel the round's jobs, or the first overdue forecast cannot be
-    drawn again. The round stands amended, and its one success line has been written before the
-    fault, so the record holds what changed."""
-    from datetime import timedelta
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from leaguebot.core.services.amendment_service import AmendmentService
-
-    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW - timedelta(days=1))
-    bot = _amending_bot(path, weather=True)
+    """Admin moves Am's round 3, 90 days out with no forecast drawn, from Bahrain International
+    Circuit to Silverstone Circuit and brings it forward to an hour from now, so that every phase
+    falls due at once, with weather on. The amendment is saved, then fails: the scheduler cannot arm the round's jobs again, or the first overdue forecast cannot
+    be drawn. The queue stops at that job; the round stands amended, and its one success line,
+    saved with the amendment, has been written, so the record holds what changed."""
+    league = await ongoing_league(tmp_path, weather=True)
+    await _place(league, at=timedelta(days=90))
     fault = RuntimeError("the fault after the save")
-    if fault_in == "cancelling the round's jobs":
-        bot.scheduler_service.cancel_round = MagicMock(side_effect=fault)
+    if fault_in == "arming the round's jobs":
+        league.arming_fails = fault
+    else:
+        phases.failing[1] = fault
 
-    with patch(
-        "leaguebot.weather.services.phase1_service.run_phase1",
-        new=AsyncMock(side_effect=fault),
-    ), patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ), patch(
-        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
-    ):
-        with pytest.raises(RuntimeError, match="the fault after the save"):
-            await AmendmentService(path).amend_round(
-                1, _race_control(), [("track_name", "Silverstone Circuit")], bot, now=_AMEND_NOW
-            )
+    await _amend(league, track=SILVERSTONE, scheduled_at=_at(league, timedelta(hours=1)))
 
-    async with get_connection(path) as db:
-        cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
-        assert (await cursor.fetchone())["track_name"] == "Silverstone Circuit"
-    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
-    assert line.startswith("Race Control (<@4242>) | /round amend | Success\n")
-    assert "  track: Bahrain International Circuit → Silverstone Circuit" in line.splitlines()
+    assert await _stopped_at(league) == (
+        "arm" if fault_in == "arming the round's jobs" else "rerun_phase"
+    )
+    assert (await _round(league))["track_name"] == SILVERSTONE
+    [line] = _success_lines(league)
+    assert line.startswith("Admin (`<@77>`) | /round amend | Success\n")
+    assert f"  track: {BAHRAIN} → {SILVERSTONE}" in line.splitlines()
 
 
 # ---------------------------------------------------------------------------
@@ -406,91 +384,40 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_amending_two_fields_amends_once(tmp_path):
+async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 
     `/round amend` called the service once per field the manager gave, so changing both ran the
     whole amendment twice: the league was told twice that its forecasts had been thrown away,
     and the round was cancelled, re-armed and had its overdue phases re-run twice over. Two
     audit entries are right — one per field — and everything else happens exactly once.
+
+    Weather on; Am's round 3, 90 days out, has had its phase 1 forecast posted (message 8101),
+    so the invalidation notice is reached at all. Its track and its date (a week later) are
+    amended together.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    league = await ongoing_league(tmp_path, weather=True)
+    await _place(league, at=timedelta(days=90))
+    await posted_forecast(league, AM_3, 1, 8101)
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, track=SILVERSTONE, scheduled_at=_at(league, timedelta(days=97)))
 
-    path = str(tmp_path / "amend_two.db")
-    await run_migrations(path)
-    scheduled_at = datetime.now(timezone.utc) + timedelta(days=30)
-    new_moment = scheduled_at + timedelta(days=7)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 10, 20, 30)"
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
-            "VALUES (1, 1, 'Div A', 1, 999, 555)"
-        )
-        # phase1_done = 1 so the invalidation notice path is reached at all.
-        await db.execute(
-            "INSERT INTO rounds "
-            "(id, division_id, round_number, format, track_name, scheduled_at, phase1_done) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?, 1)",
-            (scheduled_at.isoformat(),),
-        )
-        await db.commit()
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.db_path = path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-
-    # Both horizons stay in the future, so no overdue phase re-runs and the count below is
-    # measuring the amendment itself rather than the catch-up.
-    await AmendmentService(path).amend_round(
-        1,
-        actor,
-        [("track_name", "Silverstone Circuit"), ("scheduled_at", new_moment)],
-        bot,
-        now=datetime.now(timezone.utc),
-    )
-
-    async with get_connection(path) as db:
-        cursor = await db.execute("SELECT track_name, scheduled_at FROM rounds WHERE id = 1")
-        rnd = await cursor.fetchone()
-        cursor = await db.execute(
-            "SELECT change_type FROM audit_entries ORDER BY change_type"
-        )
-        audit = [r["change_type"] for r in await cursor.fetchall()]
-
+    rnd = await _round(league)
     # Both fields landed, in one amendment.
-    assert rnd["track_name"] == "Silverstone Circuit"
-    assert rnd["scheduled_at"] == new_moment.isoformat()
+    assert rnd["track_name"] == SILVERSTONE
+    assert _utc(rnd["scheduled_at"]) == _utc(_at(league, timedelta(days=97)))
 
     # One audit entry per field — the one thing that is right to do twice.
-    assert audit == ["round.scheduled_at", "round.track_name"]
+    assert [a["change_type"] for a in await _round_audits(league)] == [
+        "round.scheduled_at", "round.track_name",
+    ]
 
-    # Everything else exactly once.
-    assert bot.output_router.post_forecast.await_count == 1
-    assert bot.output_router.post_log.await_count == 1
-    assert bot.scheduler_service.cancel_round.call_count == 1
-    assert bot.scheduler_service.schedule_round.call_count == 1
+    # Everything else exactly once; both horizons stay in the future, so no overdue phase re-runs.
+    assert len(league.texts(DIVISIONS[AM][3].forecast)) == 1
+    assert len(_success_lines(league)) == 1
+    assert league.unarmed == [AM_3]
+    assert league.armed == [("weather", [AM_3])]
+    assert phases.ran == []
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +425,6 @@ async def test_amending_two_fields_amends_once(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     """Each phase is judged on its own, by whether it would have run under the new moment.
 
@@ -508,78 +434,32 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     amendment had no record that any forecast had ever been posted, which is what the track and
     format rules read.
 
-    Round one day out, delayed to four. Phase 1 falls five days before it and is behind us
-    either way, so it stands. Phases 2 and 3 have not come round under the new moment, so they
-    are withdrawn and armed again.
+    Am's round 3 one day out, delayed to four, weather off. Phase 1 falls five days before it
+    and is behind us either way, so it stands. Phases 2 and 3 have not come round under the new
+    moment, so they are withdrawn and armed again.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from leaguebot.core.services.amendment_service import AmendmentService
-
-    path = str(tmp_path / "amend_phases.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    scheduled_at = now + timedelta(days=1)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 10, 20, 30)"
+    league = await ongoing_league(tmp_path)
+    await _place(league, at=timedelta(days=1))
+    # Phases 1 and 2 have run (their horizons, 5 and 2 days out, are behind us); 3 has not.
+    await league.write("UPDATE rounds SET phase1_done = 1 WHERE id = ?", AM_3)
+    await league.write("UPDATE rounds SET phase2_done = 1 WHERE id = ?", AM_3)
+    for phase_number in (1, 2):
+        await league.write(
+            "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+            "VALUES (?, ?, '{}', 'ACTIVE', ?)",
+            AM_3, phase_number, league.clock.now.isoformat(),
         )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
-            "VALUES (1, 1, 'Div A', 1, 999, 555)"
-        )
-        # Phases 1 and 2 have run (their horizons, 5 and 2 days out, are behind us); 3 has not.
-        await db.execute(
-            "INSERT INTO rounds "
-            "(id, division_id, round_number, format, track_name, scheduled_at, "
-            " phase1_done, phase2_done, phase3_done) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?, 1, 1, 0)",
-            (scheduled_at.isoformat(),),
-        )
-        for phase_number in (1, 2):
-            await db.execute(
-                "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-                "VALUES (1, ?, '{}', 'ACTIVE', ?)",
-                (phase_number, now.isoformat()),
-            )
-        await db.commit()
 
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
+    await _amend(league, scheduled_at=_at(league, timedelta(days=4)))
 
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.db_path = path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("scheduled_at", now + timedelta(days=4))], bot, now=now
-    )
-
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT phase1_done, phase2_done, phase3_done FROM rounds WHERE id = 1"
+    flags = await _round(league)
+    results = {
+        r["phase_number"]: r["status"]
+        for r in await league.rows(
+            "SELECT phase_number, status FROM phase_results WHERE round_id = ? "
+            "ORDER BY phase_number", AM_3,
         )
-        flags = await cursor.fetchone()
-        cursor = await db.execute(
-            "SELECT phase_number, status FROM phase_results WHERE round_id = 1 "
-            "ORDER BY phase_number"
-        )
-        results = {r["phase_number"]: r["status"] for r in await cursor.fetchall()}
-
+    }
     # Phase 1 would still have run, so its forecast and its flag both stand.
     assert flags["phase1_done"] == 1
     assert results[1] == "ACTIVE"
@@ -597,8 +477,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
+async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path, phases):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
     `schedule_round` falls back to the packaged 5 / 2 / 2 when it is not told otherwise, and the
@@ -606,63 +485,17 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     every time it moved a round, and the phases fired at moments nobody had chosen. It also put
     the amendment at odds with itself once the rules began reading the configured horizons: a
     phase would be judged at seven days and armed at five.
+
+    Weather on, the league's horizons 7 / 3 / 4; Am's round 3 has its track amended.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    league = await ongoing_league(tmp_path, weather=True, horizons=(7, 3, 4))
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, track=SILVERSTONE)
 
-    path = str(tmp_path / "amend_horizons.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    scheduled_at = now + timedelta(days=30)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 10, 20, 30)"
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
-            "VALUES (1, 1, 'Div A', 1, 999, 555)"
-        )
-        await db.execute(
-            "INSERT INTO rounds "
-            "(id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
-            (scheduled_at.isoformat(),),
-        )
-        # Anything but the packaged 5 / 2 / 2, so a fallback cannot pass by coincidence.
-        await db.execute(
-            "INSERT INTO weather_pipeline_config (id, phase_1_days, phase_2_days, phase_3_hours) "
-            "VALUES (1, 7, 3, 4)"
-        )
-        await db.commit()
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.db_path = path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
-    )
-
-    bot.scheduler_service.schedule_round.assert_called_once()
-    kwargs = bot.scheduler_service.schedule_round.call_args.kwargs
+    schedule_round = league.bot.scheduler_service.schedule_round
+    schedule_round.assert_called_once()
+    kwargs = schedule_round.call_args.kwargs
     assert kwargs["phase_1_days"] == 7
     assert kwargs["phase_2_days"] == 3
     assert kwargs["phase_3_hours"] == 4
@@ -673,55 +506,6 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _amend_bot_with_attendance(path, *, attendance: bool, weather: bool = False):
-    from types import SimpleNamespace
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.db_path = path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    bot.attendance_service.get_or_create_config = AsyncMock(
-        return_value=SimpleNamespace(
-            rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
-        )
-    )
-    # No call has gone out for these rounds, so there is nothing to take down or repost.
-    bot.attendance_service.get_embed_message = AsyncMock(return_value=None)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.scheduler_service.cancel_round = MagicMock()
-    bot.scheduler_service.schedule_round = MagicMock()
-    bot.scheduler_service.schedule_attendance_round = MagicMock()
-    return bot
-
-
-async def _seed_one_round(path, scheduled_at):
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (1, 10, 20, 30)"
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 3)"
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
-            "VALUES (1, 1, 'Div A', 2, 999, 555)"
-        )
-        await db.execute(
-            "INSERT INTO rounds "
-            "(id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
-            (scheduled_at.isoformat(),),
-        )
-        await db.commit()
-
-
-@pytest.mark.asyncio
 async def test_amending_a_round_rearms_its_check_in(tmp_path):
     """The reported defect: amending a round destroyed its check-in for good.
 
@@ -731,28 +515,18 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     cannot be run again on an active season. So the round asked nobody whether they were racing,
     opened no attendance records, charged nobody, and read afterwards as perfect attendance for
     the entire division, with nothing anywhere reporting it.
+
+    Attendance on, at the league's timings (call 5 days out, last notice 24 hours, deadline 2
+    hours); Am's round 3 (season 3, tier 2) is moved from 90 to 100 days out.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import MagicMock
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    path = str(tmp_path / "amend_checkin.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=30))
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=True)
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
-    )
-
-    bot.scheduler_service.schedule_attendance_round.assert_called_once()
-    kwargs = bot.scheduler_service.schedule_attendance_round.call_args.kwargs
+    arming = league.bot.scheduler_service.schedule_attendance_round
+    arming.assert_called_once()
+    kwargs = arming.call_args.kwargs
     # Armed against the league's own timings, and named for the right season and tier.
     assert kwargs["notice_days"] == 5
     assert kwargs["last_notice_hours"] == 24
@@ -760,33 +534,18 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     assert kwargs["season_number"] == 3
     assert kwargs["division_tier"] == 2
     # And against the round as amended, not as it stood.
-    armed_round = bot.scheduler_service.schedule_attendance_round.call_args.args[0]
-    assert armed_round.scheduled_at.replace(tzinfo=timezone.utc) == now + timedelta(days=40)
+    assert _utc(arming.call_args.args[0].scheduled_at) == _utc(_at(league, timedelta(days=100)))
 
 
-@pytest.mark.asyncio
 async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tmp_path):
-    """A disabled module produces nothing, a scheduled job included."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import MagicMock
+    """A disabled module produces nothing, a scheduled job included: attendance off, Am's round 3
+    moved from 90 to 100 days out arms no check-in."""
+    league = await ongoing_league(tmp_path, attendance=False)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    path = str(tmp_path / "amend_no_checkin.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=30))
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=False)
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
-    )
-
-    bot.scheduler_service.schedule_attendance_round.assert_not_called()
+    league.bot.scheduler_service.schedule_attendance_round.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -794,7 +553,6 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path):
     """`schedule_round` builds the weather jobs and the results job together.
 
@@ -802,59 +560,30 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     round's results job with nothing putting it back. That job is the round's one clock-driven
     status transition — without it the round never leaves NOT_RUN, its division never finishes,
     and its season can never be completed.
+
+    Weather and attendance off; Am's round 3 (season 3, tier 2) moved from 90 to 100 days out.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import MagicMock
+    league = await ongoing_league(tmp_path)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    path = str(tmp_path / "amend_results.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=30))
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=False, weather=False)
-    bot.scheduler_service.schedule_result_submission_jobs = MagicMock()
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
-    )
-
-    bot.scheduler_service.schedule_result_submission_jobs.assert_called_once()
-    rounds = bot.scheduler_service.schedule_result_submission_jobs.call_args.args[0]
-    assert [r.id for r in rounds] == [1]
-    meta = bot.scheduler_service.schedule_result_submission_jobs.call_args.kwargs["division_meta"]
-    assert meta == {1: (3, 2)}
+    arming = league.bot.scheduler_service.schedule_result_submission_jobs
+    arming.assert_called_once()
+    assert [r.id for r in arming.call_args.args[0]] == [AM_3]
+    assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
 
 
-@pytest.mark.asyncio
-async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
-    """With weather on, `schedule_round` has already created it — arming again would duplicate."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import MagicMock
+async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path, phases):
+    """With weather on, `schedule_round` has already created it — arming again would duplicate.
+    Am's round 3 moved from 90 to 100 days out."""
+    league = await ongoing_league(tmp_path, weather=True)
+    await _place(league, at=timedelta(days=90))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, scheduled_at=_at(league, timedelta(days=100)))
 
-    path = str(tmp_path / "amend_results_weather.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=30))
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=False, weather=True)
-    bot.scheduler_service.schedule_result_submission_jobs = MagicMock()
-
-    await AmendmentService(path).amend_round(
-        1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
-    )
-
-    bot.scheduler_service.schedule_round.assert_called_once()
-    bot.scheduler_service.schedule_result_submission_jobs.assert_not_called()
+    league.bot.scheduler_service.schedule_round.assert_called_once()
+    league.bot.scheduler_service.schedule_result_submission_jobs.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -862,230 +591,144 @@ async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_window(tmp_path):
+async def _call_rows(league) -> list[dict]:
+    return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", PRO_3)
+
+
+async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_window(
+    tmp_path, reposts
+):
     """Moved far enough that the call would not have gone out, so the one standing is withdrawn.
 
     The armed job posts a fresh one at the new time. Leaving the old one up would have the
     division reading a call for a circuit, a date or a set of sessions the round no longer has.
+
+    Attendance on; Pro's round 3, two days out, has its call standing (messages 7001 to 7003),
+    and is moved 40 days out: the call's messages and its record go, and no call is posted again.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place(league, PRO_3, at=timedelta(days=2))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, "Pro", scheduled_at=_at(league, timedelta(days=40)))
 
-    path = str(tmp_path / "amend_withdraw.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=2))
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=True)
-    _withdrawn = AsyncMock(return_value=True)
-    _reposted = AsyncMock(return_value=None)
-
-    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
-        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", _reposted
-    ):
-        await AmendmentService(path).amend_round(
-            1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
-        )
-
-    _withdrawn.assert_awaited_once()
-    _reposted.assert_not_awaited()
+    assert await _call_rows(league) == []
+    checkin = league.channel(DIVISIONS[PRO][3].checkin)
+    assert not any(mid in checkin.messages for mid in CALL_MESSAGES)
+    assert reposts.posted == []
 
 
-@pytest.mark.asyncio
-async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_path):
-    """The call was due and is still open, so it goes out again carrying what changed."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_path, reposts):
+    """The call was due and is still open, so it goes out again carrying what changed.
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    Attendance on; Pro's round 3, two days out (the call, 5 days before, is behind us; the
+    deadline, 2 hours before, is not), has its call standing and its track amended: the call is
+    posted again, once."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place(league, PRO_3, at=timedelta(days=2))
 
-    path = str(tmp_path / "amend_repost.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    # Two days out: the call (5 days before) is behind us, the deadline (2 hours) is not.
-    await _seed_one_round(path, now + timedelta(days=2))
+    await _amend(league, "Pro", track=SILVERSTONE)
 
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=True)
-    _withdrawn = AsyncMock(return_value=True)
-    _reposted = AsyncMock(return_value=None)
-
-    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
-        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", _reposted
-    ):
-        await AmendmentService(path).amend_round(
-            1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
-        )
-
-    _reposted.assert_awaited_once()
-    _withdrawn.assert_not_awaited()
+    assert reposts.posted == [(PRO_3, PRO)]
 
 
-@pytest.mark.asyncio
-async def test_a_closed_check_in_is_left_alone(tmp_path):
+async def test_a_closed_check_in_is_left_alone(tmp_path, reposts):
     """Past its deadline the check-in is settled and the reserves are distributed against it.
 
     Reopening it would unsettle a grid already told who is racing, so nothing is posted and
     nothing is taken down — the amendment touches the forecasts and the schedule alone.
+
+    Attendance on; Pro's round 3, one hour out (its deadline two hours before it gone by), has
+    its call standing and its track amended. The rules refuse an amendment whose check-in
+    deadline has passed, at the offer and again when it runs, so nothing is asked of the queue:
+    the call stands as it was, and none is posted.
     """
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place(league, PRO_3, at=timedelta(hours=1))
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    await _amend(league, "Pro", offered=False, track=SILVERSTONE)
 
-    path = str(tmp_path / "amend_closed.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    # One hour out, so the deadline two hours before it has gone by.
-    await _seed_one_round(path, now + timedelta(hours=1))
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=True)
-    _withdrawn = AsyncMock(return_value=True)
-    _reposted = AsyncMock(return_value=None)
-
-    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
-        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", _reposted
-    ):
-        await AmendmentService(path).amend_round(
-            1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
-        )
-
-    _reposted.assert_not_awaited()
-    _withdrawn.assert_not_awaited()
+    assert reposts.posted == []
+    assert len(await _call_rows(league)) == 1
+    checkin = league.channel(DIVISIONS[PRO][3].checkin)
+    assert all(mid in checkin.messages for mid in CALL_MESSAGES)
 
 
-async def _cleared(path: str) -> bool:
-    async with get_connection(path) as db:
-        cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = 1")
-        return bool((await cursor.fetchone())["checkin_cleared"])
+_CHECK_INS = [
+    (timedelta(days=2), "moved-out"),
+    (timedelta(days=2), "track"),
+    (timedelta(hours=1), "track"),
+]
 
 
-@pytest.mark.asyncio
+def _change(league, changes: str, days_out: timedelta) -> dict:
+    """The amendment *changes* names, and whether it is offered: not where the round's check-in
+    deadline has passed (*days_out* inside two hours), which the rules refuse."""
+    offered = days_out > timedelta(hours=2)
+    if changes == "moved-out":
+        return {"offered": offered, "scheduled_at": _at(league, timedelta(days=40))}
+    return {"offered": offered, "track": SILVERSTONE}
+
+
 @pytest.mark.parametrize(
     "days_out,changes,cleared",
-    [
-        (2, "moved-out", False),
-        (2, "track", False),
-        (1 / 24, "track", True),
-    ],
+    [(*_CHECK_INS[0], False), (*_CHECK_INS[1], False), (*_CHECK_INS[2], True)],
     ids=["call-withdrawn", "call-reposted", "check-in-closed"],
 )
 async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
-    tmp_path, days_out, changes, cleared
+    tmp_path, reposts, days_out, changes, cleared
 ):
     """A round's check-in marked taken down, then reopened by an amendment, is no longer taken
     down (#425): test mode reads the mark, and would otherwise never offer the new call. A
-    check-in the amendment leaves closed keeps it."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    check-in the amendment leaves closed keeps it.
 
-    from leaguebot.core.services.amendment_service import AmendmentService
+    Attendance on; Am's round 3, two days out or one hour out, its check-in marked taken down,
+    is moved 40 days out or has its track amended. One hour out its check-in deadline has
+    passed, and the rules refuse the amendment at the offer, so the mark stands."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place(league, at=days_out)
+    await league.write("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", AM_3)
 
-    path = str(tmp_path / "amend_cleared.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=days_out))
-    async with get_connection(path) as db:
-        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
-        await db.commit()
+    await _amend(league, **_change(league, changes, days_out))
 
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=True)
-    change = (
-        ("scheduled_at", now + timedelta(days=40))
-        if changes == "moved-out"
-        else ("track_name", "Silverstone Circuit")
-    )
-
-    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
-        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
-    ):
-        await AmendmentService(path).amend_round(1, actor, [change], bot, now=now)
-
-    assert await _cleared(path) is cleared
+    assert bool((await _round(league))["checkin_cleared"]) is cleared
 
 
-async def _placement(path: str) -> tuple[int | None, int]:
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT assigned_team_id, is_standby FROM driver_round_attendance WHERE round_id = 1"
-        )
-        row = await cursor.fetchone()
-    return row["assigned_team_id"], row["is_standby"]
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "days_out,changes,forgotten",
-    [
-        (2, "moved-out", True),
-        (2, "track", True),
-        (1 / 24, "track", False),
-    ],
+    [(*_CHECK_INS[0], True), (*_CHECK_INS[1], True), (*_CHECK_INS[2], False)],
     ids=["call-withdrawn", "call-reposted", "check-in-closed"],
 )
 async def test_reopening_a_check_in_forgets_the_distribution_of_the_call_it_replaces(
-    tmp_path, days_out, changes, forgotten
+    tmp_path, reposts, days_out, changes, forgotten
 ):
     """A check-in reopened by an amendment carries its answers over, not its distribution
     (#429). The reserves were placed against the call being withdrawn, and the call that
     replaces it has its own deadline to place them; a reserve keeping the old team was charged
     as a no-show after the new deadline put them on standby. A check-in the amendment leaves
-    closed keeps its distribution: it is the one the division was told about."""
-    from datetime import datetime, timedelta, timezone
-    from unittest.mock import AsyncMock, MagicMock, patch
+    closed keeps its distribution: it is the one the division was told about.
 
-    from leaguebot.core.services.amendment_service import AmendmentService
-
-    path = str(tmp_path / "amend_placements.db")
-    await run_migrations(path)
-    now = datetime.now(timezone.utc)
-    await _seed_one_round(path, now + timedelta(days=days_out))
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
-            "VALUES (1, '4242', 'ASSIGNED')"
-        )
-        await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
-            "VALUES (10, 1, 'Alpha', 'Alpha', 2, 0)"
-        )
-        await db.execute(
-            "INSERT INTO driver_round_attendance "
-            "(round_id, division_id, driver_profile_id, rsvp_status, assigned_team_id) "
-            "VALUES (1, 1, 1, 'ACCEPTED', 10)"
-        )
-        await db.commit()
-
-    actor = MagicMock()
-    actor.id = 4242
-    actor.display_name = "Race Control"
-    bot = _amend_bot_with_attendance(path, attendance=True)
-    change = (
-        ("scheduled_at", now + timedelta(days=40))
-        if changes == "moved-out"
-        else ("track_name", "Silverstone Circuit")
+    Attendance on; Charles accepted Am's round 3 and was placed at McLaren. The round, two days
+    out or one hour out, is moved 40 days out or has its track amended. One hour out its check-in
+    deadline has passed, and the rules refuse the amendment at the offer, so the placement
+    stands."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place(league, at=days_out)
+    await league.write(
+        "INSERT INTO driver_round_attendance "
+        "(round_id, division_id, driver_profile_id, rsvp_status, assigned_team_id) "
+        "VALUES (?, ?, ?, 'ACCEPTED', ?)",
+        AM_3, AM, profile_id(CHARLES), MCLAREN,
     )
 
-    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
-        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
-    ):
-        await AmendmentService(path).amend_round(1, actor, [change], bot, now=now)
+    await _amend(league, **_change(league, changes, days_out))
 
-    assert await _placement(path) == ((None, 0) if forgotten else (10, 0))
+    [row] = await league.rows(
+        "SELECT assigned_team_id, is_standby FROM driver_round_attendance WHERE round_id = ?",
+        AM_3,
+    )
+    assert (row["assigned_team_id"], row["is_standby"]) == (
+        (None, 0) if forgotten else (MCLAREN, 0)
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -607,7 +607,7 @@ class SeasonService:
         the fact and `/season cancel` can tell the running divisions apart from the called-off
         ones. Stored state can drift from the rounds it summarises, so this is called from every
         place a round's outcome settles — the appeals approval in result_submission_service and
-        `cancel_round` below — and again from the `/season complete` gate, which cannot afford to
+        `cancel_round_on` below — and again from the `/season complete` gate, which cannot afford to
         strand a league on a stale row a second time (issue #154).
 
         The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
@@ -959,6 +959,19 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [_row_to_division(r) for r in rows]
 
+    async def get_division(self, division_id: int) -> Division | None:
+        """Return the division *division_id*, or None where there is none."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+                "calendar_message_id "
+                "FROM divisions WHERE id = ?",
+                (division_id,),
+            )
+            row = await cursor.fetchone()
+        return _row_to_division(row) if row is not None else None
+
     async def set_division_forecast_channel(
         self, division_id: int, channel_id: int | None
     ) -> int | None:
@@ -1107,109 +1120,6 @@ class SeasonService:
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 
-    async def _cancel_division_on(
-        self,
-        db,
-        division_id: int,
-        actor_id: int,
-        actor_name: str,
-        now: datetime,
-    ) -> None:
-        """Cancel a division and its unraced rounds on an already-open connection.
-
-        Only rounds that may still be cancelled are — those not yet run, and those whose
-        results have not been entered. Once results are in, the drivers have reports and appeals
-        to lodge and calling the round off would take that from them, so it keeps its place and
-        its results; the division around it is what was called off. `ROUND_CANCELLABLE` carries
-        the rule, and `/round cancel` reads the same set, so one round and a whole division
-        cannot disagree about what may be called off.
-        """
-        cursor = await db.execute(
-            "SELECT status FROM divisions WHERE id = ?", (division_id,)
-        )
-        row = await cursor.fetchone()
-        previous = row["status"] if row else "ACTIVE"
-
-        cursor = await db.execute(
-            f"""
-            SELECT id FROM rounds
-            WHERE division_id = ?
-              AND status IN ({_CANCELLABLE_SQL})
-            ORDER BY round_number
-            """,
-            (division_id,),
-        )
-        unraced = [r["id"] for r in await cursor.fetchall()]
-
-        for round_id in unraced:
-            await db.execute(
-                "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,)
-            )
-            await db.execute(
-                """
-                INSERT INTO audit_entries
-                    (actor_id, actor_name, division_id, change_type,
-                     old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    actor_id, actor_name, division_id,
-                    "round.status", "ACTIVE", "CANCELLED", now.isoformat(),
-                ),
-            )
-
-        await db.execute(
-            "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?",
-            (division_id,),
-        )
-        await db.execute(
-            """
-            INSERT INTO audit_entries
-                (actor_id, actor_name, division_id, change_type,
-                 old_value, new_value, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                actor_id,
-                actor_name,
-                division_id,
-                "division.status",
-                previous,
-                "CANCELLED",
-                now.isoformat(),
-            ),
-        )
-
-    async def cancel_division(
-        self,
-        division_id: int,
-        actor_id: int,
-        actor_name: str,
-    ) -> None:
-        """Mark a division CANCELLED, cancelling every round of it not yet raced.
-
-        Before issue #154 this set the division's status alone: its rounds were unscheduled by the
-        caller but kept saying ACTIVE for ever, so a cancelled division still read as one holding
-        outstanding rounds.
-        """
-        from datetime import timezone
-        now = datetime.now(timezone.utc)
-        async with get_connection(self._db_path) as db:
-            await self._cancel_division_on(
-                db, division_id, actor_id, actor_name, now
-            )
-            await db.commit()
-            cursor = await db.execute(
-                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
-            )
-            season_row = await cursor.fetchone()
-
-        # Cancelling the last division still running leaves the season pending completion.
-        if season_row is not None:
-            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
-
-            await advance_to_pending_completion(self._db_path, season_row["season_id"])
-
     async def cancel_season_cascade(
         self,
         season_id: int,
@@ -1218,9 +1128,9 @@ class SeasonService:
     ) -> None:
         """Cancel every division of a season, then the season itself.
 
-        The order is deliberate and not merely tidy: `cancel_round` refuses to touch a round whose
-        season is already COMPLETED or CANCELLED, so a season row flipped first would lock the
-        cascade out of its own children. The season is therefore the last thing written, and the
+        The order is deliberate and not merely tidy: `cancel_round_on` refuses to touch a round whose
+        season is already COMPLETED or CANCELLED, so a season row flipped first would lock a write
+        beneath it out of its own children. The season is therefore the last thing written, and the
         whole cascade shares one transaction so a failure part-way cannot leave a season standing
         over half-cancelled divisions.
         """
@@ -1234,8 +1144,8 @@ class SeasonService:
             division_ids = [r["id"] for r in await cursor.fetchall()]
 
             for division_id in division_ids:
-                await self._cancel_division_on(
-                    db, division_id, actor_id, actor_name, now
+                await cancel_division_on(
+                    db, division_id, actor_id=actor_id, actor_name=actor_name, now=now
                 )
 
             await db.execute(
@@ -1380,16 +1290,7 @@ class SeasonService:
     async def renumber_rounds(self, division_id: int) -> None:
         """Rewrite round_number for all rounds in a division, sorted ascending by scheduled_at."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
-                (division_id,),
-            )
-            rows = await cursor.fetchall()
-            for i, row in enumerate(rows, start=1):
-                await db.execute(
-                    "UPDATE rounds SET round_number = ? WHERE id = ?",
-                    (i, row[0]),
-                )
+            await renumber_rounds_on(db, division_id)
             await db.commit()
 
     async def delete_round(self, round_id: int) -> None:
@@ -1410,62 +1311,6 @@ class SeasonService:
             await db.commit()
 
         await self.renumber_rounds(division_id)
-
-    async def cancel_round(
-        self,
-        round_id: int,
-        actor_id: int,
-        actor_name: str,
-    ) -> None:
-        """Mark a round CANCELLED and write an audit entry."""
-        from datetime import timezone
-        now = datetime.now(timezone.utc)
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT r.division_id, s.status AS season_status
-                FROM rounds r
-                JOIN divisions d ON d.id = r.division_id
-                JOIN seasons s ON s.id = d.season_id
-                WHERE r.id = ?
-                """,
-                (round_id,),
-            )
-            row = await cursor.fetchone()
-            division_id = row["division_id"] if row else None
-
-            if row and row["season_status"] in ("COMPLETED", "CANCELLED"):
-                raise SeasonImmutableError(
-                    f"Round {round_id} belongs to an archived season and cannot be cancelled."
-                )
-
-            await db.execute(
-                "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?",
-                (round_id,),
-            )
-            await db.execute(
-                """
-                INSERT INTO audit_entries
-                    (actor_id, actor_name, division_id, change_type,
-                     old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    actor_id,
-                    actor_name,
-                    division_id,
-                    "round.status",
-                    "ACTIVE",
-                    "CANCELLED",
-                    now.isoformat(),
-                ),
-            )
-            await db.commit()
-
-        # Cancelling the last outstanding round is what finishes a division, so the division's
-        # own status has to be reconsidered here as well as on a result being finalised.
-        if division_id is not None:
-            await self.refresh_division_status(division_id)
 
     async def update_round_field(self, round_id: int, field: str, value: object) -> None:
         """Generic field updater used by amendment_service."""
@@ -1519,6 +1364,24 @@ class SeasonService:
                 (round_id,),
             )
             await db.commit()
+
+
+async def renumber_rounds_on(db: aiosqlite.Connection, division_id: int) -> None:
+    """Rewrite ``round_number`` for all rounds in a division on *db*, committing nothing.
+
+    Sorted ascending by ``scheduled_at``. A change's save calls it, so the renumbering outlasts
+    nothing the save does not (a round amendment writes the round and renumbers in one save).
+    """
+    cursor = await db.execute(
+        "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
+        (division_id,),
+    )
+    rows = await cursor.fetchall()
+    for i, row in enumerate(rows, start=1):
+        await db.execute(
+            "UPDATE rounds SET round_number = ? WHERE id = ?",
+            (i, row[0]),
+        )
 
 
 async def create_sessions_for_round_on(
@@ -1622,6 +1485,147 @@ async def set_round_status_on(
         f"UPDATE rounds SET status = ? WHERE id = ? AND {guard}", params
     )
     return cursor.rowcount > 0
+
+
+async def cancel_round_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> str | None:
+    """Mark a round CANCELLED on *db*, committing nothing.
+
+    The round is cancelled only while it may be: its status in ``ROUND_CANCELLABLE`` and its
+    season not archived. The write is guarded on that status, so a round that moved on since the
+    caller looked is left alone; ``/round cancel``'s check judges the same rule when it is asked
+    and when it runs, and this is the save's own backstop.
+
+    The ``round.status`` audit records the status the round was really cancelled from, written
+    on *db* in the plain-string form ``end_rounds_awaiting_results_on`` writes its own in.
+    Cancelling the last outstanding round is what finishes a division, so the division is
+    refreshed here too, and the season moved on where that was the last it waited on, all in the
+    caller's save (issue #439).
+
+    Returns the status the round was cancelled from, or ``None`` where nothing was moved.
+    """
+    cursor = await db.execute(
+        """
+        SELECT r.division_id, r.status, s.status AS season_status
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        JOIN seasons s ON s.id = d.season_id
+        WHERE r.id = ?
+        """,
+        (round_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or row["season_status"] in ("COMPLETED", "CANCELLED"):
+        return None
+    previous: str = row["status"]
+    division_id: int = row["division_id"]
+
+    cursor = await db.execute(
+        f"UPDATE rounds SET status = 'CANCELLED' WHERE id = ? AND status IN ({_CANCELLABLE_SQL})",
+        (round_id,),
+    )
+    if cursor.rowcount == 0:
+        return None
+    await db.execute(
+        """
+        INSERT INTO audit_entries
+            (actor_id, actor_name, division_id, change_type,
+             old_value, new_value, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            actor_id, actor_name, division_id,
+            "round.status", previous, "CANCELLED", now.isoformat(),
+        ),
+    )
+    await refresh_division_status_on(db, division_id)
+    return previous
+
+
+async def cancel_division_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> list[int]:
+    """Cancel a division and its unraced rounds on *db*, committing nothing.
+
+    Only rounds that may still be cancelled are — those not yet run, and those whose
+    results have not been entered. Once results are in, the drivers have reports and appeals
+    to lodge and calling the round off would take that from them, so it keeps its place and
+    its results; the division around it is what was called off. `ROUND_CANCELLABLE` carries
+    the rule, and `/round cancel` reads the same set, so one round and a whole division
+    cannot disagree about what may be called off.
+
+    Returns the ids of the rounds called off, in round order. The season is left as it is: moving
+    it on where this was its last running division is the division's cancellation's, in its own
+    save, because `/season cancel` shares this function and must never leave the season it
+    cancels at Pending completion (#439).
+    """
+    cursor = await db.execute(
+        "SELECT status FROM divisions WHERE id = ?", (division_id,)
+    )
+    row = await cursor.fetchone()
+    previous = row["status"] if row else "ACTIVE"
+
+    cursor = await db.execute(
+        f"""
+        SELECT id, status FROM rounds
+        WHERE division_id = ?
+          AND status IN ({_CANCELLABLE_SQL})
+        ORDER BY round_number
+        """,
+        (division_id,),
+    )
+    unraced = [(r["id"], r["status"]) for r in await cursor.fetchall()]
+
+    for round_id, round_status in unraced:
+        await db.execute(
+            "UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,)
+        )
+        await db.execute(
+            """
+            INSERT INTO audit_entries
+                (actor_id, actor_name, division_id, change_type,
+                 old_value, new_value, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actor_id, actor_name, division_id,
+                "round.status", round_status, "CANCELLED", now.isoformat(),
+            ),
+        )
+
+    await db.execute(
+        "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?",
+        (division_id,),
+    )
+    await db.execute(
+        """
+        INSERT INTO audit_entries
+            (actor_id, actor_name, division_id, change_type,
+             old_value, new_value, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            actor_id,
+            actor_name,
+            division_id,
+            "division.status",
+            previous,
+            "CANCELLED",
+            now.isoformat(),
+        ),
+    )
+    return [round_id for round_id, _ in unraced]
 
 
 async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int) -> bool:

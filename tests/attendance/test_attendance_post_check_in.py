@@ -254,6 +254,27 @@ async def test_a_cancelled_round_is_refused(tmp_path):
     assert "cancelled" in _replied(interaction)
 
 
+async def test_a_round_whose_check_in_is_over_is_refused(tmp_path):
+    """A round whose check-in is over, closed by its deadline with no call standing or given up
+    at a restart, has nothing left to answer: the command refuses it up front, in one line, and
+    posts nothing, rather than reporting a failure the log channel does not explain."""
+    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (ROUND_ID,))
+        await db.commit()
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    notice = await _invoke(cog, interaction)
+
+    notice.assert_not_awaited()
+    replies = [str(c.args[0]) for c in interaction.followup.send.await_args_list]
+    assert len(replies) == 1
+    assert replies[0].startswith("⛔") and "check-in is over" in replies[0]
+    assert "The log channel says why" not in replies[0]
+    assert "refused" in _logged(cog) and "check-in is over" in _logged(cog)
+
+
 async def test_a_call_already_standing_is_refused(tmp_path):
     """Decision 1: a standing call is never replaced, and the refusal says what to do instead.
 

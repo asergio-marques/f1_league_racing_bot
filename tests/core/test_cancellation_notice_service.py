@@ -676,3 +676,131 @@ async def test_only_the_division_s_own_rounds_are_withdrawn_and_audited(tmp_path
 
     assert withdrawn == [(ROUND_ID, DIVISION_ID)]
     assert "Round 3 (Monza)" in report.audit
+
+
+# ── A round's or a division's notices and take-downs, as jobs on the queue (#439, slice 4b) ──
+#
+# `/season cancel` keeps every send on its own, named at once, as above. A round's or a
+# division's cancellation posts each notice and takes each call down as a job of the change
+# queue, which stops on a failure Discord caused; so each has a raising form here.
+
+AUDIT_OF_ROUND_3 = (
+    "\n  check-in, Pro, Round 3 (Monza):"
+    "\n    accepted: <@101>"
+    "\n    tentative: none"
+    "\n    declined: <@102>"
+    "\n    no answer: none"
+)
+
+
+async def _post_notice(bot, guild, module):
+    return await cns.post_module_notice(
+        bot, guild, _division(), module, scope=cns.SCOPE_ROUND, round_number=3,
+        track_name="Monza",
+    )
+
+
+async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):
+    """Pro's check-in channel is set but no longer on the server. Posting attendance's notice
+    raises StepFailedOnDiscord, caused by nothing else, so the queue stops until the channel is
+    set again and Retry is pressed."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    bot = _bot(await _make_db(tmp_path))
+    guild, _ = _guild(missing=(RSVP,))
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await _post_notice(bot, guild, "attendance")
+    assert caught.value.__cause__ is None
+
+
+async def test_a_raising_notice_raises_where_discord_refuses(tmp_path):
+    """Discord refuses the forecast note in Pro's forecast channel (Forbidden). Posting it raises
+    StepFailedOnDiscord, raised from Discord's refusal, which the stop notice names."""
+    import discord
+
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    refusal = discord.Forbidden(MagicMock(status=403), "Missing Access")
+    channels[FORECAST].send.side_effect = refusal
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await _post_notice(bot, guild, "weather")
+    assert caught.value.__cause__ is refusal
+
+
+async def test_a_raising_notice_lets_a_fault_of_the_bot_s_own_through_unchanged(tmp_path):
+    """Sending the results note fails with a ValueError, a fault of the bot's own rather than
+    Discord's. It is raised as it is, not turned into StepFailedOnDiscord."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    channels[RESULTS].send.side_effect = ValueError("bad content")
+    with pytest.raises(ValueError, match="bad content") as caught:
+        await _post_notice(bot, guild, "results")
+    assert not isinstance(caught.value, StepFailedOnDiscord)
+
+
+async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
+    """Pro has no results channel set. Posting the results note raises nothing, sends nothing
+    and answers "no channel is set", which the cancellation names; a channel posted to answers
+    None."""
+    bot = _bot(await _make_db(tmp_path, results=False))
+    guild, channels = _guild()
+    assert await _post_notice(bot, guild, "results") == "no channel is set"
+    for channel in channels.values():
+        channel.send.assert_not_awaited()
+    assert await _post_notice(bot, guild, "weather") is None
+    channels[FORECAST].send.assert_awaited_once()
+
+
+async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(
+    tmp_path, monkeypatch
+):
+    """Round 3 (Monza) has its call standing, Lewis (101) accepted and Max (102) declined. The
+    take-down reads that check-in first, then withdraws the call in its raising form: the
+    withdrawal here wipes the answers, and the audit it gives still names both drivers."""
+    from leaguebot.attendance.services import rsvp_service
+
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    calls: list[dict] = []
+
+    async def _withdraw(round_id, division_id, bot_, **kwargs):
+        calls.append({"round_id": round_id, "division_id": division_id, **kwargs})
+        async with get_connection(db_path) as db:
+            await db.execute("DELETE FROM driver_round_attendance")
+            await db.commit()
+        return True
+
+    monkeypatch.setattr(rsvp_service, "withdraw_rsvp_call", _withdraw)
+    result = await cns.take_down_call(bot, _division(), ROUND_ID)
+
+    assert result["audit"] == AUDIT_OF_ROUND_3
+    assert result["taken_down"]
+    assert [(c["round_id"], c["division_id"], c.get("raise_on_failure")) for c in calls] == [
+        (ROUND_ID, DIVISION_ID, True)
+    ]
+
+
+async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(tmp_path):
+    """Round 3's call, its last notice and its distribution (9001-9003) stand, and Discord
+    refuses to delete any of them. The take-down raises StepFailedOnDiscord carrying the check-in
+    audit and the three ids, and the call's record stays for the next try."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    _call_channel(bot, refuse=True)
+
+    with pytest.raises(StepFailedOnDiscord) as caught:
+        await cns.take_down_call(bot, _division(), ROUND_ID)
+
+    assert caught.value.result["audit"] == AUDIT_OF_ROUND_3
+    assert sorted(caught.value.result["undeleted"]) == [
+        str(CALL_MSG), str(LAST_MSG), str(DIST_MSG)
+    ]
+    assert len(await _rows(db_path, "rsvp_embed_messages")) == 1

@@ -160,6 +160,20 @@ def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str,
     return True
 
 
+def status_refusal(status: str) -> str:
+    """Why a round in *status* can no longer be amended: it is cancelled, or its results are in.
+
+    Said by the rules, and again by the amendment's save when it finds the round no longer one
+    that may be amended, so the two cannot differ.
+    """
+    if status == RoundStatus.CANCELLED.value:
+        return "This round has been cancelled and can no longer be amended."
+    return (
+        "This round's results have been entered, so it can no longer be amended. "
+        "Drivers have reports and appeals to lodge against them."
+    )
+
+
 def judge_amendment(
     rnd: Round,
     changes: dict[str, Any],
@@ -197,13 +211,7 @@ def judge_amendment(
     # the drivers have reports and appeals lodged against them, and an amendment would take that
     # from them. It blocks a cancelled round for free, that being outside the set too.
     if rnd.status not in ROUND_CANCELLABLE:
-        if rnd.status == RoundStatus.CANCELLED.value:
-            refusals.append("This round has been cancelled and can no longer be amended.")
-        else:
-            refusals.append(
-                "This round's results have been entered, so it can no longer be amended. "
-                "Drivers have reports and appeals to lodge against them."
-            )
+        refusals.append(status_refusal(rnd.status))
 
     new_moment = _amended_moment(rnd, changes) if not unknown else _as_utc(rnd.scheduled_at)
     moment_moved = "scheduled_at" in changes

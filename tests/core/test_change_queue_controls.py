@@ -9,10 +9,12 @@ change types and the league are `test_change_queue.py`'s.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
 import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
@@ -25,6 +27,7 @@ from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixtur
     _ask,
     _described,
     _fails_while,
+    _host_errors,
     _lines,
     _queue,
     _states,
@@ -799,3 +802,125 @@ async def test_a_stopped_job_found_no_longer_due_at_its_try_writes_a_line(env):
     assert _buttons(notice) == set()
     assert ran == ["post", "after"]
     assert await _states(env) == ["DONE"]
+
+
+# ---------------------------------------------------------------------------
+# A job no one may discard (#439, slice 4b, amendment A)
+# ---------------------------------------------------------------------------
+
+#: What the undiscardable job of the tests below says would follow from dropping it.
+WOULD_NEVER_RUN = "the dummy would never run"
+#: The refusal of a Discard on it, privately and in the log channel.
+CANNOT_DISCARD = (
+    "⛔ This job can't be discarded: without it the dummy would never run. Fix what stopped it "
+    "and press **Retry**."
+)
+
+
+async def _would_never_run(_ctx) -> str:
+    return WOULD_NEVER_RUN
+
+
+async def _unreadable(_ctx) -> str:
+    raise RuntimeError("the round could not be read")
+
+
+async def _stop_undiscardable(env, holder: dict, ran: list, *, reader=_would_never_run) -> dict:
+    """A request of three jobs, its second (arming the dummy) undiscardable and failing with
+    `holder["fail"]` while set, and a change asked after it; run until the queue stops at the
+    second. Gives the stopped job."""
+    _queue(
+        env,
+        _type(steps=[_act("first", ran),
+                     _fails_while(holder, "arm", ran=ran,
+                                  describe=_described("arming the dummy"),
+                                  undiscardable=reader),
+                     _act("after", ran)]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+    return job
+
+
+async def _discard_audits(env) -> list[dict]:
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id FROM audit_entries WHERE change_type = ?", ("CHANGE_JOB_DISCARDED",)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def test_discard_of_an_undiscardable_job_is_refused_and_it_stays_stopped(env):
+    """A league admin's Discard on a job marked undiscardable is refused: they are told
+    privately that it cannot be discarded and what would follow, the log channel gets one ⛔
+    line, and nothing is dropped: the job still stops the queue, no Discard line or audit is
+    written, and neither its request's later job nor the change behind it runs."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop_undiscardable(env, holder, ran)
+
+    interaction = await discard_job(env.bot, user=_admin())
+
+    assert CANNOT_DISCARD in _private(interaction)
+    lines = await _lines(env)
+    refusals = [line for line in lines if line.startswith("⛔") and ADMIN_NAMED in line]
+    assert len(refusals) == 1
+    assert "can't be discarded" in refusals[0]
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert not [line for line in lines if "| Discarded" in line]
+    assert await _discard_audits(env) == []
+    assert ran == ["first", "arm"]
+
+
+async def test_retry_still_clears_an_undiscardable_job(env):
+    """An undiscardable job is cleared by Retry as any job is: once what stopped it is mended, a
+    Retry tries it at once, and its request and the change behind it run."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    await _stop_undiscardable(env, holder, ran)
+    await discard_job(env.bot, user=_admin())
+    holder["fail"] = None
+
+    await retry_job(env.bot, user=_manager())
+
+    assert ran == ["first", "arm", "arm", "after", "later"]
+    assert await stopped_job(env.db_path) is None
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_the_stop_notice_of_an_undiscardable_job_keeps_both_buttons(env):
+    """The stop notice of an undiscardable job carries Retry and Discard as any notice does, the
+    one persistent view serving every notice, and keeps both after a Discard is refused."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop_undiscardable(env, holder, ran)
+    notice = _notice(env, job)
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+    await discard_job(env.bot, user=_admin())
+
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+
+async def test_an_undiscardable_job_whose_reason_cannot_be_read_is_still_refused(env, caplog):
+    """Where what would follow from dropping the job cannot be read, the Discard is refused all
+    the same, naming the job in its place; the error is on the host's log, and nothing is
+    dropped."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    job = await _stop_undiscardable(env, holder, ran, reader=_unreadable)
+
+    with caplog.at_level(logging.ERROR):
+        interaction = await discard_job(env.bot, user=_admin())
+
+    named = (f"⛔ Job #{job['id']} (arming the dummy) can't be discarded. Fix what stopped it "
+             "and press **Retry**.")
+    assert named in _private(interaction)
+    assert _host_errors(caplog)
+    assert (await stopped_job(env.db_path))["id"] == job["id"]
+    assert await _discard_audits(env) == []
+    assert ran == ["first", "arm"]

@@ -1078,7 +1078,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
-    ("core/services/amendment_service.py", "AmendmentService.amend_round"): (6, PASS["core"]),
     ("core/services/amendment_service.py", "disable_amendment_mode"): (3, PASS["results"]),
     ("core/services/amendment_service.py", "enable_amendment_mode"): (5, PASS["results"]),
     ("core/services/amendment_service.py", "modify_fl_bonus"): (2, PASS["results"]),
@@ -1287,9 +1286,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    # The round and division cancels (slice 4b)
-    ("core/services/season_service.py", "SeasonService.cancel_division"): (1, SLICE[4]),
-    ("core/services/season_service.py", "SeasonService.cancel_round"): (1, SLICE[4]),
     # The season end
     ("core/services/season_service.py", "SeasonService.complete_season"): (1, SLICE[5]),
     ("core/services/season_service.py", "SeasonService.refresh_division_status"): (1, SLICE[5]),
@@ -1347,7 +1343,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "_ApproveView._forget"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "_ApproveView.bind"): (1, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
-    ("core/services/amendment_service.py", "AmendmentService.amend_round"): (2, PASS["core"]),
     ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.release_claim"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),

@@ -46,6 +46,7 @@ read from the queue's table and the review itself is left to `test_review_open_c
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -868,3 +869,234 @@ async def test_an_amendment_in_another_division_holds_nothing(tmp_path):
 
     assert len(await _sessions(db_path)) == 2
     assert "is being amended" not in _said(stubs["sub"])
+
+
+# ---------------------------------------------------------------------------
+# A submission closed by a cancellation (#439 slice 4b, amendment A, 2.9)
+# ---------------------------------------------------------------------------
+
+_CLOSED_BY = {
+    "the round cancelled": (
+        "CANCELLED",
+        "⛔ Round 3 has been cancelled, so its results can no longer be entered. Nothing was saved.",
+    ),
+    "the submission closed, the round not cancelled": (
+        "AWAITING_RESULTS",
+        "⛔ Round 3's results submission has been closed, so its results can no longer be "
+        "entered. Nothing was saved.",
+    ),
+}
+
+
+def _closing_before_the_first_paste(db_path, pastes, round_status: str):
+    """Each paste in turn; before the first arrives, round 3's submission is recorded closed and
+    the round put in *round_status*, as a cancellation's save (or `/season cancel`'s closing
+    before its cascade) leaves them while the wizard waits."""
+    messages = iter([_message(p) for p in pastes])
+    calls = 0
+
+    async def wait_for(*_a, **_k):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+                    "closed) VALUES (?, ?, '2026-02-01T18:00:00+00:00', 1)",
+                    (ROUND_ID, SUB_CHANNEL),
+                )
+                await db.execute(
+                    "UPDATE rounds SET status = ? WHERE id = ?", (round_status, ROUND_ID)
+                )
+                await db.commit()
+        return next(messages)
+
+    return AsyncMock(side_effect=wait_for)
+
+
+@pytest.mark.parametrize("closed_by", sorted(_CLOSED_BY))
+@pytest.mark.parametrize("pastes", [
+    pytest.param((QUALI_PASTE, RACE_PASTE), id="results"),
+    pytest.param(("CANCELLED", "CANCELLED"), id="CANCELLED"),
+])
+async def test_a_paste_into_a_submission_closed_by_a_cancellation_is_refused_and_nothing_is_saved(
+    tmp_path, closed_by, pastes,
+):
+    """Round 3's submission channel is open and asks for the qualifying results. While it waits,
+    a cancellation closes the submission: the round is cancelled, or (closed by `/season cancel`
+    before its cascade, or by results being turned off) the round is not yet cancelled. The
+    manager then pastes the qualifying results, or types `CANCELLED`. The wizard answers once in
+    the channel, saying the round is cancelled or its submission closed and that nothing was
+    saved, and stops collecting: no session is saved, nothing is said in the results channel,
+    no review is asked, and it waits for nothing more."""
+    status, refusal = _CLOSED_BY[closed_by]
+    db_path = await _make_db(tmp_path, name="closed_by_cancellation")
+    bot = _bot(db_path, [])
+    bot.wait_for = _closing_before_the_first_paste(db_path, list(pastes), status)
+
+    stubs = await _run(bot)
+
+    assert _said(stubs["sub"]).count(refusal) == 1
+    assert bot.wait_for.await_count == 1
+    assert await _sessions(db_path) == []
+    assert "was cancelled" not in _said(bot._results)
+    assert stubs["opened"] == []
+
+
+class _Gateway:
+    """`bot.wait_for` as discord.py's own: each wait is a future that only an event dispatched to
+    it resolves, and no message ever arrives. `close` does what a cancellation does to a
+    submission it meets open and empty: it records round 3's submission closed, with the round in
+    *round_status*, then deletes its channel, so the `guild_channel_delete` event reaches every wait
+    whose check takes the channel, and the time any wait was given runs out. It does not say how
+    the wizard learns of the closing, only that it has every means to."""
+
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.waits: list[tuple[str, Any, float | None, asyncio.Future]] = []
+        self.waiting = asyncio.Event()
+
+    async def wait_for(self, event, *, check=None, timeout=None):
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        self.waits.append((event, check, timeout, future))
+        self.waiting.set()
+        return await future
+
+    async def close(self, round_status: str) -> None:
+        async with get_connection(self.db_path) as db:
+            await db.execute(
+                "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+                "closed) VALUES (?, ?, '2026-02-01T18:00:00+00:00', 1)",
+                (ROUND_ID, SUB_CHANNEL),
+            )
+            await db.execute("UPDATE rounds SET status = ? WHERE id = ?", (round_status, ROUND_ID))
+            await db.commit()
+        deleted = SimpleNamespace(id=SUB_CHANNEL)
+        for event, check, timeout, future in list(self.waits):
+            if future.done():
+                continue
+            if event == "guild_channel_delete" and (check is None or check(deleted)):
+                future.set_result(deleted)
+            elif timeout is not None:
+                future.set_exception(asyncio.TimeoutError())
+
+    def pending(self) -> list[str]:
+        return [event for event, _c, _t, future in self.waits if not future.done()]
+
+    def expire_first(self) -> None:
+        """Run out the time of the first wait for a message still pending."""
+        for event, _check, _timeout, future in self.waits:
+            if event == "message" and not future.done():
+                future.set_exception(asyncio.TimeoutError())
+                return
+
+    def dispatch(self, message: Any) -> int:
+        """Send *message* to every wait for a message still pending whose check takes it, as
+        discord.py does; gives how many heard it."""
+        heard = 0
+        for event, check, _timeout, future in list(self.waits):
+            if event == "message" and not future.done() and (check is None or check(message)):
+                future.set_result(message)
+                heard += 1
+        return heard
+
+
+@pytest.mark.parametrize("round_status", [
+    pytest.param("CANCELLED", id="the round cancelled"),
+    pytest.param("AWAITING_RESULTS", id="closed by /season cancel before its cascade"),
+])
+async def test_a_wizard_waiting_on_a_submission_a_cancellation_closes_stops_waiting(
+    tmp_path, round_status,
+):
+    """Round 3's submission channel is open, has accepted nothing, and is waiting for the
+    qualifying results. A cancellation then closes the submission and deletes its channel: the
+    round's own or its division's (the round recorded cancelled), or `/season cancel`'s, which
+    closes it before its cascade cancels the round. No paste ever comes. The wizard stops waiting
+    and returns, without a restart: no wait of its own is left pending, no session is saved,
+    nothing is said in the results channel and no review is asked."""
+    db_path = await _make_db(tmp_path, name="wait_ends_on_closing")
+    bot = _bot(db_path, [])
+    gateway = _Gateway(db_path)
+    bot.wait_for = gateway.wait_for
+
+    wizard = asyncio.create_task(_run(bot))
+    try:
+        await asyncio.wait_for(gateway.waiting.wait(), timeout=5)
+        await gateway.close(round_status)
+        done, _ = await asyncio.wait({wizard}, timeout=3)
+        assert wizard in done, "the wizard is still waiting on a closed submission"
+        stubs = wizard.result()
+    finally:
+        if not wizard.done():
+            wizard.cancel()
+            await asyncio.gather(wizard, return_exceptions=True)
+
+    assert gateway.pending() == []
+    assert await _sessions(db_path) == []
+    assert "was cancelled" not in _said(bot._results)
+    assert stubs["opened"] == []
+
+
+async def test_a_paste_sent_while_the_wizard_rereads_its_submission_is_still_heard(
+    tmp_path, monkeypatch,
+):
+    """Round 3's submission channel is open, has accepted nothing, and is waiting for the
+    qualifying results. The first listener's time runs out, and the wizard reads whether its
+    submission was closed, a read made slow. While the read is going, the manager pastes the
+    qualifying results, which reach every listener then registered; the read ends, finding the
+    submission open. The wizard takes the paste: the qualifying results are saved, and the race
+    results after them. It says nothing of a closed submission, and while the read was held, as
+    the paste was sent, at least one listener stood registered."""
+    db_path = await _make_db(tmp_path, name="paste_during_reread")
+    bot = _bot(db_path, [])
+    gateway = _Gateway(db_path)
+    bot.wait_for = gateway.wait_for
+    real_read = result_submission_service.closed_by_cancellation
+    reading, release = asyncio.Event(), asyncio.Event()
+
+    def _listeners() -> int:
+        return gateway.pending().count("message")
+
+    async def _slow_read(*args: Any) -> Any:
+        """The first read is held until the test releases it; any later one, as made."""
+        if not reading.is_set():
+            reading.set()
+            await release.wait()
+        return await real_read(*args)
+
+    monkeypatch.setattr(result_submission_service, "closed_by_cancellation", _slow_read)
+
+    async def _until(condition: Any) -> bool:
+        for _ in range(60):
+            if await condition():
+                return True
+            await asyncio.sleep(0.05)
+        return False
+
+    async def _race_asked() -> bool:
+        return bool(await _sessions(db_path)) and _listeners() > 0
+
+    wizard = asyncio.create_task(_run(bot))
+    try:
+        await asyncio.wait_for(gateway.waiting.wait(), timeout=5)
+        gateway.expire_first()
+        await asyncio.wait_for(reading.wait(), timeout=5)
+        # A paste can arrive only while the read is suspended, as it is here.
+        listening = _listeners()
+        heard = gateway.dispatch(_message(QUALI_PASTE))
+        release.set()
+
+        assert await _until(_race_asked), "the paste sent during the read was never heard"
+        gateway.dispatch(_message(RACE_PASTE))
+        done, _ = await asyncio.wait({wizard}, timeout=5)
+        assert wizard in done, "the wizard never finished"
+        stubs = wizard.result()
+    finally:
+        if not wizard.done():
+            wizard.cancel()
+            await asyncio.gather(wizard, return_exceptions=True)
+
+    assert heard >= 1
+    assert [row[0] for row in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+    assert "can no longer be entered" not in _said(stubs["sub"])
+    assert listening >= 1

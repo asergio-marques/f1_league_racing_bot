@@ -25,16 +25,20 @@ Issue #154.
 from __future__ import annotations
 
 import itertools
+from datetime import datetime, timezone
 
 import pytest
 from unittest.mock import MagicMock
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService, SeasonImmutableError
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 7654
 ACTOR_ID = 999
 ACTOR_NAME = "Race Director"
+
+# The moment a cancellation is recorded at, pinned.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
 
 async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_status="ACTIVE"):
@@ -101,6 +105,34 @@ async def _season_status(db_path, season_id):
         return (await cur.fetchone())["status"]
 
 
+async def _cancel_round(db_path, round_id):
+    """Cancel *round_id* with `cancel_round_on` on one connection, as the round's cancellation on
+    the change queue does in its save, and commit it, which `cancel_round_on` does not. Gives the
+    round's old status, or `None` where it moved nothing."""
+    from leaguebot.core.services.season_service import cancel_round_on
+
+    async with get_connection(db_path) as db:
+        old = await cancel_round_on(
+            db, round_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=NOW
+        )
+        await db.commit()
+    return old
+
+
+async def _cancel_division(db_path, division_id):
+    """Cancel *division_id* with `cancel_division_on` on one connection, as the division's
+    cancellation on the change queue does in its save, and commit it. Moving the season on is
+    the change's, not this form's."""
+    from leaguebot.core.services.season_service import cancel_division_on
+
+    async with get_connection(db_path) as db:
+        called_off = await cancel_division_on(
+            db, division_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=NOW
+        )
+        await db.commit()
+    return called_off
+
+
 # ---------------------------------------------------------------------------
 # The gate on completing a season
 # ---------------------------------------------------------------------------
@@ -156,7 +188,7 @@ async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None
     svc = SeasonService(db_path)
 
     await _set_round_status(db_path, round_ids[0], "FINAL")
-    await svc.cancel_round(round_ids[1], ACTOR_ID, ACTOR_NAME)
+    await _cancel_round(db_path, round_ids[1])
 
     assert await _division_status(db_path, div_id) == "FINISHED"
     assert await svc.all_divisions_finished() is True
@@ -173,7 +205,7 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
     for rid in rounds_a:
         await _set_round_status(db_path, rid, "FINAL")
     await svc.refresh_division_status(div_a)
-    await svc.cancel_division(div_b, ACTOR_ID, ACTOR_NAME)
+    await _cancel_division(db_path, div_b)
 
     assert await svc.all_divisions_finished() is True
     assert await svc.get_outstanding_rounds() == []
@@ -252,12 +284,11 @@ async def test_cancelling_a_division_takes_its_unraced_rounds(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=3)
     div_id, (raced, in_appeals, unraced) = built["Div A"]
-    svc = SeasonService(db_path)
 
     await _set_round_status(db_path, raced, "FINAL")
     await _set_round_status(db_path, in_appeals, "AWAITING_APPEAL_VERDICTS")
 
-    await svc.cancel_division(div_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_division(db_path, div_id)
 
     assert await _division_status(db_path, div_id) == "CANCELLED"
     assert await _round_status(db_path, unraced) == "CANCELLED"
@@ -271,13 +302,12 @@ async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=1)
     div_id, _ = built["Div A"]
-    svc = SeasonService(db_path)
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET status = 'SETUP' WHERE id = ?", (div_id,))
         await db.commit()
 
-    await svc.cancel_division(div_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_division(db_path, div_id)
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -310,10 +340,11 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
 
 
 async def test_the_season_row_is_flipped_last(tmp_path) -> None:
-    """cancel_round refuses a round whose season is already archived.
+    """cancel_round_on leaves alone a round whose season is already archived, giving `None`.
 
     So a cascade that flipped the season first would lock itself out of its own children. This
-    pins the ordering by showing the refusal the wrong order would have run into.
+    pins the ordering: Div A's one round is cancelled by the season's cascade, and once the season
+    is archived the same round cancelled again moves nothing.
     """
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
@@ -323,9 +354,71 @@ async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
-    # the season is archived now, so the same call is refused from here on
-    with pytest.raises(SeasonImmutableError):
-        await svc.cancel_round(round_id, ACTOR_ID, ACTOR_NAME)
+    # the season is archived now, so the same call moves nothing from here on
+    assert await _cancel_round(db_path, round_id) is None
+    assert await _round_status(db_path, round_id) == "CANCELLED"
+
+
+async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path) -> None:
+    """Season 1 is ongoing; Div A has finished, both its rounds final, and Div B, its last
+    running division, has two rounds not run. Cancelling the season cancels Div B and its rounds
+    on the way, the last division to be done, and the season ends CANCELLED without ever having
+    been moved to Pending completion on the way (#439, slice 4b). The division's own
+    cancellation moves its season on in its save; the season's shares the division's write and
+    must not. Every stage the season is written is caught by a trigger of the test's own, since
+    the season's final stage follows its status whatever came before."""
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=2)
+    div_a, a_rounds = built["Div A"]
+    div_b, _ = built["Div B"]
+    for rid in a_rounds:
+        await _set_round_status(db_path, rid, "FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", (div_a,))
+        await db.execute("UPDATE seasons SET stage = 'ONGOING' WHERE id = ?", (season_id,))
+        await db.execute("CREATE TABLE stages_written (stage TEXT)")
+        await db.execute(
+            "CREATE TRIGGER catch_stages AFTER UPDATE OF stage ON seasons "
+            "BEGIN INSERT INTO stages_written (stage) VALUES (NEW.stage); END"
+        )
+        await db.commit()
+
+    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+
+    assert await _division_status(db_path, div_b) == "CANCELLED"
+    async with get_connection(db_path) as db:
+        cur = await db.execute("SELECT status, stage FROM seasons WHERE id = ?", (season_id,))
+        row = await cur.fetchone()
+        written = [r["stage"] for r in await (
+            await db.execute("SELECT stage FROM stages_written ORDER BY rowid")
+        ).fetchall()]
+    assert (row["status"], row["stage"]) == ("CANCELLED", "CANCELLED")
+    assert written, "the trigger caught no stage at all, so it proves nothing"
+    assert "PENDING_COMPLETION" not in written
+
+
+async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_cancelled_from(
+    tmp_path,
+) -> None:
+    """Season 1's Div A has round 1 waiting for its results, its race time passed and no
+    submission open, and round 2 not run. Cancelling the season cancels both, and each
+    round.status audit reads from the status that round really had to CANCELLED, never from
+    "ACTIVE", which is no round status at all (#439, slice 4b, A10)."""
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _seed(db_path, rounds_per_division=2)
+    _, (awaiting, not_run) = built["Div A"]
+    await _set_round_status(db_path, awaiting, "AWAITING_RESULTS")
+
+    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+
+    assert await _round_status(db_path, awaiting) == "CANCELLED"
+    assert await _round_status(db_path, not_run) == "CANCELLED"
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "SELECT old_value, new_value FROM audit_entries WHERE change_type = 'round.status'"
+        )
+        audits = sorted((r["old_value"], r["new_value"]) for r in await cur.fetchall())
+    assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
 
 
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
@@ -334,7 +427,7 @@ async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tm
     div_b, (b_round,) = built["Div B"]
     svc = SeasonService(db_path)
 
-    await svc.cancel_division(div_b, ACTOR_ID, ACTOR_NAME)
+    await _cancel_division(db_path, div_b)
     await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
 
     async with get_connection(db_path) as db:
@@ -529,7 +622,7 @@ async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_pat
 
     await _set_round_status(db_path, a_round, "FINAL")
     await svc.refresh_division_status(div_a)
-    await svc.cancel_division(div_b, ACTOR_ID, ACTOR_NAME)
+    await _cancel_division(db_path, div_b)
 
     bot = MagicMock()
     bot.db_path = db_path

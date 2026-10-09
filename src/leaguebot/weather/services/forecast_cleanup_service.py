@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import StepFailedOnDiscord
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -72,6 +73,8 @@ async def delete_forecast_message(
     division_id: int,
     phase_number: int,
     bot: "LeagueBot",
+    *,
+    raise_on_failure: bool = False,
 ) -> None:
     """Delete the stored Discord message for *phase_number* of *round_id*.
 
@@ -82,6 +85,13 @@ async def delete_forecast_message(
 
     On Discord API failure (NotFound / Forbidden / HTTPException) the DB row is
     still removed so a stale reference does not block future clean-ups.
+
+    *raise_on_failure* is for a caller that must stop on a failure and be tried again, as a
+    round amendment on the change queue is. A message Discord refuses to delete (or whose channel
+    is not one the bot can delete in) raises `StepFailedOnDiscord` whose `result` is
+    `{"channel_id": ..., "message_id": ...}`, raised `from` the refusal, and **keeps the row**,
+    so the next try finds the message again. A message already gone, or whose channel is gone,
+    counts as gone and drops the row. A fault that is not Discord's propagates unchanged.
     """
     db_path: str = bot.db_path
 
@@ -110,7 +120,20 @@ async def delete_forecast_message(
     channel_id: int = row["forecast_channel_id"]
 
     # --- Attempt Discord deletion ---
-    _delete_ok = await _discord_delete(bot, channel_id, message_id)
+    if raise_on_failure:
+        _delete_ok = True
+        try:
+            await _discord_delete(bot, channel_id, message_id, raising=True)
+        except discord.NotFound:
+            pass  # Already gone, or its channel is: which is what was asked.
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"the Phase {phase_number} forecast message {message_id} in channel"
+                f" {channel_id} could not be deleted",
+                result={"channel_id": channel_id, "message_id": message_id},
+            ) from exc
+    else:
+        _delete_ok = await _discord_delete(bot, channel_id, message_id)
 
     # --- Remove DB row (even on Discord error to avoid stale references) ---
     async with get_connection(db_path) as db:
@@ -209,37 +232,55 @@ async def flush_pending_deletions(bot: "LeagueBot") -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) -> bool:
-    """Attempt to delete a Discord message.  Returns True on success."""
+async def _discord_delete(
+    bot: "LeagueBot", channel_id: int, message_id: int, *, raising: bool = False
+) -> bool:
+    """Attempt to delete a Discord message.  Returns True on success.
+
+    Under *raising* it raises what Discord said, rather than logging it and returning False, and
+    a channel that is not a text channel raises `StepFailedOnDiscord`.
+    """
     try:
         channel = bot.get_channel(channel_id)
         if channel is None:
             channel = await bot.fetch_channel(channel_id)
         if not isinstance(channel, discord.TextChannel):
+            if raising:
+                raise StepFailedOnDiscord(
+                    f"channel {channel_id} is not a text channel the forecast can be deleted"
+                    " from",
+                    result={"channel_id": channel_id, "message_id": message_id},
+                )
             log.error(
                 "_discord_delete: channel id=%s is not a TextChannel", channel_id
             )
             return False
         await channel.get_partial_message(message_id).delete()
         return True
-    except discord.NotFound:
+    except discord.HTTPException as exc:
+        if raising:
+            raise  # Discord's word, for the caller to turn into a stop (`from` it).
+        _log_refusal(exc, channel_id, message_id)
+        return False
+
+
+def _log_refusal(exc: discord.HTTPException, channel_id: int, message_id: int) -> None:
+    """Log a refused delete on the host, as the quiet form does."""
+    if isinstance(exc, discord.NotFound):
         log.debug(
             "_discord_delete: message %s in channel %s already deleted or not found",
             message_id, channel_id,
         )
-        return False
-    except discord.Forbidden as exc:
+    elif isinstance(exc, discord.Forbidden):
         log.error(
             "_discord_delete: missing permissions to delete message %s in channel %s: %s",
             message_id, channel_id, exc,
         )
-        return False
-    except discord.HTTPException as exc:
+    else:
         log.error(
             "_discord_delete: HTTP error deleting message %s in channel %s: %s",
             message_id, channel_id, exc,
         )
-        return False
 
 
 # ---------------------------------------------------------------------------

@@ -58,6 +58,7 @@
 - Weather shall be generated per round and posted per division. The three phases shall fire automatically; no command to generate a forecast on demand shall be provided.
 - Nothing shall be generated before the season's placements are first confirmed.
 - Each phase shall be performed at most once per round. A phase already performed shall be skipped.
+- A phase, or the notice of a Mystery round, falling due for a cancelled round, or for a round of a cancelled division, shall do nothing: nothing shall be drawn, recorded or posted for it, however it came to fall due. Decided 2026-10-08.
 - A round of the Mystery format shall be treated as set out under Mystery rounds below.
 
 **Phase 1 - Initial calculation of rain percentage**
@@ -144,6 +145,7 @@
     - Where it would not, its result shall be marked invalidated, the slot type and weather slots it recorded cleared, the phase marked as not performed, the message posted for it deleted, and the phase armed again for its new horizon.
     - Where it would, its result shall stand, its recorded slots shall stand, and the message posted for it shall stand with it.
 - A phase that would have been performed under the round's new moment but never was shall be performed at once.
+- Where the round is amended on the change queue, the deletion of each such message, the notice and each phase performed at once shall each be a job of its own. A deletion or a notice Discord refuses stops the queue until it is retried or discarded; a phase performed at once posts as a phase on its own clock does. Decided 2026-10-08. Which forecasts are withdrawn shall be judged when the amendment is saved, and which phases are performed at once when the round is armed again, so that a phase whose horizon passed while the amendment stood stopped is performed at once, as a restart performs it, whether or not the amendment was saved, and a Phase 3 message due to be deleted a day after the round meanwhile is deleted then. Decided 2026-10-09.
 - The forecast a division holds for the round shall be the latest phase that stands. Where no phase stands, the division shall hold none until the next is performed.
 - Where any forecast has been withdrawn, the bot shall post a notice informing drivers that the forecasts for that round no longer stand and that an updated forecast shall follow. Where none has been withdrawn no notice shall be posted, the forecast the division holds being still the one that stands.
 - The phases of an amended round shall be armed at the league's own configured horizons, not at the packaged ones.

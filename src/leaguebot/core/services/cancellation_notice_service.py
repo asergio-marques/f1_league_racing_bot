@@ -24,6 +24,13 @@ called it: the cancellation has already been decided and recorded, or is about t
 losing a notice is not a reason to undo it. What failed is returned so the command can name
 it to the admin who ran it, as well as being logged; a missed notice that only reached the
 bot's own log was the second half of #175.
+
+That holds for a season's cancellation. A round's or a division's runs on the change queue
+(`cancellation_changes`), where each notice (`post_module_notice`) and each call taken down
+(`take_down_call`) is a job of its own: one Discord refuses stops the queue until it is retried
+or discarded, and is named only once discarded. So each has a raising form, which turns only a
+failure Discord caused into `StepFailedOnDiscord` and lets a fault of the bot's own through
+unchanged.
 """
 from __future__ import annotations
 
@@ -31,7 +38,10 @@ import dataclasses
 import logging
 from dataclasses import dataclass
 
+import discord
+
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -224,19 +234,74 @@ async def _rounds_of(bot: LeagueBot, division_id: int, round_ids: frozenset[int]
         return [row["id"] for row in await cursor.fetchall()]
 
 
-async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
-    """Send *content* to *channel_id*. Returns what went wrong, or None."""
+async def _send(
+    guild, channel_id, content: str, *, raise_on_failure: bool = False, **kwargs
+) -> str | None:
+    """Send *content* to *channel_id*. Returns what went wrong, or None.
+
+    A channel never set is returned as "no channel is set" either way: there is nothing to
+    retry. With *raise_on_failure*, the form a job on the change queue calls, a channel that is
+    set and no longer on the server raises `StepFailedOnDiscord` (no cause), and a send Discord
+    refuses raises it `from` the `discord.HTTPException`; any other exception is a fault of the
+    bot's own and propagates unchanged. Without it, every failure is returned, so one notice
+    never stops another.
+    """
     if not channel_id:
         return "no channel is set"
     channel = guild.get_channel(int(channel_id)) if guild is not None else None
     if channel is None:
+        if raise_on_failure:
+            raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
         return "the channel could not be found"
     try:
         await channel.send(content, **kwargs)
     except Exception as exc:  # noqa: BLE001 — one notice never stops another
+        if raise_on_failure:
+            if isinstance(exc, discord.HTTPException):
+                raise StepFailedOnDiscord(
+                    f"the message could not be posted to <#{channel_id}>: {exc}"
+                ) from exc
+            raise
         log.warning("cancellation notice: could not post to channel %s", channel_id, exc_info=True)
         return f"the message could not be posted ({exc})"
     return None
+
+
+async def post_module_notice(
+    bot: LeagueBot,
+    guild,
+    division,
+    module: str,
+    *,
+    scope: str,
+    round_number: int | None = None,
+    track_name: str | None = None,
+) -> str | None:
+    """Post *module*'s ("attendance", "weather" or "results") notice of a cancellation to
+    *division*'s channel for it, in the words `announce_cancellation` uses, and raise on a
+    failure Discord caused (`_send`). Returns "no channel is set" where the division has none.
+
+    The caller has decided that the module is on; this does not look.
+    """
+    channels = await _module_channels(bot, division.id)
+    words = dict(round_number=round_number, track_name=track_name)
+    if module == "attendance":
+        role_id = getattr(division, "mention_role_id", None)
+        ping = f"<@&{role_id}>\n" if role_id else ""
+        return await _send(
+            guild,
+            channels["attendance"],
+            ping + attendance_notice(scope, division.name, **words),
+            raise_on_failure=True,
+            allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
+        )
+    if module == "weather":
+        note = weather_note(scope, division.name, **words)
+    elif module == "results":
+        note = results_note(scope, division.name, **words)
+    else:
+        raise ValueError(f"no cancellation notice for module {module!r}")
+    return await _send(guild, channels[module], note, raise_on_failure=True, silent=True)
 
 
 #: The order the audit lists the answers in, and the words it lists them under.
@@ -325,6 +390,29 @@ async def _withdraw_call(bot: LeagueBot, round_id: int, division_id: int) -> str
             f"(ids {', '.join(undeleted)})"
         )
     return None
+
+
+async def take_down_call(bot: LeagueBot, division, round_id: int) -> dict:
+    """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
+
+    Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`_checkin_audit`),
+    read **before** the call comes down, and whether a call stood. Where a message cannot be
+    deleted it raises `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the
+    audit is kept on the job whether it goes through or is discarded, and the call's record
+    stays for the next try, which reads the audit again. The raise is `from` the Discord failure
+    that caused it, as `withdraw_rsvp_call` raises it.
+    """
+    from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
+
+    audit = await _checkin_audit(bot, division, round_id)
+    try:
+        taken_down = await withdraw_rsvp_call(round_id, division.id, bot, raise_on_failure=True)
+    except StepFailedOnDiscord as exc:
+        undeleted = (exc.result or {}).get("undeleted", [])
+        raise StepFailedOnDiscord(
+            exc.reason, result={"audit": audit, "undeleted": undeleted}
+        ) from exc.__cause__
+    return {"audit": audit, "taken_down": taken_down}
 
 
 async def announce_cancellation(
