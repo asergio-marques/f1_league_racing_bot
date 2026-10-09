@@ -1540,7 +1540,8 @@ async def _window_opening_soon(league: Any) -> None:
     opens five minutes after "now": the press and the first try find nothing gone by."""
     soon = league.clock.now + timedelta(days=5, minutes=5)
     await league.write(
-        "UPDATE rounds SET scheduled_at = ? WHERE id = ?", soon.isoformat(), round_id(PRO, 1)
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+        soon.replace(tzinfo=None).isoformat(), round_id(PRO, 1),
     )
 
 

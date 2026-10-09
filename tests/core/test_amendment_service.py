@@ -239,7 +239,7 @@ async def _place(league, rid: int = AM_3, *, at: timedelta, track: str = BAHRAIN
     """Round *rid* falls *at* from "now", at *track*, in the NORMAL format."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ?, track_name = ? WHERE id = ?",
-        (league.clock.now + at).isoformat(), track, rid,
+        (league.clock.now + at).replace(tzinfo=None).isoformat(), track, rid,
     )
 
 

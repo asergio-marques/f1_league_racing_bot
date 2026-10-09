@@ -211,7 +211,8 @@ async def _amended_league(tmp_path, *, weather: bool, at: timedelta, phase1_done
     league = await ongoing_league(tmp_path, weather=weather)
     await league.write(
         "UPDATE rounds SET scheduled_at = ?, track_name = ?, phase1_done = ? WHERE id = ?",
-        (league.clock.now + at).isoformat(), SEEDED_TRACK, phase1_done, AM_3,
+        (league.clock.now + at).replace(tzinfo=None).isoformat(), SEEDED_TRACK, phase1_done,
+        AM_3,
     )
     return league
 
