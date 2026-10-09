@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import discord
@@ -205,6 +206,9 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
         await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
 
+    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> None:
+        await _give_up_missed_check_in_call(bot_, row)
+
     return AmendHooks(
         windows=windows,
         withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
@@ -213,6 +217,7 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         run_phase=run_phase,
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
         repost_call=repost_call,
+        give_up_call=give_up_call,
         round_list=format_round_list,
     )
 

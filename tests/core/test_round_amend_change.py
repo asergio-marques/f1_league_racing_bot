@@ -1260,8 +1260,6 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
                for line in _log_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a repost dropped for its deadline is given up as "
-                                       "a restart gives it up")
 async def test_a_call_whose_deadline_passed_while_its_take_down_stood_stopped_is_given_up_as_a_restart_does(
     tmp_path, reposts,
 ):
