@@ -698,6 +698,49 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
+async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when_the_reply_is_made(
+    tmp_path, monkeypatch,
+):
+    """Attendance on; Pro's round 2 is still to be run, 60 days out. While the queue is stopped,
+    amendment A moves round 2 after round 4 and amendment B changes round 3's track, pressed as
+    round 3. The queue goes on: A renumbers the division, so B's round is now round 2. B's save
+    stops and a league admin discards it: the reply names round 2, never round 3."""
+    from leaguebot.weather.services import phase_withdrawal
+
+    real = phase_withdrawal.withdraw_phases_on
+    failing = {"on": False}
+
+    async def _withdraw(db: Any, rid: int, numbers: Any) -> None:
+        if failing["on"] and rid == R3:
+            raise RuntimeError("database is locked")
+        await real(db, rid, numbers)
+
+    # Before the league is built, so that the builder's hooks bind it.
+    monkeypatch.setattr(phase_withdrawal, "withdraw_phases_on", _withdraw)
+    league = await ongoing_league(tmp_path, attendance=True)
+    r2 = round_id(PRO, 2)
+    await league.write(
+        "UPDATE rounds SET status = 'NOT_RUN', scheduled_at = ? WHERE id = ?",
+        (league.clock.now + timedelta(days=60)).replace(tzinfo=None).isoformat(), r2,
+    )
+    await _stopped_blocker(league)
+    await _amended(league, 2, scheduled_at=_at(league, days=150))
+    press = await _amended(league, 3, track="Hungaroring")
+    assert len(await amendment_changes(league)) == 2
+
+    failing["on"] = True
+    await _clear_blocker(league)
+    assert await _stopped_at(league) == "apply"
+    assert (await _numbers(league))[R3] == 2
+    await discard_job(league.bot)
+
+    assert _outcome(press) == (
+        "Nothing was amended: round 2 in **Pro** stands as it was, its timed work armed again. "
+        "Run `/round amend` again."
+    )
+    assert "round 3" not in _outcome(press)
+
+
 async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tmp_path):
     """The arming fails and stops the queue. A league admin's Discard on it is refused,
     privately and with one line in the log channel; the queue stays stopped at the arming, and
