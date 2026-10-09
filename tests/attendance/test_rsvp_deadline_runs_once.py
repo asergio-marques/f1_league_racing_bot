@@ -20,7 +20,6 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
-import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service

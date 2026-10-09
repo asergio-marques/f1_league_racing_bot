@@ -1199,6 +1199,9 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
 
     **It runs once for each call** (#429), under the round's check-in lock — see the note on
     `_check_in_lock`. `test_two_deadline_runs_at_once_post_one_announcement` pins it.
+
+    Where no call stands, any answers kept for the round from an earlier call are cleared and the
+    round reported as counting nothing (`_close_check_in_without_a_call`).
     """
     if not await _check_in_runs_for_round(round_id, bot):
         log.info(
