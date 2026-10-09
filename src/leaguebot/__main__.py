@@ -209,6 +209,15 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> None:
         await _give_up_missed_check_in_call(bot_, row)
 
+    async def run_deadline(round_id: int, bot_: Any) -> None:
+        await rsvp_service.run_rsvp_deadline(round_id, bot_)
+
+    async def clean_up_forecast(round_id: int, bot_: Any) -> None:
+        await forecast_cleanup_service.run_post_race_cleanup(round_id, bot_)
+
+    async def clean_up_check_in(round_id: int, bot_: Any) -> None:
+        await rsvp_service.run_rsvp_cleanup(round_id, bot_)
+
     return AmendHooks(
         windows=windows,
         withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
@@ -218,6 +227,9 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
         repost_call=repost_call,
         give_up_call=give_up_call,
+        run_deadline=run_deadline,
+        clean_up_forecast=clean_up_forecast,
+        clean_up_check_in=clean_up_check_in,
         round_list=format_round_list,
     )
 

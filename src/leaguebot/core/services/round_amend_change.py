@@ -57,6 +57,7 @@ from leaguebot.core.services.change_queue import (
     StepView,
     in_hand,
 )
+from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 from leaguebot.core.services.season_service import renumber_rounds_on
 from leaguebot.core.utils.batch_notice import send_notice
 from leaguebot.core.utils.league_server import league_guild
@@ -88,6 +89,9 @@ POST_CALL = "post_call"
 DELETE_FORECAST = "delete_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
 RERUN_PHASE = "rerun_phase"
+RUN_DEADLINE = "run_deadline"
+CLEAN_UP_FORECAST = "clean_up_forecast"
+CLEAN_UP_CHECK_IN = "clean_up_check_in"
 
 AMENDED = "✅ Round amended successfully."
 NOTHING_AMENDED = (
@@ -129,8 +133,11 @@ class AmendHooks:
     Discord refuses. *run_phase* draws a phase now, *repost_call* posts the check-in call again,
     *give_up_call* reports a call whose deadline passed before it could be posted and closes the
     round's check-in, as the start-up recovery does, handed the bot and the round's
-    ``round_id``, ``round_number``, ``division_id``, ``division_name`` and ``season_number``,
-    and *round_list* formats the division's rounds for the reply.
+    ``round_id``, ``round_number``, ``division_id``, ``division_name`` and ``season_number``.
+    *run_deadline* runs the round's check-in deadline, *clean_up_forecast* deletes its Phase 3
+    forecast and *clean_up_check_in* takes its check-in down, each as its timer would, for a
+    moment that passed while the amendment stood stopped. *round_list* formats the division's
+    rounds for the reply.
     """
 
     windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
@@ -141,6 +148,9 @@ class AmendHooks:
     reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
     repost_call: Callable[[int, int, Any], Awaitable[None]]
     give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[None]]
+    run_deadline: Callable[[int, Any], Awaitable[None]]
+    clean_up_forecast: Callable[[int, Any], Awaitable[None]]
+    clean_up_check_in: Callable[[int, Any], Awaitable[None]]
     round_list: Callable[[list[Round]], str]
 
 
@@ -500,7 +510,11 @@ def round_amend_change(
         async with get_connection(ctx.db_path) as db:
             cursor = await db.execute(
                 "SELECT d.tier, s.season_number, r.checkin_cleared, EXISTS ("
-                "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) AS called "
+                "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) AS called, EXISTS ("
+                "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
+                "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
+                "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
+                "AND f.phase_number = 3) AS phase3_posted "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
                 (rnd.id,),
@@ -545,39 +559,57 @@ def round_amend_change(
                 rnd, season_number=season_number, division_tier=tier
             )
         planned = posts(
-            ctx, rnd, judgement,
-            call_owed=not found["called"] and not found["checkin_cleared"],
+            ctx, rnd, judgement, standing=dict(found),
             draw=phases_due(rnd, weather) if weather_on else [],
         )
         return StepResult(result={"armed": True}, then=planned)
 
     def posts(
-        ctx: StepContext, rnd: Round, judgement: dict[str, Any], *, call_owed: bool,
-        draw: list[int],
+        ctx: StepContext, rnd: Round, judgement: dict[str, Any], *,
+        standing: Mapping[str, Any], draw: list[int],
     ) -> tuple[PlannedStep, ...]:
         """The posts the amendment owes, in today's order: the check-in call taken down and
-        posted again, each withdrawn forecast that was posted deleted, the notice that the
-        forecasts no longer stand, and each phase in *draw* drawn. Planned once the round is
-        armed, which is where the amendment stood before them; what the save withdraws, from what
-        it read (`apply`), and only where it was saved.
+        posted again, its deadline run, each withdrawn forecast that was posted deleted, the
+        notice that the forecasts no longer stand, each phase in *draw* drawn, and the clean-ups
+        due a day after the round. Planned once the round is armed, which is where the amendment
+        stood before them; what the save withdraws, from what it read (`apply`), and only where it
+        was saved. *standing* is what the arming read of the round's call and Phase 3 forecast.
 
         A call that stood at the save is taken down and its repost planned with it, the repost
         judging when it runs whether the call is due then (`call_still_due`): the take-down can
         stop on Discord and be retried after the new call's moment, which the timer armed
         meanwhile has found taken by the old call. Otherwise the call is planned only where none
-        stands and the check-in is not over (*call_owed*) and it has fallen due as the round is
-        armed, saved or not; one still to come is the timer's."""
+        stands and the check-in is not over and it has fallen due as the round is armed, saved or
+        not; one still to come is the timer's.
+
+        What fell due while the amendment stood stopped is caught up as the start-up recovery
+        catches it up (`_recover_rsvp_views_and_deadlines`, `_recover_missed_cleanups`; owner,
+        2026-10-09): a standing call left in place whose deadline has passed with no
+        distribution recorded has its deadline run, and a day after the round its Phase 3
+        forecast is deleted and its standing call taken down."""
         after = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
+        attendance = judgement["windows"]["attendance"]
+        taking_down = bool(after.get("reopened") and after.get("called"))
+        call_left = bool(standing["called"]) and not taking_down
         planned: list[PlannedStep] = []
-        if after.get("reopened") and after.get("called"):
+        if taking_down:
             planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL)]
-        elif call_owed and call_fell_due(rnd, judgement["windows"]["attendance"]):
+        elif (not standing["called"] and not standing["checkin_cleared"]
+              and call_fell_due(rnd, attendance)):
             planned.append(PlannedStep(POST_CALL))
+        if (attendance is not None and call_left and standing["undistributed"]
+                and deadline_passed(rnd, attendance)):
+            planned.append(PlannedStep(RUN_DEADLINE))
         posted = after.get("posted", [])
         planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
         if posted:
             planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
+        if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
+            if standing["phase3_posted"]:
+                planned.append(PlannedStep(CLEAN_UP_FORECAST))
+            if call_left:
+                planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
         return tuple(planned)
 
     async def never_runs(ctx: StepContext) -> str:
@@ -693,6 +725,19 @@ def round_amend_change(
         await hooks.run_phase(phase, int(ctx.payload["round_id"]), ctx.bot)
         return StepResult(result={"phase": phase})
 
+    def catching_up(
+        hook: Callable[[int, Any], Awaitable[None]], done: str
+    ) -> Callable[[StepContext], Awaitable[StepResult]]:
+        """A job running *hook* for the round, as its timer would have: the deadline or a
+        clean-up whose moment passed while the amendment stood stopped. What Discord refuses goes
+        the way the timer's own run goes; a fault of the bot's own stops the queue."""
+
+        async def run(ctx: StepContext) -> StepResult:
+            await hook(int(ctx.payload["round_id"]), ctx.bot)
+            return StepResult(result={done: True})
+
+        return run
+
     async def close_due(ctx: StepContext) -> bool:
         """The close is due where the amendment was saved, and where a job before the save was
         discarded, to read the number the round bears then for the reply."""
@@ -774,6 +819,24 @@ def round_amend_change(
                     "not drawn, and a league admin discarded it; it is drawn when the bot next "
                     "starts, while the round is still to be run",
                 ))
+            elif each.name == RUN_DEADLINE:
+                failures.append(notices.NoticeFailure(
+                    division, "check-in deadline",
+                    "the reserves were not distributed, and a league admin discarded it; it is "
+                    "run when the bot next starts, while the call stands",
+                ))
+            elif each.name == CLEAN_UP_FORECAST:
+                failures.append(notices.NoticeFailure(
+                    division, "forecast channel",
+                    "the Phase 3 forecast was not deleted a day after the round, and a league "
+                    "admin discarded it; it is deleted when the bot next starts",
+                ))
+            elif each.name == CLEAN_UP_CHECK_IN:
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    "the check-in was not taken down a day after the round, and a league admin "
+                    "discarded it; it is taken down when the bot next starts",
+                ))
         if not failures:
             return ""
         return "\n⚠️ **Not done**\n" + "\n".join(f"  • {each.describe()}" for each in failures)
@@ -814,6 +877,25 @@ def round_amend_change(
         RERUN_PHASE: Step(
             RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=weather_on,
             describe=named("drawing a forecast of round {number} in **{division}** now"),
+        ),
+        RUN_DEADLINE: Step(
+            RUN_DEADLINE, StepKind.ACT, catching_up(hooks.run_deadline, "run"),
+            still_due=attendance_on,
+            describe=named("running the check-in deadline of round {number} in **{division}**"),
+        ),
+        CLEAN_UP_FORECAST: Step(
+            CLEAN_UP_FORECAST, StepKind.ACT, catching_up(hooks.clean_up_forecast, "cleaned_up"),
+            still_due=weather_on,
+            describe=named(
+                "deleting the Phase 3 forecast of round {number} in **{division}** a day after it"
+            ),
+        ),
+        CLEAN_UP_CHECK_IN: Step(
+            CLEAN_UP_CHECK_IN, StepKind.ACT, catching_up(hooks.clean_up_check_in, "cleaned_up"),
+            still_due=attendance_on,
+            describe=named(
+                "taking down the check-in of round {number} in **{division}** a day after it"
+            ),
         ),
         CLOSE: Step(
             CLOSE, StepKind.ACT, close, still_due=close_due,

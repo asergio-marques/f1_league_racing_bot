@@ -1157,8 +1157,6 @@ async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_it
     assert [call.args[0].id for call in opened.call_args_list] == [R3]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the arming catches up a check-in deadline that "
-                                       "passed while the save stood stopped")
 async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_run_once_it_is_discarded(
     tmp_path, reposts, deadlines,
 ):
@@ -1186,8 +1184,6 @@ async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_r
     assert reposts.posted == []
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the arming catches up the post-race clean-ups "
-                                       "that fell due while the save stood stopped")
 async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_once_it_is_discarded(
     tmp_path,
 ):
