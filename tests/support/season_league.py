@@ -63,7 +63,8 @@ driver roles, each role taken back recorded in `league.revoked` and refused for 
 `league.revoke_fails`; a wizard double recording each signup channel's closing notice in
 `league.notices` and each channel locked in `league.locked`, refusing as `league.hold_fails` and
 `league.lock_fails` say; and the window's close raising `league.close_fails`.
-`pending_completion_league` builds the season with every round final and both divisions finished,
+`approved_unplaced` adds a driver approved and never placed (`UNASSIGNED`), holding the driver
+role. `pending_completion_league` builds the season with every round final and both divisions finished,
 results accepted for three rounds; `setup_league` the season before its placements are confirmed,
 for the abort. `complete_season`, `cancel_season` and `abort_season` run the three commands as
 admin 77 and give the interaction; `season_end_changes` lists the season's ends asked of the queue;
@@ -922,6 +923,9 @@ SIGNING_UP = 105
 NAMES[SIGNING_UP] = "Kimi"
 #: Each signing-up driver's signup channel is `SIGNUP_CHANNEL_BASE` + their user id.
 SIGNUP_CHANNEL_BASE = 6300
+#: A driver approved for the season but never placed (`approved_unplaced`): Unassigned.
+UNASSIGNED = 106
+NAMES[UNASSIGNED] = "Valtteri"
 
 
 async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: bool = False,
@@ -1047,6 +1051,22 @@ async def signing_up(league: SeasonLeague, user_id: int = SIGNING_UP, *,
         "VALUES (?, ?, ?)",
         str(user_id), state, SIGNUP_CHANNEL_BASE + user_id,
     )
+
+
+async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> None:
+    """Driver *user_id* was approved for the season and never placed: Unassigned, signed up for
+    season 3 with no seat, and holding the league's driver role on the server."""
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, ?, 'UNASSIGNED', 0)",
+        profile_id(user_id), str(user_id),
+    )
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
+        "VALUES (?, ?, ?)",
+        SEASON_ID, str(user_id), NAMES[user_id],
+    )
+    league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)
 
 
 async def driver_state(league: SeasonLeague, user_id: int) -> str | None:
