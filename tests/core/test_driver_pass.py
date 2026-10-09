@@ -444,3 +444,124 @@ async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
             "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'DRIVER_PASS'"
         )
         assert (await cursor.fetchone())[0] == 1
+
+
+# ── The pass on the change queue (#439, slice 5) ──────────────────────────
+#
+# A season's end runs the pass inside the save that records its end, on the connection that
+# save hands it, and each driver's Discord side is a job of its own after it: the closing
+# notice (`signup_notice`), the channel held (`close_signup`) and the driver role taken
+# (`take_driver_role`). A job that cannot do its work raises, for the queue to stop on.
+
+_XFAIL_ON = "#439: the driver pass cannot yet run on the save handed"
+_XFAIL_JOBS = "#439: a driver's Discord side is not yet a job that raises"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
+async def test_the_pass_on_the_save_handed_commits_nothing_and_gives_the_accounts(db_path):
+    """The league of the pass above, run on a connection the season's end hands it and then
+    let go uncommitted: every driver stands as before, and the result gives the five drivers
+    returned, the four deleted, and the accounts whose portraits are to be discarded."""
+    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+
+    before = await _states(db_path)
+    async with get_connection(db_path) as db:
+        result = await run_driver_pass_on(db)
+        await db.rollback()
+
+    assert await _states(db_path) == before
+    assert result.reset == 5
+    assert sorted(result.deleted) == [2, 3, 4, 5]
+    assert sorted(result.accounts) == ["1002", "1003", "1004", "1005"]
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
+async def test_the_pass_on_the_save_handed_names_each_driver_its_discord_side_reaches(db_path):
+    """The pass names each driver it returned to Not Signed Up, with the state they were in and
+    whether test mode created them, for the jobs after the save: Lewis (1001) and Max (1002)
+    Assigned, 1003 Unassigned, 1004 in review, and the test driver flagged as one. Driver 1005,
+    already at Not Signed Up, has nothing on Discord to close."""
+    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+
+    async with get_connection(db_path) as db:
+        result = await run_driver_pass_on(db)
+        await db.commit()
+
+    real = {
+        (str(driver["user_id"]), driver["state"])
+        for driver in result.drivers
+        if not driver["is_test_driver"]
+    }
+    assert real == {
+        ("1001", "ASSIGNED"),
+        ("1002", "ASSIGNED"),
+        ("1003", "UNASSIGNED"),
+        ("1004", "PENDING_ADMIN_APPROVAL"),
+    }
+    assert all(
+        driver["is_test_driver"]
+        for driver in result.drivers
+        if str(driver["user_id"]) == "9000000000000000007"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
+async def test_a_signup_channel_that_cannot_be_held_raises():
+    """Driver 1004's signup is in review when the season ends. Discord refuses the closing
+    notice in their signup channel: the `signup_notice` job raises, for the queue to stop on,
+    before their channel is locked or their timeout cancelled. Today the failure is logged and
+    the pass goes on (`season_lifecycle_service.py:480-481`)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services.season_lifecycle_service import post_driver_notice
+
+    refusal = StepFailedOnDiscord("the closing notice could not be posted")
+    hooks = SimpleNamespace(
+        post_signup_notice=AsyncMock(side_effect=refusal),
+        lock_signup_channel=AsyncMock(),
+        cancel_signup_timeout=MagicMock(),
+    )
+    driver = {"user_id": "1004", "state": "PENDING_ADMIN_APPROVAL", "is_test_driver": 0}
+
+    with pytest.raises(StepFailedOnDiscord):
+        await post_driver_notice(
+            MagicMock(), driver, hooks=hooks,
+            notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
+        )
+
+    hooks.post_signup_notice.assert_awaited_once()
+    hooks.lock_signup_channel.assert_not_awaited()
+    hooks.cancel_signup_timeout.assert_not_called()
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
+async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
+    """Max (1002) was Assigned when the season ended, and the league's driver role is 555.
+    Discord refuses to take it back (403): the `take_driver_role` job raises, from the refusal,
+    for the queue to stop on. Today the failure is logged and the pass goes on
+    (`season_lifecycle_service.py:493-494`)."""
+    import discord
+
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.season_lifecycle_service import take_driver_role
+
+    role = MagicMock(id=555)
+    member = MagicMock(id=1002)
+    member.roles = [role]
+    refusal = discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Permissions")
+    member.remove_roles = AsyncMock(side_effect=refusal)
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=member)
+    guild.fetch_member = AsyncMock(return_value=member)
+    guild.get_role = MagicMock(return_value=role)
+    driver = {"user_id": "1002", "state": "ASSIGNED", "is_test_driver": 0}
+
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await take_driver_role(
+            guild, driver, placement=PlacementService(str(tmp_path / "db.sqlite")),
+            driver_role_id=555, reason="Season ended",
+        )
+
+    assert raised.value.__cause__ is refusal
