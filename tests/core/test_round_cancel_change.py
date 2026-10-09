@@ -161,7 +161,7 @@ async def _awaiting_results(league: Any, rid: int = R3) -> None:
     """Round *rid*'s race time has passed and it waits for its results."""
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
     )
 
 
@@ -678,7 +678,8 @@ async def _renumbered(league: Any) -> None:
     """Pro's round 2's date moved past round 4's, and the division renumbered by date, as an
     amended date renumbers it: the round asked for as round 3 is now round 2."""
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       (league.clock.now + timedelta(days=200)).isoformat(), round_id(PRO, 2))
+                       (league.clock.now + timedelta(days=200)).replace(tzinfo=None).isoformat(),
+                       round_id(PRO, 2))
     await league.bot.season_service.renumber_rounds(PRO)
     assert (await league.rows("SELECT round_number FROM rounds WHERE id = ?", R3)) == [
         {"round_number": 2}

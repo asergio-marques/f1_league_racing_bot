@@ -52,9 +52,6 @@ from tests.support.season_league import (
     round_id,
 )
 
-#: Why every test here fails until the build.
-XFAIL = "#439: /round amend is not yet a change on the change queue"
-
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 HORIZONS = (5, 2, 2)
@@ -738,7 +735,6 @@ async def test_a_module_turned_off_before_its_job_drops_it(tmp_path):
     assert NOT_DONE not in _outcome(press)
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL)
 async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumbering(tmp_path):
     """Attendance on; the queue is stopped. Pro's round 3 is moved past round 4 and confirmed,
     then Pro's round 4 is cancelled, each ask blind to the other as two asks in the same instant

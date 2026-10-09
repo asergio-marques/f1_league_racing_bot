@@ -156,7 +156,7 @@ async def _round_audits(league: Any) -> list[str]:
 async def _awaiting_results(league: Any, rid: int) -> None:
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
     )
 
 
