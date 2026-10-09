@@ -25,6 +25,7 @@ is open, and to *disable* it while a running season holds fake drivers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 
 import discord
 from discord import app_commands
@@ -480,6 +481,8 @@ class TestModeCog(commands.Cog):
             from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
             from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
 
+            # The check-in's says whether it marked the check-in over, which this does not read.
+            cleanup: Callable[[int, LeagueBot], Awaitable[object]]
             if phase_number == 8:
                 prefix, what, cleanup = "cleanup", "forecast cleanup", run_post_race_cleanup
                 done = "Its Phase 3 forecast has been deleted."

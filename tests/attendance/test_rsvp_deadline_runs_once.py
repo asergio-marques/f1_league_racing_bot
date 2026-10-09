@@ -258,7 +258,6 @@ async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
     assert not any("NOT POSTED" in c.args[0] for c in bot.output_router.post_log.await_args_list)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a give-up and a deadline both report the round")
 async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_path, monkeypatch):
     """No call stands for the round and an answer is kept. The deadline closes its check-in
     while a restart's give-up of the same round runs too, committing at the deadline's first

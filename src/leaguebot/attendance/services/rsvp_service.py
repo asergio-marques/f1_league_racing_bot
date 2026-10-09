@@ -991,12 +991,16 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
 # ── run_rsvp_cleanup ──────────────────────────────────────────────────────────
 
 
-async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool = False) -> None:
-    """Take down *round_id*'s check-in call, last notice and distribution message.
+async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool = False) -> bool:
+    """Take down *round_id*'s check-in call, last notice and distribution message; whether the
+    round's check-in was marked over.
 
-    With *clear_answers*, the round's answers and the placements made on them are cleared in the
-    save that marks its check-in over (`clear_check_in_answers_on`): the deadline closing a
-    check-in with no call standing (`run_rsvp_deadline`).
+    With *clear_answers*, the deadline closing a check-in with no call standing
+    (`_close_check_in_without_a_call`), the mark is one guarded save: it is set only where the
+    round's results are not in, its check-in is not over and answers are kept for it, and the
+    answers and the placements made on them are cleared with it (`clear_check_in_answers_on`).
+    A give-up of the same round committing first leaves it nothing to do, so the round is
+    reported once.
 
     Fired 24 hours after the round's scheduled start by its ``rsvp_cleanup`` job, by the restart
     recovery where that moment passed while the bot was down, and by ``/test-mode advance``
@@ -1015,7 +1019,7 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool
             "round %d — nothing taken down",
             round_id,
         )
-        return
+        return False
 
     # The gate above has just found the round, so it is there to be read.
     async with get_connection(bot.db_path) as db:
@@ -1024,12 +1028,23 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool
 
     await withdraw_rsvp_call(round_id, division_id, bot)
 
+    to_run = sorted(ROUND_CANCELLABLE)
     async with get_connection(bot.db_path) as db:
-        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
         if clear_answers:
+            cursor = await db.execute(
+                "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
+                f"AND status IN ({', '.join('?' for _ in to_run)}) AND EXISTS (SELECT 1 FROM "
+                "driver_round_attendance a WHERE a.round_id = rounds.id)",
+                (round_id, *to_run),
+            )
+            if cursor.rowcount != 1:
+                return False
             await clear_check_in_answers_on(db, round_id)
+        else:
+            await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
         await db.commit()
     log.info("run_rsvp_cleanup: check-in taken down for round %d", round_id)
+    return True
 
 
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
@@ -1245,20 +1260,18 @@ async def _close_check_in_without_a_call(round_id: int, bot: LeagueBot) -> bool:
     are not in and whose check-in is not over, holding answers, is touched.
     `test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so` pins it.
     """
+    # The guard is in the close's own save, so that a give-up committing first leaves it
+    # nothing to do and the round is reported once.
+    if not await run_rsvp_cleanup(round_id, bot, clear_answers=True):
+        return False
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT r.status, r.checkin_cleared, r.round_number, d.id AS division_id, "
-            "d.name AS division_name, s.season_number, EXISTS (SELECT 1 FROM "
-            "driver_round_attendance a WHERE a.round_id = r.id) AS answered FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-            "WHERE r.id = ?",
+            "SELECT r.round_number, d.id AS division_id, d.name AS division_name, "
+            "s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
             (round_id,),
         )
-        found = await cursor.fetchone()
-    if (found is None or found["status"] not in ROUND_CANCELLABLE
-            or found["checkin_cleared"] or not found["answered"]):
-        return False
-    await run_rsvp_cleanup(round_id, bot, clear_answers=True)
+        found = await sole_row(cursor)
     log.info(
         "run_rsvp_deadline: round %d's deadline passed with no call standing — answers cleared",
         round_id,
