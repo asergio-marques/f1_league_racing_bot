@@ -379,3 +379,74 @@ async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
         )
         assert await cursor.fetchall() == []
     assert await _checkin_cleared(db_path)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a restart's give-up clears a charged round's record")
+async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attendance(tmp_path):
+    """A round whose results are in and judged (FINAL), its check-in never marked over and no
+    call record standing, its deadline long past: its driver's attendance was charged (points
+    awarded) and a no-answer pardon granted. A start-up gives nothing up for it: no line in the
+    log channel, and the attendance and the pardon stand."""
+    db_path = await _make_db(tmp_path, until_round=-timedelta(days=3), round_status="FINAL")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status, attended, points_awarded, total_points_after) "
+            "VALUES (?, ?, 201, 'NO_RSVP', 1, 1, 1)",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (?, 'NO_RSVP', 'was ill', 900, ?)",
+            (cursor.lastrowid, NOW.isoformat()),
+        )
+        await db.commit()
+    bot = _make_bot(db_path)
+
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+
+    assert _logged(bot) == []
+    async with get_connection(db_path) as db:
+        rows = await (await db.execute(
+            "SELECT points_awarded FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
+        )).fetchall()
+        pardons = await (await db.execute("SELECT * FROM attendance_pardons")).fetchall()
+    assert [row["points_awarded"] for row in rows] == [1]
+    assert len(pardons) == 1
+    assert not await _checkin_cleared(db_path)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a give-up clears a finished round's or check-in's record")
+@pytest.mark.parametrize("status, cleared", [
+    ("FINAL", False), ("AWAITING_REPORT_VERDICTS", False), ("NOT_RUN", True),
+], ids=["results judged", "results entered", "check-in over"])
+async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over(
+    tmp_path, status, cleared,
+):
+    """A give-up asked for a round whose results are in, or whose check-in is already over, as
+    an amendment's catch-up or a start-up could ask for one: nothing is written, the answer left
+    for the round stands and the log channel is not told."""
+    db_path = await _make_db(
+        tmp_path, until_round=-timedelta(days=3), round_status=status, checkin_cleared=cleared
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (?, ?, 201, 'ACCEPTED')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    bot = _make_bot(db_path)
+    row = {"round_id": ROUND_ID, "round_number": 4, "division_id": DIVISION_ID,
+           "division_name": "Division 1", "season_number": 3}
+
+    await bot_module._give_up_missed_check_in_call(bot, row)
+
+    assert _logged(bot) == []
+    async with get_connection(db_path) as db:
+        rows = await (await db.execute(
+            "SELECT * FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
+        )).fetchall()
+    assert len(rows) == 1
+    assert await _checkin_cleared(db_path) == cleared
