@@ -138,6 +138,30 @@ def test_the_round_amendment_is_registered():
     assert kinds.count(ROUND_AMEND) == 1
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#439: a season's completion, cancellation and abort are not registered"
+)
+def test_the_season_s_end_is_registered():
+    """The builder registers the completion of a season, its cancellation and its abort, as
+    "season.complete", "season.cancel" and "season.abort", and the wind-down, once each (#439,
+    slice 5)."""
+    from leaguebot.__main__ import register_change_types
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
+    for kind in ("season.complete", "season.cancel", "season.abort", "season.wind_down"):
+        assert kinds.count(kind) == 1, kind
+
+    from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
+    from leaguebot.core.services.season_end_changes import SEASON_ABORT, SEASON_COMPLETE
+    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+
+    assert (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT, WIND_DOWN) == (
+        "season.complete", "season.cancel", "season.abort", "season.wind_down")
+
+
 def test_only_the_two_armings_are_undiscardable():
     """Over every change type the builder registers, the jobs marked as never to be discarded
     are exactly two: the arming of an approved season's timed work ("season.approve", its "arm")
