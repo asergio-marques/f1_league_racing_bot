@@ -978,7 +978,6 @@ async def test_clearing_a_round_s_answers_on_the_connection_handed_commits_nothi
         }
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a quiet take-down drops refused messages unnamed")
 async def test_a_quiet_withdrawal_names_in_the_log_the_messages_discord_refused_to_delete(
     tmp_path,
 ):

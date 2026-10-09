@@ -845,6 +845,7 @@ async def withdraw_rsvp_call(
         if message_id is not None
     ]
     left: list[str] = []
+    refused: list[str] = []
     cause: discord.HTTPException | None = None
     channel = as_text_channel(bot.get_channel(int(stored.channel_id)))
     if channel is None:
@@ -859,6 +860,7 @@ async def withdraw_rsvp_call(
             except discord.HTTPException as exc:
                 # No permission, or Discord failing. The quiet form drops the row either way.
                 left.append(str(message_id))
+                refused.append(str(message_id))
                 cause = exc
     if undeleted is not None:
         undeleted.extend(left)
@@ -876,7 +878,42 @@ async def withdraw_rsvp_call(
             (round_id, division_id, stored.message_id),
         )
         await db.commit()
+    if refused and undeleted is None:
+        await _report_messages_left(bot, round_id, division_id, stored.channel_id, refused)
     return True
+
+
+async def _report_messages_left(
+    bot: LeagueBot, round_id: int, division_id: int, channel_id: str, message_ids: list[str]
+) -> None:
+    """Name in the log channel the messages of a call Discord refused to delete, for a league
+    admin to delete by hand.
+
+    For the quiet form of `withdraw_rsvp_call` (a repost, the clean-up a day after the round),
+    which drops the call's record whatever is left, so that nothing would take those messages
+    down again and nobody would know they stand (owner, 2026-10-09: "Fold it in"). A caller
+    handing in *undeleted*, or raising, says so itself. Reporting never masks the take-down.
+    """
+    try:
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute(
+                "SELECT r.round_number, d.name FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                (round_id,),
+            )
+            found = await cursor.fetchone()
+        division = found["name"] if found else f"id={division_id}"
+        number = found["round_number"] if found else f"id={round_id}"
+        await bot.output_router.post_log(
+            f"ATTENDANCE | check-in call | NOT DELETED\n"
+            f"  division: {division}\n"
+            f"  round: {number}\n"
+            f"  messages: {', '.join(message_ids)} in <#{channel_id}>\n"
+            f"  note: Discord refused to delete them as the call was taken down; delete them "
+            f"by hand.",
+        )
+    except Exception:  # noqa: BLE001 — reporting must never mask the take-down
+        log.exception("withdraw_rsvp_call: failed to report the messages left standing")
 
 
 async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> None:
