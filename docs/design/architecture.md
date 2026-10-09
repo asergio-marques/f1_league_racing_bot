@@ -340,14 +340,14 @@ audit record, which is how some settings came to have none.
   review to open again (core specification, "How a change is carried out"; the results
   specification says which jobs).
 
-  A step may be marked *undiscardable* (`Step.undiscardable`), where dropping its job would leave a
-  round that would never run and a league no repair: the arming of a season's timed work once it is
-  approved, and of an amended round's. It is a reader, not a flag, that gives what would follow
-  from dropping the job, in the job's own terms, so that the refusal can name the round or the
-  season. Discard on such a job is refused through the queue's own refusal, privately and with one
-  line in the log channel, and saves nothing: no discarded mark, no line, no audit record, no
-  follow-on, and the queue stays stopped at the job. Retry, and the bot's own tries, are
-  unchanged, and are the only way on. The notice keeps both buttons: it is one persistent view
+  Which jobs cannot be discarded, and what the member and the log channel are told when Discard is
+  pressed on one, the core specification's "How a change is carried out" holds; what follows is
+  the mechanism. Such a step is marked `Step.undiscardable`, a reader rather than a flag: it gives
+  what would follow from dropping the job, in the job's own terms, so that the refusal can name
+  the round or the season. Discard on the job goes through the queue's own refusal of a press and
+  saves nothing else: no discarded mark, no Discard line, no audit record, no follow-on, and the
+  job stays the one the queue is stopped at. Retry, and the bot's own tries, are unchanged. The
+  notice keeps both buttons, and it is the button that refuses: the notice is one persistent view
   with fixed identities, found again after a restart, and a notice without Discard would need a
   second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
   discard that drops the job and names the loss, which leaves a league with nothing it can do to
