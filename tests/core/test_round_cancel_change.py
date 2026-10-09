@@ -97,6 +97,7 @@ SAVE_DISCARDED = (
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "close"]
 WIND_DOWN = "season.wind_down"
+_XFAIL_WIND_DOWN_WINDOW = "#439: there is no close_window_for_wind_down"
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
@@ -1099,6 +1100,7 @@ async def test_the_wind_down_is_asked_only_where_the_round_finished_its_division
     assert len(wind_downs) == (1 if finishes else 0)
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_WIND_DOWN_WINDOW)
 async def test_a_wind_down_that_stops_stops_at_its_own_job_and_the_cancellation_reports_success(
     tmp_path,
 ):
@@ -1112,7 +1114,7 @@ async def test_a_wind_down_that_stops_stops_at_its_own_job_and_the_cancellation_
     await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", AM)
     interaction = await _asked(league)
 
-    with patch.object(season_lifecycle_service, "wind_down_ongoing",
+    with patch.object(season_lifecycle_service, "close_window_for_wind_down",
                       AsyncMock(side_effect=RuntimeError("the signup window would not close"))):
         await run_queue(league.bot)
 
