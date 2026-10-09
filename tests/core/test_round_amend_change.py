@@ -1526,3 +1526,28 @@ async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_an
     assert await league.rows("SELECT * FROM driver_round_attendance WHERE round_id = ?", R3) == []
     [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
     assert row["checkin_cleared"] == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a test season's passed round has its submission run")
+async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_stopped_is_left_to_test_mode_advance(
+    tmp_path,
+):
+    """Test mode on. Pro's round 3 is two hours and five minutes out; it is moved thirty minutes
+    later and the save stops. Ten minutes past its old moment a league admin discards the save:
+    the round stands at its old moment, gone by, and still to be run. Its results submission is
+    armed with it, but not run at once, `/test-mode advance` running a test season's rounds in
+    their turn (owner, 2026-10-09: "Leave it to /test-mode advance")."""
+    league = await ongoing_league(tmp_path)
+    await league.set_test_mode(True)
+    await _place_r3(league, hours=2, minutes=5)
+    await _amended(league, scheduled_at=_at(league, hours=2, minutes=35))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(hours=2, minutes=15)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "NOT_RUN"
+    assert league.armed == [("results", [R3])]
+    assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
