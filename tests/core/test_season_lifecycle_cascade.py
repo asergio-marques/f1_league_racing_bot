@@ -821,3 +821,73 @@ async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tm
     await _set_round_status(db_path, round_id, "CANCELLED")
     await _run_the_round_job(db_path, round_id, results_enabled=False)
     assert await _round_status(db_path, round_id) == "CANCELLED"
+
+
+_XFAIL_ROUND_JOB = "#439: the results-off round job still saves in two commits and winds the season down itself"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ROUND_JOB)
+async def test_without_the_results_module_the_round_and_its_division_are_saved_together(
+    tmp_path, monkeypatch
+) -> None:
+    """The round's move off Not run and its division's refresh are one save (#439, slice 5).
+
+    Today the round's move commits first and the refresh commits on its own, so a refresh that
+    fails leaves the round final over a division never told. Both forms of the refresh are made
+    to raise, today's method and the on-connection form the job saves through, so the test reads
+    the same before and after the change.
+    """
+    from leaguebot.core.services import season_service
+    from leaguebot.results.services import result_submission_service
+
+    async def refused(*args, **kwargs):
+        raise RuntimeError("the division could not be refreshed")
+
+    monkeypatch.setattr(season_service.SeasonService, "refresh_division_status", refused)
+    monkeypatch.setattr(season_service, "refresh_division_status_on", refused)
+    monkeypatch.setattr(
+        result_submission_service, "refresh_division_status_on", refused, raising=False
+    )
+
+    db_path = str(tmp_path / "bot.db")
+    _, built = await _seed(db_path, rounds_per_division=1)
+    div_id, (round_id,) = built["Div A"]
+
+    await _run_the_round_job(db_path, round_id, results_enabled=False)
+
+    assert await _round_status(db_path, round_id) == "NOT_RUN"
+    assert await _division_status(db_path, div_id) == "ACTIVE"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ROUND_JOB)
+async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tmp_path) -> None:
+    """The season's wind-down is asked of the change queue as the bot's, not run in-process
+    (#439, slice 5). Today the job calls `wind_down_ongoing` itself and logs its failure."""
+    import contextlib
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.results.services.result_submission_service import run_result_submission_job
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _seed(db_path, rounds_per_division=1)
+    _, (round_id,) = built["Div A"]
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", (season_id,)
+        )
+        await db.commit()
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    with contextlib.suppress(Exception):
+        await run_result_submission_job(round_id, bot)
+
+    assert await _round_status(db_path, round_id) == "FINAL"
+    bot.change_queue.ask.assert_awaited_once()
+    call = bot.change_queue.ask.await_args
+    kind = call.args[0] if call.args else call.kwargs["kind"]
+    assert kind == "season.wind_down"
+    assert call.kwargs["origin"] is ChangeOrigin.BOT
