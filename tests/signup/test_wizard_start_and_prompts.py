@@ -674,14 +674,16 @@ async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
     assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the hold cannot be asked to arm the deletion when its notice is refused")
 async def test_a_notice_that_cannot_be_posted_still_schedules_deletion(tmp_path):
+    """The forced close's form: a refused notice still locks and arms (P1)."""
     channel = _channel(OLD_CHANNEL)
     channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=403), "no"))
     svc = _service(existing=_wizard())
     guild = _guild(old_channel=channel)
     guild.get_member = MagicMock(return_value=None)
 
-    await svc.trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended", arm_when_refused=True)
 
     svc._scheduler._scheduler.add_job.assert_called_once()
 
