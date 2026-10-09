@@ -727,7 +727,7 @@ async def test_a_refusal_found_when_the_completion_runs_updates_the_reply_and_th
     assert len(_refusal_lines(league)) == 1
     assert _refusal_lines(league)[0].startswith(REFUSAL)
     assert await stopped_job(league.db_path) is None
-    assert (await _change(league))["state"] == "DONE"
+    assert (await _change(league))["state"] == "REFUSED"
     assert await _status(league) == status
     assert await _history(league) == []
     assert league.texts(PRO_CH.standings) == []
