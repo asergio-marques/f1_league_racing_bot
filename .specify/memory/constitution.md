@@ -1,6 +1,46 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-09 — v14.11.0 → v14.12.0: MINOR — a round with an open, empty submission may be cancelled, and the cascades obey the same rule (issue #439)]
+  Version change    : 14.11.0 → 14.12.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.11.0: guidance inside Principle XII
+                      is changed in substance. A prohibition is narrowed to a stated exception and
+                      extended to the cascades of a division's and a season's cancellation. No
+                      principle is removed.
+
+  Modified sections :
+    - Principle XII, Race Results & Championship Integrity — the bullet on cancelling a round:
+      "MUST be rejected … while the transient round results submission channel stands open for
+      it" becomes a rejection, of the round, its division or its season alike, once the open
+      channel has accepted the results of any session or a session entered as not held. With
+      nothing accepted, the round MAY be cancelled, on its own or with its division or season,
+      and its submission is closed and its channel removed with it. The rejection once results
+      have been entered, and its reason, are unchanged.
+
+  Why the constitution is the document that moved:
+    - The owner decided on 2026-10-08 (#439, slice 4b, close-out and check 3) to amend Principle
+      XII: a round, division or season may be cancelled while the submission is open only until
+      any session's results are accepted; an empty submission is closed and its channel removed
+      with the cancellation; a round in its penalty or appeals review blocks the cascades too.
+    - `docs/wip-specs/core_specification.md` ("Amending and cancelling a round") and
+      `docs/wip-specs/results_module_specification.md` carry the same rules and remain their
+      governing statements.
+    - Principle III is left as it stands (owner, "Leave III").
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-cancels-on-the-queue.
+
+  Templates / docs  : none. No template in .specify/templates names the rule; the core and results
+                      specifications, the README and the guides are corrected on the same branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-10-06 — v14.10.0 → v14.11.0: MINOR — a recalculation saved whole, reposts and verdicts queued and retried (issue #439)]
   Version change    : 14.10.0 → 14.11.0
   Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.10.0: guidance inside Principle XII
@@ -6046,10 +6086,14 @@ governs the **Results & Standings optional module** (Principle X).
   points. The reposts MUST be carried out as jobs on the change queue after that save, each
   posted before the message it replaces is deleted, and a repost Discord refuses MUST stop the
   queue and be retried, never skipped.
-- A request to cancel a round MUST be rejected with a clear error while the transient round
-  results submission channel stands open for it, and once any of its results have been
-  entered. From the moment results are entered the drivers have reports and appeals to lodge
-  against them, and calling the round off would take that from them.
+- A request to cancel a round MUST be rejected with a clear error once any of its results have
+  been entered. While the transient round results submission channel stands open for a round, a
+  request to cancel that round, its division or its season MUST be rejected with a clear error
+  once the channel has accepted the results of any session, or a session entered as not held.
+  With nothing accepted, the round MAY be cancelled, on its own or with its division or season,
+  and its submission MUST then be closed and its channel removed with it. From the moment
+  results are entered the drivers have reports and appeals to lodge against them, and calling
+  the round off would take that from them.
 - The amendment-mode toggle MUST reject a request to disable (toggle off) while
   `modified_flag` is `true`. League managers MUST first either approve (overwriting the
   season points store) or revert (discarding the modification store) before amendment
@@ -8786,4 +8830,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.11.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-06
+**Version**: 14.12.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-09
