@@ -1426,7 +1426,6 @@ async def test_a_call_standing_when_the_amendment_s_post_runs_past_its_deadline_
     assert reposts.posted == []
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a phase is drawn for a round already raced")
 async def test_a_phase_whose_race_passed_while_a_job_before_it_stood_stopped_is_not_drawn(
     tmp_path, phases, reposts,
 ):

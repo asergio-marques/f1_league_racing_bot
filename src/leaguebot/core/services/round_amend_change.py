@@ -671,6 +671,21 @@ def round_amend_change(
     async def weather_on(_ctx: StepContext) -> bool:
         return await modules.is_weather_enabled()
 
+    async def phase_still_due(ctx: StepContext) -> bool:
+        """A phase is drawn at once only while weather is on and the phase is still due as the
+        round stands when this job runs (`phases_due`): not drawn yet, its horizon passed, the
+        race still ahead and the round no mystery round. A job before it can stop and be retried
+        after the race, and a forecast for a round already raced is no forecast (owner,
+        2026-10-09)."""
+        if not await modules.is_weather_enabled():
+            return False
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        judgement = judged(ctx) or {}
+        weather = judgement.get("windows", {}).get("weather")
+        if rnd is None or weather is None:
+            return False
+        return int(ctx.step_payload["phase"]) in phases_due(rnd, weather)
+
     async def take_down_call(ctx: StepContext) -> StepResult:
         """Take the round's standing check-in call down, keeping its record and stopping the queue
         where Discord will not delete a message. The check-in's audit it reads is not written.
@@ -767,8 +782,9 @@ def round_amend_change(
 
     async def rerun_phase(ctx: StepContext) -> StepResult:
         """Draw a phase whose horizon has already passed, by the amended moment or while the
-        amendment stood stopped. Discord refusing its post goes the way weather's own posts go
-        (owner, 2026-10-08: slice 6)."""
+        amendment stood stopped, where it is still due when the job runs (`phase_still_due`).
+        Discord refusing its post goes the way weather's own posts go (owner, 2026-10-08:
+        slice 6)."""
         phase = int(ctx.step_payload["phase"])
         await hooks.run_phase(phase, int(ctx.payload["round_id"]), ctx.bot)
         return StepResult(result={"phase": phase})
@@ -923,7 +939,7 @@ def round_amend_change(
             describe=named("telling **{division}** its forecasts no longer stand"),
         ),
         RERUN_PHASE: Step(
-            RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=weather_on,
+            RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=phase_still_due,
             describe=named("drawing a forecast of round {number} in **{division}** now"),
         ),
         RUN_DEADLINE: Step(
