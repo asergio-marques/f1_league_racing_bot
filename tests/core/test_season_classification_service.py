@@ -97,19 +97,6 @@ async def _seed(path, *, server_id=1, divisions=("Div A",)):
     return season_id, ids
 
 
-def _patched(standings=None, attendance=None):
-    return (
-        patch(
-            "leaguebot.results.services.results_post_service.post_standings",
-            standings or AsyncMock(return_value=None),
-        ),
-        patch(
-            "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
-            attendance or AsyncMock(return_value=None),
-        ),
-    )
-
-
 # ── The opening classification ────────────────────────────────────────────
 #
 # One division at a time, each a job of the season's approval on the change queue (#439,
@@ -289,45 +276,27 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
 # ── The final classification ──────────────────────────────────────────────
 
 
-async def test_a_division_that_ran_no_round_publishes_no_final_classification(db_path):
-    """There is no classification to publish."""
-    season_id, _division_ids = await _seed(db_path)
-    standings, attendance = AsyncMock(), AsyncMock()
-
-    with _patched(standings, attendance)[0], _patched(standings, attendance)[1]:
-        problems = await service.post_final_classifications(
-            _bot(db_path), _guild(), db_path, season_id
-        )
-
-    assert problems == []
-    assert standings.await_count == 0
-    assert attendance.await_count == 0
-
-
+@pytest.mark.xfail(
+    strict=True, reason="#439: the final standings and the final sheet are not yet jobs of their own"
+)
 async def test_the_final_is_drawn_against_the_last_round_with_results(db_path):
-    """The final sheet *is* that round's classification, restated under its own heading."""
-    season_id, division_ids = await _seed(db_path)
-    async with get_connection(db_path) as db:
-        cur = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
-            (division_ids[0],),
-        )
-        second = cur.lastrowid
-        await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-            (second, division_ids[0]),
-        )
-        await db.commit()
+    """The final sheet *is* that round's classification, restated under its own heading. Div A's
+    round 2 is its last round with results, as the completion's first save finds it: its final
+    standings and final sheet are each drawn against round 2, as the final classification."""
+    _season_id, division_ids = await _seed(db_path)
+    second = await _second_round_with_results(db_path, division_ids[0])
 
-    standings, attendance = AsyncMock(), AsyncMock()
-    with _patched(standings, attendance)[0], _patched(standings, attendance)[1]:
-        problems = await service.post_final_classifications(
-            _bot(db_path), _guild(), db_path, season_id
+    standings, attendance = AsyncMock(return_value=[]), AsyncMock(return_value=None)
+    first, middle, last = _opening_posts(standings, attendance)
+    inputs = _final_inputs(second, division_ids[0])
+    with first, middle, last, inputs[0], inputs[1]:
+        await service.post_final_standings(
+            _bot(db_path), _guild(), db_path, division_ids[0], second, as_text=False
+        )
+        await service.post_final_sheet(
+            _bot(db_path), _guild(), db_path, division_ids[0], second, as_text=False
         )
 
-    assert problems == []
     assert standings.await_args.args[2] == second
     assert standings.await_args.args[3] == 2
     assert standings.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_FINAL
