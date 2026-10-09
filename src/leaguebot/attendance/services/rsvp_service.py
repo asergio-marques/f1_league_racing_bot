@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import aiosqlite
 import discord
 
+from leaguebot.attendance.models.attendance import RsvpEmbedMessage
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.change import StepFailedOnDiscord
@@ -428,7 +429,16 @@ async def _checkin_attachment(
 # ── run_rsvp_notice ───────────────────────────────────────────────────────────
 
 
-async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
+#: What a failed repost's report says in place of the usual advice: the earlier call was left.
+EARLIER_CALL_STANDS = (
+    "the earlier call still stands, and the answers given to it count, though it does not "
+    "show what changed."
+)
+
+
+async def run_rsvp_notice(
+    round_id: int, bot: LeagueBot, *, replacing: RsvpEmbedMessage | None = None
+) -> None:
     """Post the RSVP embed for *round_id* to all configured RSVP channels.
 
     Called by the APScheduler job (and by /test-mode advance for phase 5).
@@ -447,8 +457,16 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
 
     It posts nothing where the round's call already stands (#429), judged under the round's
     check-in lock so that two posters reaching the round at once post one call between them.
-    `test_two_calls_posted_at_once_for_one_round_post_one` pins it. `repost_rsvp_call` takes
-    the standing call down before it comes here.
+    `test_two_calls_posted_at_once_for_one_round_post_one` pins it.
+
+    *replacing* is the call `repost_rsvp_call` posts this one in place of (owner, 2026-10-09:
+    "Fold it in"). Where it is the call found standing, the new call is posted beside it, and
+    only once the new one has landed is the earlier one withdrawn, its messages and its record,
+    its answers carried over. A post that fails, Discord refusing it or the channel gone, leaves
+    the earlier call and its record standing, and the report says so (`EARLIER_CALL_STANDS`)
+    rather than that no attendance rows were opened, which would no longer be true. A call
+    standing that is not *replacing* was posted since, and is left as any standing call is.
+    `test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so` pins it.
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
@@ -510,12 +528,18 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     # lock, a call found standing is left as it is: a second one beside it would be answered by
     # drivers and tracked by nothing.
     async with _check_in_lock(round_id):
-        if await bot.attendance_service.get_embed_message(round_id, division_id) is not None:
+        standing = await bot.attendance_service.get_embed_message(round_id, division_id)
+        if standing is not None and (
+            replacing is None or standing.message_id != replacing.message_id
+        ):
             log.info(
                 "run_rsvp_notice: a check-in call already stands for round %d — nothing posted",
                 round_id,
             )
             return
+        # The earlier call, standing until the new one lands; its answers count meanwhile.
+        earlier = standing
+        failure_note = EARLIER_CALL_STANDS if earlier is not None else None
 
         # Get division RSVP channel
         att_div_cfg = await bot.attendance_service.get_division_config(division_id)
@@ -546,6 +570,7 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
                 season_number=season_number,
                 round_number=round_number,
                 reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
+                note=failure_note,
             )
             return
 
@@ -636,6 +661,7 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
                 season_number=season_number,
                 round_number=round_number,
                 reason=f"the call could not be posted: {exc}",
+                note=failure_note,
             )
             return
         finally:
@@ -645,6 +671,11 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
             from leaguebot.image.services.image_rsvp_post import discard_attachment
 
             discard_attachment(attachment)
+
+        if earlier is not None:
+            # The new call has landed: the earlier one comes down, messages and record, and
+            # its answers carry over to the new one.
+            await withdraw_rsvp_call(round_id, division_id, bot)
 
         # Bulk-insert DRA rows
         if all_driver_profile_ids:
@@ -805,8 +836,15 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
     left is discarded, so the new call cannot show a name the division no longer holds.
     `bulk_insert_attendance_rows` inserts-or-ignores, so the rows that remain are left exactly
     as the drivers set them.
+
+    The call standing is withdrawn only once the new one has landed (`run_rsvp_notice`'s
+    *replacing*; owner, 2026-10-09: "Fold it in"). A repost that fails, Discord refusing it or
+    the channel gone, leaves the earlier call and its record standing, so its answers stand with
+    a call and the report says so; it fails as a call does when its timer fires, and stops no
+    queue. Withdrawn first, as it once was, a failed repost left answers with no call while the
+    report said no attendance rows were opened.
     """
-    await withdraw_rsvp_call(round_id, division_id, bot)
+    standing = await bot.attendance_service.get_embed_message(round_id, division_id)
 
     # Drop answers belonging to drivers the division no longer holds.
     roster = await query_division_roster(bot.db_path, division_id)
@@ -825,7 +863,7 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
             )
         await db.commit()
 
-    await run_rsvp_notice(round_id, bot)
+    await run_rsvp_notice(round_id, bot, replacing=standing)
 
 
 # ── run_rsvp_cleanup ──────────────────────────────────────────────────────────

@@ -719,10 +719,10 @@ class AttendanceCog(commands.Cog):
 
         **This is the first path that posts a call without first taking one down.** The
         scheduler, the restart recovery and `/test-mode advance` all post a call the round is
-        not expected to have; `repost_rsvp_call` withdraws before it posts. So the standing-call
-        check is load-bearing here in a way it is nowhere else, and it is made twice — once to
-        answer the manager, and again immediately before posting, because the scheduled call
-        falls due at the very moment this command's window opens.
+        not expected to have; `repost_rsvp_call` replaces the call it was handed once the new one
+        has landed. So the standing-call check is load-bearing here in a way it is nowhere else,
+        and it is made twice — once to answer the manager, and again immediately before posting,
+        because the scheduled call falls due at the very moment this command's window opens.
 
         The window left between that second check and the `channel.send` inside
         `run_rsvp_notice` is closed in the shared posting path (#429): `run_rsvp_notice` checks

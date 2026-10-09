@@ -425,7 +425,10 @@ async def test_a_repost_posts_the_call_again(tmp_path, notice):
 
     await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
 
-    notice.assert_awaited_once_with(ROUND_ID, bot)
+    notice.assert_awaited_once_with(
+        ROUND_ID, bot,
+        replacing=await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID),
+    )
 
 
 async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_path, notice):
@@ -447,7 +450,6 @@ def _refusing_channel() -> MagicMock:
     return channel
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a failed repost drops the earlier call's record")
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
@@ -477,6 +479,31 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     assert "NOT POSTED" in line
     assert "the earlier call still stands, and the answers given to it count" in line
     assert "no attendance rows were opened" not in line
+
+
+async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
+    """Round 1's call stands (900001, its last notice 900002), answered by both drivers. The call
+    is posted again and lands, as message 990099: only then does the earlier call come down, its
+    messages deleted and its record replaced by the new call's, the answers carried over."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _make_channel()
+    channel.send.return_value.channel.id = RSVP_CHANNEL_ID
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+
+    channel.send.assert_awaited_once()
+    assert sorted(channel.deleted) == [int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)]
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == "990099"
+    assert stored.last_notice_msg_id is None
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
 
 
 # ---------------------------------------------------------------------------
