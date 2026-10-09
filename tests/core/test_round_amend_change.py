@@ -30,6 +30,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
+from leaguebot.core.db.database import get_connection
+
 from tests.support.change_queue import (
     discard_job,
     http_error,
@@ -75,6 +77,8 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
+#: The message a check-in call posted by the `reposts` recorder stands as.
+LATE_CALL = 7101
 
 
 # ── Recorders, patched before the league is built ──────────────────────────────────
@@ -99,8 +103,10 @@ def phases(monkeypatch):
 
 @pytest.fixture
 def reposts(monkeypatch):
-    """Attendance's repost of a check-in call, recording `(round id, division id)` in `posted`;
-    raising `fault` instead where it is set."""
+    """Attendance's posts of a check-in call, recording `(round id, division id)` in `posted`,
+    raising `fault` instead where it is set: its repost (`repost_rsvp_call`), and its first post
+    (`run_rsvp_notice`), which, as the real one does, posts nothing where a call stands for the
+    round and records the call it posts as standing."""
     from leaguebot.attendance.services import rsvp_service
 
     record = SimpleNamespace(posted=[], fault=None)
@@ -110,7 +116,35 @@ def reposts(monkeypatch):
             raise record.fault
         record.posted.append((rid, division_id))
 
+    async def _post(rid: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute(
+                "SELECT r.division_id, c.rsvp_channel_id FROM rounds r "
+                "JOIN attendance_division_config c ON c.division_id = r.division_id "
+                "WHERE r.id = ?",
+                (rid,),
+            )
+            found = await cursor.fetchone()
+            cursor = await db.execute(
+                "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (rid,)
+            )
+            standing = await cursor.fetchone() is not None
+        if standing:
+            return
+        if record.fault is not None:
+            raise record.fault
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, "
+                "channel_id, posted_at) VALUES (?, ?, ?, ?, ?)",
+                (rid, found["division_id"], str(LATE_CALL), str(found["rsvp_channel_id"]),
+                 "2026-01-01T00:00:00"),
+            )
+            await db.commit()
+        record.posted.append((rid, found["division_id"]))
+
     monkeypatch.setattr(rsvp_service, "repost_rsvp_call", _repost)
+    monkeypatch.setattr(rsvp_service, "run_rsvp_notice", _post)
     return record
 
 
@@ -1306,3 +1340,89 @@ async def test_a_call_that_fell_due_while_the_save_stood_stopped_is_posted_under
 
     assert await stopped_job(league.db_path) is None
     assert reposts.posted == [(R3, PRO)]
+
+
+# ── Each catching-up job judged again when it runs (owner, 2026-10-09) ────────────────
+
+
+def _given_up_lines(league: Any, number: int = 3) -> list[str]:
+    """The log channel's lines giving up a call of Pro's round *number*."""
+    return [line for line in _log_lines(league)
+            if line.startswith("ATTENDANCE | check-in call | NOT POSTED")
+            and "division: Pro" in line and f"round: {number}\n" in line]
+
+
+async def _call_to_post_at_once(league: Any) -> None:
+    """Attendance on, its call five days before the round. Pro's round 3 is five days and thirty
+    minutes out, and no call stands for it. It is moved a day later; the save stops, and forty
+    minutes on, past the call's moment, a league admin discards it. The round is armed again at
+    its old moment with its call to post at once, a job not yet run."""
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    await _place_r3(league, days=5, minutes=30)
+    await _amended(league, scheduled_at=_at(league, days=6, minutes=30))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+    league.clock.advance(minutes=40)
+    await discard_job(league.bot, run=False)
+    await _run_through(league, "arm")
+    assert "post_call" in [job["name"] for job in await _jobs(league)]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a call posted late at a restart is posted again")
+async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_posted_once(
+    tmp_path, reposts,
+):
+    """As `_call_to_post_at_once`; the bot restarts before the amendment's job posts the call,
+    and the start-up recovery posts it late. When the job runs, the call stands: it is neither
+    taken down nor posted again, and the division is called once."""
+    from leaguebot.__main__ import _recover_missed_check_in_calls
+
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _call_to_post_at_once(league)
+
+    await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    assert reposts.posted == [(R3, PRO)]
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert reposts.posted == [(R3, PRO)]
+    assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a call standing is given up beneath its deadline")
+@pytest.mark.parametrize("path", ["first post", "after the take-down"])
+async def test_a_call_standing_when_the_amendment_s_post_runs_past_its_deadline_is_not_given_up(
+    tmp_path, reposts, path,
+):
+    """Attendance on, its call five days before the round and its deadline two hours before.
+    (first post) As `_call_to_post_at_once`; (after the take-down) Pro's round 3, its call
+    standing, is brought forward to five days and one hour out, and the old call is taken down,
+    the new one to post. Before the amendment's post runs, a call is posted for the round all the
+    same (by `/attendance post-check-in`, or its timer), and the round's deadline passes. When the
+    job runs, the call standing is live: it is not given up, no line says it was not posted, and
+    the round's check-in is not closed."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    if path == "first post":
+        await _call_to_post_at_once(league)
+        league.clock.advance(hours=119)
+    else:
+        await _amended(league, scheduled_at=_at(league, days=5, hours=1))
+        await _run_through(league, "take_down_call")
+        league.clock.advance(hours=120)
+    await league.write(
+        "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+        "posted_at) VALUES (?, ?, ?, ?, ?)",
+        R3, PRO, str(LATE_CALL), str(PRO_CH.checkin), league.clock.now.isoformat(),
+    )
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert _given_up_lines(league) == []
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 0
+    assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
+    assert reposts.posted == []
