@@ -551,6 +551,55 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
+async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
+    tmp_path,
+):
+    """Attendance on, its check-in deadline one hour before the round. Pro's round 3 is moved to
+    two hours from now and confirmed; the check passes, and the judgement stops, its windows
+    unreadable. Am's round 4 is cancelled behind it. The clock passes the new moment while the
+    judgement stands stopped; the fault is mended and Retry is pressed. The save refuses in
+    today's Confirm words, nothing of the amendment written, one refusal line, the round armed
+    again as it stood, and Am's round 4 is cancelled."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await league.write("UPDATE attendance_config SET rsvp_deadline_hours = 1 WHERE id = 1")
+    before = await _moment(league)
+    reading = league.bot.amendment_windows
+    await _amended(league, scheduled_at=_at(league, hours=2))
+    _judging_fails(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "judge"
+    await cancel_round(league, "Am", 4)
+    assert not league.errors, league.errors
+
+    league.clock.advance(hours=2, minutes=1)
+    league.bot.amendment_windows = reading
+    await retry_job(league.bot)
+
+    refused = (
+        NO_LONGER
+        + "A round cannot be moved into the past. Its result submission would never open, and "
+        "the round could never take results at all. Give it a moment still to come.\n• "
+        "The check-in deadline for that moment has already passed, so the round would have no "
+        "check-in at all. Move it further out, or shorten the deadline."
+        + NOTHING_CHANGED
+    )
+    assert (await _job(league, "apply"))["result"]["refused"] == refused
+    assert (await _change(league))["state"] == "DONE"
+    assert len(_amend_refusals(league)) == 1
+    assert await _moment(league) == before
+    assert await league.rows(
+        "SELECT * FROM audit_entries WHERE change_type = 'round.scheduled_at'"
+    ) == []
+    assert _success_lines(league) == []
+    assert league.unarmed.count(R3) == 1
+    assert league.armed == [("results", [R3]), ("attendance", [R3])]
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league, round_id(AM, 4)) == "CANCELLED"
+    am_4 = [row for row in await cancellation_changes(league)
+            if json.loads(row["payload"]).get("round_id") == round_id(AM, 4)]
+    assert [row["state"] for row in am_4] == ["DONE"]
+
+
 async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
     """Pro's round 4 is moved a day later and confirmed while the queue is stopped; the round is
     deleted while the amendment waits. Once the queue goes on, the amendment is refused with
