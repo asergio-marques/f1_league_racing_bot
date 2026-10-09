@@ -455,10 +455,21 @@ def _refusing_channel() -> MagicMock:
 EARLIER_CHANNEL_ID = 770078
 
 
+#: What the earlier call's message answers when it is looked up after a refused post: an error
+#: that is not Discord saying it is gone, so the call is not read as gone (`_call_vanished`).
+PROBE_FAULTS = {
+    "Discord refuses the post, the call's lookup forbidden":
+        discord.Forbidden(MagicMock(status=403), "missing access"),
+    "Discord refuses the post, the call's lookup failing with a 503":
+        discord.HTTPException(MagicMock(status=503), "service unavailable"),
+}
+
+
 @pytest.mark.parametrize("fault", [
     "Discord refuses the post",
     "the channel is gone",
     "the channel set is gone, the earlier call's stands",
+    *PROBE_FAULTS,
 ])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
@@ -469,11 +480,14 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     2026-10-09: "Fold it in"). (the channel is gone, the earlier call's with it) No call can be
     seen: its record is dropped, its answers kept, and the log channel says no call can be seen
     and to post it by hand once the channel is set (owner, 2026-10-09: "Drop the record, say
-    so")."""
+    so"). (the call's lookup forbidden, or failing) Discord does not say the earlier call is gone,
+    so it is taken to stand, as when the post alone is refused."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    channel = _refusing_channel() if fault.startswith("Discord refuses the post") else None
+    if fault in PROBE_FAULTS and channel is not None:
+        channel.fetch_message = AsyncMock(side_effect=PROBE_FAULTS[fault])
     bot = _make_bot(db_path, channel)
     if fault == "the channel set is gone, the earlier call's stands":
         async with get_connection(db_path) as db:
