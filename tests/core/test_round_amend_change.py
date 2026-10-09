@@ -1567,3 +1567,78 @@ async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     [armed] = league.bot.scheduler_service.schedule_round.call_args_list
     assert armed.kwargs.get("skip_phases") == frozenset({1})
     assert phases.ran == [(1, R3)]
+
+
+async def _passed_while_the_save_stood_stopped(league: Any, **after: float) -> None:
+    """Pro's round 3 is two hours and five minutes out; it is moved a day later and the save
+    stops. *after* on, a league admin discards it: the round is armed again at its old moment."""
+    await _place_r3(league, hours=2, minutes=5)
+    await _amended(league, scheduled_at=_at(league, days=1, hours=2))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(**after)
+        await discard_job(league.bot)
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_a_passed_round_s_results_submission_is_run_at_once_after_it_is_armed(tmp_path):
+    """As a round whose moment passed while its save stood stopped (ten minutes past it, the save
+    discarded): its results submission is armed with the round first and run at once after,
+    the run replacing the job armed for a moment already gone. The other way round, the job armed
+    would replace the run, and be skipped by the scheduler."""
+    league = await ongoing_league(tmp_path)
+    await _passed_while_the_save_stood_stopped(league, hours=2, minutes=15)
+
+    names = [call[0] for call in league.bot.scheduler_service.method_calls
+             if call[0] in ("schedule_round", "schedule_result_submission_jobs",
+                            "run_result_submission_now")]
+    assert names == ["schedule_result_submission_jobs", "run_result_submission_now"]
+
+
+async def test_a_check_in_deadline_whose_reserves_were_distributed_is_not_run_again(
+    tmp_path, reposts, deadlines,
+):
+    """Attendance on, its deadline two hours before the round. Pro's round 3, its call standing,
+    has had its reserves distributed (its distribution announced, message 7003). It is moved a
+    day later; the save stops, and ten minutes on, past the old deadline, a league admin discards
+    it. The deadline has been run: it is not run again, and no call is posted."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _passed_while_the_save_stood_stopped(league, minutes=10)
+
+    assert "run_deadline" not in [job["name"] for job in await _jobs(league)]
+    assert deadlines.ran == []
+    assert reposts.posted == []
+
+
+async def test_a_call_whose_check_in_was_closed_is_not_posted(tmp_path, reposts):
+    """As `_call_to_post_at_once`'s round, its check-in closed (`checkin_cleared`) and no call
+    standing, as a call given up leaves it: once the stopped save is discarded past the call's
+    moment, the call is not posted."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    await league.write("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", R3)
+    await _place_r3(league, days=5, minutes=30)
+    await _amended(league, scheduled_at=_at(league, days=6, minutes=30))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert "post_call" not in [job["name"] for job in await _jobs(league)]
+    assert reposts.posted == []
+
+
+async def test_no_phase_is_drawn_for_a_round_whose_race_passed_while_its_save_stood_stopped(
+    tmp_path, phases,
+):
+    """Weather on, horizons 5 days, 2 days, 2 hours; no phase of Pro's round 3 drawn. As a round
+    whose moment passed while its save stood stopped (ten minutes past it, the save discarded):
+    every horizon has passed, but so has the race, and no phase is drawn for it."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _passed_while_the_save_stood_stopped(league, hours=2, minutes=15)
+
+    assert "rerun_phase" not in [job["name"] for job in await _jobs(league)]
+    assert phases.ran == []
