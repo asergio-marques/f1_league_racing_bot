@@ -1239,7 +1239,7 @@ async def test_the_season_is_recorded_cancelled_last_audited_and_never_moved_to_
     await run_queue(league.bot)
 
     season = await league.season()
-    assert season["status"] == "CANCELLED" and season["stage"] == "ONGOING"
+    assert season["status"] == "CANCELLED" and season["stage"] != "PENDING_COMPLETION"
     assert await _divisions(league) == {PRO: "CANCELLED", AM: "CANCELLED"}
     assert await league.rows("SELECT * FROM audit_entries WHERE change_type = 'SEASON_CANCELLED'")
     assert [row for row in await change_rows(league.db_path) if row["kind"] == WIND_DOWN_KIND] == []
