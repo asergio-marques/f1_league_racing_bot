@@ -381,7 +381,6 @@ async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
     assert await _checkin_cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a restart's give-up clears a charged round's record")
 async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attendance(tmp_path):
     """A round whose results are in and judged (FINAL), its check-in never marked over and no
     call record standing, its deadline long past: its driver's attendance was charged (points
@@ -417,7 +416,6 @@ async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attend
     assert not await _checkin_cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a give-up clears a finished round's or check-in's record")
 @pytest.mark.parametrize("status, cleared", [
     ("FINAL", False), ("AWAITING_REPORT_VERDICTS", False), ("NOT_RUN", True),
 ], ids=["results judged", "results entered", "check-in over"])

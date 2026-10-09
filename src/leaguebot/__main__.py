@@ -873,11 +873,13 @@ async def _recover_missed_check_in_calls(
     from datetime import timedelta, timezone
 
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.round import ROUND_CANCELLABLE
     from leaguebot.core.models.season import ONGOING_STAGES
     from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
 
     moment = now or datetime.now(timezone.utc)
     ongoing = [stage.value for stage in ONGOING_STAGES]
+    to_run = sorted(ROUND_CANCELLABLE)
     try:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
@@ -892,7 +894,7 @@ async def _recover_missed_check_in_calls(
                   CROSS JOIN attendance_config ac
                  WHERE ac.module_enabled = 1
                    AND s.stage IN ({",".join("?" for _ in ongoing)})
-                   AND r.status != 'CANCELLED'
+                   AND r.status IN ({",".join("?" for _ in to_run)})
                    AND d.status != 'CANCELLED'
                    AND r.checkin_cleared = 0
                    AND NOT EXISTS (
@@ -901,7 +903,7 @@ async def _recover_missed_check_in_calls(
                    AND NOT EXISTS (SELECT 1 FROM server_configs WHERE test_mode_active = 1)
                  ORDER BY r.scheduled_at, r.id
                 """,
-                ongoing,
+                [*ongoing, *to_run],
             )
             rows = await cursor.fetchall()
     except Exception:
@@ -968,6 +970,13 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     but answers can: an amendment that took its call down and stopped, or the bot restarted,
     before posting it again leaves the answers to the old call.
 
+    **It gives up, and clears, only a round whose results are not in** (its status in
+    `ROUND_CANCELLABLE`) **and whose check-in is not over** (``checkin_cleared = 0``), judged in
+    the save itself, whichever caller asks. A round further on has had its attendance charged
+    and its pardons granted, and a check-in over is settled; clearing either would erase a
+    record a league has acted on. Nothing is written and nothing told for such a round
+    (`test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over`).
+
     **It raises** where the mark cannot be saved, and the mark is saved before the log channel
     is told, so that a give-up tried again tells it once. The start-up recovery catches the
     fault, logs it on the host and goes on to the next round; an amendment's catch-up on the
@@ -981,15 +990,29 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
         clear_check_in_answers_on,
     )
 
+    from leaguebot.core.models.round import ROUND_CANCELLABLE
+
     round_id: int = row["round_id"]
+    to_run = sorted(ROUND_CANCELLABLE)
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
+            f"AND status IN ({', '.join('?' for _ in to_run)})",
+            (round_id, *to_run),
+        )
+        if cursor.rowcount != 1:
+            log.info(
+                "_recover_missed_check_in_calls: round %d's results are in or its check-in is "
+                "over — nothing given up",
+                round_id,
+            )
+            return
+        await clear_check_in_answers_on(db, round_id)
+        await db.commit()
     log.info(
         "_recover_missed_check_in_calls: round %d's deadline has passed — call not posted",
         round_id,
     )
-    async with get_connection(bot.db_path) as db:
-        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
-        await clear_check_in_answers_on(db, round_id)
-        await db.commit()
     await _report_call_failure(
         bot,
         division_id=row["division_id"],
