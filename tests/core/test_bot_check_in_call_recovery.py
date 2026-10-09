@@ -20,6 +20,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 import leaguebot.__main__ as bot_module
 from leaguebot.__main__ import _recover_missed_check_in_calls
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -349,3 +351,32 @@ async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_
         await _recover_missed_check_in_calls(bot, now=NOW)
 
     assert not await _checkin_cleared(db_path)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a call given up at start-up keeps the answers left")
+async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
+    """No call stands for the round and its deadline has passed, but answers are left for it, as
+    a call taken down by an amendment that the bot restarted before posting again leaves them:
+    the driver accepted, and was placed in Alpha. Giving the call up clears them, placement
+    and all, so that the line saying the round counts nothing against anyone, written once, holds
+    true (owner, 2026-10-09: "Yes, clear them")."""
+    db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status, assigned_team_id) VALUES (?, ?, 201, 'ACCEPTED', 10)",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    bot = _make_bot(db_path)
+
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+
+    assert _logged(bot) == [_GIVEN_UP]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT * FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
+        )
+        assert await cursor.fetchall() == []
+    assert await _checkin_cleared(db_path)
