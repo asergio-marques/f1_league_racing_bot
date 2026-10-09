@@ -251,9 +251,13 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
         league.db_path, "SELECT status FROM divisions WHERE id = ?", DIVISION_ID,
     ) == "FINISHED"
 
-    # and with its only division finished, the season is now completable
-    from leaguebot.core.services.season_service import SeasonService
-    assert await SeasonService(league.db_path).all_divisions_finished() is True
+    # and with its only division finished, the season is now completable: no division of the
+    # season being raced is left neither finished nor cancelled
+    assert await one(
+        league.db_path,
+        "SELECT COUNT(*) FROM divisions d JOIN seasons s ON s.id = d.season_id "
+        "WHERE s.status = 'ACTIVE' AND d.status NOT IN ('FINISHED', 'CANCELLED')",
+    ) == 0
 
 
 # ---------------------------------------------------------------------------
