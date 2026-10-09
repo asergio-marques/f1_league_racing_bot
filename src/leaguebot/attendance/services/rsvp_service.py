@@ -523,7 +523,8 @@ async def run_rsvp_notice(
     *replacing* is the call `repost_rsvp_call` posts this one in place of (owner, 2026-10-09:
     "Fold it in"). Where it is the call found standing, the new call is posted beside it, and
     only once the new one has landed is the earlier one withdrawn, its messages and its record,
-    its answers carried over. A post that fails, Discord refusing it or the channel gone, leaves
+    its answers carried over. A post that fails, Discord refusing it, the connection to Discord
+    failing (a timeout among them) or the channel gone, leaves
     the earlier call and its record standing, and the report says so (`EARLIER_CALL_STANDS`)
     rather than that no attendance rows were opened, which would no longer be true; where the
     earlier call cannot be seen either, its message or its channel gone (`_call_vanished`), its

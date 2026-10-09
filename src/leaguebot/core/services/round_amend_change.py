@@ -350,10 +350,11 @@ def round_amend_change(
         division's renumbering and the success line, reading nothing but the connection.
 
         It judges the amendment again before it writes (`judged_again`), and refuses, writing
-        nothing, where the round's status or that judgement says it may no longer be made. What follows the save is planned from that judgement, made when the save
-        runs, and kept with it for the arming to read: the forecasts it withdraws (`withdrawn`),
-        those of them that were posted (`posted`, by the flags it reads), whether it reopens the
-        check-in (`reopened`) and whether a call stood (`called`). Planned from `judge`'s instead,
+        nothing, where the round's status or that judgement says it may no longer be made. What
+        follows the save is planned from that judgement, made when the save runs, and kept with
+        it for the arming to read: the forecasts it withdraws (`withdrawn`), those of them that
+        were posted (`posted`, by the flags it reads), whether it reopens the check-in
+        (`reopened`) and whether a call stood (`called`). Planned from `judge`'s instead,
         a save tried again after a window passed would withdraw a forecast that now stands, or
         leave a call to a schedule whose moment has gone (owner, 2026-10-09)."""
         if ctx.actor_id is None or ctx.actor_name is None:
