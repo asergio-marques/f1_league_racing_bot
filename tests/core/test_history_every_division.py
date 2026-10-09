@@ -7,13 +7,11 @@ is in their history beside the one they finished in.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.season_end_service import _write_driver_history_entries
 from tests.core.test_driver_move import (
     AM,
     PRO,
@@ -36,9 +34,16 @@ async def _memberships(db_path) -> list[tuple[int, int]]:
         return [tuple(row) for row in await cursor.fetchall()]
 
 
+_XFAIL_HISTORY = "#439: there is no write_driver_history_entries_on"
+
+
 async def _history(db_path) -> list[str]:
-    bot = SimpleNamespace(db_path=db_path)
-    await _write_driver_history_entries(SimpleNamespace(id=SEASON_ID, season_number=1), bot)
+    """The season's history written on one connection and committed, as a season's end save does."""
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, SEASON_ID, 1)
+        await db.commit()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT division_name FROM driver_history_entries WHERE driver_profile_id = ? "
@@ -69,6 +74,7 @@ async def test_confirming_a_placement_makes_the_driver_part_of_its_division(db_p
     assert await _memberships(db_path) == [(PRO, PROFILE_ID)]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     await _seat(db_path, PRO, "Alpha")
 
@@ -78,6 +84,7 @@ async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     assert await _history(db_path) == ["Am", "Pro"]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_released_from_a_division_keeps_its_history(db_path):
     await _seat(db_path, PRO, "Alpha")
     await _seat(db_path, AM, "Bravo")
@@ -93,6 +100,7 @@ async def test_a_driver_released_from_a_division_keeps_its_history(db_path):
     assert await _history(db_path) == ["Am", "Pro"]
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
@@ -118,6 +126,7 @@ async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     assert await _memberships(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_standing(db_path):
     """E40 (issue #243): the final round's standing stands under the account the driver left.
 
