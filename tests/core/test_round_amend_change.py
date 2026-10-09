@@ -44,6 +44,8 @@ from tests.support.season_league import (
     AM,
     CALL_MESSAGES,
     DIVISIONS,
+    FERRARI,
+    MAX,
     PRO,
     amend_round,
     amendment_changes,
@@ -51,6 +53,7 @@ from tests.support.season_league import (
     cancellation_changes,
     ongoing_league,
     posted_forecast,
+    profile_id,
     round_id,
 )
 
@@ -1487,5 +1490,40 @@ async def test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_
     assert await stopped_job(league.db_path) is None
     assert (await _change(league))["state"] == "DONE"
     assert len(_given_up_lines(league)) == 1
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a call given up after its take-down keeps answers")
+async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_and_placements(
+    tmp_path, reposts,
+):
+    """As a call given up once its take-down stood stopped past the deadline (Pro's round 3
+    brought forward to three hours out, the last notice 7002 undeletable, an hour and ten minutes
+    on), Lewis having accepted the old call and Max not answered it, and the deadline's timer,
+    armed with the round, having placed Max in Ferrari meanwhile. The round's answers and its
+    placement go in the save that closes its check-in, so that the log channel's line, written
+    once, holds true: no attendance rows stand for the round, and it counts nothing against
+    anyone (owner, 2026-10-09: "Clear the answers, keep the line true")."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _amended(league, scheduled_at=_at(league, hours=3))
+    league.undeletable.add(CALL_MESSAGES[1])
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    await league.write(
+        "UPDATE driver_round_attendance SET assigned_team_id = ? "
+        "WHERE round_id = ? AND driver_profile_id = ?",
+        FERRARI, R3, profile_id(MAX),
+    )
+    league.clock.advance(hours=1, minutes=10)
+    league.undeletable.clear()
+
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [line] = _given_up_lines(league)
+    assert "this round will count nothing against anyone" in line
+    assert await league.rows("SELECT * FROM driver_round_attendance WHERE round_id = ?", R3) == []
     [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
     assert row["checkin_cleared"] == 1
