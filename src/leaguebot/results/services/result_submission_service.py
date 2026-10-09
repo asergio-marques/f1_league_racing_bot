@@ -1616,9 +1616,8 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
     return None
 
 
-#: How long the wizard waits for a paste before it asks whether a cancellation has closed its
-#: submission. Long enough to cost nothing, short enough that a wizard whose channel was deleted
-#: does not wait on for days.
+#: How long one listener for a paste is given before the submission is read again. Long enough to
+#: cost nothing, short enough that a wizard whose channel was deleted does not wait on for days.
 SUBMISSION_WAIT_RECHECK_SECONDS = 300
 
 
@@ -1627,21 +1626,51 @@ async def next_submission_message(bot: LeagueBot, db_path: str, round_id: int, s
 
     **The wait ends when a cancellation closes the submission and deletes its channel**, which
     no message will ever follow: `bot.wait_for` has no end of its own, and the wizard would wait
-    in memory until the next restart. The wait is given a time, and when it runs out the
-    submission is read again (`closed_by_cancellation`): closed, the wizard is told so with None;
-    not, it waits on. A paste landing in the instant between two waits, the length of one read,
-    is not heard, and the manager pastes it again.
+    in memory until the next restart. So each listener is given a time
+    (`SUBMISSION_WAIT_RECHECK_SECONDS`), and when one runs out the submission is read again
+    (`closed_by_cancellation`): closed, the wizard is told so with None; not, it waits on.
+
+    **The wizard never stops listening to do it** (decided 2026-10-09): a paste sent while the
+    submission was being read would otherwise be heard by nobody, and the manager would have to
+    paste it again. Two listeners are kept, the second begun half a time after the first, and a
+    replacement is registered the moment one runs out, before the read. A paste is therefore
+    always heard by at least one listener; where it reaches two, they hold the same message.
     """
-    while True:
-        try:
-            return await bot.wait_for(
+    def listen() -> asyncio.Future:
+        return asyncio.ensure_future(
+            bot.wait_for(
                 "message",
                 check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
                 timeout=SUBMISSION_WAIT_RECHECK_SECONDS,
             )
-        except asyncio.TimeoutError:
-            if await closed_by_cancellation(db_path, round_id) is not None:
-                return None
+        )
+
+    live = {listen()}
+    try:
+        while True:
+            done, _ = await asyncio.wait(
+                live, timeout=SUBMISSION_WAIT_RECHECK_SECONDS / 2,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                if len(live) < 2:
+                    live.add(listen())
+                continue
+            expired = False
+            for task in done:
+                live.discard(task)
+                try:
+                    return task.result()
+                except asyncio.TimeoutError:
+                    expired = True
+            if expired:
+                live.add(listen())
+                if await closed_by_cancellation(db_path, round_id) is not None:
+                    return None
+    finally:
+        for task in live:
+            task.cancel()
+        await asyncio.gather(*live, return_exceptions=True)
 
 
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
