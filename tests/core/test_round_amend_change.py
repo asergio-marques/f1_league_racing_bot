@@ -1736,14 +1736,23 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
     assert "no attendance rows were opened" not in line
 
 
+@pytest.mark.parametrize("refused", [
+    pytest.param(CALL_MESSAGES[0], id="the call itself refused, so it stands"),
+    pytest.param(CALL_MESSAGES[1], id="the last notice refused, the call gone", marks=(
+        pytest.mark.xfail(strict=True, reason="#439: a call gone is said to be kept")
+    )),
+])
 async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_call_be_deleted(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, refused,
 ):
     """Attendance on; round 3's call stands (7001 to 7003) and the round is brought forward to
-    three days out, so its call is to be posted again. Discord refuses to delete the last notice
-    (7002), and a league admin discards the take-down; posting the call again is refused too, so
-    the earlier call is kept, standing with its answers. The reply names the check-in call as not
-    taken down, but never bids the manager remove by hand a call that is the round's only one."""
+    three days out, so its call is to be posted again. Discord refuses to delete one of its
+    messages, and a league admin discards the take-down; posting the call again is refused too.
+    (the call itself refused) The earlier call is kept, standing with its answers: the reply
+    names the check-in call as not taken down, but never bids the manager remove by hand a call
+    that is the round's only one. (the last notice refused) The call itself was deleted, so no
+    call can be seen: its record is dropped, the reply never says it was kept but that none can
+    be seen and to post it by hand, and the log channel says so (owner, 2026-10-09: "Make it")."""
     from leaguebot.attendance.services import rsvp_service
     from leaguebot.attendance.services.attendance_service import AttendanceService
 
@@ -1752,7 +1761,7 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     league.bot.attendance_service.get_division_config = AttendanceService(
         league.db_path
     ).get_division_config
-    league.undeletable.add(CALL_MESSAGES[1])
+    league.undeletable.add(refused)
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
     assert await _stopped_at(league) == "take_down_call"
@@ -1763,13 +1772,22 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     await discard_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
-    assert row["message_id"] == str(CALL_MESSAGES[0])
+    rows = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
     outcome = _outcome(press)
     assert NOT_DONE in outcome
     assert "**Pro** — check-in call:" in outcome
     assert "removed by hand" not in outcome
-    assert "the earlier call was kept" in outcome
+    if refused == CALL_MESSAGES[0]:
+        assert [row["message_id"] for row in rows] == [str(CALL_MESSAGES[0])]
+        assert "the earlier call was kept" in outcome
+        return
+    assert rows == []
+    assert (await _job(league, "post_call"))["result"] == {"posted": False, "vanished": True}
+    assert "kept" not in outcome
+    assert "none can be seen" in outcome and "`/attendance post-check-in`" in outcome
+    [line] = [line for line in _log_lines(league)
+              if line.startswith("ATTENDANCE | check-in call | NOT POSTED")]
+    assert "no call for this round can be seen" in line
 
 
 async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
