@@ -344,15 +344,15 @@ audit record, which is how some settings came to have none.
   pressed on one, the core specification's "How a change is carried out" holds; what follows is
   the mechanism. Such a step is marked `Step.undiscardable`, a reader rather than a flag: it gives
   what would follow from dropping the job, in the job's own terms, so that the refusal can name
-  the round or the season. Discard on the job goes through the queue's own refusal of a press and
-  saves nothing else: no discarded mark, no Discard line, no audit record, no follow-on, and the
-  job stays the one the queue is stopped at. Retry, and the bot's own tries, are unchanged. The
-  notice keeps both buttons, and it is the button that refuses: the notice is one persistent view
+  the round or the season. Discard on the job is refused as any refused press is, and saves
+  nothing else: no discarded mark, no Discard line, no audit record, no follow-on, and the job
+  stays the one the queue is stopped at. Retry, and the bot's own tries, clear it as they clear
+  any job. The notice keeps both buttons, and it is the button that refuses: the notice is one persistent view
   with fixed identities, found again after a restart, and a notice without Discard would need a
   second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
   discard that drops the job and names the loss, which leaves a league with nothing it can do to
-  put it right. A change stopped at its check, before any job of it ran, is still dropped whole:
-  no arming is its check.
+  put it right. A change stopped at its check, before any job of it ran, is still dropped whole,
+  since a stop at the check sits on the change's first job, and no arming is a first job.
 
   Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
   and names the job. They work directly on the queue's own records, and are not changes put on the
@@ -365,8 +365,8 @@ audit record, which is how some settings came to have none.
 
   After a restart a stopped job stays stopped, as "When the bot stops" in the core specification
   has it: the bot makes no try of its own, whatever the schedule had left, and only Retry or
-  Discard moves the queue. A change a
-  stop cut off with no job failed carries on from its first step not done.
+  Discard moves the queue (Retry alone where the job may not be discarded). A change a stop cut
+  off with no job failed carries on from its first step not done.
 
   *Rejected:* a failed job stepping aside while later changes go ahead, and a job tried once and
   handed to the league, as turning results off once did for a message it removes. Each is a
@@ -522,9 +522,8 @@ Start-up:
    member or a Discord event asks for it, waits until the sweep has put its own on the queue, so
    none overtakes a missed event that would have happened first;
 6. starts the queue, which carries on with any change a stop cut off, leaves a job that was stopped
-   on a failure stopped, to be cleared by Retry, or by Discard where the job may be discarded,
-   and posts again any stop notice that
-   never landed;
+   on a failure stopped, to be cleared by Retry, or by Discard where the job may be discarded, and
+   posts again any stop notice that never landed;
 7. only then lets scheduled jobs run.
 
 Tests can then run the whole start-up in order, instead of checking its order by searching the
@@ -711,8 +710,8 @@ to it would switch off the one failure path for every command.
    the reader that says what dropping an undiscardable job would leave
    (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all puts the
    error in the host's log with the full details, and the Discard is refused all the same, naming
-   the job in place of the reason, because an undiscardable job is never dropped for want of
-   its reason;
+   the job in place of the reason, its refusal recorded in the log channel as any refused press
+   is, because an undiscardable job is never dropped for want of its reason;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops the queue until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
