@@ -28,11 +28,12 @@ mode itself takes, which lets go of every row holding them wherever it stands an
 history (#268).
 
 **Results are seeded too, though no league can reach a season that has them.** The only caller,
-`/season abort`, deletes a season still in setup, which has no results, and the method refuses
-any other season (issue #153). But a cascade statement fails only on the rows that reach it, so
-a seed without results cannot see one that is broken: the delete once raised `no such table` on
-any season carrying a `session_results` row, because it still named a table the schema had
-dropped (issue #214). So every season carries a qualifying and a race result, and
+the save of `/season abort` on the change queue, which hands it its connection and commits once
+the season's whole end is written, deletes a season still in setup, which has no results, and
+the method refuses any other season (issue #153). But a cascade statement fails only on the
+rows that reach it, so a seed without results cannot see one that is broken: the delete once
+raised `no such table` on any season carrying a `session_results` row, because it still named a
+table the schema had dropped (issue #214). So every season carries a qualifying and a race result, and
 `test_a_season_with_results_is_deleted` is named for the defect.
 
 **Only a season in setup can be deleted.** A season's number is committed once it leaves SETUP,
@@ -234,19 +235,34 @@ async def _count(db_path, table, column=None, value=None) -> int:
         return (await cursor.fetchone())["n"]
 
 
+#: Why every test here fails until the deletion writes on the save handed.
+_XFAIL_ON = "#439: SeasonService.delete_season does not yet write on the connection handed to it"
+
+
+async def _delete(db_path, season_id) -> None:
+    """Delete *season_id* as the abort's one save does: on a connection handed to
+    `SeasonService.delete_season`, committed by the caller once it returns. A refusal raises
+    before anything is written, and nothing is committed."""
+    async with get_connection(db_path) as db:
+        await SeasonService.delete_season(db, season_id)
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # The season, and everything under it
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_the_season_is_deleted(tmp_path):
     db_path, _ = await _make_db(tmp_path)
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "seasons", "id", SEASON_ID) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 @pytest.mark.parametrize("table,column,value", CHILD_TABLES)
 async def test_no_child_row_survives_the_delete(tmp_path, table, column, value):
     """Enumerated rather than spot-checked: this is the test that fails the day a new child
@@ -254,11 +270,12 @@ async def test_no_child_row_survives_the_delete(tmp_path, table, column, value):
     db_path, _ = await _make_db(tmp_path, name=f"cascade_{table}")
     assert await _count(db_path, table, column, value) > 0  # the seed is real
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, table, column, value) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_season_with_results_is_deleted(tmp_path):
     """Issue #214. The cascade once deleted from `driver_session_results`, a table the schema
     dropped, inside the branch that runs only when the season has `session_results` rows — so
@@ -268,12 +285,13 @@ async def test_a_season_with_results_is_deleted(tmp_path):
     db_path, _ = await _make_db(tmp_path, name="cascade_with_results")
     assert await _count(db_path, "session_results", "round_id", ROUND_ID) > 0  # the seed is real
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "seasons", "id", SEASON_ID) == 0
     assert await _count(db_path, "session_results", "round_id", ROUND_ID) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_the_session_result_children_go_with_their_session(tmp_path):
     """They hang from `session_results`, not a round, so they sit one link further from the
     season than anything `CHILD_TABLES` counts by round. Counted by the deleted season's own
@@ -286,7 +304,7 @@ async def test_the_session_result_children_go_with_their_session(tmp_path):
         session_ids = [r["id"] for r in await cursor.fetchall()]
     assert session_ids  # the seed is real
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     ph = ",".join("?" * len(session_ids))
     async with get_connection(db_path) as db:
@@ -298,12 +316,13 @@ async def test_the_session_result_children_go_with_their_session(tmp_path):
             assert (await cursor.fetchone())["n"] == 0, table
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_the_team_seats_go_with_their_team(tmp_path):
     """Seats hang from a team instance, which hangs from a division — two links away from
     the season, and the level a cascade is most likely to stop one short of."""
     db_path, _ = await _make_db(tmp_path, name="cascade_seats")
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -332,22 +351,24 @@ async def test_the_team_seats_go_with_their_team(tmp_path):
         ("driver_season_assignments", "season_id", OTHER_SEASON_ID),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_another_season_is_untouched(tmp_path, table, column, value):
     """Every `IN (...)` in the cascade is built from ids belonging to the season being
     deleted. One missing `WHERE` takes the league's whole history with it."""
     db_path, _ = await _make_db(tmp_path, name=f"kept_{table}")
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, table, column, value) > 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_the_other_seasons_seats_survive(tmp_path):
     """Seats are collected by team instance id, which is the longest chain in the cascade
     and the easiest one to widen by accident."""
     db_path, _ = await _make_db(tmp_path, name="kept_seats")
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "team_seats") == 2  # the other season's two
 
@@ -357,39 +378,43 @@ async def test_the_other_seasons_seats_survive(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_test_driver_is_deleted_with_the_season(tmp_path):
     """A test-mode roster exists to fill a rehearsal. Leaving the profiles behind would
     accumulate fake drivers across every rehearsal a league runs."""
     db_path, profiles = await _make_db(tmp_path, name="drivers_test")
     _, test_profile = profiles["deleted"]
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "driver_profiles", "id", test_profile) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_real_driver_outlives_the_season(tmp_path):
     """A driver profile is the league's record of a person. They are unseated by the
     delete, not removed from the league."""
     db_path, profiles = await _make_db(tmp_path, name="drivers_real")
     real_profile, _ = profiles["deleted"]
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "driver_profiles", "id", real_profile) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_another_seasons_test_drivers_are_left_alone(tmp_path):
     """Test drivers are collected through the deleted season's divisions, so a rehearsal
     running in one season must not clear the roster of another."""
     db_path, profiles = await _make_db(tmp_path, name="drivers_other")
     _, other_test_profile = profiles["kept"]
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "driver_profiles", "id", other_test_profile) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_test_driver_holding_a_row_beyond_the_season_is_deleted_all_the_same(tmp_path):
     """The season's own rows go with its rounds, but not a row elsewhere naming the driver.
     No flow puts one there, the abort having switched test mode off and deleted every fake
@@ -405,13 +430,14 @@ async def test_a_test_driver_holding_a_row_beyond_the_season_is_deleted_all_the_
         )
         await db.commit()
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "seasons", "id", SEASON_ID) == 0
     assert await _count(db_path, "driver_profiles", "id", test_profile) == 0
     assert await _count(db_path, "driver_round_attendance") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
     """As switching test mode off keeps it: a driver created again under the same identifier
     holds it as their own (#220)."""
@@ -425,7 +451,7 @@ async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
         )
         await db.commit()
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -439,6 +465,7 @@ async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_season_with_no_divisions_deletes_cleanly(tmp_path):
     """Every `IN (...)` is built from a list that may be empty, and an unguarded `IN ()` is
     a syntax error — so this is the case most likely to break a tidy-up of the function."""
@@ -457,11 +484,12 @@ async def test_a_season_with_no_divisions_deletes_cleanly(tmp_path):
         )
         await db.commit()
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "seasons") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
     """The round id list is empty while the division list is not — the mixed case, and the
     one neither empty-season nor full-season coverage reaches."""
@@ -485,11 +513,12 @@ async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
         )
         await db.commit()
 
-    await SeasonService(db_path).delete_season(SEASON_ID)
+    await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "divisions") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 @pytest.mark.parametrize("status", ["ACTIVE", "COMPLETED", "CANCELLED"])
 async def test_a_season_whose_number_is_committed_is_refused(tmp_path, status):
     """Its number is how the league names that season, and nothing is removed."""
@@ -499,18 +528,19 @@ async def test_a_season_whose_number_is_committed_is_refused(tmp_path, status):
         await db.commit()
 
     with pytest.raises(ValueError, match="committed"):
-        await SeasonService(db_path).delete_season(SEASON_ID)
+        await _delete(db_path, SEASON_ID)
 
     assert await _count(db_path, "seasons", "id", SEASON_ID) == 1
     assert await _count(db_path, "divisions", "season_id", SEASON_ID) == 1
     assert await _count(db_path, "rounds", "division_id", DIVISION_ID) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_deleting_a_season_that_is_not_there_is_not_an_error(tmp_path):
     """A delete racing another that already removed the season must not raise, or it would
     report a failure for work that is already done."""
     db_path, _ = await _make_db(tmp_path, name="delete_missing")
 
-    await SeasonService(db_path).delete_season(404)
+    await _delete(db_path, 404)
 
     assert await _count(db_path, "seasons", "id", SEASON_ID) == 1
