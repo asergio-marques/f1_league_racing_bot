@@ -736,11 +736,17 @@ async def run_rsvp_notice(
                 view=view,
                 allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
             )
-        except discord.HTTPException as exc:
+        except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
+            # A fault on the connection (a timeout among them, an OSError) is handled as Discord
+            # refusing is (owner, 2026-10-09: "Fold it in"): reported, the earlier call left as
+            # it stands, and no queue stopped. A send that timed out may have landed all the same.
             log.error(
-                "run_rsvp_notice: failed to post embed for division %d: %s",
+                "run_rsvp_notice: failed to post embed for division %d: %r",
                 division_id, exc,
             )
+            reason = f"the call could not be posted: {exc or type(exc).__name__}"
+            if isinstance(exc, TimeoutError):
+                reason += "; it may have reached Discord all the same; check the channel"
             if earlier is not None and await _call_vanished(bot, earlier):
                 # As above: a take-down that deleted the call but not its last notice leaves a
                 # record of a call nobody can see (owner, 2026-10-09: "Make it").
@@ -752,7 +758,7 @@ async def run_rsvp_notice(
                 division_name=division_name,
                 season_number=season_number,
                 round_number=round_number,
-                reason=f"the call could not be posted: {exc}",
+                reason=reason,
                 note=failure_note,
             )
             return

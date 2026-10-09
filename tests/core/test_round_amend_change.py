@@ -1819,7 +1819,6 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a timed-out repost stops the queue")
 async def test_a_call_posted_again_whose_send_times_out_lets_the_amendment_go_on(
     tmp_path, monkeypatch,
 ):

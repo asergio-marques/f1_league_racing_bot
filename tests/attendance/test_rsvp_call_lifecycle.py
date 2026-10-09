@@ -611,7 +611,6 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
     assert stored.last_notice_msg_id is None
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a transport fault on the call's send escapes")
 @pytest.mark.parametrize("fault", [
     pytest.param(OSError("network unreachable"), id="the network failing"),
     pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),
