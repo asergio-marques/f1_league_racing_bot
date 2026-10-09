@@ -13,7 +13,7 @@ from leaguebot.attendance.models.attendance import RsvpEmbedMessage
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
 
@@ -439,9 +439,9 @@ EARLIER_CALL_STANDS = (
 #: kept for the round, as after an amendment took its call down: they count, so "no attendance
 #: rows were opened" would be untrue.
 ANSWERS_KEPT = (
-    "answers given to an earlier call of this round are kept, and count. Once the cause is "
-    "cleared, post the call by hand with `/attendance post-check-in division: {division} "
-    "round: {round}`."
+    "answers given to an earlier call of this round are kept, and count if the call is posted "
+    "before the check-in deadline; past it they are cleared. Once the cause is cleared, post "
+    "the call by hand with `/attendance post-check-in division: {division} round: {round}`."
 )
 
 
@@ -449,8 +449,9 @@ ANSWERS_KEPT = (
 #: that no call for the round can be seen and its record, pointing at nothing, is dropped.
 VANISHED_CALL = (
     "no call for this round can be seen, its message or the channel it was posted in being "
-    "gone, so its record was dropped; the answers given to it are kept, and count. Once the check-in channel is "
-    "set, post the call by hand with `/attendance post-check-in division: {division} round: "
+    "gone, so its record was dropped; the answers given to it are kept, and count if the call is "
+    "posted before the check-in deadline; past it they are cleared. Once the check-in channel "
+    "is set, post the call by hand with `/attendance post-check-in division: {division} round: "
     "{round}`."
 )
 
@@ -988,8 +989,12 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
 # ── run_rsvp_cleanup ──────────────────────────────────────────────────────────
 
 
-async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
+async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool = False) -> None:
     """Take down *round_id*'s check-in call, last notice and distribution message.
+
+    With *clear_answers*, the round's answers and the placements made on them are cleared in the
+    save that marks its check-in over (`clear_check_in_answers_on`): the deadline closing a
+    check-in with no call standing (`run_rsvp_deadline`).
 
     Fired 24 hours after the round's scheduled start by its ``rsvp_cleanup`` job, by the restart
     recovery where that moment passed while the bot was down, and by ``/test-mode advance``
@@ -1019,6 +1024,8 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
 
     async with get_connection(bot.db_path) as db:
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        if clear_answers:
+            await clear_check_in_answers_on(db, round_id)
         await db.commit()
     log.info("run_rsvp_cleanup: check-in taken down for round %d", round_id)
 
@@ -1183,11 +1190,13 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
         if stored is None:
             # A deadline closes the call standing, and with none there is nothing to close. Run
             # anyway, it posted a notice with no call to record it on, which nothing ever took
-            # down (#429).
-            log.info(
-                "run_rsvp_deadline: no check-in call stands for round %d — nothing done",
-                round_id,
-            )
+            # down (#429). But answers kept from an earlier call no longer count once the
+            # deadline has passed (`_close_check_in_without_a_call`).
+            if not await _close_check_in_without_a_call(round_id, bot):
+                log.info(
+                    "run_rsvp_deadline: no check-in call stands for round %d — nothing done",
+                    round_id,
+                )
             return
         if stored.distribution_msg_id is not None:
             log.info(
@@ -1220,6 +1229,52 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
             await _post_distribution_announcement(round_id, division_id, bot)
         else:
             await _post_no_reserve_notice(round_id, division_id, bot)
+
+
+async def _close_check_in_without_a_call(round_id: int, bot: LeagueBot) -> bool:
+    """At the deadline of a round with no call standing, clear the answers kept for it and say
+    so; whether it did.
+
+    Answers to an earlier call are kept where the call was taken down and its repost failed or
+    is yet to come, so that they count if a call is posted before the deadline. Past it, nothing
+    counts (owner, 2026-10-09: "Past the deadline, nothing counts"): the answers and the
+    placements made on them are cleared and the check-in marked over, as a restart past the
+    deadline gives a missed call up, whether or not the bot restarts. Only a round whose results
+    are not in and whose check-in is not over, holding answers, is touched.
+    `test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so` pins it.
+    """
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.status, r.checkin_cleared, r.round_number, d.id AS division_id, "
+            "d.name AS division_name, s.season_number, EXISTS (SELECT 1 FROM "
+            "driver_round_attendance a WHERE a.round_id = r.id) AS answered FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
+            "WHERE r.id = ?",
+            (round_id,),
+        )
+        found = await cursor.fetchone()
+    if (found is None or found["status"] not in ROUND_CANCELLABLE
+            or found["checkin_cleared"] or not found["answered"]):
+        return False
+    await run_rsvp_cleanup(round_id, bot, clear_answers=True)
+    log.info(
+        "run_rsvp_deadline: round %d's deadline passed with no call standing — answers cleared",
+        round_id,
+    )
+    await _report_call_failure(
+        bot,
+        division_id=found["division_id"],
+        division_name=found["division_name"],
+        season_number=found["season_number"],
+        round_number=found["round_number"],
+        reason="the round's check-in deadline passed with no call standing",
+        note=(
+            "the answers given to an earlier call of this round no longer count, so they were "
+            "cleared. No attendance rows are left, and this round will count nothing against "
+            "anyone."
+        ),
+    )
+    return True
 
 
 async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:

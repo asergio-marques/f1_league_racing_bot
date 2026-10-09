@@ -225,7 +225,6 @@ async def _round_state(db_path: str) -> tuple[int, int]:
     return answers, cleared
 
 
-@pytest.mark.xfail(strict=True, reason="#439: answers kept past the deadline with no call count")
 async def test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so(tmp_path):
     """No call stands for the round, its earlier call having been taken down, but a driver's
     answer to it is kept. The deadline fires, the bot running throughout: the answer is cleared,
