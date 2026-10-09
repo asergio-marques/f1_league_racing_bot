@@ -1770,3 +1770,33 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     assert "**Pro** — check-in call:" in outcome
     assert "removed by hand" not in outcome
     assert "the earlier call was kept" in outcome
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a give-up that gave nothing up is recorded as one")
+async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
+    tmp_path, reposts, caplog,
+):
+    """Attendance on. Pro's round 3, its call standing, is brought forward to three hours out;
+    Discord refuses to delete the last notice (7002), stopping the take-down. While it stands
+    stopped the round is raced and its results entered. An hour and ten minutes on, past the
+    deadline, the fault is mended and Retry is pressed: there is nothing to give up for a round
+    whose results are in, and the job records that it left the call as it was, not that it gave
+    it up. The host's log names the give-up, not the start-up recovery, as what did nothing."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _amended(league, scheduled_at=_at(league, hours=3))
+    league.undeletable.add(CALL_MESSAGES[1])
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    await _set_status(league, "AWAITING_REPORT_VERDICTS")
+    league.clock.advance(hours=1, minutes=10)
+    league.undeletable.clear()
+
+    with caplog.at_level("INFO"):
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _job(league, "post_call"))["result"] == {"left": True}
+    assert _given_up_lines(league) == []
+    said = [record.getMessage() for record in caplog.records
+            if "nothing given up" in record.getMessage()]
+    assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
