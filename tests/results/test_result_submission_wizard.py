@@ -983,6 +983,23 @@ class _Gateway:
     def pending(self) -> list[str]:
         return [event for event, _c, _t, future in self.waits if not future.done()]
 
+    def expire_first(self) -> None:
+        """Run out the time of the first wait for a message still pending."""
+        for event, _check, _timeout, future in self.waits:
+            if event == "message" and not future.done():
+                future.set_exception(asyncio.TimeoutError())
+                return
+
+    def dispatch(self, message: Any) -> int:
+        """Send *message* to every wait for a message still pending whose check takes it, as
+        discord.py does; gives how many heard it."""
+        heard = 0
+        for event, check, _timeout, future in list(self.waits):
+            if event == "message" and not future.done() and (check is None or check(message)):
+                future.set_result(message)
+                heard += 1
+        return heard
+
 
 @pytest.mark.parametrize("round_status", [
     pytest.param("CANCELLED", id="the round cancelled"),
@@ -1018,3 +1035,68 @@ async def test_a_wizard_waiting_on_a_submission_a_cancellation_closes_stops_wait
     assert await _sessions(db_path) == []
     assert "was cancelled" not in _said(bot._results)
     assert stubs["opened"] == []
+
+
+async def test_a_paste_sent_while_the_wizard_rereads_its_submission_is_still_heard(
+    tmp_path, monkeypatch,
+):
+    """Round 3's submission channel is open, has accepted nothing, and is waiting for the
+    qualifying results. The first listener's time runs out, and the wizard reads whether its
+    submission was closed, a read made slow. While the read is going, the manager pastes the
+    qualifying results, which reach every listener then registered; the read ends, finding the
+    submission open. The wizard takes the paste: the qualifying results are saved, and the race
+    results after them. It says nothing of a closed submission, and while the read was held, as
+    the paste was sent, at least one listener stood registered."""
+    db_path = await _make_db(tmp_path, name="paste_during_reread")
+    bot = _bot(db_path, [])
+    gateway = _Gateway(db_path)
+    bot.wait_for = gateway.wait_for
+    real_read = result_submission_service.closed_by_cancellation
+    reading, release = asyncio.Event(), asyncio.Event()
+
+    def _listeners() -> int:
+        return gateway.pending().count("message")
+
+    async def _slow_read(*args: Any) -> Any:
+        """The first read is held until the test releases it; any later one, as made."""
+        if not reading.is_set():
+            reading.set()
+            await release.wait()
+        return await real_read(*args)
+
+    monkeypatch.setattr(result_submission_service, "closed_by_cancellation", _slow_read)
+
+    async def _until(condition: Any) -> bool:
+        for _ in range(60):
+            if await condition():
+                return True
+            await asyncio.sleep(0.05)
+        return False
+
+    async def _race_asked() -> bool:
+        return bool(await _sessions(db_path)) and _listeners() > 0
+
+    wizard = asyncio.create_task(_run(bot))
+    try:
+        await asyncio.wait_for(gateway.waiting.wait(), timeout=5)
+        gateway.expire_first()
+        await asyncio.wait_for(reading.wait(), timeout=5)
+        # A paste can arrive only while the read is suspended, as it is here.
+        listening = _listeners()
+        heard = gateway.dispatch(_message(QUALI_PASTE))
+        release.set()
+
+        assert await _until(_race_asked), "the paste sent during the read was never heard"
+        gateway.dispatch(_message(RACE_PASTE))
+        done, _ = await asyncio.wait({wizard}, timeout=5)
+        assert wizard in done, "the wizard never finished"
+        stubs = wizard.result()
+    finally:
+        if not wizard.done():
+            wizard.cancel()
+            await asyncio.gather(wizard, return_exceptions=True)
+
+    assert heard >= 1
+    assert [row[0] for row in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+    assert "can no longer be entered" not in _said(stubs["sub"])
+    assert listening >= 1
