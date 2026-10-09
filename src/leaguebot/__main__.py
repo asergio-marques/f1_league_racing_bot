@@ -209,8 +209,8 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def post_call(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_notice(round_id, bot_)
 
-    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> None:
-        await _give_up_missed_check_in_call(bot_, row)
+    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> bool:
+        return await _give_up_missed_check_in_call(bot_, row)
 
     async def run_deadline(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_deadline(round_id, bot_)
@@ -954,8 +954,9 @@ async def _recover_missed_check_in_calls(
             )
 
 
-async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
-    """Report a round whose call and deadline both went by unposted, and close its check-in.
+async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> bool:
+    """Report a round whose call and deadline both went by unposted, and close its check-in;
+    say whether it did, False where the round was left as it stood.
 
     Decided 2026-09-24 (#429): no call is posted once the deadline has passed. A call nobody
     could answer would open the round's attendance rows only to record every driver as not
@@ -1014,18 +1015,18 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
         found = await cursor.fetchone()
         if found is None:
             log.info(
-                "_recover_missed_check_in_calls: round %d's results are in or its check-in is "
+                "_give_up_missed_check_in_call: round %d's results are in or its check-in is "
                 "over — nothing given up",
                 round_id,
             )
-            return
+            return False
         # A round final with results off keeps its attendance as it stands.
         clearing = found["status"] in ROUND_CANCELLABLE
         if clearing:
             await clear_check_in_answers_on(db, round_id)
         await db.commit()
     log.info(
-        "_recover_missed_check_in_calls: round %d's deadline has passed — call not posted",
+        "_give_up_missed_check_in_call: round %d's deadline has passed — call not posted",
         round_id,
     )
     await _report_call_failure(
@@ -1043,6 +1044,7 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
             "already recorded for this round are kept as they stand."
         ),
     )
+    return True
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:

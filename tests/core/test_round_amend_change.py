@@ -1772,7 +1772,6 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     assert "the earlier call was kept" in outcome
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a give-up that gave nothing up is recorded as one")
 async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     tmp_path, reposts, caplog,
 ):

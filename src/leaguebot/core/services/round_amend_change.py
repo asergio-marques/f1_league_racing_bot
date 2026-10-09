@@ -130,15 +130,18 @@ class AmendHooks:
     `LeagueBot.amendment_windows` does: attendance's only where it is on, weather's always.
     *withdraw_phases_on*, *reopen_check_in_on* write on the connection a save hands them and commit
     nothing. *delete_forecast* raises `StepFailedOnDiscord` and keeps the forecast's record where
-    Discord refuses. *run_phase* draws a phase now, *repost_call* takes down whatever call stands
-    and posts the check-in call again, *post_call* posts it where none stands, posting nothing
-    where one does (judged under the round's check-in lock, so that a call posted by its timer or
-    a restart at the same moment is not posted twice), *give_up_call* reports a call whose
-    deadline passed before it could be posted and closes the round's check-in, as the start-up
-    recovery does, raising where the close cannot be saved so that the queue stops rather than
-    report a give-up never made, and clearing in the same save any check-in answers left for the
-    round and the placements made on them; it is handed the bot and the round's ``round_id``,
-    ``round_number``, ``division_id``, ``division_name`` and ``season_number``.
+    Discord refuses. *run_phase* draws a phase now. *repost_call* posts the check-in call again,
+    beside any call still standing, which it takes down only once the new one has landed, and
+    leaves standing where the new one fails. *post_call* posts it where none stands, posting
+    nothing where one does (judged under the round's check-in lock, so that a call posted by its
+    timer or a restart at the same moment is not posted twice). *give_up_call* reports a call
+    whose deadline passed before it could be posted and closes the round's check-in, as the
+    start-up recovery does, clearing in the same save any check-in answers left for the round
+    and the placements made on them, and says whether it did: it leaves a round whose results are
+    in, or whose check-in is over, as it stands. It raises where the close cannot be saved, so
+    that the queue stops rather than report a give-up never made. It is handed the bot and the
+    round's ``round_id``, ``round_number``, ``division_id``, ``division_name`` and
+    ``season_number``.
     *run_deadline* runs the round's check-in deadline, *clean_up_forecast* deletes its Phase 3
     forecast and *clean_up_check_in* takes its check-in down, each as its timer would, for a
     moment that passed while the amendment stood stopped. *round_list* formats the division's
@@ -153,7 +156,7 @@ class AmendHooks:
     reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
     repost_call: Callable[[int, int, Any], Awaitable[None]]
     post_call: Callable[[int, Any], Awaitable[None]]
-    give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[None]]
+    give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[bool]]
     run_deadline: Callable[[int, Any], Awaitable[None]]
     clean_up_forecast: Callable[[int, Any], Awaitable[None]]
     clean_up_check_in: Callable[[int, Any], Awaitable[None]]
@@ -763,7 +766,9 @@ def round_amend_change(
                 found = await cursor.fetchone()
             if found is None:
                 raise LookupError(f"division {rnd.division_id} is no longer there")
-            await hooks.give_up_call(ctx.bot, dict(found))
+            if not await hooks.give_up_call(ctx.bot, dict(found)):
+                # Its results came in, or its check-in closed, as the give-up read it.
+                return StepResult(result={"left": True})
             return StepResult(result={"given_up": True})
         if reposting(ctx):
             earlier = await call_message(ctx.db_path, rnd.id) if replacing(ctx) else None
