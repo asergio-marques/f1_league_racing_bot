@@ -1372,16 +1372,23 @@ async def _call_to_post_at_once(league: Any) -> None:
     assert "post_call" in [job["name"] for job in await _jobs(league)]
 
 
+@pytest.mark.parametrize("path", ["first post", "after the take-down"])
 async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_posted_once(
-    tmp_path, reposts,
+    tmp_path, reposts, path,
 ):
-    """As `_call_to_post_at_once`; the bot restarts before the amendment's job posts the call,
-    and the start-up recovery posts it late. When the job runs, the call stands: it is neither
-    taken down nor posted again, and the division is called once."""
+    """(first post) As `_call_to_post_at_once`; (after the take-down) attendance on, Pro's round
+    3, its call standing, is brought forward to three days out, and the old call is taken down,
+    the new one to post. The bot restarts before the amendment's job posts the call, and the
+    start-up recovery posts it late. When the job runs, the call stands: it is neither taken down
+    nor posted again, and the division is called once."""
     from leaguebot.__main__ import _recover_missed_check_in_calls
 
     league = await ongoing_league(tmp_path, attendance=True)
-    await _call_to_post_at_once(league)
+    if path == "first post":
+        await _call_to_post_at_once(league)
+    else:
+        await _amended(league, scheduled_at=_at(league, days=3))
+        await _run_through(league, "take_down_call")
 
     await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
     assert reposts.posted == [(R3, PRO)]

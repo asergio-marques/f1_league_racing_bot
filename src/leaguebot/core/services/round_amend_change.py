@@ -608,10 +608,10 @@ def round_amend_change(
         call_left = bool(standing["called"]) and not taking_down
         planned: list[PlannedStep] = []
         if taking_down:
-            planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL)]
+            planned += [PlannedStep(TAKE_DOWN_CALL), PlannedStep(POST_CALL, {"repost": True})]
         elif (not standing["called"] and not standing["checkin_cleared"]
               and call_fell_due(rnd, attendance)):
-            planned.append(PlannedStep(POST_CALL))
+            planned.append(PlannedStep(POST_CALL, {"repost": False}))
         if (attendance is not None and call_left and standing["undistributed"]
                 and deadline_passed(rnd, attendance)):
             planned.append(PlannedStep(RUN_DEADLINE))
@@ -636,12 +636,17 @@ def round_amend_change(
     async def attendance_on(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()
 
+    def reposting(ctx: StepContext) -> bool:
+        """Whether the call is posted again in place of one the amendment took down (its step
+        payload, ``{"repost": True}``), rather than posted for the first time."""
+        return bool(ctx.step_payload.get("repost"))
+
     def replacing(ctx: StepContext) -> bool:
-        """Whether the call to post replaces one still standing: the old call, whose take-down a
-        league admin discarded. Otherwise any call standing when the post runs was posted after
-        the take-down, or after the arming, by its timer, a restart or `/attendance
-        post-check-in`, and is the round's live call."""
-        return discarded(view(ctx, TAKE_DOWN_CALL))
+        """Whether the call to post again replaces one still standing: the old call, whose
+        take-down a league admin discarded. Otherwise any call standing when the post runs was
+        posted after the take-down, or after the arming, by its timer, a restart or
+        `/attendance post-check-in`, and is the round's live call."""
+        return reposting(ctx) and discarded(view(ctx, TAKE_DOWN_CALL))
 
     async def call_state(db_path: str, round_id: int) -> tuple[bool, bool]:
         """Whether a call stands for the round, and whether its check-in is over
@@ -664,7 +669,7 @@ def round_amend_change(
         is not over, both read then (owner, 2026-10-09). A call posted between the arming and
         this job, by its timer, a restart or `/attendance post-check-in`, is the round's live
         call, and posting again would call the division twice. The one exception is the old call
-        a discarded take-down left standing, which this replaces (`replacing`). A call still to
+        a discarded take-down left standing, which a repost replaces (`replacing`). A call still to
         come is posted by its timer, armed with the round; one whose deadline has passed is given
         up (`post_call`)."""
         if not await modules.is_attendance_enabled():
@@ -711,10 +716,12 @@ def round_amend_change(
         timer's call does, reported by attendance; a fault of the bot's own stops the queue
         (owner, 2026-10-08: slice 6 deals with the rest).
 
-        It is posted through `post_call`, which posts nothing where a call already stands, judged
-        under the round's check-in lock: a call posted by the timer or a restart since this job
-        was judged due is not posted twice. Only the old call a discarded take-down left standing
-        is taken down first, through `repost_call` (`replacing`).
+        A first post goes through `post_call`, which posts nothing where a call already stands,
+        judged under the round's check-in lock, so that a call posted by the timer or a restart
+        since this job was judged due is not posted twice. A call posted again in place of one the
+        amendment took down (`reposting`) goes through `repost_call`, which also drops the answers
+        of drivers no longer of the division, and takes down the old call where a discarded
+        take-down left it standing.
 
         Where the round's check-in deadline has passed by the time it runs, as after a stop,
         nothing is posted: the log channel is told and the round's check-in closed, as the
@@ -745,10 +752,9 @@ def round_amend_change(
                 found = await cursor.fetchone()
             if found is None:
                 raise LookupError(f"division {rnd.division_id} is no longer there")
-            took_down = "taken_down" in (view(ctx, TAKE_DOWN_CALL).result or {})
-            await hooks.give_up_call(ctx.bot, dict(found), took_down)
+            await hooks.give_up_call(ctx.bot, dict(found), reposting(ctx))
             return StepResult(result={"given_up": True})
-        if replacing(ctx):
+        if reposting(ctx):
             await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
         else:
             await hooks.post_call(rnd.id, ctx.bot)
