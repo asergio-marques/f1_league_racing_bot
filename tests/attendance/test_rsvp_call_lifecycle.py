@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -553,6 +554,36 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a last notice recorded meanwhile is left standing")
+async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the_earlier_call(
+    tmp_path,
+):
+    """Round 1's call stands (900001) with no last notice yet. While its repost is being sent,
+    the last notice's timer, which takes no lock, posts and records its message (900005) on the
+    earlier call. Once the repost lands, that last notice comes down with the earlier call, read
+    as it stands just before the new call takes its record."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    channel = _make_channel()
+    sent = channel.send.return_value
+    sent.channel.id = RSVP_CHANNEL_ID
+    bot = _make_bot(db_path, channel)
+
+    async def _send(*_args: Any, **_kwargs: Any) -> MagicMock:
+        await bot.attendance_service.update_embed_last_notice_msg(ROUND_ID, DIVISION_ID, "900005")
+        return sent
+
+    channel.send = AsyncMock(side_effect=_send)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+
+    assert sorted(channel.deleted) == [int(CALL_MSG_ID), 900005]
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == "990099"
+    assert stored.last_notice_msg_id is None
 
 
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
