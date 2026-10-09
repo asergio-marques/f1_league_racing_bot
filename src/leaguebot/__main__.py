@@ -206,6 +206,9 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
         await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
 
+    async def post_call(round_id: int, bot_: Any) -> None:
+        await rsvp_service.run_rsvp_notice(round_id, bot_)
+
     async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> None:
         await _give_up_missed_check_in_call(bot_, row)
 
@@ -226,6 +229,7 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         run_phase=run_phase,
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
         repost_call=repost_call,
+        post_call=post_call,
         give_up_call=give_up_call,
         run_deadline=run_deadline,
         clean_up_forecast=clean_up_forecast,

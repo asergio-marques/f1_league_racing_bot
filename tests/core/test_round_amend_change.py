@@ -1369,7 +1369,6 @@ async def _call_to_post_at_once(league: Any) -> None:
     assert "post_call" in [job["name"] for job in await _jobs(league)]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a call posted late at a restart is posted again")
 async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_posted_once(
     tmp_path, reposts,
 ):
@@ -1391,7 +1390,6 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
     assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a call standing is given up beneath its deadline")
 @pytest.mark.parametrize("path", ["first post", "after the take-down"])
 async def test_a_call_standing_when_the_amendment_s_post_runs_past_its_deadline_is_not_given_up(
     tmp_path, reposts, path,

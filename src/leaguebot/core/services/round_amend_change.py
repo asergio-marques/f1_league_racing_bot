@@ -130,8 +130,10 @@ class AmendHooks:
     `LeagueBot.amendment_windows` does: attendance's only where it is on, weather's always.
     *withdraw_phases_on*, *reopen_check_in_on* write on the connection a save hands them and commit
     nothing. *delete_forecast* raises `StepFailedOnDiscord` and keeps the forecast's record where
-    Discord refuses. *run_phase* draws a phase now, *repost_call* posts the check-in call again,
-    *give_up_call* reports a call whose deadline passed before it could be posted and closes the
+    Discord refuses. *run_phase* draws a phase now, *repost_call* takes down whatever call stands
+    and posts the check-in call again, *post_call* posts it where none stands, posting nothing
+    where one does (judged under the round's check-in lock, so that a call posted by its timer or
+    a restart at the same moment is not posted twice), *give_up_call* reports a call whose deadline passed before it could be posted and closes the
     round's check-in, as the start-up recovery does, handed the bot and the round's
     ``round_id``, ``round_number``, ``division_id``, ``division_name`` and ``season_number``.
     *run_deadline* runs the round's check-in deadline, *clean_up_forecast* deletes its Phase 3
@@ -147,6 +149,7 @@ class AmendHooks:
     run_phase: Callable[[int, int, Any], Awaitable[None]]
     reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
     repost_call: Callable[[int, int, Any], Awaitable[None]]
+    post_call: Callable[[int, Any], Awaitable[None]]
     give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[None]]
     run_deadline: Callable[[int, Any], Awaitable[None]]
     clean_up_forecast: Callable[[int, Any], Awaitable[None]]
@@ -575,12 +578,14 @@ def round_amend_change(
         stood before them; what the save withdraws, from what it read (`apply`), and only where it
         was saved. *standing* is what the arming read of the round's call and Phase 3 forecast.
 
-        A call that stood at the save is taken down and its repost planned with it, the repost
+        A call that stood at the save is taken down and its post planned with it, the post
         judging when it runs whether the call is due then (`call_still_due`): the take-down can
         stop on Discord and be retried after the new call's moment, which the timer armed
         meanwhile has found taken by the old call. Otherwise the call is planned only where none
         stands and the check-in is not over and it has fallen due as the round is armed, saved or
-        not; one still to come is the timer's.
+        not; one still to come is the timer's. Either way the post judges again, when it runs,
+        that no call stands and the check-in is not over, since a restart or the timer can post
+        one between the arming and the post.
 
         What fell due while the amendment stood stopped is caught up as the start-up recovery
         catches it up (`_recover_rsvp_views_and_deadlines`, `_recover_missed_cleanups`; owner,
@@ -621,17 +626,47 @@ def round_amend_change(
     async def attendance_on(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()
 
+    def replacing(ctx: StepContext) -> bool:
+        """Whether the call to post replaces one still standing: the old call, whose take-down a
+        league admin discarded. Otherwise any call standing when the post runs was posted after
+        the take-down, or after the arming, by its timer, a restart or `/attendance
+        post-check-in`, and is the round's live call."""
+        return discarded(view(ctx, TAKE_DOWN_CALL))
+
+    async def call_state(db_path: str, round_id: int) -> tuple[bool, bool]:
+        """Whether a call stands for the round, and whether its check-in is over
+        (``checkin_cleared``), read when the job runs."""
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT r.checkin_cleared, EXISTS (SELECT 1 FROM rsvp_embed_messages m "
+                "WHERE m.round_id = r.id) AS called FROM rounds r WHERE r.id = ?",
+                (round_id,),
+            )
+            found = await cursor.fetchone()
+        if found is None:
+            return False, False
+        return bool(found["called"]), bool(found["checkin_cleared"])
+
     async def call_still_due(ctx: StepContext) -> bool:
-        """The call is posted again only while attendance is on and the call has fallen due as the
-        round stands when this job runs (owner, 2026-10-09). One still to come is posted by its
-        timer, armed with the round; one whose deadline has passed is given up (`post_call`)."""
+        """The call is posted only while attendance is on and the call has fallen due as the
+        round stands when this job runs, and, as the start-up recovery of a missed call judges it
+        (`_recover_missed_check_in_calls`), only where no call stands and the round's check-in
+        is not over, both read then (owner, 2026-10-09). A call posted between the arming and
+        this job, by its timer, a restart or `/attendance post-check-in`, is the round's live
+        call, and posting again would call the division twice. The one exception is the old call
+        a discarded take-down left standing, which this replaces (`replacing`). A call still to
+        come is posted by its timer, armed with the round; one whose deadline has passed is given
+        up (`post_call`)."""
         if not await modules.is_attendance_enabled():
             return False
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         judgement = judged(ctx) or {}
-        return rnd is not None and call_fell_due(
-            rnd, judgement.get("windows", {}).get("attendance")
-        )
+        if rnd is None or not call_fell_due(rnd, judgement.get("windows", {}).get("attendance")):
+            return False
+        if replacing(ctx):
+            return True
+        standing, cleared = await call_state(ctx.db_path, rnd.id)
+        return not standing and not cleared
 
     async def weather_on(_ctx: StepContext) -> bool:
         return await modules.is_weather_enabled()
@@ -647,20 +682,30 @@ def round_amend_change(
         return StepResult(result={"taken_down": taken["taken_down"]})
 
     async def post_call(ctx: StepContext) -> StepResult:
-        """Post the call again, carrying every answer already given. Discord refusing it fails as
-        the timer's call does, reported by attendance; a fault of the bot's own stops the queue
+        """Post the call, carrying every answer already given. Discord refusing it fails as the
+        timer's call does, reported by attendance; a fault of the bot's own stops the queue
         (owner, 2026-10-08: slice 6 deals with the rest).
+
+        It is posted through `post_call`, which posts nothing where a call already stands, judged
+        under the round's check-in lock: a call posted by the timer or a restart since this job
+        was judged due is not posted twice. Only the old call a discarded take-down left standing
+        is taken down first, through `repost_call` (`replacing`).
 
         Where the round's check-in deadline has passed by the time it runs, as after a stop,
         nothing is posted: the log channel is told and the round's check-in closed, as the
-        start-up recovery gives up a missed call (`give_up_call`; owner, 2026-10-09). The call is
-        posted under test mode too, unlike the start-up recovery, which leaves a test season's
-        calls to `/test-mode advance` (owner, 2026-10-09: "Post it anyway")."""
+        start-up recovery gives up a missed call (`give_up_call`; owner, 2026-10-09). A call is
+        given up only where none stands: one standing is the round's live call, or the old one a
+        discarded take-down left, and is left as it is. The call is posted under test mode too,
+        unlike the start-up recovery, which leaves a test season's calls to `/test-mode advance`
+        (owner, 2026-10-09: "Post it anyway")."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
         attendance = (judged(ctx) or {}).get("windows", {}).get("attendance")
         if attendance is not None and deadline_passed(rnd, attendance):
+            standing, _cleared = await call_state(ctx.db_path, rnd.id)
+            if standing:
+                return StepResult(result={"left": True})
             async with get_connection(ctx.db_path) as db:
                 cursor = await db.execute(
                     "SELECT r.id AS round_id, r.round_number, d.id AS division_id, "
@@ -674,7 +719,10 @@ def round_amend_change(
                 raise LookupError(f"division {rnd.division_id} is no longer there")
             await hooks.give_up_call(ctx.bot, dict(found))
             return StepResult(result={"given_up": True})
-        await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
+        if replacing(ctx):
+            await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
+        else:
+            await hooks.post_call(rnd.id, ctx.bot)
         return StepResult(result={"posted": True})
 
     async def delete_forecast(ctx: StepContext) -> StepResult:
