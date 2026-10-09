@@ -40,6 +40,8 @@ from tests.support.change_queue import (
     stopped_job,
 )
 from tests.support.season_league import (
+    CHARLES,
+    DRIVER_ROLE,
     LEWIS,
     MAX,
     SEASON_ABORT_KIND,
@@ -48,7 +50,9 @@ from tests.support.season_league import (
     SEASON_ID,
     SIGNING_UP,
     TEST_DRIVER,
+    UNASSIGNED,
     abort_season,
+    approved_unplaced,
     backup_saved,
     driver_state,
     reply,
@@ -84,6 +88,13 @@ NOT_FORGOTTEN = (
     "season until the bot restarts."
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
+WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+FORECASTS_KEPT = (
+    "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
+    "forecast channel."
+)
+SIGNUP_KEPT = f"<@{SIGNING_UP}> — their signup channel could not be closed. Delete it by hand."
+DRIVER_ROLE_KEPT = f"<@{LEWIS}> — the driver role could not be taken back. Remove it by hand."
 #: 2.11's refusal, for each other kind of a season's end in hand.
 IN_HAND = {
     SEASON_COMPLETE_KIND: (
@@ -279,6 +290,14 @@ def _forbidden() -> discord.HTTPException:
     return http_error(discord.Forbidden, status=403, text="Missing Permissions")
 
 
+async def _driver_role_held(league: Any) -> None:
+    """The league's driver role (820) is set, and Lewis, Max, Charles and the test driver hold
+    it on the server, as approved drivers do before their placements are confirmed."""
+    await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
+    for user_id in (LEWIS, MAX, CHARLES, TEST_DRIVER):
+        league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)
+
+
 # ── Defect 5: every failure stops the queue ─────────────────────────────────────────
 
 
@@ -469,11 +488,24 @@ async def _no_season(league: Any) -> None:
                        SEASON_ID)
 
 
+def _active_at(stage: str) -> Any:
+    """The season's placements were confirmed and it stands at *stage*."""
+    async def _set(league: Any) -> None:
+        await league.write("UPDATE seasons SET status = 'ACTIVE', stage = ? WHERE id = ?",
+                           stage, SEASON_ID)
+    return _set
+
+
 #: Each refusal at the press: what sets it up, the confirmation word, and today's reply.
 _PRESS_REFUSALS = {
     "the word": (_nothing, "confirm", WORD),
     "no season": (_no_season, "CONFIRM", ONLY_BEFORE),
     "an ongoing season": (_confirmed, "CONFIRM", ONLY_BEFORE),
+    "a season taking signups while ongoing": (_active_at("ONGOING_SIGNUPS"), "CONFIRM",
+                                              ONLY_BEFORE),
+    "a season placing drivers while ongoing": (_active_at("ONGOING_PLACEMENTS"), "CONFIRM",
+                                               ONLY_BEFORE),
+    "a season pending completion": (_active_at("PENDING_COMPLETION"), "CONFIRM", ONLY_BEFORE),
 }
 
 
@@ -531,12 +563,15 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert not await _season_stands(league)
 
 
+@pytest.mark.parametrize("stage", ["CONFIGURATION", "WAITING", "SIGNUPS", "PLACEMENTS"])
 @pytest.mark.xfail(strict=True, reason=_XFAIL)
-async def test_the_season_is_deleted_with_every_record_of_it_and_takes_no_number(tmp_path):
-    league = await setup_league(tmp_path)
+async def test_the_season_is_deleted_with_every_record_of_it_and_takes_no_number(tmp_path, stage):
+    league = await setup_league(tmp_path, stage=stage, signups_open=stage == "SIGNUPS")
     await _asked(league)
 
     await run_queue(league.bot)
+
+    assert not await window_open(league)
 
     assert await league.rows("SELECT * FROM seasons") == []
     assert await league.rows("SELECT * FROM divisions WHERE season_id = ?", SEASON_ID) == []
@@ -562,6 +597,24 @@ async def test_the_drivers_return_to_not_signed_up_with_no_history_written(tmp_p
     assert await league.rows("SELECT * FROM driver_history_entries") == []
     assert await league.rows("SELECT * FROM audit_entries WHERE change_type = 'DRIVER_PASS'")
     assert (await _change(league))["state"] == "DONE"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_every_real_driver_returned_loses_the_driver_role_and_a_test_driver_is_passed_over(
+    tmp_path,
+):
+    league = await setup_league(tmp_path, test_mode=True)
+    await _driver_role_held(league)
+    await approved_unplaced(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    taken = sorted(uid for name, uid in map(_who, await _jobs(league))
+                   if name == "take_driver_role")
+    assert taken == [LEWIS, MAX, CHARLES, UNASSIGNED]
+    assert league.revoked == {uid: [DRIVER_ROLE] for uid in (LEWIS, MAX, CHARLES, UNASSIGNED)}
+    assert not await _season_stands(league)
 
 
 @pytest.mark.xfail(strict=True, reason=_XFAIL)
@@ -647,6 +700,59 @@ async def test_a_discarded_setup_release_is_named(tmp_path):
     assert NOT_FORGOTTEN in _not_done(reply(interaction))
     [line] = _success_lines(league)
     assert f"  not done: {NOT_FORGOTTEN}" in line
+
+
+async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await setup_league(tmp_path, signups_open=True)
+    league.close_fails = RuntimeError("the window could not be recorded closed")
+    return league
+
+
+async def _flush_refused(tmp_path: Any, monkeypatch: Any) -> Any:
+    _flush_failing(monkeypatch, {"now": True})
+    return await setup_league(tmp_path, test_mode=True)
+
+
+async def _lock_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await setup_league(tmp_path)
+    await signing_up(league)
+    league.lock_fails[SIGNING_UP] = _forbidden()
+    return league
+
+
+async def _role_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await setup_league(tmp_path)
+    await _driver_role_held(league)
+    league.revoke_fails[LEWIS] = _forbidden()
+    return league
+
+
+#: Each job a league admin may discard: the league that makes it fail, where the queue stops,
+#: and what the reply and the line say was not done.
+_DISCARDS = {
+    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
+    "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
+    "take_driver_role": (_role_refused, ("take_driver_role", LEWIS), DRIVER_ROLE_KEPT),
+}
+
+
+@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_discarded_job_is_named_with_what_to_do_by_hand(tmp_path, monkeypatch, job):
+    build, where, text = _DISCARDS[job]
+    league = await build(tmp_path, monkeypatch)
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == where
+
+    await discard_job(league.bot)
+
+    assert ABORTED in reply(interaction)
+    assert text in _not_done(reply(interaction))
+    [line] = _success_lines(league)
+    assert f"  not done: {text}" in line
+    assert not await _season_stands(league)
 
 
 # ── A signup channel's notice, before its lock (F2) ─────────────────────────────────
