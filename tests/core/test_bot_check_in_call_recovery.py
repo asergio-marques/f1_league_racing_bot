@@ -331,3 +331,21 @@ async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
         await _recover_missed_check_in_calls(bot, now=NOW + timedelta(minutes=10))
 
     assert _logged(bot) == [_GIVEN_UP]
+
+
+async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_path):
+    """The database refusing to close the round's check-in is logged on the host and the start
+    goes on, the round's check-in still open, so that the next start gives it up again."""
+    db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER closing_fails BEFORE UPDATE OF checkin_cleared ON rounds "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+    bot = _make_bot(db_path)
+
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+
+    assert not await _checkin_cleared(db_path)

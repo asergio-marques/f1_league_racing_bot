@@ -1450,3 +1450,43 @@ async def test_a_phase_whose_race_passed_while_a_job_before_it_stood_stopped_is_
     assert await stopped_job(league.db_path) is None
     assert (await _change(league))["state"] == "DONE"
     assert phases.ran == []
+
+
+async def _closing_the_check_in_fails(league: Any) -> None:
+    """The database refuses to mark any round's check-in closed, as a full disk would."""
+    await league.write(
+        "CREATE TRIGGER closing_fails BEFORE UPDATE OF checkin_cleared ON rounds "
+        "WHEN NEW.checkin_cleared = 1 BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a give-up that could not be saved reports success")
+async def test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried(
+    tmp_path, reposts,
+):
+    """As a call given up once its take-down stood stopped past the deadline (Pro's round 3
+    brought forward to three hours out, the last notice 7002 undeletable, an hour and ten minutes
+    on), the database refusing to close the round's check-in: a fault of the bot's own, which
+    stops the queue at the call's job, the log channel not yet told. Once the fault is mended and
+    Retry pressed, the call is given up, and the log channel told once."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _amended(league, scheduled_at=_at(league, hours=3))
+    league.undeletable.add(CALL_MESSAGES[1])
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    await _closing_the_check_in_fails(league)
+    league.clock.advance(hours=1, minutes=10)
+    league.undeletable.clear()
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    assert _given_up_lines(league) == []
+
+    await league.write("DROP TRIGGER closing_fails")
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    assert len(_given_up_lines(league)) == 1
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 1
