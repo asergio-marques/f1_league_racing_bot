@@ -156,7 +156,6 @@ def summer_time_host(monkeypatch):
     time.tzset()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a naive round time is read as the host's own")
 def test_a_round_stored_as_plain_utc_is_shown_at_its_utc_moment(summer_time_host):
     """Rounds are stored as plain UTC, with no zone. On a host in British Summer Time, a round
     at 20:00 UTC on 30 July shows that moment, not one an hour early."""
