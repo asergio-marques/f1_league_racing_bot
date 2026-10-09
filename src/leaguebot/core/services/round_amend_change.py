@@ -691,11 +691,14 @@ def round_amend_change(
         words = {"number": number, "division": ctx.payload["division_name"]}
         if discarded(view(ctx, JUDGE)) or discarded(view(ctx, UNARM)):
             return NOTHING_AMENDED.format(**words)
+        # The arming runs whatever became of the save, and what it catches up can be discarded
+        # too: it is named beneath the refusal or the discarded save as beneath a success
+        # (owner, 2026-10-09).
         refused = (view(ctx, APPLY).result or {}).get("refused")
         if refused:
-            return str(refused)
+            return str(refused) + not_done(ctx)
         if discarded(view(ctx, APPLY)):
-            return SAVE_DISCARDED.format(**words)
+            return SAVE_DISCARDED.format(**words) + not_done(ctx)
         listed = (view(ctx, CLOSE).result or {}).get("round_list")
         return AMENDED + (f"\n\n{listed}" if listed else "") + not_done(ctx)
 

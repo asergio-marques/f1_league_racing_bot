@@ -1217,8 +1217,6 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     assert row["checkin_cleared"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded catch-up is named whatever became of "
-                                       "the save")
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     tmp_path, phases, ending,
