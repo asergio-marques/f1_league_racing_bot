@@ -556,7 +556,6 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
     }
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a last notice recorded meanwhile is left standing")
 async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the_earlier_call(
     tmp_path,
 ):

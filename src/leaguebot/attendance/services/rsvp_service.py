@@ -739,6 +739,13 @@ async def run_rsvp_notice(
 
             discard_attachment(attachment)
 
+        if earlier is not None:
+            # Read again just before the new call takes its record: the last notice's timer
+            # takes no lock, and one recorded during the send must come down with the rest.
+            earlier = (
+                await bot.attendance_service.get_embed_message(round_id, division_id) or earlier
+            )
+
         # Store message reference at once: replacing an earlier call, the new one takes its
         # record in the same statement, so that a press on the new call finds it and a stop
         # cannot leave it untracked.
