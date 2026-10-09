@@ -435,6 +435,24 @@ EARLIER_CALL_STANDS = (
     "show what changed."
 )
 
+#: What a failed call's report says where no call stands but answers to an earlier one are
+#: kept for the round, as after an amendment took its call down: they count, so "no attendance
+#: rows were opened" would be untrue.
+ANSWERS_KEPT = (
+    "answers given to an earlier call of this round are kept, and count. Once the cause is "
+    "cleared, post the call by hand with `/attendance post-check-in division: {division} "
+    "round: {round}`."
+)
+
+
+async def _answers_kept(db_path: str, round_id: int) -> bool:
+    """Whether any check-in answer is recorded for *round_id*."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM driver_round_attendance WHERE round_id = ? LIMIT 1", (round_id,)
+        )
+        return await cursor.fetchone() is not None
+
 
 async def run_rsvp_notice(
     round_id: int, bot: LeagueBot, *, replacing: RsvpEmbedMessage | None = None
@@ -464,7 +482,9 @@ async def run_rsvp_notice(
     only once the new one has landed is the earlier one withdrawn, its messages and its record,
     its answers carried over. A post that fails, Discord refusing it or the channel gone, leaves
     the earlier call and its record standing, and the report says so (`EARLIER_CALL_STANDS`)
-    rather than that no attendance rows were opened, which would no longer be true. A call
+    rather than that no attendance rows were opened, which would no longer be true. Where no
+    call stands but answers to an earlier one are kept for the round, as after an amendment took
+    its call down, a failure's report says they are kept and count (`ANSWERS_KEPT`). A call
     standing that is not *replacing* was posted since, and is left as any standing call is.
     `test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so` pins it.
 
@@ -539,7 +559,14 @@ async def run_rsvp_notice(
             return
         # The earlier call, standing until the new one lands; its answers count meanwhile.
         earlier = standing
-        failure_note = EARLIER_CALL_STANDS if earlier is not None else None
+        # What a failure says is what is really there (owner, 2026-10-09: "Make the line tell
+        # the truth"): the earlier call standing; or, with none, answers to an earlier call kept
+        # for the round, which count; or nothing at all, the report's own words.
+        failure_note: str | None = None
+        if earlier is not None:
+            failure_note = EARLIER_CALL_STANDS
+        elif await _answers_kept(bot.db_path, round_id):
+            failure_note = ANSWERS_KEPT.format(division=division_name, round=round_number)
 
         # Get division RSVP channel
         att_div_cfg = await bot.attendance_service.get_division_config(division_id)

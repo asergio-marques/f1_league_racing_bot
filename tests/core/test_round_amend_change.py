@@ -1681,7 +1681,6 @@ async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take
     )) == 2
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a failed repost says no attendance rows were opened")
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answers_are_kept(
     tmp_path, monkeypatch, fault,

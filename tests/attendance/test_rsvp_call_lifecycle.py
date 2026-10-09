@@ -506,7 +506,6 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
     }
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a failed call says no rows were opened beside answers")
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, fault):
     """No call stands for round 1, but answers to an earlier call are kept for it (both drivers
