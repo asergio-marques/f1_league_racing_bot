@@ -18,6 +18,7 @@ build, so each test is marked to fail until then: today Confirm amends on the sp
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import sys
@@ -1816,3 +1817,32 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     said = [record.getMessage() for record in caplog.records
             if "nothing given up" in record.getMessage()]
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a timed-out repost stops the queue")
+async def test_a_call_posted_again_whose_send_times_out_lets_the_amendment_go_on(
+    tmp_path, monkeypatch,
+):
+    """Attendance on. Pro's round 3, its call standing, is brought forward to three days out;
+    its call is taken down and posted again, and the send times out. As a call that fails on its
+    own timer, it does not stop the queue: the amendment goes through, and the log channel says
+    the call was not posted, that it may have reached Discord all the same, and to check the
+    channel (owner, 2026-10-08: slice 6; 2026-10-09: "Fold it in")."""
+    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.attendance_service.get_division_config = AttendanceService(
+        league.db_path
+    ).get_division_config
+    await _amended(league, scheduled_at=_at(league, days=3))
+    await _run_through(league, "take_down_call")
+    league.channel(PRO_CH.checkin).send_fails = asyncio.TimeoutError()
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [line] = _given_up_lines(league)
+    assert "may have reached Discord all the same; check the channel" in line

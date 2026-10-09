@@ -611,6 +611,35 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
     assert stored.last_notice_msg_id is None
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a transport fault on the call's send escapes")
+@pytest.mark.parametrize("fault", [
+    pytest.param(OSError("network unreachable"), id="the network failing"),
+    pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),
+    pytest.param(asyncio.TimeoutError(), id="the send timing out"),
+])
+async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_posted(
+    tmp_path, fault,
+):
+    """No call stands for round 1 and none is kept. Its timer's post fails on the connection
+    rather than on Discord: as a refusal is, it is reported in one NOT POSTED line and nothing is
+    raised, no call recorded. A send that timed out may have reached Discord all the same, and
+    the line says to check the channel (owner, 2026-10-09: "Fold it in")."""
+    db_path = await _make_db(tmp_path)
+    channel = _make_channel()
+    channel.send = AsyncMock(side_effect=fault)
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    assert await _embed_rows(db_path) == 0
+    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
+    assert line.startswith("ATTENDANCE | check-in call | NOT POSTED")
+    assert "no attendance rows were opened for this round" in line
+    timed_out = isinstance(fault, TimeoutError)
+    assert ("may have reached Discord all the same; check the channel" in line) == timed_out
+
+
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, fault):
     """No call stands for round 1, but answers to an earlier call are kept for it (both drivers
