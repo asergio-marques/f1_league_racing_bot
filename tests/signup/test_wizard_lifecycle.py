@@ -219,6 +219,46 @@ async def test_a_withdrawal_whose_transition_fails_otherwise_is_not_swallowed(li
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
+#: The detail a signup's own line gains where its closing notice was refused (#439, F2, P3).
+_CHANNEL_KEPT = (
+    f"  not done: the closing notice could not be posted in <#{CHANNEL_ID}> (Forbidden); "
+    "the channel is kept, readable but locked, and will not delete itself: delete it by hand"
+)
+
+
+def _notice_refused(lifecycle):
+    """The real channel hold, over a signup channel whose notice Discord refuses (403)."""
+    del lifecycle.svc.trigger_channel_hold  # the fixture's double; the service's own hold runs
+    lifecycle.svc._scheduler = MagicMock()
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = CHANNEL_ID
+    channel.mention = f"<#{CHANNEL_ID}>"
+    channel.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
+    channel.set_permissions = AsyncMock(return_value=None)
+    lifecycle.guild.get_channel = MagicMock(return_value=channel)
+    return channel
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: a refused notice is not named and the channel's deletion is armed"
+)
+async def test_a_withdrawal_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
+    lifecycle,
+):
+    """A withdrawal whose closing notice Discord refuses keeps the channel readable with the
+    driver's typing locked and no deletion armed, and its "Withdrawn" line names the channel for
+    a league manager to delete by hand (#439, F2, P3)."""
+    _alex_on_the_server(lifecycle)
+    channel = _notice_refused(lifecycle)
+
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    lifecycle.svc._scheduler._scheduler.add_job.assert_not_called()
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [f"Alex (<@{DRIVER_ID}>) | Signup | Withdrawn\n{_CHANNEL_KEPT}"]
+
+
 # ---------------------------------------------------------------------------
 # The inactivity timeout
 # ---------------------------------------------------------------------------
@@ -274,6 +314,28 @@ async def test_an_expired_wizard_records_one_lapse_naming_the_driver(lifecycle):
 
     lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
     assert lines == [_EXPIRY_LAPSE]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: a refused notice is not named and the channel's deletion is armed"
+)
+async def test_an_expiry_whose_notice_is_refused_keeps_the_channel_and_names_it(lifecycle):
+    """An expiry whose closing notice Discord refuses keeps the channel readable with the
+    driver's typing locked and no deletion armed, and after the lapse line a "Channel kept" line
+    of the wizard's family names the channel for a league manager to delete by hand (#439, F2,
+    P3)."""
+    _alex_on_the_server(lifecycle)
+    channel = _notice_refused(lifecycle)
+
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    lifecycle.svc._scheduler._scheduler.add_job.assert_not_called()
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [
+        _EXPIRY_LAPSE,
+        f"Alex (<@{DRIVER_ID}>) | Signup | Channel kept\n{_CHANNEL_KEPT}",
+    ]
 
 
 async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
