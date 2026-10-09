@@ -918,7 +918,8 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
                             signups_open: bool = False, held: bool = False) -> None:
     """What a season's end reads beyond the season itself.
 
-    Always: a wizard service double (`bot.wizard_service`) whose `trigger_channel_hold` records
+    Always: the real signup module and driver services, the window's recording of its close
+    raising `league.close_fails` where set; a wizard service double (`bot.wizard_service`) whose `trigger_channel_hold` records
     each closing notice in `league.notices` (refusing those in `league.hold_fails`) and, unless
     handed ``lock=False``, the channel in `league.locked`; whose `lock_signup_channel` records the
     channel in `league.locked` (refusing those in `league.lock_fails`); and the scheduler's job
@@ -926,14 +927,14 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
 
     *test_mode*: test mode on, the test driver (104) seated at McLaren, and a saved test-mode
     backup of the league and of the job store present (`backup_saved`).
-    *signups_open*: the signup module on and its window open in `SIGNUP_CHANNEL`, read and closed
-    by the real signup module service, whose recording of the window closed raises
-    `league.close_fails` where set.
+    *signups_open*: the signup module on and its window open in `SIGNUP_CHANNEL`, its Sign Up
+    button standing there (`SIGNUP_BUTTON`).
     *held*: the league's driver role (820) set, and every real driver holding their division
     role, their team role and the driver role; the test driver holds none.
     """
     bot = league.bot
     _wizard_double(league)
+    _signup_services(league)
     bot.scheduler_service._jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
     if test_mode:
         from leaguebot.core.services.backup_service import backup_path
@@ -984,20 +985,12 @@ def _wizard_double(league: SeasonLeague) -> None:
     league.bot.wizard_service = wizard
 
 
-async def _open_signups(league: SeasonLeague) -> None:
+def _signup_services(league: SeasonLeague) -> None:
+    """The real signup module service and driver service, the window's recording of its close
+    raising `league.close_fails` where set."""
     from leaguebot.core.services.driver_service import DriverService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
-    await league.switch("signup", True)
-    await league.write(
-        "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id, signups_open, "
-        "signup_button_message_id) VALUES (1, ?, 1, ?)",
-        SIGNUP_CHANNEL, SIGNUP_BUTTON,
-    )
-    signup = league._recording(channel(SIGNUP_CHANNEL, league.events))
-    signup.guild = league.guild
-    signup.seed(SIGNUP_BUTTON, "Sign Up")
-    league.channels[SIGNUP_CHANNEL] = signup
     service = SignupModuleService(league.db_path)
     closing = service.set_window_closed
 
@@ -1009,6 +1002,19 @@ async def _open_signups(league: SeasonLeague) -> None:
     service.set_window_closed = _set_window_closed
     league.bot.signup_module_service = service
     league.bot.driver_service = DriverService(league.db_path)
+
+
+async def _open_signups(league: SeasonLeague) -> None:
+    await league.switch("signup", True)
+    await league.write(
+        "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id, signups_open, "
+        "signup_button_message_id) VALUES (1, ?, 1, ?)",
+        SIGNUP_CHANNEL, SIGNUP_BUTTON,
+    )
+    signup = league._recording(channel(SIGNUP_CHANNEL, league.events))
+    signup.guild = league.guild
+    signup.seed(SIGNUP_BUTTON, "Sign Up")
+    league.channels[SIGNUP_CHANNEL] = signup
 
 
 async def window_open(league: SeasonLeague) -> bool:
