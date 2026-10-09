@@ -431,8 +431,8 @@ async def _checkin_attachment(
 
 #: What a failed repost's report says in place of the usual advice: the earlier call was left.
 EARLIER_CALL_STANDS = (
-    "the earlier call still stands, and the answers given to it count, though it does not "
-    "show what changed."
+    "the earlier call still stands, and the answers given to it count, those of drivers no "
+    "longer of the division excepted, which were dropped; it does not show what changed."
 )
 
 #: What a failed call's report says where no call stands but answers to an earlier one are
@@ -822,10 +822,10 @@ async def withdraw_rsvp_call(
     is "already gone", which counts as gone. A fault that is not Discord's propagates unchanged.
     *undeleted*, where also given, is filled all the same.
 
-    `run_rsvp_notice` takes down no call at all, the round's own included, so a round whose call
-    is posted twice would end up with both standing. This is the other half: it removes the
-    call, its last notice and its distribution announcement for one round, so a fresh call can
-    take their place. It is also how `run_rsvp_cleanup` takes them down after the round.
+    It removes a call, its last notice and its distribution announcement for one round:
+    `run_rsvp_notice` calls it for the earlier call once a repost has landed (with *call*), and
+    `run_rsvp_cleanup` to take them down after the round. Where Discord refuses a message in the
+    quiet form, the log channel names it (`_report_messages_left`).
 
     The recorded answers are **not** touched. They are what a repost carries over — a driver who
     said they were racing has not unsaid it because the round moved, and asking the division to
