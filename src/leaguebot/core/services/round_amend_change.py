@@ -508,7 +508,11 @@ def round_amend_change(
         is skipped by the scheduler. So, judged at the queue's clock: a round still to be run
         whose moment has passed has its results submission run at once through the scheduler,
         its phases due are drawn at once (`phases_due`), and its call, where none stands and its
-        check-in is not over, is posted where it has fallen due (`call_fell_due`)."""
+        check-in is not over, is posted where it has fallen due (`call_fell_due`).
+
+        Under test mode the results submission is not run at once: `/test-mode advance` runs a
+        test season's rounds in their turn (owner, 2026-10-09: "Leave it to /test-mode
+        advance"). Its call is still posted (`post_call`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
@@ -520,7 +524,8 @@ def round_amend_change(
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
                 "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
                 "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
-                "AND f.phase_number = 3) AS phase3_posted "
+                "AND f.phase_number = 3) AS phase3_posted, EXISTS ("
+                "SELECT 1 FROM server_configs c WHERE c.test_mode_active = 1) AS test_mode "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
                 (rnd.id,),
@@ -559,7 +564,8 @@ def round_amend_change(
                 last_notice_hours=attendance["last_notice_hours"],
                 deadline_hours=attendance["deadline_hours"],
             )
-        if rnd.status == RoundStatus.NOT_RUN.value and moment_of(rnd) <= now():
+        if (rnd.status == RoundStatus.NOT_RUN.value and moment_of(rnd) <= now()
+                and not found["test_mode"]):
             # After the arming above, whose job for this moment it replaces.
             scheduler.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier

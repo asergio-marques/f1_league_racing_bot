@@ -1528,7 +1528,6 @@ async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_an
     assert row["checkin_cleared"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a test season's passed round has its submission run")
 async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_stopped_is_left_to_test_mode_advance(
     tmp_path,
 ):
