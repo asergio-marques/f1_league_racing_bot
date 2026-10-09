@@ -474,6 +474,16 @@ async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
     return False
 
 
+async def _check_in_over(db_path: str, round_id: int) -> bool:
+    """Whether *round_id*'s check-in is marked over (``checkin_cleared``)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT checkin_cleared FROM rounds WHERE id = ?", (round_id,)
+        )
+        found = await cursor.fetchone()
+    return found is not None and bool(found["checkin_cleared"])
+
+
 async def _answers_kept(db_path: str, round_id: int) -> bool:
     """Whether any check-in answer is recorded for *round_id*."""
     async with get_connection(db_path) as db:
@@ -504,7 +514,11 @@ async def run_rsvp_notice(
 
     It posts nothing where the round's call already stands (#429), judged under the round's
     check-in lock so that two posters reaching the round at once post one call between them.
-    `test_two_calls_posted_at_once_for_one_round_post_one` pins it.
+    `test_two_calls_posted_at_once_for_one_round_post_one` pins it. Nor does it post, judged
+    under the same lock, where the round's check-in is already over (``checkin_cleared``): a post
+    that waited while the deadline, a give-up or the clean-up closed it would open attendance
+    rows nobody could answer (owner, 2026-10-09: "Fold it in";
+    `test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_posts_nothing`).
 
     *replacing* is the call `repost_rsvp_call` posts this one in place of (owner, 2026-10-09:
     "Fold it in"). Where it is the call found standing, the new call is posted beside it, and
@@ -580,6 +594,14 @@ async def run_rsvp_notice(
     # lock, a call found standing is left as it is: a second one beside it would be answered by
     # drivers and tracked by nothing.
     async with _check_in_lock(round_id):
+        if await _check_in_over(bot.db_path, round_id):
+            # A deadline with no call standing, a give-up or the clean-up a day after the round
+            # closed it while this post waited: nothing counts for the round any more, and a
+            # call posted now would open attendance rows nobody could answer.
+            log.info(
+                "run_rsvp_notice: round %d's check-in is over — no call posted", round_id
+            )
+            return
         standing = await bot.attendance_service.get_embed_message(round_id, division_id)
         if standing is not None and (
             replacing is None or standing.message_id != replacing.message_id

@@ -290,7 +290,6 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     assert len([line for line in lines if "NOT POSTED" in line]) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a call is posted for a round whose check-in is over")
 async def test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_posts_nothing(
     tmp_path,
 ):
