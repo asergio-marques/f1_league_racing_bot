@@ -1552,7 +1552,6 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a phase drawn at once is armed as well")
 async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its Phase 1 never drawn, is
     brought forward to four days, twenty-three hours and fifty-eight minutes out: its Phase 1

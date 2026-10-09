@@ -536,6 +536,7 @@ def round_amend_change(
         season_number, tier = int(found["season_number"]), int(found["tier"])
         weather = judgement["windows"]["weather"]
         weather_on = await modules.is_weather_enabled()
+        draw = phases_due(rnd, weather) if weather_on else []
         if weather_on and (
             rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)
         ):
@@ -546,6 +547,9 @@ def round_amend_change(
                 phase_1_days=weather["phase_1_days"],
                 phase_2_days=weather["phase_2_days"],
                 phase_3_hours=weather["phase_3_hours"],
+                # Drawn at once by a job of the amendment's: a timer for a horizon passed by
+                # less than the scheduler's misfire grace would draw it a second time.
+                skip_phases=frozenset(draw),
             )
         else:
             # Weather off, or a mystery round moved inside its first horizon, whose notice already
@@ -570,10 +574,7 @@ def round_amend_change(
             scheduler.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier
             )
-        planned = posts(
-            ctx, rnd, judgement, standing=dict(found),
-            draw=phases_due(rnd, weather) if weather_on else [],
-        )
+        planned = posts(ctx, rnd, judgement, standing=dict(found), draw=draw)
         return StepResult(result={"armed": True}, then=planned)
 
     def posts(

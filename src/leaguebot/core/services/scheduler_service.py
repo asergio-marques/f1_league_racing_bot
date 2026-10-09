@@ -25,6 +25,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -528,6 +529,7 @@ class SchedulerService:
         phase_1_days: int = 5,
         phase_2_days: int = 2,
         phase_3_hours: int = 2,
+        skip_phases: Collection[int] = frozenset(),
     ) -> None:
         """Register DateTrigger jobs for *rnd*.
 
@@ -557,6 +559,10 @@ class SchedulerService:
             phase_1_days:   Days before round to fire Phase 1 (default 5).
             phase_2_days:   Days before round to fire Phase 2 (default 2).
             phase_3_hours:  Hours before round to fire Phase 3 (default 2).
+            skip_phases:    Phases armed no job, for the caller draws them at once itself: an
+                            amendment's catch-up (`round_amend_change`). A job for a horizon
+                            passed by less than the misfire grace would run at once and draw
+                            the phase a second time.
         """
         scheduled_at = rnd.scheduled_at
         if scheduled_at.tzinfo is None:
@@ -571,6 +577,8 @@ class SchedulerService:
         }
 
         for phase_num, fire_at in horizons.items():
+            if phase_num in skip_phases:
+                continue
             job_id = f"weather_p{phase_num}{_suffix}"
             self._scheduler.add_job(
                 _weather_phase_job,

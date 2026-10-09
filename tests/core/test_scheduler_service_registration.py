@@ -249,7 +249,6 @@ def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late
     assert added.kwargs["kwargs"] == {"round_id": 21}
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a round's phases cannot be left out of its timers")
 def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
     """A phase an amendment draws at once, its horizon passed by less than the misfire grace, is
     left out of the round's timers, which would otherwise draw it a second time; the other
