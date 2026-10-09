@@ -381,12 +381,23 @@ async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
     assert await _checkin_cleared(db_path)
 
 
+async def _results_module(db_path: str, *, on: bool) -> None:
+    """The results module on or off, as `/module enable` and `/module disable` leave it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, ?)",
+            (int(on),),
+        )
+        await db.commit()
+
+
 async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attendance(tmp_path):
     """A round whose results are in and judged (FINAL), its check-in never marked over and no
     call record standing, its deadline long past: its driver's attendance was charged (points
     awarded) and a no-answer pardon granted. A start-up gives nothing up for it: no line in the
     log channel, and the attendance and the pardon stand."""
     db_path = await _make_db(tmp_path, until_round=-timedelta(days=3), round_status="FINAL")
+    await _results_module(db_path, on=True)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
@@ -428,6 +439,7 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
     db_path = await _make_db(
         tmp_path, until_round=-timedelta(days=3), round_status=status, checkin_cleared=cleared
     )
+    await _results_module(db_path, on=True)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
@@ -448,3 +460,38 @@ async def test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_i
         )).fetchall()
     assert len(rows) == 1
     assert await _checkin_cleared(db_path) == cleared
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a results-off round's missed call goes unreported")
+async def test_a_missed_call_of_a_round_final_with_results_off_is_reported_once_its_data_kept(
+    tmp_path,
+):
+    """The results module off, so a round is final once its moment passes. Its call was missed,
+    its deadline long gone, and an answer stands for it from an earlier call. A start-up still
+    reports the call as not posted, once, and leaves the round's attendance as it stands (owner,
+    2026-10-09: "Yes, still mention it")."""
+    db_path = await _make_db(tmp_path, until_round=-timedelta(days=3), round_status="FINAL")
+    await _results_module(db_path, on=False)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (?, ?, 201, 'ACCEPTED')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    bot = _make_bot(db_path)
+
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+        await _recover_missed_check_in_calls(bot, now=NOW + timedelta(minutes=10))
+
+    [line] = _logged(bot)
+    assert line.startswith("ATTENDANCE | check-in call | NOT POSTED")
+    assert "round: 4" in line
+    assert "No attendance rows were opened" not in line
+    assert "answers already recorded for this round are kept as they stand" in line
+    async with get_connection(db_path) as db:
+        rows = await (await db.execute(
+            "SELECT rsvp_status FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
+        )).fetchall()
+    assert [row["rsvp_status"] for row in rows] == ["ACCEPTED"]
