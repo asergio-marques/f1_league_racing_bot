@@ -509,7 +509,11 @@ class AttendanceService:
         message_id: str,
         channel_id: str,
     ) -> None:
-        """Store (or replace) the RSVP embed message IDs for a (round, division) pair."""
+        """Store (or replace) the RSVP embed message IDs for a (round, division) pair.
+
+        A call replacing one recorded for the pair takes its record in this one statement, its
+        last notice and distribution announcement cleared: they were the earlier call's, and the
+        new one has none yet (`run_rsvp_notice`'s *replacing*)."""
         now_iso = datetime.now(timezone.utc).isoformat()
         async with get_connection(self._db_path) as db:
             await db.execute(
@@ -519,7 +523,9 @@ class AttendanceService:
                 ON CONFLICT(round_id, division_id)
                 DO UPDATE SET message_id = excluded.message_id,
                               channel_id = excluded.channel_id,
-                              posted_at  = excluded.posted_at
+                              posted_at  = excluded.posted_at,
+                              last_notice_msg_id = NULL,
+                              distribution_msg_id = NULL
                 """,
                 (round_id, division_id, message_id, channel_id, now_iso),
             )

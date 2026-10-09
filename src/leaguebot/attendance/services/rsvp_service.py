@@ -718,10 +718,15 @@ async def run_rsvp_notice(
 
             discard_attachment(attachment)
 
-        if earlier is not None:
-            # The new call has landed: the earlier one comes down, messages and record, and
-            # its answers carry over to the new one.
-            await withdraw_rsvp_call(round_id, division_id, bot)
+        # Store message reference at once: replacing an earlier call, the new one takes its
+        # record in the same statement, so that a press on the new call finds it and a stop
+        # cannot leave it untracked.
+        await bot.attendance_service.insert_embed_message(
+            round_id=round_id,
+            division_id=division_id,
+            message_id=str(msg.id),
+            channel_id=str(msg.channel.id),
+        )
 
         # Bulk-insert DRA rows
         if all_driver_profile_ids:
@@ -731,13 +736,10 @@ async def run_rsvp_notice(
                 driver_profile_ids=all_driver_profile_ids,
             )
 
-        # Store message reference
-        await bot.attendance_service.insert_embed_message(
-            round_id=round_id,
-            division_id=division_id,
-            message_id=str(msg.id),
-            channel_id=str(msg.channel.id),
-        )
+        if earlier is not None:
+            # The new call has landed and is recorded: the earlier one's messages come down,
+            # its answers carried over to the new one.
+            await withdraw_rsvp_call(round_id, division_id, bot, call=earlier)
 
         log.info(
             "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
@@ -797,6 +799,7 @@ async def withdraw_rsvp_call(
     *,
     undeleted: list[str] | None = None,
     raise_on_failure: bool = False,
+    call: RsvpEmbedMessage | None = None,
 ) -> bool:
     """Take down the check-in call posted for *round_id*, and everything posted beside it.
 
@@ -806,6 +809,10 @@ async def withdraw_rsvp_call(
     channel gone, or Discord refusing — so a caller that must say so can. A message already
     deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
     row goes either way, since nothing would take the messages down again from it.
+
+    *call*, where given, is the call to take down in place of the one recorded: a repost's
+    earlier call, whose record the new call has already taken (`run_rsvp_notice`). Its messages
+    are deleted, and the record only where it is still that call's.
 
     *raise_on_failure* is for a caller that must stop on a failure and be tried again, as a
     round's or a division's cancellation on the change queue is. Every message is still tried;
@@ -824,7 +831,7 @@ async def withdraw_rsvp_call(
     said they were racing has not unsaid it because the round moved, and asking the division to
     answer again from nothing is how an amendment comes to look like nobody replied.
     """
-    stored = await bot.attendance_service.get_embed_message(round_id, division_id)
+    stored = call or await bot.attendance_service.get_embed_message(round_id, division_id)
     if stored is None:
         return False
 
@@ -864,8 +871,9 @@ async def withdraw_rsvp_call(
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
-            "DELETE FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
-            (round_id, division_id),
+            "DELETE FROM rsvp_embed_messages "
+            "WHERE round_id = ? AND division_id = ? AND message_id = ?",
+            (round_id, division_id, stored.message_id),
         )
         await db.commit()
     return True

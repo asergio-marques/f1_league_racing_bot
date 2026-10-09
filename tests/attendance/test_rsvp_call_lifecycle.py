@@ -511,7 +511,6 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     assert "the earlier call still stands, and the answers given to it count" in line
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the new call is recorded after the old one goes")
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. The call
     is posted again and lands, as message 990099: only then does the earlier call come down, its
