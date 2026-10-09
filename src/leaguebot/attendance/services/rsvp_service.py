@@ -744,9 +744,13 @@ async def run_rsvp_notice(
                 "run_rsvp_notice: failed to post embed for division %d: %r",
                 division_id, exc,
             )
-            reason = f"the call could not be posted: {exc or type(exc).__name__}"
+            # A bare timeout carries no message, so the fault's kind is named in its place.
+            reason = f"the call could not be posted: {str(exc) or type(exc).__name__}"
             if isinstance(exc, TimeoutError):
-                reason += "; it may have reached Discord all the same; check the channel"
+                reason += (
+                    "; it may have reached Discord all the same; check the channel, and if it is"
+                    " there, delete it before posting the call again"
+                )
             if earlier is not None and await _call_vanished(bot, earlier):
                 # As above: a take-down that deleted the call but not its last notice leaves a
                 # record of a call nobody can see (owner, 2026-10-09: "Make it").

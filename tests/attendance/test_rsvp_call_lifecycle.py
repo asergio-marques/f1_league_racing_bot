@@ -614,10 +614,7 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
 @pytest.mark.parametrize("fault", [
     pytest.param(OSError("network unreachable"), id="the network failing"),
     pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),
-    pytest.param(
-        asyncio.TimeoutError(), id="the send timing out",
-        marks=pytest.mark.xfail(strict=True, reason="#439: a bare timeout logs an empty reason"),
-    ),
+    pytest.param(asyncio.TimeoutError(), id="the send timing out"),
 ])
 async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_posted(
     tmp_path, fault,
