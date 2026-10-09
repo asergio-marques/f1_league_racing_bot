@@ -279,6 +279,9 @@ def round_amend_change(
         return StepResult(
             result={
                 "judged": True,
+                # The check judged the amendment as it started. A job that stopped here and was
+                # tried again later is judged again, and the save refuses what is no longer allowed.
+                "refused": None if verdict.allowed else no_longer_amendable(verdict.refusals),
                 "withdrawn": withdrawn,
                 "posted": [n for n in withdrawn if flags[n]],
                 "rerun": [
@@ -326,6 +329,8 @@ def round_amend_change(
             refusal = ROUND_GONE
         elif row["status"] not in ROUND_CANCELLABLE:
             refusal = no_longer_amendable([status_refusal(row["status"])])
+        elif judgement.get("refused"):
+            refusal = str(judgement["refused"])
         if row is None or refusal is not None:
             # A backstop: the check passed, and something wrote the database after it.
             return StepResult(
