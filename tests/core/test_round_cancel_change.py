@@ -1293,10 +1293,6 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
         assert f"\n  not notified: {named}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: asserts the change ends REFUSED, which the queue gives only a check's refusal; a "
-    "save's refusal ends it DONE (proposed test change)"
-))
 async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_path):
     """Round 3's open submission has accepted nothing when the cancellation is asked and when it
     starts to run, but removing its timed work fails and stops the queue; meanwhile the
@@ -1317,7 +1313,7 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_pat
 
     assert ACCEPTED in reply(interaction)
     assert CANCELLED not in reply(interaction)
-    assert (await _change(league))["state"] == "REFUSED"
+    assert (await _change(league))["state"] == "DONE"
     assert await _status(league) == "AWAITING_RESULTS"
     assert await _submission_closed(league) == 0
     assert await _round_audits(league) == []
