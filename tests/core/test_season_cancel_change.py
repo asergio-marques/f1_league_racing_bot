@@ -67,8 +67,10 @@ from tests.support.season_league import (
     SIGNING_UP,
     SUBMISSION_CHANNEL,
     TEST_DRIVER,
+    UNASSIGNED,
     WIND_DOWN_KIND,
     accept_session,
+    approved_unplaced,
     backup_saved,
     cancel_season,
     complete_season,
@@ -136,6 +138,15 @@ ROLES_KEPT = (
     "roles and the driver role by hand."
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
+WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+FORECASTS_KEPT = (
+    "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
+    "forecast channel."
+)
+SIGNUP_KEPT = f"<@{SIGNING_UP}> — their signup channel could not be closed. Delete it by hand."
+DRIVER_ROLE_KEPT = (
+    f"<@{UNASSIGNED}> — the driver role could not be taken back. Remove it by hand."
+)
 CHECKIN_R3 = (
     "\n  check-in, Pro, Round 3 (Silverstone):"
     "\n    accepted: `<@101>`"
@@ -1289,6 +1300,75 @@ async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_d
     [line] = _success_lines(league)
     assert f"\n  not notified: {unset}" in line
     assert f"\n  not notified: {fell_back}" in line
+    assert await _status(league) == "CANCELLED"
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_driver_approved_but_never_placed_loses_the_driver_role(tmp_path):
+    league = await ongoing_league(tmp_path, held=True)
+    await approved_unplaced(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert ("take_driver_role", UNASSIGNED) in await _names(league)
+    assert league.revoked[UNASSIGNED] == [DRIVER_ROLE]
+    assert await driver_state(league, UNASSIGNED) is None
+    assert await _status(league) == "CANCELLED"
+
+
+async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await ongoing_league(tmp_path, signups_open=True)
+    league.close_fails = RuntimeError("the window could not be recorded closed")
+    return league
+
+
+async def _flush_refused(tmp_path: Any, monkeypatch: Any) -> Any:
+    _flush_failing(monkeypatch, {"now": True})
+    return await ongoing_league(tmp_path, test_mode=True)
+
+
+async def _lock_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await ongoing_league(tmp_path)
+    await signing_up(league)
+    league.lock_fails[SIGNING_UP] = _forbidden()
+    return league
+
+
+async def _role_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await ongoing_league(tmp_path, held=True)
+    await approved_unplaced(league)
+    league.revoke_fails[UNASSIGNED] = _forbidden()
+    return league
+
+
+#: Each job a league admin may discard: the league that makes it fail, where the queue stops,
+#: and what the reply and the line say was not done.
+_DISCARDS = {
+    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
+    "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
+    "take_driver_role": (_role_refused, ("take_driver_role", UNASSIGNED), DRIVER_ROLE_KEPT),
+}
+
+
+@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_success_line(
+    tmp_path, monkeypatch, job,
+):
+    build, where, text = _DISCARDS[job]
+    league = await build(tmp_path, monkeypatch)
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == where
+
+    await discard_job(league.bot)
+
+    assert CANCELLED in reply(interaction)
+    assert text in _not_done(reply(interaction))
+    [line] = _success_lines(league)
+    assert f"  not done: {text}" in line
     assert await _status(league) == "CANCELLED"
 
 

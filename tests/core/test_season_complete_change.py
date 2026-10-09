@@ -62,6 +62,8 @@ from tests.support.season_league import (
     SEASON_ID,
     SIGNING_UP,
     TEST_DRIVER,
+    UNASSIGNED,
+    approved_unplaced,
     backup_saved,
     complete_season,
     driver_state,
@@ -121,6 +123,19 @@ BACKUP_KEPT = (
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+FORECASTS_KEPT = (
+    "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
+    "forecast channel."
+)
+SIGNUP_KEPT = f"<@{SIGNING_UP}> — their signup channel could not be closed. Delete it by hand."
+DRIVER_ROLE_KEPT = (
+    f"<@{UNASSIGNED}> — the driver role could not be taken back. Remove it by hand."
+)
+PRO_SHEET_NOT_POSTED = (
+    "**Pro** — its final classification (attendance sheet) could not be posted. No command "
+    "posts it again."
+)
 #: 2.11's refusal, for each other kind of a season's end in hand.
 IN_HAND = {
     SEASON_CANCEL_KIND: (
@@ -965,6 +980,20 @@ async def test_every_real_driver_of_the_season_loses_their_roles_and_a_test_driv
     assert ("revoke_roles", TEST_DRIVER) not in await _names(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_driver_approved_but_never_placed_loses_the_driver_role(tmp_path):
+    league = await pending_completion_league(tmp_path)
+    await approved_unplaced(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert ("take_driver_role", UNASSIGNED) in await _names(league)
+    assert league.revoked[UNASSIGNED] == [DRIVER_ROLE]
+    assert await driver_state(league, UNASSIGNED) is None
+    assert await _status(league) == "COMPLETED"
+
+
 async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(tmp_path):
     league = await pending_completion_league(tmp_path)
     league.absent.add(MAX)
@@ -1173,6 +1202,69 @@ async def test_a_discarded_backup_deletion_is_named_with_the_toggle_that_deletes
     [line] = _closing_lines(league)
     assert INCOMPLETE in line and f"  not done: {BACKUP_KEPT}" in line
     assert backup_saved(league)
+
+
+async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    league.close_fails = RuntimeError("the window could not be recorded closed")
+    return league
+
+
+async def _flush_refused(tmp_path: Any, monkeypatch: Any) -> Any:
+    _flush_failing(monkeypatch, {"now": True})
+    return await pending_completion_league(tmp_path, test_mode=True)
+
+
+async def _lock_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await pending_completion_league(tmp_path)
+    await signing_up(league)
+    league.lock_fails[SIGNING_UP] = _forbidden()
+    return league
+
+
+async def _role_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await pending_completion_league(tmp_path)
+    await approved_unplaced(league)
+    league.revoke_fails[UNASSIGNED] = _forbidden()
+    return league
+
+
+async def _sheet_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    league = await pending_completion_league(tmp_path, attendance=True)
+    league.channel(PRO_CH.attendance).send_fails = _forbidden()
+    return league
+
+
+#: Each job a league admin may discard: the league that makes it fail, where the queue stops,
+#: and what the reply and the line say was not done.
+_DISCARDS = {
+    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
+    "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
+    "take_driver_role": (_role_refused, ("take_driver_role", UNASSIGNED), DRIVER_ROLE_KEPT),
+    "final_sheet": (_sheet_refused, ("final_sheet", PRO), PRO_SHEET_NOT_POSTED),
+}
+
+
+@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_discarded_job_is_named_with_what_to_do_by_hand_and_the_line_says_incomplete(
+    tmp_path, monkeypatch, job,
+):
+    build, where, text = _DISCARDS[job]
+    league = await build(tmp_path, monkeypatch)
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == where
+
+    await discard_job(league.bot)
+
+    assert COMPLETED in reply(interaction)
+    assert text in _not_done(reply(interaction))
+    [line] = _closing_lines(league)
+    assert INCOMPLETE in line
+    assert f"  not done: {text}" in line
+    assert await _status(league) == "COMPLETED"
 
 
 # ── A signup channel's notice, before its lock (F2) ─────────────────────────────────
