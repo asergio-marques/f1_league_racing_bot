@@ -1783,6 +1783,7 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     assert (await _job(league, "post_call"))["result"] == {"posted": False, "vanished": True}
     assert "kept" not in outcome
     assert "none can be seen" in outcome and "`/attendance post-check-in`" in outcome
+    assert "once the cause is cleared (or the check-in channel is set)" in outcome
     [line] = [line for line in _log_lines(league)
               if line.startswith("ATTENDANCE | check-in call | NOT POSTED")]
     assert "no call for this round can be seen" in line

@@ -900,8 +900,8 @@ def round_amend_change(
                     failures.append(notices.NoticeFailure(
                         division, "check-in call",
                         "it could not be posted again and none can be seen; post it by hand "
-                        "with `/attendance post-check-in` once the check-in channel is set, "
-                        "and see the log channel",
+                        "with `/attendance post-check-in` once the cause is cleared (or the "
+                        "check-in channel is set), and see the log channel",
                     ))
                     continue
                 if (view(ctx, POST_CALL).result or {}).get("earlier_left"):

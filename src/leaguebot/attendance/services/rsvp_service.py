@@ -451,9 +451,9 @@ ANSWERS_KEPT = (
 VANISHED_CALL = (
     "no call for this round can be seen, its message or the channel it was posted in being "
     "gone, so its record was dropped; the answers given to it are kept, and count if the call is "
-    "posted before the check-in deadline; past it they are cleared. Once the check-in channel "
-    "is set, post the call by hand with `/attendance post-check-in division: {division} round: "
-    "{round}`."
+    "posted before the check-in deadline; past it they are cleared. Once the cause is cleared "
+    "(or the check-in channel is set), post the call by hand with `/attendance post-check-in "
+    "division: {division} round: {round}`."
 )
 
 

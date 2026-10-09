@@ -526,6 +526,7 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     if fault == "the channel is gone":
         assert stored is None
         assert "no call for this round can be seen" in line
+        assert "Once the cause is cleared (or the check-in channel is set)" in line
         assert "the answers given to it are kept, and count" in line
         assert "`/attendance post-check-in division: Division 1 round: 1`" in line
         assert "the earlier call still stands" not in line
