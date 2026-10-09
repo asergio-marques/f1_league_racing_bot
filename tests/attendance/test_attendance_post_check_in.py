@@ -254,7 +254,6 @@ async def test_a_cancelled_round_is_refused(tmp_path):
     assert "cancelled" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a closed check-in is answered 'the log says why'")
 async def test_a_round_whose_check_in_is_over_is_refused(tmp_path):
     """A round whose check-in is over, closed by its deadline with no call standing or given up
     at a restart, has nothing left to answer: the command refuses it up front, in one line, and
