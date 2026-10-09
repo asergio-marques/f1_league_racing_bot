@@ -254,9 +254,6 @@ async def _run(
         "close": patch(
             "leaguebot.results.services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
-        "refresh": patch(
-            "leaguebot.core.services.season_service.SeasonService.refresh_division_status", new=AsyncMock()
-        ),
     }
     if hasattr(result_submission_service, "enter_penalty_state"):
         # The handover before the review moved onto the queue (#439), kept inert while it
@@ -315,12 +312,17 @@ async def test_with_results_off_the_round_ends_at_its_start(tmp_path):
     """#154: nobody will ever enter a result, so the round would otherwise stay outstanding
     for ever and the season could never be completed."""
     db_path = await _make_db(tmp_path, name="wizard_off")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (DIVISION_ID,))
+        await db.commit()
     bot = _bot(db_path, [], results_enabled=False)
 
     stubs = await _run(bot)
 
     assert await _round_status(db_path) == "FINAL"
-    stubs["refresh"].assert_awaited_once_with(DIVISION_ID)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT status FROM divisions WHERE id = ?", (DIVISION_ID,))
+        assert (await cursor.fetchone())[0] == "FINISHED"
     stubs["create"].assert_not_awaited()
 
 
