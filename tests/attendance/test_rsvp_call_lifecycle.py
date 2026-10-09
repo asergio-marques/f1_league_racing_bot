@@ -783,3 +783,36 @@ async def test_reopening_a_check_in_on_the_connection_handed_commits_nothing(tmp
             RESERVE_PROFILE: ("ACCEPTED", 10, 0),
             STANDBY_PROFILE: ("ACCEPTED", None, 1),
         }
+
+
+async def test_clearing_a_round_s_answers_on_the_connection_handed_commits_nothing(tmp_path):
+    """Round 1's reserve placed in Alpha, a second reserve on standby, both having accepted.
+    Clearing the round's check-in answers on a connection deletes both answers, their placements
+    with them. Nothing of it outlasts a rollback."""
+    from leaguebot.attendance.services.rsvp_service import clear_check_in_answers_on
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ACTIVE', 1, 'Second Reserve')",
+            (STANDBY_PROFILE, str(STANDBY_PROFILE)),
+        )
+        for profile_id, team_id, standby in ((RESERVE_PROFILE, 10, 0), (STANDBY_PROFILE, None, 1)):
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status, assigned_team_id, is_standby) VALUES (?, ?, ?, 'ACCEPTED', ?, ?)",
+                (ROUND_ID, DIVISION_ID, profile_id, team_id, standby),
+            )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        await clear_check_in_answers_on(db, ROUND_ID)
+        assert await _distributed(db) == {}
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _distributed(db) == {
+            RESERVE_PROFILE: ("ACCEPTED", 10, 0),
+            STANDBY_PROFILE: ("ACCEPTED", None, 1),
+        }

@@ -136,7 +136,9 @@ class AmendHooks:
     a restart at the same moment is not posted twice), *give_up_call* reports a call whose
     deadline passed before it could be posted and closes the round's check-in, as the start-up
     recovery does, raising where the close cannot be saved so that the queue stops rather than
-    report a give-up never made, handed the bot and the round's ``round_id``, ``round_number``, ``division_id``, ``division_name`` and ``season_number``.
+    report a give-up never made, handed the bot, the round's ``round_id``, ``round_number``,
+    ``division_id``, ``division_name`` and ``season_number``, and whether to clear the round's
+    check-in answers and the placements made on them in the same save.
     *run_deadline* runs the round's check-in deadline, *clean_up_forecast* deletes its Phase 3
     forecast and *clean_up_check_in* takes its check-in down, each as its timer would, for a
     moment that passed while the amendment stood stopped. *round_list* formats the division's
@@ -151,7 +153,7 @@ class AmendHooks:
     reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
     repost_call: Callable[[int, int, Any], Awaitable[None]]
     post_call: Callable[[int, Any], Awaitable[None]]
-    give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[None]]
+    give_up_call: Callable[[Any, Mapping[str, Any], bool], Awaitable[None]]
     run_deadline: Callable[[int, Any], Awaitable[None]]
     clean_up_forecast: Callable[[int, Any], Awaitable[None]]
     clean_up_check_in: Callable[[int, Any], Awaitable[None]]
@@ -711,9 +713,12 @@ def round_amend_change(
         nothing is posted: the log channel is told and the round's check-in closed, as the
         start-up recovery gives up a missed call (`give_up_call`; owner, 2026-10-09). A call is
         given up only where none stands: one standing is the round's live call, or the old one a
-        discarded take-down left, and is left as it is. The call is posted under test mode too,
-        unlike the start-up recovery, which leaves a test season's calls to `/test-mode advance`
-        (owner, 2026-10-09: "Post it anyway")."""
+        discarded take-down left, and is left as it is. Given up after the amendment took the old
+        call down, the round's answers to it and the placements made on them are cleared in the
+        same save, so that the log channel's line that the round counts nothing against anyone
+        holds true (owner, 2026-10-09: "Clear the answers, keep the line true"). The call is
+        posted under test mode too, unlike the start-up recovery, which leaves a test season's
+        calls to `/test-mode advance` (owner, 2026-10-09: "Post it anyway")."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -733,7 +738,8 @@ def round_amend_change(
                 found = await cursor.fetchone()
             if found is None:
                 raise LookupError(f"division {rnd.division_id} is no longer there")
-            await hooks.give_up_call(ctx.bot, dict(found))
+            took_down = "taken_down" in (view(ctx, TAKE_DOWN_CALL).result or {})
+            await hooks.give_up_call(ctx.bot, dict(found), took_down)
             return StepResult(result={"given_up": True})
         if replacing(ctx):
             await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)

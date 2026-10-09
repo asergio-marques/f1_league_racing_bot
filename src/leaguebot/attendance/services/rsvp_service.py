@@ -692,6 +692,24 @@ async def reopen_check_in_on(db: aiosqlite.Connection, round_id: int) -> None:
     )
 
 
+# ── clear_check_in_answers_on ─────────────────────────────────────────────────
+
+
+async def clear_check_in_answers_on(db: aiosqlite.Connection, round_id: int) -> None:
+    """Delete a round's check-in answers on *db*, and the reserve placements made on them,
+    committing nothing.
+
+    For a round whose call an amendment took down and then gave up, its deadline having passed
+    before the call could be posted again (owner, 2026-10-09: "Clear the answers, keep the line
+    true"). The answers were given to a call that no longer stands, and the placements made
+    from them, by a deadline run meanwhile, against it: left, the round would charge a driver
+    with not answering, or a reserve with not racing, for a check-in the log channel has said
+    opened no attendance rows and counts nothing against anyone. A placement is a column of its
+    answer's row, so it goes with it.
+    """
+    await db.execute("DELETE FROM driver_round_attendance WHERE round_id = ?", (round_id,))
+
+
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
 
 

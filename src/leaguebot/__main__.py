@@ -209,8 +209,8 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def post_call(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_notice(round_id, bot_)
 
-    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> None:
-        await _give_up_missed_check_in_call(bot_, row)
+    async def give_up_call(bot_: Any, row: Mapping[str, Any], clear_answers: bool) -> None:
+        await _give_up_missed_check_in_call(bot_, row, clear_answers=clear_answers)
 
     async def run_deadline(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_deadline(round_id, bot_)
@@ -950,7 +950,9 @@ async def _recover_missed_check_in_calls(
             )
 
 
-async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
+async def _give_up_missed_check_in_call(
+    bot: LeagueBot, row: Any, *, clear_answers: bool = False
+) -> None:
     """Report a round whose call and deadline both went by unposted, and close its check-in.
 
     Decided 2026-09-24 (#429): no call is posted once the deadline has passed. A call nobody
@@ -962,6 +964,12 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     mark says, and it is what keeps the next start from reporting it again. An amendment that
     reopens the round's check-in clears the mark, as it does after a cleanup.
 
+    With *clear_answers*, the round's check-in answers and the placements made on them are
+    deleted in the same save (`clear_check_in_answers_on`): an amendment that took the round's
+    call down and then gives it up leaves answers to a call no longer standing, which would
+    otherwise make the line below untrue (owner, 2026-10-09). The start-up recovery gives up
+    only a round no call was posted for, which holds none.
+
     **It raises** where the mark cannot be saved, and the mark is saved before the log channel
     is told, so that a give-up tried again tells it once. The start-up recovery catches the
     fault, logs it on the host and goes on to the next round; an amendment's catch-up on the
@@ -970,7 +978,10 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     (`test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried`).
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.attendance.services.rsvp_service import _report_call_failure
+    from leaguebot.attendance.services.rsvp_service import (
+        _report_call_failure,
+        clear_check_in_answers_on,
+    )
 
     round_id: int = row["round_id"]
     log.info(
@@ -979,6 +990,8 @@ async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
     )
     async with get_connection(bot.db_path) as db:
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        if clear_answers:
+            await clear_check_in_answers_on(db, round_id)
         await db.commit()
     await _report_call_failure(
         bot,

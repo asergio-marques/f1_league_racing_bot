@@ -1494,7 +1494,6 @@ async def test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_
     assert row["checkin_cleared"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a call given up after its take-down keeps answers")
 async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_and_placements(
     tmp_path, reposts,
 ):
