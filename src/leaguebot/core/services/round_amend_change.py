@@ -279,30 +279,22 @@ def round_amend_change(
     # ── The jobs ────────────────────────────────────────────────────────────────
 
     async def judge(ctx: StepContext) -> StepResult:
-        """Judge the amendment against the round as it stands, and keep the windows the later
-        jobs judge it by.
+        """Keep the windows the later jobs judge the amendment by, the round being still there.
 
-        It writes nothing. The windows are read here, outside any save, because a save reads no
-        other connection. What the amendment withdraws and what becomes of the check-in call are
-        not kept here, nor the phases to draw at once: the save plans the first from what it
-        reads when it runs and the arming the rest, and a stop between them can last for hours
-        (owner, 2026-10-09)."""
+        It writes nothing and refuses nothing. The windows are read here, outside any save,
+        because a save reads no other connection. The amendment is judged when it is asked and
+        again in the save, against what the save reads at the queue's clock (`judged_again`), so
+        that its refusal is spoken once, at the save's own moment, however long a stop between
+        them lasts. What the amendment withdraws and what becomes of the check-in call are not
+        kept here, nor the phases to draw at once: the save plans the first from what it reads
+        when it runs and the arming the rest (owner, 2026-10-09)."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
-        values = amended_values(ctx.payload["changes"])
         attendance, weather = await hooks.windows()
-        moment = now()
-        verdict = judge_amendment(
-            rnd, values, now=moment, attendance=attendance, weather=weather
-        )
         return StepResult(
             result={
                 "judged": True,
-                # The check judged the amendment as it started; this is the verdict reached as
-                # `judge` ran, retried or not, and the save refuses on it. The save judges it once
-                # more against what it reads (`judged_again`), for a stop at a later job.
-                "refused": None if verdict.allowed else no_longer_amendable(verdict.refusals),
                 "windows": {
                     "attendance": dataclasses.asdict(attendance) if attendance else None,
                     "weather": dataclasses.asdict(weather),
@@ -358,8 +350,7 @@ def round_amend_change(
         division's renumbering and the success line, reading nothing but the connection.
 
         It judges the amendment again before it writes (`judged_again`), and refuses, writing
-        nothing, where the round's status, `judge`'s verdict or that judgement says it may no
-        longer be made. What follows the save is planned from that judgement, made when the save
+        nothing, where the round's status or that judgement says it may no longer be made. What follows the save is planned from that judgement, made when the save
         runs, and kept with it for the arming to read: the forecasts it withdraws (`withdrawn`),
         those of them that were posted (`posted`, by the flags it reads), whether it reopens the
         check-in (`reopened`) and whether a call stood (`called`). Planned from `judge`'s instead,
@@ -381,8 +372,6 @@ def round_amend_change(
             refusal = ROUND_GONE
         elif row["status"] not in ROUND_CANCELLABLE:
             refusal = no_longer_amendable([status_refusal(row["status"])])
-        elif judgement.get("refused"):
-            refusal = str(judgement["refused"])
         else:
             verdict = judged_again(row, ctx.payload["changes"], judgement)
             if not verdict.allowed:
