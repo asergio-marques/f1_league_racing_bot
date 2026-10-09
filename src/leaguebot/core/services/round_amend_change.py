@@ -544,16 +544,27 @@ def round_amend_change(
         return StepResult(result={"phase": phase})
 
     async def close_due(ctx: StepContext) -> bool:
-        return saved(ctx)
+        """The close is due where the amendment was saved, and where a job before the save was
+        discarded, to read the number the round bears then for the reply."""
+        return saved(ctx) or any(
+            discarded(view(ctx, name)) for name in (JUDGE, UNARM, APPLY)
+        )
 
     async def close(ctx: StepContext) -> StepResult:
-        """Read the division's rounds for the reply."""
+        """Read the division's rounds for the reply, and the number the round bears now: an
+        amendment ahead of this one can have renumbered the division since Confirm."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         rounds = [] if rnd is None else await seasons.get_division_rounds(rnd.division_id)
-        return StepResult(result={"round_list": hooks.round_list(rounds) if rounds else ""})
+        return StepResult(
+            result={
+                "round_list": hooks.round_list(rounds) if rounds and saved(ctx) else "",
+                "round_number": ctx.payload["round_number"] if rnd is None else rnd.round_number,
+            }
+        )
 
     def outcome(ctx: OutcomeContext) -> str:
-        words = {"number": ctx.payload["round_number"], "division": ctx.payload["division_name"]}
+        number = (view(ctx, CLOSE).result or {}).get("round_number", ctx.payload["round_number"])
+        words = {"number": number, "division": ctx.payload["division_name"]}
         if discarded(view(ctx, JUDGE)) or discarded(view(ctx, UNARM)):
             return NOTHING_AMENDED.format(**words)
         refused = (view(ctx, APPLY).result or {}).get("refused")
