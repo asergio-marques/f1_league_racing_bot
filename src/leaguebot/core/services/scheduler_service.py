@@ -833,6 +833,28 @@ class SchedulerService:
             )
             log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
 
+    def run_result_submission_now(
+        self, rnd: Round, *, season_number: int, division_tier: int
+    ) -> None:
+        """Run *rnd*'s results submission at once, as its own job would have at its moment.
+
+        For a round whose moment passed while its timed work stood removed, as an amendment
+        stopped on the change queue leaves it: the job armed again against that moment is past
+        the misfire grace and would be skipped, and it is the round's one way off Not run. It
+        replaces that job under the same id, armed with no trigger, which APScheduler runs at
+        once, and with no lateness limit, so that a restart before it runs still runs it.
+        """
+        job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
+        self._scheduler.add_job(
+            _result_submission_job_wrapper,
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=None,
+            name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
+            kwargs={"round_id": rnd.id},
+        )
+        log.info("Running %s at once: the round's moment has passed", job_id)
+
     def _remove_job(self, job_id: str) -> bool:
         """Remove *job_id*, and say whether it went; never raises (see the class docstring).
 

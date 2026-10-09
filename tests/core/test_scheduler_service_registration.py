@@ -232,7 +232,6 @@ def test_a_naive_round_time_is_read_as_utc():
     assert _added(service)[0].kwargs["trigger"].run_date.utcoffset() == timedelta(0)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a round's results submission can be run at once")
 def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():
     """A round whose moment passed while its timed work stood removed (an amendment stopped on
     the change queue) has its results submission run at once: the round's own job, under its
