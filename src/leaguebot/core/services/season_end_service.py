@@ -28,6 +28,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.member_names import member_named
 
 if TYPE_CHECKING:
+    import aiosqlite
     import discord
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.core.models.season import Season
@@ -166,8 +167,12 @@ async def end_of_season_pass(
     return result
 
 
-async def _write_driver_history_entries(
-    season: "Season", bot: "LeagueBot", *, force_cancelled: bool = False
+async def write_driver_history_entries_on(
+    db: "aiosqlite.Connection",
+    season_id: int,
+    season_number: int,
+    *,
+    force_cancelled: bool = False,
 ) -> None:
     """Write a DriverHistoryEntry for every division each driver took part in during the season.
 
@@ -176,6 +181,8 @@ async def _write_driver_history_entries(
     or sacked mid-season holds an entry for every division they raced in, as the season's
     history lists them (issue #220). Read from ``driver_division_memberships``, which records
     each committed placement as it is committed and is never cleared by a placement changing.
+
+    Commits nothing: the caller's connection carries the write and the caller commits it.
 
     Sources:
     - season_number, division_name, division_tier: from the season/division rows
@@ -196,119 +203,126 @@ async def _write_driver_history_entries(
     read the right statuses but put the rows beyond reach of a retry, since the command refuses
     once the season is no longer active, and a failure between the two would lose them for good.
     """
-    db_path: str = bot.db_path
+    # Every driver × division a committed placement was ever held in this season.
+    cursor = await db.execute(
+        """
+        SELECT m.driver_profile_id,
+               dp.discord_user_id,
+               d.id     AS division_id,
+               d.name   AS division_name,
+               d.tier   AS division_tier,
+               d.status AS division_status
+        FROM driver_division_memberships m
+        JOIN divisions d ON d.id = m.division_id
+        JOIN driver_profiles dp ON dp.id = m.driver_profile_id
+        WHERE m.season_id = ?
+        ORDER BY m.id
+        """,
+        (season_id,),
+    )
+    assignments = list(await cursor.fetchall())
 
-    async with get_connection(db_path) as db:
-        # Every driver × division a committed placement was ever held in this season.
+    if not assignments:
+        log.info(
+            "write_driver_history_entries_on: no assignments for season %s — skipping.",
+            season_id,
+        )
+        return
+
+    # For each division, determine the winner's final points (max at last round)
+    division_ids = list({row["division_id"] for row in assignments})
+    division_winner_points: dict[int, int] = {}
+    for div_id in division_ids:
         cursor = await db.execute(
             """
-            SELECT m.driver_profile_id,
-                   dp.discord_user_id,
-                   d.id     AS division_id,
-                   d.name   AS division_name,
-                   d.tier   AS division_tier,
-                   d.status AS division_status
-            FROM driver_division_memberships m
-            JOIN divisions d ON d.id = m.division_id
-            JOIN driver_profiles dp ON dp.id = m.driver_profile_id
-            WHERE m.season_id = ?
-            ORDER BY m.id
+            SELECT MAX(dss.total_points)
+            FROM driver_standings_snapshots dss
+            WHERE dss.division_id = ?
+              AND dss.round_id = (
+                  SELECT dss2.round_id
+                  FROM driver_standings_snapshots dss2
+                  JOIN rounds r ON r.id = dss2.round_id
+                  WHERE dss2.division_id = ?
+                  ORDER BY r.round_number DESC
+                  LIMIT 1
+              )
             """,
-            (season.id,),
+            (div_id, div_id),
         )
-        assignments = list(await cursor.fetchall())
+        row = await cursor.fetchone()
+        division_winner_points[div_id] = (row[0] if row and row[0] is not None else 0)
 
-        if not assignments:
-            log.info(
-                "_write_driver_history_entries: no assignments for season %s — skipping.",
-                season.id,
-            )
-            return
+    # Write a history entry for each driver × division
+    for asgn in assignments:
+        driver_profile_id = asgn["driver_profile_id"]
+        div_id = asgn["division_id"]
+        div_name = asgn["division_name"]
+        div_tier = asgn["division_tier"] or 0
+        # Cancellation reaches a driver only through their division: cancelling a
+        # season cancels each of its divisions first, so the division's status is
+        # the whole answer however the cancellation was ordered.
+        cancelled = 1 if (force_cancelled or asgn["division_status"] == "CANCELLED") else 0
 
-        # For each division, determine the winner's final points (max at last round)
-        division_ids = list({row["division_id"] for row in assignments})
-        division_winner_points: dict[int, int] = {}
-        for div_id in division_ids:
-            cursor = await db.execute(
-                """
-                SELECT MAX(dss.total_points)
-                FROM driver_standings_snapshots dss
-                WHERE dss.division_id = ?
-                  AND dss.round_id = (
-                      SELECT dss2.round_id
-                      FROM driver_standings_snapshots dss2
-                      JOIN rounds r ON r.id = dss2.round_id
-                      WHERE dss2.division_id = ?
-                      ORDER BY r.round_number DESC
-                      LIMIT 1
-                  )
-                """,
-                (div_id, div_id),
-            )
-            row = await cursor.fetchone()
-            division_winner_points[div_id] = (row[0] if row and row[0] is not None else 0)
+        # Fetch the most recent standings snapshot for this driver × division, under
+        # whichever of their accounts it stands (issue #243): a driver who changed
+        # account after the last round finished it under the old one.
+        cursor = await db.execute(
+            """
+            SELECT dss.total_points, dss.standing_position
+            FROM driver_standings_snapshots dss
+            JOIN rounds r ON r.id = dss.round_id
+            JOIN driver_accounts da
+              ON CAST(da.discord_user_id AS INTEGER) = dss.driver_user_id
+            WHERE dss.division_id = ? AND da.driver_profile_id = ?
+            ORDER BY r.round_number DESC
+            LIMIT 1
+            """,
+            (div_id, driver_profile_id),
+        )
+        snap = await cursor.fetchone()
+        final_points = snap["total_points"] if snap else 0
+        final_position = snap["standing_position"] if snap else 0
 
-        # Write a history entry for each driver × division
-        for asgn in assignments:
-            driver_profile_id = asgn["driver_profile_id"]
-            div_id = asgn["division_id"]
-            div_name = asgn["division_name"]
-            div_tier = asgn["division_tier"] or 0
-            # Cancellation reaches a driver only through their division: cancelling a
-            # season cancels each of its divisions first, so the division's status is
-            # the whole answer however the cancellation was ordered.
-            cancelled = 1 if (force_cancelled or asgn["division_status"] == "CANCELLED") else 0
+        winner_points = division_winner_points.get(div_id, 0)
+        points_gap = winner_points - final_points
 
-            # Fetch the most recent standings snapshot for this driver × division, under
-            # whichever of their accounts it stands (issue #243): a driver who changed
-            # account after the last round finished it under the old one.
-            cursor = await db.execute(
-                """
-                SELECT dss.total_points, dss.standing_position
-                FROM driver_standings_snapshots dss
-                JOIN rounds r ON r.id = dss.round_id
-                JOIN driver_accounts da
-                  ON CAST(da.discord_user_id AS INTEGER) = dss.driver_user_id
-                WHERE dss.division_id = ? AND da.driver_profile_id = ?
-                ORDER BY r.round_number DESC
-                LIMIT 1
-                """,
-                (div_id, driver_profile_id),
-            )
-            snap = await cursor.fetchone()
-            final_points = snap["total_points"] if snap else 0
-            final_position = snap["standing_position"] if snap else 0
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO driver_history_entries
+                (discord_user_id, driver_profile_id, season_number,
+                 division_name, division_tier, final_position, final_points,
+                 points_gap_to_winner, cancelled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                asgn["discord_user_id"],
+                driver_profile_id,
+                season_number,
+                div_name,
+                div_tier,
+                final_position,
+                final_points,
+                points_gap,
+                cancelled,
+            ),
+        )
 
-            winner_points = division_winner_points.get(div_id, 0)
-            points_gap = winner_points - final_points
+    log.info(
+        "write_driver_history_entries_on: wrote %d entries for season %s.",
+        len(assignments),
+        season_id,
+    )
 
-            await db.execute(
-                """
-                INSERT OR IGNORE INTO driver_history_entries
-                    (discord_user_id, driver_profile_id, season_number,
-                     division_name, division_tier, final_position, final_points,
-                     points_gap_to_winner, cancelled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    asgn["discord_user_id"],
-                    driver_profile_id,
-                    season.season_number,
-                    div_name,
-                    div_tier,
-                    final_position,
-                    final_points,
-                    points_gap,
-                    cancelled,
-                ),
-            )
 
+async def _write_driver_history_entries(
+    season: "Season", bot: "LeagueBot", *, force_cancelled: bool = False
+) -> None:
+    """Write the season's history entries and commit them."""
+    async with get_connection(bot.db_path) as db:
+        await write_driver_history_entries_on(
+            db, season.id, season.season_number, force_cancelled=force_cancelled
+        )
         await db.commit()
-        log.info(
-            "_write_driver_history_entries: wrote %d entries for season %s.",
-            len(assignments),
-            season.id,
-        )
 
 
 async def _revoke_season_roles(

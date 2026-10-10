@@ -125,7 +125,6 @@ async def _seed_a_finished_season(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: there is no write_driver_history_entries_on")
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from leaguebot.core.services.driver_service import DriverService

@@ -34,9 +34,6 @@ async def _memberships(db_path) -> list[tuple[int, int]]:
         return [tuple(row) for row in await cursor.fetchall()]
 
 
-_XFAIL_HISTORY = "#439: there is no write_driver_history_entries_on"
-
-
 async def _history(db_path) -> list[str]:
     """The season's history written on one connection and committed, as a season's end save does."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
@@ -74,7 +71,6 @@ async def test_confirming_a_placement_makes_the_driver_part_of_its_division(db_p
     assert await _memberships(db_path) == [(PRO, PROFILE_ID)]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     await _seat(db_path, PRO, "Alpha")
 
@@ -84,7 +80,6 @@ async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     assert await _history(db_path) == ["Am", "Pro"]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_released_from_a_division_keeps_its_history(db_path):
     await _seat(db_path, PRO, "Alpha")
     await _seat(db_path, AM, "Bravo")
@@ -100,7 +95,6 @@ async def test_a_driver_released_from_a_division_keeps_its_history(db_path):
     assert await _history(db_path) == ["Am", "Pro"]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
@@ -126,7 +120,6 @@ async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     assert await _memberships(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_standing(db_path):
     """E40 (issue #243): the final round's standing stands under the account the driver left.
 
@@ -171,9 +164,6 @@ async def _entries_on(db) -> list[str]:
     return [row[0] for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the history cannot yet be written on the save a season's end hands"
-)
 async def test_the_history_on_the_save_handed_commits_nothing(db_path):
     """A driver placed in Pro and moved to Am. A season's end writes their history inside the
     save that records its end: written on the connection it is handed, an entry for each

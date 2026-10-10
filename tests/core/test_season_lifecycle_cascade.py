@@ -40,7 +40,6 @@ ACTOR_NAME = "Race Director"
 # The moment a cancellation is recorded at, pinned.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
-_XFAIL_HISTORY = "#439: there is no write_driver_history_entries_on"
 _XFAIL_CANCEL = "#439: there is no cancel_season_divisions_on or cancel_season_on"
 _XFAIL_CANCEL_HISTORY = (
     "#439: there is no write_driver_history_entries_on, cancel_season_divisions_on or "
@@ -564,7 +563,6 @@ async def _history(db_path):
         return [(r["division_name"], r["cancelled"]) for r in await cur.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
@@ -587,7 +585,6 @@ async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_pat
     assert await _history(db_path) == [("Div A", 0), ("Div B", 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) -> None:
     """Mock drivers are drivers, artificially injected — they are not filtered out."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
@@ -644,7 +641,6 @@ async def test_the_flag_defaults_to_not_cancelled(tmp_path) -> None:
     assert cols["cancelled"]["notnull"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
     """The history written a second time for the same season adds no second set.
 
@@ -671,7 +667,6 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
     assert await _history(db_path) == first == [("Div A", 0)]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_HISTORY)
 async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path) -> None:
     """The unique key includes the division, so two divisions in one season is not a duplicate."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
