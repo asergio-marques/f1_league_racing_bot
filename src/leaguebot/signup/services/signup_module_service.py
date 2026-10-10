@@ -618,7 +618,16 @@ class SignupModuleService:
             return None
         return self._row_to_wizard_record(row)
 
-    async def save_wizard(self, wizard: SignupWizardRecord) -> None:
+    async def save_wizard(self, wizard: SignupWizardRecord, *, starting: bool = False) -> None:
+        """Save the wizard's record, inserting it or updating the one the driver holds.
+
+        *starting* is the save of a signup just begun (Sign Up pressed). It alone clears any
+        closing notice a past close of the window still owes the driver (`end_wizard_on`): a mark
+        a close left standing with no stop to finish it would otherwise survive into the new
+        signup, and a later finish would lock and delete the channel of a signup in progress.
+        Every other save, a step of the signup, leaves the mark as it is, so that a step saved
+        just after a close marked the driver never takes the mark away from that close.
+        """
         snapshot_json = (
             json.dumps(self._snapshot_to_dict(wizard.config_snapshot))
             if wizard.config_snapshot else None
@@ -637,7 +646,8 @@ class SignupModuleService:
                     config_snapshot_json     = excluded.config_snapshot_json,
                     draft_answers_json       = excluded.draft_answers_json,
                     current_lap_track_index  = excluded.current_lap_track_index,
-                    last_activity_at         = excluded.last_activity_at
+                    last_activity_at         = excluded.last_activity_at,
+                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
                 """,
                 (
                     wizard.discord_user_id,
@@ -647,6 +657,7 @@ class SignupModuleService:
                     json.dumps(wizard.draft_answers),
                     wizard.current_lap_track_index,
                     wizard.last_activity_at,
+                    int(starting),
                 ),
             )
             await db.commit()

@@ -699,3 +699,30 @@ async def test_an_off_queue_mark_is_kept_apart_from_the_queue_s(db_path):
     assert taken == ["301"]
     assert await svc.off_queue_closing_notices() == []
     assert await svc.owed_closing_notices() == ["302"]
+
+
+@pytest.mark.parametrize("kind", ["queue", "off queue"])
+async def test_a_mark_is_cleared_by_the_save_that_starts_a_signup_and_by_no_other(db_path, kind):
+    """Wizard 401's signup was ended by a close that owes them their notice, of the queue's kind
+    (1) or a close off the queue's (2), and the mark was never cleared. Saving the wizard as a
+    step of a signup does not touch the mark; saving it as the start of a new signup clears it,
+    so that no close finished later takes a signup the driver began afresh."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    svc = SignupModuleService(db_path)
+    await svc.save_wizard(_make_wizard("401"))
+    async with get_connection(db_path) as db:
+        await svc.end_wizard_on(
+            db, "401", closing_notice_owed=True, by_off_queue_close=kind == "off queue"
+        )
+        await db.commit()
+    owed = 2 if kind == "off queue" else 1
+
+    await svc.save_wizard(_make_wizard("401"))
+    assert (await _wizard_row(db_path, "401"))["closing_notice_owed"] == owed
+
+    await svc.save_wizard(_make_wizard("401"), starting=True)
+    assert (await _wizard_row(db_path, "401"))["closing_notice_owed"] == 0
+    assert await svc.owed_closing_notices() == []
+    assert await svc.off_queue_closing_notices() == []

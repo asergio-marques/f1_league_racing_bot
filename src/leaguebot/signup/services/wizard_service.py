@@ -576,7 +576,8 @@ class WizardService:
             current_lap_track_index=0,
             last_activity_at=now_iso,
         )
-        await self._signup_svc.save_wizard(wizard)
+        # The start of a signup: any closing notice a past close still owes the driver goes.
+        await self._signup_svc.save_wizard(wizard, starting=True)
 
         # Transition driver to PENDING_SIGNUP_COMPLETION
         await self._driver_service.transition(

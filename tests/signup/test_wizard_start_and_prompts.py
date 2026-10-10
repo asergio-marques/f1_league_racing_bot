@@ -220,6 +220,17 @@ async def test_a_private_channel_is_created_for_the_driver(tmp_path):
     assert name == "racer-one-signup"
 
 
+async def test_pressing_sign_up_saves_the_wizard_as_a_signup_started(tmp_path):
+    """Pressing Sign Up saves the new wizard as the start of a signup (`starting=True`), the one
+    save that clears any closing notice a past close still owed the driver."""
+    svc = _service()
+
+    await svc.start_wizard(_interaction(_guild()))
+
+    saved = svc._bot.signup_module_service.save_wizard.await_args
+    assert saved.kwargs.get("starting") is True
+
+
 async def test_the_channel_is_visible_to_the_driver_and_both_staff_tiers(tmp_path):
     """#116: a league admin without the interaction role must still see the signup they are
     entitled to approve."""
