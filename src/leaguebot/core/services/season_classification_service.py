@@ -203,22 +203,114 @@ async def post_opening_sheet(
     )
 
 
+async def _final_round(db_path: str, division_id: int, round_id: int):
+    """The round a division's final classification is drawn against, read as the posting runs."""
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        return await (
+            await db.execute(
+                "SELECT id, round_number, track_name FROM rounds WHERE id = ? AND division_id = ?",
+                (round_id, division_id),
+            )
+        ).fetchone()
+
+
+async def post_final_standings(
+    bot: LeagueBot, guild, db_path: str, division_id: int, round_id: int, *, as_text: bool = False
+) -> None:
+    """Post one division's final standings, both championships, raising where it cannot.
+
+    Drawn against *round_id*, the division's last round that has results, whose classification
+    the final standings *are*: the season's last word, restated under its own heading rather than
+    recomputed into something the round's own posting would disagree with. The standings channel
+    is read here, from `division_results_config`, as the posting runs. A division never given one
+    posts nothing; one given a channel the guild no longer holds raises `StepFailedOnDiscord`,
+    for the change queue to stop on. A division with no driver to rank posts nothing. *as_text*
+    leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
+    """
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.results_post_service import (
+        _get_show_reserves,
+        driver_standings_for_display,
+        post_standings,
+    )
+
+    last = await _final_round(db_path, division_id, round_id)
+    if last is None:
+        return
+    async with get_connection(db_path) as db:
+        config = await (
+            await db.execute(
+                "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
+                (division_id,),
+            )
+        ).fetchone()
+    channel_id = config["standings_channel_id"] if config is not None else None
+    if not channel_id:
+        return
+    channel = guild.get_channel(int(channel_id))
+    if channel is None:
+        raise StepFailedOnDiscord(f"the standings channel (id {channel_id}) is not in the server")
+
+    driver_snaps = await driver_standings_for_display(db_path, division_id, round_id, guild, bot)
+    team_snaps = await standings_service.compute_team_standings(db_path, division_id, round_id)
+    if not driver_snaps:
+        return
+    await post_standings(
+        db_path,
+        division_id,
+        round_id,
+        last["round_number"],
+        last["track_name"] or "",
+        channel,
+        driver_snaps,
+        team_snaps,
+        guild,
+        await _get_show_reserves(db_path, division_id),
+        "",
+        bot=None if as_text else bot,
+        occasion=ClassificationOccasion.SEASON_FINAL,
+    )
+
+
+async def post_final_sheet(
+    bot: LeagueBot, guild, db_path: str, division_id: int, round_id: int, *, as_text: bool = False
+) -> None:
+    """Post one division's final attendance sheet, drawn against *round_id*, raising where it
+    cannot be posted.
+
+    Attendance's own posting, asked to raise (`raise_on_failure`): it saves its own message id,
+    posts nothing for a division never given a channel and raises for one given a channel the
+    guild no longer holds. *as_text* leaves the graphic out, which is how a job retries.
+    """
+    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
+
+    await post_attendance_sheet(
+        bot,
+        guild,
+        db_path,
+        round_id,
+        division_id,
+        occasion=ClassificationOccasion.SEASON_FINAL,
+        raise_on_failure=True,
+        as_text=as_text,
+    )
+
+
 async def post_final_classifications(bot: LeagueBot, guild, db_path: str, season_id: int) -> list[str]:
     """Post every division's final standings and attendance sheet.
 
     Drawn against the division's **last round that has results**, whose classification the
     final sheet *is* — the season's last word, restated under its own heading rather than
     recomputed into something the round's own posting would disagree with. A division that
-    ran no round at all is skipped: there is no classification to publish.
+    ran no round at all is skipped: there is no classification to publish. Each posting is
+    :func:`post_final_standings` or :func:`post_final_sheet`, whose failure is collected here as
+    a problem line until the completion on the change queue carries them as jobs.
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services import standings_service
-    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
-    from leaguebot.results.services.results_post_service import (
-        _get_show_reserves,
-        driver_standings_for_display,
-        post_standings,
-    )
 
     problems: list[str] = []
     if bot is None or guild is None:
@@ -229,21 +321,11 @@ async def post_final_classifications(bot: LeagueBot, guild, db_path: str, season
             await db.execute(
                 """
                 SELECT d.id AS division_id, d.name AS division_name,
-                       drc.standings_channel_id AS standings_channel_id,
                        (SELECT r.id FROM rounds r
                          JOIN session_results sr ON sr.round_id = r.id
                         WHERE r.division_id = d.id AND sr.status = 'ACTIVE'
-                        ORDER BY r.round_number DESC LIMIT 1) AS last_round_id,
-                       (SELECT r.round_number FROM rounds r
-                         JOIN session_results sr ON sr.round_id = r.id
-                        WHERE r.division_id = d.id AND sr.status = 'ACTIVE'
-                        ORDER BY r.round_number DESC LIMIT 1) AS last_round_number,
-                       (SELECT r.track_name FROM rounds r
-                         JOIN session_results sr ON sr.round_id = r.id
-                        WHERE r.division_id = d.id AND sr.status = 'ACTIVE'
-                        ORDER BY r.round_number DESC LIMIT 1) AS last_track_name
+                        ORDER BY r.round_number DESC LIMIT 1) AS last_round_id
                 FROM divisions d
-                LEFT JOIN division_results_config drc ON drc.division_id = d.id
                 WHERE d.season_id = ?
                 ORDER BY d.id
                 """,
@@ -263,49 +345,13 @@ async def post_final_classifications(bot: LeagueBot, guild, db_path: str, season
             continue
 
         try:
-            driver_snaps = await driver_standings_for_display(
-                db_path, division_id, round_id, guild, bot
-            )
-            team_snaps = await standings_service.compute_team_standings(
-                db_path, division_id, round_id
-            )
+            await post_final_standings(bot, guild, db_path, division_id, round_id)
         except Exception as exc:  # noqa: BLE001 — one division never stops the next
-            log.exception("final classification: %s could not be resolved", division_name)
-            problems.append(f"{division_name}: {exc}")
-            continue
-
-        channel_id = row["standings_channel_id"]
-        channel = guild.get_channel(int(channel_id)) if channel_id else None
-        if channel is not None and driver_snaps:
-            try:
-                await post_standings(
-                    db_path,
-                    division_id,
-                    round_id,
-                    row["last_round_number"],
-                    row["last_track_name"] or "",
-                    channel,
-                    driver_snaps,
-                    team_snaps,
-                    guild,
-                    await _get_show_reserves(db_path, division_id),
-                    "",
-                    bot=bot,
-                    occasion=ClassificationOccasion.SEASON_FINAL,
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.exception("final classification: %s standings failed", division_name)
-                problems.append(f"{division_name} standings: {exc}")
+            log.exception("final classification: %s standings failed", division_name)
+            problems.append(f"{division_name} standings: {exc}")
 
         try:
-            await post_attendance_sheet(
-                bot,
-                guild,
-                db_path,
-                round_id,
-                division_id,
-                occasion=ClassificationOccasion.SEASON_FINAL,
-            )
+            await post_final_sheet(bot, guild, db_path, division_id, round_id)
         except Exception as exc:  # noqa: BLE001
             log.exception("final classification: %s attendance failed", division_name)
             problems.append(f"{division_name} attendance: {exc}")

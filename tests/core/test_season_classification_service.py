@@ -276,9 +276,6 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
 # ── The final classification ──────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: the final standings and the final sheet are not yet jobs of their own"
-)
 async def test_the_final_is_drawn_against_the_last_round_with_results(db_path):
     """The final sheet *is* that round's classification, restated under its own heading. Div A's
     round 2 is its last round with results, as the completion's first save finds it: its final
@@ -413,7 +410,6 @@ async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_not
     assert await _recorded_standings_ids(db_path, round_id) == [9100]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_FINAL)
 async def test_final_standings_whose_channel_was_deleted_raise(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for the
     queue to stop on. Today the division is passed over in silence
@@ -505,7 +501,6 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
     assert produce.await_count == 2
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_FINAL)
 async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
     """Div A was never given a standings channel: its final standings post nothing and raise
     nothing."""
@@ -531,7 +526,6 @@ async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
     standings.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_FINAL)
 async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_path):
     """Div A's final attendance sheet, drawn against its round 2 and retried as text: attendance's
     posting is asked to raise, as the final classification, and as text."""
