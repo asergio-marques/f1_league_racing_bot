@@ -1491,3 +1491,35 @@ async def test_a_cancellation_whose_only_line_beneath_is_a_driver_with_no_channe
     assert NOT_EVERYTHING not in text
     [line] = _success_lines(league)
     assert f"  not done: {_logged(no_channel)}" in line
+
+
+#: Work in hand that is not an end of the season, as a request about it would find it: each kind,
+#: and its payload.
+_OTHER_WORK = {
+    "a round's cancellation": ("season.round.cancel", {"round_id": round_id(PRO, 3)}),
+    "a division's cancellation": ("season.division.cancel", {"division_id": AM}),
+    "a /round amend": ("season.round.amend", {"round_id": round_id(PRO, 4)}),
+    "a review open": ("results.review.open", {"round_id": round_id(PRO, 2)}),
+}
+
+
+@pytest.mark.parametrize("work", list(_OTHER_WORK))
+@pytest.mark.parametrize("stopped", [False, True], ids=["waiting", "stopped"])
+async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
+    tmp_path, work, stopped,
+):
+    """Only another end of the season refuses a season's end. With a round's cancellation, a
+    division's cancellation, a `/round amend` or a review open waiting on the queue, or stopping
+    it, `/season cancel` on the ongoing season is acknowledged, no refusal line is written, and
+    the cancellation is queued behind that work."""
+    league = await ongoing_league(tmp_path)
+    kind, payload = _OTHER_WORK[work]
+    await _seed_change(league, kind, payload, stopped=stopped)
+
+    interaction = await _asked(league)
+
+    assert acknowledgement(interaction).startswith(ACK)
+    assert _refusal_lines(league) == []
+    rows = await change_rows(league.db_path)
+    assert [row["kind"] for row in rows][-2:] == [kind, SEASON_CANCEL_KIND]
+    assert rows[-1]["state"] == "QUEUED"
