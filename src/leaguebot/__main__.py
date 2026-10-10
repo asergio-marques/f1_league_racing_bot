@@ -310,6 +310,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.cancellation_changes import (
         division_cancel_change,
         round_cancel_change,
+        season_cancel_change,
     )
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
@@ -369,6 +370,17 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             hooks=hooks,
+        )
+    )
+    bot.change_queue.register(
+        season_cancel_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            placement=bot.placement_service,
+            submissions=_submission_hooks(),
+            hooks=hooks,
+            now=lambda: bot.change_queue.now(),
         )
     )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the

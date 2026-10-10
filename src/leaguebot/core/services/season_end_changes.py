@@ -100,14 +100,19 @@ if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
 
 __all__ = [
+    "SEASON_CANCEL",
     "SEASON_COMPLETE",
     "discarded",
     "season_complete_change",
     "shared_not_done",
+    "test_mode_on",
     "view_of",
 ]
 
 SEASON_COMPLETE = "season.complete"
+#: The cancellation's kind is named here beside the others', which the helper that finds a season's
+#: end in hand reads; the change itself is `cancellation_changes.season_cancel_change`.
+SEASON_CANCEL = "season.cancel"
 
 #: The job names this change adds to the shared ones, as the stop notice, the tests and
 #: ``StepView`` know them.
@@ -353,7 +358,7 @@ def season_complete_change(
                 )
             )
         planned.append(PlannedStep(CLOSE_WINDOW, {"cause": SEASON_END_CAUSE}))
-        if await _test_mode_on(db):
+        if await test_mode_on(db):
             planned.append(PlannedStep(FLUSH_FORECASTS))
         planned.append(PlannedStep(END))
         return StepResult(
@@ -370,7 +375,7 @@ def season_complete_change(
             return StepResult(result={"refused": NO_SEASON})
         number = int(season["season_number"])
 
-        test_mode = await _test_mode_on(db)
+        test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number)
         driver_pass = await run_driver_pass_on(db)
         if test_mode:
@@ -550,7 +555,8 @@ def season_complete_change(
     )
 
 
-async def _test_mode_on(db: aiosqlite.Connection) -> bool:
+async def test_mode_on(db: aiosqlite.Connection) -> bool:
+    """Whether the server is in test mode, read on the connection handed."""
     cursor = await db.execute("SELECT test_mode_active FROM server_configs")
     row = await cursor.fetchone()
     return row is not None and bool(row["test_mode_active"])
