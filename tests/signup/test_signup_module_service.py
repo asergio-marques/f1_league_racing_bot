@@ -584,9 +584,6 @@ async def _wizard_row(db_path, user_id: str) -> dict:
     return dict(row)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a wizard record carries no closing notice owed"
-)
 async def test_a_wizard_owes_no_closing_notice_by_default(db_path):
     """A wizard saved as the wizard saves it owes no closing notice: the mark is set only by the
     change queue's close of the signup window, never by the wizard itself."""
@@ -599,9 +596,6 @@ async def test_a_wizard_owes_no_closing_notice_by_default(db_path):
     assert await svc.owed_closing_notices() == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a signup's end is not marked on the save handed"
-)
 async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_channel(db_path):
     """`end_wizard_on` writes on the connection it is handed and commits nothing: rolled back,
     the wizard is as it was. Committed by the caller, the wizard is unengaged, owes its closing
@@ -631,9 +625,6 @@ async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_
     assert await svc.get_wizard("ghost") is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: the closing notices owed are neither read nor cleared"
-)
 async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed(db_path):
     """Three wizards saved in the order 203, 201, 202, so that their record ids run 203, 201,
     202 while their accounts sort 201, 202, 203; 201 and then 203 are marked owed, 202 is ended

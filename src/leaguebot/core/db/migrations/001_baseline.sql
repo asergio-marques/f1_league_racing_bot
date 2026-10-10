@@ -698,7 +698,10 @@ CREATE TABLE "signup_wizard_records" (
     current_lap_track_index     INTEGER NOT NULL DEFAULT 0,
     -- Timestamp of last wizard activity, used for inactivity timeout
     last_activity_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-    created_at                  TEXT    NOT NULL DEFAULT (datetime('now'))
+    created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
+    -- 1 while the change queue's close of the signup window owes this driver their closing
+    -- notice: set in the save that returns the driver, cleared when the queue plans the notice
+    closing_notice_owed         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_signup_wizard_channel
     ON signup_wizard_records(signup_channel_id);

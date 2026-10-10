@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
@@ -702,6 +704,56 @@ class SignupModuleService:
                 (discord_user_id,),
             )
             await db.commit()
+
+    async def end_wizard_on(
+        self, db: aiosqlite.Connection, discord_user_id: str, *, closing_notice_owed: bool = False
+    ) -> None:
+        """Mark a driver's signup over on the connection handed; commits nothing.
+
+        The wizard is unengaged, so a restart's recovery never re-arms or expires it, and owes its
+        closing notice where asked (the change queue's close of the signup window). The signup
+        channel is kept: the hold and the channel's deletion still read it. A driver with no
+        wizard record is nothing to end.
+        """
+        await db.execute(
+            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
+            "closing_notice_owed = ? WHERE discord_user_id = ?",
+            (1 if closing_notice_owed else 0, discord_user_id),
+        )
+
+    async def owed_closing_notices(self) -> list[str]:
+        """The accounts owed their closing notice, in the order of their records, on a connection
+        of its own. For a check before a step or a step with no save open; a save reads them with
+        `take_closing_notices_on`."""
+        async with get_connection(self._db_path) as db:
+            return await self._owed_closing_notices_on(db)
+
+    async def clear_closing_notices_on(
+        self, db: aiosqlite.Connection, accounts: Iterable[str]
+    ) -> None:
+        """Set the closing notice owed back to none for these accounts on the connection handed;
+        commits nothing."""
+        for account in accounts:
+            await db.execute(
+                "UPDATE signup_wizard_records SET closing_notice_owed = 0 "
+                "WHERE discord_user_id = ?",
+                (str(account),),
+            )
+
+    async def take_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
+        """Read the accounts still owed their closing notice and clear them, on the connection
+        handed, so a save needs no second connection; commits nothing."""
+        accounts = await self._owed_closing_notices_on(db)
+        await self.clear_closing_notices_on(db, accounts)
+        return accounts
+
+    @staticmethod
+    async def _owed_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
+        cursor = await db.execute(
+            "SELECT discord_user_id FROM signup_wizard_records "
+            "WHERE closing_notice_owed = 1 ORDER BY id"
+        )
+        return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
     async def get_all_active_wizards(self) -> list[SignupWizardRecord]:
         """Return all wizard records not in UNENGAGED state for a server."""
