@@ -1580,9 +1580,6 @@ def _deletions_armed(league: Any) -> list[str]:
             if str(call.kwargs.get("id", "")).startswith("wizard_channel_delete_")]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: the window's close plans a kept signup channel's driver"
-)
 async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_the_season_s_end(
     tmp_path,
 ):

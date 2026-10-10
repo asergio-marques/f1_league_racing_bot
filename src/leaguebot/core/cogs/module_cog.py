@@ -142,23 +142,6 @@ def armed_close_refusal(close_at: str) -> str:
     )
 
 
-async def _stranded_signups(bot: LeagueBot) -> list[str]:
-    """The drivers a close cut off had returned to Not Signed Up and not yet told or held (#439).
-
-    Not Signed Up, with a wizard still engaged in a signup channel that no deletion is armed for:
-    a driver who withdrew or was turned down has no engaged wizard, and one whose channel is held
-    has its deletion armed. A driver whose channel could not be held after a refused notice is
-    found too, and told with the rest.
-    """
-    from leaguebot.signup.services.wizard_service import channel_delete_job_id
-
-    scheduler = bot.scheduler_service
-    return [
-        user_id for user_id in await bot.driver_service.accounts_left_in_signup()
-        if scheduler.has_job(channel_delete_job_id(user_id)) is not True
-    ]
-
-
 async def execute_forced_close(
     bot: LeagueBot,
     *,
@@ -232,13 +215,6 @@ async def execute_forced_close(
 
     returned = 0
     returned_ids: list[str] = []
-    stranded: list[str] = []
-    if not hold_channels:
-        # A close the bot was killed in, after it returned its drivers and before it recorded the
-        # window closed, leaves them Not Signed Up with nothing kept of them: they are found by
-        # their wizard, still engaged, whose channel nothing has yet set for deletion.
-        stranded = await _stranded_signups(bot)
-        returned_ids.extend(stranded)
     for row in rows:
         try:
             await bot.driver_service.transition(
@@ -258,7 +234,8 @@ async def execute_forced_close(
     try:
         # T046: cancel wizard APScheduler jobs for each force-transitioned driver
         svc = bot.scheduler_service
-        for uid in (*(row["discord_user_id"] for row in rows), *stranded):
+        for row in rows:
+            uid = row["discord_user_id"]
             from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
             for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):

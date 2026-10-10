@@ -485,24 +485,6 @@ class DriverService:
         profile.current_state = new_state
         return profile
 
-    async def accounts_left_in_signup(self) -> list[str]:
-        """The accounts of drivers who are Not Signed Up with a signup wizard still engaged.
-
-        A driver the signup window's close returned to Not Signed Up keeps the wizard they were
-        filling in, which no withdrawal or turning down leaves engaged: so these are the drivers
-        whose signup channel a close cut off before it was told or held has not yet closed.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT p.discord_user_id FROM driver_profiles p "
-                "JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
-                "WHERE p.current_state = ? AND w.wizard_state != 'UNENGAGED' "
-                "AND w.signup_channel_id IS NOT NULL ORDER BY p.id",
-                (DriverState.NOT_SIGNED_UP.value,),
-            )
-            rows = await cursor.fetchall()
-        return [str(row["discord_user_id"]) for row in rows]
-
     # ------------------------------------------------------------------
     # Reassign user ID (US2)
     # ------------------------------------------------------------------
