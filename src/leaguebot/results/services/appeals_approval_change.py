@@ -232,7 +232,7 @@ def appeals_approval_change(
         }))
         follow_ons = (
             (FollowOn(
-                season_lifecycle_service.wind_down_change().kind, {},
+                season_lifecycle_service.WIND_DOWN, {},
                 f"Winding the season down after {ctx.what}",
             ),)
             if division_done else ()

@@ -218,9 +218,7 @@ async def test_the_snapshot_is_released_in_the_save_before_the_rebuild_begins(tm
     "moving_call",
     [
         "refresh_division_status_on",
-        pytest.param("WIND_DOWN", marks=pytest.mark.xfail(
-            strict=True, reason="#439 slice 5: the appeals approval names the wind-down by its kind",
-        )),
+        "WIND_DOWN",
     ],
 )
 async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, moving_call):
