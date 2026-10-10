@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Iterable
-from contextlib import asynccontextmanager
+from collections.abc import Iterable
 from datetime import date, datetime
 
 import aiosqlite
@@ -100,18 +99,6 @@ def division_amendment_changes_nothing(
 
 class SeasonImmutableError(Exception):
     """Raised when a mutation is attempted on a COMPLETED (archived) season."""
-
-
-@asynccontextmanager
-async def _own_or_handed(
-    handed_or_service: SeasonService | aiosqlite.Connection,
-) -> AsyncIterator[aiosqlite.Connection]:
-    """The connection handed in, or a new one on the service's own database."""
-    if isinstance(handed_or_service, aiosqlite.Connection):
-        yield handed_or_service
-        return
-    async with get_connection(handed_or_service._db_path) as db:  # noqa: SLF001
-        yield db
 
 
 class SeasonService:
@@ -628,122 +615,115 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def delete_season(
-        self: SeasonService | aiosqlite.Connection, season_id: int
-    ) -> None:
+    @staticmethod
+    async def delete_season(db: aiosqlite.Connection, season_id: int) -> None:
         """FK-safe cascade delete of one season and all its child records.
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
         at all, its signups included (issue #220).
 
         Called as ``SeasonService.delete_season(db, season_id)`` it writes on the connection
-        handed to it and commits nothing, for the abort's one save to commit. Called on a
-        service, as ``service.delete_season(season_id)``, it opens its own connection and
-        commits, until the abort asks the queue and that form goes (#439). It is a plain
-        function either way, so the writes below stay keyed to this name (#283).
+        handed to it and commits nothing, for the abort's one save to commit. It is a plain
+        function, so the writes below stay keyed to this name (#283).
 
         Raises ``ValueError`` for a season not in SETUP, before anything is deleted. Its number
         is committed from the moment it leaves SETUP, and that number is how a league names
         its own history: removing one would leave a gap nothing explains (issue #153). A season
         id that names no season is not an error.
         """
-        handed = isinstance(self, aiosqlite.Connection)
-        async with _own_or_handed(self) as db:
-            cursor = await db.execute(
-                "SELECT status FROM seasons WHERE id = ?", (season_id,)
+        cursor = await db.execute(
+            "SELECT status FROM seasons WHERE id = ?", (season_id,)
+        )
+        row = await cursor.fetchone()
+        if row is not None and row["status"] != SeasonStatus.SETUP.value:
+            raise ValueError(
+                f"season {season_id} is {row['status']}; a season whose number is "
+                "committed cannot be deleted"
             )
-            row = await cursor.fetchone()
-            if row is not None and row["status"] != SeasonStatus.SETUP.value:
-                raise ValueError(
-                    f"season {season_id} is {row['status']}; a season whose number is "
-                    "committed cannot be deleted"
-                )
+
+        cursor = await db.execute(
+            "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
+        )
+        division_rows = await cursor.fetchall()
+        division_ids = [r[0] for r in division_rows]
+
+        round_ids: list[int] = []
+        if division_ids:
+            ph = ",".join("?" * len(division_ids))
+            cursor = await db.execute(
+                f"SELECT id FROM rounds WHERE division_id IN ({ph})",
+                division_ids,
+            )
+            round_ids = [r[0] for r in await cursor.fetchall()]
+
+        # ── Results module: round-level children ────────────────────────
+        if round_ids:
+            ph = ",".join("?" * len(round_ids))
+            await db.execute(f"DELETE FROM round_submission_channels WHERE round_id IN ({ph})", round_ids)
+            await db.execute(f"DELETE FROM driver_standings_snapshots WHERE round_id IN ({ph})", round_ids)
+            await db.execute(f"DELETE FROM team_standings_snapshots WHERE round_id IN ({ph})", round_ids)
+            # Race and qualifying results hang from session_results, not a round
+            cursor = await db.execute(
+                f"SELECT id FROM session_results WHERE round_id IN ({ph})", round_ids
+            )
+            session_result_ids = [r[0] for r in await cursor.fetchall()]
+            if session_result_ids:
+                sph = ",".join("?" * len(session_result_ids))
+                await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
+                await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
+            await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
+            await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
+            await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
+            await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
+
+        # ── Results module: season-level children ───────────────────────
+        await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
+        await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
+        await db.execute("DELETE FROM season_amendment_state WHERE season_id = ?", (season_id,))
+        await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
+        await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
+        await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
+
+        # ── Driver/team children ────────────────────────────────────────
+        if division_ids:
+            ph = ",".join("?" * len(division_ids))
+
+            # The season's fake (test-mode) drivers go with it, by the deletion test mode
+            # itself takes: it lets go of every row holding them, in this season or any
+            # other, and keeps their history (issue #268).
+            from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
             cursor = await db.execute(
-                "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
+                f"""
+                SELECT DISTINCT dp.id
+                FROM driver_profiles dp
+                JOIN driver_season_assignments dsa ON dsa.driver_profile_id = dp.id
+                WHERE dp.is_test_driver = 1
+                  AND dsa.division_id IN ({ph})
+                """,
+                division_ids,
             )
-            division_rows = await cursor.fetchall()
-            division_ids = [r[0] for r in division_rows]
+            test_profile_ids = [r[0] for r in await cursor.fetchall()]
+            await delete_driver_profiles(db, test_profile_ids, keep_history=True)
 
-            round_ids: list[int] = []
-            if division_ids:
-                ph = ",".join("?" * len(division_ids))
-                cursor = await db.execute(
-                    f"SELECT id FROM rounds WHERE division_id IN ({ph})",
-                    division_ids,
-                )
-                round_ids = [r[0] for r in await cursor.fetchall()]
+            await db.execute(f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph})", division_ids)
+            await db.execute(f"DELETE FROM division_results_config WHERE division_id IN ({ph})", division_ids)
 
-            # ── Results module: round-level children ────────────────────────
-            if round_ids:
-                ph = ",".join("?" * len(round_ids))
-                await db.execute(f"DELETE FROM round_submission_channels WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM driver_standings_snapshots WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM team_standings_snapshots WHERE round_id IN ({ph})", round_ids)
-                # Race and qualifying results hang from session_results, not a round
-                cursor = await db.execute(
-                    f"SELECT id FROM session_results WHERE round_id IN ({ph})", round_ids
-                )
-                session_result_ids = [r[0] for r in await cursor.fetchall()]
-                if session_result_ids:
-                    sph = ",".join("?" * len(session_result_ids))
-                    await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
-                    await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
-                await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
-                await db.execute(f"DELETE FROM sessions WHERE round_id IN ({ph})", round_ids)
+            # team_seats → team_instances → divisions
+            cursor = await db.execute(
+                f"SELECT id FROM team_instances WHERE division_id IN ({ph})", division_ids
+            )
+            team_instance_ids = [r[0] for r in await cursor.fetchall()]
+            if team_instance_ids:
+                tiph = ",".join("?" * len(team_instance_ids))
+                await db.execute(f"DELETE FROM team_seats WHERE team_instance_id IN ({tiph})", team_instance_ids)
+            await db.execute(f"DELETE FROM team_instances WHERE division_id IN ({ph})", division_ids)
+            await db.execute(f"DELETE FROM rounds WHERE division_id IN ({ph})", division_ids)
 
-            # ── Results module: season-level children ───────────────────────
-            await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
-            await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
-            await db.execute("DELETE FROM season_amendment_state WHERE season_id = ?", (season_id,))
-            await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
-            await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
-            await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
-
-            # ── Driver/team children ────────────────────────────────────────
-            if division_ids:
-                ph = ",".join("?" * len(division_ids))
-
-                # The season's fake (test-mode) drivers go with it, by the deletion test mode
-                # itself takes: it lets go of every row holding them, in this season or any
-                # other, and keeps their history (issue #268).
-                from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
-
-                cursor = await db.execute(
-                    f"""
-                    SELECT DISTINCT dp.id
-                    FROM driver_profiles dp
-                    JOIN driver_season_assignments dsa ON dsa.driver_profile_id = dp.id
-                    WHERE dp.is_test_driver = 1
-                      AND dsa.division_id IN ({ph})
-                    """,
-                    division_ids,
-                )
-                test_profile_ids = [r[0] for r in await cursor.fetchall()]
-                await delete_driver_profiles(db, test_profile_ids, keep_history=True)
-
-                await db.execute(f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph})", division_ids)
-                await db.execute(f"DELETE FROM division_results_config WHERE division_id IN ({ph})", division_ids)
-
-                # team_seats → team_instances → divisions
-                cursor = await db.execute(
-                    f"SELECT id FROM team_instances WHERE division_id IN ({ph})", division_ids
-                )
-                team_instance_ids = [r[0] for r in await cursor.fetchall()]
-                if team_instance_ids:
-                    tiph = ",".join("?" * len(team_instance_ids))
-                    await db.execute(f"DELETE FROM team_seats WHERE team_instance_id IN ({tiph})", team_instance_ids)
-                await db.execute(f"DELETE FROM team_instances WHERE division_id IN ({ph})", division_ids)
-                await db.execute(f"DELETE FROM rounds WHERE division_id IN ({ph})", division_ids)
-
-            await db.execute("DELETE FROM season_review_prompts WHERE season_id = ?", (season_id,))
-            await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
-            # The season's signups, windows and signup configuration go with it by cascade.
-            await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
-            if not handed:
-                await db.commit()
+        await db.execute("DELETE FROM season_review_prompts WHERE season_id = ?", (season_id,))
+        await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
+        # The season's signups, windows and signup configuration go with it by cascade.
+        await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
 
     # ------------------------------------------------------------------
     # Division

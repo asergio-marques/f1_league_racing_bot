@@ -1286,7 +1286,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    # The season end
     # The standing posts
     ("core/services/calendar_post_service.py", "replace_calendar_message"): (1, SLICE[6]),
     ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, SLICE[6]),
@@ -1369,7 +1368,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_service.py", "SeasonService.create_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_round"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.delete_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.duplicate_division"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.rename_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.renumber_rounds"): (1, PASS["core"]),
