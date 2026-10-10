@@ -269,14 +269,6 @@ async def execute_forced_close(
             )
 
     try:
-        # T046: cancel wizard APScheduler jobs for each force-transitioned driver. Only the
-        # drivers returned: one whose return failed is still signing up and keeps their timers
-        # and channel, and one who moved on is no longer the close's to touch.
-        svc = bot.scheduler_service
-        for uid in returned_ids:
-            for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
-                svc.cancel_job(job_id)
-
         # Post cancellation notice in each wizard channel and schedule deletion.
         # This mirrors the withdraw() path so drivers see a message and the channel
         # is cleaned up after a 24-hour hold.
