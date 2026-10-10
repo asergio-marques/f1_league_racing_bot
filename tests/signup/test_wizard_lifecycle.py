@@ -766,10 +766,6 @@ def _lines(ctx) -> list[str]:
     return [c.args[0] for c in ctx.router.post_log.await_args_list]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439 slice 5: a withdrawal leaves its wizard engaged, for a restart to expire",
-)
 @pytest.mark.parametrize("hours", [1, 30], ids=["the deadline still ahead", "the deadline passed"])
 async def test_a_restart_within_a_day_after_a_withdrawal_tells_nobody_their_session_expired(
     tmp_path, hours,
@@ -790,9 +786,6 @@ async def test_a_restart_within_a_day_after_a_withdrawal_tells_nobody_their_sess
     assert _lines(ctx) == [_WITHDRAWN]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a lapse leaves its wizard engaged, for a restart to expire"
-)
 async def test_a_restart_after_a_lapse_tells_nobody_again(tmp_path):
     """Driver 7's wizard lapses: 25 hours after their last answer the inactivity job fires,
     returning them to Not Signed Up, telling them their session expired and recording the lapse.
@@ -812,10 +805,6 @@ async def test_a_restart_after_a_lapse_tells_nobody_again(tmp_path):
     assert _lines(ctx) == lapsed
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439 slice 5: a withdrawal leaves its wizard engaged, for a restart to expire",
-)
 async def test_a_restart_after_a_refused_withdrawal_notice_posts_nothing_and_writes_no_new_line(
     tmp_path,
 ):

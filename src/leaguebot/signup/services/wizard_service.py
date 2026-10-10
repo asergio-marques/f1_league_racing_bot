@@ -15,6 +15,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -710,7 +711,8 @@ class WizardService:
     ) -> str | None:
         """Voluntarily withdraw from the signup wizard (T040).
 
-        Transitions the driver to NOT_SIGNED_UP, cancels pending jobs/tasks, writes the
+        Transitions the driver to NOT_SIGNED_UP, marking the wizard over in the same save (a
+        restart never tells them it expired), cancels pending jobs/tasks, writes the
         withdrawal's line, posts the cancellation notice and schedules channel deletion.
         FR-033, FR-036.
 
@@ -723,7 +725,9 @@ class WizardService:
         """
         try:
             await self._driver_service.transition(
-                discord_user_id, DriverState.NOT_SIGNED_UP
+                discord_user_id,
+                DriverState.NOT_SIGNED_UP,
+                also_on=partial(self._signup_svc.end_wizard_on, discord_user_id=discord_user_id),
             )
         except ValueError:
             return _SIGNUP_ENDED
@@ -1168,7 +1172,9 @@ class WizardService:
 
         try:
             await self._driver_service.transition(
-                discord_user_id, DriverState.NOT_SIGNED_UP
+                discord_user_id,
+                DriverState.NOT_SIGNED_UP,
+                also_on=partial(self._signup_svc.end_wizard_on, discord_user_id=discord_user_id),
             )
         except ValueError:
             log.info(
