@@ -471,6 +471,29 @@ async def test_an_abort_is_refused_at_once_while_another_end_of_the_season_is_in
     assert await _season_stands(league)
 
 
+@pytest.mark.parametrize("kind", [SEASON_CANCEL_KIND, SEASON_COMPLETE_KIND])
+@pytest.mark.parametrize("stopped", [False, True], ids=["waiting", "stopped"])
+async def test_an_abort_is_refused_at_once_naming_the_job_of_an_ongoing_season_s_cancellation_or_completion_in_hand(
+    tmp_path, kind, stopped,
+):
+    """The season's placements are confirmed and it stands ongoing, its cancellation (or its
+    completion) in hand on the queue, waiting or stopped. `/season abort confirm:CONFIRM` is
+    refused at once in 2.11's words, naming that job, not as "available only before a season's
+    placements are first confirmed": one ⛔ line, no abort asked, and the season stands."""
+    league = await setup_league(tmp_path)
+    await _confirmed(league)
+    payload, text = IN_HAND[kind]
+    job = await _seed_change(league, kind, payload, stopped=stopped)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == text.format(job=job)
+    assert len(_refusal_lines(league)) == 1
+    assert _refusal_lines(league)[0].startswith(REFUSAL)
+    assert await season_end_changes(league, SEASON_ABORT_KIND) == []
+    assert await _season_stands(league)
+
+
 # ── The checks ──────────────────────────────────────────────────────────────────────
 
 
