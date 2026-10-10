@@ -31,7 +31,7 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 > **Nothing attaches them again** (decided 2026-09-23). Enabling is the only moment test mode attaches its two. Detach both, or remove them, and the season is judged as a real one is: `/season config-review` and `/season placements-review` each name it as a fault and withhold their button, and approval refuses it, until one is attached with `/results config append`. Approval once attached them itself where nothing at all was attached, and the reviews promised as much; neither does now (#409).
 
-**Test mode is left one of two ways**: by the toggle, while the season is still in Configuration, or by the season ending — completed, cancelled or aborted, it switches test mode off as part of its end-of-season pass. Nothing else turns it off, so there is no mid-run toggle to destroy a roster by accident. Either way:
+**Test mode is left one of two ways**: by the toggle, while the season is still in Configuration, or by the season ending — completed, cancelled or aborted, it switches test mode off in the save that records its end, on the change queue, the forecasts having been cleared by a job just before. Nothing else turns it off, so there is no mid-run toggle to destroy a roster by accident. Either way:
 
 - Pending forecast-message deletions are flushed.
 - **Every fake driver on the server is deleted**, across all divisions, with no confirmation.
@@ -198,7 +198,7 @@ It decides what becomes of a profile once the driver has returned to Not Signed 
 
 > **What you set by hand does not survive a round being finalised.** The flag is derived from results, so finalising a round the driver appears in recomputes it and overwrites whatever you set — back to 0 if their only entry there is a did-not-start. Set it after the rounds you need are final, or on a driver with no results at all.
 
-The pass reads **real** drivers only. A fake driver is never deleted by it, flag or no flag: fake drivers go when test mode is switched off, which the same end-of-season pass does once the driver pass is through. To exercise the pass itself, reach it with a real account at Not Signed Up.
+The pass reads **real** drivers only. A fake driver is never deleted by it, flag or no flag: fake drivers go when test mode is switched off, which the season's end does in the same save, once the driver pass is through. To exercise the pass itself, reach it with a real account at Not Signed Up.
 
 ---
 
