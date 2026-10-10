@@ -746,50 +746,6 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
 })
 
 
-async def _close_driver_signups(
-    drivers: list[dict],
-    driver_role_id: int | None,
-    *,
-    bot: LeagueBot | None,
-    guild,
-    notice: str,
-    reason: str,
-) -> None:
-    """The Discord side of returning *drivers* to Not Signed Up: their signups and their role.
-
-    A signup still in progress or in review has its channel told *notice* and set to be
-    deleted, and its inactivity timeout cancelled; an approved real driver loses the driver
-    role. Each driver is a row with ``discord_user_id``, ``current_state`` and
-    ``is_test_driver``. Nothing here is worth the caller's work: every failure is logged.
-    """
-    for driver in drivers:
-        uid = driver["discord_user_id"]
-        if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
-            try:
-                if guild is not None:
-                    await bot.wizard_service.trigger_channel_hold(uid, guild, notice)
-                # The channel's own deletion job stays armed, and reads the wizard record
-                # when it fires; only the inactivity timeout is cancelled.
-                from leaguebot.signup.services.wizard_service import inactivity_job_id
-
-                bot.scheduler_service.cancel_job(inactivity_job_id(uid))
-            except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
-                log.exception("closing signups: could not close the signup of %s", uid)
-        if (
-            guild is not None
-            and driver_role_id
-            and not driver["is_test_driver"]
-            and driver["current_state"] in ("UNASSIGNED", "ASSIGNED")
-        ):
-            member = guild.get_member(int(uid))
-            role = guild.get_role(driver_role_id)
-            if member is not None and role is not None and role in member.roles:
-                try:
-                    await member.remove_roles(role, reason=reason)
-                except Exception:  # noqa: BLE001 — a role is never worth the pass
-                    log.warning("closing signups: could not revoke the driver role of %s", uid, exc_info=True)
-
-
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:
     """Delete *profile_ids* and everything that holds them, within the caller's transaction.
 
@@ -925,54 +881,3 @@ async def run_driver_pass_on(db: aiosqlite.Connection) -> DriverPass:
         ],
         driver_role_id=driver_role_id,
     )
-
-
-async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=None) -> dict:
-    """The driver pass that ends a season, committing, with its Discord side done in-process.
-
-    Kept until the season's end is wholly on the change queue, where the database side is
-    ``run_driver_pass_on`` and each driver's Discord side a job.
-
-    1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A
-       signup still in progress or in review is cancelled: its inactivity timeout is cancelled
-       and, where a guild is to hand, its channel is told and set to be deleted.
-    2. The driver role is revoked from every such real driver, where a guild is to hand.
-    3. Every real driver at Not Signed Up without the former-driver flag — pending deletion —
-       is deleted, with their placements and history entries. Their signups remain.
-    4. The portraits the bot obtained for every account of a deleted driver are discarded,
-       where a bot is to hand (issue #235). A portrait is keyed by account, not by profile,
-       and nothing else would ever remove it. Where the league's driver directory cannot be
-       resolved they are left, file and row alike: see
-       ``driver_portrait_service.discard_portraits``.
-
-    Returns ``{"reset": n, "deleted": m}``.
-    """
-    placeholders = ",".join("?" for _ in DRIVER_PASS_STATES)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE current_state IN ({placeholders})",
-            (*DRIVER_PASS_STATES,),
-        )
-        to_reset = [dict(r) for r in await cursor.fetchall()]
-        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-        cfg_row = await cursor.fetchone()
-    driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
-
-    await _close_driver_signups(
-        to_reset, driver_role_id, bot=bot, guild=guild,
-        notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
-        reason="Season ended",
-    )
-
-    async with get_connection(db_path) as db:
-        result = await run_driver_pass_on(db)
-        await db.commit()
-
-    if bot is not None:
-        # Once committed, so a deletion that fails leaves every portrait where it was.
-        from leaguebot.image.services.driver_portrait_service import discard_portraits
-
-        await discard_portraits(bot, result.accounts)
-
-    return {"reset": result.reset, "deleted": len(result.deleted)}
