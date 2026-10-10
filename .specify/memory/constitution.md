@@ -1,6 +1,29 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-10 — v14.12.0 → v14.12.1: PATCH — Principle XII names the record a season's end writes a driver's final standing to (issue #439)]
+  Version change    : 14.12.0 → 14.12.1
+  Bump rationale    : PATCH: a wording correction that changes no rule. The bullet required the final
+                      points and position to be written atomically "to their SeasonAssignment
+                      `final_points` and `final_position` fields"; no such columns exist. The season's
+                      end writes them to the driver's history entry, in the one save that also marks
+                      the season completed. The requirement, that they be written atomically as part
+                      of the season-end transaction, is unchanged.
+
+  Modified sections :
+    - Principle XII, Race Results & Championship Integrity — the bullet on season completion:
+      "their SeasonAssignment `final_points` and `final_position` fields" becomes "their history
+      entry (`driver_history_entries.final_points` and `final_position`)". "On season completion"
+      is kept.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-season-end-on-the-queue.
+
+  Templates / docs  : none. No template in .specify/templates names the field.
+
 [2026-10-09 — v14.11.0 → v14.12.0: MINOR — a round with an open, empty submission may be cancelled, and the cascades obey the same rule (issue #439)]
   Version change    : 14.11.0 → 14.12.0
   Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.11.0: guidance inside Principle XII
@@ -6173,8 +6196,8 @@ governs the **Results & Standings optional module** (Principle X).
   **reserves visibility toggle** (default on). When toggled off, reserve drivers still
   accrue points and are included in internal snapshots, but are excluded from posted output.
 - On season completion, each driver's final points and position MUST be written atomically
-  to their SeasonAssignment `final_points` and `final_position` fields as part of the
-  season-end transaction.
+  to their history entry (`driver_history_entries.final_points` and `final_position`) as part
+  of the season-end transaction.
 
 **Rationale**: Accurate, immutable, session-level result records are the backbone of any
 competitive league. A deterministic, auditable computation pipeline with named configurations
@@ -8830,4 +8853,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.12.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-09
+**Version**: 14.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-10
