@@ -154,9 +154,10 @@ async def execute_forced_close(
     *hold_channels* False is the change queue's form: the close notices and locks no signup
     channel itself, leaving each driver it returned (the outcome's ``returned_ids``) to the
     queue's ``signup_notice`` and ``close_signup`` jobs, so that a notice Discord refuses stops
-    the queue before the channel is locked. Off the queue (``/signup close``, the close timer, a
-    restart past the close time, turning signup off) it holds them as before, locking the
-    channel and arming its deletion whatever became of the notice.
+    the queue before the channel is locked, and which leaves the season's stage where it stands
+    (step 4b). Off the queue (``/signup close``, the close timer, a restart past the close time,
+    turning signup off) it holds them as before, locking the channel and arming its deletion
+    whatever became of the notice.
 
     1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
     2. Delete signup button message (graceful NotFound).
@@ -294,16 +295,21 @@ async def execute_forced_close(
     # 4. Set window closed (persists closed_msg_id)
     await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
 
-    # 4b. Move the season on (issue #220). Every close reaches here — the command, the
-    #     close timer and the restart sweep — so every close moves the season alike. A
-    #     failure is logged and never undoes the close: the window is shut either way.
-    from leaguebot.core.services.season_lifecycle_service import advance_on_window_close
+    # 4b. Move the season on (issue #220). Every close a member or a timer runs reaches here —
+    #     the command, the close timer and the restart sweep — so each moves the season alike.
+    #     A failure is logged and never undoes the close: the window is shut either way. The
+    #     change queue's form (*hold_channels* False) moves it not at all: a season's end closes
+    #     the window in the middle of its jobs, and a cancelled season sent on to Pending
+    #     completion between them would stand there, refused its own cancellation, should the
+    #     queue stop; the change that closes the window saves the stage move itself.
+    if hold_channels:
+        from leaguebot.core.services.season_lifecycle_service import advance_on_window_close
 
-    try:
-        await advance_on_window_close(bot.db_path)
-    except Exception:  # noqa: BLE001
-        log.exception("forced_close: could not move the season on")
-        failed.append("The season could not be moved on.")
+        try:
+            await advance_on_window_close(bot.db_path)
+        except Exception:  # noqa: BLE001
+            log.exception("forced_close: could not move the season on")
+            failed.append("The season could not be moved on.")
 
     # 5. Audit entry
     now = datetime.now(timezone.utc).isoformat()
