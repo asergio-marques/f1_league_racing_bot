@@ -1390,3 +1390,45 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
     ]
     assert not await window_open(league)
     assert await _status(league) == "COMPLETED"
+
+
+@pytest.mark.parametrize("failures", [1, 2], ids=["fails once", "fails again on the retry"])
+async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
+    tmp_path, failures,
+):
+    """The signup window open with driver 105 still filling in the wizard, and the completion
+    queued. The close returns 105, then recording the window closed fails: the queue stops at
+    `close_window`, keeping 105 on the job, with the window still open. Where the first Retry
+    fails the same way, the job still keeps 105. Once the record goes through, 105 is told, then
+    their channel closed, each once, and the season is completed."""
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    league.close_fails = RuntimeError("the window could not be recorded closed")
+    await _asked(league)
+
+    await run_queue(league.bot)
+    for attempt in range(failures):
+        if attempt:
+            await retry_job(league.bot)
+        assert await _stopped_at(league) == ("close_window", None)
+        [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
+        assert close["result"] == {"returned": [str(SIGNING_UP)]}
+        assert await window_open(league)
+        assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+        assert league.notices == [] and league.locked == []
+
+    league.close_fails = None
+    await retry_job(league.bot)
+
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    names = await _names(league)
+    assert names.count(("signup_notice", SIGNING_UP)) == 1
+    assert names.count(("close_signup", SIGNING_UP)) == 1
+    assert names.index(("signup_notice", SIGNING_UP)) < names.index(("close_signup", SIGNING_UP))
+    assert [(kind, uid) for kind, uid, _n in league.events
+            if kind in ("notice", "lock") and uid == SIGNING_UP] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert not await window_open(league)
+    assert await _status(league) == "COMPLETED"
