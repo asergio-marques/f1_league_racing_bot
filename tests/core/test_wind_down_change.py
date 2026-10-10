@@ -245,3 +245,52 @@ async def test_a_discarded_signup_notice_still_closes_the_channel(tmp_path):
     assert league.notices == []
     discard_lines = [line for line in league.bot.log_channel.sent if "Discard" in line]
     assert discard_lines and f"<@{SIGNING_UP}>" in discard_lines[-1]
+
+
+def _closes_then_fails_once(league: Any) -> None:
+    """The window's close records the window closed, then fails once, after it has returned its
+    drivers: as an audit that cannot be written would make it."""
+    service = league.bot.signup_module_service
+    closing = service.set_window_closed
+    failing = {"now": True}
+
+    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+        closed = await closing(*args, **kwargs)
+        if failing["now"]:
+            failing["now"] = False
+            raise RuntimeError("disk I/O error")
+        return closed
+
+    service.set_window_closed = _set_window_closed
+
+
+async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tells_and_closes_them(
+    tmp_path,
+):
+    """The wind-down's own `wind_down` job, as the completion's `close_window`: the window's
+    close returns a driver still filling in the wizard, records the window closed, then fails,
+    and the queue stops there. Retried with the window now read as closed, it still plans the
+    driver's notice and the close of their channel, the notice posted before the lock, and the
+    season is moved on to Pending completion."""
+    league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    _closes_then_fails_once(league)
+    await _ask(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("wind_down", None)
+    assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+    assert not await window_open(league)
+    assert league.notices == [] and league.locked == []
+
+    await retry_job(league.bot)
+
+    jobs = await _jobs(league)
+    assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
+    assert [(kind, uid) for kind, uid, _n in league.events if kind in ("notice", "lock")] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert league.notices == [(SIGNING_UP, "🔒 Signups have closed. This channel will be "
+                                           "automatically deleted in 24 hours.")]
+    assert league.locked == [SIGNING_UP]
+    assert await _stage(league) == "PENDING_COMPLETION"

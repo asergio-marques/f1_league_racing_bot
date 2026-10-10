@@ -1280,3 +1280,54 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
     [line] = _closing_lines(league)
     assert f"  not done: {_logged(NOTICE_DISCARDED)}" in line
     assert await _status(league) == "COMPLETED"
+
+
+def _closes_then_fails_once(league: Any) -> None:
+    """The window's close records the window closed, then fails once, after it has returned its
+    drivers: as an audit that cannot be written would make it."""
+    service = league.bot.signup_module_service
+    closing = service.set_window_closed
+    failing = {"now": True}
+
+    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+        closed = await closing(*args, **kwargs)
+        if failing["now"]:
+            failing["now"] = False
+            raise RuntimeError("disk I/O error")
+        return closed
+
+    service.set_window_closed = _set_window_closed
+
+
+async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tells_and_closes_them(
+    tmp_path,
+):
+    """The signup window open with a driver still filling in the wizard, and the completion
+    queued. The window's close returns the driver, records the window closed, then fails: the
+    queue stops at `close_window`. Retried with the window now read as closed, the job is not
+    dropped as no longer due: it plans the driver's notice and the close of their channel, the
+    notice posted before the lock, and the season is completed."""
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    _closes_then_fails_once(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("close_window", None)
+    assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+    assert not await window_open(league)
+    assert league.notices == [] and league.locked == []
+
+    await retry_job(league.bot)
+
+    [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
+    assert close["result"] == {"returned": [str(SIGNING_UP)]}
+    names = await _names(league)
+    assert names.index(("signup_notice", SIGNING_UP)) < names.index(("close_signup", SIGNING_UP))
+    assert [(kind, uid) for kind, uid, _n in league.events
+            if kind in ("notice", "lock") and uid == SIGNING_UP] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    assert await _status(league) == "COMPLETED"
