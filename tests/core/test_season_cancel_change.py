@@ -87,7 +87,6 @@ from tests.support.season_league import (
 )
 
 _XFAIL = "#439: /season cancel still cancels the season at the press, off the change queue"
-_XFAIL_NOTICE = "#439: a signup channel's notice is not yet a job before its lock"
 _XFAIL_IN_HAND = "#439: a cancellation is not yet refused while the season's end is in hand"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
@@ -487,7 +486,6 @@ async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, m
     assert await _test_mode(league) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_role_discord_will_not_take_back_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
@@ -1350,7 +1348,6 @@ async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_succ
 # ── A signup channel's notice, before its lock (F2) ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_NOTICE)
 async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcome_says_so(
     tmp_path,
 ):
