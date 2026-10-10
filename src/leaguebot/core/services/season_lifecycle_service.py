@@ -704,9 +704,17 @@ def close_finish_change(
             account for account in marked
             if account not in moved_on and await hooks.closing_held(account, guild)
         ]
+        # The window's close above is the queue's form, which marks each driver it returns owed
+        # by the queue (1). A stop after it returned them and before this job was marked done
+        # leaves them so marked, and the next try's close finds nobody to return: they are read
+        # here, as `close_signup_window` reads them. No other change's marks are among them: the
+        # queue runs one change at a time, and a change it resumed at start ran before this one
+        # and planned its own.
+        owed = [str(account) for account in await hooks.owed_closing_notices()]
         untold = list(dict.fromkeys((
             *before,
             *now,
+            *owed,
             *(account for account in marked if account not in moved_on and account not in held),
         )))
         return StepResult(

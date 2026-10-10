@@ -389,6 +389,61 @@ async def test_a_discarded_finish_names_every_driver_still_marked_and_takes_thei
     assert await league.bot.signup_module_service.off_queue_closing_notices() == []
 
 
+async def test_a_driver_the_finish_s_own_close_returned_before_a_kill_is_told_once_at_the_next_start(
+    tmp_path,
+):
+    """`/signup close` (off the queue) returns driver 105 and is killed at driver 107's return,
+    the window still open. When the bot starts, the finish closes the window, which returns 107,
+    and the bot is killed again before the window is recorded closed. When it starts once more,
+    the finish closes the window, returning nobody this time, and 107, returned by its own close
+    of the start before, is still told once and their channel closed, as 105 is."""
+    from leaguebot.core.cogs.module_cog import execute_forced_close
+
+    league = await _league(tmp_path)
+    returning = league.bot.driver_service.transition
+    kills = {"return": True}
+
+    async def _transition(user_id: Any, *args: Any, **kwargs: Any) -> Any:
+        if int(user_id) == SECOND and kills["return"]:
+            kills["return"] = False
+            raise _Killed()
+        return await returning(user_id, *args, **kwargs)
+
+    league.bot.driver_service.transition = _transition
+    try:
+        await execute_forced_close(league.bot, audit_action="SIGNUP_FORCE_CLOSE")
+    except _Killed:
+        pass
+    assert await driver_state(league, SECOND) == "PENDING_SIGNUP_COMPLETION"
+    service = league.bot.signup_module_service
+    closing = service.set_window_closed
+    kills["record"] = True
+
+    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+        if kills["record"]:
+            kills["record"] = False
+            raise _Killed()
+        return await closing(*args, **kwargs)
+
+    service.set_window_closed = _set_window_closed
+    await _recover(league)
+    try:
+        await run_queue(league.bot)
+    except _Killed:
+        pass
+    assert await driver_state(league, SECOND) == "NOT_SIGNED_UP"
+    assert league.notices == []
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert not await window_open(league)
+    assert sorted(league.notices) == [(SIGNING_UP, SIGNUPS_CLOSED), (SECOND, SIGNUPS_CLOSED)]
+    assert sorted(league.locked) == [SIGNING_UP, SECOND]
+    assert await service.owed_closing_notices() == []
+    assert await service.off_queue_closing_notices() == []
+
+
 def test_the_recovery_is_asked_after_the_wizards_are_recovered_and_before_the_queue_starts():
     """The finish is asked once the signup wizards are recovered, which pass over these
     wizards, and after the close timers', whose restart close may leave marks of its own; and
