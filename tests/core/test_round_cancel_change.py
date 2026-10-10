@@ -537,6 +537,34 @@ async def test_a_round_cancel_is_refused_at_once_while_its_season_s_end_is_in_ha
     assert await _status(league) == "NOT_RUN"
 
 
+@pytest.mark.parametrize(("kind", "stage"), [
+    pytest.param(SEASON_COMPLETE_KIND, "PENDING_COMPLETION",
+                 id="its completion, the season pending completion"),
+    pytest.param(SEASON_CANCEL_KIND, "ONGOING", id="its cancellation"),
+    pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
+])
+@pytest.mark.xfail(strict=True, reason="#439: /round cancel does not yet read a season's end in hand")
+async def test_a_round_cancel_refused_while_only_its_season_s_end_close_is_left_names_no_job(
+    tmp_path, kind, stage,
+):
+    """Season 3's completion, its cancellation or its abort has done its first job, leaving only
+    its close. Cancelling Pro's round 3 is refused at once in the same words, with " (job #N)"
+    left out, as there is no job but the close to name: nothing is asked, nothing unarmed, the
+    round stands, and one refusal line is written."""
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE seasons SET stage = ? WHERE id = ?", stage, SEASON_ID)
+    await seed_season_end(league.db_path, kind, first_done=True)
+
+    interaction = await _asked(league)
+
+    assert reply(interaction) == SEASON_END_IN_HAND[kind].replace(" (job #{job})", "")
+    assert "job #" not in reply(interaction)
+    assert len(_refusal_lines(league)) == 1
+    assert await _changes_of(league) == []
+    assert league.unarmed == []
+    assert await _status(league) == "NOT_RUN"
+
+
 # ── The checks ──────────────────────────────────────────────────────────────────────
 
 
