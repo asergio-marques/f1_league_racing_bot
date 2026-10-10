@@ -636,6 +636,58 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     assert standing == {inactivity_job_id("102")}
 
 
+async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is_named(tmp_path):
+    """`/signup close` (off the queue) finds drivers 101 and 102 part-way through the wizard.
+    101's return to Not Signed Up fails with an error other than the state machine's refusal;
+    102's goes through. 101 is still signing up: their inactivity and channel-delete jobs are
+    left standing and their channel is not held, and the close names them, "<@101> could not be
+    returned to Not Signed Up." 102 is held, with their timers cancelled."""
+    db_path = await _make_db(
+        tmp_path,
+        name="fc_return_fails",
+        drivers=[
+            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
+            ("102", DriverState.PENDING_SIGNUP_COMPLETION),
+        ],
+    )
+    bot = _bot(db_path)
+
+    async def _transition(user_id, *_a, **_k):
+        if str(user_id) == "101":
+            raise RuntimeError("db locked")
+
+    bot.driver_service.transition = AsyncMock(side_effect=_transition)
+
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    cancelled = {c.args[0] for c in bot.scheduler_service.cancel_job.call_args_list}
+    assert not any(job_id.endswith("_101") for job_id in cancelled)
+    held = [c.args[0] for c in bot.wizard_service.trigger_channel_hold.await_args_list]
+    assert held == ["102"]
+    assert "<@101> could not be returned to Not Signed Up." in outcome.failed
+    assert {"wizard_inactivity_102", "wizard_channel_delete_102"} <= cancelled
+    assert outcome.returned == 1
+
+
+async def test_a_driver_who_moved_on_before_the_close_is_neither_held_nor_has_their_timers_taken(
+    tmp_path,
+):
+    """`/signup close` (off the queue) reads driver 101 part-way through the wizard, but they
+    have moved on before their return, which the state machine refuses (`ValueError`). They are
+    no longer Pending Signup Completion, so the close leaves them alone: no hold, no timer
+    cancelled, and no failure named."""
+    db_path = await _make_db(
+        tmp_path, name="fc_moved_on_alone", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    bot = _bot(db_path, transition_error=ValueError("not in PENDING_SIGNUP_COMPLETION"))
+
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    bot.wizard_service.trigger_channel_hold.assert_not_awaited()
+    bot.scheduler_service.cancel_job.assert_not_called()
+    assert list(outcome.failed) == []
+
+
 async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
     """The confirm button reports this number (issue #128). A driver awaiting approval is not
     turned away, so is not counted."""

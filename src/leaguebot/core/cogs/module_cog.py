@@ -183,7 +183,9 @@ async def execute_forced_close(
     Every step runs whatever the one before did. A step that fails is named in the outcome's
     ``failed`` and its traceback is logged; it is never swallowed. A driver whose transition the
     state machine refuses (``ValueError``) has moved on since the close read them: they are not
-    counted as returned, and it is not a failure. Any other error from that transition is.
+    counted as returned, and it is not a failure. Any other error from that transition is. Either
+    way the driver is not the close's to touch: only the drivers returned have their timers
+    cancelled and their channels held, so a driver whose return failed keeps signing up.
 
     The count is of transitions that succeeded, read at the moment of closing. The
     confirmation ``/signup close`` shows may be up to five minutes older than that.
@@ -264,11 +266,11 @@ async def execute_forced_close(
             )
 
     try:
-        # T046: cancel wizard APScheduler jobs for each force-transitioned driver
+        # T046: cancel wizard APScheduler jobs for each force-transitioned driver. Only the
+        # drivers returned: one whose return failed is still signing up and keeps their timers
+        # and channel, and one who moved on is no longer the close's to touch.
         svc = bot.scheduler_service
-        for row in rows:
-            uid = row["discord_user_id"]
-
+        for uid in returned_ids:
             for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
                 svc.cancel_job(job_id)
 
@@ -278,29 +280,27 @@ async def execute_forced_close(
         if hold_channels:
             _guild = await league_guild(bot)
             if _guild is None:
-                failed.extend(
-                    f"<@{row['discord_user_id']}> was not told signups had closed." for row in rows
-                )
+                failed.extend(f"<@{uid}> was not told signups had closed." for uid in returned_ids)
             else:
                 _wizard_svc = bot.wizard_service
-                for row in rows:
+                for uid in returned_ids:
                     try:
                         held = await _wizard_svc.trigger_channel_hold(
-                            row["discord_user_id"], _guild,
+                            uid, _guild,
                             "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
                             arm_when_refused=True,
                         )
                         if held.channel_id is not None and held.posted is False:
                             # Held and set for deletion all the same (signup spec: closing the window).
-                            failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
+                            failed.append(f"<@{uid}> was not told signups had closed.")
                     except discord.HTTPException:
                         # Discord refused the lock or the arming of the deletion, which the hold
                         # makes only after the notice: say so, rather than that they were not told.
-                        log.exception("forced_close: could not lock the channel of driver %s", row["discord_user_id"])
-                        failed.append(_channel_not_locked(row["discord_user_id"]))
+                        log.exception("forced_close: could not lock the channel of driver %s", uid)
+                        failed.append(_channel_not_locked(uid))
                     except Exception:
-                        log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
-                        failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
+                        log.exception("forced_close: trigger_channel_hold failed for driver %s", uid)
+                        failed.append(f"<@{uid}> was not told signups had closed.")
 
         # 2. Delete button message
         if cfg.signup_button_message_id:
