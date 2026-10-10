@@ -755,7 +755,8 @@ async def _last_rounds_with_results(
     """Each division of *season_id*, by id, with the last of its rounds that has results.
 
     The final classification is drawn against that round, whose classification it *is*. A
-    division that ran no round has none to publish and is left out.
+    division that ran no round has none to publish and is left out, and so is a division
+    cancelled, which gets no final classification (decided 2026-10-09).
     """
     cursor = await db.execute(
         """
@@ -765,7 +766,7 @@ async def _last_rounds_with_results(
                 WHERE r.division_id = d.id AND sr.status = 'ACTIVE'
                 ORDER BY r.round_number DESC LIMIT 1) AS round_id
         FROM divisions d
-        WHERE d.season_id = ?
+        WHERE d.season_id = ? AND d.status != 'CANCELLED'
         ORDER BY d.id
         """,
         (season_id,),

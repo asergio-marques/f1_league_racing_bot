@@ -875,7 +875,6 @@ async def test_a_division_that_ran_no_round_gets_no_final_classification(tmp_pat
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_cancelled_division_gets_no_final_classification(tmp_path):
     league = await pending_completion_league(tmp_path, attendance=True)
     await league.write("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", AM)
