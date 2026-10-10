@@ -631,7 +631,7 @@ Two of the nine *add* a picture rather than replacing anything, so switching the
 > standings pair and an opening attendance sheet for every division; completing it draws a final
 > pair and a final sheet. These two are unlike every other picture the module draws in one respect:
 > **they carry no message text at all**, because the phrase naming the occasion is on the picture
-> itself. They also post with the module switched off, as the ordinary text tables headed by that
+> itself. Each is a job on the change queue (the opening ones when the season is approved, the final ones when it is completed): a drawing Discord will not take stops the queue until it is retried, and once a league admin discards it the confirmation or the completion names it. They also post with the module switched off, as the ordinary text tables headed by that
 > same phrase — they belong to the results and attendance modules, and the pictures are only how
 > they are dressed.
 >
