@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -71,51 +70,6 @@ async def toggle_test_mode(db_path: str) -> bool:
         log.error("toggle_test_mode: no server_config row")
         return False
     return bool(row["test_mode_active"])
-
-
-async def switch_test_mode_off(bot: LeagueBot, *, discard_backup: bool = False) -> int:
-    """Switch test mode off, deleting every driver it created.
-
-    The one way test mode is left, by the toggle in Configuration or by the season it was chosen
-    for ending (issue #220). Pending forecast deletions are flushed first, as they were while a
-    season ran under test. Every fake driver is deleted and their history kept. A server not in
-    test mode is left as it is. Returns the count of fake drivers removed.
-
-    *discard_backup* deletes the saved test-mode backup as well, lock and all (decided
-    2026-09-17). The toggle and a season being **completed** pass it: nothing could restore
-    that state afterwards, the backup commands running in test mode alone. A season
-    **cancelled or aborted** does not — it was abandoned rather than run to its end, and the
-    state saved along the way is what a maintainer goes back to.
-    """
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs"
-        )
-        row = await cursor.fetchone()
-    if row is None or not row["test_mode_active"]:
-        return 0
-
-    from leaguebot.weather.services.forecast_cleanup_service import flush_pending_deletions
-    from leaguebot.core.services.test_roster_service import clear_all_test_drivers
-
-    try:
-        await flush_pending_deletions(bot)
-    except Exception:  # noqa: BLE001 — a stale forecast is not worth staying in test mode
-        log.exception("switch_test_mode_off: could not flush pending deletions")
-    removed = await clear_all_test_drivers(bot.db_path)
-    if discard_backup:
-        from leaguebot.core.services import backup_service
-
-        try:
-            backup_service.discard(bot.db_path, backup_service.jobstore_path_of(bot))
-        except Exception:  # noqa: BLE001 — a backup left behind is not worth the switch
-            log.exception("switch_test_mode_off: could not discard the saved backup")
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "UPDATE server_configs SET test_mode_active = 0"
-        )
-        await db.commit()
-    return removed
 
 
 async def switch_test_mode_off_on(db: aiosqlite.Connection) -> int:
