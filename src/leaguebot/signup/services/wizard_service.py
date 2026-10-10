@@ -1121,6 +1121,45 @@ class WizardService:
             fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
             await self._arm_channel_delete_job(discord_user_id, fire_at)
 
+    #: How many of a signup channel's latest messages are searched for its closing notice.
+    HELD_NOTICE_LOOKBACK = 20
+
+    async def rearm_deletion_if_held(
+        self, discord_user_id: str, guild: discord.Guild, notice: str
+    ) -> bool:
+        """Whether the driver's signup channel was already held, and if so arm its deletion again.
+
+        For the finish of a close a stop cut off, where the channel's deletion job is gone: the
+        scheduler drops a job whose time passed more than its grace before the bot came back, so a
+        channel held a day or more before a long stop has none. Held is the closing *notice*
+        standing among the channel's latest messages, posted by the bot, **and** the driver's
+        typing denied in the channel. Neither alone will do: a button-only question denies typing
+        too, to a driver never told, and a notice the lock never followed is not yet a hold. A
+        channel held has its deletion armed 24 hours on, as the hold arms it, and nothing posted
+        or locked again. A wizard, a channel or a member gone is no hold. Reading the messages is
+        a Discord call: a refusal raises, for the queue to stop on.
+        """
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
+        if wizard is None or wizard.signup_channel_id is None:
+            return False
+        channel = guild.get_channel(wizard.signup_channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return False
+        member = guild.get_member(int(discord_user_id))
+        if member is None or channel.overwrites_for(member).send_messages is not False:
+            return False
+        told = False
+        async for message in channel.history(limit=self.HELD_NOTICE_LOOKBACK):
+            if message.author.id == guild.me.id and message.content == notice:
+                told = True
+                break
+        if not told:
+            return False
+        await self._arm_channel_delete_job(
+            discord_user_id, datetime.now(timezone.utc) + timedelta(hours=24)
+        )
+        return True
+
     async def lock_signup_channel(self, discord_user_id: str, guild: discord.Guild) -> None:
         """Lock a driver's signup channel and arm its deletion 24 hours on, posting nothing.
 

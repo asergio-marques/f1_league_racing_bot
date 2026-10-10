@@ -836,3 +836,71 @@ async def test_a_guild_the_bot_has_left_still_clears_the_wizard(tmp_path):
     await svc._execute_channel_delete(DRIVER)
 
     svc._bot.signup_module_service.delete_wizard.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# A hold whose deletion was lost (#439, slice 5)
+# ---------------------------------------------------------------------------
+
+CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+BOT_ID = 4000
+
+
+def _held_channel(*, write_denied: bool, messages: list[tuple[int, str]]):
+    """The driver's signup channel: their typing denied or not, and its recent messages as
+    (author id, content), newest first."""
+    channel = _channel(OLD_CHANNEL)
+    channel.overwrites_for = MagicMock(
+        return_value=SimpleNamespace(send_messages=False if write_denied else None)
+    )
+
+    async def _history(**_kwargs):
+        for author, content in messages:
+            yield SimpleNamespace(author=SimpleNamespace(id=author), content=content)
+
+    channel.history = MagicMock(side_effect=_history)
+    return channel
+
+
+def _hold_guild(channel):
+    guild = _guild(old_channel=channel)
+    guild.me = SimpleNamespace(id=BOT_ID)
+    guild.get_member = MagicMock(return_value=MagicMock(spec=discord.Member))
+    return guild
+
+
+@pytest.mark.parametrize(
+    "write_denied, messages, held",
+    [
+        pytest.param(True, [(int(DRIVER), "hello?"), (BOT_ID, CLOSED_NOTICE)], True,
+                     id="told and locked"),
+        pytest.param(True, [(BOT_ID, "Step 2: choose your platform")], False,
+                     id="typing denied by a button step, never told"),
+        pytest.param(False, [(BOT_ID, CLOSED_NOTICE)], False, id="told, never locked"),
+    ],
+)
+async def test_a_channel_told_and_locked_counts_as_held_and_only_its_deletion_is_armed_again(
+    write_denied, messages, held,
+):
+    """Driver 4242's signup was ended by a close, and their channel's deletion job is gone (the
+    scheduler dropped it after a long stop). Their channel counts as held only where both the
+    closing notice stands among its recent messages, posted by the bot, and the driver's typing
+    is denied in it: then the deletion alone is armed again, 24 hours on, and nothing is posted.
+    Typing denied by a button-only question, with no notice, is no hold; nor is a notice the
+    lock never followed."""
+    channel = _held_channel(write_denied=write_denied, messages=messages)
+    svc = _service(existing=_wizard(WizardState.UNENGAGED))
+
+    found = await svc.rearm_deletion_if_held(DRIVER, _hold_guild(channel), CLOSED_NOTICE)
+
+    assert found is held
+    armed = svc._scheduler._scheduler.add_job.call_args_list
+    if held:
+        [job] = armed
+        assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
+        fire_at = job.kwargs["trigger"].run_date
+        assert timedelta(hours=23) < fire_at - datetime.now(timezone.utc) <= timedelta(hours=24)
+    else:
+        assert armed == []
+    channel.send.assert_not_awaited()
+    channel.set_permissions.assert_not_awaited()

@@ -300,7 +300,11 @@ class SeasonEndHooks:
       a stop cut it off before reaching, read on a connection of its own (`close_finish_change`).
     - *take_off_queue_closing_notices_on*: reads those accounts and clears them, on the save's
       connection.
-    - *closing_held*: whether the account's signup channel was already held, its deletion armed.
+    - *closing_held*: whether the account's signup channel was already held, given the league's
+      server. It reads the scheduler's job store first, a channel-delete job standing being the
+      record of a hold (the job store standing in for a record of signup's own, which it was
+      meant only to serve); where none stands, the wizard service judges the channel itself (the
+      closing notice posted and the driver's typing denied) and arms the deletion again.
     """
 
     close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
@@ -320,7 +324,7 @@ class SeasonEndHooks:
     end_wizards_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
     off_queue_closing_notices: Callable[[], Awaitable[list[str]]]
     take_off_queue_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
-    closing_held: Callable[[str], bool]
+    closing_held: Callable[[str, discord.Guild], Awaitable[bool]]
 
 
 #: The jobs of one driver's Discord side of a season's end, as the stop notice, the tests and
@@ -634,6 +638,12 @@ def close_finish_change(
        job leaves, and names those drivers as returned but not told, as a discarded close of the
        window on the queue does.
 
+    A driver is told twice in two cases, both accepted as rare (owner, 2026-10-10): one whose
+    lock Discord refused just before the stop, named then for their channel to be deleted by
+    hand, which is neither locked nor set for deletion; and one whose notice posted before a
+    fault other than Discord's stopped the hold short of the lock. Neither channel counts as held
+    (`SeasonEndHooks.closing_held`), so each is told again and then closed.
+
     *placement* and *hooks* are handed by the builder; without them the change is only described.
     """
 
@@ -649,9 +659,10 @@ def close_finish_change(
         # A mark that outlived its close (no stop to finish it) is no warrant to close a signup
         # the driver has since begun: only a driver still Not Signed Up is the close's.
         moved_on = await _no_longer_not_signed_up(ctx.db_path, marked)
+        guild = await require_guild(ctx.bot)
         untold = [
             account for account in marked
-            if account not in moved_on and not hooks.closing_held(account)
+            if account not in moved_on and not await hooks.closing_held(account, guild)
         ]
         return StepResult(
             result={"marked": marked, "returned": untold}, then=window_closed_jobs(untold)

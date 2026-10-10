@@ -169,7 +169,10 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     before it is needed."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
     from leaguebot.core.services import backup_service
-    from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
+    from leaguebot.core.services.season_lifecycle_service import (
+        WINDOW_CLOSED_NOTICE,
+        SeasonEndHooks,
+    )
     from leaguebot.image.services import driver_portrait_service
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
@@ -228,9 +231,14 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     async def take_off_queue_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
         return await bot.signup_module_service.take_off_queue_closing_notices_on(db)
 
-    def closing_held(user_id: str) -> bool:
-        # Held is the channel's deletion armed: the hold arms it, and it is signup's own job.
-        return bot.scheduler_service.has_job(channel_delete_job_id(user_id))
+    async def closing_held(user_id: str, guild: discord.Guild) -> bool:
+        # A channel-delete job standing is the record of a hold; where the scheduler dropped it
+        # after a long stop, the wizard service judges the channel and arms the deletion again.
+        if bot.scheduler_service.has_job(channel_delete_job_id(user_id)):
+            return True
+        return await bot.wizard_service.rearm_deletion_if_held(
+            user_id, guild, WINDOW_CLOSED_NOTICE
+        )
 
     return SeasonEndHooks(
         close_signups=close_signups,

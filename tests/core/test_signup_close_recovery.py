@@ -64,6 +64,8 @@ async def _league(tmp_path: Any) -> Any:
             f"wizard_channel_delete_{user_id}" for user_id in league.locked
         }
     )
+    # No channel was told and locked with its deletion lost, unless a test says so.
+    league.bot.wizard_service.rearm_deletion_if_held = AsyncMock(return_value=False)
     return league
 
 
@@ -239,6 +241,27 @@ async def test_a_marked_driver_who_has_signed_up_again_is_passed_over_and_their_
     assert league.locked == []
     assert await league.bot.signup_module_service.off_queue_closing_notices() == []
     assert await driver_state(league, SECOND) == "PENDING_SIGNUP_COMPLETION"
+
+
+async def test_a_held_driver_whose_deletion_was_lost_is_not_told_again(tmp_path):
+    """Driver 107 was told and their channel locked by a close off the queue that a stop then
+    cut off, and the long stop lost the channel's deletion job. When the bot starts, the finish
+    asks the wizard service whether 107's channel was held; it was, and its deletion is armed
+    again: 107 is not told a second time, nor locked again, and their mark is cleared."""
+    league = await _league(tmp_path)
+    await _marked_by_a_close_off_the_queue(league, SECOND)
+    league.bot.wizard_service.rearm_deletion_if_held = AsyncMock(
+        side_effect=lambda user_id, _guild, notice: int(user_id) == SECOND
+        and notice == SIGNUPS_CLOSED
+    )
+
+    await _recover(league)
+    await run_queue(league.bot)
+
+    assert league.notices == [] and league.locked == []
+    asked = league.bot.wizard_service.rearm_deletion_if_held.await_args_list
+    assert [int(call.args[0]) for call in asked] == [SECOND]
+    assert await league.bot.signup_module_service.off_queue_closing_notices() == []
 
 
 def test_the_recovery_is_asked_after_the_wizards_are_recovered_and_before_the_queue_starts():
