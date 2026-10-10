@@ -437,7 +437,6 @@ def _forbidden() -> discord.HTTPException:
 # ── Defect 5, and the cancellation's windows ────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     league = await ongoing_league(tmp_path, signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -456,7 +455,6 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
 
 
 @pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
     _flush_failing(monkeypatch, failing)
@@ -505,7 +503,6 @@ async def test_a_role_discord_will_not_take_back_stops_the_queue_and_once_discar
     assert f"  not done: {ROLES_KEPT}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_not_notified(
     tmp_path,
 ):
@@ -530,7 +527,6 @@ async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_na
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_notice_channel_deleted_stops_the_queue_and_goes_through_once_it_is_set_again(
     tmp_path,
 ):
@@ -551,7 +547,6 @@ async def test_a_notice_channel_deleted_stops_the_queue_and_goes_through_once_it
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_the_call_s_record(
     tmp_path,
 ):
@@ -572,7 +567,6 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_the_old_retry_queue(
     tmp_path,
 ):
@@ -592,7 +586,6 @@ async def test_a_calendar_discord_refuses_stops_the_queue_and_puts_nothing_on_th
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
@@ -618,7 +611,6 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_stop_part_way_is_finished_on_restart_telling_nobody_twice(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True)
     await _asked(league)
@@ -637,7 +629,6 @@ async def test_a_stop_part_way_is_finished_on_restart_telling_nobody_twice(tmp_p
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated(tmp_path):
     league = await ongoing_league(tmp_path)
     interaction = await _asked(league)
@@ -651,7 +642,6 @@ async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated
     assert CANCELLED in reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_nothing_is_announced_until_the_cancellation_is_recorded(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True, held=True)
     await _asked(league)
@@ -667,7 +657,6 @@ async def test_nothing_is_announced_until_the_cancellation_is_recorded(tmp_path)
     assert await _history(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_history_the_driver_pass_test_mode_and_the_season_s_cancellation_are_saved_together(
     tmp_path,
 ):
@@ -694,7 +683,6 @@ async def test_the_history_the_driver_pass_test_mode_and_the_season_s_cancellati
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_writing_nothing(
     tmp_path,
 ):
@@ -823,7 +811,6 @@ _RUN_REFUSALS = {
 
 
 @pytest.mark.parametrize("case", sorted(_RUN_REFUSALS))
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_refusal_found_when_the_cancellation_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, case,
 ):
@@ -871,7 +858,6 @@ async def test_a_cancellation_is_refused_at_once_while_another_end_of_the_season
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_jobs_run_in_order(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True, test_mode=True,
                                   held=True)
@@ -900,7 +886,6 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -940,7 +925,6 @@ async def _am_finished(league: Any) -> None:
 
 
 @pytest.mark.parametrize("how", ["cancelled", "finished"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_division_already_cancelled_or_finished_is_not_told(tmp_path, how):
     league = await ongoing_league(tmp_path, weather=True, attendance=True)
     await _am_calendar_posted(league)
@@ -983,7 +967,6 @@ async def test_a_calendar_never_posted_is_left_alone(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_each_call_of_a_round_called_off_comes_down_and_its_check_in_is_written_beneath_the_line(
     tmp_path,
 ):
@@ -999,7 +982,6 @@ async def test_each_call_of_a_round_called_off_comes_down_and_its_check_in_is_wr
     assert CHECKIN_R3 in line
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_an_empty_open_submission_is_closed_in_the_first_save_and_its_channel_deleted_first_after_it(
     tmp_path,
 ):
@@ -1020,7 +1002,6 @@ async def test_an_empty_open_submission_is_closed_in_the_first_save_and_its_chan
     assert len(deleted) == 1 and deleted[0] < first_send
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_uncommitted_placements_are_discarded(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write(
@@ -1040,7 +1021,6 @@ async def test_uncommitted_placements_are_discarded(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_pass(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -1072,7 +1052,6 @@ async def test_each_round_called_off_is_audited_with_the_status_it_was_cancelled
     assert [row["old_value"] for row in audits if row["division_id"] == AM] == ["NOT_RUN"] * 4
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_every_driver_gets_a_history_entry_marked_cancelled(tmp_path):
     league = await ongoing_league(tmp_path)
     await _formers(league, LEWIS, CHARLES)
@@ -1086,7 +1065,6 @@ async def test_every_driver_gets_a_history_entry_marked_cancelled(tmp_path):
     assert (await _change(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_driver_pass_returns_the_drivers_and_deletes_those_who_never_raced(tmp_path):
     league = await ongoing_league(tmp_path)
     await _formers(league, LEWIS)
@@ -1103,7 +1081,6 @@ async def test_the_driver_pass_returns_the_drivers_and_deletes_those_who_never_r
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_test_mode_is_switched_off_and_its_saved_state_kept(tmp_path):
     league = await ongoing_league(tmp_path, test_mode=True)
     await _asked(league)
@@ -1135,7 +1112,6 @@ async def test_the_roles_are_taken_back_after_the_notices(tmp_path):
         assert set(league.revoked[user_id]) == roles
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     _unarming_fails(league)
@@ -1155,7 +1131,6 @@ async def test_a_discarded_unarming_cancels_nothing(tmp_path):
     assert await _status(league) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_first_save_cancels_nothing_and_says_the_timed_work_is_gone(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     rounds = await _rounds(league)
@@ -1177,7 +1152,6 @@ async def test_a_discarded_first_save_cancels_nothing_and_says_the_timed_work_is
 
 
 @pytest.mark.parametrize("then", ["run again", "wound down meanwhile"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_last_save_says_to_run_the_command_again_and_running_it_again_finishes_it(
     tmp_path, then,
 ):
@@ -1215,7 +1189,6 @@ async def test_a_discarded_last_save_says_to_run_the_command_again_and_running_i
     assert _posted(league) == posted
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_one_success_line_records_the_cancellation_after_the_last_job(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     league.channel(PRO_CH.calendar).send_fails = _forbidden()
@@ -1235,7 +1208,6 @@ async def test_one_success_line_records_the_cancellation_after_the_last_job(tmp_
     assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_season_is_recorded_cancelled_last_audited_and_never_moved_to_pending_completion(
     tmp_path,
 ):
@@ -1256,7 +1228,6 @@ async def test_the_season_is_recorded_cancelled_last_audited_and_never_moved_to_
     assert await league.rows("SELECT * FROM seasons WHERE status = 'ACTIVE'") == []
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     league = await ongoing_league(tmp_path, weather=True)
     interaction = await _asked(league)
@@ -1271,7 +1242,6 @@ async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_division(
     tmp_path, monkeypatch,
 ):
@@ -1303,7 +1273,6 @@ async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_d
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_driver_approved_but_never_placed_loses_the_driver_role(tmp_path):
     league = await ongoing_league(tmp_path, held=True)
     await approved_unplaced(league)
@@ -1353,7 +1322,6 @@ _DISCARDS = {
 
 
 @pytest.mark.parametrize("job", sorted(_DISCARDS))
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_success_line(
     tmp_path, monkeypatch, job,
 ):

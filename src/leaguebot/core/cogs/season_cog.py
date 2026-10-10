@@ -41,12 +41,13 @@ from discord.ext import commands
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round as RoundModel
-from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
+from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import approval_checks, cancellation_notice_service
+from leaguebot.core.services import approval_checks
 from leaguebot.core.services.cancellation_changes import (
     DIVISION_CANCEL,
     ROUND_CANCEL,
+    SEASON_CANCEL,
     cancellation_holding_amendment,
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
@@ -80,7 +81,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView, guild_of, is_foreign_guild
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
@@ -3187,183 +3188,15 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Cancelled only while ongoing (issue #220): a season pending completion has run its
-        # course and is completed instead.
-        from leaguebot.core.models.season import ONGOING_STAGES
-
-        if season.stage not in ONGOING_STAGES:
-            await refuse(
-                interaction,
-                "\u274c Every division of this season is done. Complete it with "
-                "`/season complete` instead.",
-                what=describe(interaction),
-            )
-            return
-
-        # **Not while a round is being amended** (#345, decided 2026-09-21). Cancelling writes
-        # every driver's history from the standings, which hold an open amendment's corrections
-        # before they are approved — and the history is never rewritten. Refused before anything
-        # else runs, so that a refusal leaves the season exactly as it was.
-        from leaguebot.results.services.result_submission_service import open_amendment_in_season
-
-        held = await open_amendment_in_season(self.bot.db_path, season.id)
-        if held is not None:
-            await refuse(
-                interaction,
-                f"\u274c Cannot cancel the season — round {held['round_number']} of "
-                f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
-                "Finish or cancel it first: cancelling writes every driver's history from the "
-                "standings, which would carry its corrections before they are approved.",
-                what=describe(interaction),
-            )
-            return
-
-        # **Not while a results submission holds accepted results** (#439, owner 2026-10-08,
-        # amending Constitution XII): a session accepted into an open submission, or one entered
-        # as not held, is data the cascade below would lose, and a round in its review counts. An
-        # open submission with nothing accepted does not hold the cancellation; it is closed
-        # right after the defer. Refused before anything else runs, naming the round.
-        from leaguebot.results.services.result_submission_service import open_submissions
-
-        standing: dict[int, tuple[str, RoundModel]] = {}
-        for division in await self.bot.season_service.get_divisions(season.id):
-            if division.status == "CANCELLED":
-                continue
-            for division_round in await self.bot.season_service.get_division_rounds(division.id):
-                standing[division_round.id] = (division.name, division_round)
-        open_ones = await open_submissions(self.bot.db_path, list(standing))
-        held_submissions = [each for each in open_ones if each.accepted]
-        if held_submissions:
-            # The first by division, then by round number, as the season lists them.
-            order = list(standing)
-            first = min(held_submissions, key=lambda each: order.index(each.round_id))
-            division_name, held_round = standing[first.round_id]
-            await refuse(
-                interaction,
-                f"\u274c Cannot cancel the season — results have already been accepted in the "
-                f"submission channel of round {held_round.round_number} of **{division_name}** "
-                f"(<#{first.channel_id}>), and cancelling would lose them.",
-                what=describe(interaction),
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        # **The empty open submissions are closed first**, before the timed work goes and before
-        # the history is written, so that the wizard waiting in each refuses any paste from here
-        # on (it asks `closed_by_cancellation`). Each is marked closed and its channel deleted.
-        # A run this command's failure cut short finds them closed already, and the cascade
-        # cancels their rounds when it is run again. A channel Discord will not delete is named
-        # at once, as every failure of this command is.
-        from leaguebot.results.services.result_submission_service import (
-            close_submission_channel,
-        )
-
-        channel_failures: list[cancellation_notice_service.NoticeFailure] = []
-        for each in open_ones:
-            gone = await close_submission_channel(
-                each.channel_id, each.round_id, guild_of(interaction), self.bot.db_path
-            )
-            if not gone:
-                division_name, closed_round = standing[each.round_id]
-                channel_failures.append(
-                    cancellation_notice_service.NoticeFailure(
-                        division_name,
-                        f"results submission channel of round {closed_round.round_number}",
-                        f"could not be deleted; delete <#{each.channel_id}> by hand",
-                    )
-                )
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        # Told: every division still running. A division already cancelled was told when it
-        # was, and one already finished has no round left to call off and nothing to hear.
-        active_divs = [d for d in divisions if d.status not in ("CANCELLED", "FINISHED")]
-
-        # The rounds the cascade below is about to call off: those of the divisions it
-        # cancels whose results are not yet in, exactly as `ROUND_CANCELLABLE` has it for the
-        # cascade itself. The jobs of every division go, told or not.
-        cancelled_divs = {d.id for d in divisions if d.status != "CANCELLED"}
-        to_cancel: set[int] = set()
-        for div in divisions:
-            div_rounds = await self.bot.season_service.get_division_rounds(div.id)
-            for rnd in div_rounds:
-                self.bot.scheduler_service.cancel_round(rnd.id)
-                if rnd.status in ROUND_CANCELLABLE and div.id in cancelled_divs:
-                    to_cancel.add(rnd.id)
-        self.bot.scheduler_service.cancel_season_end()
-
-        # A cancelled season is still league history: it happened, and the drivers raced in it.
-        #
-        # Written *before* the cascade, and marked cancelled explicitly rather than by reading
-        # the divisions. Written after, the rows would be beyond reach of a retry — this command
-        # refuses once the season is no longer active — so a failure in between would lose them
-        # with no way to put them back. Before the cascade, the season is still ACTIVE and the
-        # whole command can simply be run again; the write is idempotent, so running it again
-        # adds nothing.
-        #
-        # A placement not yet confirmed never entered the championship, and is discarded first so
-        # that it earns no history entry and holds no seat (issue #220).
-        await self.bot.season_service.discard_uncommitted_placements(season.id)
-
-        from leaguebot.core.services.season_end_service import (
-            _revoke_season_roles,
-            _write_driver_history_entries,
-            end_of_season_pass,
-        )
-
-        await _write_driver_history_entries(season, self.bot, force_cancelled=True)
-
-        # Each division still running is told by each enabled module, in its own channel, and
-        # its calendar posted again with the called-off rounds struck through (#175).
-        #
-        # The placing is deliberate on both sides. **After** the history, which is the step a
-        # failure is most likely to stop and the admin to run again, so that running it again
-        # does not tell every division twice. **Before** the roles are revoked, since the
-        # check-in notice mentions the division role and a role nobody holds any more reaches
-        # nobody; and before the cascade, since a season recorded cancelled no longer has its
-        # channels read — which is also why the rounds about to be cancelled are named here
-        # rather than read back.
-        report = await cancellation_notice_service.announce_cancellation(
-            self.bot,
-            interaction.guild,
-            active_divs,
-            scope=cancellation_notice_service.SCOPE_SEASON,
-            season_number=season.season_number,
-            round_ids=frozenset(to_cancel),
-        )
-        report.failures = channel_failures + report.failures
-
-        # A round that was raced but whose verdicts are still open is closed as FINAL, and must
-        # be **before the driver pass**. The cascade below cannot cancel it — its results are
-        # in, and a cancellation never discards a result — so nothing else would ever move it
-        # off a non-terminal state. That leaves its drivers unflagged when the pass runs, and
-        # the pass deletes a flagless profile at Not Signed Up, NULLing the result rows that
-        # point at it (#216).
-        await self.bot.season_service.close_raced_rounds_for_cancellation(
-            season.id, interaction.user.id, str(interaction.user)
-        )
-
-        # The roles, the driver pass, the window and test mode — as completing a season does.
-        if interaction.guild is not None:
-            await _revoke_season_roles(
-                season.id, interaction.guild, self.bot
-            )
-        await end_of_season_pass(self.bot, interaction.guild)
-
-        await self.bot.season_service.cancel_season_cascade(
-            season_id=season.id,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-        )
-
-        await interaction.followup.send(
-            "\u2705 Season cancelled." + cancellation_notice_service.failure_lines(report.failures),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success"
-            + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures),
+        # Every other gate (a season pending completion, a round being amended, a submission
+        # holding accepted results) is the change type's check, made now and again as the
+        # cancellation comes up to run, in the words this command used. The queue's
+        # acknowledgement is this command's response, so nothing is deferred.
+        await self.bot.change_queue.ask(
+            SEASON_CANCEL,
+            {"season_id": season.id, "season_number": season.season_number},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @season.command(
