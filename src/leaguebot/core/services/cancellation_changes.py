@@ -110,8 +110,8 @@ from leaguebot.core.services.season_end_changes import (
     END,
     SEASON_CANCEL,
     SEASON_ENDED_NOTICE,
-    cancellation_in_hand_refusal,
     season_end_in_hand,
+    season_end_refusal,
     shared_not_done,
     test_mode_on,
 )
@@ -1199,8 +1199,10 @@ def season_cancel_change(
         # itself.
         if ctx.change_id is None:
             hand = await season_end_in_hand(ctx.db_path, season.id)
-            if hand is not None and hand[0] == SEASON_CANCEL:
-                return Verdict.refuse(cancellation_in_hand_refusal(season.season_number, hand[1]))
+            if hand is not None:
+                return Verdict.refuse(
+                    season_end_refusal(SEASON_CANCEL, hand, season.season_number)
+                )
         if season.stage not in ONGOING_STAGES:
             return Verdict.refuse(SEASON_NOT_ONGOING)
 

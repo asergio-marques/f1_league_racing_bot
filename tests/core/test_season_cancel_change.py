@@ -86,7 +86,6 @@ from tests.support.season_league import (
     window_open,
 )
 
-_XFAIL_IN_HAND = "#439: a cancellation is not yet refused while the season's end is in hand"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R2, R3, R4 = round_id(PRO, 2), round_id(PRO, 3), round_id(PRO, 4)
@@ -840,7 +839,6 @@ async def test_a_refusal_found_when_the_cancellation_runs_updates_the_reply_and_
 
 @pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_ABORT_KIND])
 @pytest.mark.parametrize("stopped", [False, True], ids=["waiting", "stopped"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL_IN_HAND)
 async def test_a_cancellation_is_refused_at_once_while_another_end_of_the_season_is_in_hand(
     tmp_path, kind, stopped,
 ):

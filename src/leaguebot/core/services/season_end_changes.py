@@ -123,6 +123,7 @@ __all__ = [
     "season_abort_change",
     "season_complete_change",
     "season_end_in_hand",
+    "season_end_refusal",
     "shared_not_done",
     "test_mode_on",
     "view_of",
@@ -223,6 +224,33 @@ def abort_in_hand_refusal(job: int) -> str:
         f"⏳ The season being set up is already being aborted{named}. If it has stopped, press "
         "Retry or Discard on its notice in the log channel."
     )
+
+
+def season_end_refusal(own: str | None, hand: tuple[str, int], season_number: Any) -> str:
+    """The refusal of a request while the season's end *hand* (its kind and job, as
+    `season_end_in_hand` gives them) is in hand.
+
+    A request that is itself the same kind of end, *own*, is a second one and is told so in the
+    words of its command; any other request is told the season is being ended and that this cannot
+    be done until that is finished. The job is left out where only the end's close is left.
+    """
+    kind, job = hand
+    if own == kind:
+        if kind == SEASON_COMPLETE:
+            return completion_in_hand_refusal(season_number, job)
+        if kind == SEASON_CANCEL:
+            return cancellation_in_hand_refusal(season_number, job)
+        return abort_in_hand_refusal(job)
+    named = f" (job #{job})" if job else ""
+    tail = (
+        ", so this cannot be done until that is finished. If it has stopped, press Retry or "
+        "Discard on its notice in the log channel."
+    )
+    if kind == SEASON_COMPLETE:
+        return f"⏳ Season {season_number} is being completed{named}{tail}"
+    if kind == SEASON_CANCEL:
+        return f"⏳ Season {season_number} is being cancelled{named}{tail}"
+    return f"⏳ The season being set up is being aborted{named}{tail}"
 
 
 async def season_end_in_hand(
@@ -386,11 +414,11 @@ def season_complete_change(
         # **A second completion, asked while the first is in hand** (owner, 2026-10-09): refused
         # at once, naming the job. Only as it is asked: as the change runs, it would find itself.
         if ctx.change_id is None:
-            for payload, job in await in_hand(ctx.db_path, (SEASON_COMPLETE,)):
-                if payload.get("season_id") == season.id:
-                    return Verdict.refuse(
-                        completion_in_hand_refusal(season.season_number, job or 0)
-                    )
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None:
+                return Verdict.refuse(
+                    season_end_refusal(SEASON_COMPLETE, hand, season.season_number)
+                )
 
         # **Not while a round is being amended** (#345, decided 2026-09-21): completing posts
         # each division's final classification from the database, which holds an open
@@ -683,8 +711,10 @@ def season_abort_change(
         # once, naming the job. Only as it is asked: as the change runs, it would find itself.
         if ctx.change_id is None:
             hand = await season_end_in_hand(ctx.db_path, season.id)
-            if hand is not None and hand[0] == SEASON_ABORT:
-                return Verdict.refuse(abort_in_hand_refusal(hand[1]))
+            if hand is not None:
+                return Verdict.refuse(
+                    season_end_refusal(SEASON_ABORT, hand, season.season_number)
+                )
         return Verdict.go()
 
     async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

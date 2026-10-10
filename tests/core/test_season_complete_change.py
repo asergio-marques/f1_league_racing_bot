@@ -75,7 +75,6 @@ from tests.support.season_league import (
     window_open,
 )
 
-_XFAIL_IN_HAND = "#439: a completion is not yet refused while the season's end is in hand"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 COMPLETED = "✅ Season marked as complete."
@@ -631,7 +630,6 @@ async def test_a_second_completion_is_refused_at_once_naming_the_job(tmp_path, h
 
 @pytest.mark.parametrize("kind", [SEASON_CANCEL_KIND, SEASON_ABORT_KIND])
 @pytest.mark.parametrize("stopped", [False, True], ids=["waiting", "stopped"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL_IN_HAND)
 async def test_a_completion_is_refused_at_once_while_another_end_of_the_season_is_in_hand(
     tmp_path, kind, stopped,
 ):
