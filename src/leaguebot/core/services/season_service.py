@@ -575,25 +575,6 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
-    async def all_divisions_finished(self) -> bool:
-        """True if every division of the active season is FINISHED or CANCELLED.
-
-        This is the gate on completing a season. It asks about divisions, not rounds: a division
-        is the unit a league finishes, and one that was cancelled never had to run its rounds at
-        all. `get_outstanding_rounds` supplies the detail for the refusal.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT COUNT(*) FROM divisions d
-                JOIN seasons s ON s.id = d.season_id
-                WHERE s.status    = 'ACTIVE'
-                  AND d.status NOT IN ('FINISHED', 'CANCELLED')
-                """,
-            )
-            row = await cursor.fetchone()
-        return row is not None and row[0] == 0
-
     async def get_outstanding_rounds(self) -> list[dict]:
         """Return division, round_number and track_name for every round still to be finalised.
 
