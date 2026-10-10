@@ -996,7 +996,6 @@ async def _goes_on(tmp_path, name, *, kind, payload, state):
     assert _logged(interaction) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_SEASON_END)
 @pytest.mark.parametrize("division", ["Pro", "Am"])
 @_IN_HAND
 async def test_a_round_is_not_amended_while_its_season_s_completion_is_in_hand(
