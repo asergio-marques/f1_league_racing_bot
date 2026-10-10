@@ -124,17 +124,41 @@ async def _audit(db_path):
 # ---------------------------------------------------------------------------
 
 
+def _ends_recorded(bot) -> list[tuple[object, str, bool]]:
+    """Each wizard the close marks over, recorded as the signup module service is handed it:
+    (the connection, the account, whether the driver is owed their closing notice)."""
+    ended: list[tuple[object, str, bool]] = []
+
+    async def _end(db, discord_user_id, *, closing_notice_owed=False) -> None:
+        ended.append((db, str(discord_user_id), closing_notice_owed))
+
+    bot.signup_module_service.end_wizard_on = AsyncMock(side_effect=_end)
+    return ended
+
+
+async def _handed_on(bot) -> object:
+    """Run what the close handed the transition to save with it, on a stand-in connection."""
+    db = object()
+    await bot.driver_service.transition.await_args.kwargs["also_on"](db)
+    return db
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
+)
 async def test_a_driver_still_filling_in_the_wizard_is_turned_away(tmp_path):
     db_path = await _make_db(
         tmp_path, drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
     )
     bot = _bot(db_path)
+    ended = _ends_recorded(bot)
 
     await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
 
-    bot.driver_service.transition.assert_awaited_once_with(
-        "101", DriverState.NOT_SIGNED_UP
-    )
+    bot.driver_service.transition.assert_awaited_once()
+    assert bot.driver_service.transition.await_args.args == ("101", DriverState.NOT_SIGNED_UP)
+    db = await _handed_on(bot)
+    assert ended == [(db, "101", False)]
 
 
 @pytest.mark.parametrize(
@@ -370,11 +394,15 @@ async def test_a_channel_discord_will_not_lock_is_named_apart_from_a_driver_not_
     assert outcome.returned == 1
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
+)
 async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
     """The season's end closes the window on the change queue, where each driver's notice and
     lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling
-    in the wizard) to Not Signed Up and gives their id, leaves 102 (awaiting approval) alone,
-    and holds no channel itself."""
+    in the wizard) to Not Signed Up, marking their wizard over and owed its closing notice in
+    the same save, and gives their id, leaves 102 (awaiting approval) alone, and holds no
+    channel itself."""
     db_path = await _make_db(
         tmp_path,
         name="fc_unheld",
@@ -384,15 +412,173 @@ async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds
         ],
     )
     bot = _bot(db_path)
+    ended = _ends_recorded(bot)
 
     outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
 
-    bot.driver_service.transition.assert_awaited_once_with("101", DriverState.NOT_SIGNED_UP)
+    bot.driver_service.transition.assert_awaited_once()
+    assert bot.driver_service.transition.await_args.args == ("101", DriverState.NOT_SIGNED_UP)
+    db = await _handed_on(bot)
+    assert ended == [(db, "101", True)]
     bot.wizard_service.trigger_channel_hold.assert_not_awaited()
     assert outcome.returned == 1
     assert [str(uid) for uid in outcome.returned_ids] == ["101"]
     assert list(outcome.failed) == []
     bot.signup_module_service.set_window_closed.assert_awaited_once()
+
+
+async def _real_services(tmp_path, *, name, hours_since_activity=1.0):
+    """Driver 101 part-way through the wizard (Pending Signup Completion, the wizard collecting
+    their notes in channel 555), their last answer *hours_since_activity* hours ago, and the
+    window open on button 8800 in channel 700; the bot's signup module and driver services the
+    real ones on the migrated database. `recover_wizards` reads the host's clock, so the time is
+    computed from it."""
+    from datetime import timedelta, timezone
+
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    db_path = await _make_db(
+        tmp_path, name=name, drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    last = datetime.now(timezone.utc) - timedelta(hours=hours_since_activity)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (id, signup_channel_id, signups_open, "
+            "signup_button_message_id) VALUES (1, ?, 1, ?)",
+            (SIGNUP_CHANNEL, BUTTON_MESSAGE),
+        )
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+            "signup_channel_id, last_activity_at) VALUES ('101', 'COLLECTING_NOTES', ?, ?)",
+            (WIZARD_CHANNEL, last.isoformat()),
+        )
+        await db.commit()
+    bot = _bot(db_path)
+    bot.signup_module_service = SignupModuleService(db_path)
+    bot.driver_service = DriverService(db_path)
+    return bot
+
+
+async def _wizard_of(db_path, user_id: str) -> tuple[str, int]:
+    """The wizard's state and its signup channel."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT wizard_state, signup_channel_id FROM signup_wizard_records "
+            "WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+    assert row is not None, user_id
+    return row[0], row[1]
+
+
+async def _owed_of(db_path, user_id: str) -> int:
+    """Whether the wizard's driver is owed their closing notice."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT closing_notice_owed FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def _state_of(db_path, user_id: str) -> str:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def _window_still_open(db_path) -> bool:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT signups_open FROM signup_module_config WHERE id = 1")
+        return bool((await cursor.fetchone())[0])
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
+)
+async def test_a_restart_within_a_day_after_a_close_tells_nobody_their_session_expired(tmp_path):
+    """`/signup close` turns driver 101 away, an hour after their last answer, and the bot
+    restarts. Their signup has ended, so the restart arms no inactivity job for them, fires no
+    expiry and posts nothing."""
+    import asyncio
+
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    bot = await _real_services(tmp_path, name="fc_restart")
+    outcome = await execute_forced_close(
+        bot, audit_action="SIGNUP_FORCE_CLOSE", window=BUTTON_MESSAGE
+    )
+    assert outcome.refused is None and outcome.returned == 1
+
+    wizards = WizardService.__new__(WizardService)
+    wizards._db_path = bot.db_path
+    wizards._correction_tasks = {}
+    wizards._scheduler = MagicMock()
+    wizards._output_router = MagicMock()
+    wizards._output_router.post_log = AsyncMock()
+    wizards._bot = bot
+    wizards.recover_correction_timeouts = AsyncMock()
+    wizards._arm_inactivity_job = AsyncMock()
+    wizards.handle_inactivity_timeout = AsyncMock()
+    wizards.trigger_channel_hold = AsyncMock()
+    before = asyncio.all_tasks()
+
+    await wizards.recover_wizards()
+    await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+
+    wizards._arm_inactivity_job.assert_not_awaited()
+    wizards.handle_inactivity_timeout.assert_not_awaited()
+    wizards.trigger_channel_hold.assert_not_awaited()
+    wizards._output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
+)
+@pytest.mark.parametrize("case", ["on the queue", "the mark fails", "off the queue"])
+async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_save(tmp_path, case):
+    """Driver 101, part-way through the wizard, is returned to Not Signed Up by the window's
+    close, on the real services.
+
+    - On the queue (`hold_channels=False`): 101 is Not Signed Up, their wizard unengaged and
+      owed its closing notice, together, its channel kept for the queue's jobs.
+    - The mark cannot be written (the wizard's record refuses the update): 101's return is
+      rolled back with it, still Pending Signup Completion with the wizard as it was, and the
+      queue's close raises the failure, stopping before the window is recorded closed.
+    - Off the queue (`hold_channels=True`): 101's wizard is marked over but owes nothing, the
+      close holding the channel itself."""
+    bot = await _real_services(tmp_path, name="fc_mark")
+    if case == "the mark fails":
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "CREATE TRIGGER mark_fails BEFORE UPDATE ON signup_wizard_records "
+                "BEGIN SELECT RAISE(ABORT, 'the mark could not be written'); END"
+            )
+            await db.commit()
+
+    if case == "the mark fails":
+        with pytest.raises(Exception) as raised:
+            await execute_forced_close(bot, audit_action="X", hold_channels=False)
+        chain, error = [], raised.value
+        while error is not None:
+            chain.append(str(error))
+            error = error.__cause__ or error.__context__
+        assert any("the mark could not be written" in text for text in chain), chain
+        assert await _state_of(bot.db_path, "101") == "PENDING_SIGNUP_COMPLETION"
+        assert await _wizard_of(bot.db_path, "101") == ("COLLECTING_NOTES", WIZARD_CHANNEL)
+        assert await _owed_of(bot.db_path, "101") == 0
+        assert await _window_still_open(bot.db_path)
+        return
+
+    await execute_forced_close(bot, audit_action="X", hold_channels=case == "off the queue")
+
+    assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
+    assert await _wizard_of(bot.db_path, "101") == ("UNENGAGED", WIZARD_CHANNEL)
+    assert await _owed_of(bot.db_path, "101") == int(case == "on the queue")
 
 
 async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
