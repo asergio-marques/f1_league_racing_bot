@@ -569,6 +569,73 @@ async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_s
     assert await _owed_of(bot.db_path, "101") == int(case == "on the queue")
 
 
+class _Killed(BaseException):
+    """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
+
+
+async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driver_s_timer_armed(
+    tmp_path,
+):
+    """Drivers 101 and 102 are both part-way through the wizard, each with an inactivity job
+    standing in the scheduler, when the change queue's close returns them, on the real driver
+    and signup module services. The process is killed in 102's return, after 101's return has
+    been saved. At that moment 101 is Not Signed Up and owed their closing notice, and their
+    inactivity and channel-delete jobs are already cancelled: none is left to tell them their
+    session expired once the bot starts again. 102 is untouched: still part-way through, owed
+    nothing, their inactivity job standing."""
+    from datetime import timedelta, timezone
+
+    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+
+    bot = await _real_services(tmp_path, name="fc_killed")
+    last = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES ('102', 'PENDING_SIGNUP_COMPLETION')"
+        )
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+            "signup_channel_id, last_activity_at) VALUES ('102', 'COLLECTING_NOTES', 556, ?)",
+            (last,),
+        )
+        await db.commit()
+
+    standing = {inactivity_job_id("101"), inactivity_job_id("102")}
+    cancelled: list[str] = []
+
+    def _cancel(job_id: str) -> None:
+        cancelled.append(job_id)
+        standing.discard(job_id)
+
+    bot.scheduler_service.cancel_job = MagicMock(side_effect=_cancel)
+    returning = bot.driver_service.transition
+    asked: list[str] = []
+
+    async def _transition(user_id, *args, **kwargs):
+        asked.append(str(user_id))
+        if str(user_id) == "102":
+            raise _Killed()
+        return await returning(user_id, *args, **kwargs)
+
+    bot.driver_service.transition = _transition
+
+    with pytest.raises(_Killed):
+        await execute_forced_close(bot, audit_action="X", hold_channels=False)
+
+    # What stands at the moment of the kill, before anything after the loop could run.
+    assert asked == ["101", "102"]
+    assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
+    assert await _owed_of(bot.db_path, "101") == 1
+    assert inactivity_job_id("101") in cancelled
+    assert channel_delete_job_id("101") in cancelled
+    assert inactivity_job_id("101") not in standing
+    assert await _state_of(bot.db_path, "102") == "PENDING_SIGNUP_COMPLETION"
+    assert await _owed_of(bot.db_path, "102") == 0
+    assert not any(job_id.endswith("_102") for job_id in cancelled)
+    assert standing == {inactivity_job_id("102")}
+
+
 async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
     """The confirm button reports this number (issue #128). A driver awaiting approval is not
     turned away, so is not counted."""
