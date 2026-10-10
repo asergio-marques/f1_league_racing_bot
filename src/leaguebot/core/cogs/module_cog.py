@@ -61,6 +61,14 @@ _BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup c
 _NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
 
 
+def _channel_not_locked(user_id: str) -> str:
+    """The failed step of a driver whose channel Discord would not lock or set for deletion."""
+    return (
+        f"<@{user_id}>'s signup channel could not be locked and will not delete itself: "
+        "delete it by hand."
+    )
+
+
 @dataclass(frozen=True)
 class ForcedCloseOutcome:
     """What a forced close did: the drivers it turned away, and each step that failed.
@@ -250,6 +258,11 @@ async def execute_forced_close(
                     if held.channel_id is not None and held.posted is False:
                         # Held and set for deletion all the same (signup spec: closing the window).
                         failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
+                except discord.HTTPException:
+                    # Discord refused the lock or the arming of the deletion, which the hold
+                    # makes only after the notice: say so, rather than that they were not told.
+                    log.exception("forced_close: could not lock the channel of driver %s", row["discord_user_id"])
+                    failed.append(_channel_not_locked(row["discord_user_id"]))
                 except Exception:
                     log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
                     failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
