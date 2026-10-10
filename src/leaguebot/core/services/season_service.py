@@ -30,7 +30,6 @@ from leaguebot.core.models.season import (
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.league_bot import LeagueBot
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
 #: encode. Interpolated rather than bound because they are our own enum values and the
@@ -588,17 +587,6 @@ class SeasonService:
         from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
 
         return await advance_to_pending_completion(self._db_path, season_id)
-
-    async def wind_down_ongoing(self, bot: LeagueBot) -> bool:
-        """Take a season whose every division is done out of the ongoing stages (issue #220).
-
-        Its signup window closed, its pending placements turned down, and on to Pending
-        completion. A wrapper, so that a command reaches it through the service it already
-        holds; see :func:`leaguebot.core.services.season_lifecycle_service.wind_down_ongoing`.
-        """
-        from leaguebot.core.services.season_lifecycle_service import wind_down_ongoing
-
-        return await wind_down_ongoing(bot)
 
     async def close_raced_rounds_for_cancellation(
         self, season_id: int, actor_id: int, actor_name: str

@@ -251,83 +251,6 @@ async def turn_down_pending_placements_on(db: aiosqlite.Connection, season_id: i
     ]
 
 
-async def turn_down_pending_placements(bot: LeagueBot, season_id: int, guild) -> list[int]:
-    """Turn down every placement of *season_id* still pending, as the reject command would.
-
-    Pending are the unsettled signups — Unassigned, awaiting approval or mid-correction — and
-    every placement not yet committed. Each such placement is discarded, and each such driver
-    returns to Not Signed Up: a signup in review has its channel closed, an approved driver
-    loses the driver role. A driver without the former-driver flag is thereby pending
-    deletion. Returns the profile ids turned down.
-    """
-    db_path = bot.db_path
-    async with get_connection(db_path) as db:
-        drivers = await _pending_placement_drivers_on(db, season_id)
-        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-        cfg_row = await cursor.fetchone()
-
-    await _close_driver_signups(
-        drivers, cfg_row["driver_role_id"] if cfg_row else None,
-        bot=bot, guild=guild,
-        notice="🔒 Every division of this season is done, so its signups are closed. "
-        "This channel will be automatically deleted in 24 hours.",
-        reason="Season's divisions done; signup turned down",
-    )
-
-    async with get_connection(db_path) as db:
-        await _turn_down_on(db, season_id, drivers)
-        await db.commit()
-    return [d["id"] for d in drivers]
-
-
-async def wind_down_ongoing(bot: LeagueBot) -> bool:
-    """Take a season whose every division is done out of the ongoing stages (issue #220).
-
-    A season in Ongoing, signups open or Ongoing, placements has no round left to place a
-    driver into once every division is finished or cancelled. Its signup window is closed,
-    every pending placement is turned down, and it moves straight to Pending completion. A
-    season in plain Ongoing moves too. Called from everywhere a division can finish; a no-op
-    for any other season. Returns True where the season was moved.
-    """
-    db_path = bot.db_path
-    found = await live_season_stage(db_path)
-    if found is None:
-        return False
-    season_id, stage = found
-    if stage not in ONGOING_STAGES:
-        return False
-    _, done = await _stage_and_whether_done(db_path, season_id)
-    if not done:
-        return False
-
-    guild = await league_guild(bot)
-    if stage is not SeasonStage.ONGOING:
-        try:
-            signup_cfg = await bot.signup_module_service.get_config()
-            if signup_cfg is not None and signup_cfg.signups_open:
-                from leaguebot.core.cogs.module_cog import close_signups_unattended
-
-                bot.scheduler_service.cancel_signup_close_timer()
-                await close_signups_unattended(bot, cause="divisions done")
-        except Exception:  # noqa: BLE001 — the window's close must not hold the season
-            log.exception("wind_down_ongoing: could not close the signup window")
-        turned_down = await turn_down_pending_placements(bot, season_id, guild)
-        current_stage, _ = await _stage_and_whether_done(db_path, season_id)
-        if current_stage in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
-            await _move(db_path, season_id, SeasonStage(current_stage), SeasonStage.ONGOING)
-        if turned_down:
-            try:
-                await bot.output_router.post_log(
-                    "System | Every division is done | "
-                    f"Pending placements turned down: {len(turned_down)}",
-                )
-            except Exception:  # noqa: BLE001
-                log.exception("wind_down_ongoing: could not post the log line")
-    await advance_to_pending_completion(db_path, season_id)
-    final_stage, _ = await _stage_and_whether_done(db_path, season_id)
-    return final_stage == SeasonStage.PENDING_COMPLETION.value
-
-
 class WindowClosed(Protocol):
     """What the signup window's close gives back: the accounts it returned to Not Signed Up."""
 
@@ -789,7 +712,7 @@ async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
     A division is done when it is finished or cancelled. Only a season in plain Ongoing is
     moved here, this needing nothing but the database. A season with a signup window open or
     placements still to confirm has signups to close and placements to turn down first, which
-    need Discord: :func:`wind_down_ongoing` does that, from wherever a division can finish.
+    need Discord: :func:`wind_down_change` does that, on the change queue, from wherever a division can finish.
     Returns True where this call moved it.
     """
     stage, done = await _stage_and_whether_done(db_path, season_id)

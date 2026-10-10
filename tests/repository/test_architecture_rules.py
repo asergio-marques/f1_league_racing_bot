@@ -1289,7 +1289,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The season end
     ("core/services/season_end_service.py", "_write_driver_history_entries"): (1, SLICE[5]),
     ("core/services/season_lifecycle_service.py", "run_driver_pass"): (1, SLICE[5]),
-    ("core/services/season_lifecycle_service.py", "turn_down_pending_placements"): (1, SLICE[5]),
     # The standing posts
     ("core/services/calendar_post_service.py", "replace_calendar_message"): (1, SLICE[6]),
     ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, SLICE[6]),

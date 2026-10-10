@@ -42,7 +42,6 @@ ignore_imports =
     leaguebot.attendance.services.rsvp_service -> leaguebot.attendance.cogs.attendance_cog
     # #286: signup's forced close lives in the module cog, and its views in its cogs.
     leaguebot.core.services.season_end_service -> leaguebot.core.cogs.module_cog
-    leaguebot.core.services.season_lifecycle_service -> leaguebot.core.cogs.module_cog
     leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.admin_review_cog
     leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.signup_cog
 
