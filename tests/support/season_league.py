@@ -70,6 +70,8 @@ for the abort. `complete_season`, `cancel_season` and `abort_season` run the thr
 admin 77 and give the interaction; `season_end_changes` lists the season's ends asked of the queue;
 `seed_season_end` puts one in hand on the queue, as another request would find it, and
 `SEASON_END_IN_HAND` holds the refusal of a request about the season while it is.
+`wizard_state` reads a driver's signup wizard, and `wizards_recovered` recovers the wizards as
+the bot does when it starts, recording what it would arm or expire.
 """
 from __future__ import annotations
 
@@ -1067,6 +1069,45 @@ async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> 
         SEASON_ID, str(user_id), NAMES[user_id],
     )
     league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)
+
+
+async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
+    """The state of driver *user_id*'s signup wizard, or None where they have none."""
+    rows = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?", str(user_id)
+    )
+    return rows[0]["wizard_state"] if rows else None
+
+
+async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
+    """The signup wizards recovered as the bot does when it starts (`recover_wizards`), over the
+    league's real signup module and driver services; gives the accounts whose inactivity job was
+    armed again (``armed``) and those expired at once (``expired``), neither run. The pending
+    corrections are not released: no test of a season's end leaves one. `recover_wizards` reads
+    the host's clock, as a wizard's last activity written by `signing_up` does."""
+    import asyncio
+
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    armed: list[str] = []
+    expired: list[str] = []
+    wizards = WizardService.__new__(WizardService)
+    wizards._db_path = league.db_path
+    wizards._correction_tasks = {}
+    wizards._scheduler = league.bot.scheduler_service
+    wizards._output_router = league.bot.output_router
+    wizards._bot = league.bot
+    wizards.recover_correction_timeouts = AsyncMock()  # type: ignore[method-assign]
+    wizards._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda user_id, _at: armed.append(str(user_id))
+    )
+    wizards.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda user_id: expired.append(str(user_id))
+    )
+    before = asyncio.all_tasks()
+    await wizards.recover_wizards()
+    await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+    return {"armed": armed, "expired": expired}
 
 
 async def driver_state(league: SeasonLeague, user_id: int) -> str | None:
