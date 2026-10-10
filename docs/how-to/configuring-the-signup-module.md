@@ -217,7 +217,7 @@ Anyone holding the interaction role or the league admin role can press these. Th
 >
 > **A restart sends them back too, whatever time was left.** If the bot restarts while the field buttons are up, the driver returns to waiting for approval immediately and you are pinged the same way, with the message saying the bot restarted. The five minutes cannot run while the bot is down, and you are no longer sat there choosing — so the window is closed rather than left open for a press that would never come. Press Request Changes again when you are ready.
 
-A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, recorded in the log channel (also where a restart finds the time passed), and their channel is tidied away 24 hours after that. Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
+A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, recorded in the log channel (also where a restart finds the time passed), and their channel is tidied away 24 hours after that, unless the bot could not post its closing notice (see the note on the three endings below). Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
 
 There are no reminders. The bot never chases a driver who has not signed up, and never re-posts the button.
 
@@ -322,7 +322,7 @@ The one thing you cannot fake is a second person pressing the button, so it is w
 
 **A summary and a wait.** When they finish, everything they entered is read back to them with a note to wait for an admin to check it.
 
-**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later.
+**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later, unless the bot could not post its closing notice: it then stays, readable but locked and set for no deletion, and the log channel names it for you to delete by hand.
 
 **A lineup post**, once placements are confirmed, in whichever channel that division uses.
 
