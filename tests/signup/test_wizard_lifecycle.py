@@ -826,10 +826,6 @@ async def test_a_restart_after_a_refused_withdrawal_notice_posts_nothing_and_wri
     assert _lines(ctx) == [withdrawn]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439 slice 5: a queue close leaves its returned drivers' wizards engaged",
-)
 async def test_a_driver_a_queue_close_returned_is_not_expired_at_restart_however_late(tmp_path):
     """The signup window open with driver 7 part-way through the wizard, their last answer two
     days ago. The change queue's close (`execute_forced_close(hold_channels=False)`) returns

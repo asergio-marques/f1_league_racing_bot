@@ -8,6 +8,7 @@ import enum
 import json
 import logging
 from dataclasses import dataclass
+from functools import partial
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -170,7 +171,10 @@ async def execute_forced_close(
     keeps them on the job, so that its next try, which finds none left to return, still tells and
     closes each one's channel.
 
-    1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
+    1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
+       wizard over in the same save (owed its closing notice on the queue), so a restart never
+       tells a driver whose signup has ended that it expired. The queue's form raises a failed
+       return, other than the state machine's, naming the drivers already returned.
     2. Delete signup button message (graceful NotFound).
     3. Post "signups are closed" to signup channel.
     4. Set window closed.
@@ -213,19 +217,41 @@ async def execute_forced_close(
         )
         rows = await cursor.fetchall()
 
+    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+
     returned = 0
     returned_ids: list[str] = []
     for row in rows:
         try:
+            # The return and the end of the driver's signup are one save: their wizard is marked
+            # over, so a restart never expires it, and on the queue owed its closing notice, which
+            # the queue's jobs then give once. Signup writes its own table (`end_wizard_on`).
             await bot.driver_service.transition(
-                row["discord_user_id"], DriverState.NOT_SIGNED_UP
+                row["discord_user_id"],
+                DriverState.NOT_SIGNED_UP,
+                also_on=partial(
+                    bot.signup_module_service.end_wizard_on,
+                    discord_user_id=row["discord_user_id"],
+                    closing_notice_owed=not hold_channels,
+                ),
             )
             returned += 1
             returned_ids.append(str(row["discord_user_id"]))
         except ValueError:
             # The state machine's refusal: the driver moved on since they were read.
             log.info("forced_close: driver %s had moved on", row["discord_user_id"])
-        except Exception:
+        except Exception as exc:
+            if not hold_channels:
+                # The queue's form raises, as every failure on the queue does. Each driver
+                # returned before this one is saved and marked owed: the stop keeps them on the
+                # job for its next try, and their timers are cancelled here, as the rest are below.
+                for uid in returned_ids:
+                    for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
+                        bot.scheduler_service.cancel_job(job_id)
+                raise StepFailedOnDiscord(
+                    f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
+                    result={"returned": list(returned_ids)},
+                ) from exc
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
             failed.append(
                 f"<@{row['discord_user_id']}> could not be returned to Not Signed Up."
@@ -236,7 +262,6 @@ async def execute_forced_close(
         svc = bot.scheduler_service
         for row in rows:
             uid = row["discord_user_id"]
-            from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
             for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
                 svc.cancel_job(job_id)

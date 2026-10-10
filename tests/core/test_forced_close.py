@@ -143,9 +143,6 @@ async def _handed_on(bot) -> object:
     return db
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
-)
 async def test_a_driver_still_filling_in_the_wizard_is_turned_away(tmp_path):
     db_path = await _make_db(
         tmp_path, drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
@@ -394,9 +391,6 @@ async def test_a_channel_discord_will_not_lock_is_named_apart_from_a_driver_not_
     assert outcome.returned == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
-)
 async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
     """The season's end closes the window on the change queue, where each driver's notice and
     lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling
@@ -497,9 +491,6 @@ async def _window_still_open(db_path) -> bool:
         return bool((await cursor.fetchone())[0])
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
-)
 async def test_a_restart_within_a_day_after_a_close_tells_nobody_their_session_expired(tmp_path):
     """`/signup close` turns driver 101 away, an hour after their last answer, and the bot
     restarts. Their signup has ended, so the restart arms no inactivity job for them, fires no
@@ -536,9 +527,6 @@ async def test_a_restart_within_a_day_after_a_close_tells_nobody_their_session_e
     wizards._output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a close returns its drivers without marking their wizards over"
-)
 @pytest.mark.parametrize("case", ["on the queue", "the mark fails", "off the queue"])
 async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_save(tmp_path, case):
     """Driver 101, part-way through the wizard, is returned to Not Signed Up by the window's
