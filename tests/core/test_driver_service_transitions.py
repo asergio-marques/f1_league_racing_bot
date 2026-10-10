@@ -295,9 +295,6 @@ async def _state(db_path, user_id: str) -> str | None:
     return row[0] if row else None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a transition takes nothing to save with it"
-)
 @pytest.mark.parametrize("fails", [False, True], ids=["saved together", "rolled back together"])
 async def test_a_transition_saves_what_it_is_handed_in_the_same_save(db_path, fails):
     """Driver u1 is returned from Pending Signup Completion to Not Signed Up, the caller handing
@@ -332,9 +329,6 @@ async def test_a_transition_saves_what_it_is_handed_in_the_same_save(db_path, fa
     assert len(handed) == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a transition takes nothing to save with it"
-)
 async def test_a_transition_creating_a_profile_refuses_also_on_and_writes_nothing(db_path):
     """A transition from no profile creates one on a save of its own, so a write handed to it
     could not be saved with it: it is refused (`ValueError`) before anything is written, no
