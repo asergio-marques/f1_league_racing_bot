@@ -1331,3 +1331,62 @@ async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tel
     assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
     assert league.locked == [SIGNING_UP]
     assert await _status(league) == "COMPLETED"
+
+
+class _Killed(BaseException):
+    """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
+
+
+def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
+    """The process is killed as the window's close comes to record the window closed: once,
+    after the close has returned its drivers, their transitions committed, and before the job's
+    mark or any result of its is saved. The bot started again closes as it should."""
+    service = league.bot.signup_module_service
+    closing = service.set_window_closed
+    killing = {"now": True}
+
+    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+        if killing["now"]:
+            killing["now"] = False
+            raise _Killed()
+        return await closing(*args, **kwargs)
+
+    service.set_window_closed = _set_window_closed
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a window close cut off by a kill loses the drivers it returned"
+)
+async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
+    tmp_path,
+):
+    """The signup window open with a driver still filling in the wizard, and the completion
+    queued. The bot is killed in the window's close, after the driver is returned to Not Signed
+    Up and before the window is recorded closed or the job's mark and result are saved. When the
+    bot starts again, the close is finished as for a recorded stop: the driver it had returned is
+    told, then their channel closed, and the season is completed."""
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    _killed_before_the_window_is_recorded_closed(league)
+    await _asked(league)
+
+    with pytest.raises(_Killed):
+        await run_queue(league.bot)
+    [close] = [job for job in await _jobs(league) if job["name"] == "close_window"]
+    assert close["done_at"] is None and close["result"] is None
+    assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
+    assert await window_open(league)
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    names = await _names(league)
+    assert names.index(("signup_notice", SIGNING_UP)) < names.index(("close_signup", SIGNING_UP))
+    assert [(kind, uid) for kind, uid, _n in league.events
+            if kind in ("notice", "lock") and uid == SIGNING_UP] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert not await window_open(league)
+    assert await _status(league) == "COMPLETED"
