@@ -40,9 +40,6 @@ DRIVER_ROLE = 555
 #: The role of each season's division, `Pro`.
 DIVISION_MENTION = 600
 
-_XFAIL_TARGETS = "#439: there is no season_role_targets_on"
-_XFAIL_REVOKE = "#439: a season's roles cannot yet be taken back by a job that raises"
-
 
 async def _make_db(tmp_path, *, name="revoke_roles", driver_role=DRIVER_ROLE, drivers=None):
     """*drivers* are ``(profile_id, discord_user_id, is_test, season_id)``."""
@@ -96,7 +93,6 @@ async def _targets(db_path, season_id=SEASON_ID) -> dict[int, set[int]]:
     return {int(t["user_id"]): set(t["role_ids"]) for t in targets}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_every_driver_loses_their_placement_roles(tmp_path):
     """Drivers 101 and 102 are placed in season 1's division, whose role is 600: both are to
     lose it."""
@@ -108,7 +104,6 @@ async def test_every_driver_loses_their_placement_roles(tmp_path):
     assert all(DIVISION_MENTION in roles for roles in targets.values())
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_the_driver_role_is_taken_back_too(tmp_path):
     """Otherwise a league enters its next signup window with half its server still marked
     as signed up."""
@@ -120,7 +115,6 @@ async def test_the_driver_role_is_taken_back_too(tmp_path):
     assert all(DRIVER_ROLE in roles for roles in targets.values())
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
     """Driver 101 holds the division's role but not the driver role: the job takes the
     division's alone, and asks Discord nothing of the driver role."""
@@ -136,7 +130,6 @@ async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path
     assert _taken(member) == {_DIVISION_ROLE}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_a_league_with_no_driver_role_revokes_placement_only(tmp_path):
     db_path = await _make_db(tmp_path, name="revoke_noconfig", driver_role=None)
 
@@ -145,7 +138,6 @@ async def test_a_league_with_no_driver_role_revokes_placement_only(tmp_path):
     assert targets == {101: {DIVISION_MENTION}, 102: {DIVISION_MENTION}}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_a_test_driver_is_skipped(tmp_path):
     """No Discord member behind them."""
     db_path = await _make_db(
@@ -155,7 +147,6 @@ async def test_a_test_driver_is_skipped(tmp_path):
     assert sorted(await _targets(db_path)) == [101]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
     """Driver 101 is not in the bot's member cache: the job fetches them from Discord and takes
     their roles all the same."""
@@ -172,7 +163,6 @@ async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
     assert _taken(member) == {_DIVISION_ROLE, DRIVER_ROLE}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_driver_who_has_left_the_server_is_stepped_over(tmp_path):
     """The roles went with them, and one departed member must not stop the rest: Discord
     answers the fetch of driver 101 "unknown member", and the job is done, raising nothing."""
@@ -189,7 +179,6 @@ async def test_a_driver_who_has_left_the_server_is_stepped_over(tmp_path):
     member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_another_seasons_drivers_are_left_alone(tmp_path):
     """A driver placed only last season keeps whatever the current season gave them."""
     db_path = await _make_db(
@@ -199,7 +188,6 @@ async def test_another_seasons_drivers_are_left_alone(tmp_path):
     assert sorted(await _targets(db_path)) == [101]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_TARGETS)
 async def test_a_season_with_no_drivers_revokes_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="revoke_empty", drivers=[])
 
@@ -235,7 +223,6 @@ def _taken(member) -> set[int]:
     return {role.id for call in member.remove_roles.await_args_list for role in call.args}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
     """Discord answers the fetch of driver 101 with a server error, not "unknown member": the
     job stops, raised from the fault, and nothing is taken."""
@@ -254,7 +241,6 @@ async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
     member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
     """Driver 101 is fetched, but Discord refuses to take their roles (403): the job stops,
     raised from the refusal."""
@@ -273,7 +259,6 @@ async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
     assert raised.value.__cause__ is refusal
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REVOKE)
 async def test_a_role_no_longer_on_the_server_is_passed_over(tmp_path):
     """The team's role (811) was deleted from the server: driver 101 still loses the division's
     role and the driver role, nothing raises, and the job is done."""

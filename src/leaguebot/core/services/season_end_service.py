@@ -325,6 +325,65 @@ async def _write_driver_history_entries(
         await db.commit()
 
 
+async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+    """Every real driver of *season_id* with the roles a season's end takes back, on *db*.
+
+    Each entry is ``{"user_id": int, "role_ids": list[int]}``, in user-id order: the division
+    role and the team role of each of the driver's placements in the season, and the league's
+    driver role where one is set. Test drivers are skipped: no Discord member stands behind
+    them. Which of these roles a member holds is Discord's to say, when
+    :meth:`PlacementService.revoke_roles` takes them, so the driver role is named for every
+    driver here and left alone for one who never held it.
+
+    Read in the save that records the season's end and committing nothing: the roles are
+    fixed there, and each driver's are taken back by a job of its own afterwards.
+    """
+    cursor = await db.execute(
+        """
+        SELECT DISTINCT dp.id AS driver_profile_id,
+                        CAST(dp.discord_user_id AS INTEGER) AS user_id
+        FROM driver_season_assignments dsa
+        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+        JOIN divisions d ON d.id = dsa.division_id
+        WHERE d.season_id = ? AND dp.is_test_driver = 0
+        ORDER BY user_id
+        """,
+        (season_id,),
+    )
+    drivers = [dict(row) for row in await cursor.fetchall()]
+
+    cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+    config = await cursor.fetchone()
+    driver_role_id = config["driver_role_id"] if config else None
+
+    targets: list[dict] = []
+    for driver in drivers:
+        cursor = await db.execute(
+            """
+            SELECT d.mention_role_id AS role_id
+            FROM driver_season_assignments dsa
+            JOIN divisions d ON d.id = dsa.division_id
+            WHERE dsa.driver_profile_id = ? AND d.season_id = ?
+            UNION
+            SELECT trc.role_id
+            FROM driver_season_assignments dsa
+            JOIN divisions d ON d.id = dsa.division_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN team_role_configs trc ON trc.team_name = ti.name
+            WHERE dsa.driver_profile_id = ? AND d.season_id = ?
+            """,
+            (driver["driver_profile_id"], season_id) * 2,
+        )
+        role_ids = {row["role_id"] for row in await cursor.fetchall()}
+        if driver_role_id is not None:
+            role_ids.add(driver_role_id)
+        targets.append(
+            {"user_id": driver["user_id"], "role_ids": sorted(r for r in role_ids if r is not None)}
+        )
+    return targets
+
+
 async def _revoke_season_roles(
     season_id: int,
     guild: "discord.Guild",

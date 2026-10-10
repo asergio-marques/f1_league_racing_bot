@@ -153,6 +153,45 @@ class PlacementService:
             ) from exc
         return True
 
+    async def revoke_roles(
+        self, guild: discord.Guild, user_id: int, *role_ids: int, reason: str
+    ) -> bool:
+        """Take *role_ids* from the member *user_id*, **raising** where it could not be done.
+
+        What a job on the change queue calls when a season's end takes a driver's roles back
+        (#439): the queue stops where Discord will not, where `_revoke_roles` logs and carries
+        on. The mirror of `grant_roles`. A member Discord reports absent (`NotFound`) has left
+        the server, and their roles went with them: nothing is taken, nothing raises, and the
+        result is False. A member who cannot be fetched for any other reason, or a removal
+        Discord refuses, stops the job with `StepFailedOnDiscord`, raised from the fault.
+
+        A role no longer on the server is passed over, and only the roles the member holds are
+        asked of Discord: a driver without the driver role is not asked to lose it. Taking is
+        idempotent, so a retry takes again what is still held.
+        """
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            return False
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"member {user_id} could not be fetched to have their roles taken back: {exc}"
+            ) from exc
+        held = list(member.roles)
+        roles = [
+            role
+            for role in (guild.get_role(role_id) for role_id in role_ids)
+            if role is not None and role in held
+        ]
+        if roles:
+            try:
+                await member.remove_roles(*roles, reason=reason)
+            except discord.HTTPException as exc:
+                raise StepFailedOnDiscord(
+                    f"member {user_id} could not have their roles taken back: {exc}"
+                ) from exc
+        return True
+
     async def grant_to_every_driver(
         self, guild: discord.Guild, role_id: int
     ) -> RoleGrantOutcome:
