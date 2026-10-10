@@ -606,7 +606,6 @@ async def test_the_history_the_driver_pass_and_the_archive_are_saved_together_or
     pytest.param("waiting", id="waiting behind a stopped job"),
     pytest.param("stopped", id="stopped at its final standings"),
 ])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_second_completion_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await pending_completion_league(tmp_path)
     if how == "waiting":

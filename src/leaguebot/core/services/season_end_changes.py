@@ -73,6 +73,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
     StepView,
+    in_hand,
 )
 from leaguebot.core.services.season_end_service import (
     CLOSE_WINDOW,
@@ -193,6 +194,16 @@ FORECASTS_KEPT = (
     "forecast channel."
 )
 PORTRAITS_KEPT = "The portraits of the drivers deleted could not be discarded."
+
+
+def completion_in_hand_refusal(season_number: Any, job: int) -> str:
+    """The refusal of a second `/season complete` while the first is waiting, being carried out
+    or stopped on a failure; it names the job, and leaves it out where only the close is left."""
+    named = f" (job #{job})" if job else ""
+    return (
+        f"⏳ Season {season_number} is already being completed{named}. If it has stopped, press "
+        "Retry or Discard on its notice in the log channel."
+    )
 
 
 def amended(held: Any) -> str:
@@ -328,6 +339,15 @@ def season_complete_change(
         season = await seasons.get_confirmed_season()
         if season is None or season.id != int(ctx.payload["season_id"]):
             return Verdict.refuse(NO_SEASON)
+
+        # **A second completion, asked while the first is in hand** (owner, 2026-10-09): refused
+        # at once, naming the job. Only as it is asked: as the change runs, it would find itself.
+        if ctx.change_id is None:
+            for payload, job in await in_hand(ctx.db_path, (SEASON_COMPLETE,)):
+                if payload.get("season_id") == season.id:
+                    return Verdict.refuse(
+                        completion_in_hand_refusal(season.season_number, job or 0)
+                    )
 
         # **Not while a round is being amended** (#345, decided 2026-09-21): completing posts
         # each division's final classification from the database, which holds an open
