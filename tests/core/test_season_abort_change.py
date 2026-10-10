@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 from contextlib import ExitStack
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -190,6 +191,12 @@ def _not_done(text: str) -> list[str]:
     assert NOT_EVERYTHING in text, text
     section = text.split(NOT_EVERYTHING, 1)[1]
     return [line.strip()[2:] for line in section.splitlines() if line.strip().startswith("• ")]
+
+
+def _logged(text: str) -> str:
+    """*text* as the log channel carries it: every mention in backticks, naming without
+    notifying."""
+    return re.sub(r"(<@&?\d+>)", r"`\1`", text)
 
 
 def _modules() -> list[Any]:
@@ -733,7 +740,7 @@ async def test_a_discarded_job_is_named_with_what_to_do_by_hand(tmp_path, monkey
     assert ABORTED in reply(interaction)
     assert text in _not_done(reply(interaction))
     [line] = _success_lines(league)
-    assert f"  not done: {text}" in line
+    assert f"  not done: {_logged(text)}" in line
     assert not await _season_stands(league)
 
 
@@ -759,5 +766,5 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
     assert ABORTED in reply(interaction)
     assert NOTICE_DISCARDED in _not_done(reply(interaction))
     [line] = _success_lines(league)
-    assert f"  not done: {NOTICE_DISCARDED}" in line
+    assert f"  not done: {_logged(NOTICE_DISCARDED)}" in line
     assert not await _season_stands(league)

@@ -243,6 +243,12 @@ def _not_done(text: str) -> list[str]:
     return [line[2:] for line in section.splitlines() if line.startswith("• ")]
 
 
+def _logged(text: str) -> str:
+    """*text* as the log channel carries it: every mention in backticks, naming without
+    notifying."""
+    return re.sub(r"(<@&?\d+>)", r"`\1`", text)
+
+
 def _modules() -> list[Any]:
     found = []
     for name in ("leaguebot.__main__",
@@ -511,7 +517,7 @@ async def test_a_role_discord_will_not_take_back_stops_the_queue_and_once_discar
     assert await _status(league) == "COMPLETED"
     assert ROLES_KEPT in _not_done(reply(interaction))
     [line] = _closing_lines(league)
-    assert f"  not done: {ROLES_KEPT}" in line
+    assert f"  not done: {_logged(ROLES_KEPT)}" in line
 
 
 async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp_path):
@@ -1228,7 +1234,7 @@ async def test_a_discarded_job_is_named_with_what_to_do_by_hand_and_the_line_say
     assert text in _not_done(reply(interaction))
     [line] = _closing_lines(league)
     assert INCOMPLETE in line
-    assert f"  not done: {text}" in line
+    assert f"  not done: {_logged(text)}" in line
     assert await _status(league) == "COMPLETED"
 
 
@@ -1278,5 +1284,5 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
     assert league.notices == []
     assert NOTICE_DISCARDED in _not_done(reply(interaction))
     [line] = _closing_lines(league)
-    assert f"  not done: {NOTICE_DISCARDED}" in line
+    assert f"  not done: {_logged(NOTICE_DISCARDED)}" in line
     assert await _status(league) == "COMPLETED"

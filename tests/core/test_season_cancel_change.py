@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 from contextlib import ExitStack
 from datetime import timedelta
 from typing import Any
@@ -300,6 +301,12 @@ def _not_done(text: str) -> list[str]:
     return _bullets(text, NOT_EVERYTHING)
 
 
+def _logged(text: str) -> str:
+    """*text* as the log channel carries it: every mention in backticks, naming without
+    notifying."""
+    return re.sub(r"(<@&?\d+>)", r"`\1`", text)
+
+
 def _posted(league: Any) -> list[list[str]]:
     return [league.texts(cid) for cid in _POSTS]
 
@@ -500,7 +507,7 @@ async def test_a_role_discord_will_not_take_back_stops_the_queue_and_once_discar
     assert CANCELLED in reply(interaction)
     assert ROLES_KEPT in _not_done(reply(interaction))
     [line] = _success_lines(league)
-    assert f"  not done: {ROLES_KEPT}" in line
+    assert f"  not done: {_logged(ROLES_KEPT)}" in line
 
 
 async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_not_notified(
@@ -1336,7 +1343,7 @@ async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_succ
     assert CANCELLED in reply(interaction)
     assert text in _not_done(reply(interaction))
     [line] = _success_lines(league)
-    assert f"  not done: {text}" in line
+    assert f"  not done: {_logged(text)}" in line
     assert await _status(league) == "CANCELLED"
 
 
@@ -1361,5 +1368,5 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
     assert league.notices == []
     assert NOTICE_DISCARDED in _not_done(reply(interaction))
     [line] = _success_lines(league)
-    assert f"  not done: {NOTICE_DISCARDED}" in line
+    assert f"  not done: {_logged(NOTICE_DISCARDED)}" in line
     assert await _status(league) == "CANCELLED"
