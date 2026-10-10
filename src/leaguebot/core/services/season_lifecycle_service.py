@@ -296,6 +296,11 @@ class SeasonEndHooks:
       connection, for a change's last save to name the drivers a discarded close left untold.
     - *end_wizards_on*: marks these accounts' signup wizards over, on the save's connection, for
       the driver pass and the turn-down to end a signup in the save that returns the driver.
+    - *off_queue_closing_notices*: the accounts a close of the window off the queue returned and
+      a stop cut it off before reaching, read on a connection of its own (`close_finish_change`).
+    - *take_off_queue_closing_notices_on*: reads those accounts and clears them, on the save's
+      connection.
+    - *closing_held*: whether the account's signup channel was already held, its deletion armed.
     """
 
     close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
@@ -313,6 +318,9 @@ class SeasonEndHooks:
     clear_closing_notices_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
     take_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
     end_wizards_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
+    off_queue_closing_notices: Callable[[], Awaitable[list[str]]]
+    take_off_queue_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
+    closing_held: Callable[[str], bool]
 
 
 #: The jobs of one driver's Discord side of a season's end, as the stop notice, the tests and
@@ -575,6 +583,128 @@ def close_signup_steps(
         CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
         TAKE_DRIVER_ROLE: Step(TAKE_DRIVER_ROLE, StepKind.ACT, take_role, describe=describe_role),
     }
+
+
+#: The kind of the change that finishes a close of the signup window off the queue that a stop
+#: cut off, and its two jobs.
+CLOSE_FINISH = "signup.close.finish"
+CLOSE_FINISH_PLAN = "finish_close"
+CLOSE_FINISH_CLOSE = "finish_close_line"
+#: The head of the line the finish writes.
+CLOSE_FINISHED = "System | Signups closed | the close a stop cut off was finished"
+
+
+def close_finish_change(
+    *, placement: PlacementService | None = None, hooks: SeasonEndHooks | None = None
+) -> ChangeType:
+    """The change that finishes a close of the signup window off the queue that a stop cut off.
+
+    A close off the queue (`/signup close`, its timer, a restart past the close time, turning
+    signup off) returns each driver still filling in the wizard in a save of their own, marking
+    them owed their notice, then tells and locks them one at a time, and clears the marks of
+    those it reached in its audit save. A stop in between leaves the others returned and untold,
+    with a channel nobody deletes. The bot asks for this change as it starts
+    (`__main__._recover_off_queue_closing_notices`), before the queue does. It is due only while
+    such a mark is left. Its jobs, each of which stops the queue where it fails:
+
+    1. `finish_close`: reads the marked accounts and passes over each whose channel was already
+       held, its deletion armed; each other driver is then told, then their channel closed, as
+       jobs of their own (`window_closed_jobs`). Its record clears the marks it read in the save
+       that marks it done, so that from that save the queue's own records hold the drivers.
+    2. `finish_close_line`: one save writes the line naming who was told and closed, and what was
+       left undone, beneath. It takes any mark still standing, which only a Discard of the first
+       job leaves, and names those drivers as returned but not told, as a discarded close of the
+       window on the queue does.
+
+    *placement* and *hooks* are handed by the builder; without them the change is only described.
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        if hooks is None or not await hooks.off_queue_closing_notices():
+            return Verdict.not_due("no close of the signup window was cut off")
+        return Verdict.go()
+
+    async def plan(_ctx: StepContext) -> StepResult:
+        if hooks is None:
+            raise RuntimeError("the finish of a close is run with the hooks the builder hands it")
+        marked = [str(account) for account in await hooks.off_queue_closing_notices()]
+        untold = [account for account in marked if not hooks.closing_held(account)]
+        return StepResult(
+            result={"marked": marked, "returned": untold}, then=window_closed_jobs(untold)
+        )
+
+    async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
+        if hooks is None:
+            return
+        await hooks.clear_closing_notices_on(
+            db, [str(account) for account in (result.result or {}).get("marked", ())]
+        )
+
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        untold = await hooks.take_off_queue_closing_notices_on(db) if hooks is not None else []
+        told: list[str] = []
+        beneath: list[str] = []
+        for notice in ctx.steps:
+            if notice.name != SIGNUP_NOTICE:
+                continue
+            user_id = str(notice.payload["user_id"])
+            who = f"<@{user_id}>"
+            closing = next(
+                (view for view in ctx.steps
+                 if view.name == CLOSE_SIGNUP and str(view.payload.get("user_id")) == user_id),
+                None,
+            )
+            if closing is not None and "discarded" in (closing.result or {}):
+                beneath.append(
+                    f"{who} — their signup channel could not be closed. Delete it by hand."
+                )
+            elif "discarded" in (notice.result or {}):
+                beneath.append(f"{who} — their signup channel was closed without its notice")
+            elif (notice.result or {}).get("no_channel"):
+                beneath.append(NO_CHANNEL_LEFT.format(who=who))
+            else:
+                told.append(who)
+        beneath.extend(
+            f"<@{account}> was returned to Not Signed Up when signups closed, but was not told "
+            "and their channel was not closed: tell them and delete it by hand."
+            for account in untold
+        )
+        if not told and not beneath:
+            # Every driver marked had been held before the stop: nothing to say.
+            return StepResult(result={"untold": untold})
+        head = (
+            f"{CLOSE_FINISHED}: {', '.join(told)} told and their channel closed"
+            if told
+            else CLOSE_FINISHED
+        )
+        line = head + "".join(f"\n  not done: {each}" for each in beneath)
+        return StepResult(result={"untold": untold}, lines=(line,))
+
+    async def describe_plan(_ctx: StepContext) -> str:
+        return "finding the drivers a stopped close of the signup window did not tell"
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording the finish of the signup window's close"
+
+    steps: dict[str, Step] = {
+        CLOSE_FINISH_PLAN: Step(
+            CLOSE_FINISH_PLAN, StepKind.ACT, plan, describe=describe_plan, record=record
+        ),
+        CLOSE_FINISH_CLOSE: Step(
+            CLOSE_FINISH_CLOSE, StepKind.SAVE, close, describe=describe_close
+        ),
+    }
+    if placement is not None and hooks is not None:
+        steps.update(close_signup_steps(placement, hooks))
+    return ChangeType(
+        kind=CLOSE_FINISH,
+        opening=(PlannedStep(CLOSE_FINISH_PLAN), PlannedStep(CLOSE_FINISH_CLOSE)),
+        steps=steps,
+        check=check,
+        key=lambda _payload: CLOSE_FINISH,
+        doing=lambda _payload: "Finishing the signup window's close a stop cut off",
+        outcome=lambda _ctx: "",
+    )
 
 
 #: Why no module may be disabled in Pending completion: the reply of every disable refused for it.

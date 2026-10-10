@@ -878,6 +878,10 @@ class SchedulerService:
             return False
         return True
 
+    def has_job(self, job_id: str) -> bool:
+        """Whether the job *job_id* stands, armed and not yet fired."""
+        return self._scheduler.get_job(job_id) is not None
+
     def cancel_job(self, job_id: str) -> None:
         """Remove a single job from the scheduler by ID (no-op if not found)."""
         if self._remove_job(job_id):

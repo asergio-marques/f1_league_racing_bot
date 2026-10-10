@@ -90,3 +90,17 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
     assert any(r.exc_info and r.exc_info[1] is error for r in warnings)
     if cancel == "cancel_all":
         assert result == 1
+
+
+def test_a_job_stands_while_the_store_holds_it():
+    """`has_job` answers whether a job is armed and not yet fired: the store holds
+    `wizard_channel_delete_101` and not `wizard_channel_delete_102`. The finish of a signup
+    window's close a stop cut off reads it to pass over a channel already held."""
+    service = _service([])
+    held = _job("wizard_channel_delete_101")
+    service._scheduler.get_job = MagicMock(
+        side_effect=lambda job_id: held if job_id == held.id else None
+    )
+
+    assert service.has_job("wizard_channel_delete_101") is True
+    assert service.has_job("wizard_channel_delete_102") is False
