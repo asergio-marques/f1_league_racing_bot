@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict
 
+import aiosqlite
+
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -113,6 +115,28 @@ async def switch_test_mode_off(bot: LeagueBot, *, discard_backup: bool = False) 
             "UPDATE server_configs SET test_mode_active = 0"
         )
         await db.commit()
+    return removed
+
+
+async def switch_test_mode_off_on(db: aiosqlite.Connection) -> int:
+    """Switch test mode off on *db*, committing nothing, deleting every driver it created.
+
+    A season's end does it inside the save that records its end, just before the season itself
+    is written, so the test drivers, the flag and the season's archive land together or not at
+    all (decided 2026-10-09). The forecasts posted under test mode are not flushed here: that
+    is a job of its own before the save, and the saved backup's deletion one after it. Every
+    fake driver is deleted and their history kept. A server not in test mode is left as it is.
+
+    Returns the count of fake drivers removed.
+    """
+    from leaguebot.core.services.test_roster_service import clear_all_test_drivers_on
+
+    cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+    row = await cursor.fetchone()
+    if row is None or not row["test_mode_active"]:
+        return 0
+    removed = await clear_all_test_drivers_on(db)
+    await db.execute("UPDATE server_configs SET test_mode_active = 0")
     return removed
 
 

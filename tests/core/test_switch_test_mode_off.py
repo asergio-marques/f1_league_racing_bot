@@ -14,8 +14,6 @@ from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 
 SERVER_ID = 22140
 
-_XFAIL_ON = "#439: test mode cannot be switched off on the save a season's end hands it"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -124,7 +122,6 @@ async def _switch_off(db_path):
     return deleted
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
     assert await _switch_off(db_path) == 2
 
@@ -136,7 +133,6 @@ async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_a_server_not_in_test_mode_is_left_alone(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET test_mode_active = 0")
@@ -178,7 +174,6 @@ async def _flag_on(db):
     return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go and the flag is cleared on the save, the forecasts untouched;
     rolled back, both drivers and the flag are as they were."""
@@ -199,7 +194,6 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
     flushed.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ON)
 async def test_clearing_the_test_drivers_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go on the save, their history kept by identifier; rolled back, they
     are back."""

@@ -796,10 +796,7 @@ def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
 # slice 5), and a job that fails must say so: asked to raise, the discard still tries every file,
 # then raises the fault it met, so the queue stops at it and a Retry finishes what is left.
 
-_XFAIL_RAISING = "#439: the discard cannot be asked to raise a fault"
 
-
-@pytest.mark.xfail(strict=True, reason=_XFAIL_RAISING)
 def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch):
     """The saved state, its scheduler half and the lock are all there, and the saved state
     cannot be deleted. The other two go all the same, and the fault is raised."""
@@ -826,7 +823,6 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
     assert not bs.lock_path(live).exists()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_RAISING)
 def test_a_discard_that_finds_nothing_raises_nothing(tmp_path):
     """Nothing was saved: asked to raise, the discard says there was nothing and raises
     nothing, so a Retry after a part-done discard finishes quietly."""
