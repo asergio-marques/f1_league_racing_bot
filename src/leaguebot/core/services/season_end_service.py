@@ -30,6 +30,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     SeasonEndHooks,
     close_signup_steps,
     close_signup_window,
+    kept_returned,
     require_guild,
     window_closed_jobs,
 )
@@ -500,12 +501,13 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         of = f" of season {number}" if number else ""
         return f"taking back <@{ctx.step_payload['user_id']}>'s roles{of}"
 
-    async def window_due(_ctx: StepContext) -> bool:
-        return await hooks.window_open()
+    async def window_due(ctx: StepContext) -> bool:
+        # A close that stopped after returning its drivers has drivers left to tell and close.
+        return await hooks.window_open() or bool(kept_returned(ctx.kept))
 
     async def close_window(ctx: StepContext) -> StepResult:
         returned = await close_signup_window(
-            ctx.bot, hooks, str(ctx.step_payload.get("cause", SEASON_END_CAUSE))
+            ctx.bot, hooks, str(ctx.step_payload.get("cause", SEASON_END_CAUSE)), kept=ctx.kept
         )
         return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
 

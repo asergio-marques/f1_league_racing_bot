@@ -24,6 +24,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     GuildUnavailable,
     PlannedStep,
+    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -490,23 +491,44 @@ def window_closed_jobs(user_ids: Sequence[str]) -> tuple[PlannedStep, ...]:
     return tuple(planned)
 
 
-async def close_signup_window(bot: LeagueBot, hooks: SeasonEndHooks, cause: str) -> tuple[str, ...]:
+def kept_returned(kept: Mapping[str, Any] | None) -> tuple[str, ...]:
+    """The drivers a close that stopped part-way had already returned, from the result it kept."""
+    return tuple(str(user_id) for user_id in (kept or {}).get("returned", ()))
+
+
+async def close_signup_window(
+    bot: LeagueBot, hooks: SeasonEndHooks, cause: str, *, kept: Mapping[str, Any] | None = None
+) -> tuple[str, ...]:
     """Cancel the signup close timer and close the window where it stands open (#439).
 
     Gives the accounts the close returned to Not Signed Up, whose channels the queue's jobs then
     tell and close: the close itself holds none. Raises what the close raises, for the queue to
     stop on; a window not open is nothing to close.
+
+    *kept* is what the job's last try left when it stopped: a close that stopped after returning
+    its drivers fails with their ids as its result, and the next try finds none left to return.
+    They are given with whatever it returns now, so that no driver's channel goes untold and
+    open, and also where the window was shut by that try and only its audit failed.
     """
+    before = kept_returned(kept)
     if not await hooks.window_open():
-        return ()
+        return before
     hooks.cancel_close_timer()
-    closed = await hooks.close_signups(bot, cause)
-    return tuple(str(user_id) for user_id in closed.returned_ids) if closed is not None else ()
+    try:
+        closed = await hooks.close_signups(bot, cause)
+    except StepFailedOnDiscord as stopped:
+        found = kept_returned(stopped.result)
+        stopped.result = {**(stopped.result or {}), "returned": list(dict.fromkeys((*before, *found)))}
+        raise
+    now = tuple(str(user_id) for user_id in closed.returned_ids) if closed is not None else ()
+    return tuple(dict.fromkeys((*before, *now)))
 
 
-async def close_window_for_wind_down(bot: LeagueBot, hooks: SeasonEndHooks) -> tuple[str, ...]:
+async def close_window_for_wind_down(
+    bot: LeagueBot, hooks: SeasonEndHooks, *, kept: Mapping[str, Any] | None = None
+) -> tuple[str, ...]:
     """Close the signup window as every division is done, giving the drivers it returned."""
-    return await close_signup_window(bot, hooks, "divisions done")
+    return await close_signup_window(bot, hooks, "divisions done", kept=kept)
 
 
 def close_signup_steps(placement: PlacementService, hooks: SeasonEndHooks) -> dict[str, Step]:
@@ -633,7 +655,7 @@ def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
     async def wind_down(ctx: StepContext) -> StepResult:
         if hooks is None:
             raise RuntimeError("a wind-down is run with the hooks the builder hands it")
-        returned = await close_window_for_wind_down(ctx.bot, hooks)
+        returned = await close_window_for_wind_down(ctx.bot, hooks, kept=ctx.kept)
         return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
 
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
