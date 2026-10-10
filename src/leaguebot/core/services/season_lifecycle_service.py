@@ -305,7 +305,7 @@ class SeasonEndHooks:
     - *closing_held*: whether the account's signup channel was already held, given the league's
       server. It reads the scheduler's job store first, a channel-delete job standing being the
       record of a hold (the job store standing in for a record of signup's own, which it was
-      meant only to serve); where none stands, the wizard service judges the channel itself (the
+      meant only to serve, #440); where none stands, the wizard service judges the channel itself (the
       closing notice posted and the driver's typing denied) and arms the deletion again.
     """
 
