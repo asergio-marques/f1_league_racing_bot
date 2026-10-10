@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepKind, StepResult
 from leaguebot.core.services.change_queue import Step, StepContext
 from leaguebot.core.services.season_lifecycle_service import (
@@ -31,10 +30,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 
 if TYPE_CHECKING:
     import aiosqlite
-    import discord
     from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.utils.league_bot import LeagueBot
-    from leaguebot.core.models.season import Season
 
 log = logging.getLogger(__name__)
 
@@ -48,49 +44,6 @@ FORGET_SETUP = "forget_setup"
 
 #: The cause the window's close is recorded under, where a season's end closes it.
 SEASON_END_CAUSE = "season end"
-
-
-async def end_of_season_pass(
-    bot: "LeagueBot", guild, *, discard_backup: bool = False
-) -> dict:
-    """The driver pass, the signup window and test mode: what every end of a season does (#220).
-
-    Shared by completing, cancelling and aborting a season, in that order within each:
-
-    - the signup window closed, where one stands open — first, so that nobody begins a signup
-      the driver pass has already gone by;
-    - the driver pass, returning the season's drivers to Not Signed Up and deleting those
-      pending deletion;
-    - test mode switched off, deleting every driver it created and keeping their history.
-
-    Each step is fail-soft against the next: a window that cannot be closed does not keep a
-    server in test mode. Returns what the driver pass reported.
-
-    *discard_backup* deletes the saved test-mode backup with it, which **completing** a season
-    passes and cancelling or aborting one does not (decided 2026-09-17): a season run to its end
-    leaves a state nothing could restore, where an abandoned one leaves the state a maintainer
-    goes back to.
-    """
-    from leaguebot.core.services.season_lifecycle_service import run_driver_pass
-    from leaguebot.core.services.test_mode_service import switch_test_mode_off
-
-    try:
-        signup_cfg = await bot.signup_module_service.get_config()
-        if signup_cfg is not None and signup_cfg.signups_open:
-            from leaguebot.core.cogs.module_cog import close_signups_unattended
-
-            await close_signups_unattended(bot, cause="season end")
-    except Exception:  # noqa: BLE001
-        log.exception("end_of_season_pass: could not close the signup window")
-
-    result = await run_driver_pass(bot.db_path, bot=bot, guild=guild)
-
-    try:
-        await switch_test_mode_off(bot, discard_backup=discard_backup)
-    except Exception:  # noqa: BLE001
-        log.exception("end_of_season_pass: could not switch test mode off")
-
-    return result
 
 
 async def write_driver_history_entries_on(
@@ -240,17 +193,6 @@ async def write_driver_history_entries_on(
     )
 
 
-async def _write_driver_history_entries(
-    season: "Season", bot: "LeagueBot", *, force_cancelled: bool = False
-) -> None:
-    """Write the season's history entries and commit them."""
-    async with get_connection(bot.db_path) as db:
-        await write_driver_history_entries_on(
-            db, season.id, season.season_number, force_cancelled=force_cancelled
-        )
-        await db.commit()
-
-
 async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
     """Every real driver of *season_id* with the roles a season's end takes back, on *db*.
 
@@ -308,71 +250,6 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
             {"user_id": driver["user_id"], "role_ids": sorted(r for r in role_ids if r is not None)}
         )
     return targets
-
-
-async def _revoke_season_roles(
-    season_id: int,
-    guild: "discord.Guild",
-    bot: "LeagueBot",
-) -> None:
-    """Revoke division roles, team roles, and the league's driver role from
-    every non-test driver assigned in *season_id*.
-
-    Called on both season completion and cancellation.  All failures are logged
-    but do not abort the operation.
-    """
-    import discord
-
-    placement_svc = bot.placement_service
-
-    async with get_connection(bot.db_path) as db:
-        cur = await db.execute(
-            """
-            SELECT DISTINCT dp.id AS driver_profile_id,
-                            CAST(dp.discord_user_id AS INTEGER) AS discord_user_id
-            FROM driver_season_assignments dsa
-            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-            JOIN divisions d ON d.id = dsa.division_id
-            WHERE d.season_id = ? AND dp.is_test_driver = 0
-            """,
-            (season_id,),
-        )
-        assigned_rows = list(await cur.fetchall())
-
-        # Fetch the driver role once for the whole loop
-        cfg_cur = await db.execute("SELECT driver_role_id FROM server_configs")
-        cfg_row = await cfg_cur.fetchone()
-
-    driver_role_id: int | None = cfg_row["driver_role_id"] if cfg_row else None
-
-    for row in assigned_rows:
-        discord_uid: int = row["discord_user_id"]
-        driver_profile_id: int = row["driver_profile_id"]
-
-        member = guild.get_member(discord_uid) or None
-        if member is None:
-            try:
-                member = await guild.fetch_member(discord_uid)
-            except discord.HTTPException:
-                log.warning(
-                    "_revoke_season_roles: member %d not found — skipping",
-                    discord_uid,
-                )
-                continue
-
-        await placement_svc.revoke_all_placement_roles(
-            driver_profile_id, season_id, member
-        )
-        if driver_role_id is not None:
-            driver_role = guild.get_role(driver_role_id)
-            if driver_role is not None and driver_role in member.roles:
-                await placement_svc._revoke_roles(member, driver_role_id)
-
-    log.info(
-        "_revoke_season_roles: processed %d driver(s) for season %d",
-        len(assigned_rows),
-        season_id,
-    )
 
 
 def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> dict[str, Step]:
