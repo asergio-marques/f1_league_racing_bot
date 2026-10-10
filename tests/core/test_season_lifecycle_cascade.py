@@ -40,12 +40,6 @@ ACTOR_NAME = "Race Director"
 # The moment a cancellation is recorded at, pinned.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
-_XFAIL_CANCEL = "#439: there is no cancel_season_divisions_on or cancel_season_on"
-_XFAIL_CANCEL_HISTORY = (
-    "#439: there is no write_driver_history_entries_on, cancel_season_divisions_on or "
-    "cancel_season_on"
-)
-
 
 async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_status="ACTIVE"):
     """Seed one season with divisions and rounds. Returns (season_id, {name: (div_id, [round_ids])})."""
@@ -361,7 +355,6 @@ async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -
     assert (row["old_value"], row["new_value"]) == ("SETUP", "CANCELLED")
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=2)
@@ -381,7 +374,6 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
         assert await _round_status(db_path, rid) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     """cancel_round_on leaves alone a round whose season is already archived, giving `None`.
 
@@ -402,7 +394,6 @@ async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path) -> None:
     """Season 1 is ongoing; Div A has finished, both its rounds final, and Div B, its last
     running division, has two rounds not run. Cancelling the season cancels Div B and its rounds
@@ -441,7 +432,6 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
     assert "PENDING_COMPLETION" not in written
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_cancelled_from(
     tmp_path,
 ) -> None:
@@ -466,7 +456,6 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
     assert audits == [("AWAITING_RESULTS", "CANCELLED"), ("NOT_RUN", "CANCELLED")]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL)
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -606,7 +595,6 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
     assert written == 2, "both drivers should be recorded"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CANCEL_HISTORY)
 async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) -> None:
     """A cancelled season used to leave no trace in anybody's history at all."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on

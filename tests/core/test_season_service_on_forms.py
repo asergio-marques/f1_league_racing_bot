@@ -510,7 +510,6 @@ async def test_the_completion_refusal_is_read_on_the_save_handed(tmp_path, case,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_season_is_marked_cancelled_on_the_save_handed_and_nothing_else(tmp_path) -> None:
     from leaguebot.core.services.season_service import cancel_season_on
 
@@ -527,7 +526,6 @@ async def test_a_season_is_marked_cancelled_on_the_save_handed_and_nothing_else(
         assert await _season_status(db, season_id) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its_row(
     tmp_path,
 ) -> None:
@@ -562,7 +560,6 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
         assert await _statuses(db, "rounds", [unraced]) == {unraced: "NOT_RUN"}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
     """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
     audited at the moment handed; round 2 is left to the divisions' cancellation."""
@@ -603,7 +600,6 @@ async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
         assert await _statuses(db, "rounds", [awaiting]) == {awaiting: "AWAITING_REPORT_VERDICTS"}
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path) -> None:
     """Driver 1 holds a committed seat, driver 2 one placed but not yet committed. Driver 2's
     placement goes and their seat is freed; driver 1's stands."""

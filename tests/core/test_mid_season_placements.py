@@ -240,7 +240,6 @@ async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
     cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: there is no discard_uncommitted_placements_on")
 async def test_cancelling_discards_the_uncommitted_placements_and_frees_their_seats(db_path):
     from leaguebot.core.services.season_service import discard_uncommitted_placements_on
 

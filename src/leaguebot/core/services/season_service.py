@@ -644,53 +644,16 @@ class SeasonService:
 
         Returns the ids closed, for the caller to report and for the tests to assert on.
         """
-        from datetime import timezone
-        from leaguebot.results.services.result_submission_service import (
-            recompute_former_drivers_for_round,
-        )
-
-        now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"""
-                SELECT r.id, r.status, d.id AS division_id
-                FROM rounds r
-                JOIN divisions d ON d.id = r.division_id
-                WHERE d.season_id = ?
-                  AND r.status IN ({_RACED_AWAITING_VERDICTS_SQL})
-                ORDER BY r.id
-                """,
-                (season_id,),
+            closed = await close_raced_rounds_on(
+                db,
+                season_id,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                now=datetime.now(timezone.utc),
             )
-            rows = [dict(r) for r in await cursor.fetchall()]
-
-            for row in rows:
-                await db.execute(
-                    "UPDATE rounds SET status = ? WHERE id = ?",
-                    (RoundStatus.FINAL.value, row["id"]),
-                )
-                # The round's results are final as of the line above, so its drivers become
-                # former drivers here — which is the whole point of closing them (#216).
-                await recompute_former_drivers_for_round(db, row["id"])
-                await db.execute(
-                    """
-                    INSERT INTO audit_entries
-                        (actor_id, actor_name, division_id, change_type,
-                         old_value, new_value, timestamp)
-                    VALUES (?, ?, ?, 'round.status', ?, ?, ?)
-                    """,
-                    (
-                        actor_id,
-                        actor_name,
-                        row["division_id"],
-                        row["status"],
-                        RoundStatus.FINAL.value,
-                        now,
-                    ),
-                )
             await db.commit()
-
-        return [row["id"] for row in rows]
+        return closed
 
     async def all_divisions_finished(self) -> bool:
         """True if every division of the active season is FINISHED or CANCELLED.
@@ -739,18 +702,9 @@ class SeasonService:
         championship and earn no history of it. Returns how many were discarded.
         """
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
-                "  SELECT team_seat_id FROM driver_season_assignments "
-                "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
-                (season_id,),
-            )
-            cursor = await db.execute(
-                "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
-                (season_id,),
-            )
+            discarded = await discard_uncommitted_placements_on(db, season_id)
             await db.commit()
-            return cursor.rowcount
+            return discarded
 
     async def delete_season(self, season_id: int) -> None:
         """FK-safe cascade delete of one season and all its child records.
@@ -1134,23 +1088,15 @@ class SeasonService:
         whole cascade shares one transaction so a failure part-way cannot leave a season standing
         over half-cancelled divisions.
         """
-        from datetime import timezone
-        now = datetime.now(timezone.utc)
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM divisions WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
-                (season_id,),
+            await cancel_season_divisions_on(
+                db,
+                season_id,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                now=datetime.now(timezone.utc),
             )
-            division_ids = [r["id"] for r in await cursor.fetchall()]
-
-            for division_id in division_ids:
-                await cancel_division_on(
-                    db, division_id, actor_id=actor_id, actor_name=actor_name, now=now
-                )
-
-            await db.execute(
-                "UPDATE seasons SET status = 'CANCELLED' WHERE id = ?", (season_id,)
-            )
+            await cancel_season_on(db, season_id)
             await db.commit()
 
     async def duplicate_division(
@@ -1962,3 +1908,132 @@ async def completion_refusal_on(db: aiosqlite.Connection, season_id: int) -> str
         f"divisions have not finished: {unfinished}. Cancel a division that will "
         "never run, or report this."
     )
+
+
+async def cancel_season_on(db: aiosqlite.Connection, season_id: int) -> bool:
+    """Mark *season_id* CANCELLED on *db*, committing nothing, and nothing else of it.
+
+    Guarded on ``ACTIVE``: a season already completed or cancelled is left, and False is given.
+    A season's cancellation writes this after :func:`cancel_season_divisions_on`, never before:
+    ``cancel_round_on`` refuses a round whose season is already COMPLETED or CANCELLED, so a
+    season row flipped first would lock a write beneath it out of its own children.
+    """
+    cursor = await db.execute(
+        "UPDATE seasons SET status = 'CANCELLED' WHERE id = ? AND status = 'ACTIVE'",
+        (season_id,),
+    )
+    return cursor.rowcount > 0
+
+
+async def cancel_season_divisions_on(
+    db: aiosqlite.Connection,
+    season_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> dict[int, list[int]]:
+    """Cancel every division of *season_id* not yet cancelled, with its rounds, on *db*.
+
+    Each goes through :func:`cancel_division_on`, so the rounds called off and the real status
+    each was called off from are audited as a division's cancellation audits them. Committing
+    nothing, and leaving the season's own row alone: that is :func:`cancel_season_on`'s, written
+    last. Gives each division cancelled by this call, in tier order, with the ids of its rounds
+    called off.
+    """
+    cursor = await db.execute(
+        "SELECT id FROM divisions WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
+        (season_id,),
+    )
+    division_ids = [row["id"] for row in await cursor.fetchall()]
+    return {
+        division_id: await cancel_division_on(
+            db, division_id, actor_id=actor_id, actor_name=actor_name, now=now
+        )
+        for division_id in division_ids
+    }
+
+
+async def close_raced_rounds_on(
+    db: aiosqlite.Connection,
+    season_id: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> list[int]:
+    """Close as FINAL every round of *season_id* raced but whose verdicts are open, on *db*.
+
+    A round at *awaiting report verdicts* or *awaiting appeal verdicts* has its results
+    entered, so ``ROUND_CANCELLABLE`` excludes it and a cancellation leaves it exactly where it
+    is: "a cancellation shall never discard a result". But nothing else will move it either,
+    the verdict commands it waits on being refused once the season is cancelled.
+
+    The former-driver flag is set at the FINAL transition (#216). A driver whose only round is
+    one of these is flagless when the driver pass runs, and the pass deletes a flagless profile
+    at Not Signed Up, which would discard the results this rule forbids discarding. Closing the
+    rounds first marks their drivers, and the pass keeps them.
+
+    Committing nothing. Gives the ids closed, for the caller to report.
+    """
+    from leaguebot.results.services.result_submission_service import (
+        recompute_former_drivers_for_round,
+    )
+
+    cursor = await db.execute(
+        f"""
+        SELECT r.id, r.status, d.id AS division_id
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        WHERE d.season_id = ?
+          AND r.status IN ({_RACED_AWAITING_VERDICTS_SQL})
+        ORDER BY r.id
+        """,
+        (season_id,),
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+
+    for row in rows:
+        await db.execute(
+            "UPDATE rounds SET status = ? WHERE id = ?",
+            (RoundStatus.FINAL.value, row["id"]),
+        )
+        # The round's results are final as of the line above, so its drivers become
+        # former drivers here, which is the whole point of closing them (#216).
+        await recompute_former_drivers_for_round(db, row["id"])
+        await db.execute(
+            """
+            INSERT INTO audit_entries
+                (actor_id, actor_name, division_id, change_type,
+                 old_value, new_value, timestamp)
+            VALUES (?, ?, ?, 'round.status', ?, ?, ?)
+            """,
+            (
+                actor_id,
+                actor_name,
+                row["division_id"],
+                row["status"],
+                RoundStatus.FINAL.value,
+                now.isoformat(),
+            ),
+        )
+    return [row["id"] for row in rows]
+
+
+async def discard_uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) -> int:
+    """Delete every placement of *season_id* not yet committed, freeing its seat, on *db*.
+
+    Cancelling a season discards them (issue #220): the drivers placed stood outside the
+    championship and earn no history of it. Committing nothing. Gives how many were discarded.
+    """
+    await db.execute(
+        "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+        "  SELECT team_seat_id FROM driver_season_assignments "
+        "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
+        (season_id,),
+    )
+    cursor = await db.execute(
+        "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
+        (season_id,),
+    )
+    return cursor.rowcount
