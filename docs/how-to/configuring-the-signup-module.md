@@ -17,7 +17,7 @@ This guide covers the signup module only. Setting the bot up, creating a season 
 
 ## A note on four words
 
-**Wizard** — the private channel a driver gets when they press the button, and the run of questions inside it. One per driver, named after them, deleted 24 hours after their signup ends however it ends.
+**Wizard** — the private channel a driver gets when they press the button, and the run of questions inside it. One per driver, named after them, deleted 24 hours after their signup ends, unless the bot could not post its closing notice there: it is then kept, locked, for you to delete by hand.
 
 **Slot** — a day and time you offer as a race slot, so drivers can say which ones they can make. You set the list; they tick the ones that suit. Nothing else in the bot uses them — they exist so you can work out who can race when.
 
@@ -234,7 +234,7 @@ If nobody is mid-signup it closes immediately. Otherwise you get a confirmation 
 - **Drivers still filling in the form** are returned to Not Signed Up by the close, and would have to start again. If you want them in, follow their links and nudge them to finish before you close.
 - **Drivers awaiting your approval or a correction** keep their place. You can still approve, reject or ask them for changes once the window has closed.
 
-If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up. **Confirm checks the window again**: if signups have since closed, were reopened, or had a close time armed, it is refused and closes nothing — run `/signup close` again. If a step of the close fails (a driver not returned or not told, the Sign Up button not removed, the notice not posted, the season not moved on) the reply and the log line name it, the rest having run; put that part right by hand.
+If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up. **Confirm checks the window again**: if signups have since closed, were reopened, or had a close time armed, it is refused and closes nothing — run `/signup close` again. If a step of the close fails, the reply and the log line name it, the rest having run. A driver not returned keeps their signup and channel as they were. A driver not told still has their channel locked and deleted a day later. A channel that could not be locked after its notice went out is yours to delete by hand. The Sign Up button not removed, the notice not posted, or the season not moved on, you put right by hand.
 
 **If you set a close time, clear it first.** `/signup close` refuses while one is armed, names the time it is waiting for, and sends you here:
 
@@ -257,7 +257,7 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 
 > **The confirmation expires after five minutes.** Leave the dialog sitting and its buttons come down and the lapse is recorded in the log channel, with signups still open. Cancel is recorded the same way. Run the command again.
 
-> **A close the bot's stop cuts off is finished when it starts.** If the bot stops part-way through a close, it finishes the close as it starts again: the window is closed, where the close never got that far and you have not opened a new one since, and each driver it returned and had not yet told is told once and their channel locked, one line in the log channel saying so. If the close was `/module disable signup`, the module stays on: run the command again. A season the close left in signups, the window closed but the season not moved on to placements (the bot stopped in between, or the close's reply named *The season could not be moved on.*), is moved on when the bot next starts.
+> **A close the bot's stop cuts off is finished when it starts.** If the bot stops part-way through a close, it finishes the close as it starts again: the window is closed, where the close never got that far and you have not opened a new one since, and each driver it returned and had not yet told is told once and their channel locked, one line in the log channel saying so. A notice Discord refuses then stops the change queue until it is retried, or discarded, when the channel is closed without it. If the close was `/module disable signup`, the module stays on: run the command again. A season the close left in signups, the window closed but the season not moved on to placements (the bot stopped in between, or the close's reply named *The season could not be moved on.*), is moved on when the bot next starts, unless you have opened a new window since or the season's end or wind-down is waiting on the change queue.
 
 > **A close nobody runs is recorded too.** At its close time, after a restart that found the time passed, at a season's end and when every division is done, the log channel gets one line naming no member, with the drivers returned and any failed step.
 
