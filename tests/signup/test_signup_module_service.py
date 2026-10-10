@@ -563,3 +563,109 @@ class TestConfigSnapshotIsolation:
         assert len(snap.slots) == 1
         assert snap.slots[0].day_of_week == 1
 
+
+
+# ---------------------------------------------------------------------------
+# A signup's end, and the closing notice it owes (#439, slice 5)
+# ---------------------------------------------------------------------------
+
+
+async def _wizard_row(db_path, user_id: str) -> dict:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT wizard_state, signup_channel_id, closing_notice_owed "
+            "FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+    assert row is not None, user_id
+    return dict(row)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a wizard record carries no closing notice owed"
+)
+async def test_a_wizard_owes_no_closing_notice_by_default(db_path):
+    """A wizard saved as the wizard saves it owes no closing notice: the mark is set only by the
+    change queue's close of the signup window, never by the wizard itself."""
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    svc = SignupModuleService(db_path)
+    await svc.save_wizard(_make_wizard())
+
+    assert (await _wizard_row(db_path, "w1"))["closing_notice_owed"] == 0
+    assert await svc.owed_closing_notices() == []
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: a signup's end is not marked on the save handed"
+)
+async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_channel(db_path):
+    """`end_wizard_on` writes on the connection it is handed and commits nothing: rolled back,
+    the wizard is as it was. Committed by the caller, the wizard is unengaged, owes its closing
+    notice where asked, and keeps its signup channel, which the hold and the channel's deletion
+    still read. A driver with no wizard is nothing to end."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    svc = SignupModuleService(db_path)
+    await svc.save_wizard(_make_wizard())
+
+    async with get_connection(db_path) as db:
+        await svc.end_wizard_on(db, "w1", closing_notice_owed=True)
+        await db.rollback()
+    assert await _wizard_row(db_path, "w1") == {
+        "wizard_state": "COLLECTING_NATIONALITY", "signup_channel_id": 777,
+        "closing_notice_owed": 0,
+    }
+
+    async with get_connection(db_path) as db:
+        await svc.end_wizard_on(db, "w1", closing_notice_owed=True)
+        await svc.end_wizard_on(db, "ghost")
+        await db.commit()
+    assert await _wizard_row(db_path, "w1") == {
+        "wizard_state": "UNENGAGED", "signup_channel_id": 777, "closing_notice_owed": 1,
+    }
+    assert await svc.get_wizard("ghost") is None
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: the closing notices owed are neither read nor cleared"
+)
+async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed(db_path):
+    """Three wizards, 201, 202 and 203, saved in that order; 203 and then 201 are marked owed,
+    202 is ended owing nothing. The owed are read in the order the wizards were saved, not the
+    order they were marked. Clearing 201 on a save that is rolled back clears nothing; committed,
+    203 alone is owed. Taking the owed on a save reads 203 and clears it with that save."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    svc = SignupModuleService(db_path)
+    for user_id in ("201", "202", "203"):
+        await svc.save_wizard(_make_wizard(user_id))
+    async with get_connection(db_path) as db:
+        await svc.end_wizard_on(db, "203", closing_notice_owed=True)
+        await svc.end_wizard_on(db, "201", closing_notice_owed=True)
+        await svc.end_wizard_on(db, "202")
+        await db.commit()
+
+    assert await svc.owed_closing_notices() == ["201", "203"]
+
+    async with get_connection(db_path) as db:
+        await svc.clear_closing_notices_on(db, ["201"])
+        await db.rollback()
+    assert await svc.owed_closing_notices() == ["201", "203"]
+
+    async with get_connection(db_path) as db:
+        await svc.clear_closing_notices_on(db, ["201"])
+        await db.commit()
+    assert await svc.owed_closing_notices() == ["203"]
+
+    async with get_connection(db_path) as db:
+        taken = await svc.take_closing_notices_on(db)
+        await db.commit()
+    assert taken == ["203"]
+    assert await svc.owed_closing_notices() == []
+    assert (await _wizard_row(db_path, "203"))["wizard_state"] == "UNENGAGED"
