@@ -228,6 +228,7 @@ async def execute_forced_close(
                 await _wizard_svc.trigger_channel_hold(
                     row["discord_user_id"], _guild,
                     "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
+                    arm_when_refused=True,
                 )
             except Exception:
                 log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])

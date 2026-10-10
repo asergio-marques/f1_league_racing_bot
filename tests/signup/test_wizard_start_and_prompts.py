@@ -674,7 +674,6 @@ async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
     assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the hold cannot be asked to arm the deletion when its notice is refused")
 async def test_a_notice_that_cannot_be_posted_still_schedules_deletion(tmp_path):
     """The forced close's form: a refused notice still locks and arms (P1)."""
     channel = _channel(OLD_CHANNEL)
@@ -701,7 +700,6 @@ def _refused():
     return discord.Forbidden(MagicMock(status=403), "Missing Permissions")
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the channel is locked before its notice is posted")
 async def test_the_notice_is_posted_before_the_channel_is_locked(tmp_path):
     """The driver is told why their signup ended before their typing is taken away and the
     channel's deletion armed, so they are never locked out of a channel that says nothing."""
@@ -719,7 +717,6 @@ async def test_the_notice_is_posted_before_the_channel_is_locked(tmp_path):
     assert order == ["send", "lock", "arm"]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a refused notice still arms the channel's deletion")
 async def test_a_notice_that_cannot_be_posted_locks_typing_and_arms_no_deletion(tmp_path):
     """By default (a withdrawal, approval, rejection or expiry), a notice Discord refuses leaves
     the channel readable with the driver's typing locked and no deletion armed, and says so."""
@@ -739,7 +736,6 @@ async def test_a_notice_that_cannot_be_posted_locks_typing_and_arms_no_deletion(
     assert outcome.reason
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the hold cannot be asked to raise on a refused notice")
 async def test_a_raising_hold_raises_before_locking_where_the_notice_is_refused(tmp_path):
     """Asked to raise (the change queue's notice job), a refused notice raises from Discord's
     fault, having locked nothing and armed nothing, so a Retry finds the channel as it was."""
@@ -760,7 +756,6 @@ async def test_a_raising_hold_raises_before_locking_where_the_notice_is_refused(
     svc._scheduler._scheduler.add_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the hold cannot post its notice without locking")
 async def test_a_notice_only_hold_posts_without_locking(tmp_path):
     """Asked only for the notice (`lock=False`), the hold posts it and leaves the channel and its
     deletion to the job after it."""
@@ -777,7 +772,6 @@ async def test_a_notice_only_hold_posts_without_locking(tmp_path):
     assert outcome.posted is True
 
 
-@pytest.mark.xfail(strict=True, reason="#439: there is no lock_signup_channel")
 async def test_locking_a_signup_channel_revokes_writing_and_arms_its_deletion(tmp_path):
     """Locking a signup channel takes away the driver's typing and arms its deletion 24 hours on,
     posting nothing; a permission write Discord refuses raises from its fault."""

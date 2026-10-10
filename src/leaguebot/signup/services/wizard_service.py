@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,7 @@ from apscheduler.triggers.date import DateTrigger
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
@@ -149,6 +151,21 @@ _CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
 
 #: What `WizardService.withdraw` returns where the signup has already ended (S5-A6).
 _SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
+
+
+@dataclass(frozen=True)
+class HoldOutcome:
+    """What `WizardService.trigger_channel_hold` did, for a caller to name in its own line.
+
+    *channel_id* is None where there was nothing to hold (no wizard, or no text channel).
+    *posted* says the closing notice went out; *locked* that the driver's typing was taken away;
+    *reason* names the kind of Discord fault that refused the notice, when it was refused.
+    """
+
+    channel_id: int | None
+    posted: bool = False
+    locked: bool = False
+    reason: str | None = None
 
 
 class WizardService:
@@ -1008,34 +1025,94 @@ class WizardService:
         discord_user_id: str,
         guild: discord.Guild,
         terminal_message: str,
-    ) -> None:
-        """Revoke driver write access, post terminal message, and schedule
-        channel deletion +24 h (T033).
+        *,
+        lock: bool = True,
+        raise_on_failure: bool = False,
+        arm_when_refused: bool = False,
+    ) -> HoldOutcome:
+        """Post the terminal notice, then hold the channel: revoke the driver's write access and
+        schedule the channel's deletion +24 h (T033).
 
         FR-026, SC-003.
+
+        **The notice is posted first**, so a driver is never locked out of a channel that says
+        nothing. No wizard, or a channel that is not a text channel, leaves nothing done and gives
+        `HoldOutcome(channel_id=None)`. Where Discord refuses the notice:
+
+        - with *raise_on_failure* (the change queue's notice job) `StepFailedOnDiscord` is raised
+          from the refusal, having locked and armed nothing, so a Retry finds the channel as it
+          was;
+        - by default (withdrawal, approval, rejection and expiry) the driver's typing is locked and
+          **no deletion is armed**: the channel stays readable for a manager to delete by hand, and
+          the outcome says so for the caller's log line;
+        - with *arm_when_refused* (the window's forced close off the queue, whose rule is that
+          the channel is held whatever became of the notice) the channel is locked and its
+          deletion armed all the same.
+
+        *lock=False* posts the notice alone, leaving the lock and the deletion to `lock_signup_channel`.
+        """
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
+        if wizard is None or wizard.signup_channel_id is None:
+            return HoldOutcome(channel_id=None)
+
+        channel = guild.get_channel(wizard.signup_channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return HoldOutcome(channel_id=None)
+
+        try:
+            await channel.send(terminal_message)
+        except discord.HTTPException as exc:
+            if raise_on_failure:
+                raise StepFailedOnDiscord(
+                    f"the closing notice could not be posted in channel {channel.id}"
+                ) from exc
+            log.warning("trigger_channel_hold: failed to post terminal message in %s", channel.id)
+            reason = type(exc).__name__
+            if lock:
+                await self._lock_channel(
+                    discord_user_id, guild, channel, arm_deletion=arm_when_refused
+                )
+            return HoldOutcome(channel.id, posted=False, locked=lock, reason=reason)
+
+        if lock:
+            await self._lock_channel(discord_user_id, guild, channel, arm_deletion=True)
+        return HoldOutcome(channel.id, posted=True, locked=lock)
+
+    async def _lock_channel(
+        self,
+        discord_user_id: str,
+        guild: discord.Guild,
+        channel: discord.TextChannel,
+        *,
+        arm_deletion: bool,
+    ) -> None:
+        """Revoke the driver's write access and, when asked, arm the deletion 24 hours on."""
+        member = guild.get_member(int(discord_user_id))
+        if member is not None:
+            await self._revoke_driver_write(channel, member)
+        if arm_deletion:
+            fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
+            await self._arm_channel_delete_job(discord_user_id, fire_at)
+
+    async def lock_signup_channel(self, discord_user_id: str, guild: discord.Guild) -> None:
+        """Lock a driver's signup channel and arm its deletion 24 hours on, posting nothing.
+
+        The change queue's `close_signup` job, after its `signup_notice` job. No wizard, or no
+        channel, is nothing to lock. A permission write Discord refuses raises
+        `StepFailedOnDiscord` from the refusal.
         """
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.signup_channel_id is None:
             return
-
         channel = guild.get_channel(wizard.signup_channel_id)
         if not isinstance(channel, discord.TextChannel):
             return
-
-        # Revoke driver write access
-        member = guild.get_member(int(discord_user_id))
-        if member is not None:
-            await self._revoke_driver_write(channel, member)
-
-        # Post terminal notice
         try:
-            await channel.send(terminal_message)
-        except discord.HTTPException:
-            log.warning("trigger_channel_hold: failed to post terminal message in %s", channel.id)
-
-        # Schedule channel deletion (+24 h)
-        fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        await self._arm_channel_delete_job(discord_user_id, fire_at)
+            await self._lock_channel(discord_user_id, guild, channel, arm_deletion=True)
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"the signup channel {channel.id} could not be locked"
+            ) from exc
 
     async def handle_inactivity_timeout(
         self, discord_user_id: str
