@@ -1,6 +1,28 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-10 — v14.12.1 → v14.12.2: PATCH — the SeasonAssignment entity no longer lists a driver's final standing (issue #439)]
+  Version change    : 14.12.1 → 14.12.2
+  Bump rationale    : PATCH, on the precedent of v14.6.2 and v14.12.1: a statement of fact is
+                      corrected to match the bot, and no rule changes. v14.12.1 corrected
+                      Principle XII alone; the SeasonAssignment entity still listed `final_points`
+                      and `final_position`, which `001_baseline.sql` gives only to
+                      `driver_history_entries`.
+
+  Modified sections :
+    - Data & State Management, New Entities (v2.3.0), **SeasonAssignment** — the
+      `final_points` and `final_position` field lines give way to a note that a driver's final
+      points and position are held on each history entry (`driver_history_entries`), written
+      in the season-end save.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-season-end-on-the-queue.
+
+  Templates / docs  : none. No template in .specify/templates names the fields.
+
 [2026-10-10 — v14.12.0 → v14.12.1: PATCH — Principle XII names the record a season's end writes a driver's final standing to (issue #439)]
   Version change    : 14.12.0 → 14.12.1
   Bump rationale    : PATCH: a wording correction that changes no rule. The bullet required the final
@@ -8345,8 +8367,8 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 - `division_id` (INTEGER, FK → Division)
 - `team_seat_id` (INTEGER, FK → TeamSeat, nullable — null until `/driver assign` runs)
 - `is_historical` (BOOLEAN, default false — set to `true` on season completion)
-- `final_points` (INTEGER, nullable — written atomically on season completion)
-- `final_position` (INTEGER, nullable — written atomically on season completion)
+- A driver's final points and position are not held here: they are held on each history
+  entry (`driver_history_entries`), written in the season-end save.
 - Rows are created on first `/driver assign` for a season, or on admin direct-assign in
   test mode.
 
@@ -8853,4 +8875,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.12.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-10
+**Version**: 14.12.2 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-10
