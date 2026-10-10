@@ -434,7 +434,6 @@ async def _statuses(db, table, ids):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_season_is_completed_on_the_save_handed(tmp_path) -> None:
     from leaguebot.core.services.season_service import complete_season_on
 
@@ -448,7 +447,6 @@ async def test_a_season_is_completed_on_the_save_handed(tmp_path) -> None:
         assert await _season_status(db, season_id) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
 async def test_a_season_no_longer_active_is_left_and_gives_false(tmp_path, status) -> None:
     from leaguebot.core.services.season_service import complete_season_on
@@ -471,7 +469,6 @@ DIVISION_IN_SETUP = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 @pytest.mark.parametrize(
     "case, expected",
     [

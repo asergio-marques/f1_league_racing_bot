@@ -1891,3 +1891,74 @@ def _row_to_session(row: aiosqlite.Row) -> Session:
         phase2_slot_type=row["phase2_slot_type"],
         phase3_slots=json.loads(slots_raw) if slots_raw else None,
     )
+
+
+async def complete_season_on(db: aiosqlite.Connection, season_id: int) -> bool:
+    """Archive *season_id* in place as COMPLETED on *db*, committing nothing.
+
+    Guarded on ``ACTIVE``: a season already completed or cancelled is left, and False is given.
+    A season's completion writes this last in the save that records its end, so that the
+    archive never stands without the history and the driver pass written beside it.
+    """
+    cursor = await db.execute(
+        "UPDATE seasons SET status = 'COMPLETED' WHERE id = ? AND status = 'ACTIVE'",
+        (season_id,),
+    )
+    return cursor.rowcount > 0
+
+
+async def outstanding_rounds_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+    """Division, round number and track of every round of *season_id* still to be finalised.
+
+    Cancelled rounds and the rounds of a cancelled division are excluded: neither is waiting on
+    anybody.
+    """
+    cursor = await db.execute(
+        f"""
+        SELECT d.name AS division, r.round_number, r.track_name
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        WHERE d.season_id = ?
+          AND r.status NOT IN ({_TERMINAL_SQL})
+          AND d.status != 'CANCELLED'
+        ORDER BY d.name, r.round_number
+        """,
+        (season_id,),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def completion_refusal_on(db: aiosqlite.Connection, season_id: int) -> str | None:
+    """Why *season_id* cannot be completed yet, in the words the league is told, else None.
+
+    Read on *db*, so that a completion's save judges the divisions it has just refreshed.
+
+    - Rounds still to be finalised are named, the first twenty.
+    - Otherwise a division neither finished nor cancelled is named: a refusal naming nothing is
+      what stranded leagues in issue #154. A division still ``ACTIVE`` with nothing outstanding
+      refuses nothing, the completion's refresh finishing it.
+    """
+    pending = await outstanding_rounds_on(db, season_id)
+    if pending:
+        lines = "\n".join(
+            f"• {r['division']} — Round {r['round_number']}"
+            + (f" ({r['track_name']})" if r.get("track_name") else "")
+            for r in pending[:20]
+        )
+        return (
+            "❌ Cannot complete season — the following rounds are not yet "
+            f"finalised:\n{lines}"
+        )
+    cursor = await db.execute(
+        "SELECT name FROM divisions WHERE season_id = ? "
+        "AND status NOT IN ('FINISHED', 'CANCELLED', 'ACTIVE') ORDER BY tier, id",
+        (season_id,),
+    )
+    unfinished = ", ".join(f"**{row['name']}**" for row in await cursor.fetchall())
+    if not unfinished:
+        return None
+    return (
+        "❌ Cannot complete season — no round is outstanding, but these "
+        f"divisions have not finished: {unfinished}. Cancel a division that will "
+        "never run, or report this."
+    )

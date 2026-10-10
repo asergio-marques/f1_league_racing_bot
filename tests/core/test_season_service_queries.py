@@ -268,7 +268,6 @@ async def test_completed_seasons_are_counted(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: there is no complete_season_on")
 async def test_a_season_is_completed_in_place(tmp_path):
     """Archived, not removed — the championship's record."""
     from leaguebot.core.services.season_service import complete_season_on
