@@ -939,8 +939,6 @@ async def test_a_finished_or_discarded_round_amend_does_not_hold_the_amendment(t
 # word for word.
 # ---------------------------------------------------------------------------
 
-_XFAIL_SEASON_END = "#439: /results rounds amend does not yet read a season's end in hand"
-
 SEASON_COMPLETE_PAYLOAD = {"season_id": SEASON_ID, "season_number": 7}
 
 _SEASON_ENDS = [
@@ -1022,7 +1020,6 @@ async def test_a_finished_or_discarded_completion_does_not_hold_the_amendment(tm
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_SEASON_END)
 @pytest.mark.parametrize(("kind", "payload"), _SEASON_ENDS)
 @pytest.mark.parametrize("division", ["Pro", "Am"])
 @_IN_HAND
