@@ -84,6 +84,8 @@ from tests.support.season_league import (
     season_end_changes,
     signing_up,
     window_open,
+    wizard_state,
+    wizards_recovered,
 )
 
 
@@ -1389,3 +1391,66 @@ async def test_a_discarded_signup_notice_still_closes_the_channel_and_the_outcom
     [line] = _success_lines(league)
     assert f"  not done: {_logged(NOTICE_DISCARDED)}" in line
     assert await _status(league) == "CANCELLED"
+
+
+# ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
+
+#: How a driver a discarded window close returned is named, in the reply and the line.
+RETURNED_NOT_TOLD = (
+    f"<@{SIGNING_UP}> was returned to Not Signed Up when signups closed, but was not told and "
+    "their channel was not closed: tell them and delete it by hand."
+)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439 slice 5: a discarded window close forgets the drivers it returned",
+)
+async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returned(tmp_path):
+    """The season ongoing with its signup window open and driver 105 still filling in the
+    wizard. The window's close returns 105, then recording the window closed fails, and a league
+    admin discards `close_window`. 105 is never told: the reply and the closing line name them
+    as returned but not told, their channel to delete by hand; no `signup_notice` is planned for
+    them, and the mark is taken, so no later close finds them."""
+    league = await ongoing_league(tmp_path, signups_open=True)
+    await league.write("UPDATE seasons SET stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    league.close_fails = RuntimeError("the window could not be recorded closed")
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("close_window", None)
+
+    await discard_job(league.bot)
+
+    assert RETURNED_NOT_TOLD in reply(interaction)
+    [line] = _success_lines(league)
+    assert _logged(RETURNED_NOT_TOLD) in line
+    assert ("signup_notice", SIGNING_UP) not in await _names(league)
+    assert league.notices == []
+    assert await _status(league) == "CANCELLED"
+    assert await league.bot.signup_module_service.owed_closing_notices() == []
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439 slice 5: the end's driver pass leaves a signup's wizard engaged"
+)
+async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
+    """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
+    collecting their notes) when the cancellation's `end` runs its driver pass. Their wizard is
+    unengaged in that save, before any job of theirs runs, and a restart then arms no
+    inactivity job for them and expires nothing."""
+    league = await ongoing_league(tmp_path)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'COLLECTING_NOTES' "
+        "WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await _asked(league)
+
+    await _run_through(league, "end")
+
+    assert await driver_state(league, SIGNING_UP) is None
+    assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
+    await run_queue(league.bot)
+    assert await wizards_recovered(league) == {"armed": [], "expired": []}
