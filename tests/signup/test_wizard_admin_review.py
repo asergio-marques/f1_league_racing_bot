@@ -473,9 +473,6 @@ def _notice_refused(review):
     return review.channel
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: a refused notice is not named and the channel's deletion is armed"
-)
 async def test_an_approval_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
     review,
 ):
@@ -495,9 +492,6 @@ async def test_an_approval_whose_notice_is_refused_keeps_the_channel_and_names_i
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: a refused notice is not named and the channel's deletion is armed"
-)
 async def test_a_rejection_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
     review,
 ):

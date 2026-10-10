@@ -239,9 +239,6 @@ def _notice_refused(lifecycle):
     return channel
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: a refused notice is not named and the channel's deletion is armed"
-)
 async def test_a_withdrawal_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
     lifecycle,
 ):
@@ -316,9 +313,6 @@ async def test_an_expired_wizard_records_one_lapse_naming_the_driver(lifecycle):
     assert lines == [_EXPIRY_LAPSE]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: a refused notice is not named and the channel's deletion is armed"
-)
 async def test_an_expiry_whose_notice_is_refused_keeps_the_channel_and_names_it(lifecycle):
     """An expiry whose closing notice Discord refuses keeps the channel readable with the
     driver's typing locked and no deletion armed, and after the lapse line a "Channel kept" line

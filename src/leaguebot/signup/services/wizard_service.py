@@ -168,6 +168,22 @@ class HoldOutcome:
     reason: str | None = None
 
 
+def _channel_kept(held: HoldOutcome) -> str | None:
+    """The `not done:` line a signup's own flow gains where its closing notice was refused, or
+    None where it went out (or there was no channel to hold).
+
+    The channel is kept, readable with the driver's typing locked and no deletion armed, so a
+    league manager must delete it by hand (signup specification: the closing notice).
+    """
+    if not isinstance(held, HoldOutcome) or held.channel_id is None or held.posted:
+        return None
+    return (
+        f"  not done: the closing notice could not be posted in <#{held.channel_id}>"
+        f" ({held.reason}); the channel is kept, readable but locked, and will not delete"
+        " itself: delete it by hand"
+    )
+
+
 class WizardService:
     """Manages the full lifecycle of a driver's signup wizard session.
 
@@ -720,14 +736,16 @@ class WizardService:
         # Cancel inactivity APScheduler job
         await self._cancel_inactivity_job(discord_user_id)
 
-        await self._record_signup_line(discord_user_id, guild, "Withdrawn")
-
-        # Post cancellation notice and hold channel
-        await self.trigger_channel_hold(
+        # Post cancellation notice and hold channel, before the line, which names a channel kept.
+        held = await self.trigger_channel_hold(
             discord_user_id, guild,
             "❌ You have cancelled your signup. "
             "This channel will be automatically deleted in 24 hours.",
         )
+        text = "Withdrawn"
+        if (kept := _channel_kept(held)) is not None:
+            text += f"\n{kept}"
+        await self._record_signup_line(discord_user_id, guild, text)
         return None
 
     async def approve_signup(
@@ -789,7 +807,7 @@ class WizardService:
 
         await self._cancel_inactivity_job(discord_user_id)
 
-        await self.trigger_channel_hold(
+        held = await self.trigger_channel_hold(
             discord_user_id, guild,
             f"✅ Your signup has been approved by **{actor.display_name}**! "
             "You are now an Unassigned driver. "
@@ -803,6 +821,8 @@ class WizardService:
         )
         if role_note is not None:
             line += f"\n  {role_note}"
+        if (kept := _channel_kept(held)) is not None:
+            line += f"\n{kept}"
         await self._output_router.post_log(line)
         return role_note
 
@@ -853,7 +873,7 @@ class WizardService:
         except ValueError:
             log.warning("reject_signup: driver transition refused for %s", discord_user_id, exc_info=True)
 
-        await self.trigger_channel_hold(
+        held = await self.trigger_channel_hold(
             discord_user_id, guild,
             f"<@{discord_user_id}> ❌ Your signup has been rejected by **{actor.display_name}**."
             + (f"\n**Reason:** {reason}" if reason else "")
@@ -864,6 +884,8 @@ class WizardService:
         msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Rejected\n  driver: {driver_named}"
         if reason:
             msg += f"\n  reason: {reason}"
+        if (kept := _channel_kept(held)) is not None:
+            msg += f"\n{kept}"
         await self._output_router.post_log(msg)
         return None
 
@@ -1166,11 +1188,13 @@ class WizardService:
             )
 
         if guild is not None:
-            await self.trigger_channel_hold(
+            held = await self.trigger_channel_hold(
                 discord_user_id, guild,
                 "⏰ Your signup session has expired due to inactivity. "
                 "This channel will be automatically deleted in 24 hours.",
             )
+            if (kept := _channel_kept(held)) is not None:
+                await self._record_signup_line(discord_user_id, guild, f"Channel kept\n{kept}")
 
     async def handle_member_remove(
         self, discord_user_id: str, guild: discord.Guild
