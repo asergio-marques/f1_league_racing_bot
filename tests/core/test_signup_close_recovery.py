@@ -26,6 +26,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     change_rows,
+    discard_job,
     http_error,
     retry_job,
     run_queue,
@@ -328,6 +329,64 @@ async def test_a_mark_left_by_an_older_window_never_closes_the_window_now_open(t
     assert league.notices == [(SECOND, SIGNUPS_CLOSED)]
     assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
     assert not any(CLOSED_AT_START in line for line in league.bot.log_channel.sent)
+
+
+async def test_a_finish_whose_every_driver_was_already_held_writes_its_line_bare(tmp_path):
+    """Driver 107's channel was told and held before the stop, and only the close's audit was
+    cut off. When the bot starts, the finish tells nobody and closes nothing, and still writes
+    its line, with no driver named: the cut-off close wrote none."""
+    league = await _league(tmp_path)
+    await _marked_by_a_close_off_the_queue(league, SECOND)
+    league.bot.wizard_service.rearm_deletion_if_held = AsyncMock(return_value=True)
+
+    await _recover(league)
+    await run_queue(league.bot)
+
+    assert league.notices == []
+    assert _lines(league) == [FINISHED]
+
+
+async def test_the_finish_takes_only_the_marks_its_plan_read_unless_the_plan_was_discarded(
+    tmp_path,
+):
+    """Driver 107 is owed their notice by a close off the queue cut off by a stop. The finish's
+    first job reads 107; before its last save, driver 105 is marked by another close off the
+    queue. The last save leaves 105's mark for a later finish, naming only 107 as told."""
+    league = await _league(tmp_path)
+    await _marked_by_a_close_off_the_queue(league, SECOND)
+    await _recover(league)
+    await run_queue(league.bot, steps=1)
+    await _marked_by_a_close_off_the_queue(league, SIGNING_UP)
+
+    await run_queue(league.bot)
+
+    assert _lines(league) == [f"{FINISHED}: `<@{SECOND}>` told and their channel closed"]
+    assert await league.bot.signup_module_service.off_queue_closing_notices() == [
+        str(SIGNING_UP)
+    ]
+
+
+async def test_a_discarded_finish_names_every_driver_still_marked_and_takes_their_marks(tmp_path):
+    """Driver 107 is owed their notice by a close off the queue cut off by a stop. When the bot
+    starts, Discord refuses to show the finish 107's channel, which stops the queue at its first
+    job, and a league admin discards it. Its last save takes 107's mark and names them as
+    returned but not told, their channel to delete by hand; nothing is posted or locked."""
+    league = await _league(tmp_path)
+    await _marked_by_a_close_off_the_queue(league, SECOND)
+    league.bot.wizard_service.rearm_deletion_if_held = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Access")
+    )
+    await _recover(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "finish_close"
+
+    await discard_job(league.bot)
+
+    [line] = _lines(league)
+    assert f"`<@{SECOND}>` was returned to Not Signed Up when signups closed, but was not told" in line
+    assert league.notices == [] and league.locked == []
+    assert await league.bot.signup_module_service.off_queue_closing_notices() == []
 
 
 def test_the_recovery_is_asked_after_the_wizards_are_recovered_and_before_the_queue_starts():

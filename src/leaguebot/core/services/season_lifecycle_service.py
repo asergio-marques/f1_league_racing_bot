@@ -643,9 +643,10 @@ def close_finish_change(
        jobs of their own (`window_closed_jobs`). Its record clears the marks it read in the save
        that marks it done, so that from that save the queue's own records hold the drivers.
     2. `finish_close_line`: one save writes the line naming who was told and closed, and what was
-       left undone, beneath. It takes any mark still standing, which only a Discard of the first
-       job leaves, and names those drivers as returned but not told, as a discarded close of the
-       window on the queue does.
+       left undone, beneath; bare where nobody was left to tell. Where a league admin discarded
+       the first job, it takes every mark still standing and names those drivers as returned but
+       not told, as a discarded close of the window on the queue does; otherwise it takes none,
+       a mark another close made since being left for a later finish.
 
     A driver is told twice in two cases, both accepted as rare (owner, 2026-10-10): one whose
     lock Discord refused just before the stop, named then for their channel to be deleted by
@@ -724,7 +725,16 @@ def close_finish_change(
         )
 
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        untold = await hooks.take_off_queue_closing_notices_on(db) if hooks is not None else []
+        # Only a Discard of the first job leaves its marks standing, untaken by its record: then
+        # every mark is taken and named. Otherwise the record took what the plan read, and a mark
+        # another close made since is left for a later finish.
+        plan_view = next((view for view in ctx.steps if view.name == CLOSE_FINISH_PLAN), None)
+        plan_discarded = plan_view is not None and "discarded" in (plan_view.result or {})
+        untold = (
+            await hooks.take_off_queue_closing_notices_on(db)
+            if hooks is not None and plan_discarded
+            else []
+        )
         told: list[str] = []
         beneath: list[str] = []
         for notice in ctx.steps:
@@ -752,9 +762,8 @@ def close_finish_change(
             "and their channel was not closed: tell them and delete it by hand."
             for account in untold
         )
-        if not told and not beneath:
-            # Every driver marked had been held before the stop: nothing to say.
-            return StepResult(result={"untold": untold})
+        # Written even where every driver marked had been held before the stop: the close that was
+        # cut off wrote no line of its own.
         head = (
             f"{CLOSE_FINISHED}: {', '.join(told)} told and their channel closed"
             if told
