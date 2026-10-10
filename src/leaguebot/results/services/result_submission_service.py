@@ -3258,19 +3258,21 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     arrived_at = (
         RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
     )
+    from leaguebot.core.services.season_service import refresh_division_status_on
+
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE rounds SET status = ? WHERE id = ? AND status = ?",
             (arrived_at, round_id, RoundStatus.NOT_RUN.value),
         )
+        if not results_enabled:
+            # The round just reached a terminal state, so its division may now be finished: the
+            # move and the refresh are one save, a refresh that fails leaving the round as it was
+            # (#439).
+            await refresh_division_status_on(db, division_id)
         await db.commit()
 
     if not results_enabled:
-        # The round just reached a terminal state, so its division may now be finished.
-        from leaguebot.core.services.season_service import SeasonService
-
-        await SeasonService(db_path).refresh_division_status(division_id)
-
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
         try:

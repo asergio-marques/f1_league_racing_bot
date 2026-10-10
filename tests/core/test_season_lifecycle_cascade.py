@@ -760,7 +760,6 @@ async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tm
 _XFAIL_ROUND_JOB = "#439: the results-off round job still saves in two commits and winds the season down itself"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ROUND_JOB)
 async def test_without_the_results_module_the_round_and_its_division_are_saved_together(
     tmp_path, monkeypatch
 ) -> None:
