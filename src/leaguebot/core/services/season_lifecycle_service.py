@@ -36,6 +36,7 @@ from leaguebot.core.services.change_queue import (
     OutcomeContext,
     Step,
     StepContext,
+    in_hand,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
@@ -184,9 +185,9 @@ async def move_on_a_season_left_by_a_closed_window(
     would ever move. The bot's start calls this, handing whether signup's window stands open: it
     is the one place reached after both, and the window's close itself is no place, its move
     having failed or never run. Nothing is moved where the window stands open (a window opened
-    since, in whose stage the season rightly stands) or where an end of the season is in hand on
-    the queue, which closes the window and keeps the stage where it stands until it records the
-    end. Gives the new stage, or None where nothing was moved.
+    since, in whose stage the season rightly stands) or where an end of the season or its
+    wind-down is in hand on the queue, each of which closes the window and keeps the stage where
+    it stands until its own save moves it. Gives the new stage, or None where nothing was moved.
     """
     if window_open:
         return None
@@ -197,6 +198,11 @@ async def move_on_a_season_left_by_a_closed_window(
     from leaguebot.core.services.season_end_changes import season_end_in_hand
 
     if await season_end_in_hand(db_path, found[0]) is not None:
+        return None
+    if await in_hand(db_path, (WIND_DOWN,)):
+        # The wind-down closes the window first and moves the season on in its own save, after
+        # turning down the placements still pending; moved on here, the season would pass that
+        # turn-down by on its way to Pending completion.
         return None
     return await advance_on_window_close(db_path)
 

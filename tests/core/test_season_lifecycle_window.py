@@ -273,6 +273,39 @@ async def test_a_season_whose_end_is_in_hand_is_left_to_it_at_start(db_path):
     assert await _stage(db_path) is SeasonStage.ONGOING_SIGNUPS
 
 
+async def test_a_season_whose_wind_down_is_in_hand_is_left_to_it_at_start(db_path):
+    """The season stands in Ongoing, signups open with no window open and every placement
+    settled, its wind-down stopped on the queue after closing the window and before its save,
+    which turns down the placements still pending and moves the season on itself. The start
+    leaves the stage to it, rather than send the season on to Pending completion past that
+    turn-down."""
+    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+
+    await _season(db_path, SeasonStage.ONGOING_SIGNUPS)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES (?, ?, '{}', 'BOT', 'RUNNING', 'winding the season down')",
+            (WIND_DOWN, WIND_DOWN),
+        )
+        await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, done_at) "
+            "VALUES (?, 0, 'wind_down', '{}', '2026-10-05T11:00:00+00:00')",
+            (cursor.lastrowid,),
+        )
+        await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, tries, "
+            "failing_since, last_failure) VALUES (?, 1, 'turn_down', '{}', 1, "
+            "'2026-10-05T12:00:00+00:00', 'OperationalError')",
+            (cursor.lastrowid,),
+        )
+        await db.commit()
+
+    await _start(_start_bot(db_path, window_open=False))
+
+    assert await _stage(db_path) is SeasonStage.ONGOING_SIGNUPS
+
+
 def test_the_season_is_moved_on_after_the_close_timers_and_before_the_finish_is_asked():
     """After the close timers' recovery, whose restart close moves its season itself, and before
     the finish of a close a stop cut off is asked. Read from the source, because both run inside
