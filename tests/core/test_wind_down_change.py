@@ -507,7 +507,8 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
     """Driver 105 is correcting their signup (Pending Driver Correction, their wizard in a
     correction step) when the wind-down turns the season's pending placements down. Without
     the hooks the builder hands it, `turn_down` refuses to turn a signup down
-    (`RuntimeError`), writing nothing. With them, 105's wizard is unengaged in `turn_down`'s own
+    (`RuntimeError`) before it writes anything: what it wrote is committed, and the database,
+    read afresh, holds no turn-down. With them, 105's wizard is unengaged in `turn_down`'s own
     save, before any job of theirs runs, and a restart then arms no inactivity job for them and
     expires nothing."""
     from leaguebot.core.db.database import get_connection
@@ -524,7 +525,12 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
     unhooked = wind_down_steps(None)[TURN_DOWN_STEP]
     async with get_connection(league.db_path) as db:
         with pytest.raises(RuntimeError, match="a wind-down is run with the hooks the builder"):
-            await unhooked.run(db, MagicMock())
+            try:
+                await unhooked.run(db, MagicMock())
+            finally:
+                # Whatever the step wrote before it refused is saved, so that the reads below,
+                # each on a connection of its own, would see it.
+                await db.commit()
     assert await _pending(league) == 2
     assert await driver_state(league, SIGNING_UP) == "PENDING_DRIVER_CORRECTION"
     assert await wizard_state(league, SIGNING_UP) == "COLLECTING_NATIONALITY"
@@ -545,11 +551,10 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
     """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
-    (`channel_id` None) and locking it nothing to lock, as the wizard service answers for a
-    wizard with no channel."""
+    (`channel_id` None), as the wizard service answers for a wizard with no channel. The lock is
+    the support's double still, so a lock asked for them is recorded in `league.locked`."""
     wizard = league.bot.wizard_service
     holding = wizard.trigger_channel_hold.side_effect
-    locking = wizard.lock_signup_channel.side_effect
 
     async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
         if int(uid) == user_id:
@@ -557,13 +562,19 @@ def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
             return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
         return await holding(uid, guild, notice, **kwargs)
 
-    async def _lock(uid: Any, guild: Any) -> None:
-        if int(uid) == user_id:
-            return None
-        await locking(uid, guild)
-
     wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
-    wizard.lock_signup_channel = AsyncMock(side_effect=_lock)
+
+
+def _locks_asked(league: Any, user_id: int = SIGNING_UP) -> list[Any]:
+    """Each lock of driver *user_id*'s signup channel asked of the wizard service."""
+    return [call for call in league.bot.wizard_service.lock_signup_channel.await_args_list
+            if int(call.args[0]) == user_id]
+
+
+def _deletion_armed_for(league: Any, user_id: int = SIGNING_UP) -> bool:
+    """Whether a deletion of driver *user_id*'s signup channel was armed on the scheduler."""
+    return any(call.kwargs.get("id") == f"wizard_channel_delete_{user_id}"
+               for call in league.bot.scheduler_service._scheduler.add_job.call_args_list)
 
 
 @pytest.mark.xfail(
@@ -571,9 +582,9 @@ def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
 )
 async def test_a_driver_with_no_signup_channel_left_is_named_in_a_line(tmp_path):
     """Driver 105, in review with no signup channel, is turned down by the wind-down. Their
-    `signup_notice` finds no channel to tell, nothing is locked, and a line of the job's own
-    names them: "System | Every division is done | `<@105>` had no signup channel left to
-    tell"."""
+    `signup_notice` finds no channel to tell, no lock is asked for them and no deletion armed,
+    and a line of the job's own names them: "System | Every division is done | `<@105>` had no
+    signup channel left to tell"."""
     league = await _league(tmp_path)
     await signing_up(league)
     await league.write(
@@ -590,6 +601,8 @@ async def test_a_driver_with_no_signup_channel_left_is_named_in_a_line(tmp_path)
         f"System | Every division is done | `<@{SIGNING_UP}>` had no signup channel left to tell"
         in line for line in league.bot.log_channel.sent
     )
+    assert _locks_asked(league) == []
     assert SIGNING_UP not in league.locked
+    assert not _deletion_armed_for(league)
     assert league.notices == []
     assert await _stage(league) == "PENDING_COMPLETION"

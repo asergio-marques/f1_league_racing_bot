@@ -347,7 +347,7 @@ async def test_a_transition_creating_a_profile_refuses_also_on_and_writes_nothin
         called.append(db)
 
     svc = _make_svc(db_path)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="takes no also_on"):
         await svc.transition("nobody", DriverState.PENDING_SIGNUP_COMPLETION, also_on=_also_on)
 
     assert await _state(db_path, "nobody") is None

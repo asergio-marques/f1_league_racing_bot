@@ -635,28 +635,30 @@ async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_
     strict=True, reason="#439 slice 5: the closing notices owed are neither read nor cleared"
 )
 async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed(db_path):
-    """Three wizards, 201, 202 and 203, saved in that order; 203 and then 201 are marked owed,
-    202 is ended owing nothing. The owed are read in the order the wizards were saved, not the
-    order they were marked. Clearing 201 on a save that is rolled back clears nothing; committed,
-    203 alone is owed. Taking the owed on a save reads 203 and clears it with that save."""
+    """Three wizards saved in the order 203, 201, 202, so that their record ids run 203, 201,
+    202 while their accounts sort 201, 202, 203; 201 and then 203 are marked owed, 202 is ended
+    owing nothing. The owed are read in the order of their record ids, 203 before 201: neither
+    the accounts' order nor the order they were marked. Clearing 201 on a save that is rolled
+    back clears nothing; committed, 203 alone is owed. Taking the owed on a save reads 203 and
+    clears it with that save."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     svc = SignupModuleService(db_path)
-    for user_id in ("201", "202", "203"):
+    for user_id in ("203", "201", "202"):
         await svc.save_wizard(_make_wizard(user_id))
     async with get_connection(db_path) as db:
-        await svc.end_wizard_on(db, "203", closing_notice_owed=True)
         await svc.end_wizard_on(db, "201", closing_notice_owed=True)
+        await svc.end_wizard_on(db, "203", closing_notice_owed=True)
         await svc.end_wizard_on(db, "202")
         await db.commit()
 
-    assert await svc.owed_closing_notices() == ["201", "203"]
+    assert await svc.owed_closing_notices() == ["203", "201"]
 
     async with get_connection(db_path) as db:
         await svc.clear_closing_notices_on(db, ["201"])
         await db.rollback()
-    assert await svc.owed_closing_notices() == ["201", "203"]
+    assert await svc.owed_closing_notices() == ["203", "201"]
 
     async with get_connection(db_path) as db:
         await svc.clear_closing_notices_on(db, ["201"])

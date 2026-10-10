@@ -1628,11 +1628,10 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
     """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
-    (`channel_id` None) and locking it nothing to lock, as the wizard service answers for a
-    wizard with no channel."""
+    (`channel_id` None), as the wizard service answers for a wizard with no channel. The lock is
+    the support's double still, so a lock asked for them is recorded in `league.locked`."""
     wizard = league.bot.wizard_service
     holding = wizard.trigger_channel_hold.side_effect
-    locking = wizard.lock_signup_channel.side_effect
 
     async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
         if int(uid) == user_id:
@@ -1640,13 +1639,19 @@ def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
             return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
         return await holding(uid, guild, notice, **kwargs)
 
-    async def _lock(uid: Any, guild: Any) -> None:
-        if int(uid) == user_id:
-            return None
-        await locking(uid, guild)
-
     wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
-    wizard.lock_signup_channel = AsyncMock(side_effect=_lock)
+
+
+def _locks_asked(league: Any, user_id: int = SIGNING_UP) -> list[Any]:
+    """Each lock of driver *user_id*'s signup channel asked of the wizard service."""
+    return [call for call in league.bot.wizard_service.lock_signup_channel.await_args_list
+            if int(call.args[0]) == user_id]
+
+
+def _deletion_armed_for(league: Any, user_id: int = SIGNING_UP) -> bool:
+    """Whether a deletion of driver *user_id*'s signup channel was armed on the scheduler."""
+    return any(call.kwargs.get("id") == f"wizard_channel_delete_{user_id}"
+               for call in league.bot.scheduler_service._scheduler.add_job.call_args_list)
 
 
 @pytest.mark.xfail(
@@ -1680,6 +1685,8 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     assert NO_CHANNEL in "\n".join(_not_done(reply(interaction)))
     [line] = _closing_lines(league)
     assert f"  not done: {_logged(NO_CHANNEL)}" in line
+    assert _locks_asked(league) == []
     assert SIGNING_UP not in league.locked
+    assert not _deletion_armed_for(league)
     assert league.notices == []
     assert await _status(league) == "COMPLETED"
