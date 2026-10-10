@@ -359,7 +359,8 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(hub_refresh_change())
-    bot.change_queue.register(wind_down_change())
+    hooks = _season_end_hooks(bot)
+    bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the
     # enabled modules', and the drawing program the host's, read through `converter_available`
     # when it is judged, so a test that patches it moves the judgement.

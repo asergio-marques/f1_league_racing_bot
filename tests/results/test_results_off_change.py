@@ -54,7 +54,6 @@ from tests.support.change_queue import (
 from tests.support.teams import seed_team_instances
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-_XFAIL_WIND_DOWN_WINDOW = "#439: there is no close_window_for_wind_down"
 WHAT = "`/module disable results`"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
@@ -754,7 +753,6 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_WIND_DOWN_WINDOW)
 async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path, monkeypatch):
     """A season with placements still open has the wind-down's Discord work left to do."""
     from leaguebot.core.services import season_lifecycle_service
@@ -774,7 +772,6 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path, monkeyp
     wind_down.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_WIND_DOWN_WINDOW)
 async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off_stands(
     tmp_path, monkeypatch,
 ):
@@ -803,7 +800,6 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_WIND_DOWN_WINDOW)
 async def test_a_wind_down_discord_keeps_failing_says_only_retry_continues_after_the_hour(
     tmp_path, monkeypatch,
 ):

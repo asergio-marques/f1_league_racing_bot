@@ -45,7 +45,6 @@ from tests.support.change_queue import (
 SERVER_ID = 6611
 ACTOR_ID = 4242
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-_XFAIL_WIND_DOWN_WINDOW = "#439: there is no close_window_for_wind_down"
 #: The opening of the line the queue writes when a job stops it.
 STOPPED_AT = "❌ The queue is stopped at job #"
 
@@ -333,7 +332,6 @@ async def test_only_the_actor_may_confirm(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_WIND_DOWN_WINDOW)
 async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     tmp_path, monkeypatch,
 ):

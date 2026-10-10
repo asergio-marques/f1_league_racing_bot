@@ -557,17 +557,36 @@ FROZEN_FOR_COMPLETION_REFUSAL = (
 #: The kind of the change that winds a season down.
 WIND_DOWN = "season.wind_down"
 _WIND_DOWN_STEP = "wind_down"
+_TURN_DOWN_STEP = "turn_down"
+
+#: What a signup channel is told where the wind-down turns its signup down.
+WIND_DOWN_NOTICE = (
+    "🔒 Every division of this season is done, so its signups are closed. "
+    "This channel will be automatically deleted in 24 hours."
+)
 
 
-def wind_down_change() -> ChangeType:
+def wind_down_change(
+    *, placement: PlacementService | None = None, hooks: SeasonEndHooks | None = None
+) -> ChangeType:
     """The change that takes a season whose every division is done to Pending completion.
 
     Asked by the bot in the save of whatever finished the last division, so that the wind-down,
     which needs Discord, runs as a change of its own, after the steps of the change that asked
-    for it. It is due only while
-    the live season is in an ongoing stage with every division finished or cancelled; where it is
-    not, the change is dropped. Its one step is `wind_down_ongoing`; where that fails, the queue
-    stops at the job, and `describe` names it.
+    for it. It is due only while the live season is in an ongoing stage with every division
+    finished or cancelled; where it is not, the change is dropped. Its jobs, each of which stops
+    the queue where it fails:
+
+    1. `wind_down`: the signup window closed, where one stands open (`close_window_for_wind_down`);
+       each driver the close returned is then told and their channel closed, as jobs of their own.
+    2. `turn_down`: one save turns down the pending placements, returns their drivers to Not
+       Signed Up, moves the season on to Pending completion and writes its line.
+    3. Then, for each driver turned down, `signup_notice` and `close_signup` for a signup in review,
+       or `take_driver_role` for an approved driver.
+
+    *placement* and *hooks* are what the jobs reach Discord and the other modules through, handed
+    by the builder. Without them the change is only described, which is all a caller needs that
+    names its kind (``wind_down_change().kind``) and never runs it.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -580,21 +599,63 @@ def wind_down_change() -> ChangeType:
         return Verdict.go()
 
     async def wind_down(ctx: StepContext) -> StepResult:
-        moved = await wind_down_ongoing(ctx.bot)
-        return StepResult(result={"moved": moved})
+        if hooks is None:
+            raise RuntimeError("a wind-down is run with the hooks the builder hands it")
+        returned = await close_window_for_wind_down(ctx.bot, hooks)
+        return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
+
+    async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
+        cursor = await db.execute(
+            "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') ORDER BY id DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return StepResult(result={"moved": False})
+        season_id = int(row["id"])
+        stage, done = await _stage_and_whether_done_on(db, season_id)
+        if stage is None or SeasonStage(stage) not in ONGOING_STAGES or not done:
+            return StepResult(result={"moved": False})
+        drivers: list[dict] = []
+        if stage != SeasonStage.ONGOING.value:
+            drivers = await turn_down_pending_placements_on(db, season_id)
+            current, _ = await _stage_and_whether_done_on(db, season_id)
+            if current in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
+                await _move_on(db, season_id, SeasonStage(current), SeasonStage.ONGOING)
+        moved = await advance_to_pending_completion_on(db, season_id)
+        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+        config = await cursor.fetchone()
+        planned = driver_jobs(
+            drivers, config["driver_role_id"] if config else None,
+            notice=WIND_DOWN_NOTICE, reason="Season's divisions done; signup turned down",
+        )
+        lines = (
+            (f"System | Every division is done | Pending placements turned down: {len(drivers)}",)
+            if drivers
+            else ()
+        )
+        return StepResult(result={"moved": moved}, lines=lines, then=planned)
 
     async def describe(_ctx: StepContext) -> str:
         return "winding the season down"
 
+    async def describe_turn_down(_ctx: StepContext) -> str:
+        return "turning the pending placements down and moving the season on"
+
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
+    steps = {
+        _WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe),
+        _TURN_DOWN_STEP: Step(
+            _TURN_DOWN_STEP, StepKind.SAVE, turn_down, describe=describe_turn_down
+        ),
+    }
+    if placement is not None and hooks is not None:
+        steps.update(close_signup_steps(placement, hooks))
     return ChangeType(
         kind=WIND_DOWN,
-        opening=(PlannedStep(_WIND_DOWN_STEP),),
-        steps={
-            _WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe)
-        },
+        opening=(PlannedStep(_WIND_DOWN_STEP), PlannedStep(_TURN_DOWN_STEP)),
+        steps=steps,
         check=check,
         key=lambda _payload: WIND_DOWN,
         doing=lambda _payload: "Winding the season down",

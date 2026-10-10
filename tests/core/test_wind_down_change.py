@@ -48,10 +48,6 @@ from tests.support.season_league import (
     window_open,
 )
 
-_XFAIL = "#439: the wind-down is still one job that catches what fails"
-_XFAIL_ONE_SAVE = "#439: the wind-down still saves the turn-down and the move apart"
-_XFAIL_JOBS = "#439: the wind-down still has no job for each driver turned down"
-_XFAIL_NOTICE = "#439: a signup channel's notice is not yet a job before its lock"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
@@ -113,7 +109,6 @@ async def _stopped_at(league: Any) -> tuple[str, int | None] | None:
 # ── Defects ─────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ONE_SAVE)
 async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -131,7 +126,6 @@ async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -147,7 +141,6 @@ async def test_a_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_signup_channel_that_cannot_be_held_stops_the_queue_at_its_driver(tmp_path):
     league = await _league(tmp_path)
     await signing_up(league)
@@ -160,7 +153,6 @@ async def test_a_signup_channel_that_cannot_be_held_stops_the_queue_at_its_drive
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_driver_role_discord_will_not_take_back_stops_the_queue(tmp_path):
     league = await _league(tmp_path)
     league.revoke_fails[MAX] = http_error(discord.Forbidden, status=403,
@@ -188,7 +180,6 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     league = await _league(tmp_path)
     await signing_up(league)
@@ -210,7 +201,6 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
     league = await pending_completion_league(tmp_path, stage="ONGOING")
     await _ask(league)
@@ -223,7 +213,6 @@ async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
 # ── A signup channel's notice, before its lock (F2) ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_NOTICE)
 async def test_a_driver_returned_by_the_wind_down_s_close_is_told_before_their_channel_is_locked(
     tmp_path,
 ):
@@ -241,7 +230,6 @@ async def test_a_driver_returned_by_the_wind_down_s_close_is_told_before_their_c
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_NOTICE)
 async def test_a_discarded_signup_notice_still_closes_the_channel(tmp_path):
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
