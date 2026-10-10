@@ -226,8 +226,10 @@ async def execute_forced_close(
     for row in rows:
         try:
             # The return and the end of the driver's signup are one save: their wizard is marked
-            # over, so a restart never expires it, and on the queue owed its closing notice, which
-            # the queue's jobs then give once. Signup writes its own table (`end_wizard_on`).
+            # over, so a restart never expires it, and owed its closing notice. On the queue the
+            # queue's jobs then give it once; off it, the hold below gives it and the audit save
+            # clears the mark, and where a stop cuts the close off first the bot's start finishes
+            # it (`signup.close.finish`). Signup writes its own table (`end_wizard_on`).
             await bot.driver_service.transition(
                 row["discord_user_id"],
                 DriverState.NOT_SIGNED_UP,
@@ -235,6 +237,7 @@ async def execute_forced_close(
                     bot.signup_module_service.end_wizard_on,
                     discord_user_id=row["discord_user_id"],
                     closing_notice_owed=not hold_channels,
+                    by_off_queue_close=hold_channels,
                 ),
             )
             returned += 1
@@ -277,6 +280,7 @@ async def execute_forced_close(
         # Post cancellation notice in each wizard channel and schedule deletion.
         # This mirrors the withdraw() path so drivers see a message and the channel
         # is cleaned up after a 24-hour hold.
+        reached: list[str] = []
         if hold_channels:
             _guild = await league_guild(bot)
             if _guild is None:
@@ -290,6 +294,7 @@ async def execute_forced_close(
                             "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
                             arm_when_refused=True,
                         )
+                        reached.append(uid)
                         if held.channel_id is not None and held.posted is False:
                             # Held and set for deletion all the same (signup spec: closing the window).
                             failed.append(f"<@{uid}> was not told signups had closed.")
@@ -297,6 +302,7 @@ async def execute_forced_close(
                         # Discord refused the lock or the arming of the deletion, which the hold
                         # makes only after the notice: say so, rather than that they were not told.
                         log.exception("forced_close: could not lock the channel of driver %s", uid)
+                        reached.append(uid)
                         failed.append(_channel_not_locked(uid))
                     except Exception:
                         log.exception("forced_close: trigger_channel_hold failed for driver %s", uid)
@@ -359,7 +365,8 @@ async def execute_forced_close(
                 log.exception("forced_close: could not move the season on")
                 failed.append("The season could not be moved on.")
 
-        # 5. Audit entry
+        # 5. Audit entry. The drivers the hold reached are owed nothing more, and their marks go
+        #    in the same save; a driver it did not reach keeps theirs for the bot's start.
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(bot.db_path) as db:
             await db.execute(
@@ -368,6 +375,8 @@ async def execute_forced_close(
                 "VALUES (?, ?, NULL, ?, ?, ?, ?)",
                 (0, "system", audit_action, "open", "closed", now),
             )
+            if reached:
+                await bot.signup_module_service.clear_closing_notices_on(db, reached)
             await db.commit()
     except Exception as exc:
         if hold_channels:

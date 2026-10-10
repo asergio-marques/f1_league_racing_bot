@@ -97,6 +97,8 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=N
         else config
     )
     bot.signup_module_service.set_window_closed = AsyncMock()
+    # The close clears, in its audit save, the marks of the drivers it reached.
+    bot.signup_module_service.clear_closing_notices_on = AsyncMock()
     bot.driver_service = MagicMock()
     bot.driver_service.transition = AsyncMock(side_effect=transition_error)
     bot.scheduler_service = MagicMock()
@@ -648,6 +650,149 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     assert await _owed_of(bot.db_path, "102") == 0
     assert not any(job_id.endswith("_102") for job_id in cancelled)
     assert standing == {inactivity_job_id("102")}
+
+
+async def _second_driver_mid_wizard(db_path, user_id: str = "102", channel: int = 556) -> None:
+    """A second driver part-way through the wizard, their last answer an hour ago."""
+    from datetime import timedelta, timezone
+
+    last = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'PENDING_SIGNUP_COMPLETION')",
+            (user_id,),
+        )
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+            "signup_channel_id, last_activity_at) VALUES (?, 'COLLECTING_NOTES', ?, ?)",
+            (user_id, channel, last),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("case", ["the return is saved", "the mark fails"])
+async def test_an_off_queue_close_owes_each_returned_driver_their_notice_in_the_return_s_save(
+    tmp_path, case
+):
+    """`/signup close` (off the queue) returns driver 101, part-way through the wizard, on the
+    real driver and signup module services.
+
+    - The return is saved: by the time the close comes to tell 101, they are Not Signed Up, their
+      wizard unengaged and owed their closing notice by a close off the queue (2), together.
+    - The mark cannot be written (the wizard's record refuses the update): 101's return is rolled
+      back with it, still Pending Signup Completion with the wizard as it was and owed nothing,
+      and the close names them as not returned and holds nothing."""
+    bot = await _real_services(tmp_path, name="fc_off_mark")
+    if case == "the mark fails":
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "CREATE TRIGGER mark_fails BEFORE UPDATE ON signup_wizard_records "
+                "BEGIN SELECT RAISE(ABORT, 'the mark could not be written'); END"
+            )
+            await db.commit()
+    seen: list[tuple[str, tuple[str, int], int]] = []
+
+    async def _hold(user_id, *_a, **_k):
+        seen.append(
+            (
+                await _state_of(bot.db_path, user_id),
+                await _wizard_of(bot.db_path, user_id),
+                await _owed_of(bot.db_path, user_id),
+            )
+        )
+        return SimpleNamespace(channel_id=WIZARD_CHANNEL, posted=True)
+
+    bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=_hold)
+
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    if case == "the mark fails":
+        assert seen == []
+        assert await _state_of(bot.db_path, "101") == "PENDING_SIGNUP_COMPLETION"
+        assert await _wizard_of(bot.db_path, "101") == ("COLLECTING_NOTES", WIZARD_CHANNEL)
+        assert await _owed_of(bot.db_path, "101") == 0
+        assert list(outcome.failed) == ["<@101> could not be returned to Not Signed Up."]
+        return
+    assert seen == [("NOT_SIGNED_UP", ("UNENGAGED", WIZARD_CHANNEL), 2)]
+
+
+@pytest.mark.parametrize("case", ["the audit is saved", "the audit fails"])
+async def test_an_off_queue_close_clears_the_marks_it_reached_in_its_audit_save(tmp_path, case):
+    """`/signup close` (off the queue) returns drivers 101 and 102, both part-way through the
+    wizard, on the real driver and signup module services. 101's channel is told and held;
+    Discord refuses to lock 102's, which the close names for deleting by hand.
+
+    - The audit is saved: neither is owed their notice any longer, and the close is audited.
+    - The audit's save fails (its insert refused): the close raises, and both are still owed,
+      the clearing being part of the same commit as the audit row."""
+    bot = await _real_services(tmp_path, name="fc_off_clear")
+    await _second_driver_mid_wizard(bot.db_path)
+    if case == "the audit fails":
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "CREATE TRIGGER audit_fails BEFORE INSERT ON audit_entries "
+                "BEGIN SELECT RAISE(ABORT, 'the audit could not be written'); END"
+            )
+            await db.commit()
+
+    async def _hold(user_id, *_a, **_k):
+        if str(user_id) == "102":
+            raise discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+        return SimpleNamespace(channel_id=WIZARD_CHANNEL, posted=True)
+
+    bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=_hold)
+
+    if case == "the audit fails":
+        with pytest.raises(Exception):
+            await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+        assert await _owed_of(bot.db_path, "101") == 2
+        assert await _owed_of(bot.db_path, "102") == 2
+        return
+
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    assert list(outcome.failed) == [
+        "<@102>'s signup channel could not be locked and will not delete itself: "
+        "delete it by hand."
+    ]
+    assert await _owed_of(bot.db_path, "101") == 0
+    assert await _owed_of(bot.db_path, "102") == 0
+    assert [row[0] for row in await _audit(bot.db_path)] == ["SIGNUP_FORCE_CLOSE"]
+
+
+async def test_a_kill_part_way_through_an_off_queue_close_leaves_the_untold_drivers_marked(
+    tmp_path,
+):
+    """`/signup close` (off the queue) returns drivers 101 and 102, both part-way through the
+    wizard, each with an inactivity job standing, on the real driver and signup module services.
+    101's channel is told and held, its deletion armed; the process is killed while 102's is
+    being held. At that moment both are owed their notice by a close off the queue (2), so the
+    bot's start can find 102: 101's deletion job stands, and 102 has no timer left and no
+    deletion armed."""
+    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+
+    bot = await _real_services(tmp_path, name="fc_off_killed")
+    await _second_driver_mid_wizard(bot.db_path)
+    standing = {inactivity_job_id("101"), inactivity_job_id("102")}
+    bot.scheduler_service.cancel_job = MagicMock(side_effect=standing.discard)
+
+    async def _hold(user_id, *_a, **_k):
+        if str(user_id) == "102":
+            raise _Killed()
+        standing.add(channel_delete_job_id(str(user_id)))
+        return SimpleNamespace(channel_id=WIZARD_CHANNEL, posted=True)
+
+    bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=_hold)
+
+    with pytest.raises(_Killed):
+        await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
+    assert await _state_of(bot.db_path, "102") == "NOT_SIGNED_UP"
+    assert await _owed_of(bot.db_path, "101") == 2
+    assert await _owed_of(bot.db_path, "102") == 2
+    assert standing == {channel_delete_job_id("101")}
 
 
 async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is_named(tmp_path):
