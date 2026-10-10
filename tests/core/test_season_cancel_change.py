@@ -86,7 +86,6 @@ from tests.support.season_league import (
     window_open,
 )
 
-_XFAIL = "#439: /season cancel still cancels the season at the press, off the change queue"
 _XFAIL_IN_HAND = "#439: a cancellation is not yet refused while the season's end is in hand"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
@@ -719,7 +718,6 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_first_save_w
     pytest.param("waiting", id="waiting behind a stopped job"),
     pytest.param("stopped", id="stopped at its own job"),
 ])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_second_cancellation_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await ongoing_league(tmp_path)
     if how == "waiting":

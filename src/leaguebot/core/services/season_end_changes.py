@@ -122,6 +122,7 @@ __all__ = [
     "discarded",
     "season_abort_change",
     "season_complete_change",
+    "season_end_in_hand",
     "shared_not_done",
     "test_mode_on",
     "view_of",
@@ -204,6 +205,48 @@ def completion_in_hand_refusal(season_number: Any, job: int) -> str:
         f"⏳ Season {season_number} is already being completed{named}. If it has stopped, press "
         "Retry or Discard on its notice in the log channel."
     )
+
+
+def cancellation_in_hand_refusal(season_number: Any, job: int) -> str:
+    """The refusal of a second `/season cancel` while the first is in hand; as the completion's."""
+    named = f" (job #{job})" if job else ""
+    return (
+        f"⏳ Season {season_number} is already being cancelled{named}. If it has stopped, press "
+        "Retry or Discard on its notice in the log channel."
+    )
+
+
+def abort_in_hand_refusal(job: int) -> str:
+    """The refusal of a second `/season abort` while the first is in hand."""
+    named = f" (job #{job})" if job else ""
+    return (
+        f"⏳ The season being set up is already being aborted{named}. If it has stopped, press "
+        "Retry or Discard on its notice in the log channel."
+    )
+
+
+async def season_end_in_hand(
+    db_path: str, season_id: int, *, excluding: int | None = None
+) -> tuple[str, int] | None:
+    """Which end of season *season_id* is in hand on the queue, as its kind and the job it waits on.
+
+    A completion, cancellation or abort of the season that is queued, running or stopped on a
+    failure is in hand; one done, refused, dropped or discarded is not, nor is another season's.
+    Where two are in hand, the one nearest its turn is given: the one whose first job not done
+    comes first. The job is 0 where only the end's own close is left. *excluding* leaves out the
+    change whose id it is, so that a check made as the change runs does not find itself.
+
+    Every request about a season reads it, only as the request is asked (the owner, 2026-10-09:
+    one rule for every request about a season whose end is in hand).
+    """
+    nearest: tuple[str, int] | None = None
+    for kind in (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT):
+        for payload, job in await in_hand(db_path, (kind,), excluding=excluding):
+            if payload.get("season_id") != season_id:
+                continue
+            if nearest is None or (job or 0) < nearest[1]:
+                nearest = (kind, job or 0)
+    return nearest
 
 
 def amended(held: Any) -> str:
@@ -635,6 +678,13 @@ def season_abort_change(
             or season.stage not in PRE_CONFIRMATION
         ):
             return Verdict.refuse(ABORT_ONLY_BEFORE)
+
+        # **A second abort, asked while the first is in hand** (owner, 2026-10-09): refused at
+        # once, naming the job. Only as it is asked: as the change runs, it would find itself.
+        if ctx.change_id is None:
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None and hand[0] == SEASON_ABORT:
+                return Verdict.refuse(abort_in_hand_refusal(hand[1]))
         return Verdict.go()
 
     async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

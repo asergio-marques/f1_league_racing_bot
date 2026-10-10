@@ -63,7 +63,6 @@ from tests.support.season_league import (
     window_open,
 )
 
-_XFAIL = "#439: /season abort still aborts the season at the press, off the change queue"
 _XFAIL_IN_HAND = "#439: an abort is not yet refused while the season's end is in hand"
 
 ABORTED = (
@@ -435,7 +434,6 @@ async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated
     pytest.param("waiting", id="waiting behind a stopped job"),
     pytest.param("stopped", id="stopped at its own job"),
 ])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_second_abort_is_refused_at_once_naming_the_job(tmp_path, how):
     league = await setup_league(tmp_path, signups_open=True)
     if how == "waiting":

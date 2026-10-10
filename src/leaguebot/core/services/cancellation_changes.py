@@ -110,6 +110,8 @@ from leaguebot.core.services.season_end_changes import (
     END,
     SEASON_CANCEL,
     SEASON_ENDED_NOTICE,
+    cancellation_in_hand_refusal,
+    season_end_in_hand,
     shared_not_done,
     test_mode_on,
 )
@@ -1191,6 +1193,14 @@ def season_cancel_change(
         season = await seasons.get_confirmed_season()
         if season is None or season.id != int(ctx.payload["season_id"]):
             return Verdict.refuse(SEASON_NO_SEASON)
+
+        # **A second cancellation, asked while the first is in hand** (owner, 2026-10-09):
+        # refused at once, naming the job. Only as it is asked: as the change runs, it would find
+        # itself.
+        if ctx.change_id is None:
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None and hand[0] == SEASON_CANCEL:
+                return Verdict.refuse(cancellation_in_hand_refusal(season.season_number, hand[1]))
         if season.stage not in ONGOING_STAGES:
             return Verdict.refuse(SEASON_NOT_ONGOING)
 

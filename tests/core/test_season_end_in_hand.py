@@ -27,8 +27,6 @@ from tests.support.season_league import (
     seed_season_end,
 )
 
-_XFAIL = "#439: season_end_in_hand is not yet written"
-
 
 def _other(kind: str) -> str:
     """Another kind of a season's end than *kind*."""
@@ -92,7 +90,6 @@ _CASES = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 @pytest.mark.parametrize("case", sorted(_CASES))
 @pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND, SEASON_ABORT_KIND])
 async def test_season_end_in_hand_names_the_job_nearest_its_turn_and_leaves_out_a_finished_or_discarded_one(
