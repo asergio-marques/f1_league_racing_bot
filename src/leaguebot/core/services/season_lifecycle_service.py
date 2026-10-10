@@ -466,17 +466,43 @@ async def close_signup_window(
     open, and also where the window was shut by that try and only its audit failed.
     """
     before = kept_returned(kept)
-    if not await hooks.window_open():
-        return before
-    hooks.cancel_close_timer()
-    try:
-        closed = await hooks.close_signups(bot, cause)
-    except StepFailedOnDiscord as stopped:
-        found = kept_returned(stopped.result)
-        stopped.result = {**(stopped.result or {}), "returned": list(dict.fromkeys((*before, *found)))}
-        raise
-    now = tuple(str(user_id) for user_id in closed.returned_ids) if closed is not None else ()
-    return tuple(dict.fromkeys((*before, *now)))
+    now: tuple[str, ...] = ()
+    if await hooks.window_open():
+        hooks.cancel_close_timer()
+        try:
+            closed = await hooks.close_signups(bot, cause)
+        except StepFailedOnDiscord as stopped:
+            found = kept_returned(stopped.result)
+            stopped.result = {
+                **(stopped.result or {}), "returned": list(dict.fromkeys((*before, *found)))
+            }
+            raise
+        if closed is not None:
+            now = tuple(str(user_id) for user_id in closed.returned_ids)
+    # Read after the close, whether it closed the window now or found it closed: a try cut off
+    # after the window was recorded closed left each driver it returned marked as owed their
+    # notice, in the save that returned them.
+    owed = tuple(str(user_id) for user_id in await hooks.owed_closing_notices())
+    return tuple(dict.fromkeys((*before, *now, *owed)))
+
+
+def drivers_told_record(
+    hooks: SeasonEndHooks | None,
+) -> Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]]:
+    """The `Step.record` of a job that plans the jobs telling the drivers a window close returned.
+
+    It clears those drivers' marks in the save that marks the job done and inserts the jobs it
+    planned, so that from that save the queue's own records hold them and no later read of the
+    marks finds them again: each is told once.
+    """
+
+    async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
+        if hooks is None:
+            return
+        returned = [str(user_id) for user_id in (result.result or {}).get("returned", ())]
+        await hooks.clear_closing_notices_on(db, returned)
+
+    return record
 
 
 async def close_window_for_wind_down(
@@ -659,7 +685,10 @@ def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
         return "turning the pending placements down and moving the season on"
 
     return {
-        WIND_DOWN_STEP: Step(WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe),
+        WIND_DOWN_STEP: Step(
+            WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe,
+            record=drivers_told_record(hooks),
+        ),
         TURN_DOWN_STEP: Step(
             TURN_DOWN_STEP, StepKind.SAVE, turn_down, describe=describe_turn_down
         ),

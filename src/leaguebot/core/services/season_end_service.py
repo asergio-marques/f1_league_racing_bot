@@ -23,6 +23,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     SeasonEndHooks,
     close_signup_steps,
     close_signup_window,
+    drivers_told_record,
     kept_returned,
     require_guild,
     window_closed_jobs,
@@ -284,7 +285,11 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
 
     async def window_due(ctx: StepContext) -> bool:
         # A close that stopped after returning its drivers has drivers left to tell and close.
-        return await hooks.window_open() or bool(kept_returned(ctx.kept))
+        return (
+            await hooks.window_open()
+            or bool(kept_returned(ctx.kept))
+            or bool(await hooks.owed_closing_notices())
+        )
 
     async def close_window(ctx: StepContext) -> StepResult:
         returned = await close_signup_window(
@@ -332,7 +337,8 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
     return {
         REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
         CLOSE_WINDOW: Step(
-            CLOSE_WINDOW, StepKind.ACT, close_window, still_due=window_due, describe=describe_window
+            CLOSE_WINDOW, StepKind.ACT, close_window, still_due=window_due, describe=describe_window,
+            record=drivers_told_record(hooks),
         ),
         FLUSH_FORECASTS: Step(
             FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush
