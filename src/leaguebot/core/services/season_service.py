@@ -276,15 +276,6 @@ class SeasonService:
             row = await cursor.fetchone()
         return row[0] if row else 0
 
-    async def cancel_season(self, season_id: int) -> None:
-        """Transition a season to CANCELLED (immutable, all data preserved)."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE seasons SET status = 'CANCELLED' WHERE id = ?",
-                (season_id,),
-            )
-            await db.commit()
-
     async def get_stage(self, season_id: int) -> SeasonStage | None:
         """The lifecycle stage of *season_id*, or None where no such season exists."""
         async with get_connection(self._db_path) as db:

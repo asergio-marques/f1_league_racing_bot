@@ -1363,7 +1363,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_lifecycle_service.py", "_move"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.add_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.add_round"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.cancel_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.create_season"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_division"): (1, PASS["core"]),
