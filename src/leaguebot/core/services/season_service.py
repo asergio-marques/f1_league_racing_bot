@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 import aiosqlite
 
@@ -588,40 +588,6 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
-    async def close_raced_rounds_for_cancellation(
-        self, season_id: int, actor_id: int, actor_name: str
-    ) -> list[int]:
-        """Close as FINAL every round of a season that was raced but whose verdicts are open.
-
-        Called by `/season cancel`, **before** the driver pass, and by nothing else.
-
-        A round at *awaiting report verdicts* or *awaiting appeal verdicts* has its results
-        entered, so `ROUND_CANCELLABLE` excludes it and the cancellation cascade leaves it
-        exactly where it is — "a cancellation shall never discard a result", and "a round
-        further along shall keep its place and its results". But nothing else will move it
-        either: the verdict commands it waits on are refused once the season is cancelled. It
-        would sit in a non-terminal state for ever.
-
-        That mattered little until the former-driver flag came to be set at the FINAL
-        transition (#216). A driver whose only round is one of these is now flagless when the
-        driver pass runs, and the pass deletes a flagless profile at Not Signed Up — NULLing
-        the `driver_profile_id` on their result rows and destroying their history entries,
-        which is the very discarding of a result the rule above forbids. Closing the rounds
-        first marks their drivers, and the pass keeps them.
-
-        Returns the ids closed, for the caller to report and for the tests to assert on.
-        """
-        async with get_connection(self._db_path) as db:
-            closed = await close_raced_rounds_on(
-                db,
-                season_id,
-                actor_id=actor_id,
-                actor_name=actor_name,
-                now=datetime.now(timezone.utc),
-            )
-            await db.commit()
-        return closed
-
     async def all_divisions_finished(self) -> bool:
         """True if every division of the active season is FINISHED or CANCELLED.
 
@@ -661,17 +627,6 @@ class SeasonService:
             )
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
-
-    async def discard_uncommitted_placements(self, season_id: int) -> int:
-        """Delete every placement of *season_id* not yet committed, freeing its seat.
-
-        Cancelling a season discards them (issue #220): the drivers placed stood outside the
-        championship and earn no history of it. Returns how many were discarded.
-        """
-        async with get_connection(self._db_path) as db:
-            discarded = await discard_uncommitted_placements_on(db, season_id)
-            await db.commit()
-            return discarded
 
     async def delete_season(
         self: SeasonService | aiosqlite.Connection, season_id: int
@@ -1049,31 +1004,6 @@ class SeasonService:
                 "DELETE FROM driver_season_assignments WHERE division_id = ?", (division_id,)
             )
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
-            await db.commit()
-
-    async def cancel_season_cascade(
-        self,
-        season_id: int,
-        actor_id: int,
-        actor_name: str,
-    ) -> None:
-        """Cancel every division of a season, then the season itself.
-
-        The order is deliberate and not merely tidy: `cancel_round_on` refuses to touch a round whose
-        season is already COMPLETED or CANCELLED, so a season row flipped first would lock a write
-        beneath it out of its own children. The season is therefore the last thing written, and the
-        whole cascade shares one transaction so a failure part-way cannot leave a season standing
-        over half-cancelled divisions.
-        """
-        async with get_connection(self._db_path) as db:
-            await cancel_season_divisions_on(
-                db,
-                season_id,
-                actor_id=actor_id,
-                actor_name=actor_name,
-                now=datetime.now(timezone.utc),
-            )
-            await cancel_season_on(db, season_id)
             await db.commit()
 
     async def duplicate_division(
