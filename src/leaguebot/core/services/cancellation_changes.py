@@ -255,10 +255,22 @@ async def cancellation_holding_amendment(db_path: str, rnd: Round) -> str | None
     cancellation removed it, and forecasts would be posted for a round that is then cancelled
     (owner, 2026-10-08). An amended date of another round would renumber the division, and the
     round being cancelled would be announced by a number it no longer bears: so every round of
-    the division is held (owner, 2026-10-08, "Hold amends in the division"). Asked at the offer
-    and again at the confirmation, as the rules are. It names the job, and leaves the name out
-    where only the cancellation's close is left.
+    the division is held (owner, 2026-10-08, "Hold amends in the division"). A season's
+    completion, cancellation or abort in hand holds it too, ahead of the rest (slice 5, owner,
+    2026-10-09, answer B). Asked at the offer and again at the confirmation, as the rules are. It
+    names the job, and leaves the name out where only the cancellation's close is left.
     """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT s.id, s.season_number FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            "WHERE d.id = ?",
+            (rnd.division_id,),
+        )
+        season = await cursor.fetchone()
+    if season is not None:
+        hand = await season_end_in_hand(db_path, int(season["id"]))
+        if hand is not None:
+            return season_end_refusal(None, hand, season["season_number"])
     job = await cancellation_in_hand(db_path, division_id=rnd.division_id, round_id=rnd.id)
     if job is not None:
         return (

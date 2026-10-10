@@ -1014,7 +1014,6 @@ _SEASON_ENDS_IN_HAND = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: /round amend does not yet read a season's end in hand")
 @pytest.mark.parametrize("at", ["offer", "confirm"])
 @pytest.mark.parametrize(("kind", "payload", "said"), _SEASON_ENDS_IN_HAND)
 async def test_a_round_of_a_season_whose_end_is_in_hand_is_not_amended_naming_the_job(
