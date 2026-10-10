@@ -3274,11 +3274,14 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
 
     if not results_enabled:
         # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        try:
-            await bot.season_service.wind_down_ongoing(bot)
-        except Exception:  # noqa: BLE001 — never fail the job on the season's next stage
-            log.exception("could not wind the season down")
+        # placements to confirm is wound down and moves to Pending completion (#220). That needs
+        # Discord, so the bot asks the change queue for it; the queue drops the request where
+        # the season is not yet done (#439).
+        from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+
+        await bot.change_queue.ask(
+            WIND_DOWN, {}, origin=ChangeOrigin.BOT, what="winding the season down"
+        )
         log.info(
             "run_result_submission_job: results module disabled — round %s "
             "closed without results",

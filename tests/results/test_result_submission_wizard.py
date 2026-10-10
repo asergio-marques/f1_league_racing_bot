@@ -182,7 +182,11 @@ def _bot(
     bot.get_guild = MagicMock(return_value=g if guild else None)
     bot._results = results
     bot._guild = g
-    attach_queue(bot, db_path, now=NOW, types=[_change_type(REVIEW_OPEN)])
+    # The results-off round job asks the queue for the season's wind-down, which is registered
+    # here as the builder registers it, described only (#439).
+    from leaguebot.core.services.season_lifecycle_service import wind_down_change
+
+    attach_queue(bot, db_path, now=NOW, types=[_change_type(REVIEW_OPEN), wind_down_change()])
     return bot
 
 

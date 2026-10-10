@@ -757,9 +757,6 @@ async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tm
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
 
-_XFAIL_ROUND_JOB = "#439: the results-off round job still saves in two commits and winds the season down itself"
-
-
 async def test_without_the_results_module_the_round_and_its_division_are_saved_together(
     tmp_path, monkeypatch
 ) -> None:
@@ -794,7 +791,6 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_ROUND_JOB)
 async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tmp_path) -> None:
     """The season's wind-down is asked of the change queue as the bot's, not run in-process
     (#439, slice 5). Today the job calls `wind_down_ongoing` itself and logs its failure."""
