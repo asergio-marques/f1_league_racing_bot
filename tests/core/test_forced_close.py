@@ -260,16 +260,11 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     assert "101" in failed
 
 
-_XFAIL_NAMED = (
-    "#439: a close off the queue locks before its notice and does not name a driver whose "
-    "closing notice was refused"
-)
 _XFAIL_UNHELD = "#439: the close cannot be asked to hold no channel and give the drivers it returned"
 
 WIZARD_CHANNEL = 555
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_NAMED)
 async def test_a_close_off_the_queue_still_locks_and_arms_a_channel_whose_notice_is_refused(tmp_path):
     """`/signup close` turns away driver 101, still filling in the wizard, whose signup channel
     refuses the closing notice. Off the queue the window's close keeps today's lock and

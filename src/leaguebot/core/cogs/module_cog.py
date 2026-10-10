@@ -225,11 +225,14 @@ async def execute_forced_close(
         _wizard_svc = bot.wizard_service
         for row in rows:
             try:
-                await _wizard_svc.trigger_channel_hold(
+                held = await _wizard_svc.trigger_channel_hold(
                     row["discord_user_id"], _guild,
                     "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
                     arm_when_refused=True,
                 )
+                if held.channel_id is not None and held.posted is False:
+                    # Held and set for deletion all the same (signup spec: closing the window).
+                    failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
             except Exception:
                 log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
                 failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
