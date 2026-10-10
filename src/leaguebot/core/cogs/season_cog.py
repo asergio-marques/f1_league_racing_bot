@@ -3260,7 +3260,7 @@ class SeasonCog(commands.Cog):
 
     @season.command(
         name="complete",
-        description="Manually mark the current season as complete (requires all rounds finalized).",
+        description="Mark the current season as complete (every round must be finalised).",
     )
     @league_admin_only
     async def season_complete(

@@ -204,3 +204,13 @@ async def test_every_season_cancel_and_complete_refusal_is_recorded(command, bui
     [line] = _logged(cog)
     head = f"⛔ `/{command}` refused for Admin (<@{ACTOR_ID}>) — "
     assert line == head + reply[2:]
+
+
+def test_the_complete_command_s_description_is_in_british_english():
+    """`/season complete` as a league admin finds it in Discord's command list: its description
+    is written in British English ("finalised"), and fits Discord's 100-character limit."""
+    description = SeasonCog.season_complete.description
+
+    assert "finalised" in description
+    assert "finalized" not in description
+    assert len(description) <= 100
