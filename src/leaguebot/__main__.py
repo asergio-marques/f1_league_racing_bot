@@ -318,7 +318,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_approval_change,
         season_approval_tell_change,
     )
-    from leaguebot.core.services.season_end_changes import season_complete_change
+    from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
@@ -381,6 +381,11 @@ def register_change_types(bot: LeagueBot) -> None:
             submissions=_submission_hooks(),
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(
+        season_abort_change(
+            seasons=bot.season_service, placement=bot.placement_service, hooks=hooks
         )
     )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the

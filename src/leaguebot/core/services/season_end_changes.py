@@ -1,4 +1,4 @@
-"""Completing a season, carried out on the change queue (#439, slice 5).
+"""Completing and aborting a season, carried out on the change queue (#439, slice 5).
 
 `/season complete` checks the season at the press, in the season cog, then asks the queue for this
 change. It used to end the season inside the command: the final classifications caught to a
@@ -35,6 +35,19 @@ fails:
 A job a league admin discards is dropped and the rest run on; the reply and the line say what was
 not done and what to do by hand. A season whose `end` is discarded is not completed, and says to
 run the command again.
+
+**Aborting** (`season_abort_change`) is the same change over a season whose placements were never
+confirmed. `/season abort` checks its confirmation word and finds that season at the press, then
+asks the queue. The change is checked when asked and again when it runs, in the words the command
+used: no season set up or active, or one past the confirmation of its placements. Its jobs:
+`close_window` (the signup close timer cancelled, the window closed), `flush_forecasts` where
+test mode is on, then `end`, one save that runs the driver pass (no history is written, the season
+having none), switches test mode off and deletes the season, **last**. After that save each driver
+the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
+own, the portraits of the drivers deleted are discarded and the setup the bot holds in memory is
+let go of (`forget_setup`). The saved test-mode state is kept, a season aborted being one
+abandoned. The signup records are keyed by account and outlive the season, so a channel is still
+held after the save.
 """
 from __future__ import annotations
 
@@ -66,6 +79,7 @@ from leaguebot.core.services.season_end_service import (
     DISCARD_BACKUP,
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
+    FORGET_SETUP,
     REVOKE_ROLES,
     SEASON_END_CAUSE,
     season_end_steps,
@@ -85,6 +99,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     run_driver_pass_on,
     wind_down_steps,
 )
+from leaguebot.core.services.season_approval_change import NOT_FORGOTTEN
 from leaguebot.core.services.season_service import (
     SeasonService,
     complete_season_on,
@@ -100,9 +115,11 @@ if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
 
 __all__ = [
+    "SEASON_ABORT",
     "SEASON_CANCEL",
     "SEASON_COMPLETE",
     "discarded",
+    "season_abort_change",
     "season_complete_change",
     "shared_not_done",
     "test_mode_on",
@@ -113,6 +130,7 @@ SEASON_COMPLETE = "season.complete"
 #: The cancellation's kind is named here beside the others', which the helper that finds a season's
 #: end in hand reads; the change itself is `cancellation_changes.season_cancel_change`.
 SEASON_CANCEL = "season.cancel"
+SEASON_ABORT = "season.abort"
 
 #: The job names this change adds to the shared ones, as the stop notice, the tests and
 #: ``StepView`` know them.
@@ -123,6 +141,7 @@ END = "end"
 CLOSE = "close"
 
 _COMMAND = "`/season complete`"
+_ABORT_COMMAND = "`/season abort`"
 
 #: What a signup channel is told where the driver pass closes its signup as the season ends.
 SEASON_ENDED_NOTICE = (
@@ -131,6 +150,26 @@ SEASON_ENDED_NOTICE = (
 SEASON_ENDED_REASON = "Season ended"
 
 NO_SEASON = "❌ No season is being raced, so there is none to complete."
+
+ABORT_ONLY_BEFORE = (
+    "❌ `/season abort` is available only before a season's placements are first confirmed. An "
+    "ongoing season is cancelled with `/season cancel`."
+)
+ABORTED = (
+    "✅ The season has been aborted. Nothing of it remains, and a new season may be set up with "
+    "`/season setup`."
+)
+ABORT_END_DISCARDED = (
+    "Nothing was aborted: the season stands as it was. Run `/season abort` again."
+)
+
+#: The stages before a season's placements are first confirmed, when it may be aborted.
+PRE_CONFIRMATION = frozenset({
+    SeasonStage.CONFIGURATION,
+    SeasonStage.WAITING,
+    SeasonStage.SIGNUPS,
+    SeasonStage.PLACEMENTS,
+})
 
 COMPLETED = "✅ Season marked as complete."
 SETTLE_DISCARDED = (
@@ -551,6 +590,154 @@ def season_complete_change(
         check=check,
         key=lambda payload: f"{SEASON_COMPLETE}:{payload['season_id']}",
         doing=lambda payload: f"Completing season {payload['season_number']}",
+        outcome=outcome,
+    )
+
+
+def season_abort_change(
+    *,
+    seasons: "SeasonService",
+    placement: "PlacementService",
+    hooks: SeasonEndHooks,
+) -> ChangeType:
+    """The change that aborts the season being set up; see the module.
+
+    The payload is ``{"season_id"}``: a season set up has no number until its placements are
+    confirmed. The builder hands in the *seasons* service (the season the check reads), the
+    *placement* service (which takes back roles) and the season end's *hooks*.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        season = await seasons.get_setup_or_active_season()
+        if (
+            season is None
+            or season.id != int(ctx.payload["season_id"])
+            or season.stage not in PRE_CONFIRMATION
+        ):
+            return Verdict.refuse(ABORT_ONLY_BEFORE)
+        return Verdict.go()
+
+    async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The one save: the driver pass, test mode and the season's deletion, last."""
+        season_id = int(ctx.payload["season_id"])
+        cursor = await db.execute(
+            "SELECT status, stage FROM seasons WHERE id = ?", (season_id,)
+        )
+        season = await cursor.fetchone()
+        if (
+            season is None
+            or season["status"] != "SETUP"
+            or SeasonStage(season["stage"]) not in PRE_CONFIRMATION
+        ):
+            return StepResult(result={"refused": ABORT_ONLY_BEFORE})
+
+        test_mode = await test_mode_on(db)
+        driver_pass = await run_driver_pass_on(db)
+        if test_mode:
+            await switch_test_mode_off_on(db)
+        # The season's deletion is the last thing written. The saved test-mode state is kept: a
+        # season aborted is one abandoned.
+        await SeasonService.delete_season(db, season_id)
+
+        planned = list(
+            driver_jobs(
+                driver_pass.drivers, driver_pass.driver_role_id,
+                notice=SEASON_ENDED_NOTICE, reason=SEASON_ENDED_REASON,
+            )
+        )
+        if driver_pass.accounts:
+            planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
+        planned.append(PlannedStep(FORGET_SETUP))
+        return StepResult(
+            result={
+                "drivers_returned": driver_pass.reset,
+                "drivers_deleted": len(driver_pass.deleted),
+            },
+            then=tuple(planned),
+        )
+
+    def _end_result(ctx: OutcomeContext) -> dict[str, Any]:
+        view = view_of(ctx, END)
+        return dict(view.result or {}) if view is not None else {}
+
+    def _refused(ctx: OutcomeContext) -> str | None:
+        refused = _end_result(ctx).get("refused")
+        return str(refused) if refused else None
+
+    def _aborted(ctx: OutcomeContext) -> bool:
+        """Whether the season was deleted: `end` is done, and neither refused nor discarded."""
+        view = view_of(ctx, END)
+        if view is None or not view.done:
+            return False
+        return not (discarded(view) or (view.result or {}).get("refused"))
+
+    def _not_done_abort(ctx: OutcomeContext) -> list[str]:
+        lines = shared_not_done(ctx)
+        if discarded(view_of(ctx, FORGET_SETUP)):
+            lines.append(NOT_FORGOTTEN)
+        return lines
+
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        refused = _refused(ctx)
+        if refused is not None:
+            return StepResult(
+                result={"closed": True},
+                lines=(refusal_line(ctx.named, _ABORT_COMMAND, reply_reason(refused)),),
+            )
+        if not _aborted(ctx):
+            return StepResult(result={"closed": True})
+        counts = _end_result(ctx)
+        line = (
+            f"{ctx.named} | /season abort | Success\n"
+            f"  drivers returned to Not Signed Up: {counts.get('drivers_returned', 0)}\n"
+            f"  drivers deleted: {counts.get('drivers_deleted', 0)}"
+            + "".join(f"\n  not done: {each}" for each in _not_done_abort(ctx))
+        )
+        return StepResult(result={"closed": True}, lines=(line,))
+
+    def outcome(ctx: OutcomeContext) -> str:
+        refused = _refused(ctx)
+        if refused is not None:
+            return refused
+        if not _aborted(ctx):
+            return ABORT_END_DISCARDED
+        return ABORTED + approval_checks.not_done_section(_not_done_abort(ctx))
+
+    async def describe_window_close(_ctx: StepContext) -> str:
+        return "closing the signup window as the season being set up is aborted"
+
+    async def describe_end(_ctx: StepContext) -> str:
+        return "aborting the season being set up"
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording the abort of the season being set up"
+
+    async def test_mode_still_on(ctx: StepContext) -> bool:
+        """The forecasts are cleared only where test mode posted them: the job is planned with the
+        abort, before the save that switches test mode off, and reads the flag as it comes up."""
+        async with get_connection(ctx.db_path) as db:
+            return await test_mode_on(db)
+
+    shared = season_end_steps(placement, hooks)
+    steps: dict[str, Step] = {
+        **shared,
+        FLUSH_FORECASTS: replace(shared[FLUSH_FORECASTS], still_due=test_mode_still_on),
+        CLOSE_WINDOW: replace(shared[CLOSE_WINDOW], describe=describe_window_close),
+        END: Step(END, StepKind.SAVE, end, describe=describe_end),
+        CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
+    }
+    return ChangeType(
+        kind=SEASON_ABORT,
+        opening=(
+            PlannedStep(CLOSE_WINDOW, {"cause": SEASON_END_CAUSE}),
+            PlannedStep(FLUSH_FORECASTS),
+            PlannedStep(END),
+            PlannedStep(CLOSE),
+        ),
+        steps=steps,
+        check=check,
+        key=lambda payload: f"{SEASON_ABORT}:{payload['season_id']}",
+        doing=lambda payload: "Aborting the season being set up",
         outcome=outcome,
     )
 

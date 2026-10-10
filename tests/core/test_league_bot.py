@@ -138,9 +138,6 @@ def test_the_round_amendment_is_registered():
     assert kinds.count(ROUND_AMEND) == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: a season's completion, cancellation and abort are not registered"
-)
 def test_the_season_s_end_is_registered():
     """The builder registers the completion of a season, its cancellation and its abort, as
     "season.complete", "season.cancel" and "season.abort", and the wind-down, once each (#439,
