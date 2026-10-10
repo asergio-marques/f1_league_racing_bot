@@ -324,6 +324,52 @@ async def test_a_close_off_the_queue_still_locks_and_arms_a_channel_whose_notice
     )
 
 
+async def test_a_channel_discord_will_not_lock_is_named_apart_from_a_driver_not_told(tmp_path):
+    """`/signup close` turns away driver 101, still filling in the wizard. The closing notice is
+    posted in their signup channel, but Discord refuses the lock (`set_permissions` raises
+    Forbidden). The close's failed steps name the channel left unlocked and undeleted, not a
+    driver who was not told; the window still closes and 101 is counted returned."""
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    db_path = await _make_db(
+        tmp_path, name="fc_unlocked", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    bot = _bot(db_path)
+    wizard_channel = MagicMock(spec=discord.TextChannel)
+    wizard_channel.id = WIZARD_CHANNEL
+    wizard_channel.send = AsyncMock()
+    wizard_channel.set_permissions = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+    )
+    guild = bot.get_guild.return_value
+    guild.get_channel = MagicMock(
+        side_effect=lambda cid: wizard_channel if cid == WIZARD_CHANNEL else bot._channel
+    )
+    guild.get_member = MagicMock(return_value=MagicMock(spec=discord.Member))
+    wizards = WizardService.__new__(WizardService)
+    wizards._correction_tasks = {}
+    wizards._scheduler = MagicMock()
+    wizards._scheduler._scheduler = MagicMock()
+    wizards._output_router = MagicMock()
+    wizards._output_router.post_log = AsyncMock()
+    wizards._bot = MagicMock()
+    wizards._bot.signup_module_service.get_wizard = AsyncMock(
+        return_value=SimpleNamespace(signup_channel_id=WIZARD_CHANNEL)
+    )
+    bot.wizard_service = wizards
+
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
+
+    wizard_channel.send.assert_awaited_once()
+    assert list(outcome.failed) == [
+        "<@101>'s signup channel could not be locked and will not delete itself: "
+        "delete it by hand."
+    ]
+    assert "<@101> was not told signups had closed." not in outcome.failed
+    bot.signup_module_service.set_window_closed.assert_awaited_once()
+    assert outcome.returned == 1
+
+
 async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
     """The season's end closes the window on the change queue, where each driver's notice and
     lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling
