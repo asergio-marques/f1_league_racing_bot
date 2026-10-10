@@ -883,6 +883,10 @@ class SchedulerService:
         if self._remove_job(job_id):
             log.info("Removed job %s", job_id)
 
+    def has_job(self, job_id: str) -> bool:
+        """Say whether a job with *job_id* stands in the scheduler."""
+        return self._scheduler.get_job(job_id) is not None
+
     def cancel_all(self, *, keep: frozenset[str] = frozenset()) -> int:
         """Remove every job but those whose ids are in *keep*, and return how many went.
 

@@ -1354,9 +1354,6 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     service.set_window_closed = _set_window_closed
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a window close cut off by a kill loses the drivers it returned"
-)
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
     tmp_path,
 ):

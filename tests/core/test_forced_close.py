@@ -99,6 +99,7 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=N
     bot.signup_module_service.set_window_closed = AsyncMock()
     bot.driver_service = MagicMock()
     bot.driver_service.transition = AsyncMock(side_effect=transition_error)
+    bot.driver_service.accounts_left_in_signup = AsyncMock(return_value=[])
     bot.scheduler_service = MagicMock()
     bot.scheduler_service._scheduler = MagicMock()
     bot.wizard_service = MagicMock()
