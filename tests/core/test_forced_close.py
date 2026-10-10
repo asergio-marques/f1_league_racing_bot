@@ -260,7 +260,6 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     assert "101" in failed
 
 
-_XFAIL_UNHELD = "#439: the close cannot be asked to hold no channel and give the drivers it returned"
 
 WIZARD_CHANNEL = 555
 
@@ -325,7 +324,6 @@ async def test_a_close_off_the_queue_still_locks_and_arms_a_channel_whose_notice
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_UNHELD)
 async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds_nothing(tmp_path):
     """The season's end closes the window on the change queue, where each driver's notice and
     lock are jobs of their own: asked not to hold, the close returns driver 101 (still filling

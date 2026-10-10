@@ -81,6 +81,9 @@ class ForcedCloseOutcome:
     #: Why the close was refused, when it was given a window and that window is not the one
     #: still open. Nothing was touched then. ``None`` where the close ran.
     refused: str | None = None
+    #: The ids of the drivers returned, in the order the close read them. The change queue's jobs
+    #: close each one's signup channel, so the close asked not to hold gives them back.
+    returned_ids: tuple[str, ...] = ()
 
 
 def failed_steps_reply(outcome: ForcedCloseOutcome) -> str:
@@ -136,6 +139,7 @@ async def execute_forced_close(
     *,
     audit_action: str,
     window: int | None | _Unasked = _Unasked.UNASKED,
+    hold_channels: bool = True,
 ) -> ForcedCloseOutcome:
     """Force-close the signup window, and return what it did.
 
@@ -146,6 +150,13 @@ async def execute_forced_close(
     where a close time has been armed since (the timer would close the window a second time).
     The reason comes back in the outcome's ``refused``, for the caller to answer and record. A
     caller that was asked nothing passes no window and is not checked.
+
+    *hold_channels* False is the change queue's form: the close notices and locks no signup
+    channel itself, leaving each driver it returned (the outcome's ``returned_ids``) to the
+    queue's ``signup_notice`` and ``close_signup`` jobs, so that a notice Discord refuses stops
+    the queue before the channel is locked. Off the queue (``/signup close``, the close timer, a
+    restart past the close time, turning signup off) it holds them as before, locking the
+    channel and arming its deletion whatever became of the notice.
 
     1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
     2. Delete signup button message (graceful NotFound).
@@ -191,12 +202,14 @@ async def execute_forced_close(
         rows = await cursor.fetchall()
 
     returned = 0
+    returned_ids: list[str] = []
     for row in rows:
         try:
             await bot.driver_service.transition(
                 row["discord_user_id"], DriverState.NOT_SIGNED_UP
             )
             returned += 1
+            returned_ids.append(str(row["discord_user_id"]))
         except ValueError:
             # The state machine's refusal: the driver moved on since they were read.
             log.info("forced_close: driver %s had moved on", row["discord_user_id"])
@@ -218,24 +231,27 @@ async def execute_forced_close(
     # Post cancellation notice in each wizard channel and schedule deletion.
     # This mirrors the withdraw() path so drivers see a message and the channel
     # is cleaned up after a 24-hour hold.
-    _guild = await league_guild(bot)
-    if _guild is None:
-        failed.extend(f"<@{row['discord_user_id']}> was not told signups had closed." for row in rows)
-    else:
-        _wizard_svc = bot.wizard_service
-        for row in rows:
-            try:
-                held = await _wizard_svc.trigger_channel_hold(
-                    row["discord_user_id"], _guild,
-                    "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
-                    arm_when_refused=True,
-                )
-                if held.channel_id is not None and held.posted is False:
-                    # Held and set for deletion all the same (signup spec: closing the window).
+    if hold_channels:
+        _guild = await league_guild(bot)
+        if _guild is None:
+            failed.extend(
+                f"<@{row['discord_user_id']}> was not told signups had closed." for row in rows
+            )
+        else:
+            _wizard_svc = bot.wizard_service
+            for row in rows:
+                try:
+                    held = await _wizard_svc.trigger_channel_hold(
+                        row["discord_user_id"], _guild,
+                        "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
+                        arm_when_refused=True,
+                    )
+                    if held.channel_id is not None and held.posted is False:
+                        # Held and set for deletion all the same (signup spec: closing the window).
+                        failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
+                except Exception:
+                    log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
                     failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
-            except Exception:
-                log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
-                failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
 
     # 2. Delete button message
     if cfg.signup_button_message_id:
@@ -300,7 +316,9 @@ async def execute_forced_close(
         )
         await db.commit()
 
-    return ForcedCloseOutcome(returned=returned, failed=tuple(failed))
+    return ForcedCloseOutcome(
+        returned=returned, failed=tuple(failed), returned_ids=tuple(returned_ids)
+    )
 
 
 #: Why a close nobody ran happened, and the audit action it is recorded under.
