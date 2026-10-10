@@ -110,6 +110,8 @@ from leaguebot.core.services.season_end_changes import (
     END,
     SEASON_CANCEL,
     SEASON_ENDED_NOTICE,
+    anything_discarded,
+    not_done_reply,
     season_end_in_hand,
     season_end_refusal,
     shared_not_done,
@@ -1494,7 +1496,9 @@ def season_cancel_change(
         return (
             SEASON_CANCELLED
             + notices.failure_lines(not_notified(ctx))
-            + approval_checks.not_done_section(shared_not_done(ctx))
+            + not_done_reply(
+                shared_not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+            )
         )
 
     def describing(text: str) -> Callable[[StepContext], Awaitable[str]]:

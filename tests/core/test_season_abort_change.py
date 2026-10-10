@@ -842,3 +842,47 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
     await run_queue(league.bot)
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
+
+
+
+def _no_channel_left(league: Any, user_id: int = SIGNING_UP) -> None:
+    """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
+    (`channel_id` None), as the wizard service answers for a wizard with no channel."""
+    from types import SimpleNamespace
+
+    wizard = league.bot.wizard_service
+    holding = wizard.trigger_channel_hold.side_effect
+
+    async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
+        if int(uid) == user_id:
+            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
+        return await holding(uid, guild, notice, **kwargs)
+
+    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
+
+
+async def test_an_abort_whose_only_line_beneath_is_a_driver_with_no_channel_left_has_no_warning_heading(
+    tmp_path,
+):
+    """Driver 105, in review, has no signup channel left when the abort comes to tell them,
+    and a league admin discards nothing. The reply names "<@105> had no signup channel left to
+    tell" on a line of its own, under no "Not everything could be done" heading, as the
+    completion's does; the closing line reads "| Success" with it beneath under `not done:`."""
+    league = await setup_league(tmp_path)
+    await signing_up(league)
+    await league.write(
+        "UPDATE signup_wizard_records SET signup_channel_id = NULL WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    _no_channel_left(league)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+
+    no_channel = f"<@{SIGNING_UP}> had no signup channel left to tell"
+    text = reply(interaction)
+    assert ABORTED in text
+    assert no_channel in text.splitlines()
+    assert NOT_EVERYTHING not in text
+    [line] = _success_lines(league)
+    assert f"  not done: {_logged(no_channel)}" in line

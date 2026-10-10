@@ -122,7 +122,9 @@ __all__ = [
     "SEASON_ABORT",
     "SEASON_CANCEL",
     "SEASON_COMPLETE",
+    "anything_discarded",
     "discarded",
+    "not_done_reply",
     "season_abort_change",
     "season_complete_change",
     "season_end_in_hand",
@@ -325,6 +327,24 @@ def untold_log(named: str, command: str, accounts: Sequence[str]) -> tuple[str, 
 def discarded(view: StepView | None) -> bool:
     """Whether a league admin discarded the job."""
     return view is not None and "discarded" in (view.result or {})
+
+
+def anything_discarded(ctx: OutcomeContext, untold: Sequence[str]) -> bool:
+    """Whether a league admin discarded any job of the change, the drivers a discarded window
+    close left untold (*untold*) counting as one. Only then is a season's end incomplete: a driver
+    with no signup channel left is named beneath a line that still reads as a success."""
+    return any(discarded(view) for view in ctx.steps) or bool(untold)
+
+
+def not_done_reply(lines: Sequence[str], *, discarded: bool) -> str:
+    """The part of a season's end's reply naming what was not done: under the "Not everything
+    could be done" heading where anything was *discarded*; otherwise *lines*, which can then only
+    name drivers with no signup channel left to tell, each on a line of its own under no heading."""
+    if discarded:
+        return approval_checks.not_done_section(list(lines))
+    if not lines:
+        return ""
+    return "\n\n" + "\n".join(lines)
 
 
 def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
@@ -649,8 +669,9 @@ def season_complete_change(
             return StepResult(result=result, lines=untold_log(ctx.named, "/season complete", untold))
         left = _not_done(ctx, untold)
         number = ctx.payload["season_number"]
+        status = "Incomplete" if anything_discarded(ctx, untold) else "Success"
         line = (
-            f"{ctx.named} | /season complete | {'Incomplete' if left else 'Success'}\n"
+            f"{ctx.named} | /season complete | {status}\n"
             f"  season: Season #{number}" + "".join(f"\n  not done: {each}" for each in left)
         )
         return StepResult(result=result, lines=(line,))
@@ -672,7 +693,9 @@ def season_complete_change(
             return WIND_DOWN_DISCARDED
         if not _completed(ctx):
             return END_DISCARDED.format(number=number)
-        return COMPLETED + approval_checks.not_done_section(_not_done(ctx))
+        return COMPLETED + not_done_reply(
+            _not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+        )
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
 
@@ -859,7 +882,9 @@ def season_abort_change(
             return ABORT_END_DISCARDED + approval_checks.not_done_section(
                 untold_lines(untold_of(ctx))
             )
-        return ABORTED + approval_checks.not_done_section(_not_done_abort(ctx))
+        return ABORTED + not_done_reply(
+            _not_done_abort(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+        )
 
     async def describe_window_close(_ctx: StepContext) -> str:
         return "closing the signup window as the season being set up is aborted"

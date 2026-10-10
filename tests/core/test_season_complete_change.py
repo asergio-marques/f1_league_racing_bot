@@ -1644,8 +1644,9 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     """Driver 105 has no signup channel left when the completion comes to tell them: either the
     window's close returned them and their channel was deleted before `signup_notice` ran, or
     the driver pass returned them from review with no channel. Nothing is locked or set for
-    deletion, and they are named: "<@105> had no signup channel left to tell", in the reply's
-    not-done section and, with the mention backticked, under `not done:` in the closing line."""
+    deletion, and they are named: "<@105> had no signup channel left to tell", in the reply, under
+    no warning heading as nothing was discarded, and, with the mention backticked, under
+    `not done:` in the closing line."""
     if whose == "in review":
         league = await pending_completion_league(tmp_path)
         await signing_up(league)
@@ -1662,7 +1663,8 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     await run_queue(league.bot)
 
     assert ("signup_notice", SIGNING_UP) in await _names(league)
-    assert NO_CHANNEL in "\n".join(_not_done(reply(interaction)))
+    assert NO_CHANNEL in reply(interaction)
+    assert NOT_EVERYTHING not in reply(interaction)
     [line] = _closing_lines(league)
     assert f"  not done: {_logged(NO_CHANNEL)}" in line
     assert _locks_asked(league) == []
@@ -1670,3 +1672,81 @@ async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_lock
     assert not _deletion_armed_for(league)
     assert league.notices == []
     assert await _status(league) == "COMPLETED"
+
+
+async def _in_review_with_no_channel(league: Any) -> None:
+    """Driver 105 in review, their signup channel gone, for the driver pass to return."""
+    await signing_up(league)
+    await league.write(
+        "UPDATE signup_wizard_records SET signup_channel_id = NULL WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    _channel_gone(league)
+
+
+async def test_a_completion_whose_only_line_beneath_is_a_driver_with_no_channel_left_reads_success(
+    tmp_path,
+):
+    """Driver 105, in review, has no signup channel left when the completion comes to tell them,
+    and a league admin discards nothing. The closing line reads "| Success", with "not done:
+    `<@105>` had no signup channel left to tell" beneath it; the reply reads "✅ Season marked as
+    complete." with "<@105> had no signup channel left to tell" on a line of its own, and no
+    "Not everything could be done" heading."""
+    league = await pending_completion_league(tmp_path)
+    await _in_review_with_no_channel(league)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+
+    [line] = _closing_lines(league)
+    assert line.startswith(f"{SUCCESS}\n  not done: {_logged(NO_CHANNEL)}")
+    text = reply(interaction)
+    assert COMPLETED in text
+    assert NO_CHANNEL in text.splitlines()
+    assert NOT_EVERYTHING not in text
+    assert await _status(league) == "COMPLETED"
+
+
+async def test_a_completion_with_a_discard_and_a_driver_with_no_channel_left_reads_incomplete(
+    tmp_path,
+):
+    """Driver 105, in review, has no signup channel left, and Discord refuses to take Lewis's
+    roles back, which a league admin discards. The closing line reads "| Incomplete", with both
+    beneath it under `not done:`; the reply's "Not everything could be done" section holds
+    both."""
+    league = await pending_completion_league(tmp_path)
+    await _in_review_with_no_channel(league)
+    league.revoke_fails[LEWIS] = _forbidden()
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("revoke_roles", LEWIS)
+
+    del league.revoke_fails[LEWIS]
+    await discard_job(league.bot)
+
+    [line] = _closing_lines(league)
+    assert line.startswith(INCOMPLETE)
+    assert f"  not done: {_logged(ROLES_KEPT)}" in line
+    assert f"  not done: {_logged(NO_CHANNEL)}" in line
+    assert {ROLES_KEPT, NO_CHANNEL} <= set(_not_done(reply(interaction)))
+    assert await _status(league) == "COMPLETED"
+
+
+async def test_a_completion_whose_discarded_close_left_drivers_untold_reads_incomplete(tmp_path):
+    """The signup window's close returns driver 105, then recording the window closed fails, and
+    a league admin discards `close_window`: 105 is left untold. The closing line reads
+    "| Incomplete", naming 105 as returned but not told beneath it, the drivers so left counting
+    as a discard."""
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    league.close_fails = RuntimeError("the window could not be recorded closed")
+    interaction = await _asked(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("close_window", None)
+
+    await discard_job(league.bot)
+
+    [line] = _closing_lines(league)
+    assert line.startswith(INCOMPLETE)
+    assert f"  not done: {_logged(RETURNED_NOT_TOLD)}" in line
+    assert RETURNED_NOT_TOLD in _not_done(reply(interaction))
