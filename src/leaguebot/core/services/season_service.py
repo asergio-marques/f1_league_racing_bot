@@ -600,31 +600,6 @@ class SeasonService:
 
         return await wind_down_ongoing(bot)
 
-    async def refresh_division_status(self, division_id: int) -> bool:
-        """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
-
-        A round is outstanding until it reaches one of its two terminal states, FINAL or
-        CANCELLED. Every other state is a round still waiting on somebody: for its date, for its
-        results, for report verdicts, or for appeal verdicts.
-
-        Division status is stored rather than derived, so that cancelling a division can record
-        the fact and `/season cancel` can tell the running divisions apart from the called-off
-        ones. Stored state can drift from the rounds it summarises, so this is called from every
-        place a round's outcome settles — the appeals approval in result_submission_service and
-        `cancel_round_on` below — and again from the `/season complete` gate, which cannot afford to
-        strand a league on a stale row a second time (issue #154).
-
-        The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
-        SETUP has not started, and a CANCELLED one was called off deliberately. Neither is a
-        division that has *finished*, and neither is ever touched here.
-
-        Returns True if this call is what moved it.
-        """
-        async with get_connection(self._db_path) as db:
-            moved = await refresh_division_status_on(db, division_id)
-            await db.commit()
-        return moved
-
     async def close_raced_rounds_for_cancellation(
         self, season_id: int, actor_id: int, actor_name: str
     ) -> list[int]:
