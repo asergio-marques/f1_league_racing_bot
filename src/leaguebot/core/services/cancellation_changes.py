@@ -130,6 +130,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     SeasonEndHooks,
     advance_to_pending_completion_on,
     driver_jobs,
+    end_signup_wizards_on,
     run_driver_pass_on,
 )
 from leaguebot.core.services.season_service import (
@@ -1393,6 +1394,7 @@ def season_cancel_change(
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number, force_cancelled=True)
         driver_pass = await run_driver_pass_on(db)
+        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db)
         # The season's row is the last thing written (Constitution, the Season Archive). The

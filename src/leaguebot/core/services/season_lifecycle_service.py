@@ -415,6 +415,26 @@ def driver_jobs(
     return tuple(planned)
 
 
+async def end_signup_wizards_on(
+    db: aiosqlite.Connection,
+    hooks: SeasonEndHooks | None,
+    drivers: Sequence[Mapping[str, Any]],
+) -> None:
+    """Mark over the signup wizard of each of *drivers* whose signup was in progress or in review.
+
+    Called in the save that returns them to Not Signed Up (the driver pass, the turn-down), on
+    that save's connection and through signup's own hook, so that a restart finds no wizard still
+    engaged for a signup that has ended and tells nobody it expired. Nothing is asked of the hooks
+    where no driver is in that case. *drivers* are mappings of ``user_id`` and ``state``.
+    """
+    accounts = [str(d["user_id"]) for d in drivers if d["state"] in _SIGNUP_IN_PROGRESS]
+    if not accounts:
+        return
+    if hooks is None:
+        raise RuntimeError("a season's end is run with the hooks the builder hands it")
+    await hooks.end_wizards_on(db, accounts)
+
+
 def window_closed_jobs(user_ids: Sequence[str]) -> tuple[PlannedStep, ...]:
     """The jobs for each driver the signup window's close returned: told, then their channel closed."""
     planned: list[PlannedStep] = []
@@ -606,7 +626,15 @@ def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
             return StepResult(result={"moved": False})
         drivers: list[dict] = []
         if stage != SeasonStage.ONGOING.value:
+            if hooks is None and any(
+                d["current_state"] in _SIGNUP_IN_PROGRESS
+                for d in await _pending_placement_drivers_on(db, season_id)
+            ):
+                # Refused before anything is written: a signup turned down is marked over in
+                # this save, through the hooks.
+                raise RuntimeError("a wind-down is run with the hooks the builder hands it")
             drivers = await turn_down_pending_placements_on(db, season_id)
+            await end_signup_wizards_on(db, hooks, drivers)
             current, _ = await _stage_and_whether_done_on(db, season_id)
             if current in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
                 await _move_on(db, season_id, SeasonStage(current), SeasonStage.ONGOING)

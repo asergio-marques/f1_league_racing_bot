@@ -97,6 +97,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     advance_to_pending_completion_on,
     driver_jobs,
     require_guild,
+    end_signup_wizards_on,
     run_driver_pass_on,
     wind_down_steps,
 )
@@ -508,6 +509,7 @@ def season_complete_change(
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number)
         driver_pass = await run_driver_pass_on(db)
+        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db)
         # The archive is the last thing written (Constitution, the Season Archive).
@@ -733,6 +735,7 @@ def season_abort_change(
 
         test_mode = await test_mode_on(db)
         driver_pass = await run_driver_pass_on(db)
+        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db)
         # The season's deletion is the last thing written. The saved test-mode state is kept: a

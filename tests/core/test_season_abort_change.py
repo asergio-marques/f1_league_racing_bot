@@ -826,9 +826,6 @@ async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returne
     assert await league.bot.signup_module_service.owed_closing_notices() == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: the end's driver pass leaves a signup's wizard engaged"
-)
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the abort's `end` runs its driver pass. Their wizard is

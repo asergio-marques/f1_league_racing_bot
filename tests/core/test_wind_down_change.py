@@ -500,9 +500,6 @@ async def test_a_discarded_wind_down_names_and_forgets_the_drivers_it_returned(t
     assert await _owed(league) == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: the turn-down leaves a turned-down signup's wizard engaged"
-)
 async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_path):
     """Driver 105 is correcting their signup (Pending Driver Correction, their wizard in a
     correction step) when the wind-down turns the season's pending placements down. Without

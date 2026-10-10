@@ -1603,9 +1603,6 @@ async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_th
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: the end's driver pass leaves a signup's wizard engaged"
-)
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the completion's `end` runs its driver pass. Their wizard is
