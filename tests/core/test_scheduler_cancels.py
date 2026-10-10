@@ -90,3 +90,33 @@ def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
     assert any(r.exc_info and r.exc_info[1] is error for r in warnings)
     if cancel == "cancel_all":
         assert result == 1
+
+
+async def test_a_job_stands_while_the_store_holds_it(tmp_path, monkeypatch):
+    """`has_job` answers whether a job is armed and not yet fired, read of a real job store: the
+    signup close timer, armed a day ahead, stands until it is cancelled, and a job never armed
+    does not. The finish of a signup window's close a stop cut off reads it to pass over a
+    channel already held."""
+    from datetime import datetime, timedelta, timezone
+
+    from leaguebot.core.db.database import run_migrations
+    from leaguebot.core.services import scheduler_service
+    from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
+
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", None)
+    service = SchedulerService(db_path, str(tmp_path / "jobs.db"))
+    service.start()
+    try:
+        fire_at = datetime.now(timezone.utc) + timedelta(days=1)
+        service.schedule_signup_close_timer(fire_at.replace(tzinfo=None).isoformat())
+
+        assert service.has_job(SIGNUP_CLOSE_JOB_ID) is True
+        assert service.has_job("wizard_channel_delete_102") is False
+
+        service.cancel_signup_close_timer()
+        assert service.has_job(SIGNUP_CLOSE_JOB_ID) is False
+    finally:
+        service._scheduler.shutdown(wait=False)
+        service._scheduler._jobstores["default"].engine.dispose()

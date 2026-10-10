@@ -241,9 +241,11 @@ async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
 
 
 async def test_cancelling_discards_the_uncommitted_placements_and_frees_their_seats(db_path):
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.season_service import discard_uncommitted_placements_on
 
-    assert await SeasonService(db_path).discard_uncommitted_placements(1) == 1
+    async with get_connection(db_path) as db:
+        assert await discard_uncommitted_placements_on(db, 1) == 1
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

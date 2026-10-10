@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 from typing import TypedDict
 
+import aiosqlite
+
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.services.team_service import (
@@ -618,25 +620,35 @@ async def remove_test_driver(
     return {"display_name": display_name, "team_name": team_name}
 
 
-async def clear_all_test_drivers(db_path: str) -> int:
-    """Remove every driver created by test mode on the server, keeping their history.
+async def clear_all_test_drivers_on(db: aiosqlite.Connection) -> int:
+    """Remove every driver created by test mode on the server, keeping their history, on *db*.
 
     Every one of them, seated or not and in whatever season — switching test mode off deletes
     every fake driver on the server. Their history entries are kept, naming them by identifier,
     so a driver created again under the same identifier holds that history (issue #220).
 
+    Committing nothing: a season's end deletes them inside the save that records its end.
     Returns the count removed.
     """
     from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE is_test_driver = 1",
-        )
-        profile_ids = [r["id"] for r in await cursor.fetchall()]
-        await delete_driver_profiles(db, profile_ids, keep_history=True)
-        await db.commit()
+    cursor = await db.execute(
+        "SELECT id FROM driver_profiles WHERE is_test_driver = 1",
+    )
+    profile_ids = [r["id"] for r in await cursor.fetchall()]
+    await delete_driver_profiles(db, profile_ids, keep_history=True)
     return len(profile_ids)
+
+
+async def clear_all_test_drivers(db_path: str) -> int:
+    """:func:`clear_all_test_drivers_on` on a save of its own, for `/test-mode toggle`.
+
+    Returns the count removed.
+    """
+    async with get_connection(db_path) as db:
+        removed = await clear_all_test_drivers_on(db)
+        await db.commit()
+    return removed
 
 
 async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> int:

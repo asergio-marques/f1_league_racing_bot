@@ -8,6 +8,7 @@ import enum
 import json
 import logging
 from dataclasses import dataclass
+from functools import partial
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -16,7 +17,7 @@ from discord.ext import commands
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import module_off
+from leaguebot.core.models.change import StepFailedOnDiscord, module_off
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -61,6 +62,14 @@ _BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup c
 _NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
 
 
+def _channel_not_locked(user_id: str) -> str:
+    """The failed step of a driver whose channel Discord would not lock or set for deletion."""
+    return (
+        f"<@{user_id}>'s signup channel could not be locked and will not delete itself: "
+        "delete it by hand."
+    )
+
+
 @dataclass(frozen=True)
 class ForcedCloseOutcome:
     """What a forced close did: the drivers it turned away, and each step that failed.
@@ -81,6 +90,9 @@ class ForcedCloseOutcome:
     #: Why the close was refused, when it was given a window and that window is not the one
     #: still open. Nothing was touched then. ``None`` where the close ran.
     refused: str | None = None
+    #: The ids of the drivers returned, in the order the close read them. The change queue's jobs
+    #: close each one's signup channel, so the close asked not to hold gives them back.
+    returned_ids: tuple[str, ...] = ()
 
 
 def failed_steps_reply(outcome: ForcedCloseOutcome) -> str:
@@ -136,6 +148,7 @@ async def execute_forced_close(
     *,
     audit_action: str,
     window: int | None | _Unasked = _Unasked.UNASKED,
+    hold_channels: bool = True,
 ) -> ForcedCloseOutcome:
     """Force-close the signup window, and return what it did.
 
@@ -147,7 +160,21 @@ async def execute_forced_close(
     The reason comes back in the outcome's ``refused``, for the caller to answer and record. A
     caller that was asked nothing passes no window and is not checked.
 
-    1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
+    *hold_channels* False is the change queue's form: the close notices and locks no signup
+    channel itself, leaving each driver it returned (the outcome's ``returned_ids``) to the
+    queue's ``signup_notice`` and ``close_signup`` jobs, so that a notice Discord refuses stops
+    the queue before the channel is locked, and which leaves the season's stage where it stands
+    (step 4b). Off the queue (``/signup close``, the close timer, a restart past the close time,
+    turning signup off) it holds them as before, locking the channel and arming its deletion
+    whatever became of the notice. The queue's form raises where a step after the drivers were
+    returned does, as a `StepFailedOnDiscord` whose result names them (``returned``): the stop
+    keeps them on the job, so that its next try, which finds none left to return, still tells and
+    closes each one's channel.
+
+    1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
+       wizard over in the same save (owed its closing notice on the queue), so a restart never
+       tells a driver whose signup has ended that it expired. The queue's form raises a failed
+       return, other than the state machine's, naming the drivers already returned.
     2. Delete signup button message (graceful NotFound).
     3. Post "signups are closed" to signup channel.
     4. Set window closed.
@@ -156,7 +183,9 @@ async def execute_forced_close(
     Every step runs whatever the one before did. A step that fails is named in the outcome's
     ``failed`` and its traceback is logged; it is never swallowed. A driver whose transition the
     state machine refuses (``ValueError``) has moved on since the close read them: they are not
-    counted as returned, and it is not a failure. Any other error from that transition is.
+    counted as returned, and it is not a failure. Any other error from that transition is. Either
+    way the driver is not the close's to touch: only the drivers returned have their timers
+    cancelled and their channels held, so a driver whose return failed keeps signing up.
 
     The count is of transitions that succeeded, read at the moment of closing. The
     confirmation ``/signup close`` shows may be up to five minutes older than that.
@@ -190,51 +219,112 @@ async def execute_forced_close(
         )
         rows = await cursor.fetchall()
 
+    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+
     returned = 0
+    returned_ids: list[str] = []
     for row in rows:
         try:
+            # The return and the end of the driver's signup are one save: their wizard is marked
+            # over, so a restart never expires it, and owed its closing notice. On the queue the
+            # queue's jobs then give it once; off it, the hold below gives it and the audit save
+            # clears the mark, and where a stop cuts the close off first the bot's start finishes
+            # it (`signup.close.finish`). Signup writes its own table (`end_wizard_on`).
             await bot.driver_service.transition(
-                row["discord_user_id"], DriverState.NOT_SIGNED_UP
+                row["discord_user_id"],
+                DriverState.NOT_SIGNED_UP,
+                also_on=partial(
+                    bot.signup_module_service.end_wizard_on,
+                    discord_user_id=row["discord_user_id"],
+                    closing_notice_owed=not hold_channels,
+                    by_off_queue_close=hold_channels,
+                ),
             )
             returned += 1
+            returned_ids.append(str(row["discord_user_id"]))
+            # Their timers go now, before the next driver's save and any await, so that a kill
+            # part-way through the loop never leaves a returned driver's inactivity job in the
+            # persistent jobstore to tell them their session expired as well as that signups
+            # closed.
+            for job_id in (
+                inactivity_job_id(row["discord_user_id"]),
+                channel_delete_job_id(row["discord_user_id"]),
+            ):
+                bot.scheduler_service.cancel_job(job_id)
         except ValueError:
             # The state machine's refusal: the driver moved on since they were read.
             log.info("forced_close: driver %s had moved on", row["discord_user_id"])
-        except Exception:
+        except Exception as exc:
+            if not hold_channels:
+                # The queue's form raises, as every failure on the queue does. Each driver
+                # returned before this one is saved and marked owed, their timers already
+                # cancelled: the stop keeps them on the job for its next try.
+                raise StepFailedOnDiscord(
+                    f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
+                    result={"returned": list(returned_ids)},
+                ) from exc
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
             failed.append(
                 f"<@{row['discord_user_id']}> could not be returned to Not Signed Up."
             )
 
-    # T046: cancel wizard APScheduler jobs for each force-transitioned driver
-    svc = bot.scheduler_service
-    for row in rows:
-        uid = row["discord_user_id"]
-        from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+    try:
+        # Post cancellation notice in each wizard channel and schedule deletion.
+        # This mirrors the withdraw() path so drivers see a message and the channel
+        # is cleaned up after a 24-hour hold.
+        reached: list[str] = []
+        if hold_channels:
+            # The notice the start-up's finish looks for in the channel to know it was held.
+            from leaguebot.core.services.season_lifecycle_service import WINDOW_CLOSED_NOTICE
 
-        for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
-            svc.cancel_job(job_id)
+            _guild = await league_guild(bot)
+            if _guild is None:
+                failed.extend(f"<@{uid}> was not told signups had closed." for uid in returned_ids)
+            else:
+                _wizard_svc = bot.wizard_service
+                for uid in returned_ids:
+                    try:
+                        held = await _wizard_svc.trigger_channel_hold(
+                            uid, _guild,
+                            WINDOW_CLOSED_NOTICE,
+                            arm_when_refused=True,
+                        )
+                        reached.append(uid)
+                        if held.channel_id is not None and held.posted is False:
+                            # Held and set for deletion all the same (signup spec: closing the window).
+                            failed.append(f"<@{uid}> was not told signups had closed.")
+                    except discord.HTTPException:
+                        # Discord refused the lock or the arming of the deletion, which the hold
+                        # makes only after the notice: say so, rather than that they were not told.
+                        log.exception("forced_close: could not lock the channel of driver %s", uid)
+                        reached.append(uid)
+                        failed.append(_channel_not_locked(uid))
+                    except Exception:
+                        log.exception("forced_close: trigger_channel_hold failed for driver %s", uid)
+                        failed.append(f"<@{uid}> was not told signups had closed.")
 
-    # Post cancellation notice in each wizard channel and schedule deletion.
-    # This mirrors the withdraw() path so drivers see a message and the channel
-    # is cleaned up after a 24-hour hold.
-    _guild = await league_guild(bot)
-    if _guild is None:
-        failed.extend(f"<@{row['discord_user_id']}> was not told signups had closed." for row in rows)
-    else:
-        _wizard_svc = bot.wizard_service
-        for row in rows:
-            try:
-                await _wizard_svc.trigger_channel_hold(
-                    row["discord_user_id"], _guild,
-                    "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
-                )
-            except Exception:
-                log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
-                failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
+        # 2. Delete button message
+        if cfg.signup_button_message_id:
+            guild = await league_guild(bot)
+            channel = (
+                as_text_channel(guild.get_channel(cfg.signup_channel_id))
+                if guild and cfg.signup_channel_id is not None
+                else None
+            )
+            if channel:
+                try:
+                    msg = await channel.fetch_message(cfg.signup_button_message_id)
+                    await msg.delete()
+                except discord.NotFound:
+                    pass
+                except Exception:
+                    log.exception("forced_close: could not delete button message")
+                    failed.append(_BUTTON_NOT_REMOVED)
+            else:
+                failed.append(_BUTTON_NOT_REMOVED)
 
-    # 2. Delete button message
-    if cfg.signup_button_message_id:
+        # 3. Post closed message; capture ID so it can be deleted when re-opening
+        closed_msg_id: int | None = None
         guild = await league_guild(bot)
         channel = (
             as_text_channel(guild.get_channel(cfg.signup_channel_id))
@@ -243,60 +333,59 @@ async def execute_forced_close(
         )
         if channel:
             try:
-                msg = await channel.fetch_message(cfg.signup_button_message_id)
-                await msg.delete()
-            except discord.NotFound:
-                pass
+                closed_msg = await channel.send("🔒 Signups are now closed.")
+                closed_msg_id = closed_msg.id
             except Exception:
-                log.exception("forced_close: could not delete button message")
-                failed.append(_BUTTON_NOT_REMOVED)
+                log.exception("forced_close: could not post closed message")
+                failed.append(_NOTICE_NOT_POSTED)
         else:
-            failed.append(_BUTTON_NOT_REMOVED)
-
-    # 3. Post closed message; capture ID so it can be deleted when re-opening
-    closed_msg_id: int | None = None
-    guild = await league_guild(bot)
-    channel = (
-        as_text_channel(guild.get_channel(cfg.signup_channel_id))
-        if guild and cfg.signup_channel_id is not None
-        else None
-    )
-    if channel:
-        try:
-            closed_msg = await channel.send("🔒 Signups are now closed.")
-            closed_msg_id = closed_msg.id
-        except Exception:
-            log.exception("forced_close: could not post closed message")
             failed.append(_NOTICE_NOT_POSTED)
-    else:
-        failed.append(_NOTICE_NOT_POSTED)
 
-    # 4. Set window closed (persists closed_msg_id)
-    await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
+        # 4. Set window closed (persists closed_msg_id)
+        await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
 
-    # 4b. Move the season on (issue #220). Every close reaches here — the command, the
-    #     close timer and the restart sweep — so every close moves the season alike. A
-    #     failure is logged and never undoes the close: the window is shut either way.
-    from leaguebot.core.services.season_lifecycle_service import advance_on_window_close
+        # 4b. Move the season on (issue #220). Every close a member or a timer runs reaches here —
+        #     the command, the close timer and the restart sweep — so each moves the season alike.
+        #     A failure is logged and never undoes the close: the window is shut either way. The
+        #     change queue's form (*hold_channels* False) moves it not at all: a season's end closes
+        #     the window in the middle of its jobs, and a cancelled season sent on to Pending
+        #     completion between them would stand there, refused its own cancellation, should the
+        #     queue stop; the change that closes the window saves the stage move itself.
+        if hold_channels:
+            from leaguebot.core.services.season_lifecycle_service import advance_on_window_close
 
-    try:
-        await advance_on_window_close(bot.db_path)
-    except Exception:  # noqa: BLE001
-        log.exception("forced_close: could not move the season on")
-        failed.append("The season could not be moved on.")
+            try:
+                await advance_on_window_close(bot.db_path)
+            except Exception:  # noqa: BLE001
+                log.exception("forced_close: could not move the season on")
+                failed.append("The season could not be moved on.")
 
-    # 5. Audit entry
-    now = datetime.now(timezone.utc).isoformat()
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (?, ?, NULL, ?, ?, ?, ?)",
-            (0, "system", audit_action, "open", "closed", now),
-        )
-        await db.commit()
+        # 5. Audit entry. The drivers the hold reached are owed nothing more, and their marks go
+        #    in the same save; a driver it did not reach keeps theirs for the bot's start.
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+                (0, "system", audit_action, "open", "closed", now),
+            )
+            if reached:
+                await bot.signup_module_service.clear_closing_notices_on(db, reached)
+            await db.commit()
+    except Exception as exc:
+        if hold_channels:
+            raise
+        # The drivers are already returned and nothing else will name them, so the stop keeps
+        # them on the job (`StepFailedOnDiscord.result`) for its next try to tell and close.
+        raise StepFailedOnDiscord(
+            "the signup window could not be closed after its drivers were returned",
+            result={"returned": list(returned_ids)},
+        ) from exc
 
-    return ForcedCloseOutcome(returned=returned, failed=tuple(failed))
+    return ForcedCloseOutcome(
+        returned=returned, failed=tuple(failed), returned_ids=tuple(returned_ids)
+    )
 
 
 #: Why a close nobody ran happened, and the audit action it is recorded under.
@@ -305,24 +394,33 @@ _UNATTENDED_CAUSES: dict[str, str] = {
     "restart": "SIGNUP_AUTO_CLOSE",
     "season end": "SIGNUP_SEASON_END_CLOSE",
     "divisions done": "SIGNUP_DIVISIONS_DONE_CLOSE",
+    "stop cut off": "SIGNUP_FORCE_CLOSE",
 }
 
 _UNATTENDED_HEADS: dict[str, str] = {
     "season end": "🔒 Signups closed as the season ended",
     "divisions done": "🔒 Signups closed as every division is done",
+    "stop cut off": "🔒 Signups closed at start-up, finishing a close a stop cut off",
 }
 
 
-async def close_signups_unattended(bot: LeagueBot, *, cause: str) -> ForcedCloseOutcome | None:
+async def close_signups_unattended(
+    bot: LeagueBot, *, cause: str, hold_channels: bool = True
+) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close, and record it in one line.
 
     *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
-    after it), ``"season end"`` and ``"divisions done"``; it picks the audit action the close
+    after it), ``"season end"``, ``"divisions done"`` and ``"stop cut off"`` (the bot's start
+    finishing a close off the queue that a stop cut off before it recorded the window closed:
+    `season_lifecycle_service.close_finish_change`); it picks the audit action the close
     is written under and the line's head. The line names no member, since none closed the
     window, and carries the drivers returned with each failed step beneath, as the closes a
     member runs do. Formed here, beside ``execute_forced_close``, so that no caller forms it:
     the timer and the restart sweep in ``__main__`` and the two season closes keep only the
     call.
+
+    *hold_channels* False is the change queue's form (``execute_forced_close``): the outcome gives
+    the drivers it returned and the queue's jobs tell and close each one's signup channel.
 
     Written only where a window was actually closed: a module that is disabled produces nothing
     (the core specification, Modules), and a window not open needs no close, so both return
@@ -337,7 +435,9 @@ async def close_signups_unattended(bot: LeagueBot, *, cause: str) -> ForcedClose
         return None
     close_at = cfg.close_at  # the close clears it, so it is read first
 
-    outcome = await execute_forced_close(bot, audit_action=audit_action)
+    outcome = await execute_forced_close(
+        bot, audit_action=audit_action, hold_channels=hold_channels
+    )
 
     head = _UNATTENDED_HEADS.get(cause, "🔒 Signups closed automatically at their set time")
     if cause in ("timer", "restart") and close_at is not None:

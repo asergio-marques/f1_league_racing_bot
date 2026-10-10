@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
@@ -616,7 +618,16 @@ class SignupModuleService:
             return None
         return self._row_to_wizard_record(row)
 
-    async def save_wizard(self, wizard: SignupWizardRecord) -> None:
+    async def save_wizard(self, wizard: SignupWizardRecord, *, starting: bool = False) -> None:
+        """Save the wizard's record, inserting it or updating the one the driver holds.
+
+        *starting* is the save of a signup just begun (Sign Up pressed). It alone clears any
+        closing notice a past close of the window still owes the driver (`end_wizard_on`): a mark
+        a close left standing with no stop to finish it would otherwise survive into the new
+        signup, and a later finish would lock and delete the channel of a signup in progress.
+        Every other save, a step of the signup, leaves the mark as it is, so that a step saved
+        just after a close marked the driver never takes the mark away from that close.
+        """
         snapshot_json = (
             json.dumps(self._snapshot_to_dict(wizard.config_snapshot))
             if wizard.config_snapshot else None
@@ -635,7 +646,10 @@ class SignupModuleService:
                     config_snapshot_json     = excluded.config_snapshot_json,
                     draft_answers_json       = excluded.draft_answers_json,
                     current_lap_track_index  = excluded.current_lap_track_index,
-                    last_activity_at         = excluded.last_activity_at
+                    last_activity_at         = excluded.last_activity_at,
+                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END,
+                    closing_window_message_id = CASE WHEN ? THEN NULL
+                                                     ELSE closing_window_message_id END
                 """,
                 (
                     wizard.discord_user_id,
@@ -645,6 +659,8 @@ class SignupModuleService:
                     json.dumps(wizard.draft_answers),
                     wizard.current_lap_track_index,
                     wizard.last_activity_at,
+                    int(starting),
+                    int(starting),
                 ),
             )
             await db.commit()
@@ -702,6 +718,134 @@ class SignupModuleService:
                 (discord_user_id,),
             )
             await db.commit()
+
+    #: The values of ``signup_wizard_records.closing_notice_owed``: none, owed by the change
+    #: queue's close of the window, owed by a close off the queue.
+    _OWED_NONE = 0
+    _OWED_BY_QUEUE = 1
+    _OWED_BY_OFF_QUEUE_CLOSE = 2
+
+    async def end_wizard_on(
+        self,
+        db: aiosqlite.Connection,
+        discord_user_id: str,
+        *,
+        closing_notice_owed: bool = False,
+        by_off_queue_close: bool = False,
+    ) -> None:
+        """Mark a driver's signup over on the connection handed; commits nothing.
+
+        The wizard is unengaged, so a restart's recovery never re-arms or expires it, and owes its
+        closing notice where asked: *closing_notice_owed* for the change queue's close of the
+        signup window, *by_off_queue_close* for a close off the queue (`/signup close`, its timer,
+        a restart past the close time, turning signup off), which wins where both are given. The
+        signup channel is kept: the hold and the channel's deletion still read it. A driver with
+        no wizard record is nothing to end.
+
+        The owed mark is a record of work still owed, kept beside the change queue, which
+        architecture.md rejects as a rule ("a separate record of work still owed after a save").
+        It is here on purpose: the window's close returns each driver in a save of its own, before
+        the job that plans their notice and channel jobs is saved, and a kill between the two
+        leaves no queue record to find them by. The mark is written in the save that returns the
+        driver, so that the next try or the restart finds exactly those drivers, and is cleared in
+        the save that plans their jobs (`clear_closing_notices_on`), from which the queue's own
+        records hold them. It is never read from wizard state, so a channel kept on purpose is
+        never found.
+
+        It has two kinds, kept apart so that neither close takes the other's drivers. The queue's
+        (1) is read by `owed_closing_notices` and `take_closing_notices_on`. A close off the queue
+        returns each driver in a save of its own too, then tells and locks them one by one, so a
+        stop between leaves the later drivers returned, untold and with a writable channel nobody
+        deletes: it marks its own (2) in the same save, clears those it reached in its audit save,
+        and the bot's start finishes the rest through a change of its own, reading them with
+        `off_queue_closing_notices` and `take_off_queue_closing_notices_on`. Both kinds are owed
+        by a close of the window and by nothing else. Do not widen the mark further into a
+        general record of owed work.
+
+        A mark of a close off the queue also records the window that close was closing, as the
+        Sign Up button message the configuration holds in the same save, while the window still
+        stands open: a close cut off before it recorded the window closed leaves it open, and the
+        start-up step closes it (`cut_off_window_open`). The button message is the window's
+        identity, each opening posting a new one, so a mark an older close left standing never
+        closes a window opened since.
+        """
+        if by_off_queue_close:
+            owed = self._OWED_BY_OFF_QUEUE_CLOSE
+        elif closing_notice_owed:
+            owed = self._OWED_BY_QUEUE
+        else:
+            owed = self._OWED_NONE
+        await db.execute(
+            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
+            "closing_notice_owed = ?, closing_window_message_id = CASE WHEN ? THEN ("
+            "  SELECT signup_button_message_id FROM signup_module_config WHERE id = 1"
+            ") ELSE NULL END WHERE discord_user_id = ?",
+            (owed, int(owed == self._OWED_BY_OFF_QUEUE_CLOSE), discord_user_id),
+        )
+
+    async def owed_closing_notices(self) -> list[str]:
+        """The accounts the queue's close owes their closing notice, in the order of their
+        records, on a connection of its own. For a check before a step or a step with no save
+        open; a save reads them with `take_closing_notices_on`."""
+        async with get_connection(self._db_path) as db:
+            return await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
+
+    async def off_queue_closing_notices(self) -> list[str]:
+        """The accounts a close off the queue returned and has not yet reached, in the order of
+        their records, on a connection of its own: those a stop cut the close off before. A save
+        reads them with `take_off_queue_closing_notices_on`."""
+        async with get_connection(self._db_path) as db:
+            return await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
+
+    async def cut_off_window_open(self) -> bool:
+        """Whether the signup window stands open and is the very window a close off the queue
+        was closing when a stop cut it off: a driver it returned still owes their notice under a
+        mark recording this window's Sign Up button. A window opened since is never it."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM signup_module_config c "
+                "WHERE c.id = 1 AND c.signups_open = 1 AND EXISTS ("
+                "  SELECT 1 FROM signup_wizard_records w "
+                "  WHERE w.closing_notice_owed = ? "
+                "    AND w.closing_window_message_id = c.signup_button_message_id)",
+                (self._OWED_BY_OFF_QUEUE_CLOSE,),
+            )
+            return await cursor.fetchone() is not None
+
+    async def clear_closing_notices_on(
+        self, db: aiosqlite.Connection, accounts: Iterable[str]
+    ) -> None:
+        """Set the closing notice owed back to none for these accounts, of either kind, on the
+        connection handed; commits nothing."""
+        for account in accounts:
+            await db.execute(
+                "UPDATE signup_wizard_records SET closing_notice_owed = 0, "
+                "closing_window_message_id = NULL WHERE discord_user_id = ?",
+                (str(account),),
+            )
+
+    async def take_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
+        """Read the accounts the queue's close still owes their closing notice and clear them, on
+        the connection handed, so a save needs no second connection; commits nothing."""
+        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
+        await self.clear_closing_notices_on(db, accounts)
+        return accounts
+
+    async def take_off_queue_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
+        """Read the accounts a close off the queue still owes their closing notice and clear them,
+        on the connection handed; commits nothing."""
+        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
+        await self.clear_closing_notices_on(db, accounts)
+        return accounts
+
+    @staticmethod
+    async def _owed_closing_notices_on(db: aiosqlite.Connection, kind: int) -> list[str]:
+        cursor = await db.execute(
+            "SELECT discord_user_id FROM signup_wizard_records "
+            "WHERE closing_notice_owed = ? ORDER BY id",
+            (kind,),
+        )
+        return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
     async def get_all_active_wizards(self) -> list[SignupWizardRecord]:
         """Return all wizard records not in UNENGAGED state for a server."""

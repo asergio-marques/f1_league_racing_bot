@@ -3258,25 +3258,30 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     arrived_at = (
         RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
     )
+    from leaguebot.core.services.season_service import refresh_division_status_on
+
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE rounds SET status = ? WHERE id = ? AND status = ?",
             (arrived_at, round_id, RoundStatus.NOT_RUN.value),
         )
+        if not results_enabled:
+            # The round just reached a terminal state, so its division may now be finished: the
+            # move and the refresh are one save, a refresh that fails leaving the round as it was
+            # (#439).
+            await refresh_division_status_on(db, division_id)
         await db.commit()
 
     if not results_enabled:
-        # The round just reached a terminal state, so its division may now be finished.
-        from leaguebot.core.services.season_service import SeasonService
-
-        await SeasonService(db_path).refresh_division_status(division_id)
-
         # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        try:
-            await bot.season_service.wind_down_ongoing(bot)
-        except Exception:  # noqa: BLE001 — never fail the job on the season's next stage
-            log.exception("could not wind the season down")
+        # placements to confirm is wound down and moves to Pending completion (#220). That needs
+        # Discord, so the bot asks the change queue for it; the queue drops the request where
+        # the season is not yet done (#439).
+        from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+
+        await bot.change_queue.ask(
+            WIND_DOWN, {}, origin=ChangeOrigin.BOT, what="winding the season down"
+        )
         log.info(
             "run_result_submission_job: results module disabled — round %s "
             "closed without results",

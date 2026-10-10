@@ -1,4 +1,4 @@
-"""Cancelling a round or a division on the change queue (#439, slice 4b).
+"""Cancelling a round, a division or a season on the change queue (#439, slices 4b and 5).
 
 `/round cancel` checks its confirmation word, the season and the names at the press, in the season
 cog, then asks the queue for this change. Every other gate it had is the change type's `check`,
@@ -56,6 +56,21 @@ change imports this module, so this one cannot import it), never from a flag kep
 the change is asked for, never as it runs: the queue runs one change at a time and leaves nothing
 overtaking a stopped job, so whatever amendment was ahead of this cancellation has finished, its
 renumbering included, and the cancellation reads the round's number as it then stands.
+
+**A season's cancellation is the same change over every division** (`season_cancel_change`, slice
+5), in the order the core specification sets: the timed work of every round removed (`unarm`); then
+one save, `apply`, that records the cancellation (each empty open submission closed, the
+uncommitted placements discarded, the raced rounds awaiting verdicts made final, and every division
+not cancelled cancelled with its rounds that may still be cancelled), **leaving the season itself
+ongoing**, so that its channels stay readable while it is announced; the notices, the calls taken
+down and the calendars of every division that was still running, in the season's words; each real
+driver's roles taken back, after the notices, since the check-in notice mentions the division role;
+the signup window closed and the forecasts posted under test mode cleared; and then a second save,
+`end`, that writes the history marked cancelled, runs the driver pass, switches test mode off and
+marks the season cancelled, **last**. The saved test-mode state is kept: a season cancelled is one
+abandoned, not run to its end. The jobs the other ends of a season share
+(`season_end_changes`) carry out the rest. A run that stops at `end` and is discarded is run again, and tells no
+division twice, since by then none is still running.
 """
 from __future__ import annotations
 
@@ -68,6 +83,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
+    AuditRecord,
     FollowOn,
     GuildUnavailable,
     PlannedStep,
@@ -77,7 +93,8 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundStatus
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.season import ONGOING_STAGES
+from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
+from leaguebot.core.services import approval_checks
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.calendar_post_service import post_division_calendar, tracks_by_name
 from leaguebot.core.services.change_queue import (
@@ -89,30 +106,66 @@ from leaguebot.core.services.change_queue import (
     StepView,
     in_hand,
 )
+from leaguebot.core.services.season_end_changes import (
+    END,
+    SEASON_CANCEL,
+    SEASON_ENDED_NOTICE,
+    anything_discarded,
+    not_done_reply,
+    season_end_in_hand,
+    season_end_refusal,
+    shared_not_done,
+    test_mode_on,
+    untold_lines,
+    untold_log,
+    untold_of,
+)
+from leaguebot.core.services.season_end_service import (
+    CLOSE_WINDOW,
+    DISCARD_PORTRAITS,
+    FLUSH_FORECASTS,
+    REVOKE_ROLES,
+    SEASON_END_CAUSE,
+    season_end_steps,
+    season_role_targets_on,
+    write_driver_history_entries_on,
+)
 from leaguebot.core.services.season_lifecycle_service import (
     WIND_DOWN,
+    SeasonEndHooks,
     advance_to_pending_completion_on,
+    driver_jobs,
+    end_signup_wizards_on,
+    run_driver_pass_on,
 )
 from leaguebot.core.services.season_service import (
     SeasonImmutableError,
     SeasonService,
     cancel_division_on,
     cancel_round_on,
+    cancel_season_divisions_on,
+    cancel_season_on,
+    close_raced_rounds_on,
+    discard_uncommitted_placements_on,
 )
+from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
 
 __all__ = [
     "DIVISION_CANCEL",
     "ROUND_CANCEL",
+    "SEASON_CANCEL",
     "cancellation_holding_amendment",
     "cancellation_in_hand",
     "division_cancel_change",
     "round_cancel_change",
+    "season_cancel_change",
 ]
 
 ROUND_CANCEL = "season.round.cancel"
@@ -123,6 +176,16 @@ NOT_ONGOING = f"❌ {_COMMAND} is available only while the season is ongoing."
 ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
 DIVISION_COMMAND = "`/division cancel`"
 DIVISION_NOT_ONGOING = f"❌ {DIVISION_COMMAND} is available only while the season is ongoing."
+SEASON_COMMAND = "`/season cancel`"
+SEASON_NO_SEASON = (
+    "❌ No season is being raced, so there is none to cancel. A season whose placements are yet "
+    "to be confirmed is abandoned with `/season abort`."
+)
+SEASON_NOT_ONGOING = (
+    "❌ Every division of this season is done. Complete it with `/season complete` instead."
+)
+SEASON_CANCELLED = "✅ Season cancelled."
+SEASON_CANCELLED_REASON = "Season cancelled"
 
 
 def _division_finished(name: str) -> str:
@@ -198,10 +261,22 @@ async def cancellation_holding_amendment(db_path: str, rnd: Round) -> str | None
     cancellation removed it, and forecasts would be posted for a round that is then cancelled
     (owner, 2026-10-08). An amended date of another round would renumber the division, and the
     round being cancelled would be announced by a number it no longer bears: so every round of
-    the division is held (owner, 2026-10-08, "Hold amends in the division"). Asked at the offer
-    and again at the confirmation, as the rules are. It names the job, and leaves the name out
-    where only the cancellation's close is left.
+    the division is held (owner, 2026-10-08, "Hold amends in the division"). A season's
+    completion, cancellation or abort in hand holds it too, ahead of the rest (slice 5, owner,
+    2026-10-09, answer B). Asked at the offer and again at the confirmation, as the rules are. It
+    names the job, and leaves the name out where only the cancellation's close is left.
     """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT s.id, s.season_number FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            "WHERE d.id = ?",
+            (rnd.division_id,),
+        )
+        season = await cursor.fetchone()
+    if season is not None:
+        hand = await season_end_in_hand(db_path, int(season["id"]))
+        if hand is not None:
+            return season_end_refusal(None, hand, season["season_number"])
     job = await cancellation_in_hand(db_path, division_id=rnd.division_id, round_id=rnd.id)
     if job is not None:
         return (
@@ -313,6 +388,19 @@ _DISCARDED_CHANNEL = (
 _DISCARDED_CALENDAR = (
     "the calendar could not be posted, and a league admin discarded it; run "
     "`/division calendar-sync`"
+)
+
+SEASON_UNARM_DISCARDED = (
+    "Nothing was cancelled: season {number} stands as it was. Run `/season cancel` again."
+)
+SEASON_SAVE_DISCARDED = (
+    "Nothing was cancelled, but the rounds of season {number} no longer have their timed work: "
+    "run `/season cancel` again."
+)
+SEASON_END_DISCARDED = (
+    "Season {number}'s divisions and rounds are cancelled, but the season itself is not: the "
+    "save that records its end was discarded. Run `/season cancel` again to finish it; if the "
+    "season has since moved to pending completion, complete it with `/season complete`."
 )
 
 _EMPTY = StepView(name="", payload={}, result=None, done=False)
@@ -433,10 +521,12 @@ def _named(
         number = ctx.step_payload.get("round_number")
         if number is None:
             number = await _round_number_now(ctx) if number_now else ctx.payload.get("round_number")
+        # A season's payload names no division: its jobs carry theirs on their own.
+        division = ctx.payload.get("division_name", ctx.step_payload.get("division_name", ""))
         return text.format(
             number=number,
-            division=ctx.payload["division_name"],
-            name=ctx.step_payload.get("division_name", ctx.payload["division_name"]),
+            division=division,
+            name=ctx.step_payload.get("division_name", division),
         )
 
     return describe
@@ -588,6 +678,12 @@ def round_cancel_change(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         season = await seasons.get_confirmed_season()
+        if season is not None and ctx.change_id is None:
+            # **While the season's own end is in hand** (owner, 2026-10-09, answer B): refused
+            # at once, naming the job, ahead of any stage gate. Only as it is asked.
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None:
+                return Verdict.refuse(season_end_refusal(None, hand, season.season_number))
         if season is None or season.stage not in ONGOING_STAGES:
             return Verdict.refuse(NOT_ONGOING)
         try:
@@ -865,6 +961,12 @@ def division_cancel_change(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         season = await seasons.get_confirmed_season()
+        if season is not None and ctx.change_id is None:
+            # **While the season's own end is in hand** (owner, 2026-10-09, answer B): refused
+            # at once, naming the job, ahead of any stage gate. Only as it is asked.
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None:
+                return Verdict.refuse(season_end_refusal(None, hand, season.season_number))
         if season is None or season.stage not in ONGOING_STAGES:
             return Verdict.refuse(DIVISION_NOT_ONGOING)
         try:
@@ -1062,5 +1164,376 @@ def division_cancel_change(
         check=check,
         key=lambda payload: f"{DIVISION_CANCEL}:{payload['division_id']}",
         doing=lambda payload: f"Cancelling **{payload['division_name']}**",
+        outcome=outcome,
+    )
+
+
+def season_amended(held: Any) -> str:
+    """The refusal of a season's cancellation while a round is being amended: its corrections
+    would reach every driver's history before they are approved (#345)."""
+    return (
+        f"❌ Cannot cancel the season — round {held['round_number']} of "
+        f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
+        "Finish or cancel it first: cancelling writes every driver's history from the "
+        "standings, which would carry its corrections before they are approved."
+    )
+
+
+def _season_accepted(division_name: str, number: int, channel_id: int) -> str:
+    return (
+        f"❌ Cannot cancel the season — results have already been accepted in the submission "
+        f"channel of round {number} of **{division_name}** (<#{channel_id}>), and cancelling "
+        "would lose them."
+    )
+
+
+def _first_accepted(
+    standing: dict[int, tuple[str, int]], open_ones: Iterable[Any]
+) -> str | None:
+    """The refusal naming the first round, by division then round, whose open submission has
+    accepted a session, or None. *standing* maps a round's id to its division's name and its
+    number, in the order the season lists them."""
+    held = [each for each in open_ones if each.accepted]
+    if not held:
+        return None
+    order = list(standing)
+    first = min(held, key=lambda each: order.index(each.round_id))
+    name, number = standing[first.round_id]
+    return _season_accepted(name, number, first.channel_id)
+
+
+def season_cancel_change(
+    *,
+    modules: "ModuleService",
+    seasons: SeasonService,
+    scheduler: "SchedulerService",
+    placement: "PlacementService",
+    submissions: SubmissionHooks,
+    hooks: SeasonEndHooks,
+    now: Callable[[], datetime],
+) -> ChangeType:
+    """The change that cancels the season being raced; see the module.
+
+    The payload is ``{"season_id", "season_number"}``. The builder hands in the *modules*, the
+    *seasons* service, the *scheduler*, the *placement* service (which takes back roles), results'
+    *submissions*, the season end's *hooks* and the queue's clock *now*.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        season = await seasons.get_confirmed_season()
+        if season is None or season.id != int(ctx.payload["season_id"]):
+            return Verdict.refuse(SEASON_NO_SEASON)
+
+        # **A second cancellation, asked while the first is in hand** (owner, 2026-10-09):
+        # refused at once, naming the job. Only as it is asked: as the change runs, it would find
+        # itself.
+        if ctx.change_id is None:
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None:
+                return Verdict.refuse(
+                    season_end_refusal(SEASON_CANCEL, hand, season.season_number)
+                )
+        if season.stage not in ONGOING_STAGES:
+            return Verdict.refuse(SEASON_NOT_ONGOING)
+
+        # **Not while a round is being amended** (#345, decided 2026-09-21): cancelling writes
+        # every driver's history from the standings, which hold an open amendment's corrections
+        # before they are approved, and the history is never rewritten.
+        held = await hooks.amendment_open(ctx.db_path, season.id)
+        if held is not None:
+            return Verdict.refuse(season_amended(held))
+
+        # **Not while a submission holds accepted results** (owner, 2026-10-08, amending
+        # Constitution XII): a session accepted, or entered as not held, is data the cancellation
+        # would lose, and a round in its review counts.
+        standing: dict[int, tuple[str, int]] = {}
+        for division in await seasons.get_divisions(season.id):
+            if division.status == "CANCELLED":
+                continue
+            for each in await seasons.get_division_rounds(division.id):
+                standing[each.id] = (division.name, each.round_number)
+        refusal = _first_accepted(
+            standing, await submissions.open_submissions(ctx.db_path, list(standing))
+        )
+        if refusal is not None:
+            return Verdict.refuse(refusal)
+        return Verdict.go()
+
+    # ── The jobs ────────────────────────────────────────────────────────────────
+
+    async def unarm(ctx: StepContext) -> StepResult:
+        """Remove the timed work of every round of every division, read as the job runs, and the
+        job that would end the season on its own."""
+        for division in await seasons.get_divisions(int(ctx.payload["season_id"])):
+            for each in await seasons.get_division_rounds(division.id):
+                scheduler.cancel_round(each.id)
+        scheduler.cancel_season_end()
+        return StepResult(result={"unarmed": True})
+
+    async def unarmed(ctx: StepContext) -> bool:
+        """The save is due only where the timed work was removed, not where that job was
+        discarded."""
+        return not _discarded(_view(ctx, UNARM))
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The first save: the cancellation recorded, the season itself left ongoing; see the
+        module. It plans every job that announces the cancellation, then the second save."""
+        if ctx.actor_id is None or ctx.actor_name is None:
+            raise RuntimeError("cancelling a season is the act of a member, and none is recorded")
+        season_id = int(ctx.payload["season_id"])
+        cursor = await db.execute(
+            "SELECT status, stage FROM seasons WHERE id = ?", (season_id,)
+        )
+        season = await cursor.fetchone()
+        if season is None or season["status"] != "ACTIVE":
+            return StepResult(result={"refused": SEASON_NO_SEASON})
+        if SeasonStage(season["stage"]) not in ONGOING_STAGES:
+            return StepResult(result={"refused": SEASON_NOT_ONGOING})
+
+        cursor = await db.execute(
+            "SELECT d.name AS division_name, r.id AS round_id, r.round_number FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id WHERE d.season_id = ? "
+            "AND d.status != 'CANCELLED' ORDER BY d.tier, r.round_number",
+            (season_id,),
+        )
+        standing = {
+            int(row["round_id"]): (str(row["division_name"]), int(row["round_number"]))
+            for row in await cursor.fetchall()
+        }
+        # A backstop for the check: `unarm` lies between them, and a session may have been
+        # accepted since. Nothing is written then.
+        refusal = _first_accepted(standing, await submissions.open_submissions_on(db, list(standing)))
+        if refusal is not None:
+            return StepResult(result={"refused": refusal})
+
+        # The empty open submissions are closed first, then the placements not yet confirmed
+        # discarded so that they earn no history, then the rounds raced and awaiting verdicts made
+        # final: the driver pass at the end would otherwise delete the drivers of those rounds
+        # (#216).
+        closed = sorted(
+            await submissions.close_submissions_on(db, list(standing)),
+            key=lambda each: list(standing).index(each[0]),
+        )
+        await discard_uncommitted_placements_on(db, season_id)
+        await close_raced_rounds_on(
+            db, season_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
+        )
+        # Told: every division still running. A division cancelled was told when it was, and one
+        # finished has no round left to call off and nothing to hear.
+        cursor = await db.execute(
+            "SELECT id, name FROM divisions WHERE season_id = ? "
+            "AND status NOT IN ('CANCELLED', 'FINISHED') ORDER BY tier",
+            (season_id,),
+        )
+        running = [(int(row["id"]), str(row["name"])) for row in await cursor.fetchall()]
+        called_off = await cancel_season_divisions_on(
+            db, season_id, actor_id=ctx.actor_id, actor_name=ctx.actor_name, now=now()
+        )
+
+        planned = [
+            PlannedStep(DELETE_CHANNEL, {
+                "channel_id": channel_id,
+                "round_id": closed_round,
+                "what": "results submission channel",
+                "reason": "Season cancelled",
+                "division_name": standing[closed_round][0],
+                "round_number": standing[closed_round][1],
+            })
+            for closed_round, channel_id in closed
+        ]
+        for division_id, division_name in running:
+            target = {
+                "division_id": division_id,
+                "division_name": division_name,
+                "season_id": season_id,
+            }
+            planned.append(PlannedStep(NOTIFY_CHECKIN, target))
+            rounds = called_off.get(division_id, [])
+            if rounds:
+                marks = ",".join("?" * len(rounds))
+                cursor = await db.execute(
+                    f"SELECT r.id, r.round_number FROM rounds r WHERE r.id IN ({marks}) "  # noqa: S608
+                    "AND EXISTS (SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) "
+                    "ORDER BY r.round_number",
+                    rounds,
+                )
+                planned += [
+                    PlannedStep(TAKE_DOWN_CALL, {
+                        **target, "round_id": int(row["id"]),
+                        "round_number": int(row["round_number"]),
+                    })
+                    for row in await cursor.fetchall()
+                ]
+            planned += [
+                PlannedStep(NOTIFY_FORECAST, target),
+                PlannedStep(NOTIFY_RESULTS, target),
+                PlannedStep(POST_CALENDAR, {**target, "round_ids": rounds}),
+            ]
+        # The roles are taken after the notices: the check-in notice mentions the division role.
+        for target_driver in await season_role_targets_on(db, season_id):
+            planned.append(PlannedStep(REVOKE_ROLES, {
+                "user_id": int(target_driver["user_id"]),
+                "role_ids": [int(role) for role in target_driver["role_ids"]],
+                "reason": SEASON_CANCELLED_REASON,
+            }))
+        planned.append(PlannedStep(CLOSE_WINDOW, {"cause": SEASON_END_CAUSE}))
+        if await test_mode_on(db):
+            planned.append(PlannedStep(FLUSH_FORECASTS))
+        planned.append(PlannedStep(END))
+        return StepResult(
+            result={"divisions": [division_id for division_id, _ in running]},
+            then=tuple(planned),
+        )
+
+    async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The second save: the history, the driver pass, test mode and the season, last."""
+        season_id = int(ctx.payload["season_id"])
+        cursor = await db.execute(
+            "SELECT status, season_number FROM seasons WHERE id = ?", (season_id,)
+        )
+        season = await cursor.fetchone()
+        if season is None or season["status"] != "ACTIVE":
+            return StepResult(result={"refused": SEASON_NO_SEASON})
+        number = int(season["season_number"])
+
+        test_mode = await test_mode_on(db)
+        await write_driver_history_entries_on(db, season_id, number, force_cancelled=True)
+        driver_pass = await run_driver_pass_on(db)
+        await end_signup_wizards_on(db, hooks, driver_pass.drivers)
+        if test_mode:
+            await switch_test_mode_off_on(db)
+        # The season's row is the last thing written (Constitution, the Season Archive). The
+        # saved test-mode state is kept: a season cancelled is one abandoned.
+        await cancel_season_on(db, season_id)
+
+        planned = list(
+            driver_jobs(
+                driver_pass.drivers, driver_pass.driver_role_id,
+                notice=SEASON_ENDED_NOTICE, reason=SEASON_CANCELLED_REASON,
+            )
+        )
+        if driver_pass.accounts:
+            planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
+        audit = AuditRecord(
+            "SEASON_CANCELLED",
+            {"season_id": season_id, "status": "ACTIVE"},
+            {
+                "season_id": season_id,
+                "season_number": number,
+                "status": "CANCELLED",
+                "drivers_returned": driver_pass.reset,
+                "drivers_deleted": len(driver_pass.deleted),
+            },
+        )
+        return StepResult(
+            result={"season_number": number},
+            audits=(audit,),
+            then=tuple(planned),
+        )
+
+    def _refused(ctx: OutcomeContext) -> str | None:
+        """What a save refused with as it ran, or None."""
+        for name in (APPLY, END):
+            refused = (_view(ctx, name).result or {}).get("refused")
+            if refused:
+                return str(refused)
+        return None
+
+    def _ended(ctx: OutcomeContext) -> bool:
+        """Whether the season's end was saved: `end` is done, and neither refused nor discarded."""
+        view = _view(ctx, END)
+        return view.done and not (_discarded(view) or (view.result or {}).get("refused"))
+
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Write the one line that records the cancellation, or the refusal a save met.
+
+        The drivers a discarded window close returned and nobody told are named here and their
+        marks taken, whatever else this save finds.
+        """
+        untold = await hooks.take_closing_notices_on(db)
+        result = {"closed": True, "untold": untold}
+        refused = _refused(ctx)
+        if refused is not None:
+            return StepResult(
+                result=result,
+                lines=(
+                    refusal_line(ctx.named, SEASON_COMMAND, reply_reason(refused)),
+                    *untold_log(ctx.named, "/season cancel", untold),
+                ),
+            )
+        if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)) or not _ended(ctx):
+            return StepResult(result=result, lines=untold_log(ctx.named, "/season cancel", untold))
+        line = (
+            f"{ctx.named} | /season cancel | Success"
+            + checkin_audit(ctx)
+            + notices.failure_log_lines(not_notified(ctx))
+            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, untold))
+        )
+        return StepResult(result=result, lines=(line,))
+
+    def outcome(ctx: OutcomeContext) -> str:
+        text = _outcome(ctx)
+        if (
+            not _discarded(_view(ctx, UNARM))
+            and not _discarded(_view(ctx, APPLY))
+            and _ended(ctx)
+            and not _refused(ctx)
+        ):
+            return text
+        return text + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
+
+    def _outcome(ctx: OutcomeContext) -> str:
+        number = ctx.payload["season_number"]
+        if _discarded(_view(ctx, UNARM)):
+            return SEASON_UNARM_DISCARDED.format(number=number)
+        refused = _refused(ctx)
+        if refused:
+            return refused
+        if _discarded(_view(ctx, APPLY)):
+            return SEASON_SAVE_DISCARDED.format(number=number)
+        if not _ended(ctx):
+            return SEASON_END_DISCARDED.format(number=number)
+        return (
+            SEASON_CANCELLED
+            + notices.failure_lines(not_notified(ctx))
+            + not_done_reply(
+                shared_not_done(ctx), discarded=anything_discarded(ctx, untold_of(ctx))
+            )
+        )
+
+    def describing(text: str) -> Callable[[StepContext], Awaitable[str]]:
+        async def describe(ctx: StepContext) -> str:
+            return text.format(number=ctx.payload["season_number"])
+
+        return describe
+
+    steps: dict[str, Step] = {
+        **_follow_steps(modules=modules, seasons=seasons, scope=notices.SCOPE_SEASON),
+        **season_end_steps(placement, hooks),
+        DELETE_CHANNEL: submissions.delete_step,
+        UNARM: Step(
+            UNARM, StepKind.ACT, unarm,
+            describe=describing("removing the timed work of the rounds of season {number}"),
+        ),
+        APPLY: Step(
+            APPLY, StepKind.SAVE, apply, still_due=unarmed,
+            describe=describing("cancelling season {number}"),
+        ),
+        END: Step(
+            END, StepKind.SAVE, end,
+            describe=describing("recording the end of season {number}"),
+        ),
+        CLOSE: Step(
+            CLOSE, StepKind.SAVE, close,
+            describe=describing("recording the cancellation of season {number}"),
+        ),
+    }
+    return ChangeType(
+        kind=SEASON_CANCEL,
+        opening=(PlannedStep(UNARM), PlannedStep(APPLY), PlannedStep(CLOSE)),
+        steps=steps,
+        check=check,
+        key=lambda payload: f"{SEASON_CANCEL}:{payload['season_id']}",
+        doing=lambda payload: f"Cancelling season {payload['season_number']}",
         outcome=outcome,
     )

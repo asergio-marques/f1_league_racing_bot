@@ -981,3 +981,64 @@ async def test_a_cancellation_elsewhere_or_done_lets_the_amendment_through(
 
     assert "⏸️" not in _all_replies(interaction)
     assert not any(line.startswith("⛔ ") for line in _lines(cog))
+
+
+# ---------------------------------------------------------------------------
+# A season's end in hand holds the amendment (#439 slice 5, answer B)
+#
+# While the season's completion, cancellation or abort is waiting, being carried out or stopped,
+# every request about that season is refused at once, naming the job: `/round amend` among them,
+# at the offer and again at confirm.
+# ---------------------------------------------------------------------------
+
+_SEASON_ENDS_IN_HAND = [
+    pytest.param(
+        "season.complete", {"season_id": 1, "season_number": 1},
+        "⏳ Season 1 is being completed (job #{job}), so this cannot be done until that is "
+        "finished. If it has stopped, press Retry or Discard on its notice in the log channel.",
+        id="complete",
+    ),
+    pytest.param(
+        "season.cancel", {"season_id": 1, "season_number": 1},
+        "⏳ Season 1 is being cancelled (job #{job}), so this cannot be done until that is "
+        "finished. If it has stopped, press Retry or Discard on its notice in the log channel.",
+        id="cancel",
+    ),
+    pytest.param(
+        "season.abort", {"season_id": 1},
+        "⏳ The season being set up is being aborted (job #{job}), so this cannot be done until "
+        "that is finished. If it has stopped, press Retry or Discard on its notice in the log "
+        "channel.",
+        id="abort",
+    ),
+]
+
+
+@pytest.mark.parametrize("at", ["offer", "confirm"])
+@pytest.mark.parametrize(("kind", "payload", "said"), _SEASON_ENDS_IN_HAND)
+async def test_a_round_of_a_season_whose_end_is_in_hand_is_not_amended_naming_the_job(
+    tmp_path, kind, payload, said, at
+):
+    """Round 1 of Div A is a month out, and season 1's completion, its cancellation, or the
+    season's abort waits on the queue. Asking to amend round 1's track is refused before any
+    confirmation is offered; pressing Confirm on an amendment offered earlier is refused too.
+    Either way the reply names the season's end and its job, nothing is amended or armed, and
+    one refusal line naming the job is written in the log channel."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = await _seed_cancellation(path, kind, payload)
+    cog = _cog(path)
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    if at == "confirm":
+        _answered(interaction)
+        await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+    else:
+        await _amend(cog, interaction, track=NEW_TRACK)
+        assert not _offered_a_confirmation(interaction)
+
+    assert said.format(job=job) in _all_replies(interaction)
+    assert await _amendments(path) == []
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/round amend" in line and f"job #{job}" in line

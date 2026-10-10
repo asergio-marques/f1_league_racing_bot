@@ -24,6 +24,7 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
@@ -342,7 +343,7 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        season_lifecycle_service, "wind_down_ongoing",
+        season_lifecycle_service, "close_window_for_wind_down",
         AsyncMock(side_effect=RuntimeError("the scheduler is down")),
     )
     db_path = await _make_db(tmp_path, attendance_enabled=False, season_status="ACTIVE")

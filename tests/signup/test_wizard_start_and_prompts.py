@@ -220,6 +220,17 @@ async def test_a_private_channel_is_created_for_the_driver(tmp_path):
     assert name == "racer-one-signup"
 
 
+async def test_pressing_sign_up_saves_the_wizard_as_a_signup_started(tmp_path):
+    """Pressing Sign Up saves the new wizard as the start of a signup (`starting=True`), the one
+    save that clears any closing notice a past close still owed the driver."""
+    svc = _service()
+
+    await svc.start_wizard(_interaction(_guild()))
+
+    saved = svc._bot.signup_module_service.save_wizard.await_args
+    assert saved.kwargs.get("starting") is True
+
+
 async def test_the_channel_is_visible_to_the_driver_and_both_staff_tiers(tmp_path):
     """#116: a league admin without the interaction role must still see the signup they are
     entitled to approve."""
@@ -675,13 +686,14 @@ async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
 
 
 async def test_a_notice_that_cannot_be_posted_still_schedules_deletion(tmp_path):
+    """The forced close's form: a refused notice still locks and arms (P1)."""
     channel = _channel(OLD_CHANNEL)
     channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=403), "no"))
     svc = _service(existing=_wizard())
     guild = _guild(old_channel=channel)
     guild.get_member = MagicMock(return_value=None)
 
-    await svc.trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended", arm_when_refused=True)
 
     svc._scheduler._scheduler.add_job.assert_called_once()
 
@@ -693,6 +705,106 @@ async def test_no_wizard_means_no_hold(tmp_path):
     await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_not_called()
+
+
+def _refused():
+    return discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+
+
+async def test_the_notice_is_posted_before_the_channel_is_locked(tmp_path):
+    """The driver is told why their signup ended before their typing is taken away and the
+    channel's deletion armed, so they are never locked out of a channel that says nothing."""
+    order: list[str] = []
+    channel = _channel(OLD_CHANNEL)
+    channel.send = AsyncMock(side_effect=lambda *a, **k: order.append("send"))
+    channel.set_permissions = AsyncMock(side_effect=lambda *a, **k: order.append("lock"))
+    svc = _service(existing=_wizard())
+    svc._scheduler._scheduler.add_job = MagicMock(side_effect=lambda *a, **k: order.append("arm"))
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    await svc.trigger_channel_hold(DRIVER, guild, "Signups have closed.")
+
+    assert order == ["send", "lock", "arm"]
+
+
+async def test_a_notice_that_cannot_be_posted_locks_typing_and_arms_no_deletion(tmp_path):
+    """By default (a withdrawal, approval, rejection or expiry), a notice Discord refuses leaves
+    the channel readable with the driver's typing locked and no deletion armed, and says so."""
+    channel = _channel(OLD_CHANNEL)
+    channel.send = AsyncMock(side_effect=_refused())
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    outcome = await svc.trigger_channel_hold(DRIVER, guild, "ended")
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    svc._scheduler._scheduler.add_job.assert_not_called()
+    assert outcome.channel_id == OLD_CHANNEL
+    assert outcome.posted is False
+    assert outcome.locked is True
+    assert outcome.reason
+
+
+async def test_a_raising_hold_raises_before_locking_where_the_notice_is_refused(tmp_path):
+    """Asked to raise (the change queue's notice job), a refused notice raises from Discord's
+    fault, having locked nothing and armed nothing, so a Retry finds the channel as it was."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    refusal = _refused()
+    channel = _channel(OLD_CHANNEL)
+    channel.send = AsyncMock(side_effect=refusal)
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await svc.trigger_channel_hold(DRIVER, guild, "ended", raise_on_failure=True)
+
+    assert raised.value.__cause__ is refusal
+    channel.set_permissions.assert_not_awaited()
+    svc._scheduler._scheduler.add_job.assert_not_called()
+
+
+async def test_a_notice_only_hold_posts_without_locking(tmp_path):
+    """Asked only for the notice (`lock=False`), the hold posts it and leaves the channel and its
+    deletion to the job after it."""
+    channel = _channel(OLD_CHANNEL)
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    outcome = await svc.trigger_channel_hold(DRIVER, guild, "ended", lock=False)
+
+    channel.send.assert_awaited_once_with("ended")
+    channel.set_permissions.assert_not_awaited()
+    svc._scheduler._scheduler.add_job.assert_not_called()
+    assert outcome.posted is True
+
+
+async def test_locking_a_signup_channel_revokes_writing_and_arms_its_deletion(tmp_path):
+    """Locking a signup channel takes away the driver's typing and arms its deletion 24 hours on,
+    posting nothing; a permission write Discord refuses raises from its fault."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    channel = _channel(OLD_CHANNEL)
+    svc = _service(existing=_wizard())
+    guild = _guild(old_channel=channel)
+    guild.get_member = MagicMock(return_value=MagicMock())
+
+    await svc.lock_signup_channel(DRIVER, guild)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    channel.send.assert_not_awaited()
+    job = svc._scheduler._scheduler.add_job.call_args
+    assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
+
+    refusal = _refused()
+    channel.set_permissions = AsyncMock(side_effect=refusal)
+    with pytest.raises(StepFailedOnDiscord) as raised:
+        await svc.lock_signup_channel(DRIVER, guild)
+    assert raised.value.__cause__ is refusal
 
 
 async def test_the_scheduled_deletion_removes_channel_and_wizard(tmp_path):
@@ -724,3 +836,71 @@ async def test_a_guild_the_bot_has_left_still_clears_the_wizard(tmp_path):
     await svc._execute_channel_delete(DRIVER)
 
     svc._bot.signup_module_service.delete_wizard.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# A hold whose deletion was lost (#439, slice 5)
+# ---------------------------------------------------------------------------
+
+CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+BOT_ID = 4000
+
+
+def _held_channel(*, write_denied: bool, messages: list[tuple[int, str]]):
+    """The driver's signup channel: their typing denied or not, and its recent messages as
+    (author id, content), newest first."""
+    channel = _channel(OLD_CHANNEL)
+    channel.overwrites_for = MagicMock(
+        return_value=SimpleNamespace(send_messages=False if write_denied else None)
+    )
+
+    async def _history(**_kwargs):
+        for author, content in messages:
+            yield SimpleNamespace(author=SimpleNamespace(id=author), content=content)
+
+    channel.history = MagicMock(side_effect=_history)
+    return channel
+
+
+def _hold_guild(channel):
+    guild = _guild(old_channel=channel)
+    guild.me = SimpleNamespace(id=BOT_ID)
+    guild.get_member = MagicMock(return_value=MagicMock(spec=discord.Member))
+    return guild
+
+
+@pytest.mark.parametrize(
+    "write_denied, messages, held",
+    [
+        pytest.param(True, [(int(DRIVER), "hello?"), (BOT_ID, CLOSED_NOTICE)], True,
+                     id="told and locked"),
+        pytest.param(True, [(BOT_ID, "Step 2: choose your platform")], False,
+                     id="typing denied by a button step, never told"),
+        pytest.param(False, [(BOT_ID, CLOSED_NOTICE)], False, id="told, never locked"),
+    ],
+)
+async def test_a_channel_told_and_locked_counts_as_held_and_only_its_deletion_is_armed_again(
+    write_denied, messages, held,
+):
+    """Driver 4242's signup was ended by a close, and their channel's deletion job is gone (the
+    scheduler dropped it after a long stop). Their channel counts as held only where both the
+    closing notice stands among its recent messages, posted by the bot, and the driver's typing
+    is denied in it: then the deletion alone is armed again, 24 hours on, and nothing is posted.
+    Typing denied by a button-only question, with no notice, is no hold; nor is a notice the
+    lock never followed."""
+    channel = _held_channel(write_denied=write_denied, messages=messages)
+    svc = _service(existing=_wizard(WizardState.UNENGAGED))
+
+    found = await svc.rearm_deletion_if_held(DRIVER, _hold_guild(channel), CLOSED_NOTICE)
+
+    assert found is held
+    armed = svc._scheduler._scheduler.add_job.call_args_list
+    if held:
+        [job] = armed
+        assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
+        fire_at = job.kwargs["trigger"].run_date
+        assert timedelta(hours=23) < fire_at - datetime.now(timezone.utc) <= timedelta(hours=24)
+    else:
+        assert armed == []
+    channel.send.assert_not_awaited()
+    channel.set_permissions.assert_not_awaited()

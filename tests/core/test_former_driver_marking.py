@@ -10,7 +10,7 @@ and an amendment leaving a driver no longer having raced clears the flag unless 
 round marks them.
 
 **Why the flag matters.** It is read in exactly one behavioural place —
-``run_driver_pass``, which at season end deletes every non-test profile sitting at NOT_SIGNED_UP
+the driver pass (``run_driver_pass_on``), which at season end deletes every non-test profile sitting at NOT_SIGNED_UP
 *without* it. A flag wrongly set keeps a profile that should have been deleted; a flag wrongly
 clear deletes one a result points at. The tests here are about which of the two a league gets.
 
@@ -497,6 +497,26 @@ async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path)
 # ---------------------------------------------------------------------------
 
 
+async def _close_raced(db_path: str) -> list[int]:
+    """Close season 1's raced rounds with `close_raced_rounds_on` on one connection, as the
+    season's cancellation does in its first save on the change queue, and commit it, which the
+    form does not. Gives the rounds it closed."""
+    from datetime import datetime, timezone
+
+    from leaguebot.core.services.season_service import close_raced_rounds_on
+
+    async with get_connection(db_path) as db:
+        closed = await close_raced_rounds_on(
+            db,
+            SEASON_ID,
+            actor_id=5,
+            actor_name="Admin",
+            now=datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc),
+        )
+        await db.commit()
+    return closed
+
+
 async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_path):
     """The rounds a cancellation may not call off are made final instead (#216).
 
@@ -510,17 +530,13 @@ async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_pa
     deletes them — taking their results and their history with them. Closing the rounds first
     is what keeps them.
     """
-    from leaguebot.core.services.season_service import SeasonService
-
     db_path = await _make_db(tmp_path, name="cancel_verdicts")
     await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS", round_number=3)
     await _add_round(db_path, 22, status="AWAITING_APPEAL_VERDICTS", round_number=4)
     await _add_race(db_path, 21, [(31, 101, "CLASSIFIED"), (32, 102, "DNS")])
     await _add_race(db_path, 22, [(33, 103, "CLASSIFIED")])
 
-    closed = await SeasonService(db_path).close_raced_rounds_for_cancellation(
-        SEASON_ID, 5, "Admin"
-    )
+    closed = await _close_raced(db_path)
 
     assert closed == [21, 22]
     assert await _former(db_path, 31) == 1
@@ -537,8 +553,7 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     by a cancellation, that is a result discarded — which "a cancellation shall never discard a
     result" forbids. Closing the round first is what keeps them.
     """
-    from leaguebot.core.services.season_lifecycle_service import run_driver_pass
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
 
     db_path = await _make_db(tmp_path, name="cancel_pass")
     await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS")
@@ -550,10 +565,10 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
         )
         await db.commit()
 
-    await SeasonService(db_path).close_raced_rounds_for_cancellation(
-        SEASON_ID, 5, "Admin"
-    )
-    await run_driver_pass(db_path)
+    await _close_raced(db_path)
+    async with get_connection(db_path) as db:
+        await run_driver_pass_on(db)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) AS n FROM driver_profiles WHERE id = 31")
@@ -570,15 +585,11 @@ async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_pa
     Closing it as FINAL would say it was raced when it was not, and would tell the attendance
     module to expect a turnout for a round that never happened.
     """
-    from leaguebot.core.services.season_service import SeasonService
-
     db_path = await _make_db(tmp_path, name="cancel_unraced")
     await _add_round(db_path, 21, status="AWAITING_RESULTS", round_number=3)
     await _add_round(db_path, 22, status="NOT_RUN", round_number=4)
 
-    closed = await SeasonService(db_path).close_raced_rounds_for_cancellation(
-        SEASON_ID, 5, "Admin"
-    )
+    closed = await _close_raced(db_path)
 
     assert closed == []
     async with get_connection(db_path) as db:
@@ -591,8 +602,6 @@ async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_pa
 
 async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path):
     """Scoped by season, so cancelling one never closes a round of another."""
-    from leaguebot.core.services.season_service import SeasonService
-
     db_path = await _make_db(tmp_path, name="cancel_other_season")
     await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS", round_number=3)
     async with get_connection(db_path) as db:
@@ -612,8 +621,6 @@ async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path)
         db_path, 31, status="AWAITING_REPORT_VERDICTS", division_id=99, round_number=1
     )
 
-    closed = await SeasonService(db_path).close_raced_rounds_for_cancellation(
-        SEASON_ID, 5, "Admin"
-    )
+    closed = await _close_raced(db_path)
 
     assert closed == [21]

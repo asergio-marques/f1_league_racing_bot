@@ -17,7 +17,7 @@ This guide covers the signup module only. Setting the bot up, creating a season 
 
 ## A note on four words
 
-**Wizard** — the private channel a driver gets when they press the button, and the run of questions inside it. One per driver, named after them, deleted 24 hours after their signup ends however it ends.
+**Wizard** — the private channel a driver gets when they press the button, and the run of questions inside it. One per driver, named after them, deleted 24 hours after their signup ends, unless the bot could not post its closing notice there: it is then kept, locked, for you to delete by hand.
 
 **Slot** — a day and time you offer as a race slot, so drivers can say which ones they can make. You set the list; they tick the ones that suit. Nothing else in the bot uses them — they exist so you can work out who can race when.
 
@@ -217,7 +217,7 @@ Anyone holding the interaction role or the league admin role can press these. Th
 >
 > **A restart sends them back too, whatever time was left.** If the bot restarts while the field buttons are up, the driver returns to waiting for approval immediately and you are pinged the same way, with the message saying the bot restarted. The five minutes cannot run while the bot is down, and you are no longer sat there choosing — so the window is closed rather than left open for a press that would never come. Press Request Changes again when you are ready.
 
-A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, recorded in the log channel (also where a restart finds the time passed), and their channel is tidied away 24 hours after that. Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
+A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, recorded in the log channel (also where a restart finds the time passed, for a signup still under way; one already ended is left alone), and their channel is tidied away 24 hours after that, unless the bot could not post its closing notice (see the note on the three endings below). Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. Where a season's end, or the finishing of a close a stop cut off, comes to tell a driver whose signup has ended and finds no signup channel left, the driver is passed over and named as such. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
 
 There are no reminders. The bot never chases a driver who has not signed up, and never re-posts the button.
 
@@ -234,7 +234,7 @@ If nobody is mid-signup it closes immediately. Otherwise you get a confirmation 
 - **Drivers still filling in the form** are returned to Not Signed Up by the close, and would have to start again. If you want them in, follow their links and nudge them to finish before you close.
 - **Drivers awaiting your approval or a correction** keep their place. You can still approve, reject or ask them for changes once the window has closed.
 
-If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up. **Confirm checks the window again**: if signups have since closed, were reopened, or had a close time armed, it is refused and closes nothing — run `/signup close` again. If a step of the close fails (a driver not returned or not told, the Sign Up button not removed, the notice not posted, the season not moved on) the reply and the log line name it, the rest having run; put that part right by hand.
+If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up. **Confirm checks the window again**: if signups have since closed, were reopened, or had a close time armed, it is refused and closes nothing — run `/signup close` again. If a step of the close fails, the reply and the log line name it, the rest having run. A driver not returned keeps their signup and channel as they were. A driver not told still has their channel locked and deleted a day later. A channel that could not be locked after its notice went out is yours to delete by hand. The Sign Up button not removed, the notice not posted, or the season not moved on, you put right by hand.
 
 **If you set a close time, clear it first.** `/signup close` refuses while one is armed, names the time it is waiting for, and sends you here:
 
@@ -256,6 +256,8 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 > **Closing is not a deadline for your own review.** Request Changes still works after the window has shut, so a driver you send back then behaves exactly as they would have before it — including the five-minute field window and the ping if you leave it.
 
 > **The confirmation expires after five minutes.** Leave the dialog sitting and its buttons come down and the lapse is recorded in the log channel, with signups still open. Cancel is recorded the same way. Run the command again.
+
+> **A close the bot's stop cuts off is finished when it starts.** If the bot stops part-way through a close, it finishes the close as it starts again: the window is closed, where the close never got that far and you have not opened a new one since, and each driver it returned and had not yet told is told once and their channel locked, one line in the log channel saying so. A notice Discord refuses then stops the change queue until it is retried, or discarded, when the channel is closed without it. If the close was `/module disable signup`, the module stays on: run the command again. A season the close left in signups, the window closed but the season not moved on to placements (the bot stopped in between, or the close's reply named *The season could not be moved on.*), is moved on when the bot next starts, unless you have opened a new window since or the season's end or wind-down is waiting on the change queue.
 
 > **A close nobody runs is recorded too.** At its close time, after a restart that found the time passed, at a season's end and when every division is done, the log channel gets one line naming no member, with the drivers returned and any failed step.
 
@@ -322,7 +324,7 @@ The one thing you cannot fake is a second person pressing the button, so it is w
 
 **A summary and a wait.** When they finish, everything they entered is read back to them with a note to wait for an admin to check it.
 
-**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later.
+**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later, unless the bot could not post its closing notice: it then stays, readable but locked and set for no deletion, and the log channel names it for you to delete by hand.
 
 **A lineup post**, once placements are confirmed, in whichever channel that division uses.
 

@@ -1,13 +1,13 @@
 """When a division is finished, and what still holds a season open.
 
-Issue #208. These three queries decide whether `/season complete` runs, and issue #154 was a
+Issue #208. These queries decide whether `/season complete` goes ahead, and issue #154 was a
 league stranded by them disagreeing with the rounds they summarise.
 
 **Division status is stored rather than derived**, so that cancelling a division can record the
 fact and `/season cancel` can tell the running divisions from the called-off ones. Stored state
-can drift from the rounds beneath it, which is why `refresh_division_status` is called from every
-place a round's outcome settles *and* again from the `/season complete` gate — the gate cannot
-afford to strand a league on a stale row a second time.
+can drift from the rounds beneath it, which is why `refresh_division_status_on` is called from
+every place a round's outcome settles *and* again in the completion's first save on the change
+queue — the completion cannot afford to strand a league on a stale row a second time.
 
 **The `status = 'ACTIVE'` guard is what makes it safe to call anywhere.** A division still in
 SETUP has not started and a CANCELLED one was called off deliberately; neither has *finished*,
@@ -17,12 +17,14 @@ would then treat it as a division that had run.
 
 **A round is outstanding until it reaches one of its two terminal states**, FINAL or CANCELLED.
 Every other state is a round still waiting on somebody: for its date, for its results, for
-report verdicts, or for appeal verdicts. The set is read from `_TERMINAL_SQL` so the three
-queries cannot come to disagree about what "done" means.
+report verdicts, or for appeal verdicts. The set is read from `_TERMINAL_SQL` so the queries
+cannot come to disagree about what "done" means.
 
-**The completion gate asks about divisions, not rounds.** A division is the unit a league
-finishes, and one that was cancelled never had to run its rounds at all — asking about rounds
-would hold a season open on a division nobody intends to run.
+**The completion asks about divisions, not rounds.** A division is the unit a league finishes,
+and one that was cancelled never had to run its rounds at all — asking about rounds would hold a
+season open on a division nobody intends to run. That rule is read by `completion_refusal_on`,
+and held by its tests (test_season_service_on_forms.py) and the completion's
+(test_season_complete_change.py).
 """
 from __future__ import annotations
 
@@ -32,7 +34,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 12608
 SEASON_ID = 1
@@ -114,6 +116,15 @@ async def _status(db_path: str, division_id: int) -> str:
         return (await cursor.fetchone())["status"]
 
 
+async def _refresh(db_path: str, division_id: int) -> bool:
+    """Refresh *division_id* on a connection of its own, committed, as every caller's save
+    does."""
+    async with get_connection(db_path) as db:
+        moved = await refresh_division_status_on(db, division_id)
+        await db.commit()
+    return moved
+
+
 # ---------------------------------------------------------------------------
 # Refreshing a division's status
 # ---------------------------------------------------------------------------
@@ -125,7 +136,7 @@ async def test_a_division_whose_rounds_are_all_done_finishes(tmp_path):
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
     await _add_round(db_path, 11, 2, RoundStatus.CANCELLED.value)
 
-    moved = await SeasonService(db_path).refresh_division_status(11)
+    moved = await _refresh(db_path, 11)
 
     assert moved is True
     assert await _status(db_path, 11) == "FINISHED"
@@ -140,7 +151,7 @@ async def test_any_round_still_waiting_holds_the_division_open(tmp_path, status)
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
     await _add_round(db_path, 11, 2, status)
 
-    moved = await SeasonService(db_path).refresh_division_status(11)
+    moved = await _refresh(db_path, 11)
 
     assert moved is False
     assert await _status(db_path, 11) == "ACTIVE"
@@ -152,7 +163,7 @@ async def test_a_division_with_no_rounds_finishes(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11)
 
-    assert await SeasonService(db_path).refresh_division_status(11) is True
+    assert await _refresh(db_path, 11) is True
 
 
 async def test_refreshing_a_finished_division_reports_no_change(tmp_path):
@@ -161,9 +172,8 @@ async def test_refreshing_a_finished_division_reports_no_change(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11, status="FINISHED")
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
-    service = SeasonService(db_path)
 
-    assert await service.refresh_division_status(11) is False
+    assert await _refresh(db_path, 11) is False
 
 
 async def test_a_cancelled_division_is_not_marked_finished(tmp_path):
@@ -173,7 +183,7 @@ async def test_a_cancelled_division_is_not_marked_finished(tmp_path):
     await _add_division(db_path, 11, status="CANCELLED")
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
 
-    moved = await SeasonService(db_path).refresh_division_status(11)
+    moved = await _refresh(db_path, 11)
 
     assert moved is False
     assert await _status(db_path, 11) == "CANCELLED"
@@ -184,7 +194,7 @@ async def test_a_division_still_in_setup_is_not_marked_finished(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_division(db_path, 11, status="SETUP")
 
-    moved = await SeasonService(db_path).refresh_division_status(11)
+    moved = await _refresh(db_path, 11)
 
     assert moved is False
     assert await _status(db_path, 11) == "SETUP"
@@ -197,50 +207,10 @@ async def test_refreshing_one_division_leaves_its_neighbours_alone(tmp_path):
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
     await _add_round(db_path, 12, 1, RoundStatus.AWAITING_RESULTS.value)
 
-    await SeasonService(db_path).refresh_division_status(11)
+    await _refresh(db_path, 11)
 
     assert await _status(db_path, 11) == "FINISHED"
     assert await _status(db_path, 12) == "ACTIVE"
-
-
-# ---------------------------------------------------------------------------
-# The completion gate
-# ---------------------------------------------------------------------------
-
-
-async def test_a_season_whose_divisions_have_all_finished_may_complete(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-    await _add_division(db_path, 12, status="FINISHED")
-
-    assert await SeasonService(db_path).all_divisions_finished() is True
-
-
-async def test_a_cancelled_division_does_not_hold_a_season_open(tmp_path):
-    """One that was cancelled never had to run its rounds at all."""
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-    await _add_division(db_path, 12, status="CANCELLED")
-
-    assert await SeasonService(db_path).all_divisions_finished() is True
-
-
-async def test_an_active_division_holds_the_season_open(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-    await _add_division(db_path, 12, status="ACTIVE")
-
-    assert await SeasonService(db_path).all_divisions_finished() is False
-
-
-async def test_the_gate_asks_about_divisions_not_rounds(tmp_path):
-    """A cancelled division with an unfinished round still lets the season complete —
-    asking about rounds would hold it open on a division nobody intends to run."""
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="CANCELLED")
-    await _add_round(db_path, 11, 1, RoundStatus.AWAITING_RESULTS.value)
-
-    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 # ---------------------------------------------------------------------------

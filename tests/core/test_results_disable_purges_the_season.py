@@ -359,6 +359,18 @@ async def _round_status(db_path: str, round_id: int) -> str:
         return (await cur.fetchone())["status"]
 
 
+async def _open_divisions(db_path: str) -> int:
+    """How many divisions of the season being raced are neither finished nor cancelled, read
+    from the divisions' own statuses: none means the season may be completed."""
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND d.status NOT IN ('FINISHED', 'CANCELLED')"
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
 async def _division_status(db_path: str, division_id: int) -> str:
     async with get_connection(db_path) as db:
         cur = await db.execute("SELECT status FROM divisions WHERE id = ?", (division_id,))
@@ -419,7 +431,7 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
 
         assert await _round_status(db_path, round_id) == "FINAL", status
         assert await _division_status(db_path, division_id) == "FINISHED", status
-        assert await SeasonService(db_path).all_divisions_finished() is True, status
+        assert await _open_divisions(db_path) == 0, status
 
 
 async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> None:

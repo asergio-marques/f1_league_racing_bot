@@ -792,6 +792,46 @@ def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
     assert bs.prerestore_path(live).read_bytes() == b"kept"
 
 
+# A season's completion deletes the saved state as a job of its own on the change queue (#439,
+# slice 5), and a job that fails must say so: asked to raise, the discard still tries every file,
+# then raises the fault it met, so the queue stops at it and a Retry finishes what is left.
+
+
+def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch):
+    """The saved state, its scheduler half and the lock are all there, and the saved state
+    cannot be deleted. The other two go all the same, and the fault is raised."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    bs.set_lock(live, who="Manager")
+    stuck = bs.backup_path(live)
+    unlink = Path.unlink
+
+    def _refusing(self, *args, **kwargs):
+        if self == Path(stuck):
+            raise PermissionError("in use")
+        return unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _refusing)
+
+    with pytest.raises(OSError, match="in use"):
+        bs.discard(live, jobs, raise_on_failure=True)
+
+    assert Path(stuck).exists()
+    assert not bs.backup_path(jobs).exists()
+    assert not bs.lock_path(live).exists()
+
+
+def test_a_discard_that_finds_nothing_raises_nothing(tmp_path):
+    """Nothing was saved: asked to raise, the discard says there was nothing and raises
+    nothing, so a Retry after a part-done discard finishes quietly."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+
+    assert bs.discard(live, jobs, raise_on_failure=True) is False
+
+
 async def test_a_restored_state_brings_back_no_queue(tmp_path):
     """A change saved with the state, stopped on a failed job, is not carried out again on a server
     whose messages it no longer knows: the staged file's queue is emptied before the swap."""

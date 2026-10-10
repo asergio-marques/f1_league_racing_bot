@@ -330,8 +330,9 @@ async def test_cancelling_without_an_active_season_is_refused():
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_cancelling_in_an_archived_season_is_refused():
+async def test_cancelling_in_an_archived_season_is_refused(tmp_path):
     cog = _make_cog(mutable=False)
+    cog.bot.db_path = await _migrated(tmp_path)
     interaction = _interaction()
 
     await _cancel(cog, interaction)
@@ -471,12 +472,13 @@ async def test_every_other_round_delete_refusal_is_recorded(arranged, asked, rep
         ),
     ],
 )
-async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
+async def test_every_round_cancel_refusal_is_recorded(tmp_path, arranged, asked, reply):
     """A season being raced with round 5 in Division 1, unless the case says otherwise. Each
     refusal the command makes before it asks the queue answers as today, asks the queue for
     nothing, and writes one refusal line (#482, criterion 1). The refusals the change's check
     makes are tested in `test_round_cancel_change.py`."""
     cog = _make_cog(**arranged)
+    cog.bot.db_path = await _migrated(tmp_path)
     interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
 
     await _cancel(cog, interaction, **asked)

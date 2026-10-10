@@ -456,6 +456,64 @@ async def test_a_rejection_reason_is_logged(review):
     assert "Duplicate entry" in logged
 
 
+_CHANNEL_KEPT = (
+    f"  not done: the closing notice could not be posted in <#{CHANNEL_ID}> (Forbidden); "
+    "the channel is kept, readable but locked, and will not delete itself: delete it by hand"
+)
+
+
+def _notice_refused(review):
+    """The real channel hold, over Lewis's signup channel, whose notice Discord refuses (403)."""
+    del review.svc.trigger_channel_hold  # the fixture's double; the service's own hold runs
+    review.svc._scheduler = MagicMock()
+    review.channel.id = CHANNEL_ID
+    review.channel.mention = f"<#{CHANNEL_ID}>"
+    review.channel.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
+    review.channel.set_permissions = AsyncMock(return_value=None)
+    return review.channel
+
+
+async def test_an_approval_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
+    review,
+):
+    """Manager approves Lewis, whose signup channel refuses the closing notice: the channel is
+    kept readable with Lewis's typing locked and no deletion armed, and the "Approved" line
+    names it for a league manager to delete by hand (#439, F2, P2)."""
+    channel = _notice_refused(review)
+
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    review.svc._scheduler._scheduler.add_job.assert_not_called()
+    lines = [c.args[0] for c in review.svc._output_router.post_log.await_args_list]
+    assert lines == [
+        f"Manager (<@{ACTOR_ID}>) | Signup | Approved\n"
+        f"  driver: Lewis (<@{DRIVER_ID}>)\n{_CHANNEL_KEPT}"
+    ]
+
+
+async def test_a_rejection_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
+    review,
+):
+    """Manager rejects Lewis as a duplicate entry, and Lewis's signup channel refuses the
+    closing notice: the channel is kept readable with Lewis's typing locked and no deletion
+    armed, and the "Rejected" line names it for a league manager to delete by hand (#439, F2,
+    P3)."""
+    channel = _notice_refused(review)
+
+    await review.svc.reject_signup(
+        DRIVER_ID, review.guild, review.actor, reason="Duplicate entry"
+    )
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    review.svc._scheduler._scheduler.add_job.assert_not_called()
+    lines = [c.args[0] for c in review.svc._output_router.post_log.await_args_list]
+    assert lines == [
+        f"Manager (<@{ACTOR_ID}>) | Signup | Rejected\n"
+        f"  driver: Lewis (<@{DRIVER_ID}>)\n  reason: Duplicate entry\n{_CHANNEL_KEPT}"
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Requesting changes
 # ---------------------------------------------------------------------------

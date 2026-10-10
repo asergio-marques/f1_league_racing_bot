@@ -219,6 +219,43 @@ async def test_a_withdrawal_whose_transition_fails_otherwise_is_not_swallowed(li
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
+#: The detail a signup's own line gains where its closing notice was refused (#439, F2, P3).
+_CHANNEL_KEPT = (
+    f"  not done: the closing notice could not be posted in <#{CHANNEL_ID}> (Forbidden); "
+    "the channel is kept, readable but locked, and will not delete itself: delete it by hand"
+)
+
+
+def _notice_refused(lifecycle):
+    """The real channel hold, over a signup channel whose notice Discord refuses (403)."""
+    del lifecycle.svc.trigger_channel_hold  # the fixture's double; the service's own hold runs
+    lifecycle.svc._scheduler = MagicMock()
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = CHANNEL_ID
+    channel.mention = f"<#{CHANNEL_ID}>"
+    channel.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
+    channel.set_permissions = AsyncMock(return_value=None)
+    lifecycle.guild.get_channel = MagicMock(return_value=channel)
+    return channel
+
+
+async def test_a_withdrawal_whose_notice_is_refused_keeps_the_channel_and_names_it_in_its_line(
+    lifecycle,
+):
+    """A withdrawal whose closing notice Discord refuses keeps the channel readable with the
+    driver's typing locked and no deletion armed, and its "Withdrawn" line names the channel for
+    a league manager to delete by hand (#439, F2, P3)."""
+    _alex_on_the_server(lifecycle)
+    channel = _notice_refused(lifecycle)
+
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    lifecycle.svc._scheduler._scheduler.add_job.assert_not_called()
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [f"Alex (<@{DRIVER_ID}>) | Signup | Withdrawn\n{_CHANNEL_KEPT}"]
+
+
 # ---------------------------------------------------------------------------
 # The inactivity timeout
 # ---------------------------------------------------------------------------
@@ -274,6 +311,25 @@ async def test_an_expired_wizard_records_one_lapse_naming_the_driver(lifecycle):
 
     lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
     assert lines == [_EXPIRY_LAPSE]
+
+
+async def test_an_expiry_whose_notice_is_refused_keeps_the_channel_and_names_it(lifecycle):
+    """An expiry whose closing notice Discord refuses keeps the channel readable with the
+    driver's typing locked and no deletion armed, and after the lapse line a "Channel kept" line
+    of the wizard's family names the channel for a league manager to delete by hand (#439, F2,
+    P3)."""
+    _alex_on_the_server(lifecycle)
+    channel = _notice_refused(lifecycle)
+
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
+    lifecycle.svc._scheduler._scheduler.add_job.assert_not_called()
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [
+        _EXPIRY_LAPSE,
+        f"Alex (<@{DRIVER_ID}>) | Signup | Channel kept\n{_CHANNEL_KEPT}",
+    ]
 
 
 async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
@@ -589,3 +645,210 @@ async def test_a_wizard_expired_at_restart_records_its_lapse(lifecycle):
 
     lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
     assert lines == [_EXPIRY_LAPSE]
+
+
+# ---------------------------------------------------------------------------
+# A restart after a signup has ended (#439, slice 5)
+# ---------------------------------------------------------------------------
+#
+# The real signup module and driver services on a database built by the migrations: a restart
+# reads the wizards a signup's end left behind, so the record each route writes is the subject.
+# The Discord side is doubled. `recover_wizards` reads the host's clock, so the times are
+# computed from it.
+
+
+_WITHDRAWN = f"Alex (<@{DRIVER_ID}>) | Signup | Withdrawn"
+
+
+async def _real_signup(tmp_path, *, hours_since_activity: float, refusing: bool = False):
+    """Driver 7 part-way through the wizard (Pending Signup Completion, the wizard collecting
+    their notes in channel 99), their last answer *hours_since_activity* hours ago, on the real
+    services; a `WizardService` over them, recording each inactivity job armed, each expiry
+    fired and each closing notice held. Where *refusing*, the real channel hold runs over a
+    channel whose notice Discord refuses (403); otherwise the hold is a double that posts."""
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.wizard_service import HoldOutcome, WizardService
+
+    db_path = str(tmp_path / "restart.db")
+    await run_migrations(db_path)
+    last = datetime.now(timezone.utc) - timedelta(hours=hours_since_activity)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 0, 0, 0)",
+            (SERVER_ID,),
+        )
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'PENDING_SIGNUP_COMPLETION')",
+            (DRIVER_ID,),
+        )
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+            "signup_channel_id, last_activity_at) VALUES (?, 'COLLECTING_NOTES', ?, ?)",
+            (DRIVER_ID, CHANNEL_ID, last.isoformat()),
+        )
+        await db.commit()
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = CHANNEL_ID
+    channel.mention = f"<#{CHANNEL_ID}>"
+    channel.send = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403), "no") if refusing else None
+    )
+    channel.set_permissions = AsyncMock(return_value=None)
+    # The signup channel, where the window's Sign Up button stands and its close is posted.
+    button = MagicMock()
+    button.delete = AsyncMock(return_value=None)
+    signups = MagicMock()
+    signups.fetch_message = AsyncMock(return_value=button)
+    signups.send = AsyncMock(return_value=SimpleNamespace(id=9900))
+    guild = MagicMock(spec=discord.Guild)
+    guild.get_channel = MagicMock(
+        side_effect=lambda cid: channel if cid == CHANNEL_ID else signups
+    )
+    guild.get_member = MagicMock(
+        return_value=SimpleNamespace(id=int(DRIVER_ID), display_name="Alex", mention="<@7>")
+    )
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.signup_module_service = SignupModuleService(db_path)
+    bot.driver_service = DriverService(db_path)
+    bot.get_guild = MagicMock(return_value=guild)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    router = MagicMock()
+    router.post_log = AsyncMock(return_value=None)
+    bot.output_router = router
+
+    svc = WizardService.__new__(WizardService)
+    svc._db_path = db_path
+    svc._correction_tasks = {}
+    svc._scheduler = MagicMock()
+    svc._output_router = router
+    svc._bot = bot
+    svc.recover_correction_timeouts = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    armed: list[str] = []
+    svc._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda uid, _at: armed.append(str(uid))
+    )
+    expired: list[str] = []
+    expiring = svc.handle_inactivity_timeout
+
+    async def _expire(uid: str) -> None:
+        expired.append(str(uid))
+        await expiring(uid)
+
+    svc.handle_inactivity_timeout = _expire  # type: ignore[method-assign]
+    held: list[str] = []
+    if not refusing:
+        async def _hold(_uid, _guild, notice, **_kwargs):
+            held.append(notice)
+            return HoldOutcome(CHANNEL_ID, posted=True, locked=True)
+
+        svc.trigger_channel_hold = AsyncMock(side_effect=_hold)  # type: ignore[method-assign]
+    return SimpleNamespace(
+        svc=svc, bot=bot, guild=guild, channel=channel, router=router, db_path=db_path,
+        armed=armed, expired=expired, held=held,
+    )
+
+
+async def _restarted(ctx) -> None:
+    """The bot started again: its wizards recovered, and any expiry it fires run out."""
+    before = asyncio.all_tasks()
+    await ctx.svc.recover_wizards()
+    await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+
+
+def _lines(ctx) -> list[str]:
+    return [c.args[0] for c in ctx.router.post_log.await_args_list]
+
+
+@pytest.mark.parametrize("hours", [1, 30], ids=["the deadline still ahead", "the deadline passed"])
+async def test_a_restart_within_a_day_after_a_withdrawal_tells_nobody_their_session_expired(
+    tmp_path, hours,
+):
+    """Driver 7 withdraws from the wizard, their last answer *hours* ago, and the bot restarts.
+    Their signup has ended, so the restart arms no inactivity job for them, fires no expiry and
+    posts nothing: neither "⏰ … expired" in their channel nor a line in the log."""
+    ctx = await _real_signup(tmp_path, hours_since_activity=hours)
+    assert await ctx.svc.withdraw(DRIVER_ID, ctx.guild) is None
+    assert _lines(ctx) == [_WITHDRAWN]
+    ctx.held.clear()
+
+    await _restarted(ctx)
+
+    assert ctx.armed == []
+    assert ctx.expired == []
+    assert ctx.held == []
+    assert _lines(ctx) == [_WITHDRAWN]
+
+
+async def test_a_restart_after_a_lapse_tells_nobody_again(tmp_path):
+    """Driver 7's wizard lapses: 25 hours after their last answer the inactivity job fires,
+    returning them to Not Signed Up, telling them their session expired and recording the lapse.
+    The bot then restarts: it fires no second expiry, arms nothing, and posts nothing more."""
+    ctx = await _real_signup(tmp_path, hours_since_activity=25)
+    await ctx.svc.handle_inactivity_timeout(DRIVER_ID)
+    assert len(ctx.held) == 1 and "expired" in ctx.held[0]
+    lapsed = _lines(ctx)
+    ctx.held.clear()
+    ctx.expired.clear()
+
+    await _restarted(ctx)
+
+    assert ctx.expired == []
+    assert ctx.armed == []
+    assert ctx.held == []
+    assert _lines(ctx) == lapsed
+
+
+async def test_a_restart_after_a_refused_withdrawal_notice_posts_nothing_and_writes_no_new_line(
+    tmp_path,
+):
+    """Driver 7, their last answer 30 hours ago, withdraws; Discord refuses the closing notice,
+    so the channel is kept, readable with their typing locked, and the "Withdrawn" line names it
+    (P3). The bot then starts twice. Neither start tries an expiry notice in the kept channel,
+    and neither writes a "Channel kept" line: the "Withdrawn" line stands alone in the log."""
+    ctx = await _real_signup(tmp_path, hours_since_activity=30, refusing=True)
+    assert await ctx.svc.withdraw(DRIVER_ID, ctx.guild) is None
+    [withdrawn] = _lines(ctx)
+    assert withdrawn.startswith(_WITHDRAWN)
+
+    await _restarted(ctx)
+    await _restarted(ctx)
+
+    assert ctx.expired == []
+    assert ctx.channel.send.await_count == 1
+    assert "expired" not in str(ctx.channel.send.await_args_list)
+    assert _lines(ctx) == [withdrawn]
+
+
+async def test_a_driver_a_queue_close_returned_is_not_expired_at_restart_however_late(tmp_path):
+    """The signup window open with driver 7 part-way through the wizard, their last answer two
+    days ago. The change queue's close (`execute_forced_close(hold_channels=False)`) returns
+    them to Not Signed Up, leaving their notice to the queue's own jobs. The bot then restarts:
+    it fires no expiry for them and posts no "⏰" notice, so the queue's notice is the one they
+    are told."""
+    from leaguebot.core.cogs.module_cog import execute_forced_close
+    from leaguebot.core.db.database import get_connection
+
+    ctx = await _real_signup(tmp_path, hours_since_activity=48)
+    async with get_connection(ctx.db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (id, signup_channel_id, signups_open, "
+            "signup_button_message_id) VALUES (1, 700, 1, 8800)"
+        )
+        await db.commit()
+    ctx.bot.wizard_service = ctx.svc
+
+    outcome = await execute_forced_close(ctx.bot, audit_action="X", hold_channels=False)
+    assert [str(uid) for uid in outcome.returned_ids] == [DRIVER_ID]
+
+    await _restarted(ctx)
+
+    assert ctx.expired == []
+    assert not any("⏰" in notice for notice in ctx.held)
+    assert ctx.armed == []

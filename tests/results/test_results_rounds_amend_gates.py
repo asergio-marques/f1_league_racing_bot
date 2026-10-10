@@ -927,3 +927,122 @@ async def test_a_finished_or_discarded_round_amend_does_not_hold_the_amendment(t
 
     assert "job #" not in _replied(interaction)
     assert _logged(interaction) == []
+
+
+# ---------------------------------------------------------------------------
+# A season's end on the queue (#439 slice 5: Q6 for the completion, B for the cancellation and
+# the abort)
+#
+# While a season's completion, cancellation or abort is waiting, being carried out or stopped,
+# no round of any of its divisions has its results amended. The change's payload names the season
+# alone, so it holds every division of it, as the points approval does. The refusal is r1-1's,
+# word for word.
+# ---------------------------------------------------------------------------
+
+SEASON_COMPLETE_PAYLOAD = {"season_id": SEASON_ID, "season_number": 7}
+
+_SEASON_ENDS = [
+    pytest.param("season.cancel", {"season_id": SEASON_ID, "season_number": 7}, id="cancel"),
+    pytest.param("season.abort", {"season_id": SEASON_ID}, id="abort"),
+]
+
+_IN_HAND = pytest.mark.parametrize(
+    ("state", "stopped"),
+    [("QUEUED", False), ("RUNNING", True)],
+    ids=["waiting", "stopped"],
+)
+
+
+async def _refused_naming(tmp_path, name, *, kind, payload, state, stopped, division):
+    """Seed a change of *kind* in *state*, amend round 3 of *division*, and assert r1-1's refusal
+    naming its job, one refusal line, and nothing opened."""
+    db_path = await _make_db(tmp_path, name=name)
+    job = await _seed_queued_change(
+        db_path, kind=kind, payload=payload, state=state, stopped=stopped,
+    )
+    cog = _division_cog(db_path, division)
+    interaction = _gate_interaction()
+
+    with contextlib.suppress(_AmendmentWentOn):
+        await _amend(cog, interaction, division=division, session=SessionType.FEATURE_RACE)
+
+    assert _replied(interaction) == (
+        f"⏸️ A round of {division} has a job on the change queue (job #{job}), so it "
+        "cannot be amended until that is done. Let it finish, or press **Retry** or **Discard** "
+        "on its notice if it has stopped, then amend again."
+    )
+    [line] = _logged(interaction)
+    assert line.startswith("⛔") and f"job #{job}" in line
+    interaction.guild.create_text_channel.assert_not_called()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def _goes_on(tmp_path, name, *, kind, payload, state):
+    """Seed a change of *kind* in *state*, and assert amending Pro's round 3 goes on to create
+    the amendment's channel, nothing refused and nothing logged."""
+    db_path = await _make_db(tmp_path, name=name)
+    await _seed_queued_change(db_path, kind=kind, payload=payload, state=state)
+    cog = _division_cog(db_path, "Pro")
+    interaction = _gate_interaction()
+
+    with pytest.raises(_AmendmentWentOn):
+        await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert "job #" not in _replied(interaction)
+    assert _logged(interaction) == []
+
+
+@pytest.mark.parametrize("division", ["Pro", "Am"])
+@_IN_HAND
+async def test_a_round_is_not_amended_while_its_season_s_completion_is_in_hand(
+    tmp_path, state, stopped, division,
+):
+    """Season 7's completion is on the queue, waiting or stopped at a failed job; its payload
+    names the season alone. Amending round 3 of Pro, or of Am, is refused in r1-1's words, naming
+    the completion's job and how to clear it, with one refusal line in the log; no amendment is
+    opened and no channel created."""
+    await _refused_naming(
+        tmp_path, f"amend_complete_{state}_{stopped}_{division}", kind="season.complete",
+        payload=SEASON_COMPLETE_PAYLOAD, state=state, stopped=stopped, division=division,
+    )
+
+
+@pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
+async def test_a_finished_or_discarded_completion_does_not_hold_the_amendment(tmp_path, state):
+    """Season 7's completion has finished, or a league admin discarded it: it is no longer in
+    hand, so amending Pro's round 3 goes on to create the amendment's channel, nothing refused
+    and nothing logged."""
+    await _goes_on(
+        tmp_path, f"amend_complete_over_{state}", kind="season.complete",
+        payload=SEASON_COMPLETE_PAYLOAD, state=state,
+    )
+
+
+@pytest.mark.parametrize(("kind", "payload"), _SEASON_ENDS)
+@pytest.mark.parametrize("division", ["Pro", "Am"])
+@_IN_HAND
+async def test_a_round_is_not_amended_while_its_season_s_cancellation_or_abort_is_in_hand(
+    tmp_path, kind, payload, state, stopped, division,
+):
+    """Season 7's cancellation, or the abort of the season, is on the queue, waiting or stopped
+    at a failed job. Amending round 3 of Pro, or of Am, is refused in r1-1's words, naming that
+    change's job, with one refusal line in the log; no amendment is opened."""
+    await _refused_naming(
+        tmp_path, f"amend_{kind}_{state}_{stopped}_{division}", kind=kind, payload=payload,
+        state=state, stopped=stopped, division=division,
+    )
+
+
+@pytest.mark.parametrize(("kind", "payload"), _SEASON_ENDS)
+@pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
+async def test_a_finished_or_discarded_season_cancellation_or_abort_does_not_hold_the_amendment(
+    tmp_path, kind, payload, state,
+):
+    """Season 7's cancellation, or the season's abort, has finished, or a league admin discarded
+    it: amending Pro's round 3 goes on to create the amendment's channel, nothing refused and
+    nothing logged."""
+    await _goes_on(
+        tmp_path, f"amend_{kind}_over_{state}", kind=kind, payload=payload, state=state,
+    )

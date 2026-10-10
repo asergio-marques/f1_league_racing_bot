@@ -7,11 +7,11 @@ is in their history beside the one they finished in.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.season_end_service import _write_driver_history_entries
 from tests.core.test_driver_move import (
     AM,
     PRO,
@@ -35,8 +35,12 @@ async def _memberships(db_path) -> list[tuple[int, int]]:
 
 
 async def _history(db_path) -> list[str]:
-    bot = SimpleNamespace(db_path=db_path)
-    await _write_driver_history_entries(SimpleNamespace(id=SEASON_ID, season_number=1), bot)
+    """The season's history written on one connection and committed, as a season's end save does."""
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, SEASON_ID, 1)
+        await db.commit()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT division_name FROM driver_history_entries WHERE driver_profile_id = ? "
@@ -149,3 +153,30 @@ async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_sta
             "SELECT discord_user_id, final_position, final_points FROM driver_history_entries"
         )
         assert [tuple(r) for r in await cursor.fetchall()] == [("777001", 3, 42)]
+
+
+async def _entries_on(db) -> list[str]:
+    cursor = await db.execute(
+        "SELECT division_name FROM driver_history_entries WHERE driver_profile_id = ? "
+        "ORDER BY division_name",
+        (PROFILE_ID,),
+    )
+    return [row[0] for row in await cursor.fetchall()]
+
+
+async def test_the_history_on_the_save_handed_commits_nothing(db_path):
+    """A driver placed in Pro and moved to Am. A season's end writes their history inside the
+    save that records its end: written on the connection it is handed, an entry for each
+    division is there on that connection, and once the save is let go uncommitted none is."""
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+
+    await _seat(db_path, PRO, "Alpha")
+    await _move(_service(db_path), AM, "Bravo")
+
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, SEASON_ID, 1)
+        assert await _entries_on(db) == ["Am", "Pro"]
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _entries_on(db) == []

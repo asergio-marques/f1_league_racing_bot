@@ -270,25 +270,18 @@ async def test_completed_seasons_are_counted(tmp_path):
 
 async def test_a_season_is_completed_in_place(tmp_path):
     """Archived, not removed — the championship's record."""
+    from leaguebot.core.services.season_service import complete_season_on
+
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "ACTIVE")
     service = SeasonService(db_path)
 
-    await service.complete_season(1)
+    async with get_connection(db_path) as db:
+        await complete_season_on(db, 1)
+        await db.commit()
 
     assert await service.get_confirmed_season() is None
     assert await service.has_active_or_completed_season() is True
-
-
-async def test_a_cancelled_season_keeps_its_data(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "ACTIVE")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    await service.cancel_season(1)
-
-    assert await _count(db_path, "divisions", "season_id = ?", (1,)) == 1
 
 
 @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])

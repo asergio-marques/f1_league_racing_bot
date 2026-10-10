@@ -13,11 +13,22 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol
 
 import aiosqlite
+import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.change import (
+    GuildUnavailable,
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -25,9 +36,13 @@ from leaguebot.core.services.change_queue import (
     OutcomeContext,
     Step,
     StepContext,
+    in_hand,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.placement_service import PlacementService
 
 log = logging.getLogger(__name__)
 
@@ -159,121 +174,687 @@ async def advance_on_window_close(db_path: str) -> SeasonStage | None:
     return target
 
 
-async def turn_down_pending_placements(bot: LeagueBot, season_id: int, guild) -> list[int]:
-    """Turn down every placement of *season_id* still pending, as the reject command would.
+async def move_on_a_season_left_by_a_closed_window(
+    db_path: str, *, window_open: bool
+) -> SeasonStage | None:
+    """Move on a season its signup window's close left in the window's stage, where none is open.
+
+    A close records the window closed, then moves the season on in a save of its own
+    (`advance_on_window_close`). A stop between the two, or a move that fails and is let go,
+    leaves the season in Signups (or Ongoing, signups open) with no window, which nothing else
+    would ever move. The bot's start calls this, handing whether signup's window stands open: it
+    is the one place reached after both, and the window's close itself is no place, its move
+    having failed or never run. Nothing is moved where the window stands open (a window opened
+    since, in whose stage the season rightly stands) or where an end of the season or its
+    wind-down is in hand on the queue, each of which closes the window and keeps the stage where
+    it stands until its own save moves it. Gives the new stage, or None where nothing was moved.
+    """
+    if window_open:
+        return None
+    found = await live_season_stage(db_path)
+    if found is None or found[1] not in (SeasonStage.SIGNUPS, SeasonStage.ONGOING_SIGNUPS):
+        return None
+    # Imported here: the season's end imports this module.
+    from leaguebot.core.services.season_end_changes import season_end_in_hand
+
+    if await season_end_in_hand(db_path, found[0]) is not None:
+        return None
+    if await in_hand(db_path, (WIND_DOWN,)):
+        # The wind-down closes the window first and moves the season on in its own save, after
+        # turning down the placements still pending; moved on here, the season would pass that
+        # turn-down by on its way to Pending completion.
+        return None
+    return await advance_on_window_close(db_path)
+
+
+async def _pending_placement_drivers_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+    """Every driver of *season_id* whose placement is still pending, as the rows are read.
 
     Pending are the unsettled signups — Unassigned, awaiting approval or mid-correction — and
-    every placement not yet committed. Each such placement is discarded, and each such driver
-    returns to Not Signed Up: a signup in review has its channel closed, an approved driver
-    loses the driver role. A driver without the former-driver flag is thereby pending
-    deletion. Returns the profile ids turned down.
+    every driver Assigned only by a placement not yet committed.
     """
+    placeholders = ",".join("?" for _ in UNSETTLED_STATES)
+    cursor = await db.execute(
+        f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
+        f"WHERE ("
+        f"  current_state IN ({placeholders}) "
+        f"  OR (current_state = 'ASSIGNED' AND id IN ("
+        f"      SELECT driver_profile_id FROM driver_season_assignments "
+        f"      WHERE season_id = ? AND committed = 0) "
+        f"    AND id NOT IN ("
+        f"      SELECT driver_profile_id FROM driver_season_assignments "
+        f"      WHERE season_id = ? AND committed = 1))"
+        f") ORDER BY id",
+        (*UNSETTLED_STATES, season_id, season_id),
+    )
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def _turn_down_on(db: aiosqlite.Connection, season_id: int, drivers: list[dict]) -> None:
+    """Write the turn-down of *drivers*' placements on *db*, committing nothing."""
     from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.core.services.driver_service import write_transition
 
-    db_path = bot.db_path
-    placeholders = ",".join("?" for _ in UNSETTLED_STATES)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE ("
-            f"  current_state IN ({placeholders}) "
-            f"  OR (current_state = 'ASSIGNED' AND id IN ("
-            f"      SELECT driver_profile_id FROM driver_season_assignments "
-            f"      WHERE season_id = ? AND committed = 0) "
-            f"    AND id NOT IN ("
-            f"      SELECT driver_profile_id FROM driver_season_assignments "
-            f"      WHERE season_id = ? AND committed = 1))"
-            f") ORDER BY id",
-            (*UNSETTLED_STATES, season_id, season_id),
-        )
-        drivers = [dict(r) for r in await cursor.fetchall()]
-        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-        cfg_row = await cursor.fetchone()
-
-    await _close_driver_signups(
-        drivers, cfg_row["driver_role_id"] if cfg_row else None,
-        bot=bot, guild=guild,
-        notice="🔒 Every division of this season is done, so its signups are closed. "
-        "This channel will be automatically deleted in 24 hours.",
-        reason="Season's divisions done; signup turned down",
+    await db.execute(
+        "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+        "  SELECT team_seat_id FROM driver_season_assignments "
+        "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
+        (season_id,),
     )
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
-            "  SELECT team_seat_id FROM driver_season_assignments "
-            "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
-            (season_id,),
+    await db.execute(
+        "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
+        (season_id,),
+    )
+    for driver in drivers:
+        await write_transition(
+            db, driver["id"], DriverState(driver["current_state"]), DriverState.NOT_SIGNED_UP
         )
+    if drivers:
         await db.execute(
-            "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
-            (season_id,),
+            "INSERT INTO audit_entries "
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, datetime('now'))",
+            (
+                json.dumps({d["id"]: d["current_state"] for d in drivers}, sort_keys=True),
+                json.dumps({"state": "NOT_SIGNED_UP"}),
+            ),
         )
-        for driver in drivers:
-            await write_transition(
-                db, driver["id"], DriverState(driver["current_state"]), DriverState.NOT_SIGNED_UP
-            )
-        if drivers:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, datetime('now'))",
-                (
-                    json.dumps({d["id"]: d["current_state"] for d in drivers}, sort_keys=True),
-                    json.dumps({"state": "NOT_SIGNED_UP"}),
-                ),
-            )
-        await db.commit()
-    return [d["id"] for d in drivers]
 
 
-async def wind_down_ongoing(bot: LeagueBot) -> bool:
-    """Take a season whose every division is done out of the ongoing stages (issue #220).
+async def turn_down_pending_placements_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+    """Turn down every placement of *season_id* still pending, as the reject command would, on *db*.
 
-    A season in Ongoing, signups open or Ongoing, placements has no round left to place a
-    driver into once every division is finished or cancelled. Its signup window is closed,
-    every pending placement is turned down, and it moves straight to Pending completion. A
-    season in plain Ongoing moves too. Called from everywhere a division can finish; a no-op
-    for any other season. Returns True where the season was moved.
+    The database side of the wind-down, committing nothing: it is part of the save that also
+    moves the season on (#439). Each pending placement is discarded and its seat vacated, and
+    each such driver returns to Not Signed Up through the transition table. A driver without the
+    former-driver flag is thereby pending deletion. Gives each driver turned down as ``id``,
+    ``user_id``, ``state`` (the one they were in) and ``is_test_driver``, for the jobs that follow
+    the save: a signup in review has its channel told and closed, an approved driver loses the
+    driver role.
     """
-    db_path = bot.db_path
-    found = await live_season_stage(db_path)
-    if found is None:
-        return False
-    season_id, stage = found
-    if stage not in ONGOING_STAGES:
-        return False
-    _, done = await _stage_and_whether_done(db_path, season_id)
-    if not done:
-        return False
+    drivers = await _pending_placement_drivers_on(db, season_id)
+    await _turn_down_on(db, season_id, drivers)
+    return [
+        {
+            "id": d["id"],
+            "user_id": d["discord_user_id"],
+            "state": d["current_state"],
+            "is_test_driver": d["is_test_driver"],
+        }
+        for d in drivers
+    ]
 
+
+class WindowClosed(Protocol):
+    """What the signup window's close gives back: the accounts it returned to Not Signed Up."""
+
+    @property
+    def returned_ids(self) -> Sequence[str]: ...
+
+
+class ChannelHeld(Protocol):
+    """What holding a signup channel gives back: its id, None where there was nothing to hold."""
+
+    @property
+    def channel_id(self) -> int | None: ...
+
+
+@dataclass(frozen=True)
+class SeasonEndHooks:
+    """What a season's end needs of other modules and of the cog, handed it by the builder (#439).
+
+    The wind-down, the completion, the cancellation and the abort share them. Through them core
+    imports no module and no cog for the season's end (architecture.md, "How modules and core fit
+    together": a season ending is a hook point). Each field is the function it stands for, bound
+    in ``__main__._season_end_hooks``:
+
+    - *close_signups*: signup's close nobody ran, holding no channel (the queue's jobs do), giving
+      the drivers it returned; None where there was no window to close.
+    - *window_open*: signup on and its window open.
+    - *cancel_close_timer*: removes the signup close timer.
+    - *post_signup_notice*: tells one driver's signup channel why it closes, locking nothing, and
+      **raising** where Discord refuses.
+    - *lock_signup_channel*: takes the driver's write access from their signup channel and arms its
+      deletion.
+    - *cancel_signup_timeout*: removes one driver's inactivity timeout.
+    - *discard_portraits*: removes the portraits obtained for the accounts of drivers deleted.
+    - *amendment_open*: an amendment open in any division of a season, or None.
+    - *flush_forecasts*: deletes the forecasts posted under test mode.
+    - *discard_backup*: deletes the saved test-mode state, raising where it cannot.
+    - *forget_setup*: lets go of the setup the season cog holds in memory.
+    - *owed_closing_notices*: the accounts the window's close returned and owes their closing
+      notice, read on a connection of its own, for a check before a step or a step with no save
+      open.
+    - *clear_closing_notices_on*: sets those accounts' mark back to none, on the save's connection.
+    - *take_closing_notices_on*: reads the accounts still owed and clears them, on the save's
+      connection, for a change's last save to name the drivers a discarded close left untold.
+    - *end_wizards_on*: marks these accounts' signup wizards over, on the save's connection, for
+      the driver pass and the turn-down to end a signup in the save that returns the driver.
+    - *off_queue_closing_notices*: the accounts a close of the window off the queue returned and
+      a stop cut it off before reaching, read on a connection of its own (`close_finish_change`).
+    - *take_off_queue_closing_notices_on*: reads those accounts and clears them, on the save's
+      connection.
+    - *cut_off_window_open*: the signup window stands open and is the one a close off the queue
+      was closing when a stop cut it off, by the mark that close left.
+    - *closing_held*: whether the account's signup channel was already held, given the league's
+      server. It reads the scheduler's job store first, a channel-delete job standing being the
+      record of a hold (the job store standing in for a record of signup's own, which it was
+      meant only to serve, #440); where none stands, the wizard service judges the channel itself (the
+      closing notice posted and the driver's typing denied) and arms the deletion again.
+    """
+
+    close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
+    window_open: Callable[[], Awaitable[bool]]
+    cancel_close_timer: Callable[[], None]
+    post_signup_notice: Callable[[str, discord.Guild, str], Awaitable[ChannelHeld]]
+    lock_signup_channel: Callable[[str, discord.Guild], Awaitable[None]]
+    cancel_signup_timeout: Callable[[str], None]
+    discard_portraits: Callable[[Sequence[str]], Awaitable[object]]
+    amendment_open: Callable[[str, int], Awaitable[object]]
+    flush_forecasts: Callable[[], Awaitable[None]]
+    discard_backup: Callable[[], object]
+    forget_setup: Callable[[], None]
+    owed_closing_notices: Callable[[], Awaitable[list[str]]]
+    clear_closing_notices_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
+    take_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
+    end_wizards_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
+    off_queue_closing_notices: Callable[[], Awaitable[list[str]]]
+    take_off_queue_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
+    cut_off_window_open: Callable[[], Awaitable[bool]]
+    closing_held: Callable[[str, discord.Guild], Awaitable[bool]]
+
+
+#: The jobs of one driver's Discord side of a season's end, as the stop notice, the tests and
+#: ``StepView`` know them.
+SIGNUP_NOTICE = "signup_notice"
+CLOSE_SIGNUP = "close_signup"
+TAKE_DRIVER_ROLE = "take_driver_role"
+
+#: What a signup channel is told where the signup window closes under it.
+WINDOW_CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+
+
+async def require_guild(bot: LeagueBot) -> discord.Guild:
+    """The league's server, or `GuildUnavailable` where it is not in the cache."""
     guild = await league_guild(bot)
-    if stage is not SeasonStage.ONGOING:
-        try:
-            signup_cfg = await bot.signup_module_service.get_config()
-            if signup_cfg is not None and signup_cfg.signups_open:
-                from leaguebot.core.cogs.module_cog import close_signups_unattended
+    if guild is None:
+        raise GuildUnavailable("the league's server is not in the cache")
+    return guild
 
-                bot.scheduler_service.cancel_signup_close_timer()
-                await close_signups_unattended(bot, cause="divisions done")
-        except Exception:  # noqa: BLE001 — the window's close must not hold the season
-            log.exception("wind_down_ongoing: could not close the signup window")
-        turned_down = await turn_down_pending_placements(bot, season_id, guild)
-        current_stage, _ = await _stage_and_whether_done(db_path, season_id)
-        if current_stage in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
-            await _move(db_path, season_id, SeasonStage(current_stage), SeasonStage.ONGOING)
-        if turned_down:
-            try:
-                await bot.output_router.post_log(
-                    "System | Every division is done | "
-                    f"Pending placements turned down: {len(turned_down)}",
+
+async def post_driver_notice(
+    guild: discord.Guild, driver: Mapping[str, Any], *, hooks: SeasonEndHooks, notice: str
+) -> dict:
+    """Tell one driver's signup channel *notice*, before anything is locked (the `signup_notice` job).
+
+    *driver* holds their ``user_id``. A refusal from Discord raises, for the queue to stop on with
+    the channel still readable and writable; a wizard with no channel, or a channel gone, is
+    nothing to tell and the job is done.
+    """
+    held = await hooks.post_signup_notice(str(driver["user_id"]), guild, notice)
+    return {"no_channel": True} if held.channel_id is None else {}
+
+
+async def close_driver_signup(
+    guild: discord.Guild, driver: Mapping[str, Any], *, hooks: SeasonEndHooks
+) -> dict:
+    """Close one driver's signup channel and cancel their inactivity timeout (the `close_signup` job).
+
+    The channel loses the driver's write access and its deletion is armed 24 hours on. It runs
+    whether the `signup_notice` job before it went through or was discarded. A timeout the
+    scheduler no longer holds is nothing to cancel.
+    """
+    user_id = str(driver["user_id"])
+    await hooks.lock_signup_channel(user_id, guild)
+    hooks.cancel_signup_timeout(user_id)
+    return {}
+
+
+async def take_driver_role(
+    guild: discord.Guild,
+    driver: Mapping[str, Any],
+    *,
+    placement: PlacementService,
+    driver_role_id: int,
+    reason: str,
+) -> dict:
+    """Take the league's driver role back from one real driver (the `take_driver_role` job).
+
+    A member who left the server, or a role gone from it, is passed over; Discord refusing
+    raises, for the queue to stop on.
+    """
+    revoked = await placement.revoke_roles(
+        guild, int(driver["user_id"]), driver_role_id, reason=reason
+    )
+    return {"revoked": revoked}
+
+
+def driver_jobs(
+    drivers: Sequence[Mapping[str, Any]],
+    driver_role_id: int | None,
+    *,
+    notice: str,
+    reason: str,
+) -> tuple[PlannedStep, ...]:
+    """The jobs of the Discord side of returning *drivers* to Not Signed Up, each driver's in order.
+
+    *drivers* are mappings of ``user_id``, ``state`` (the one they were in) and
+    ``is_test_driver``. A signup still in progress or in review is told *notice* (`signup_notice`)
+    and then has its channel closed (`close_signup`); an approved real driver, Unassigned or
+    Assigned, loses the driver role (`take_driver_role`) where the league has one. Nothing else
+    needs Discord.
+    """
+    planned: list[PlannedStep] = []
+    for driver in drivers:
+        user_id = str(driver["user_id"])
+        if driver["state"] in _SIGNUP_IN_PROGRESS:
+            planned.append(PlannedStep(SIGNUP_NOTICE, {"user_id": user_id, "notice": notice}))
+            planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": user_id}))
+        elif (
+            driver_role_id
+            and not driver["is_test_driver"]
+            and driver["state"] in ("UNASSIGNED", "ASSIGNED")
+        ):
+            planned.append(
+                PlannedStep(
+                    TAKE_DRIVER_ROLE,
+                    {"user_id": user_id, "role_id": int(driver_role_id), "reason": reason},
                 )
-            except Exception:  # noqa: BLE001
-                log.exception("wind_down_ongoing: could not post the log line")
-    await advance_to_pending_completion(db_path, season_id)
-    final_stage, _ = await _stage_and_whether_done(db_path, season_id)
-    return final_stage == SeasonStage.PENDING_COMPLETION.value
+            )
+    return tuple(planned)
+
+
+async def end_signup_wizards_on(
+    db: aiosqlite.Connection,
+    hooks: SeasonEndHooks | None,
+    drivers: Sequence[Mapping[str, Any]],
+) -> None:
+    """Mark over the signup wizard of each of *drivers* whose signup was in progress or in review.
+
+    Called in the save that returns them to Not Signed Up (the driver pass, the turn-down), on
+    that save's connection and through signup's own hook, so that a restart finds no wizard still
+    engaged for a signup that has ended and tells nobody it expired. Nothing is asked of the hooks
+    where no driver is in that case. *drivers* are mappings of ``user_id`` and ``state``.
+    """
+    accounts = [str(d["user_id"]) for d in drivers if d["state"] in _SIGNUP_IN_PROGRESS]
+    if not accounts:
+        return
+    if hooks is None:
+        raise RuntimeError("a season's end is run with the hooks the builder hands it")
+    await hooks.end_wizards_on(db, accounts)
+
+
+def window_closed_jobs(user_ids: Sequence[str]) -> tuple[PlannedStep, ...]:
+    """The jobs for each driver the signup window's close returned: told, then their channel closed."""
+    planned: list[PlannedStep] = []
+    for user_id in user_ids:
+        planned.append(
+            PlannedStep(SIGNUP_NOTICE, {"user_id": str(user_id), "notice": WINDOW_CLOSED_NOTICE})
+        )
+        planned.append(PlannedStep(CLOSE_SIGNUP, {"user_id": str(user_id)}))
+    return tuple(planned)
+
+
+def kept_returned(kept: Mapping[str, Any] | None) -> tuple[str, ...]:
+    """The drivers a close that stopped part-way had already returned, from the result it kept."""
+    return tuple(str(user_id) for user_id in (kept or {}).get("returned", ()))
+
+
+async def close_signup_window(
+    bot: LeagueBot, hooks: SeasonEndHooks, cause: str, *, kept: Mapping[str, Any] | None = None
+) -> tuple[str, ...]:
+    """Cancel the signup close timer and close the window where it stands open (#439).
+
+    Gives the accounts the close returned to Not Signed Up, whose channels the queue's jobs then
+    tell and close: the close itself holds none. Raises what the close raises, for the queue to
+    stop on; a window not open is nothing to close.
+
+    *kept* is what the job's last try left when it stopped: a close that stopped after returning
+    its drivers fails with their ids as its result, and the next try finds none left to return.
+    They are given with whatever it returns now, so that no driver's channel goes untold and
+    open, and also where the window was shut by that try and only its audit failed.
+    """
+    before = kept_returned(kept)
+    now: tuple[str, ...] = ()
+    if await hooks.window_open():
+        hooks.cancel_close_timer()
+        try:
+            closed = await hooks.close_signups(bot, cause)
+        except StepFailedOnDiscord as stopped:
+            found = kept_returned(stopped.result)
+            stopped.result = {
+                **(stopped.result or {}), "returned": list(dict.fromkeys((*before, *found)))
+            }
+            raise
+        if closed is not None:
+            now = tuple(str(user_id) for user_id in closed.returned_ids)
+    # Read after the close, whether it closed the window now or found it closed: a try cut off
+    # after the window was recorded closed left each driver it returned marked as owed their
+    # notice, in the save that returned them.
+    owed = tuple(str(user_id) for user_id in await hooks.owed_closing_notices())
+    return tuple(dict.fromkeys((*before, *now, *owed)))
+
+
+def drivers_told_record(
+    hooks: SeasonEndHooks | None,
+) -> Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]]:
+    """The `Step.record` of a job that plans the jobs telling the drivers a window close returned.
+
+    It clears those drivers' marks in the save that marks the job done and inserts the jobs it
+    planned, so that from that save the queue's own records hold them and no later read of the
+    marks finds them again: each is told once.
+    """
+
+    async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
+        if hooks is None:
+            return
+        returned = [str(user_id) for user_id in (result.result or {}).get("returned", ())]
+        await hooks.clear_closing_notices_on(db, returned)
+
+    return record
+
+
+async def close_window_for_wind_down(
+    bot: LeagueBot, hooks: SeasonEndHooks, *, kept: Mapping[str, Any] | None = None
+) -> tuple[str, ...]:
+    """Close the signup window as every division is done, giving the drivers it returned."""
+    return await close_signup_window(bot, hooks, "divisions done", kept=kept)
+
+
+#: How a driver the season's end could not tell for want of a signup channel is named.
+NO_CHANNEL_LEFT = "{who} had no signup channel left to tell"
+
+
+def close_signup_steps(
+    placement: PlacementService, hooks: SeasonEndHooks, *, line_prefix: str | None = None
+) -> dict[str, Step]:
+    """The three jobs of one driver's Discord side, shared by every change that ends signups.
+
+    A driver with no signup channel left is passed over by `signup_notice`, and `close_signup`
+    then has nothing to lock or delete. The change's closing outcome names them
+    (``NO_CHANNEL_LEFT``); where the change has no closing line of its own, *line_prefix* ("System
+    | Every division is done") has the notice job write one.
+    """
+
+    async def signup_notice(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        result = await post_driver_notice(
+            guild, ctx.step_payload, hooks=hooks, notice=str(ctx.step_payload["notice"])
+        )
+        lines: tuple[str, ...] = ()
+        if result.get("no_channel") and line_prefix:
+            who = f"<@{ctx.step_payload['user_id']}>"
+            lines = (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=who)}",)
+        return StepResult(result=result, lines=lines)
+
+    async def close_signup(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        user_id = str(ctx.step_payload["user_id"])
+        if any(
+            view.name == SIGNUP_NOTICE and view.done
+            and str(view.payload.get("user_id")) == user_id
+            and (view.result or {}).get("no_channel")
+            for view in ctx.steps
+        ):
+            # Nothing to lock or delete: the notice found no channel left.
+            hooks.cancel_signup_timeout(user_id)
+            return StepResult(result={"no_channel": True})
+        return StepResult(result=await close_driver_signup(guild, ctx.step_payload, hooks=hooks))
+
+    async def take_role(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        result = await take_driver_role(
+            guild, ctx.step_payload, placement=placement,
+            driver_role_id=int(ctx.step_payload["role_id"]),
+            reason=str(ctx.step_payload["reason"]),
+        )
+        return StepResult(result=result)
+
+    async def describe_notice(ctx: StepContext) -> str:
+        return f"telling <@{ctx.step_payload['user_id']}> that their signup has closed"
+
+    async def describe_close(ctx: StepContext) -> str:
+        return f"closing the signup of <@{ctx.step_payload['user_id']}>"
+
+    async def describe_role(ctx: StepContext) -> str:
+        return f"taking the driver role back from <@{ctx.step_payload['user_id']}>"
+
+    return {
+        SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
+        CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
+        TAKE_DRIVER_ROLE: Step(TAKE_DRIVER_ROLE, StepKind.ACT, take_role, describe=describe_role),
+    }
+
+
+#: The kind of the change that finishes a close of the signup window off the queue that a stop
+#: cut off, and its two jobs.
+CLOSE_FINISH = "signup.close.finish"
+CLOSE_FINISH_PLAN = "finish_close"
+CLOSE_FINISH_CLOSE = "finish_close_line"
+#: The head of the line the finish writes.
+CLOSE_FINISHED = "System | Signups closed | the close a stop cut off was finished"
+#: Beneath the finish's line, whatever close it finished: which command a close off the queue was
+#: run by is not recorded, and `/module disable signup` cut off in its close never turned the
+#: module off, which the finish does not do for it.
+CLOSE_FINISHED_DISABLE = (
+    "if the close cut off was `/module disable signup`, it was not finished and signup is still "
+    "on: run it again"
+)
+#: The cause the finish closes a window under, where the close it finishes never recorded it.
+CLOSE_CUT_OFF_CAUSE = "stop cut off"
+
+
+async def _no_longer_not_signed_up(db_path: str, accounts: Sequence[str]) -> set[str]:
+    """Those of *accounts* whose driver stands in a state other than Not Signed Up, read on a
+    connection of its own. An account with no driver is not among them."""
+    found: set[str] = set()
+    async with get_connection(db_path) as db:
+        for account in accounts:
+            cursor = await db.execute(
+                "SELECT current_state FROM driver_profiles WHERE discord_user_id = ? "
+                "OR id IN (SELECT driver_profile_id FROM driver_accounts WHERE discord_user_id = ?)",
+                (account, account),
+            )
+            row = await cursor.fetchone()
+            if row is not None and row["current_state"] != "NOT_SIGNED_UP":
+                found.add(account)
+    return found
+
+
+def close_finish_change(
+    *, placement: PlacementService | None = None, hooks: SeasonEndHooks | None = None
+) -> ChangeType:
+    """The change that finishes a close of the signup window off the queue that a stop cut off.
+
+    A close off the queue (`/signup close`, its timer, a restart past the close time, turning
+    signup off) returns each driver still filling in the wizard in a save of their own, marking
+    them owed their notice, then tells and locks them one at a time, and clears the marks of
+    those it reached in its audit save. A stop in between leaves the others returned and untold,
+    with a channel nobody deletes. The bot asks for this change as it starts
+    (`__main__._recover_off_queue_closing_notices`), before the queue does. It is due only while
+    such a mark is left. Its jobs, each of which stops the queue where it fails:
+
+    1. `finish_close`: where the close was cut off before it recorded the window closed, the
+       window still open being the one the marks record, closes it first, as that close would
+       have (`close_signups`, the queue's form, under the cause ``"stop cut off"``), and moves
+       the season on as it would have; a window opened since is left open. It then reads the
+       marked accounts and passes over each whose channel was already
+       held, its deletion armed, and each whose driver is no longer Not Signed Up (a mark that
+       outlived its close, which must not close a signup begun since); each other driver is then told, then their channel closed, as
+       jobs of their own (`window_closed_jobs`). Its record clears the marks it read in the save
+       that marks it done, so that from that save the queue's own records hold the drivers.
+    2. `finish_close_line`: one save writes the line naming who was told and closed, and what was
+       left undone, beneath; bare where nobody was left to tell. Where a league admin discarded
+       the first job, it takes every mark still standing and names those drivers as returned but
+       not told, as a discarded close of the window on the queue does, those its own close of
+       the window returned included; otherwise it takes none, a mark another close made since
+       being left for a later finish. The line ends saying that a `/module disable signup` cut
+       off was not finished, signup still on, for the command a close was run by is not known.
+
+    A driver is told twice in two cases, both accepted as rare (owner, 2026-10-10): one whose
+    lock Discord refused just before the stop, named then for their channel to be deleted by
+    hand, which is neither locked nor set for deletion; and one whose notice posted before a
+    fault other than Discord's stopped the hold short of the lock. Neither channel counts as held
+    (`SeasonEndHooks.closing_held`), so each is told again and then closed.
+
+    *placement* and *hooks* are handed by the builder; without them the change is only described.
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        if hooks is None or not await hooks.off_queue_closing_notices():
+            return Verdict.not_due("no close of the signup window was cut off")
+        return Verdict.go()
+
+    async def plan(ctx: StepContext) -> StepResult:
+        if hooks is None:
+            raise RuntimeError("the finish of a close is run with the hooks the builder hands it")
+        before = kept_returned(ctx.kept)
+        closing = bool((ctx.kept or {}).get("closing"))
+        now: tuple[str, ...] = ()
+        if await hooks.cut_off_window_open():
+            # The close was cut off before it recorded the window closed: the window is closed
+            # first, as that close would have closed it, and only then is anyone told.
+            closing = True
+            hooks.cancel_close_timer()
+            try:
+                closed = await hooks.close_signups(ctx.bot, CLOSE_CUT_OFF_CAUSE)
+            except StepFailedOnDiscord as stopped:
+                found = kept_returned(stopped.result)
+                stopped.result = {
+                    **(stopped.result or {}),
+                    "returned": list(dict.fromkeys((*before, *found))),
+                    "closing": True,
+                }
+                raise
+            if closed is not None:
+                now = tuple(str(user_id) for user_id in closed.returned_ids)
+        if closing:
+            # Moved on as the close would have moved it; only where the finish closed the window
+            # itself, so that a window some other change closed is never taken for this one's.
+            try:
+                await advance_on_window_close(ctx.db_path)
+            except Exception as exc:
+                raise StepFailedOnDiscord(
+                    "the season could not be moved on for the signup window closed",
+                    result={"returned": list(dict.fromkeys((*before, *now))), "closing": True},
+                ) from exc
+        marked = [str(account) for account in await hooks.off_queue_closing_notices()]
+        # A mark that outlived its close (no stop to finish it) is no warrant to close a signup
+        # the driver has since begun: only a driver still Not Signed Up is the close's.
+        moved_on = await _no_longer_not_signed_up(ctx.db_path, marked)
+        guild = await require_guild(ctx.bot)
+        held = [
+            account for account in marked
+            if account not in moved_on and await hooks.closing_held(account, guild)
+        ]
+        # The window's close above is the queue's form, which marks each driver it returns owed
+        # by the queue (1). A stop after it returned them and before this job was marked done
+        # leaves them so marked, and the next try's close finds nobody to return: they are read
+        # here, as `close_signup_window` reads them. No other change's marks are among them: the
+        # queue runs one change at a time, and a change it resumed at start ran before this one
+        # and planned its own.
+        owed = [str(account) for account in await hooks.owed_closing_notices()]
+        untold = list(dict.fromkeys((
+            *before,
+            *now,
+            *owed,
+            *(account for account in marked if account not in moved_on and account not in held),
+        )))
+        return StepResult(
+            result={"marked": marked, "returned": untold}, then=window_closed_jobs(untold)
+        )
+
+    async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
+        if hooks is None:
+            return
+        kept = result.result or {}
+        await hooks.clear_closing_notices_on(
+            db,
+            list(dict.fromkeys(
+                str(account) for account in (*kept.get("marked", ()), *kept.get("returned", ()))
+            )),
+        )
+
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        # Only a Discard of the first job leaves its marks standing, untaken by its record: then
+        # every mark is taken and named. Otherwise the record took what the plan read, and a mark
+        # another close made since is left for a later finish.
+        plan_view = next((view for view in ctx.steps if view.name == CLOSE_FINISH_PLAN), None)
+        plan_discarded = plan_view is not None and "discarded" in (plan_view.result or {})
+        untold: list[str] = []
+        if hooks is not None and plan_discarded:
+            # The marks of the close cut off, and those of the drivers the first job's own close
+            # of the window returned (the queue's kind) before it was discarded.
+            untold = list(dict.fromkeys((
+                *await hooks.take_off_queue_closing_notices_on(db),
+                *await hooks.take_closing_notices_on(db),
+            )))
+        told: list[str] = []
+        beneath: list[str] = []
+        for notice in ctx.steps:
+            if notice.name != SIGNUP_NOTICE:
+                continue
+            user_id = str(notice.payload["user_id"])
+            who = f"<@{user_id}>"
+            closing = next(
+                (view for view in ctx.steps
+                 if view.name == CLOSE_SIGNUP and str(view.payload.get("user_id")) == user_id),
+                None,
+            )
+            if closing is not None and "discarded" in (closing.result or {}):
+                beneath.append(
+                    f"{who} — their signup channel could not be closed. Delete it by hand."
+                )
+            elif "discarded" in (notice.result or {}):
+                beneath.append(f"{who} — their signup channel was closed without its notice")
+            elif (notice.result or {}).get("no_channel"):
+                beneath.append(NO_CHANNEL_LEFT.format(who=who))
+            else:
+                told.append(who)
+        beneath.extend(
+            f"<@{account}> was returned to Not Signed Up when signups closed, but was not told "
+            "and their channel was not closed: tell them and delete it by hand."
+            for account in untold
+        )
+        # Written even where every driver marked had been held before the stop: the close that was
+        # cut off wrote no line of its own.
+        head = (
+            f"{CLOSE_FINISHED}: {', '.join(told)} told and their channel closed"
+            if told
+            else CLOSE_FINISHED
+        )
+        line = (
+            head
+            + "".join(f"\n  not done: {each}" for each in beneath)
+            + f"\n  {CLOSE_FINISHED_DISABLE}"
+        )
+        return StepResult(result={"untold": untold}, lines=(line,))
+
+    async def describe_plan(_ctx: StepContext) -> str:
+        return "finding the drivers a stopped close of the signup window did not tell"
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording the finish of the signup window's close"
+
+    steps: dict[str, Step] = {
+        CLOSE_FINISH_PLAN: Step(
+            CLOSE_FINISH_PLAN, StepKind.ACT, plan, describe=describe_plan, record=record
+        ),
+        CLOSE_FINISH_CLOSE: Step(
+            CLOSE_FINISH_CLOSE, StepKind.SAVE, close, describe=describe_close
+        ),
+    }
+    if placement is not None and hooks is not None:
+        steps.update(close_signup_steps(placement, hooks))
+    return ChangeType(
+        kind=CLOSE_FINISH,
+        opening=(PlannedStep(CLOSE_FINISH_PLAN), PlannedStep(CLOSE_FINISH_CLOSE)),
+        steps=steps,
+        check=check,
+        key=lambda _payload: CLOSE_FINISH,
+        doing=lambda _payload: "Finishing the signup window's close a stop cut off",
+        outcome=lambda _ctx: "",
+    )
 
 
 #: Why no module may be disabled in Pending completion: the reply of every disable refused for it.
@@ -284,18 +865,37 @@ FROZEN_FOR_COMPLETION_REFUSAL = (
 
 #: The kind of the change that winds a season down.
 WIND_DOWN = "season.wind_down"
-_WIND_DOWN_STEP = "wind_down"
+WIND_DOWN_STEP = "wind_down"
+TURN_DOWN_STEP = "turn_down"
+
+#: What a signup channel is told where the wind-down turns its signup down.
+WIND_DOWN_NOTICE = (
+    "🔒 Every division of this season is done, so its signups are closed. "
+    "This channel will be automatically deleted in 24 hours."
+)
 
 
-def wind_down_change() -> ChangeType:
+def wind_down_change(
+    *, placement: PlacementService | None = None, hooks: SeasonEndHooks | None = None
+) -> ChangeType:
     """The change that takes a season whose every division is done to Pending completion.
 
     Asked by the bot in the save of whatever finished the last division, so that the wind-down,
     which needs Discord, runs as a change of its own, after the steps of the change that asked
-    for it. It is due only while
-    the live season is in an ongoing stage with every division finished or cancelled; where it is
-    not, the change is dropped. Its one step is `wind_down_ongoing`; where that fails, the queue
-    stops at the job, and `describe` names it.
+    for it. It is due only while the live season is in an ongoing stage with every division
+    finished or cancelled; where it is not, the change is dropped. Its jobs, each of which stops
+    the queue where it fails:
+
+    1. `wind_down`: the signup window closed, where one stands open (`close_window_for_wind_down`);
+       each driver the close returned is then told and their channel closed, as jobs of their own.
+    2. `turn_down`: one save turns down the pending placements, returns their drivers to Not
+       Signed Up, moves the season on to Pending completion and writes its line.
+    3. Then, for each driver turned down, `signup_notice` and `close_signup` for a signup in review,
+       or `take_driver_role` for an approved driver.
+
+    *placement* and *hooks* are what the jobs reach Discord and the other modules through, handed
+    by the builder. Without them the change is only described, which is all a caller needs that
+    names its kind (``wind_down_change().kind``) and never runs it.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -307,27 +907,109 @@ def wind_down_change() -> ChangeType:
             return Verdict.not_due("a division of the season is not done")
         return Verdict.go()
 
-    async def wind_down(ctx: StepContext) -> StepResult:
-        moved = await wind_down_ongoing(ctx.bot)
-        return StepResult(result={"moved": moved})
-
-    async def describe(_ctx: StepContext) -> str:
-        return "winding the season down"
-
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
+    steps = wind_down_steps(hooks)
+    if placement is not None and hooks is not None:
+        steps.update(
+            close_signup_steps(placement, hooks, line_prefix="System | Every division is done")
+        )
     return ChangeType(
         kind=WIND_DOWN,
-        opening=(PlannedStep(_WIND_DOWN_STEP),),
-        steps={
-            _WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe)
-        },
+        opening=(PlannedStep(WIND_DOWN_STEP), PlannedStep(TURN_DOWN_STEP)),
+        steps=steps,
         check=check,
         key=lambda _payload: WIND_DOWN,
         doing=lambda _payload: "Winding the season down",
         outcome=outcome,
     )
+
+
+def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
+    """The two jobs that take a season whose every division is done out of its ongoing stages.
+
+    Shared by the change that winds a season down and by the completion, which winds one down
+    first where it finds one (#439):
+
+    1. `wind_down`: the signup window closed, where one stands open; each driver the close
+       returned is then told and their channel closed, as jobs of their own.
+    2. `turn_down`: one save turns down the pending placements, returns their drivers to Not
+       Signed Up, moves the season on to Pending completion and writes its line.
+
+    The jobs that tell and close each driver's signup (`close_signup_steps`) are the change's own
+    to carry. Without *hooks* the jobs are only described.
+    """
+
+    async def wind_down(ctx: StepContext) -> StepResult:
+        if hooks is None:
+            raise RuntimeError("a wind-down is run with the hooks the builder hands it")
+        returned = await close_window_for_wind_down(ctx.bot, hooks, kept=ctx.kept)
+        return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
+
+    async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
+        # A window close discarded after it returned drivers leaves them marked as owed their
+        # notice, with no job planned for them: they are named here and their marks taken.
+        untold = await hooks.take_closing_notices_on(db) if hooks is not None else []
+        untold_lines = tuple(
+            "System | Every division is done | "
+            f"<@{account}> was returned to Not Signed Up when signups closed, but was not told "
+            "and their channel was not closed: tell them and delete it by hand."
+            for account in untold
+        )
+        cursor = await db.execute(
+            "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') ORDER BY id DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return StepResult(result={"moved": False}, lines=untold_lines)
+        season_id = int(row["id"])
+        stage, done = await _stage_and_whether_done_on(db, season_id)
+        if stage is None or SeasonStage(stage) not in ONGOING_STAGES or not done:
+            return StepResult(result={"moved": False}, lines=untold_lines)
+        drivers: list[dict] = []
+        if stage != SeasonStage.ONGOING.value:
+            if hooks is None and any(
+                d["current_state"] in _SIGNUP_IN_PROGRESS
+                for d in await _pending_placement_drivers_on(db, season_id)
+            ):
+                # Refused before anything is written: a signup turned down is marked over in
+                # this save, through the hooks.
+                raise RuntimeError("a wind-down is run with the hooks the builder hands it")
+            drivers = await turn_down_pending_placements_on(db, season_id)
+            await end_signup_wizards_on(db, hooks, drivers)
+            current, _ = await _stage_and_whether_done_on(db, season_id)
+            if current in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
+                await _move_on(db, season_id, SeasonStage(current), SeasonStage.ONGOING)
+        moved = await advance_to_pending_completion_on(db, season_id)
+        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+        config = await cursor.fetchone()
+        planned = driver_jobs(
+            drivers, config["driver_role_id"] if config else None,
+            notice=WIND_DOWN_NOTICE, reason="Season's divisions done; signup turned down",
+        )
+        lines = (
+            (f"System | Every division is done | Pending placements turned down: {len(drivers)}",)
+            if drivers
+            else ()
+        )
+        return StepResult(result={"moved": moved}, lines=(*untold_lines, *lines), then=planned)
+
+    async def describe(_ctx: StepContext) -> str:
+        return "winding the season down"
+
+    async def describe_turn_down(_ctx: StepContext) -> str:
+        return "turning the pending placements down and moving the season on"
+
+    return {
+        WIND_DOWN_STEP: Step(
+            WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe,
+            record=drivers_told_record(hooks),
+        ),
+        TURN_DOWN_STEP: Step(
+            TURN_DOWN_STEP, StepKind.SAVE, turn_down, describe=describe_turn_down
+        ),
+    }
 
 
 async def configuration_fixed(db_path: str) -> int | None:
@@ -416,7 +1098,7 @@ async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
     A division is done when it is finished or cancelled. Only a season in plain Ongoing is
     moved here, this needing nothing but the database. A season with a signup window open or
     placements still to confirm has signups to close and placements to turn down first, which
-    need Discord: :func:`wind_down_ongoing` does that, from wherever a division can finish.
+    need Discord: :func:`wind_down_change` does that, on the change queue, from wherever a division can finish.
     Returns True where this call moved it.
     """
     stage, done = await _stage_and_whether_done(db_path, season_id)
@@ -448,50 +1130,6 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 })
-
-
-async def _close_driver_signups(
-    drivers: list[dict],
-    driver_role_id: int | None,
-    *,
-    bot: LeagueBot | None,
-    guild,
-    notice: str,
-    reason: str,
-) -> None:
-    """The Discord side of returning *drivers* to Not Signed Up: their signups and their role.
-
-    A signup still in progress or in review has its channel told *notice* and set to be
-    deleted, and its inactivity timeout cancelled; an approved real driver loses the driver
-    role. Each driver is a row with ``discord_user_id``, ``current_state`` and
-    ``is_test_driver``. Nothing here is worth the caller's work: every failure is logged.
-    """
-    for driver in drivers:
-        uid = driver["discord_user_id"]
-        if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
-            try:
-                if guild is not None:
-                    await bot.wizard_service.trigger_channel_hold(uid, guild, notice)
-                # The channel's own deletion job stays armed, and reads the wizard record
-                # when it fires; only the inactivity timeout is cancelled.
-                from leaguebot.signup.services.wizard_service import inactivity_job_id
-
-                bot.scheduler_service.cancel_job(inactivity_job_id(uid))
-            except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
-                log.exception("closing signups: could not close the signup of %s", uid)
-        if (
-            guild is not None
-            and driver_role_id
-            and not driver["is_test_driver"]
-            and driver["current_state"] in ("UNASSIGNED", "ASSIGNED")
-        ):
-            member = guild.get_member(int(uid))
-            role = guild.get_role(driver_role_id)
-            if member is not None and role is not None and role in member.roles:
-                try:
-                    await member.remove_roles(role, reason=reason)
-                except Exception:  # noqa: BLE001 — a role is never worth the pass
-                    log.warning("closing signups: could not revoke the driver role of %s", uid, exc_info=True)
 
 
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:
@@ -546,74 +1184,86 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
     return accounts
 
 
-async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=None) -> dict:
-    """The driver pass that ends a season: completion, cancellation and abort alike (#220).
+@dataclass(frozen=True)
+class DriverPass:
+    """What the driver pass did, for the jobs that follow the save it was made in.
 
-    1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A
-       signup still in progress or in review is cancelled: its inactivity timeout is cancelled
-       and, where a guild is to hand, its channel is told and set to be deleted.
-    2. The driver role is revoked from every such real driver, where a guild is to hand.
-    3. Every real driver at Not Signed Up without the former-driver flag — pending deletion —
-       is deleted, with their placements and history entries. Their signups remain.
-    4. The portraits the bot obtained for every account of a deleted driver are discarded,
-       where a bot is to hand (issue #235). A portrait is keyed by account, not by profile,
-       and nothing else would ever remove it. Where the league's driver directory cannot be
-       resolved they are left, file and row alike: see
-       ``driver_portrait_service.discard_portraits``.
+    *reset* is the number of drivers returned to Not Signed Up, *deleted* the ids of the
+    profiles deleted, *accounts* every Discord account those profiles held (their portraits are
+    keyed by account, not by profile), *drivers* each driver returned, as a mapping of
+    ``user_id``, ``state`` (the one they were in) and ``is_test_driver``, and *driver_role_id*
+    the league's driver role, as it stood when the pass ran.
+    """
+
+    reset: int
+    deleted: list[int]
+    accounts: list[str]
+    drivers: list[dict]
+    driver_role_id: int | None
+
+
+async def run_driver_pass_on(db: aiosqlite.Connection) -> DriverPass:
+    """The database side of the driver pass that ends a season, on the connection handed.
+
+    The pass runs inside the save that records a season's end (completion, cancellation and
+    abort alike, #220), so this commits nothing. Its Discord side (each driver's signup channel
+    and driver role) and the discarding of the deleted drivers' portraits are jobs of their own
+    after that save, and are not done here.
+
+    1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up,
+       through the transition table.
+    2. Every real driver at Not Signed Up without the former-driver flag, pending deletion, is
+       deleted, with their placements and history entries. Their signups remain.
 
     A former driver is kept. A driver created by test mode is not deleted here: switching test
-    mode off does that, and keeps their history. Returns ``{"reset": n, "deleted": m}``.
+    mode off does that, and keeps their history.
     """
     placeholders = ",".join("?" for _ in DRIVER_PASS_STATES)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE current_state IN ({placeholders})",
-            (*DRIVER_PASS_STATES,),
-        )
-        to_reset = [dict(r) for r in await cursor.fetchall()]
-        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-        cfg_row = await cursor.fetchone()
-    driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
-
-    await _close_driver_signups(
-        to_reset, driver_role_id, bot=bot, guild=guild,
-        notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
-        reason="Season ended",
+    cursor = await db.execute(
+        f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
+        f"WHERE current_state IN ({placeholders})",
+        (*DRIVER_PASS_STATES,),
     )
+    to_reset = [dict(r) for r in await cursor.fetchall()]
+    cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+    cfg_row = await cursor.fetchone()
+    driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
 
     from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.core.services.driver_service import write_transition
 
-    async with get_connection(db_path) as db:
-        # Through the transition table, as every change of a driver's state is.
-        for driver in to_reset:
-            await write_transition(
-                db, driver["id"], DriverState(driver["current_state"]),
-                DriverState.NOT_SIGNED_UP,
-            )
-        cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE is_test_driver = 0 "
-            "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
+    # Through the transition table, as every change of a driver's state is.
+    for driver in to_reset:
+        await write_transition(
+            db, driver["id"], DriverState(driver["current_state"]),
+            DriverState.NOT_SIGNED_UP,
         )
-        pending_deletion = [r["id"] for r in await cursor.fetchall()]
-        accounts = await delete_driver_profiles(db, pending_deletion, keep_history=False)
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
-            (
-                json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
-                json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
-            ),
-        )
-        await db.commit()
-
-    if bot is not None:
-        # Once committed, so a deletion that fails leaves every portrait where it was.
-        from leaguebot.image.services.driver_portrait_service import discard_portraits
-
-        await discard_portraits(bot, accounts)
-
-    return {"reset": len(to_reset), "deleted": len(pending_deletion)}
-
+    cursor = await db.execute(
+        "SELECT id FROM driver_profiles WHERE is_test_driver = 0 "
+        "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
+    )
+    pending_deletion = [r["id"] for r in await cursor.fetchall()]
+    accounts = await delete_driver_profiles(db, pending_deletion, keep_history=False)
+    await db.execute(
+        "INSERT INTO audit_entries "
+        "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+        "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
+        (
+            json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
+            json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
+        ),
+    )
+    return DriverPass(
+        reset=len(to_reset),
+        deleted=pending_deletion,
+        accounts=accounts,
+        drivers=[
+            {
+                "user_id": d["discord_user_id"],
+                "state": d["current_state"],
+                "is_test_driver": d["is_test_driver"],
+            }
+            for d in to_reset
+        ],
+        driver_role_id=driver_role_id,
+    )

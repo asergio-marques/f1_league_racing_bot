@@ -31,7 +31,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 7654
 ACTOR_ID = 999
@@ -133,6 +133,44 @@ async def _cancel_division(db_path, division_id):
     return called_off
 
 
+async def _refresh(db_path, division_id):
+    """Refresh *division_id* with `refresh_division_status_on` on one connection, committed, as
+    every caller's save does. Gives whether it moved the division."""
+    async with get_connection(db_path) as db:
+        moved = await refresh_division_status_on(db, division_id)
+        await db.commit()
+    return moved
+
+
+async def _every_division_done(db_path):
+    """Whether every division of the season being raced is finished or cancelled, read from the
+    divisions' own statuses: the rule the completion reads, without asking any service."""
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND d.status NOT IN ('FINISHED', 'CANCELLED')"
+        )
+        (open_divisions,) = await cur.fetchone()
+    return open_divisions == 0
+
+
+async def _cancel_season(db_path, season_id):
+    """Cancel *season_id* as the season's cancellation on the change queue records it, on one
+    connection: every division not yet cancelled with its rounds (`cancel_season_divisions_on`),
+    then the season's own row (`cancel_season_on`), last, committed once."""
+    from leaguebot.core.services.season_service import (
+        cancel_season_divisions_on,
+        cancel_season_on,
+    )
+
+    async with get_connection(db_path) as db:
+        await cancel_season_divisions_on(
+            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=NOW
+        )
+        await cancel_season_on(db, season_id)
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # The gate on completing a season
 # ---------------------------------------------------------------------------
@@ -145,9 +183,9 @@ async def test_a_fully_raced_season_can_be_completed(tmp_path) -> None:
 
     for rid in round_ids:
         await _set_round_status(db_path, rid, "FINAL")
-    await svc.refresh_division_status(div_id)
+    await _refresh(db_path, div_id)
 
-    assert await svc.all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
     assert await svc.get_outstanding_rounds() == []
 
 
@@ -158,9 +196,9 @@ async def test_one_unfinalised_round_holds_the_season_open_and_is_named(tmp_path
     svc = SeasonService(db_path)
 
     await _set_round_status(db_path, round_ids[0], "FINAL")
-    await svc.refresh_division_status(div_id)
+    await _refresh(db_path, div_id)
 
-    assert await svc.all_divisions_finished() is False
+    assert await _every_division_done(db_path) is False
     outstanding = await svc.get_outstanding_rounds()
     assert [r["round_number"] for r in outstanding] == [2]
     assert outstanding[0]["division"] == "Div A"
@@ -174,10 +212,10 @@ async def test_post_race_penalty_does_not_count_as_finished(tmp_path) -> None:
     svc = SeasonService(db_path)
 
     await _set_round_status(db_path, round_id, "AWAITING_APPEAL_VERDICTS")
-    await svc.refresh_division_status(div_id)
+    await _refresh(db_path, div_id)
 
     assert await _division_status(db_path, div_id) == "ACTIVE"
-    assert await svc.all_divisions_finished() is False
+    assert await _every_division_done(db_path) is False
     assert [r["round_number"] for r in await svc.get_outstanding_rounds()] == [1]
 
 
@@ -191,7 +229,7 @@ async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None
     await _cancel_round(db_path, round_ids[1])
 
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await svc.all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
     assert await svc.get_outstanding_rounds() == []
 
 
@@ -204,10 +242,10 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
 
     for rid in rounds_a:
         await _set_round_status(db_path, rid, "FINAL")
-    await svc.refresh_division_status(div_a)
+    await _refresh(db_path, div_a)
     await _cancel_division(db_path, div_b)
 
-    assert await svc.all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
     assert await svc.get_outstanding_rounds() == []
 
 
@@ -219,18 +257,17 @@ async def test_a_division_finishes_only_once_nothing_is_outstanding(tmp_path) ->
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path)
     div_id, round_ids = built["Div A"]
-    svc = SeasonService(db_path)
 
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
     await _set_round_status(db_path, round_ids[0], "FINAL")
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
     await _set_round_status(db_path, round_ids[1], "FINAL")
-    assert await svc.refresh_division_status(div_id) is True
+    assert await _refresh(db_path, div_id) is True
     assert await _division_status(db_path, div_id) == "FINISHED"
     # idempotent: a second call reports it did nothing
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
 
 
 @pytest.mark.parametrize("untouchable", ["SETUP", "CANCELLED"])
@@ -239,7 +276,6 @@ async def test_refresh_never_disturbs_a_setup_or_cancelled_division(tmp_path, un
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=0)
     div_id, _ = built["Div A"]
-    svc = SeasonService(db_path)
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -247,7 +283,7 @@ async def test_refresh_never_disturbs_a_setup_or_cancelled_division(tmp_path, un
         )
         await db.commit()
 
-    assert await svc.refresh_division_status(div_id) is False
+    assert await _refresh(db_path, div_id) is False
     assert await _division_status(db_path, div_id) == untouchable
 
 
@@ -324,11 +360,10 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=2)
     div_a, (a_raced, a_unraced) = built["Div A"]
     div_b, b_rounds = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _set_round_status(db_path, a_raced, "FINAL")
 
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     assert await _season_status(db_path, season_id) == "CANCELLED"
     assert await _division_status(db_path, div_a) == "CANCELLED"
@@ -342,16 +377,16 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
 async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     """cancel_round_on leaves alone a round whose season is already archived, giving `None`.
 
-    So a cascade that flipped the season first would lock itself out of its own children. This
-    pins the ordering: Div A's one round is cancelled by the season's cascade, and once the season
-    is archived the same round cancelled again moves nothing.
+    So a cancellation that flipped the season first would lock itself out of its own children.
+    This pins the ordering: Div A's one round is cancelled with its division, the season's row
+    is written after it, and once the season is archived the same round cancelled again moves
+    nothing.
     """
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
     _, (round_id,) = built["Div A"]
-    svc = SeasonService(db_path)
 
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
     # the season is archived now, so the same call moves nothing from here on
@@ -383,7 +418,7 @@ async def test_cancelling_a_season_never_moves_it_to_pending_completion(tmp_path
         )
         await db.commit()
 
-    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     assert await _division_status(db_path, div_b) == "CANCELLED"
     async with get_connection(db_path) as db:
@@ -409,7 +444,7 @@ async def test_cancelling_a_season_audits_each_round_with_the_status_it_was_canc
     _, (awaiting, not_run) = built["Div A"]
     await _set_round_status(db_path, awaiting, "AWAITING_RESULTS")
 
-    await SeasonService(db_path).cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     assert await _round_status(db_path, awaiting) == "CANCELLED"
     assert await _round_status(db_path, not_run) == "CANCELLED"
@@ -425,10 +460,9 @@ async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tm
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
     div_b, (b_round,) = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _cancel_division(db_path, div_b)
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    await _cancel_season(db_path, season_id)
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -479,95 +513,6 @@ async def test_the_dead_finalized_column_is_gone(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The refusal `/season complete` gives
-# ---------------------------------------------------------------------------
-
-async def _run_season_complete(divisions, outstanding, all_done=False):
-    """Drive the `/season complete` callback past its decorators and capture the reply."""
-    import inspect
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = SeasonCog.__new__(SeasonCog)
-    # ``MagicMock`` with each awaited member named (issue #240). On a whole-bot
-    # ``AsyncMock`` the two readers pinned just below answered truthily without being
-    # asked to, so the gate this drives could pass on the stub rather than the season.
-    cog.bot = MagicMock()
-    cog.bot.output_router.post_log = AsyncMock()
-    svc = cog.bot.season_service
-    svc.wind_down_ongoing = AsyncMock()
-    svc.get_confirmed_season = AsyncMock(return_value=MagicMock(id=1, season_number=1))
-    svc.get_divisions = AsyncMock(return_value=divisions)
-    svc.refresh_division_status = AsyncMock(return_value=False)
-    svc.all_divisions_finished = AsyncMock(return_value=all_done)
-    svc.get_outstanding_rounds = AsyncMock(return_value=outstanding)
-    from leaguebot.core.models.season import SeasonStage
-
-    svc.get_stage = AsyncMock(return_value=SeasonStage.PENDING_COMPLETION)
-
-    sent: list[str] = []
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    # Connected to the cog's log channel, and not yet answered, as Discord's interaction is
-    # before its reply, so a refusal the command records lands where a real one would.
-    interaction.client = cog.bot
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock(side_effect=lambda msg, **kw: sent.append(msg))
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-
-    raw = inspect.unwrap(SeasonCog.season_complete.callback)
-
-    # The archival itself belongs to season_end_service and has its own tests; stub it so this
-    # exercises the gate and nothing beyond it.
-    with patch("leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock()) as archived, patch(
-        "leaguebot.results.services.result_submission_service.open_amendment_in_season",
-        new=AsyncMock(return_value=None),
-    ):
-        await raw(cog, interaction)
-    return sent, svc, archived
-
-
-async def test_the_refusal_names_the_outstanding_rounds() -> None:
-    divisions = [MagicMock(id=1, name="Div A", status="ACTIVE")]
-    sent, svc, archived = await _run_season_complete(
-        divisions,
-        [{"division": "Div A", "round_number": 2, "track_name": "Monza"}],
-    )
-    assert len(sent) == 1
-    assert "Div A — Round 2" in sent[0]
-    assert "Monza" in sent[0]
-    # the stale-status reread happens before the gate is consulted
-    svc.refresh_division_status.assert_awaited_once_with(1)
-    archived.assert_not_awaited()
-
-
-async def test_the_refusal_never_names_nothing() -> None:
-    """A refusal listing no rounds is the dead end #154 put leagues in.
-
-    If the gate ever fails with nothing outstanding, the division holding the season open must
-    be named — otherwise the league is told it cannot continue and not told why.
-    """
-    divisions = [
-        MagicMock(id=1, name="Div A", status="FINISHED"),
-        MagicMock(id=2, name="Div B", status="SETUP"),
-    ]
-    sent, _, archived = await _run_season_complete(divisions, [])
-    assert len(sent) == 1
-    assert "Div B" in sent[0]
-    archived.assert_not_awaited()
-    assert "Div A" not in sent[0], "a finished division is not holding anything open"
-
-
-async def test_a_finished_season_is_not_refused() -> None:
-    divisions = [MagicMock(id=1, name="Div A", status="FINISHED")]
-    sent, _, archived = await _run_season_complete(divisions, [], all_done=True)
-    assert sent == [], "nothing should be refused when every division has finished"
-    archived.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
 # Driver history records a cancellation
 # ---------------------------------------------------------------------------
 #
@@ -608,34 +553,30 @@ async def _history(db_path):
 
 
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
-    from unittest.mock import AsyncMock, MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
     div_a, (a_round,) = built["Div A"]
     div_b, _ = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _seat_driver(db_path, div_a, season_id, name="alice")
     await _seat_driver(db_path, div_b, season_id, name="bob")
 
     await _set_round_status(db_path, a_round, "FINAL")
-    await svc.refresh_division_status(div_a)
+    await _refresh(db_path, div_a)
     await _cancel_division(db_path, div_b)
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    season = MagicMock(id=season_id, season_number=1)
-    await _write_driver_history_entries(season, bot)
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1)
+        await db.commit()
 
     assert await _history(db_path) == [("Div A", 0), ("Div B", 1)]
 
 
 async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) -> None:
     """Mock drivers are drivers, artificially injected — they are not filtered out."""
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
@@ -644,9 +585,9 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
     await _seat_driver(db_path, div_id, season_id, name="real", is_test=0)
     await _seat_driver(db_path, div_id, season_id, name="mock", is_test=1)
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    await _write_driver_history_entries(MagicMock(id=season_id, season_number=1), bot)
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cur = await db.execute("SELECT COUNT(*) FROM driver_history_entries")
@@ -656,27 +597,22 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
 
 async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) -> None:
     """A cancelled season used to leave no trace in anybody's history at all."""
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
     div_a, _ = built["Div A"]
     div_b, _ = built["Div B"]
-    svc = SeasonService(db_path)
 
     await _seat_driver(db_path, div_a, season_id, name="alice")
     await _seat_driver(db_path, div_b, season_id, name="bob")
 
-    bot = MagicMock()
-    bot.db_path = db_path
-
-    # `/season cancel` writes history first, while the season is still ACTIVE and the command is
-    # still retryable, so the flag is forced rather than read from divisions not yet cascaded.
-    await _write_driver_history_entries(
-        MagicMock(id=season_id, season_number=1), bot, force_cancelled=True
-    )
-    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
+    # The flag is forced rather than read from the divisions, so the history is marked cancelled
+    # whichever of them the cancellation has reached when it is written.
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1, force_cancelled=True)
+        await db.commit()
+    await _cancel_season(db_path, season_id)
 
     assert await _history(db_path) == [("Div A", 1), ("Div B", 1)]
 
@@ -694,36 +630,34 @@ async def test_the_flag_defaults_to_not_cancelled(tmp_path) -> None:
 
 
 async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
-    """Ending a season is several writes with no transaction, and its own row flips last.
+    """The history written a second time for the same season adds no second set.
 
-    So a process that dies part-way leaves the season ACTIVE with history already written, and
-    the retry a league is told to run would append a second set that nothing could tell apart.
-    The unique index from migration 053 plus `INSERT OR IGNORE` is what stands in for the
-    atomicity the sequence does not have — this is the test the migration comment names.
+    The unique index from migration 053 plus `INSERT OR IGNORE` is what keeps a second write of
+    a season's history from appending a set that nothing could tell apart from the first — this
+    is the test the migration comment names.
     """
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
     div_id, _ = built["Div A"]
     await _seat_driver(db_path, div_id, season_id, name="alice")
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    season = MagicMock(id=season_id, season_number=1)
+    async def write_once():
+        async with get_connection(db_path) as db:
+            await write_driver_history_entries_on(db, season_id, 1)
+            await db.commit()
 
-    await _write_driver_history_entries(season, bot)
+    await write_once()
     first = await _history(db_path)
-    await _write_driver_history_entries(season, bot)
+    await write_once()
 
     assert await _history(db_path) == first == [("Div A", 0)]
 
 
 async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path) -> None:
     """The unique key includes the division, so two divisions in one season is not a duplicate."""
-    from unittest.mock import MagicMock
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -739,9 +673,9 @@ async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path
         )
         await db.commit()
 
-    bot = MagicMock()
-    bot.db_path = db_path
-    await _write_driver_history_entries(MagicMock(id=season_id, season_number=1), bot)
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, season_id, 1)
+        await db.commit()
 
     assert await _history(db_path) == [("Div A", 0), ("Div B", 0)]
 
@@ -805,7 +739,7 @@ async def test_without_the_results_module_the_round_ends_when_its_moment_arrives
     assert await _round_status(db_path, round_id) == "FINAL"
     # and the division finishes with it, so the season can be completed
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await SeasonService(db_path).all_divisions_finished() is True
+    assert await _every_division_done(db_path) is True
 
 
 async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tmp_path) -> None:
@@ -821,3 +755,70 @@ async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tm
     await _set_round_status(db_path, round_id, "CANCELLED")
     await _run_the_round_job(db_path, round_id, results_enabled=False)
     assert await _round_status(db_path, round_id) == "CANCELLED"
+
+
+async def test_without_the_results_module_the_round_and_its_division_are_saved_together(
+    tmp_path, monkeypatch
+) -> None:
+    """The round's move off Not run and its division's refresh are one save (#439, slice 5).
+
+    Today the round's move commits first and the refresh commits on its own, so a refresh that
+    fails leaves the round final over a division never told. Both forms of the refresh are made
+    to raise, today's method and the on-connection form the job saves through, so the test reads
+    the same before and after the change.
+    """
+    from leaguebot.core.services import season_service
+    from leaguebot.results.services import result_submission_service
+
+    async def refused(*args, **kwargs):
+        raise RuntimeError("the division could not be refreshed")
+
+    monkeypatch.setattr(
+        season_service.SeasonService, "refresh_division_status", refused, raising=False
+    )
+    monkeypatch.setattr(season_service, "refresh_division_status_on", refused)
+    monkeypatch.setattr(
+        result_submission_service, "refresh_division_status_on", refused, raising=False
+    )
+
+    db_path = str(tmp_path / "bot.db")
+    _, built = await _seed(db_path, rounds_per_division=1)
+    div_id, (round_id,) = built["Div A"]
+
+    await _run_the_round_job(db_path, round_id, results_enabled=False)
+
+    assert await _round_status(db_path, round_id) == "NOT_RUN"
+    assert await _division_status(db_path, div_id) == "ACTIVE"
+
+
+async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tmp_path) -> None:
+    """The season's wind-down is asked of the change queue as the bot's, not run in-process
+    (#439, slice 5). Today the job calls `wind_down_ongoing` itself and logs its failure."""
+    import contextlib
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.results.services.result_submission_service import run_result_submission_job
+
+    db_path = str(tmp_path / "bot.db")
+    season_id, built = await _seed(db_path, rounds_per_division=1)
+    _, (round_id,) = built["Div A"]
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", (season_id,)
+        )
+        await db.commit()
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    bot.change_queue.ask = AsyncMock(return_value=1)
+    with contextlib.suppress(Exception):
+        await run_result_submission_job(round_id, bot)
+
+    assert await _round_status(db_path, round_id) == "FINAL"
+    bot.change_queue.ask.assert_awaited_once()
+    call = bot.change_queue.ask.await_args
+    kind = call.args[0] if call.args else call.kwargs["kind"]
+    assert kind == "season.wind_down"
+    assert call.kwargs["origin"] is ChangeOrigin.BOT

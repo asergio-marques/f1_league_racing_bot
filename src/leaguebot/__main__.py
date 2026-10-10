@@ -5,9 +5,10 @@ import json
 import logging
 import os
 from datetime import datetime
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
+import aiosqlite
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.cancellation_changes import SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
+    from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
 
 load_dotenv()
 
@@ -161,6 +163,106 @@ def _forget_setup(bot: LeagueBot) -> None:
         cog.clear_pending()
 
 
+def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
+    """What a season's end needs of signup, results, weather, image and the cog, handed it here so
+    that core imports none of them. Each is looked up as it is called, so that nothing is bound
+    before it is needed."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.season_lifecycle_service import (
+        WINDOW_CLOSED_NOTICE,
+        SeasonEndHooks,
+    )
+    from leaguebot.image.services import driver_portrait_service
+    from leaguebot.results.services import result_submission_service
+    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+    from leaguebot.weather.services import forecast_cleanup_service
+
+    async def close_signups(bot_: LeagueBot, cause: str):
+        return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
+
+    async def window_open() -> bool:
+        if not await bot.module_service.is_signup_enabled():
+            return False
+        config = await bot.signup_module_service.get_config()
+        return config is not None and config.signups_open
+
+    async def post_signup_notice(user_id: str, guild: discord.Guild, notice: str):
+        return await bot.wizard_service.trigger_channel_hold(
+            user_id, guild, notice, lock=False, raise_on_failure=True
+        )
+
+    async def lock_signup_channel(user_id: str, guild: discord.Guild) -> None:
+        await bot.wizard_service.lock_signup_channel(user_id, guild)
+
+    def cancel_signup_timeout(user_id: str) -> None:
+        bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
+
+    async def discard_portraits(accounts):
+        return await driver_portrait_service.discard_portraits(bot, accounts)
+
+    async def amendment_open(db_path: str, season_id: int):
+        return await result_submission_service.open_amendment_in_season(db_path, season_id)
+
+    async def flush_forecasts() -> None:
+        await forecast_cleanup_service.flush_pending_deletions(bot)
+
+    def discard_backup() -> object:
+        return backup_service.discard(
+            bot.db_path, backup_service.jobstore_path_of(bot), raise_on_failure=True
+        )
+
+    async def owed_closing_notices() -> list[str]:
+        return await bot.signup_module_service.owed_closing_notices()
+
+    async def clear_closing_notices_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> None:
+        await bot.signup_module_service.clear_closing_notices_on(db, accounts)
+
+    async def take_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
+        return await bot.signup_module_service.take_closing_notices_on(db)
+
+    async def end_wizards_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> None:
+        for account in accounts:
+            await bot.signup_module_service.end_wizard_on(db, str(account))
+
+    async def off_queue_closing_notices() -> list[str]:
+        return await bot.signup_module_service.off_queue_closing_notices()
+
+    async def take_off_queue_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
+        return await bot.signup_module_service.take_off_queue_closing_notices_on(db)
+
+    async def closing_held(user_id: str, guild: discord.Guild) -> bool:
+        # A channel-delete job standing is the record of a hold; where the scheduler dropped it
+        # after a long stop, the wizard service judges the channel and arms the deletion again.
+        if bot.scheduler_service.has_job(channel_delete_job_id(user_id)):
+            return True
+        return await bot.wizard_service.rearm_deletion_if_held(
+            user_id, guild, WINDOW_CLOSED_NOTICE
+        )
+
+    return SeasonEndHooks(
+        close_signups=close_signups,
+        window_open=window_open,
+        cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
+        post_signup_notice=post_signup_notice,
+        lock_signup_channel=lock_signup_channel,
+        cancel_signup_timeout=cancel_signup_timeout,
+        discard_portraits=discard_portraits,
+        amendment_open=amendment_open,
+        flush_forecasts=flush_forecasts,
+        discard_backup=discard_backup,
+        forget_setup=lambda: _forget_setup(bot),
+        owed_closing_notices=owed_closing_notices,
+        clear_closing_notices_on=clear_closing_notices_on,
+        take_closing_notices_on=take_closing_notices_on,
+        end_wizards_on=end_wizards_on,
+        off_queue_closing_notices=off_queue_closing_notices,
+        take_off_queue_closing_notices_on=take_off_queue_closing_notices_on,
+        cut_off_window_open=lambda: bot.signup_module_service.cut_off_window_open(),
+        closing_held=closing_held,
+    )
+
+
 def _submission_hooks() -> "SubmissionHooks":
     """What a cancellation needs of results' submissions, handed it here so that core imports no
     module."""
@@ -248,6 +350,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.cancellation_changes import (
         division_cancel_change,
         round_cancel_change,
+        season_cancel_change,
     )
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
@@ -255,7 +358,11 @@ def register_change_types(bot: LeagueBot) -> None:
         season_approval_change,
         season_approval_tell_change,
     )
-    from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
+    from leaguebot.core.services.season_lifecycle_service import (
+        close_finish_change,
+        wind_down_change,
+    )
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
@@ -297,7 +404,34 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(hub_refresh_change())
-    bot.change_queue.register(wind_down_change())
+    hooks = _season_end_hooks(bot)
+    bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
+    bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))
+    bot.change_queue.register(
+        season_complete_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            placement=bot.placement_service,
+            hooks=hooks,
+        )
+    )
+    bot.change_queue.register(
+        season_cancel_change(
+            modules=bot.module_service,
+            seasons=bot.season_service,
+            scheduler=bot.scheduler_service,
+            placement=bot.placement_service,
+            submissions=_submission_hooks(),
+            hooks=hooks,
+            now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(
+        season_abort_change(
+            seasons=bot.season_service, placement=bot.placement_service, hooks=hooks
+        )
+    )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the
     # enabled modules', and the drawing program the host's, read through `converter_available`
     # when it is judged, so a test that patches it moves the judgement.
@@ -599,6 +733,9 @@ async def main() -> None:
 
         await _recover_signup_close_timers()
 
+        # A season a window's close left in the window's stage, the move cut off or failed.
+        await _recover_season_left_by_a_closed_window(bot)
+
         # Close any results-amend channels left open by a previous run.
         #
         # **Before the submission channels, not after** (#345). An amendment open at the restart
@@ -647,6 +784,12 @@ async def main() -> None:
             await bot.wizard_service.recover_wizards()
         except NotImplementedError:
             pass  # stub until T030 is implemented
+
+        # Finish any close of the signup window off the queue that the stop cut off, its drivers
+        # returned and not yet told. After the close timers', whose restart close may leave marks
+        # of its own, and the wizards', which pass these over; before the queue starts, so that
+        # the change is saved and run behind any change the queue resumes.
+        await _recover_off_queue_closing_notices(bot)
 
         # Restore in-memory pending setups from DB SETUP seasons
         await _recover_pending_setups(bot)
@@ -1683,6 +1826,53 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
                 "Recovery: failed to post log for orphaned amend channel round %s sessions %s",
                 round_id, _sessions,
             )
+
+
+async def _recover_season_left_by_a_closed_window(bot: LeagueBot) -> None:
+    """Move on a season a signup window's close left in the window's stage, no window being open
+    (`season_lifecycle_service.move_on_a_season_left_by_a_closed_window`). Signup's window is read
+    here, where the modules meet, so that core reads no table of signup's. A failure is logged,
+    and the start goes on: the next start tries again."""
+    from leaguebot.core.services.season_lifecycle_service import (
+        move_on_a_season_left_by_a_closed_window,
+    )
+
+    try:
+        config = await bot.signup_module_service.get_config()
+        window_open = (
+            await bot.module_service.is_signup_enabled()
+            and config is not None
+            and bool(config.signups_open)
+        )
+        moved = await move_on_a_season_left_by_a_closed_window(
+            bot.db_path, window_open=window_open
+        )
+        if moved is not None:
+            log.info("on_ready: moved the season on to %s, its signup window closed", moved.value)
+    except Exception:
+        log.exception("Could not move on a season its signup window's close left behind")
+
+
+async def _recover_off_queue_closing_notices(bot: LeagueBot) -> None:
+    """Ask the change queue, as the bot, to finish a close of the signup window off the queue
+    that a stop cut off (`signup.close.finish`), where any driver it returned is still owed their
+    notice. Nothing is asked where none is: the queue's own close keeps marks of its own, which
+    the queue finds for itself. A failure to ask is logged, and the start goes on: the marks stand
+    for the next start to find."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.season_lifecycle_service import CLOSE_FINISH
+
+    try:
+        if not await bot.signup_module_service.off_queue_closing_notices():
+            return
+        await bot.change_queue.ask(
+            CLOSE_FINISH,
+            {},
+            origin=ChangeOrigin.BOT,
+            what="finishing the signup window's close a stop cut off",
+        )
+    except Exception:
+        log.exception("Could not ask to finish the signup window's close a stop cut off")
 
 
 async def _recover_pending_setups(bot: LeagueBot) -> None:

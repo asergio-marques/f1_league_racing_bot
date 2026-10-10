@@ -127,20 +127,17 @@ async def _seed_a_finished_season(db_path: str) -> None:
 
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
-    from types import SimpleNamespace
-
     from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.core.services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
 
     await _seed_a_finished_season(db_path)
     await DriverService(db_path).reassign_user_id(
         _OLD_USER, _NEW_USER, 77, "Manager"
     )
 
-    await _write_driver_history_entries(
-        SimpleNamespace(id=_SEASON_ID, season_number=4),
-        SimpleNamespace(db_path=db_path),
-    )
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(db, _SEASON_ID, 4)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

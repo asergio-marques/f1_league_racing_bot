@@ -301,7 +301,9 @@ def save(db_path: str | Path, jobstore_path: str | Path) -> None:
     log.info("backup: saved %s and %s", league_target, jobs_target)
 
 
-def discard(db_path: str | Path, jobstore_path: str | Path) -> bool:
+def discard(
+    db_path: str | Path, jobstore_path: str | Path, *, raise_on_failure: bool = False
+) -> bool:
     """Delete the saved backup, its scheduler half and the lock, and say whether one was there.
 
     A saved state belongs to the test season it was taken in: nothing restores it once that
@@ -312,17 +314,26 @@ def discard(db_path: str | Path, jobstore_path: str | Path) -> bool:
     **The lock does not protect it.** The lock exists to stop a *save* overwriting a state a
     maintainer means to keep for the run they are in; it is not a reason to keep a state past
     the run itself. The lock file goes too, so the next test season saves freely.
+
+    Every file is tried whatever becomes of the others. By default a fault on one is logged and
+    passed over, as the toggle in Configuration wants. With *raise_on_failure*, as a season's
+    completion asks of it as a job on the change queue, the first fault met is raised once all
+    three have been tried, so the queue stops at it and a Retry finishes what is left.
     """
     removed = False
+    fault: OSError | None = None
     for path in (backup_path(db_path), backup_path(jobstore_path), lock_path(db_path)):
         try:
             if Path(path).is_file():
                 Path(path).unlink()
                 removed = True
-        except OSError:  # noqa: PERF203 — one file failing must not keep the others
+        except OSError as err:  # noqa: PERF203 — one file failing must not keep the others
             log.exception("backup: could not delete %s", path)
+            fault = fault or err
     if removed:
         log.info("backup: discarded the saved state beside %s", db_path)
+    if fault is not None and raise_on_failure:
+        raise fault
     return removed
 
 

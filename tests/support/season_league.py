@@ -56,9 +56,26 @@ always. The scheduler double records `schedule_round` as weather's arming. `amen
 `amendment_changes` lists the amendments asked of the queue; `accept_session` saves a session's
 results as the wizard does on accepting them; `posted_forecast` records a phase's forecast as
 posted, its message standing in the division's forecast channel.
+
+For a season's end on the queue (slice 5), `ongoing_league` also takes *test_mode*,
+*signups_open* and *held* (`season_end_extras`): the members holding their division, team and
+driver roles, each role taken back recorded in `league.revoked` and refused for a member in
+`league.revoke_fails`; a wizard double recording each signup channel's closing notice in
+`league.notices` and each channel locked in `league.locked`, refusing as `league.hold_fails` and
+`league.lock_fails` say; and the window's close raising `league.close_fails`.
+`approved_unplaced` adds a driver approved and never placed (`UNASSIGNED`), holding the driver
+role. `pending_completion_league` builds the season with every round final and both divisions finished,
+results accepted for three rounds; `setup_league` the season before its placements are confirmed,
+for the abort. `complete_season`, `cancel_season` and `abort_season` run the three commands as
+admin 77 and give the interaction; `season_end_changes` lists the season's ends asked of the queue;
+`seed_season_end` puts one in hand on the queue, as another request would find it, and
+`SEASON_END_IN_HAND` holds the refusal of a request about the season while it is.
+`wizard_state` reads a driver's signup wizard, and `wizards_recovered` recovers the wizards as
+the bot does when it starts, recording what it would arm or expire.
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -165,6 +182,7 @@ class SeasonLeague:
         self.fetch_fails: dict[int, BaseException] = {}
         self.grant_fails: dict[int, BaseException] = {}
         self.roles_gone: set[int] = set()
+        self._role_doubles: dict[int, Any] = {}
         self.arming_fails: BaseException | None = None
         self.rasteriser_on = True
         #: The round ids `scheduler.cancel_round` was handed (`ongoing_league`), in order.
@@ -175,6 +193,22 @@ class SeasonLeague:
         self._removed: dict[int, Any] = {}
         #: Each backup question answered: (the answer, how many changes were asked by then).
         self.backup_answers: list[tuple[str, int]] = []
+        #: The roles each member holds on the server (`ongoing_league`'s *held*), by user id.
+        self.roles_held: dict[int, set[int]] = {}
+        #: The roles taken back from each member, in order (slice 5).
+        self.revoked: dict[int, list[int]] = {}
+        #: Members whose roles Discord refuses to take back, and what it raises.
+        self.revoke_fails: dict[int, BaseException] = {}
+        #: Drivers whose signup channel's closing notice Discord refuses, and what it raises.
+        self.hold_fails: dict[int, BaseException] = {}
+        #: Drivers whose signup channel Discord refuses to lock, and what it raises.
+        self.lock_fails: dict[int, BaseException] = {}
+        #: Each closing notice posted in a driver's signup channel: (user id, the notice).
+        self.notices: list[tuple[int, str]] = []
+        #: Each driver whose signup channel was locked and its deletion armed, in order.
+        self.locked: list[int] = []
+        #: What the signup window's close raises as it records the window closed, if anything.
+        self.close_fails: BaseException | None = None
         self.bot = bot = league_double(db_path)
         ids = [REVIEW_CHANNEL]
         for _name, _tier, _role, chans in DIVISIONS.values():
@@ -250,11 +284,17 @@ class SeasonLeague:
         return chan
 
     def _role(self, role_id: int) -> Any:
+        """The one double of role *role_id*, or None where it is gone from the server.
+
+        One double per id, so that `role in member.roles` holds as it does for a real
+        `discord.Role`, which compares by id."""
         if role_id in self.roles_gone:
             return None
-        role = MagicMock(spec=discord.Role)
-        role.id = role_id
-        return role
+        if role_id not in self._role_doubles:
+            role = MagicMock(spec=discord.Role)
+            role.id = role_id
+            self._role_doubles[role_id] = role
+        return self._role_doubles[role_id]
 
     def _member(self, user_id: int) -> Any:
         person = MagicMock(spec=discord.Member)
@@ -262,7 +302,8 @@ class SeasonLeague:
         person.display_name = NAMES.get(user_id, str(user_id))
         person.mention = f"<@{user_id}>"
         person.bot = user_id == BOT_USER_ID
-        person.roles = []
+        person.roles = [role for role in map(self._role, sorted(self.roles_held.get(user_id, ())))
+                        if role is not None]
         person.guild = self.guild
 
         async def _add_roles(*roles: Any, **_kwargs: Any) -> None:
@@ -270,7 +311,16 @@ class SeasonLeague:
                 raise self.grant_fails[user_id]
             self.granted.setdefault(user_id, []).extend(role.id for role in roles)
 
+        async def _remove_roles(*roles: Any, **_kwargs: Any) -> None:
+            if user_id in self.revoke_fails:
+                raise self.revoke_fails[user_id]
+            taken = [role.id for role in roles]
+            self.revoked.setdefault(user_id, []).extend(taken)
+            self.roles_held[user_id] = self.roles_held.get(user_id, set()) - set(taken)
+            self.events.append(("revoke", user_id, len(taken)))
+
         person.add_roles = AsyncMock(side_effect=_add_roles)
+        person.remove_roles = AsyncMock(side_effect=_remove_roles)
         return person
 
     def _member_or_none(self, user_id: int) -> Any:
@@ -654,14 +704,16 @@ DIVISION_CANCEL_KIND = "season.division.cancel"
 async def ongoing_league(
     tmp_path: Any, *, weather: bool = False, results: bool = True, attendance: bool = False,
     images: bool = False, horizons: tuple[int, int, int] | None = None,
-    phases_done: dict[int, tuple[int, ...]] | None = None,
+    phases_done: dict[int, tuple[int, ...]] | None = None, test_mode: bool = False,
+    signups_open: bool = False, held: bool = False,
 ) -> SeasonLeague:
     """The ongoing season of the module docstring, its modules as asked.
 
     *horizons*, where given, are the league's weather horizons (phase 1 days, phase 2 days,
-    phase 3 hours); *phases_done* marks, for each round id, the phases already performed."""
+    phase 3 hours); *phases_done* marks, for each round id, the phases already performed.
+    *test_mode*, *signups_open* and *held* are `season_end_extras`'."""
     league = await season_league(tmp_path, weather=weather, results=results,
-                                 attendance=attendance, images=images)
+                                 attendance=attendance, images=images, extra_drivers=test_mode)
     now = league.clock.now
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -716,6 +768,8 @@ async def ongoing_league(
     for message_id in CALL_MESSAGES:
         checkin.seed(message_id, "Round 3 check-in")
         _refusing_delete(league, checkin.messages[message_id])
+    await season_end_extras(league, tmp_path, test_mode=test_mode, signups_open=signups_open,
+                            held=held)
     return league
 
 
@@ -848,3 +902,390 @@ async def posted_forecast(league: SeasonLeague, round_: int, phase: int, message
     forecast = league.channel(DIVISIONS[division][3].forecast)
     forecast.seed(message_id, f"Phase {phase} forecast")
     _refusing_delete(league, forecast.messages[message_id])
+
+
+# ---------------------------------------------------------------------------
+# A season's end on the change queue (slice 5)
+# ---------------------------------------------------------------------------
+
+#: The kinds of a season's completion, cancellation and abort, and the wind-down, on the queue.
+SEASON_COMPLETE_KIND = "season.complete"
+SEASON_CANCEL_KIND = "season.cancel"
+SEASON_ABORT_KIND = "season.abort"
+WIND_DOWN_KIND = "season.wind_down"
+SEASON_END_KINDS = (SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND, SEASON_ABORT_KIND)
+#: The league's driver role, set where the members hold their roles (*held*).
+DRIVER_ROLE = 820
+#: The signup channel, where the Sign Up button stands while the window is open.
+SIGNUP_CHANNEL = 620
+#: The Sign Up button's message, in `SIGNUP_CHANNEL`.
+SIGNUP_BUTTON = 6201
+#: A driver part-way through signing up (`signing_up`), with no placement.
+SIGNING_UP = 105
+NAMES[SIGNING_UP] = "Kimi"
+#: Each signing-up driver's signup channel is `SIGNUP_CHANNEL_BASE` + their user id.
+SIGNUP_CHANNEL_BASE = 6300
+#: A driver approved for the season but never placed (`approved_unplaced`): Unassigned.
+UNASSIGNED = 106
+NAMES[UNASSIGNED] = "Valtteri"
+
+
+async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: bool = False,
+                            signups_open: bool = False, held: bool = False) -> None:
+    """What a season's end reads beyond the season itself.
+
+    Always: the real signup module and driver services, the window's recording of its close
+    raising `league.close_fails` where set; a wizard service double (`bot.wizard_service`) whose `trigger_channel_hold` records
+    each closing notice in `league.notices` (refusing those in `league.hold_fails`) and, unless
+    handed ``lock=False``, the channel in `league.locked`; whose `lock_signup_channel` records the
+    channel in `league.locked` (refusing those in `league.lock_fails`); and the scheduler's job
+    store under *tmp_path*, for the backup to be found beside it.
+
+    *test_mode*: test mode on, the test driver (104) seated at McLaren, and a saved test-mode
+    backup of the league and of the job store present (`backup_saved`).
+    *signups_open*: the signup module on and its window open in `SIGNUP_CHANNEL`, its Sign Up
+    button standing there (`SIGNUP_BUTTON`).
+    *held*: the league's driver role (820) set, and every real driver holding their division
+    role, their team role and the driver role; the test driver holds none.
+    """
+    bot = league.bot
+    _wizard_double(league)
+    _signup_services(league)
+    bot.scheduler_service._jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
+    if test_mode:
+        from leaguebot.core.services.backup_service import backup_path
+
+        await league.set_test_mode(True)
+        for live in (league.db_path, bot.scheduler_service._jobstore_path):
+            backup_path(live).write_bytes(b"saved")
+    if signups_open:
+        await _open_signups(league)
+    if held:
+        await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
+        for user_id, (team_id, _seat) in SEATS.items():
+            division_id = TEAMS[team_id][0]
+            league.roles_held[user_id] = {DIVISIONS[division_id][2], TEAMS[team_id][3],
+                                          DRIVER_ROLE}
+
+
+def backup_saved(league: SeasonLeague) -> bool:
+    """Whether a saved test-mode backup of the league's database is still present."""
+    from leaguebot.core.services.backup_service import backup_path
+
+    return backup_path(league.db_path).is_file()
+
+
+def _wizard_double(league: SeasonLeague) -> None:
+    async def _hold(user_id: Any, _guild: Any, notice: str, **kwargs: Any) -> Any:
+        uid = int(user_id)
+        league.events.append(("notice", uid, 0))
+        if uid in league.hold_fails:
+            raise league.hold_fails[uid]
+        league.notices.append((uid, notice))
+        if kwargs.get("lock", True):
+            league.events.append(("lock", uid, 0))
+            league.locked.append(uid)
+        return SimpleNamespace(channel_id=SIGNUP_CHANNEL_BASE + uid, posted=True,
+                               locked=kwargs.get("lock", True), reason=None)
+
+    async def _lock(user_id: Any, _guild: Any) -> None:
+        uid = int(user_id)
+        if uid in league.lock_fails:
+            raise league.lock_fails[uid]
+        league.events.append(("lock", uid, 0))
+        league.locked.append(uid)
+
+    wizard = MagicMock()
+    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
+    wizard.lock_signup_channel = AsyncMock(side_effect=_lock)
+    league.bot.wizard_service = wizard
+
+
+def _signup_services(league: SeasonLeague) -> None:
+    """The real signup module service and driver service, the window's recording of its close
+    raising `league.close_fails` where set."""
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    service = SignupModuleService(league.db_path)
+    closing = service.set_window_closed
+
+    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+        if league.close_fails is not None:
+            raise league.close_fails
+        return await closing(*args, **kwargs)
+
+    service.set_window_closed = _set_window_closed
+    league.bot.signup_module_service = service
+    league.bot.driver_service = DriverService(league.db_path)
+
+
+async def _open_signups(league: SeasonLeague) -> None:
+    await league.switch("signup", True)
+    await league.write(
+        "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id, signups_open, "
+        "signup_button_message_id) VALUES (1, ?, 1, ?)",
+        SIGNUP_CHANNEL, SIGNUP_BUTTON,
+    )
+    signup = league._recording(channel(SIGNUP_CHANNEL, league.events))
+    signup.guild = league.guild
+    signup.seed(SIGNUP_BUTTON, "Sign Up")
+    league.channels[SIGNUP_CHANNEL] = signup
+
+
+async def window_open(league: SeasonLeague) -> bool:
+    """Whether the signup window still stands open."""
+    rows = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+    return bool(rows and rows[0]["signups_open"])
+
+
+async def signing_up(league: SeasonLeague, user_id: int = SIGNING_UP, *,
+                     state: str = "PENDING_ADMIN_APPROVAL") -> None:
+    """Driver *user_id* stands part-way through signing up, at *state*, their wizard holding a
+    signup channel (`SIGNUP_CHANNEL_BASE` + their user id); they hold no placement."""
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, ?, ?, 0)",
+        profile_id(user_id), str(user_id), state,
+    )
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES (?, ?, ?)",
+        str(user_id), state, SIGNUP_CHANNEL_BASE + user_id,
+    )
+
+
+async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> None:
+    """Driver *user_id* was approved for the season and never placed: Unassigned, signed up for
+    season 3 with no seat, and holding the league's driver role on the server."""
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, ?, 'UNASSIGNED', 0)",
+        profile_id(user_id), str(user_id),
+    )
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name) "
+        "VALUES (?, ?, ?)",
+        SEASON_ID, str(user_id), NAMES[user_id],
+    )
+    league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)
+
+
+async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
+    """The state of driver *user_id*'s signup wizard, or None where they have none."""
+    rows = await league.rows(
+        "SELECT wizard_state FROM signup_wizard_records WHERE discord_user_id = ?", str(user_id)
+    )
+    return rows[0]["wizard_state"] if rows else None
+
+
+async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
+    """The signup wizards recovered as the bot does when it starts (`recover_wizards`), over the
+    league's real signup module and driver services; gives the accounts whose inactivity job was
+    armed again (``armed``) and those expired at once (``expired``), neither run. The pending
+    corrections are not released: no test of a season's end leaves one. `recover_wizards` reads
+    the host's clock, as a wizard's last activity written by `signing_up` does."""
+    import asyncio
+
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    armed: list[str] = []
+    expired: list[str] = []
+    wizards = WizardService.__new__(WizardService)
+    wizards._db_path = league.db_path
+    wizards._correction_tasks = {}
+    wizards._scheduler = league.bot.scheduler_service
+    wizards._output_router = league.bot.output_router
+    wizards._bot = league.bot
+    wizards.recover_correction_timeouts = AsyncMock()  # type: ignore[method-assign]
+    wizards._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda user_id, _at: armed.append(str(user_id))
+    )
+    wizards.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda user_id: expired.append(str(user_id))
+    )
+    before = asyncio.all_tasks()
+    await wizards.recover_wizards()
+    await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+    return {"armed": armed, "expired": expired}
+
+
+async def driver_state(league: SeasonLeague, user_id: int) -> str | None:
+    """Driver *user_id*'s state, or None where their profile is gone."""
+    rows = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(user_id)
+    )
+    return rows[0]["current_state"] if rows else None
+
+
+#: Each round with results accepted in `pending_completion_league`, and its standings: the
+#: last round with results of Pro is round 2, of Am round 1.
+RESULTS_ROUNDS = {round_id(PRO, 1): (LEWIS, MAX), round_id(PRO, 2): (LEWIS, MAX),
+                  round_id(AM, 1): (CHARLES,)}
+
+
+async def pending_completion_league(
+    tmp_path: Any, *, results: bool = True, attendance: bool = False, images: bool = False,
+    weather: bool = False, signups_open: bool = False, test_mode: bool = False,
+    stage: str = "PENDING_COMPLETION",
+) -> SeasonLeague:
+    """`ongoing_league`'s season with every round of Pro and Am final and both divisions
+    finished, the season at *stage* and the members holding their roles (*held*).
+
+    Results are accepted, with a standings snapshot for each driver, for Pro's rounds 1 and 2
+    and Am's round 1 (`RESULTS_ROUNDS`). Lewis is a former driver; Max and Charles are not, so
+    the driver pass deletes them. With *signups_open* the window stands open, with *test_mode*
+    test mode is on with the test driver seated and a backup saved (`season_end_extras`).
+    """
+    league = await ongoing_league(tmp_path, results=results, attendance=attendance,
+                                  images=images, weather=weather, test_mode=test_mode,
+                                  signups_open=signups_open, held=True)
+    now = league.clock.now
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'FINAL'")
+        for number in range(1, 5):
+            for division_id in DIVISIONS:
+                await db.execute(
+                    "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                    ((now - timedelta(days=40 - 7 * number)).replace(tzinfo=None).isoformat(),
+                     round_id(division_id, number)),
+                )
+        await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE season_id = ?",
+                         (SEASON_ID,))
+        await db.execute("UPDATE seasons SET stage = ? WHERE id = ?", (stage, SEASON_ID))
+        await db.execute("UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = ?",
+                         (str(LEWIS),))
+        for rid, standing in RESULTS_ROUNDS.items():
+            await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status, "
+                "config_name, submitted_by, submitted_at) "
+                "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', ?, ?, ?)",
+                (rid, rid // 10, CONFIG, ADMIN_ID, now.isoformat()),
+            )
+            for position, user_id in enumerate(standing, start=1):
+                await db.execute(
+                    "INSERT INTO driver_standings_snapshots (round_id, division_id, "
+                    "driver_user_id, driver_profile_id, standing_position, total_points) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (rid, rid // 10, user_id, profile_id(user_id), position,
+                     (25, 18)[position - 1]),
+                )
+        await db.commit()
+    return league
+
+
+async def setup_league(tmp_path: Any, *, stage: str = "PLACEMENTS", test_mode: bool = False,
+                       signups_open: bool = False) -> SeasonLeague:
+    """`season_league`'s season before its placements are confirmed, at *stage*, for the abort:
+    status SETUP, its setup held in memory, with `season_end_extras`' *test_mode* and
+    *signups_open*."""
+    league = await season_league(tmp_path, extra_drivers=test_mode)
+    await league.write("UPDATE seasons SET stage = ? WHERE id = ?", stage, SEASON_ID)
+    await season_end_extras(league, tmp_path, test_mode=test_mode, signups_open=signups_open)
+    return league
+
+
+async def complete_season(league: SeasonLeague) -> Any:
+    """Run `/season complete` as admin 77; the queue is not run. Gives the interaction."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    interaction = _admin_interaction(league, "season complete")
+    await _run(league, undecorate(SeasonCog.season_complete)(league.cog, interaction))
+    return interaction
+
+
+async def cancel_season(league: SeasonLeague, *, confirm: str = "CONFIRM") -> Any:
+    """Run `/season cancel` with *confirm* as admin 77; the queue is not run. Gives the
+    interaction."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    interaction = _admin_interaction(league, "season cancel")
+    await _run(league, undecorate(SeasonCog.season_cancel)(league.cog, interaction, confirm))
+    return interaction
+
+
+async def abort_season(league: SeasonLeague, *, confirm: str = "CONFIRM") -> Any:
+    """Run `/season abort` with *confirm* as admin 77; the queue is not run. Gives the
+    interaction."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    interaction = _admin_interaction(league, "season abort")
+    await _run(league, undecorate(SeasonCog.season_abort)(league.cog, interaction, confirm))
+    return interaction
+
+
+async def _run(league: SeasonLeague, command: Any) -> None:
+    try:
+        await command
+    except Exception as error:  # noqa: BLE001 — as the bot's error handler would catch it
+        league.errors.append(error)
+
+
+async def season_end_changes(league: SeasonLeague, kind: str | None = None) -> list[dict[str, Any]]:
+    """Every completion, cancellation and abort of a season asked of the queue (or those of
+    *kind*), in the order asked."""
+    kinds = (kind,) if kind else SEASON_END_KINDS
+    return [row for row in await change_rows(league.db_path) if row["kind"] in kinds]
+
+
+#: The refusal of a request about season 3 while its end of each kind is in hand (#439 slice 5,
+#: answer B), its job's number put in for ``{job}``.
+SEASON_END_IN_HAND = {
+    SEASON_COMPLETE_KIND: (
+        "⏳ Season 3 is being completed (job #{job}), so this cannot be done until that is "
+        "finished. If it has stopped, press Retry or Discard on its notice in the log channel."
+    ),
+    SEASON_CANCEL_KIND: (
+        "⏳ Season 3 is being cancelled (job #{job}), so this cannot be done until that is "
+        "finished. If it has stopped, press Retry or Discard on its notice in the log channel."
+    ),
+    SEASON_ABORT_KIND: (
+        "⏳ The season being set up is being aborted (job #{job}), so this cannot be done until "
+        "that is finished. If it has stopped, press Retry or Discard on its notice in the log "
+        "channel."
+    ),
+}
+
+
+async def seed_season_end(db_path: str, kind: str, *, season_id: int = SEASON_ID,
+                          state: str = "QUEUED", stopped: bool = False,
+                          first_done: bool = False) -> int:
+    """A season's end of *kind* for season *season_id* on the queue, as its change type would
+    ask it, and give the number of its first job.
+
+    The change stands in *state* behind an earlier change of three jobs long done, so that its
+    job's number and its change's id differ. Its first job is not done unless *first_done* says
+    so, which leaves only the change's own close; where *stopped*, the queue stands stopped at it.
+    Written straight to the queue's tables, so it needs no change type registered."""
+    payload: dict[str, Any] = {"season_id": season_id}
+    if kind != SEASON_ABORT_KIND:
+        payload["season_number"] = SEASON_NUMBER
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('hub.refresh', 'hub.refresh', '{}', 'BOT', 'DONE', 'refreshing the hub')"
+        )
+        for position in range(3):
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, done_at) "
+                "VALUES (?, ?, 'refresh', '2026-10-05T11:00:00+00:00')",
+                (cursor.lastrowid, position),
+            )
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES (?, ?, ?, 'MEMBER', ?, 'a season''s end of the test')",
+            (kind, f"{kind}:{season_id}", json.dumps(payload), state),
+        )
+        change_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, tries, "
+            "failing_since, last_failure, done_at) VALUES (?, 0, 'first', '{}', ?, ?, ?, ?)",
+            (change_id, 1 if stopped else 0,
+             "2026-10-05T12:00:00+00:00" if stopped else None,
+             "OperationalError" if stopped else None,
+             "2026-10-05T12:00:00+00:00" if first_done else None),
+        )
+        job = cursor.lastrowid
+        await db.commit()
+    assert job is not None and job != change_id
+    return job
