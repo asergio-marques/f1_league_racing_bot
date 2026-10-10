@@ -714,6 +714,16 @@ class SignupModuleService:
         closing notice where asked (the change queue's close of the signup window). The signup
         channel is kept: the hold and the channel's deletion still read it. A driver with no
         wizard record is nothing to end.
+
+        The owed mark is a record of work still owed, kept beside the change queue, which
+        architecture.md rejects as a rule ("a separate record of work still owed after a save").
+        It is here on purpose: the window's close returns each driver in a save of its own, before
+        the job that plans their notice and channel jobs is saved, and a kill between the two
+        leaves no queue record to find them by. The mark is written in the save that returns the
+        driver, so that the next try or the restart finds exactly those drivers, and is cleared in
+        the save that plans their jobs (`clear_closing_notices_on`), from which the queue's own
+        records hold them. It is never read from wizard state, so a channel kept on purpose is
+        never found. Do not widen it into a general record of owed work.
         """
         await db.execute(
             "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
