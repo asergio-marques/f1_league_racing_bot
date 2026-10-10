@@ -1589,10 +1589,27 @@ async def cancel_division_on(
 
 
 async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int) -> bool:
-    """:meth:`SeasonService.refresh_division_status` on *db*, committing nothing.
+    """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding, committing nothing.
+
+    A round is outstanding until it reaches one of its two terminal states, FINAL or CANCELLED.
+    Every other state is a round still waiting on somebody: for its date, for its results, for
+    report verdicts, or for appeal verdicts.
+
+    Division status is stored rather than derived, so that cancelling a division can record the
+    fact and `/season cancel` can tell the running divisions apart from the called-off ones.
+    Stored state can drift from the rounds it summarises, so this is called from every place a
+    round's outcome settles — the appeals approval in result_submission_service and
+    `cancel_round_on` below — and again from the completion's first save, which cannot afford to
+    strand a league on a stale row a second time (issue #154).
+
+    The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
+    SETUP has not started, and a CANCELLED one was called off deliberately. Neither is a division
+    that has *finished*, and neither is ever touched here.
 
     A division finishing may be the last one its season waited on (issue #220), so where it
     moves the season is moved on in the same save, on the same connection (issue #439).
+
+    Returns True if this call is what moved it.
     """
     cursor = await db.execute(
         f"""
