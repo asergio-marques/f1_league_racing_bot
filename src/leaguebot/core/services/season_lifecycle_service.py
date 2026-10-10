@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 
 import aiosqlite
 
@@ -546,8 +547,96 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
     return accounts
 
 
+@dataclass(frozen=True)
+class DriverPass:
+    """What the driver pass did, for the jobs that follow the save it was made in.
+
+    *reset* is the number of drivers returned to Not Signed Up, *deleted* the ids of the
+    profiles deleted, *accounts* every Discord account those profiles held (their portraits are
+    keyed by account, not by profile), *drivers* each driver returned, as a mapping of
+    ``user_id``, ``state`` (the one they were in) and ``is_test_driver``, and *driver_role_id*
+    the league's driver role, as it stood when the pass ran.
+    """
+
+    reset: int
+    deleted: list[int]
+    accounts: list[str]
+    drivers: list[dict]
+    driver_role_id: int | None
+
+
+async def run_driver_pass_on(db: aiosqlite.Connection) -> DriverPass:
+    """The database side of the driver pass that ends a season, on the connection handed.
+
+    The pass runs inside the save that records a season's end (completion, cancellation and
+    abort alike, #220), so this commits nothing. Its Discord side (each driver's signup channel
+    and driver role) and the discarding of the deleted drivers' portraits are jobs of their own
+    after that save, and are not done here.
+
+    1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up,
+       through the transition table.
+    2. Every real driver at Not Signed Up without the former-driver flag, pending deletion, is
+       deleted, with their placements and history entries. Their signups remain.
+
+    A former driver is kept. A driver created by test mode is not deleted here: switching test
+    mode off does that, and keeps their history.
+    """
+    placeholders = ",".join("?" for _ in DRIVER_PASS_STATES)
+    cursor = await db.execute(
+        f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
+        f"WHERE current_state IN ({placeholders})",
+        (*DRIVER_PASS_STATES,),
+    )
+    to_reset = [dict(r) for r in await cursor.fetchall()]
+    cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+    cfg_row = await cursor.fetchone()
+    driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
+
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.core.services.driver_service import write_transition
+
+    # Through the transition table, as every change of a driver's state is.
+    for driver in to_reset:
+        await write_transition(
+            db, driver["id"], DriverState(driver["current_state"]),
+            DriverState.NOT_SIGNED_UP,
+        )
+    cursor = await db.execute(
+        "SELECT id FROM driver_profiles WHERE is_test_driver = 0 "
+        "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
+    )
+    pending_deletion = [r["id"] for r in await cursor.fetchall()]
+    accounts = await delete_driver_profiles(db, pending_deletion, keep_history=False)
+    await db.execute(
+        "INSERT INTO audit_entries "
+        "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+        "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
+        (
+            json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
+            json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
+        ),
+    )
+    return DriverPass(
+        reset=len(to_reset),
+        deleted=pending_deletion,
+        accounts=accounts,
+        drivers=[
+            {
+                "user_id": d["discord_user_id"],
+                "state": d["current_state"],
+                "is_test_driver": d["is_test_driver"],
+            }
+            for d in to_reset
+        ],
+        driver_role_id=driver_role_id,
+    )
+
+
 async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=None) -> dict:
-    """The driver pass that ends a season: completion, cancellation and abort alike (#220).
+    """The driver pass that ends a season, committing, with its Discord side done in-process.
+
+    Kept until the season's end is wholly on the change queue, where the database side is
+    ``run_driver_pass_on`` and each driver's Discord side a job.
 
     1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A
        signup still in progress or in review is cancelled: its inactivity timeout is cancelled
@@ -561,8 +650,7 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
        resolved they are left, file and row alike: see
        ``driver_portrait_service.discard_portraits``.
 
-    A former driver is kept. A driver created by test mode is not deleted here: switching test
-    mode off does that, and keeps their history. Returns ``{"reset": n, "deleted": m}``.
+    Returns ``{"reset": n, "deleted": m}``.
     """
     placeholders = ",".join("?" for _ in DRIVER_PASS_STATES)
     async with get_connection(db_path) as db:
@@ -582,38 +670,14 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
         reason="Season ended",
     )
 
-    from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.core.services.driver_service import write_transition
-
     async with get_connection(db_path) as db:
-        # Through the transition table, as every change of a driver's state is.
-        for driver in to_reset:
-            await write_transition(
-                db, driver["id"], DriverState(driver["current_state"]),
-                DriverState.NOT_SIGNED_UP,
-            )
-        cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE is_test_driver = 0 "
-            "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
-        )
-        pending_deletion = [r["id"] for r in await cursor.fetchall()]
-        accounts = await delete_driver_profiles(db, pending_deletion, keep_history=False)
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
-            (
-                json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
-                json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
-            ),
-        )
+        result = await run_driver_pass_on(db)
         await db.commit()
 
     if bot is not None:
         # Once committed, so a deletion that fails leaves every portrait where it was.
         from leaguebot.image.services.driver_portrait_service import discard_portraits
 
-        await discard_portraits(bot, accounts)
+        await discard_portraits(bot, result.accounts)
 
-    return {"reset": len(to_reset), "deleted": len(pending_deletion)}
-
+    return {"reset": result.reset, "deleted": len(result.deleted)}
