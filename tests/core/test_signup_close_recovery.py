@@ -49,6 +49,11 @@ SECOND = 107
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
 #: The head of the line the finish writes.
 FINISHED = "System | Signups closed | the close a stop cut off was finished"
+#: What the finish's line says beneath, the close it finished being any close off the queue.
+DISABLE_NOT_FINISHED = (
+    "if the close cut off was `/module disable signup`, it was not finished and signup is still "
+    "on: run it again"
+)
 #: The Sign Up button of a window opened and closed before the one now open.
 OLDER_WINDOW = 6100
 #: The head of the line the window's close writes where the finish closes it.
@@ -144,7 +149,9 @@ async def test_a_close_cut_off_by_a_kill_is_finished_at_start_each_untold_driver
     assert league.locked == [SIGNING_UP, SECOND]
     assert _notices_and_locks(league, SECOND)[-2:] == ["notice", "lock"]
     assert await league.bot.signup_module_service.off_queue_closing_notices() == []
-    assert _lines(league) == [f"{FINISHED}: `<@{SECOND}>` told and their channel closed"]
+    assert _lines(league) == [
+        f"{FINISHED}: `<@{SECOND}>` told and their channel closed\n  {DISABLE_NOT_FINISHED}"
+    ]
     [finish] = await _finishes(league)
     assert finish["state"] == "DONE"
 
@@ -227,7 +234,9 @@ async def test_a_refused_notice_at_start_stops_the_queue_before_anything_is_lock
 
     assert league.notices == [(SECOND, SIGNUPS_CLOSED)]
     assert league.locked == [SECOND]
-    assert _lines(league) == [f"{FINISHED}: `<@{SECOND}>` told and their channel closed"]
+    assert _lines(league) == [
+        f"{FINISHED}: `<@{SECOND}>` told and their channel closed\n  {DISABLE_NOT_FINISHED}"
+    ]
     assert await league.bot.signup_module_service.off_queue_closing_notices() == []
 
 
@@ -312,7 +321,9 @@ async def test_a_close_cut_off_before_the_window_was_recorded_closed_closes_it_a
     assert open_when_told == [(SECOND, False)]
     assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED), (SECOND, SIGNUPS_CLOSED)]
     assert league.locked == [SIGNING_UP, SECOND]
-    assert _lines(league) == [f"{FINISHED}: `<@{SECOND}>` told and their channel closed"]
+    assert _lines(league) == [
+        f"{FINISHED}: `<@{SECOND}>` told and their channel closed\n  {DISABLE_NOT_FINISHED}"
+    ]
 
 
 async def test_a_mark_left_by_an_older_window_never_closes_the_window_now_open(tmp_path):
@@ -343,7 +354,7 @@ async def test_a_finish_whose_every_driver_was_already_held_writes_its_line_bare
     await run_queue(league.bot)
 
     assert league.notices == []
-    assert _lines(league) == [FINISHED]
+    assert _lines(league) == [f"{FINISHED}\n  {DISABLE_NOT_FINISHED}"]
 
 
 async def test_the_finish_takes_only_the_marks_its_plan_read_unless_the_plan_was_discarded(
@@ -360,7 +371,9 @@ async def test_the_finish_takes_only_the_marks_its_plan_read_unless_the_plan_was
 
     await run_queue(league.bot)
 
-    assert _lines(league) == [f"{FINISHED}: `<@{SECOND}>` told and their channel closed"]
+    assert _lines(league) == [
+        f"{FINISHED}: `<@{SECOND}>` told and their channel closed\n  {DISABLE_NOT_FINISHED}"
+    ]
     assert await league.bot.signup_module_service.off_queue_closing_notices() == [
         str(SIGNING_UP)
     ]
@@ -440,6 +453,53 @@ async def test_a_driver_the_finish_s_own_close_returned_before_a_kill_is_told_on
     assert not await window_open(league)
     assert sorted(league.notices) == [(SIGNING_UP, SIGNUPS_CLOSED), (SECOND, SIGNUPS_CLOSED)]
     assert sorted(league.locked) == [SIGNING_UP, SECOND]
+    assert await service.owed_closing_notices() == []
+    assert await service.off_queue_closing_notices() == []
+
+
+async def test_a_discarded_finish_names_the_drivers_its_own_close_returned_too(tmp_path):
+    """`/signup close` (off the queue) returns driver 105 and is killed at driver 107's return.
+    When the bot starts, the finish's own close of the window returns 107, then fails to record
+    the window closed, stopping the queue at its first job, and a league admin discards it. Its
+    last save names 105 and 107 alike as returned but not told, their channels to delete by
+    hand, and takes both marks: 105's from the close cut off, 107's from its own."""
+    from leaguebot.core.cogs.module_cog import execute_forced_close
+
+    league = await _league(tmp_path)
+    returning = league.bot.driver_service.transition
+
+    async def _transition(user_id: Any, *args: Any, **kwargs: Any) -> Any:
+        if int(user_id) == SECOND:
+            raise _Killed()
+        return await returning(user_id, *args, **kwargs)
+
+    league.bot.driver_service.transition = _transition
+    try:
+        await execute_forced_close(league.bot, audit_action="SIGNUP_FORCE_CLOSE")
+    except _Killed:
+        pass
+    league.bot.driver_service.transition = returning
+    service = league.bot.signup_module_service
+
+    async def _set_window_closed(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("the window could not be recorded closed")
+
+    service.set_window_closed = _set_window_closed
+    await _recover(league)
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "finish_close"
+    assert await driver_state(league, SECOND) == "NOT_SIGNED_UP"
+
+    await discard_job(league.bot)
+
+    [line] = _lines(league)
+    for user_id in (SIGNING_UP, SECOND):
+        assert (
+            f"`<@{user_id}>` was returned to Not Signed Up when signups closed, but was not told"
+            in line
+        )
+    assert league.notices == [] and league.locked == []
     assert await service.owed_closing_notices() == []
     assert await service.off_queue_closing_notices() == []
 

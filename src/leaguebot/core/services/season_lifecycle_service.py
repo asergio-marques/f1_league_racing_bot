@@ -627,6 +627,13 @@ CLOSE_FINISH_PLAN = "finish_close"
 CLOSE_FINISH_CLOSE = "finish_close_line"
 #: The head of the line the finish writes.
 CLOSE_FINISHED = "System | Signups closed | the close a stop cut off was finished"
+#: Beneath the finish's line, whatever close it finished: which command a close off the queue was
+#: run by is not recorded, and `/module disable signup` cut off in its close never turned the
+#: module off, which the finish does not do for it.
+CLOSE_FINISHED_DISABLE = (
+    "if the close cut off was `/module disable signup`, it was not finished and signup is still "
+    "on: run it again"
+)
 #: The cause the finish closes a window under, where the close it finishes never recorded it.
 CLOSE_CUT_OFF_CAUSE = "stop cut off"
 
@@ -673,8 +680,10 @@ def close_finish_change(
     2. `finish_close_line`: one save writes the line naming who was told and closed, and what was
        left undone, beneath; bare where nobody was left to tell. Where a league admin discarded
        the first job, it takes every mark still standing and names those drivers as returned but
-       not told, as a discarded close of the window on the queue does; otherwise it takes none,
-       a mark another close made since being left for a later finish.
+       not told, as a discarded close of the window on the queue does, those its own close of
+       the window returned included; otherwise it takes none, a mark another close made since
+       being left for a later finish. The line ends saying that a `/module disable signup` cut
+       off was not finished, signup still on, for the command a close was run by is not known.
 
     A driver is told twice in two cases, both accepted as rare (owner, 2026-10-10): one whose
     lock Discord refused just before the stop, named then for their channel to be deleted by
@@ -766,11 +775,14 @@ def close_finish_change(
         # another close made since is left for a later finish.
         plan_view = next((view for view in ctx.steps if view.name == CLOSE_FINISH_PLAN), None)
         plan_discarded = plan_view is not None and "discarded" in (plan_view.result or {})
-        untold = (
-            await hooks.take_off_queue_closing_notices_on(db)
-            if hooks is not None and plan_discarded
-            else []
-        )
+        untold: list[str] = []
+        if hooks is not None and plan_discarded:
+            # The marks of the close cut off, and those of the drivers the first job's own close
+            # of the window returned (the queue's kind) before it was discarded.
+            untold = list(dict.fromkeys((
+                *await hooks.take_off_queue_closing_notices_on(db),
+                *await hooks.take_closing_notices_on(db),
+            )))
         told: list[str] = []
         beneath: list[str] = []
         for notice in ctx.steps:
@@ -805,7 +817,11 @@ def close_finish_change(
             if told
             else CLOSE_FINISHED
         )
-        line = head + "".join(f"\n  not done: {each}" for each in beneath)
+        line = (
+            head
+            + "".join(f"\n  not done: {each}" for each in beneath)
+            + f"\n  {CLOSE_FINISHED_DISABLE}"
+        )
         return StepResult(result={"untold": untold}, lines=(line,))
 
     async def describe_plan(_ctx: StepContext) -> str:
