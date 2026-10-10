@@ -1229,6 +1229,32 @@ async def test_the_season_is_recorded_cancelled_last_audited_and_never_moved_to_
     assert await league.rows("SELECT * FROM seasons WHERE status = 'ACTIVE'") == []
 
 
+async def test_a_cancellation_with_signups_open_leaves_the_stage_alone_until_the_season_is_recorded(
+    tmp_path,
+):
+    """The season ongoing with its signup window open, and a driver still filling in the wizard,
+    whom the window's close returns. The queue stops at that driver's notice, which Discord
+    refuses, after the window is closed and before the season's end is saved: the season is still
+    ongoing with signups open, never moved on to Pending completion, where it would stand refused
+    its own cancellation. Retried, the season is recorded cancelled."""
+    league = await ongoing_league(tmp_path, signups_open=True)
+    await league.write("UPDATE seasons SET stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    league.hold_fails[SIGNING_UP] = _forbidden()
+    await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("signup_notice", SIGNING_UP)
+    assert not await window_open(league)
+    season = await league.season()
+    assert (season["status"], season["stage"]) == ("ACTIVE", "ONGOING_SIGNUPS")
+
+    del league.hold_fails[SIGNING_UP]
+    await retry_job(league.bot)
+    assert await _status(league) == "CANCELLED"
+    assert league.locked == [SIGNING_UP]
+
+
 async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     league = await ongoing_league(tmp_path, weather=True)
     interaction = await _asked(league)
