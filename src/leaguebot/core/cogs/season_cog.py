@@ -51,7 +51,12 @@ from leaguebot.core.services.cancellation_changes import (
     cancellation_holding_amendment,
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
-from leaguebot.core.services.season_end_changes import SEASON_COMPLETE
+from leaguebot.core.services.season_end_changes import (
+    ABORT_ONLY_BEFORE,
+    PRE_CONFIRMATION,
+    SEASON_ABORT,
+    SEASON_COMPLETE,
+)
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
@@ -3206,13 +3211,15 @@ class SeasonCog(commands.Cog):
     @app_commands.describe(confirm='Type "CONFIRM" to abort the season.')
     @league_admin_only
     async def season_abort(self, interaction: discord.Interaction, confirm: str) -> None:
-        """Abort the active season before its placements are first confirmed (issue #220).
+        """Abort the season being set up, before its placements are first confirmed (issue #220).
 
         The season is deleted with every record of it, its signups included, and takes no
         number. Its drivers go through the driver pass — no history is written, the season
         having none — its signup window is closed and test mode is switched off. The way out
         of a test-mode rehearsal, a wrong signup setting, or a season postponed for want of
-        signups.
+        signups. The word and the season are checked here; the rest is the change queue's
+        (`season_end_changes.season_abort_change`), which acknowledges at once and updates the
+        reply, so nothing is deferred.
         """
         if confirm != "CONFIRM":
             await refuse(
@@ -3223,44 +3230,15 @@ class SeasonCog(commands.Cog):
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
-        pre_confirmation = {
-            SeasonStage.CONFIGURATION,
-            SeasonStage.WAITING,
-            SeasonStage.SIGNUPS,
-            SeasonStage.PLACEMENTS,
-        }
-        if season is None or season.stage not in pre_confirmation:
-            await refuse(
-                interaction,
-                "\u274c `/season abort` is available only before a season's placements are "
-                "first confirmed. An ongoing season is cancelled with `/season cancel`.",
-                what=describe(interaction),
-            )
+        if season is None or season.stage not in PRE_CONFIRMATION:
+            await refuse(interaction, ABORT_ONLY_BEFORE, what=describe(interaction))
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.season_end_service import end_of_season_pass
-
-        try:
-            self.bot.scheduler_service.cancel_signup_close_timer()
-        except Exception:  # noqa: BLE001 — a timer already gone is the aim
-            log.exception("season abort: could not cancel the signup close timer")
-        result = await end_of_season_pass(self.bot, interaction.guild)
-        await self.bot.season_service.delete_season(season.id)
-
-        # The setup held in memory goes with the season it described.
-        self._pending.clear()
-
-        await interaction.followup.send(
-            "\u2705 The season has been aborted. Nothing of it remains, and a new season may "
-            "be set up with `/season setup`.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season abort | Success\n"
-            f"  drivers returned to Not Signed Up: {result.get('reset', 0)}\n"
-            f"  drivers deleted: {result.get('deleted', 0)}",
+        await self.bot.change_queue.ask(
+            SEASON_ABORT,
+            {"season_id": season.id},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @season.command(

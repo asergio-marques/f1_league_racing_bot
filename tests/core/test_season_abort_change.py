@@ -301,7 +301,6 @@ async def _driver_role_held(league: Any) -> None:
 # ── Defect 5: every failure stops the queue ─────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     league = await setup_league(tmp_path, signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -319,7 +318,6 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
 
 
 @pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
     _flush_failing(monkeypatch, failing)
@@ -344,7 +342,6 @@ async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, m
     assert await _test_mode(league) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_close_timer_that_cannot_be_cancelled_stops_the_queue(tmp_path):
     league = await setup_league(tmp_path, signups_open=True)
     scheduler = league.bot.scheduler_service
@@ -363,7 +360,6 @@ async def test_a_close_timer_that_cannot_be_cancelled_stops_the_queue(tmp_path):
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp_path):
     league = await setup_league(tmp_path)
     await signing_up(league)
@@ -382,7 +378,6 @@ async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_driver_pass_test_mode_and_the_season_s_deletion_are_saved_together(tmp_path):
     league = await setup_league(tmp_path, test_mode=True)
     await _asked(league)
@@ -402,7 +397,6 @@ async def test_the_driver_pass_test_mode_and_the_season_s_deletion_are_saved_tog
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_stop_part_way_is_finished_on_restart(tmp_path):
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await _asked(league)
@@ -418,7 +412,6 @@ async def test_a_stop_part_way_is_finished_on_restart(tmp_path):
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_admin_is_told_at_once_naming_the_job_and_the_reply_is_updated(tmp_path):
     league = await setup_league(tmp_path)
     interaction = await _asked(league)
@@ -525,7 +518,6 @@ async def test_the_command_is_refused_at_once_in_today_s_words(tmp_path, case):
     assert await driver_state(league, LEWIS) == "ASSIGNED"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs(tmp_path):
     league = await setup_league(tmp_path)
     interaction = await _asked(league)
@@ -546,7 +538,6 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_jobs_run_in_order(tmp_path):
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await signing_up(league)
@@ -564,7 +555,6 @@ async def test_the_jobs_run_in_order(tmp_path):
 
 
 @pytest.mark.parametrize("stage", ["CONFIGURATION", "WAITING", "SIGNUPS", "PLACEMENTS"])
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_season_is_deleted_with_every_record_of_it_and_takes_no_number(tmp_path, stage):
     league = await setup_league(tmp_path, stage=stage, signups_open=stage == "SIGNUPS")
     await _asked(league)
@@ -583,7 +573,6 @@ async def test_the_season_is_deleted_with_every_record_of_it_and_takes_no_number
     assert (await _change(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_drivers_return_to_not_signed_up_with_no_history_written(tmp_path):
     league = await setup_league(tmp_path)
     await league.write("UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = ?",
@@ -599,7 +588,6 @@ async def test_the_drivers_return_to_not_signed_up_with_no_history_written(tmp_p
     assert (await _change(league))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_every_real_driver_returned_loses_the_driver_role_and_a_test_driver_is_passed_over(
     tmp_path,
 ):
@@ -617,7 +605,6 @@ async def test_every_real_driver_returned_loses_the_driver_role_and_a_test_drive
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_test_mode_is_switched_off_and_its_saved_state_kept(tmp_path):
     league = await setup_league(tmp_path, test_mode=True)
     await _asked(league)
@@ -631,7 +618,6 @@ async def test_test_mode_is_switched_off_and_its_saved_state_kept(tmp_path):
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_setup_held_in_memory_is_let_go_after_the_save(tmp_path):
     league = await setup_league(tmp_path)
     await _asked(league)
@@ -646,7 +632,6 @@ async def test_the_setup_held_in_memory_is_let_go_after_the_save(tmp_path):
     assert names.index("end") < names.index("forget_setup")
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_save_aborts_nothing(tmp_path):
     league = await setup_league(tmp_path, test_mode=True)
     interaction = await _asked(league)
@@ -666,7 +651,6 @@ async def test_a_discarded_save_aborts_nothing(tmp_path):
     assert league.cog._get_pending() is not None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_path):
     league = await setup_league(tmp_path)
     await league.write("UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = ?",
@@ -684,7 +668,6 @@ async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_pat
     assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_setup_release_is_named(tmp_path):
     league = await setup_league(tmp_path)
     league.cog.clear_pending = MagicMock(side_effect=RuntimeError("the cog is reloading"))
@@ -738,7 +721,6 @@ _DISCARDS = {
 
 
 @pytest.mark.parametrize("job", sorted(_DISCARDS))
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand(tmp_path, monkeypatch, job):
     build, where, text = _DISCARDS[job]
     league = await build(tmp_path, monkeypatch)
