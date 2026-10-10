@@ -159,6 +159,9 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     bot.season_service = SeasonService(db_path)
     bot.attendance_service = AttendanceService(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    # The wind-down clears the marks of the drivers it returned, and its last save takes any left.
+    bot.signup_module_service.clear_closing_notices_on = AsyncMock(return_value=None)
+    bot.signup_module_service.take_closing_notices_on = AsyncMock(return_value=[])
     bot.channels = {
         cid: _FakeChannel(cid)
         for cid in (RESULTS_CHANNEL_ID, STANDINGS_CHANNEL_ID, VERDICTS_CHANNEL_ID,
