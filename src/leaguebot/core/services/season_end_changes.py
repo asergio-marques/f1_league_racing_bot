@@ -51,6 +51,7 @@ held after the save.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -197,6 +198,10 @@ FORECASTS_KEPT = (
     "forecast channel."
 )
 PORTRAITS_KEPT = "The portraits of the drivers deleted could not be discarded."
+RETURNED_NOT_TOLD = (
+    "{who} was returned to Not Signed Up when signups closed, but was not told and their "
+    "channel was not closed: tell them and delete it by hand."
+)
 
 
 def completion_in_hand_refusal(season_number: Any, job: int) -> str:
@@ -294,18 +299,42 @@ def view_of(ctx: OutcomeContext, name: str) -> StepView | None:
     return next((view for view in reversed(ctx.steps) if view.name == name), None)
 
 
+def untold_of(ctx: OutcomeContext) -> list[str]:
+    """The accounts the change's last save took the marks of: drivers a window close returned
+    that a league admin's Discard left untold, as the `close` job recorded them."""
+    view = view_of(ctx, CLOSE)
+    return [str(account) for account in ((view.result if view else None) or {}).get("untold", ())]
+
+
+def untold_lines(accounts: Sequence[str]) -> list[str]:
+    """How each driver a discarded window close returned, and nobody told, is named."""
+    return [RETURNED_NOT_TOLD.format(who=f"<@{account}>") for account in accounts]
+
+
+def untold_log(named: str, command: str, accounts: Sequence[str]) -> tuple[str, ...]:
+    """The line naming those drivers where the change's own closing line is not written."""
+    if not accounts:
+        return ()
+    return (
+        f"{named} | {command} | Incomplete"
+        + "".join(f"\n  not done: {each}" for each in untold_lines(accounts)),
+    )
+
+
 def discarded(view: StepView | None) -> bool:
     """Whether a league admin discarded the job."""
     return view is not None and "discarded" in (view.result or {})
 
 
-def shared_not_done(ctx: OutcomeContext) -> list[str]:
+def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
     """What the jobs every end of a season shares left undone, one line for each job a league
     admin discarded, in the order of the jobs, the drivers whose roles were not taken back
     gathered into one line.
 
     A signup channel whose notice was discarded but which was closed is named as closed without
-    its notice; one that was not closed is named as not closed alone.
+    its notice; one that was not closed is named as not closed alone. Drivers a discarded window
+    close returned, and nobody told, are named last: *untold* where the change's last save has
+    just taken them, else what that save recorded.
     """
     lines: list[str] = []
     roles: list[str] = []
@@ -352,6 +381,7 @@ def shared_not_done(ctx: OutcomeContext) -> list[str]:
             f"{', '.join(roles)} — their roles{of} could not be taken back. Remove their "
             "division and team roles and the driver role by hand."
         )
+    lines.extend(untold_lines(untold_of(ctx) if untold is None else untold))
     return lines
 
 
@@ -382,10 +412,10 @@ def _classification_not_done(ctx: OutcomeContext) -> list[str]:
     return lines
 
 
-def _not_done(ctx: OutcomeContext) -> list[str]:
+def _not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
     """What a league admin's Discards left undone, in the order of the jobs."""
     # The jobs run the classification first, then the shared ones, then the backup's deletion.
-    lines = [*_classification_not_done(ctx), *shared_not_done(ctx)]
+    lines = [*_classification_not_done(ctx), *shared_not_done(ctx, untold)]
     if discarded(view_of(ctx, DISCARD_BACKUP)):
         lines.append(BACKUP_KEPT)
     return lines
@@ -598,24 +628,37 @@ def season_complete_change(
             return False
         return len(settles) < 2 or bool((settles[1].result or {}).get("unsettled"))
 
-    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        # The drivers a discarded window close returned and nobody told are named here and their
+        # marks taken, whatever else this save finds.
+        untold = await hooks.take_closing_notices_on(db)
+        result = {"closed": True, "untold": untold}
         refused = _refused(ctx)
         if refused is not None:
             return StepResult(
-                result={"closed": True},
-                lines=(refusal_line(ctx.named, _COMMAND, reply_reason(refused)),),
+                result=result,
+                lines=(
+                    refusal_line(ctx.named, _COMMAND, reply_reason(refused)),
+                    *untold_log(ctx.named, "/season complete", untold),
+                ),
             )
         if not _completed(ctx):
-            return StepResult(result={"closed": True})
-        left = _not_done(ctx)
+            return StepResult(result=result, lines=untold_log(ctx.named, "/season complete", untold))
+        left = _not_done(ctx, untold)
         number = ctx.payload["season_number"]
         line = (
             f"{ctx.named} | /season complete | {'Incomplete' if left else 'Success'}\n"
             f"  season: Season #{number}" + "".join(f"\n  not done: {each}" for each in left)
         )
-        return StepResult(result={"closed": True}, lines=(line,))
+        return StepResult(result=result, lines=(line,))
 
     def outcome(ctx: OutcomeContext) -> str:
+        text = _outcome(ctx)
+        if _completed(ctx):
+            return text
+        return text + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
+
+    def _outcome(ctx: OutcomeContext) -> str:
         refused = _refused(ctx)
         if refused is not None:
             return refused
@@ -774,36 +817,45 @@ def season_abort_change(
             return False
         return not (discarded(view) or (view.result or {}).get("refused"))
 
-    def _not_done_abort(ctx: OutcomeContext) -> list[str]:
-        lines = shared_not_done(ctx)
+    def _not_done_abort(ctx: OutcomeContext, untold: Sequence[str] | None = None) -> list[str]:
+        lines = shared_not_done(ctx, untold)
         if discarded(view_of(ctx, FORGET_SETUP)):
             lines.append(NOT_FORGOTTEN)
         return lines
 
-    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        # The drivers a discarded window close returned and nobody told are named here and their
+        # marks taken, whatever else this save finds.
+        untold = await hooks.take_closing_notices_on(db)
+        result = {"closed": True, "untold": untold}
         refused = _refused(ctx)
         if refused is not None:
             return StepResult(
-                result={"closed": True},
-                lines=(refusal_line(ctx.named, _ABORT_COMMAND, reply_reason(refused)),),
+                result=result,
+                lines=(
+                    refusal_line(ctx.named, _ABORT_COMMAND, reply_reason(refused)),
+                    *untold_log(ctx.named, "/season abort", untold),
+                ),
             )
         if not _aborted(ctx):
-            return StepResult(result={"closed": True})
+            return StepResult(result=result, lines=untold_log(ctx.named, "/season abort", untold))
         counts = _end_result(ctx)
         line = (
             f"{ctx.named} | /season abort | Success\n"
             f"  drivers returned to Not Signed Up: {counts.get('drivers_returned', 0)}\n"
             f"  drivers deleted: {counts.get('drivers_deleted', 0)}"
-            + "".join(f"\n  not done: {each}" for each in _not_done_abort(ctx))
+            + "".join(f"\n  not done: {each}" for each in _not_done_abort(ctx, untold))
         )
-        return StepResult(result={"closed": True}, lines=(line,))
+        return StepResult(result=result, lines=(line,))
 
     def outcome(ctx: OutcomeContext) -> str:
         refused = _refused(ctx)
         if refused is not None:
-            return refused
+            return refused + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
         if not _aborted(ctx):
-            return ABORT_END_DISCARDED
+            return ABORT_END_DISCARDED + approval_checks.not_done_section(
+                untold_lines(untold_of(ctx))
+            )
         return ABORTED + approval_checks.not_done_section(_not_done_abort(ctx))
 
     async def describe_window_close(_ctx: StepContext) -> str:

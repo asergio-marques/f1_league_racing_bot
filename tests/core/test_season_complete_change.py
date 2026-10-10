@@ -1515,10 +1515,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     assert await _owed(league) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439 slice 5: a discarded window close forgets the drivers it returned",
-)
 async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returned(tmp_path):
     """The signup window open with driver 105 still filling in the wizard. The window's close
     returns 105, then recording the window closed fails, and a league admin discards

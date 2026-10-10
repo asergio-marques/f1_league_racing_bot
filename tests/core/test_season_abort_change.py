@@ -798,10 +798,6 @@ RETURNED_NOT_TOLD = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439 slice 5: a discarded window close forgets the drivers it returned",
-)
 async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returned(tmp_path):
     """The season being set up stands in Signups with its window open and driver 105 still
     filling in the wizard. The window's close returns 105, then recording the window closed

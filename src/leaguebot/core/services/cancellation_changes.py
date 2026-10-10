@@ -114,6 +114,9 @@ from leaguebot.core.services.season_end_changes import (
     season_end_refusal,
     shared_not_done,
     test_mode_on,
+    untold_lines,
+    untold_log,
+    untold_of,
 )
 from leaguebot.core.services.season_end_service import (
     CLOSE_WINDOW,
@@ -1439,25 +1442,45 @@ def season_cancel_change(
         view = _view(ctx, END)
         return view.done and not (_discarded(view) or (view.result or {}).get("refused"))
 
-    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        """Write the one line that records the cancellation, or the refusal a save met."""
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Write the one line that records the cancellation, or the refusal a save met.
+
+        The drivers a discarded window close returned and nobody told are named here and their
+        marks taken, whatever else this save finds.
+        """
+        untold = await hooks.take_closing_notices_on(db)
+        result = {"closed": True, "untold": untold}
         refused = _refused(ctx)
         if refused is not None:
             return StepResult(
-                result={"closed": True},
-                lines=(refusal_line(ctx.named, SEASON_COMMAND, reply_reason(refused)),),
+                result=result,
+                lines=(
+                    refusal_line(ctx.named, SEASON_COMMAND, reply_reason(refused)),
+                    *untold_log(ctx.named, "/season cancel", untold),
+                ),
             )
         if _discarded(_view(ctx, UNARM)) or _discarded(_view(ctx, APPLY)) or not _ended(ctx):
-            return StepResult(result={"closed": True})
+            return StepResult(result=result, lines=untold_log(ctx.named, "/season cancel", untold))
         line = (
             f"{ctx.named} | /season cancel | Success"
             + checkin_audit(ctx)
             + notices.failure_log_lines(not_notified(ctx))
-            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx))
+            + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, untold))
         )
-        return StepResult(result={"closed": True}, lines=(line,))
+        return StepResult(result=result, lines=(line,))
 
     def outcome(ctx: OutcomeContext) -> str:
+        text = _outcome(ctx)
+        if (
+            not _discarded(_view(ctx, UNARM))
+            and not _discarded(_view(ctx, APPLY))
+            and _ended(ctx)
+            and not _refused(ctx)
+        ):
+            return text
+        return text + approval_checks.not_done_section(untold_lines(untold_of(ctx)))
+
+    def _outcome(ctx: OutcomeContext) -> str:
         number = ctx.payload["season_number"]
         if _discarded(_view(ctx, UNARM)):
             return SEASON_UNARM_DISCARDED.format(number=number)

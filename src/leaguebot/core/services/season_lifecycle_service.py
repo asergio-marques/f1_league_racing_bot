@@ -640,16 +640,25 @@ def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
         return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
 
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
+        # A window close discarded after it returned drivers leaves them marked as owed their
+        # notice, with no job planned for them: they are named here and their marks taken.
+        untold = await hooks.take_closing_notices_on(db) if hooks is not None else []
+        untold_lines = tuple(
+            "System | Every division is done | "
+            f"<@{account}> was returned to Not Signed Up when signups closed, but was not told "
+            "and their channel was not closed: tell them and delete it by hand."
+            for account in untold
+        )
         cursor = await db.execute(
             "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') ORDER BY id DESC LIMIT 1"
         )
         row = await cursor.fetchone()
         if row is None:
-            return StepResult(result={"moved": False})
+            return StepResult(result={"moved": False}, lines=untold_lines)
         season_id = int(row["id"])
         stage, done = await _stage_and_whether_done_on(db, season_id)
         if stage is None or SeasonStage(stage) not in ONGOING_STAGES or not done:
-            return StepResult(result={"moved": False})
+            return StepResult(result={"moved": False}, lines=untold_lines)
         drivers: list[dict] = []
         if stage != SeasonStage.ONGOING.value:
             if hooks is None and any(
@@ -676,7 +685,7 @@ def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
             if drivers
             else ()
         )
-        return StepResult(result={"moved": moved}, lines=lines, then=planned)
+        return StepResult(result={"moved": moved}, lines=(*untold_lines, *lines), then=planned)
 
     async def describe(_ctx: StepContext) -> str:
         return "winding the season down"
