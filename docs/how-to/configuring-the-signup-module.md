@@ -257,6 +257,8 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 
 > **The confirmation expires after five minutes.** Leave the dialog sitting and its buttons come down and the lapse is recorded in the log channel, with signups still open. Cancel is recorded the same way. Run the command again.
 
+> **A close the bot's stop cuts off is finished when it starts.** If the bot stops part-way through a close, it finishes the close as it starts again: the window is closed, where the close never got that far and you have not opened a new one since, and each driver it returned and had not yet told is told once and their channel locked, one line in the log channel saying so. If the close was `/module disable signup`, the module stays on: run the command again.
+
 > **A close nobody runs is recorded too.** At its close time, after a restart that found the time passed, at a season's end and when every division is done, the log channel gets one line naming no member, with the drivers returned and any failed step.
 
 A Sign Up button the close could not delete starts nothing: pressed after the window closed, it is refused as *Signups are closed*.
