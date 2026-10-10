@@ -525,8 +525,9 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         return "clearing the forecasts posted under test mode"
 
     async def discard_portraits(ctx: StepContext) -> StepResult:
-        discarded = await hooks.discard_portraits([str(a) for a in ctx.step_payload["accounts"]])
-        return StepResult(result={"discarded": discarded if isinstance(discarded, int) else 0})
+        removed = await hooks.discard_portraits([str(a) for a in ctx.step_payload["accounts"]])
+        # Not "discarded": that is the key a league admin's Discard leaves on a job's result.
+        return StepResult(result={"removed": removed if isinstance(removed, int) else 0})
 
     async def describe_portraits(_ctx: StepContext) -> str:
         return "discarding the portraits of the drivers deleted"

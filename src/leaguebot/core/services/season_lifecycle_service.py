@@ -556,8 +556,8 @@ FROZEN_FOR_COMPLETION_REFUSAL = (
 
 #: The kind of the change that winds a season down.
 WIND_DOWN = "season.wind_down"
-_WIND_DOWN_STEP = "wind_down"
-_TURN_DOWN_STEP = "turn_down"
+WIND_DOWN_STEP = "wind_down"
+TURN_DOWN_STEP = "turn_down"
 
 #: What a signup channel is told where the wind-down turns its signup down.
 WIND_DOWN_NOTICE = (
@@ -597,6 +597,38 @@ def wind_down_change(
         if not done:
             return Verdict.not_due("a division of the season is not done")
         return Verdict.go()
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    steps = wind_down_steps(hooks)
+    if placement is not None and hooks is not None:
+        steps.update(close_signup_steps(placement, hooks))
+    return ChangeType(
+        kind=WIND_DOWN,
+        opening=(PlannedStep(WIND_DOWN_STEP), PlannedStep(TURN_DOWN_STEP)),
+        steps=steps,
+        check=check,
+        key=lambda _payload: WIND_DOWN,
+        doing=lambda _payload: "Winding the season down",
+        outcome=outcome,
+    )
+
+
+def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
+    """The two jobs that take a season whose every division is done out of its ongoing stages.
+
+    Shared by the change that winds a season down and by the completion, which winds one down
+    first where it finds one (#439):
+
+    1. `wind_down`: the signup window closed, where one stands open; each driver the close
+       returned is then told and their channel closed, as jobs of their own.
+    2. `turn_down`: one save turns down the pending placements, returns their drivers to Not
+       Signed Up, moves the season on to Pending completion and writes its line.
+
+    The jobs that tell and close each driver's signup (`close_signup_steps`) are the change's own
+    to carry. Without *hooks* the jobs are only described.
+    """
 
     async def wind_down(ctx: StepContext) -> StepResult:
         if hooks is None:
@@ -641,26 +673,12 @@ def wind_down_change(
     async def describe_turn_down(_ctx: StepContext) -> str:
         return "turning the pending placements down and moving the season on"
 
-    def outcome(_ctx: OutcomeContext) -> str:
-        return ""
-
-    steps = {
-        _WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe),
-        _TURN_DOWN_STEP: Step(
-            _TURN_DOWN_STEP, StepKind.SAVE, turn_down, describe=describe_turn_down
+    return {
+        WIND_DOWN_STEP: Step(WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe),
+        TURN_DOWN_STEP: Step(
+            TURN_DOWN_STEP, StepKind.SAVE, turn_down, describe=describe_turn_down
         ),
     }
-    if placement is not None and hooks is not None:
-        steps.update(close_signup_steps(placement, hooks))
-    return ChangeType(
-        kind=WIND_DOWN,
-        opening=(PlannedStep(_WIND_DOWN_STEP), PlannedStep(_TURN_DOWN_STEP)),
-        steps=steps,
-        check=check,
-        key=lambda _payload: WIND_DOWN,
-        doing=lambda _payload: "Winding the season down",
-        outcome=outcome,
-    )
 
 
 async def configuration_fixed(db_path: str) -> int | None:
