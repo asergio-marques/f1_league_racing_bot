@@ -173,6 +173,34 @@ async def advance_on_window_close(db_path: str) -> SeasonStage | None:
     return target
 
 
+async def move_on_a_season_left_by_a_closed_window(
+    db_path: str, *, window_open: bool
+) -> SeasonStage | None:
+    """Move on a season its signup window's close left in the window's stage, where none is open.
+
+    A close records the window closed, then moves the season on in a save of its own
+    (`advance_on_window_close`). A stop between the two, or a move that fails and is let go,
+    leaves the season in Signups (or Ongoing, signups open) with no window, which nothing else
+    would ever move. The bot's start calls this, handing whether signup's window stands open: it
+    is the one place reached after both, and the window's close itself is no place, its move
+    having failed or never run. Nothing is moved where the window stands open (a window opened
+    since, in whose stage the season rightly stands) or where an end of the season is in hand on
+    the queue, which closes the window and keeps the stage where it stands until it records the
+    end. Gives the new stage, or None where nothing was moved.
+    """
+    if window_open:
+        return None
+    found = await live_season_stage(db_path)
+    if found is None or found[1] not in (SeasonStage.SIGNUPS, SeasonStage.ONGOING_SIGNUPS):
+        return None
+    # Imported here: the season's end imports this module.
+    from leaguebot.core.services.season_end_changes import season_end_in_hand
+
+    if await season_end_in_hand(db_path, found[0]) is not None:
+        return None
+    return await advance_on_window_close(db_path)
+
+
 async def _pending_placement_drivers_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
     """Every driver of *season_id* whose placement is still pending, as the rows are read.
 
