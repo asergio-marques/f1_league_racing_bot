@@ -664,11 +664,12 @@ Where the window closes with nobody left to settle, the season goes straight bac
 1. each division's **final classification** is posted, then its final attendance sheet; a division that was cancelled gets none;
 2. the season's roles are revoked, one driver at a time;
 3. an open signup window is closed;
-4. **in one save**, a history entry is written for every division each driver took part in (one they were moved or released from included), every driver returns to **Not Signed Up**, drivers who never raced are deleted (their signups kept with the season; former drivers are kept), test mode is switched off with the drivers it created deleted, and the season is archived — written last, so a save that fails leaves the season as it was;
-5. each driver the save returned has their signup channel closed or their driver role taken back, one job each;
-6. the saved test-mode state, if there was one, is deleted.
+4. the forecasts posted under test mode are cleared, where it is on;
+5. **in one save**, a history entry is written for every division each driver took part in (one they were moved or released from included), every driver returns to **Not Signed Up**, drivers who never raced are deleted (their signups kept with the season; former drivers are kept), test mode is switched off with the drivers it created deleted, and the season is archived — written last, so a save that fails leaves the season as it was;
+6. each driver the save returned has their signup channel closed or their driver role taken back, one job each;
+7. the saved test-mode state, if there was one, is deleted.
 
-The season is announced in the log channel when the last job is done. Nothing is completed until the save in step 4 goes through; if a league admin discards it, the reply says so and you run `/season complete` again — its final classifications are posted again. Pressing `/season complete` while one is already waiting, running or stopped is refused, naming the job.
+The season is announced in the log channel when the last job is done. Nothing is completed until the save in step 5 goes through; if a league admin discards it, the reply says so and you run `/season complete` again — its final classifications are posted again. Pressing `/season complete` while one is already waiting, running or stopped is refused, naming the job.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between
@@ -739,8 +740,8 @@ A season whose placements were never confirmed — one in configuration, waiting
 > ⚠️ **`/season abort` keeps nothing.** The season is deleted with its divisions, rounds and every
 > signup made for it, and it leaves no history — it never raced. It is acknowledged at once and
 > carried out on the change queue: an open signup window is closed; then, in one save, every driver
-> returns to Not Signed Up, those who never raced are deleted, test mode is switched off and the
-> season is deleted, last; then each driver's signup channel is closed or their driver role taken
+> returns to Not Signed Up, those who never raced are deleted, test mode is switched off, its
+> forecasts cleared first, and the season is deleted, last; then each driver's signup channel is closed or their driver role taken
 > back, and the setup the bot held in memory is let go. Any job that fails stops the queue, and a
 > second `/season abort` is refused naming the job. It is a league admin's, and it frees the server
 > for a new `/season setup` once the queue has finished it.
