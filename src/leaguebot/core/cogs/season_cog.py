@@ -56,6 +56,8 @@ from leaguebot.core.services.season_end_changes import (
     PRE_CONFIRMATION,
     SEASON_ABORT,
     SEASON_COMPLETE,
+    season_end_in_hand,
+    season_end_refusal,
 )
 from leaguebot.core.services.season_approval_change import (
     ALREADY_BEING_APPROVED,
@@ -3848,6 +3850,18 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_confirmed_season()
         from leaguebot.core.models.season import ONGOING_STAGES
 
+        # Not while the season's own end is in hand: refused at once, naming the job, ahead of
+        # the stage gate (slice 5, owner, 2026-10-09, answer B).
+        if season is not None:
+            hand = await season_end_in_hand(self.bot.db_path, season.id)
+            if hand is not None:
+                await refuse(
+                    interaction,
+                    season_end_refusal(None, hand, season.season_number),
+                    what=describe(interaction),
+                )
+                return
+
         # Available only while the season is ongoing (issue #220).
         if season is None or season.stage not in ONGOING_STAGES:
             await refuse(
@@ -4849,6 +4863,18 @@ class SeasonCog(commands.Cog):
 
         season = await self.bot.season_service.get_confirmed_season()
         from leaguebot.core.models.season import ONGOING_STAGES
+
+        # Not while the season's own end is in hand: refused at once, naming the job, ahead of
+        # the stage gate (slice 5, owner, 2026-10-09, answer B).
+        if season is not None:
+            hand = await season_end_in_hand(self.bot.db_path, season.id)
+            if hand is not None:
+                await refuse(
+                    interaction,
+                    season_end_refusal(None, hand, season.season_number),
+                    what=describe(interaction),
+                )
+                return
 
         # Available only while the season is ongoing (issue #220).
         if season is None or season.stage not in ONGOING_STAGES:

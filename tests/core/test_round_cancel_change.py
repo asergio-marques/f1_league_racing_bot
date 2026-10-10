@@ -514,7 +514,6 @@ async def test_a_round_cancel_while_its_division_s_cancellation_is_in_hand_is_re
     pytest.param(SEASON_CANCEL_KIND, "ONGOING", id="its cancellation"),
     pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
 ])
-@pytest.mark.xfail(strict=True, reason="#439: /round cancel does not yet read a season's end in hand")
 async def test_a_round_cancel_is_refused_at_once_while_its_season_s_end_is_in_hand(
     tmp_path, kind, stage,
 ):
@@ -542,7 +541,6 @@ async def test_a_round_cancel_is_refused_at_once_while_its_season_s_end_is_in_ha
     pytest.param(SEASON_CANCEL_KIND, "ONGOING", id="its cancellation"),
     pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
 ])
-@pytest.mark.xfail(strict=True, reason="#439: /round cancel does not yet read a season's end in hand")
 async def test_a_round_cancel_refused_while_only_its_season_s_end_close_is_left_names_no_job(
     tmp_path, kind, stage,
 ):

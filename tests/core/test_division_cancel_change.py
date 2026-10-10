@@ -351,8 +351,6 @@ async def test_a_second_cancel_of_the_division_is_refused_at_once_naming_the_job
     pytest.param(SEASON_CANCEL_KIND, "ONGOING", id="its cancellation"),
     pytest.param(SEASON_ABORT_KIND, "ONGOING", id="its abort"),
 ])
-@pytest.mark.xfail(strict=True,
-                   reason="#439: /division cancel does not yet read a season's end in hand")
 async def test_a_division_cancel_is_refused_at_once_while_its_season_s_end_is_in_hand(
     tmp_path, kind, stage,
 ):

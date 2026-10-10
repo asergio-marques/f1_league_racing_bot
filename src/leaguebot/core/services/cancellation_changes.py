@@ -672,6 +672,12 @@ def round_cancel_change(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         season = await seasons.get_confirmed_season()
+        if season is not None and ctx.change_id is None:
+            # **While the season's own end is in hand** (owner, 2026-10-09, answer B): refused
+            # at once, naming the job, ahead of any stage gate. Only as it is asked.
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None:
+                return Verdict.refuse(season_end_refusal(None, hand, season.season_number))
         if season is None or season.stage not in ONGOING_STAGES:
             return Verdict.refuse(NOT_ONGOING)
         try:
@@ -949,6 +955,12 @@ def division_cancel_change(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         season = await seasons.get_confirmed_season()
+        if season is not None and ctx.change_id is None:
+            # **While the season's own end is in hand** (owner, 2026-10-09, answer B): refused
+            # at once, naming the job, ahead of any stage gate. Only as it is asked.
+            hand = await season_end_in_hand(ctx.db_path, season.id)
+            if hand is not None:
+                return Verdict.refuse(season_end_refusal(None, hand, season.season_number))
         if season is None or season.stage not in ONGOING_STAGES:
             return Verdict.refuse(DIVISION_NOT_ONGOING)
         try:
