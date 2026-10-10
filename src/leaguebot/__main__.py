@@ -258,6 +258,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         end_wizards_on=end_wizards_on,
         off_queue_closing_notices=off_queue_closing_notices,
         take_off_queue_closing_notices_on=take_off_queue_closing_notices_on,
+        cut_off_window_open=lambda: bot.signup_module_service.cut_off_window_open(),
         closing_held=closing_held,
     )
 

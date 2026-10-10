@@ -703,7 +703,10 @@ CREATE TABLE "signup_wizard_records" (
     -- change queue's close, cleared when the queue plans the notice; 2 a close off the queue,
     -- cleared in its audit save once it reached the driver, or by the start-up step that
     -- finishes a close a stop cut off. Set in the save that returns the driver.
-    closing_notice_owed         INTEGER NOT NULL DEFAULT 0
+    closing_notice_owed         INTEGER NOT NULL DEFAULT 0,
+    -- With a mark of a close off the queue (2): the Sign Up button message of the window that
+    -- close was closing, so that the start-up step closes that window and never a later one
+    closing_window_message_id   INTEGER
 );
 CREATE INDEX idx_signup_wizard_channel
     ON signup_wizard_records(signup_channel_id);

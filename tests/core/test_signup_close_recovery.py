@@ -33,9 +33,11 @@ from tests.support.change_queue import (
 )
 from tests.support.season_league import (
     SIGNING_UP,
+    SIGNUP_CHANNEL,
     driver_state,
     ongoing_league,
     signing_up,
+    window_open,
 )
 
 #: The change that finishes a close a stop cut off.
@@ -46,6 +48,10 @@ SECOND = 107
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
 #: The head of the line the finish writes.
 FINISHED = "System | Signups closed | the close a stop cut off was finished"
+#: The Sign Up button of a window opened and closed before the one now open.
+OLDER_WINDOW = 6100
+#: The head of the line the window's close writes where the finish closes it.
+CLOSED_AT_START = "🔒 Signups closed at start-up, finishing a close a stop cut off"
 
 
 class _Killed(BaseException):
@@ -71,7 +77,8 @@ async def _league(tmp_path: Any) -> Any:
 
 async def _marked_by_a_close_off_the_queue(league: Any, user_id: int) -> None:
     """Driver *user_id* returned to Not Signed Up by a close off the queue that never reached
-    them: their wizard marked over and owed its notice (2)."""
+    them: their wizard marked over and owed its notice (2), by the close of an older window
+    (`OLDER_WINDOW`) than the one now open, which the finish therefore leaves open."""
     await league.write(
         "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE discord_user_id = ?",
         str(user_id),
@@ -81,6 +88,10 @@ async def _marked_by_a_close_off_the_queue(league: Any, user_id: int) -> None:
             db, str(user_id), by_off_queue_close=True
         )
         await db.commit()
+    await league.write(
+        "UPDATE signup_wizard_records SET closing_window_message_id = ? WHERE discord_user_id = ?",
+        OLDER_WINDOW, str(user_id),
+    )
 
 
 async def _recover(league: Any) -> None:
@@ -262,6 +273,61 @@ async def test_a_held_driver_whose_deletion_was_lost_is_not_told_again(tmp_path)
     asked = league.bot.wizard_service.rearm_deletion_if_held.await_args_list
     assert [int(call.args[0]) for call in asked] == [SECOND]
     assert await league.bot.signup_module_service.off_queue_closing_notices() == []
+
+
+async def test_a_close_cut_off_before_the_window_was_recorded_closed_closes_it_at_start_first(
+    tmp_path,
+):
+    """`/signup close` (off the queue) returns drivers 105 and 107 and tells and locks 105; the
+    process is killed while 107's channel is being held, so the window was never recorded
+    closed. When the bot starts, the finish closes the window first, as the close would have:
+    "🔒 Signups are now closed." is posted in the signup channel, the window is recorded closed
+    and a line says signups closed at start-up; only then is 107 told, and locked."""
+    from leaguebot.core.cogs.module_cog import execute_forced_close
+
+    league = await _league(tmp_path)
+    league.hold_fails[SECOND] = _Killed()
+    try:
+        await execute_forced_close(league.bot, audit_action="SIGNUP_FORCE_CLOSE")
+    except _Killed:
+        pass
+    assert await window_open(league)
+    league.hold_fails.clear()
+    holding = league.bot.wizard_service.trigger_channel_hold.side_effect
+    open_when_told: list[tuple[int, bool]] = []
+
+    async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
+        open_when_told.append((int(uid), await window_open(league)))
+        return await holding(uid, guild, notice, **kwargs)
+
+    league.bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=_hold)
+
+    await _recover(league)
+    await run_queue(league.bot)
+
+    assert not await window_open(league)
+    assert "🔒 Signups are now closed." in league.texts(SIGNUP_CHANNEL)
+    assert any(CLOSED_AT_START in line for line in league.bot.log_channel.sent)
+    assert open_when_told == [(SECOND, False)]
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED), (SECOND, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP, SECOND]
+    assert _lines(league) == [f"{FINISHED}: `<@{SECOND}>` told and their channel closed"]
+
+
+async def test_a_mark_left_by_an_older_window_never_closes_the_window_now_open(tmp_path):
+    """Driver 107 is still owed their notice by the close of an older window, and a new window
+    stands open, driver 105 part-way through signing up in it. When the bot starts, the finish
+    tells and closes 107 alone: the new window stays open and 105 is left signing up."""
+    league = await _league(tmp_path)
+    await _marked_by_a_close_off_the_queue(league, SECOND)
+
+    await _recover(league)
+    await run_queue(league.bot)
+
+    assert await window_open(league)
+    assert league.notices == [(SECOND, SIGNUPS_CLOSED)]
+    assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
+    assert not any(CLOSED_AT_START in line for line in league.bot.log_channel.sent)
 
 
 def test_the_recovery_is_asked_after_the_wizards_are_recovered_and_before_the_queue_starts():

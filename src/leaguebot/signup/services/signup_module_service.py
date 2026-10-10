@@ -647,7 +647,9 @@ class SignupModuleService:
                     draft_answers_json       = excluded.draft_answers_json,
                     current_lap_track_index  = excluded.current_lap_track_index,
                     last_activity_at         = excluded.last_activity_at,
-                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
+                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END,
+                    closing_window_message_id = CASE WHEN ? THEN NULL
+                                                     ELSE closing_window_message_id END
                 """,
                 (
                     wizard.discord_user_id,
@@ -657,6 +659,7 @@ class SignupModuleService:
                     json.dumps(wizard.draft_answers),
                     wizard.current_lap_track_index,
                     wizard.last_activity_at,
+                    int(starting),
                     int(starting),
                 ),
             )
@@ -758,6 +761,13 @@ class SignupModuleService:
         `off_queue_closing_notices` and `take_off_queue_closing_notices_on`. Both kinds are owed
         by a close of the window and by nothing else. Do not widen the mark further into a
         general record of owed work.
+
+        A mark of a close off the queue also records the window that close was closing, as the
+        Sign Up button message the configuration holds in the same save, while the window still
+        stands open: a close cut off before it recorded the window closed leaves it open, and the
+        start-up step closes it (`cut_off_window_open`). The button message is the window's
+        identity, each opening posting a new one, so a mark an older close left standing never
+        closes a window opened since.
         """
         if by_off_queue_close:
             owed = self._OWED_BY_OFF_QUEUE_CLOSE
@@ -767,8 +777,10 @@ class SignupModuleService:
             owed = self._OWED_NONE
         await db.execute(
             "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
-            "closing_notice_owed = ? WHERE discord_user_id = ?",
-            (owed, discord_user_id),
+            "closing_notice_owed = ?, closing_window_message_id = CASE WHEN ? THEN ("
+            "  SELECT signup_button_message_id FROM signup_module_config WHERE id = 1"
+            ") ELSE NULL END WHERE discord_user_id = ?",
+            (owed, int(owed == self._OWED_BY_OFF_QUEUE_CLOSE), discord_user_id),
         )
 
     async def owed_closing_notices(self) -> list[str]:
@@ -785,6 +797,21 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             return await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
 
+    async def cut_off_window_open(self) -> bool:
+        """Whether the signup window stands open and is the very window a close off the queue
+        was closing when a stop cut it off: a driver it returned still owes their notice under a
+        mark recording this window's Sign Up button. A window opened since is never it."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM signup_module_config c "
+                "WHERE c.id = 1 AND c.signups_open = 1 AND EXISTS ("
+                "  SELECT 1 FROM signup_wizard_records w "
+                "  WHERE w.closing_notice_owed = ? "
+                "    AND w.closing_window_message_id = c.signup_button_message_id)",
+                (self._OWED_BY_OFF_QUEUE_CLOSE,),
+            )
+            return await cursor.fetchone() is not None
+
     async def clear_closing_notices_on(
         self, db: aiosqlite.Connection, accounts: Iterable[str]
     ) -> None:
@@ -792,8 +819,8 @@ class SignupModuleService:
         connection handed; commits nothing."""
         for account in accounts:
             await db.execute(
-                "UPDATE signup_wizard_records SET closing_notice_owed = 0 "
-                "WHERE discord_user_id = ?",
+                "UPDATE signup_wizard_records SET closing_notice_owed = 0, "
+                "closing_window_message_id = NULL WHERE discord_user_id = ?",
                 (str(account),),
             )
 

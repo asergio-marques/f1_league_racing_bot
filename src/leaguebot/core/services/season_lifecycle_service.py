@@ -300,6 +300,8 @@ class SeasonEndHooks:
       a stop cut it off before reaching, read on a connection of its own (`close_finish_change`).
     - *take_off_queue_closing_notices_on*: reads those accounts and clears them, on the save's
       connection.
+    - *cut_off_window_open*: the signup window stands open and is the one a close off the queue
+      was closing when a stop cut it off, by the mark that close left.
     - *closing_held*: whether the account's signup channel was already held, given the league's
       server. It reads the scheduler's job store first, a channel-delete job standing being the
       record of a hold (the job store standing in for a record of signup's own, which it was
@@ -324,6 +326,7 @@ class SeasonEndHooks:
     end_wizards_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
     off_queue_closing_notices: Callable[[], Awaitable[list[str]]]
     take_off_queue_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
+    cut_off_window_open: Callable[[], Awaitable[bool]]
     closing_held: Callable[[str, discord.Guild], Awaitable[bool]]
 
 
@@ -596,6 +599,8 @@ CLOSE_FINISH_PLAN = "finish_close"
 CLOSE_FINISH_CLOSE = "finish_close_line"
 #: The head of the line the finish writes.
 CLOSE_FINISHED = "System | Signups closed | the close a stop cut off was finished"
+#: The cause the finish closes a window under, where the close it finishes never recorded it.
+CLOSE_CUT_OFF_CAUSE = "stop cut off"
 
 
 async def _no_longer_not_signed_up(db_path: str, accounts: Sequence[str]) -> set[str]:
@@ -628,7 +633,11 @@ def close_finish_change(
     (`__main__._recover_off_queue_closing_notices`), before the queue does. It is due only while
     such a mark is left. Its jobs, each of which stops the queue where it fails:
 
-    1. `finish_close`: reads the marked accounts and passes over each whose channel was already
+    1. `finish_close`: where the close was cut off before it recorded the window closed, the
+       window still open being the one the marks record, closes it first, as that close would
+       have (`close_signups`, the queue's form, under the cause ``"stop cut off"``), and moves
+       the season on as it would have; a window opened since is left open. It then reads the
+       marked accounts and passes over each whose channel was already
        held, its deletion armed, and each whose driver is no longer Not Signed Up (a mark that
        outlived its close, which must not close a signup begun since); each other driver is then told, then their channel closed, as
        jobs of their own (`window_closed_jobs`). Its record clears the marks it read in the save
@@ -655,15 +664,50 @@ def close_finish_change(
     async def plan(ctx: StepContext) -> StepResult:
         if hooks is None:
             raise RuntimeError("the finish of a close is run with the hooks the builder hands it")
+        before = kept_returned(ctx.kept)
+        closing = bool((ctx.kept or {}).get("closing"))
+        now: tuple[str, ...] = ()
+        if await hooks.cut_off_window_open():
+            # The close was cut off before it recorded the window closed: the window is closed
+            # first, as that close would have closed it, and only then is anyone told.
+            closing = True
+            hooks.cancel_close_timer()
+            try:
+                closed = await hooks.close_signups(ctx.bot, CLOSE_CUT_OFF_CAUSE)
+            except StepFailedOnDiscord as stopped:
+                found = kept_returned(stopped.result)
+                stopped.result = {
+                    **(stopped.result or {}),
+                    "returned": list(dict.fromkeys((*before, *found))),
+                    "closing": True,
+                }
+                raise
+            if closed is not None:
+                now = tuple(str(user_id) for user_id in closed.returned_ids)
+        if closing:
+            # Moved on as the close would have moved it; only where the finish closed the window
+            # itself, so that a window some other change closed is never taken for this one's.
+            try:
+                await advance_on_window_close(ctx.db_path)
+            except Exception as exc:
+                raise StepFailedOnDiscord(
+                    "the season could not be moved on for the signup window closed",
+                    result={"returned": list(dict.fromkeys((*before, *now))), "closing": True},
+                ) from exc
         marked = [str(account) for account in await hooks.off_queue_closing_notices()]
         # A mark that outlived its close (no stop to finish it) is no warrant to close a signup
         # the driver has since begun: only a driver still Not Signed Up is the close's.
         moved_on = await _no_longer_not_signed_up(ctx.db_path, marked)
         guild = await require_guild(ctx.bot)
-        untold = [
+        held = [
             account for account in marked
-            if account not in moved_on and not await hooks.closing_held(account, guild)
+            if account not in moved_on and await hooks.closing_held(account, guild)
         ]
+        untold = list(dict.fromkeys((
+            *before,
+            *now,
+            *(account for account in marked if account not in moved_on and account not in held),
+        )))
         return StepResult(
             result={"marked": marked, "returned": untold}, then=window_closed_jobs(untold)
         )
@@ -671,8 +715,12 @@ def close_finish_change(
     async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
         if hooks is None:
             return
+        kept = result.result or {}
         await hooks.clear_closing_notices_on(
-            db, [str(account) for account in (result.result or {}).get("marked", ())]
+            db,
+            list(dict.fromkeys(
+                str(account) for account in (*kept.get("marked", ()), *kept.get("returned", ()))
+            )),
         )
 
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

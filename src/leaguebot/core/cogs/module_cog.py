@@ -399,11 +399,13 @@ _UNATTENDED_CAUSES: dict[str, str] = {
     "restart": "SIGNUP_AUTO_CLOSE",
     "season end": "SIGNUP_SEASON_END_CLOSE",
     "divisions done": "SIGNUP_DIVISIONS_DONE_CLOSE",
+    "stop cut off": "SIGNUP_FORCE_CLOSE",
 }
 
 _UNATTENDED_HEADS: dict[str, str] = {
     "season end": "🔒 Signups closed as the season ended",
     "divisions done": "🔒 Signups closed as every division is done",
+    "stop cut off": "🔒 Signups closed at start-up, finishing a close a stop cut off",
 }
 
 
@@ -413,7 +415,9 @@ async def close_signups_unattended(
     """Close the signup window where no member ran the close, and record it in one line.
 
     *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
-    after it), ``"season end"`` and ``"divisions done"``; it picks the audit action the close
+    after it), ``"season end"``, ``"divisions done"`` and ``"stop cut off"`` (the bot's start
+    finishing a close off the queue that a stop cut off before it recorded the window closed:
+    `season_lifecycle_service.close_finish_change`); it picks the audit action the close
     is written under and the line's head. The line names no member, since none closed the
     window, and carries the drivers returned with each failed step beneath, as the closes a
     member runs do. Formed here, beside ``execute_forced_close``, so that no caller forms it:
