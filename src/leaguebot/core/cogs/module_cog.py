@@ -237,17 +237,23 @@ async def execute_forced_close(
             )
             returned += 1
             returned_ids.append(str(row["discord_user_id"]))
+            # Their timers go now, before the next driver's save and any await, so that a kill
+            # part-way through the loop never leaves a returned driver's inactivity job in the
+            # persistent jobstore to tell them their session expired as well as that signups
+            # closed.
+            for job_id in (
+                inactivity_job_id(row["discord_user_id"]),
+                channel_delete_job_id(row["discord_user_id"]),
+            ):
+                bot.scheduler_service.cancel_job(job_id)
         except ValueError:
             # The state machine's refusal: the driver moved on since they were read.
             log.info("forced_close: driver %s had moved on", row["discord_user_id"])
         except Exception as exc:
             if not hold_channels:
                 # The queue's form raises, as every failure on the queue does. Each driver
-                # returned before this one is saved and marked owed: the stop keeps them on the
-                # job for its next try, and their timers are cancelled here, as the rest are below.
-                for uid in returned_ids:
-                    for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
-                        bot.scheduler_service.cancel_job(job_id)
+                # returned before this one is saved and marked owed, their timers already
+                # cancelled: the stop keeps them on the job for its next try.
                 raise StepFailedOnDiscord(
                     f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
                     result={"returned": list(returned_ids)},
