@@ -594,6 +594,23 @@ CLOSE_FINISH_CLOSE = "finish_close_line"
 CLOSE_FINISHED = "System | Signups closed | the close a stop cut off was finished"
 
 
+async def _no_longer_not_signed_up(db_path: str, accounts: Sequence[str]) -> set[str]:
+    """Those of *accounts* whose driver stands in a state other than Not Signed Up, read on a
+    connection of its own. An account with no driver is not among them."""
+    found: set[str] = set()
+    async with get_connection(db_path) as db:
+        for account in accounts:
+            cursor = await db.execute(
+                "SELECT current_state FROM driver_profiles WHERE discord_user_id = ? "
+                "OR id IN (SELECT driver_profile_id FROM driver_accounts WHERE discord_user_id = ?)",
+                (account, account),
+            )
+            row = await cursor.fetchone()
+            if row is not None and row["current_state"] != "NOT_SIGNED_UP":
+                found.add(account)
+    return found
+
+
 def close_finish_change(
     *, placement: PlacementService | None = None, hooks: SeasonEndHooks | None = None
 ) -> ChangeType:
@@ -608,7 +625,8 @@ def close_finish_change(
     such a mark is left. Its jobs, each of which stops the queue where it fails:
 
     1. `finish_close`: reads the marked accounts and passes over each whose channel was already
-       held, its deletion armed; each other driver is then told, then their channel closed, as
+       held, its deletion armed, and each whose driver is no longer Not Signed Up (a mark that
+       outlived its close, which must not close a signup begun since); each other driver is then told, then their channel closed, as
        jobs of their own (`window_closed_jobs`). Its record clears the marks it read in the save
        that marks it done, so that from that save the queue's own records hold the drivers.
     2. `finish_close_line`: one save writes the line naming who was told and closed, and what was
@@ -624,11 +642,17 @@ def close_finish_change(
             return Verdict.not_due("no close of the signup window was cut off")
         return Verdict.go()
 
-    async def plan(_ctx: StepContext) -> StepResult:
+    async def plan(ctx: StepContext) -> StepResult:
         if hooks is None:
             raise RuntimeError("the finish of a close is run with the hooks the builder hands it")
         marked = [str(account) for account in await hooks.off_queue_closing_notices()]
-        untold = [account for account in marked if not hooks.closing_held(account)]
+        # A mark that outlived its close (no stop to finish it) is no warrant to close a signup
+        # the driver has since begun: only a driver still Not Signed Up is the close's.
+        moved_on = await _no_longer_not_signed_up(ctx.db_path, marked)
+        untold = [
+            account for account in marked
+            if account not in moved_on and not hooks.closing_held(account)
+        ]
         return StepResult(
             result={"marked": marked, "returned": untold}, then=window_closed_jobs(untold)
         )

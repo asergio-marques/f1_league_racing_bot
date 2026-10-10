@@ -217,6 +217,30 @@ async def test_a_refused_notice_at_start_stops_the_queue_before_anything_is_lock
     assert await league.bot.signup_module_service.off_queue_closing_notices() == []
 
 
+async def test_a_marked_driver_who_has_signed_up_again_is_passed_over_and_their_mark_cleared(
+    tmp_path,
+):
+    """Driver 107 was marked owed their notice by a close off the queue, and the mark outlived
+    it: 107 has since begun a new signup and stands Pending Signup Completion. When the bot
+    starts, the finish passes 107 over: nothing is posted in their channel, nothing locked, and
+    the mark is cleared."""
+    league = await _league(tmp_path)
+    await _marked_by_a_close_off_the_queue(league, SECOND)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'PENDING_SIGNUP_COMPLETION' "
+        "WHERE discord_user_id = ?",
+        str(SECOND),
+    )
+
+    await _recover(league)
+    await run_queue(league.bot)
+
+    assert league.notices == []
+    assert league.locked == []
+    assert await league.bot.signup_module_service.off_queue_closing_notices() == []
+    assert await driver_state(league, SECOND) == "PENDING_SIGNUP_COMPLETION"
+
+
 def test_the_recovery_is_asked_after_the_wizards_are_recovered_and_before_the_queue_starts():
     """The finish is asked once the signup wizards are recovered, which pass over these
     wizards, and after the close timers', whose restart close may leave marks of its own; and
