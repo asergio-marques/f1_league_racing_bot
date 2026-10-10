@@ -433,10 +433,12 @@ def _named(
         number = ctx.step_payload.get("round_number")
         if number is None:
             number = await _round_number_now(ctx) if number_now else ctx.payload.get("round_number")
+        # A season's payload names no division: its jobs carry theirs on their own.
+        division = ctx.payload.get("division_name", ctx.step_payload.get("division_name", ""))
         return text.format(
             number=number,
-            division=ctx.payload["division_name"],
-            name=ctx.step_payload.get("division_name", ctx.payload["division_name"]),
+            division=division,
+            name=ctx.step_payload.get("division_name", division),
         )
 
     return describe
