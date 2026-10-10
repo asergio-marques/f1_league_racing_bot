@@ -90,6 +90,7 @@ from leaguebot.core.services.season_end_service import (
 )
 from leaguebot.core.services.season_lifecycle_service import (
     CLOSE_SIGNUP,
+    NO_CHANNEL_LEFT,
     SIGNUP_NOTICE,
     TAKE_DRIVER_ROLE,
     TURN_DOWN_STEP,
@@ -345,6 +346,8 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
         if view.name == CLOSE_SIGNUP and view.done and not discarded(view)
     }
     for view in ctx.steps:
+        if view.name == SIGNUP_NOTICE and view.done and (view.result or {}).get("no_channel"):
+            lines.append(NO_CHANNEL_LEFT.format(who=f"<@{view.payload['user_id']}>"))
         if not discarded(view):
             continue
         each = view.payload

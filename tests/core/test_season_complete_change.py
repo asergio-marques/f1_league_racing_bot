@@ -1637,9 +1637,6 @@ def _deletion_armed_for(league: Any, user_id: int = SIGNING_UP) -> bool:
                for call in league.bot.scheduler_service._scheduler.add_job.call_args_list)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439 slice 5: a driver with no signup channel left is passed over quietly"
-)
 @pytest.mark.parametrize("whose", ["returned by the window's close", "in review"])
 async def test_a_driver_with_no_signup_channel_left_is_named_and_nothing_is_locked(
     tmp_path, whose,

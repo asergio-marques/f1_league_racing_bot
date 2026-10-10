@@ -512,18 +512,44 @@ async def close_window_for_wind_down(
     return await close_signup_window(bot, hooks, "divisions done", kept=kept)
 
 
-def close_signup_steps(placement: PlacementService, hooks: SeasonEndHooks) -> dict[str, Step]:
-    """The three jobs of one driver's Discord side, shared by every change that ends signups."""
+#: How a driver the season's end could not tell for want of a signup channel is named.
+NO_CHANNEL_LEFT = "{who} had no signup channel left to tell"
+
+
+def close_signup_steps(
+    placement: PlacementService, hooks: SeasonEndHooks, *, line_prefix: str | None = None
+) -> dict[str, Step]:
+    """The three jobs of one driver's Discord side, shared by every change that ends signups.
+
+    A driver with no signup channel left is passed over by `signup_notice`, and `close_signup`
+    then has nothing to lock or delete. The change's closing outcome names them
+    (``NO_CHANNEL_LEFT``); where the change has no closing line of its own, *line_prefix* ("System
+    | Every division is done") has the notice job write one.
+    """
 
     async def signup_notice(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         result = await post_driver_notice(
             guild, ctx.step_payload, hooks=hooks, notice=str(ctx.step_payload["notice"])
         )
-        return StepResult(result=result)
+        lines: tuple[str, ...] = ()
+        if result.get("no_channel") and line_prefix:
+            who = f"<@{ctx.step_payload['user_id']}>"
+            lines = (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=who)}",)
+        return StepResult(result=result, lines=lines)
 
     async def close_signup(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
+        user_id = str(ctx.step_payload["user_id"])
+        if any(
+            view.name == SIGNUP_NOTICE and view.done
+            and str(view.payload.get("user_id")) == user_id
+            and (view.result or {}).get("no_channel")
+            for view in ctx.steps
+        ):
+            # Nothing to lock or delete: the notice found no channel left.
+            hooks.cancel_signup_timeout(user_id)
+            return StepResult(result={"no_channel": True})
         return StepResult(result=await close_driver_signup(guild, ctx.step_payload, hooks=hooks))
 
     async def take_role(ctx: StepContext) -> StepResult:
@@ -606,7 +632,9 @@ def wind_down_change(
 
     steps = wind_down_steps(hooks)
     if placement is not None and hooks is not None:
-        steps.update(close_signup_steps(placement, hooks))
+        steps.update(
+            close_signup_steps(placement, hooks, line_prefix="System | Every division is done")
+        )
     return ChangeType(
         kind=WIND_DOWN,
         opening=(PlannedStep(WIND_DOWN_STEP), PlannedStep(TURN_DOWN_STEP)),
