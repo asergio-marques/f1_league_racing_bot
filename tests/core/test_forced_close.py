@@ -124,13 +124,27 @@ async def _audit(db_path):
 # ---------------------------------------------------------------------------
 
 
-def _ends_recorded(bot) -> list[tuple[object, str, bool]]:
-    """Each wizard the close marks over, recorded as the signup module service is handed it:
-    (the connection, the account, whether the driver is owed their closing notice)."""
-    ended: list[tuple[object, str, bool]] = []
+class _Ended(list):
+    """The wizards marked over, as (the connection, the account, whether the queue's close owes
+    the driver their notice); ``off_queue`` holds, in the same order, whether a close off the
+    queue does."""
 
-    async def _end(db, discord_user_id, *, closing_notice_owed=False) -> None:
+    def __init__(self) -> None:
+        super().__init__()
+        self.off_queue: list[bool] = []
+
+
+def _ends_recorded(bot) -> _Ended:
+    """Each wizard the close marks over, recorded as the signup module service is handed it:
+    (the connection, the account, whether the driver is owed their closing notice by the queue),
+    and beside it whether they are owed it by a close off the queue."""
+    ended = _Ended()
+
+    async def _end(
+        db, discord_user_id, *, closing_notice_owed=False, by_off_queue_close=False
+    ) -> None:
         ended.append((db, str(discord_user_id), closing_notice_owed))
+        ended.off_queue.append(by_off_queue_close)
 
     bot.signup_module_service.end_wizard_on = AsyncMock(side_effect=_end)
     return ended

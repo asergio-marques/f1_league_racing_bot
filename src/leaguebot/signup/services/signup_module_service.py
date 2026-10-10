@@ -705,15 +705,28 @@ class SignupModuleService:
             )
             await db.commit()
 
+    #: The values of ``signup_wizard_records.closing_notice_owed``: none, owed by the change
+    #: queue's close of the window, owed by a close off the queue.
+    _OWED_NONE = 0
+    _OWED_BY_QUEUE = 1
+    _OWED_BY_OFF_QUEUE_CLOSE = 2
+
     async def end_wizard_on(
-        self, db: aiosqlite.Connection, discord_user_id: str, *, closing_notice_owed: bool = False
+        self,
+        db: aiosqlite.Connection,
+        discord_user_id: str,
+        *,
+        closing_notice_owed: bool = False,
+        by_off_queue_close: bool = False,
     ) -> None:
         """Mark a driver's signup over on the connection handed; commits nothing.
 
         The wizard is unengaged, so a restart's recovery never re-arms or expires it, and owes its
-        closing notice where asked (the change queue's close of the signup window). The signup
-        channel is kept: the hold and the channel's deletion still read it. A driver with no
-        wizard record is nothing to end.
+        closing notice where asked: *closing_notice_owed* for the change queue's close of the
+        signup window, *by_off_queue_close* for a close off the queue (`/signup close`, its timer,
+        a restart past the close time, turning signup off), which wins where both are given. The
+        signup channel is kept: the hold and the channel's deletion still read it. A driver with
+        no wizard record is nothing to end.
 
         The owed mark is a record of work still owed, kept beside the change queue, which
         architecture.md rejects as a rule ("a separate record of work still owed after a save").
@@ -723,26 +736,49 @@ class SignupModuleService:
         driver, so that the next try or the restart finds exactly those drivers, and is cleared in
         the save that plans their jobs (`clear_closing_notices_on`), from which the queue's own
         records hold them. It is never read from wizard state, so a channel kept on purpose is
-        never found. Do not widen it into a general record of owed work.
+        never found.
+
+        It has two kinds, kept apart so that neither close takes the other's drivers. The queue's
+        (1) is read by `owed_closing_notices` and `take_closing_notices_on`. A close off the queue
+        returns each driver in a save of its own too, then tells and locks them one by one, so a
+        stop between leaves the later drivers returned, untold and with a writable channel nobody
+        deletes: it marks its own (2) in the same save, clears those it reached in its audit save,
+        and the bot's start finishes the rest through a change of its own, reading them with
+        `off_queue_closing_notices` and `take_off_queue_closing_notices_on`. Both kinds are owed
+        by a close of the window and by nothing else. Do not widen the mark further into a
+        general record of owed work.
         """
+        if by_off_queue_close:
+            owed = self._OWED_BY_OFF_QUEUE_CLOSE
+        elif closing_notice_owed:
+            owed = self._OWED_BY_QUEUE
+        else:
+            owed = self._OWED_NONE
         await db.execute(
             "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
             "closing_notice_owed = ? WHERE discord_user_id = ?",
-            (1 if closing_notice_owed else 0, discord_user_id),
+            (owed, discord_user_id),
         )
 
     async def owed_closing_notices(self) -> list[str]:
-        """The accounts owed their closing notice, in the order of their records, on a connection
-        of its own. For a check before a step or a step with no save open; a save reads them with
-        `take_closing_notices_on`."""
+        """The accounts the queue's close owes their closing notice, in the order of their
+        records, on a connection of its own. For a check before a step or a step with no save
+        open; a save reads them with `take_closing_notices_on`."""
         async with get_connection(self._db_path) as db:
-            return await self._owed_closing_notices_on(db)
+            return await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
+
+    async def off_queue_closing_notices(self) -> list[str]:
+        """The accounts a close off the queue returned and has not yet reached, in the order of
+        their records, on a connection of its own: those a stop cut the close off before. A save
+        reads them with `take_off_queue_closing_notices_on`."""
+        async with get_connection(self._db_path) as db:
+            return await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
 
     async def clear_closing_notices_on(
         self, db: aiosqlite.Connection, accounts: Iterable[str]
     ) -> None:
-        """Set the closing notice owed back to none for these accounts on the connection handed;
-        commits nothing."""
+        """Set the closing notice owed back to none for these accounts, of either kind, on the
+        connection handed; commits nothing."""
         for account in accounts:
             await db.execute(
                 "UPDATE signup_wizard_records SET closing_notice_owed = 0 "
@@ -751,17 +787,25 @@ class SignupModuleService:
             )
 
     async def take_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
-        """Read the accounts still owed their closing notice and clear them, on the connection
-        handed, so a save needs no second connection; commits nothing."""
-        accounts = await self._owed_closing_notices_on(db)
+        """Read the accounts the queue's close still owes their closing notice and clear them, on
+        the connection handed, so a save needs no second connection; commits nothing."""
+        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
+        await self.clear_closing_notices_on(db, accounts)
+        return accounts
+
+    async def take_off_queue_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
+        """Read the accounts a close off the queue still owes their closing notice and clear them,
+        on the connection handed; commits nothing."""
+        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
         await self.clear_closing_notices_on(db, accounts)
         return accounts
 
     @staticmethod
-    async def _owed_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
+    async def _owed_closing_notices_on(db: aiosqlite.Connection, kind: int) -> list[str]:
         cursor = await db.execute(
             "SELECT discord_user_id FROM signup_wizard_records "
-            "WHERE closing_notice_owed = 1 ORDER BY id"
+            "WHERE closing_notice_owed = ? ORDER BY id",
+            (kind,),
         )
         return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 

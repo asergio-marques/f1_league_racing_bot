@@ -662,3 +662,40 @@ async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed
     assert taken == ["203"]
     assert await svc.owed_closing_notices() == []
     assert (await _wizard_row(db_path, "203"))["wizard_state"] == "UNENGAGED"
+
+
+async def test_an_off_queue_mark_is_kept_apart_from_the_queue_s(db_path):
+    """Wizards 301 and 302 are saved; 301's signup is ended by a close off the queue (a mark of
+    the second kind, 2), 302's by the queue's (1). The queue's readers give 302 alone, and taking
+    them on a save leaves 301's mark standing; the off-queue readers give 301 alone, and taking
+    them on a save clears it and leaves 302's to the queue."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    svc = SignupModuleService(db_path)
+    for user_id in ("301", "302"):
+        await svc.save_wizard(_make_wizard(user_id))
+    async with get_connection(db_path) as db:
+        await svc.end_wizard_on(db, "301", closing_notice_owed=True, by_off_queue_close=True)
+        await svc.end_wizard_on(db, "302", closing_notice_owed=True)
+        await db.commit()
+
+    assert (await _wizard_row(db_path, "301"))["closing_notice_owed"] == 2
+    assert await svc.owed_closing_notices() == ["302"]
+    assert await svc.off_queue_closing_notices() == ["301"]
+
+    async with get_connection(db_path) as db:
+        taken = await svc.take_closing_notices_on(db)
+        await db.commit()
+    assert taken == ["302"]
+    assert (await _wizard_row(db_path, "301"))["closing_notice_owed"] == 2
+
+    async with get_connection(db_path) as db:
+        await svc.end_wizard_on(db, "302", closing_notice_owed=True)
+        await db.commit()
+    async with get_connection(db_path) as db:
+        taken = await svc.take_off_queue_closing_notices_on(db)
+        await db.commit()
+    assert taken == ["301"]
+    assert await svc.off_queue_closing_notices() == []
+    assert await svc.owed_closing_notices() == ["302"]
