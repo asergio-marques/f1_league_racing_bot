@@ -19,8 +19,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 22130
 
-_XFAIL_JOBS = "#439: a driver's Discord side is not yet a job that raises"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -180,7 +178,6 @@ async def test_a_former_driver_keeps_their_placement_and_history(db_path):
         assert (await cursor.fetchone())[0] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_a_signup_in_review_has_its_channel_closed():
     """Driver 1004's signup is in review when the season ends. Their `signup_notice` job posts
     the closing notice in their signup channel, then their `close_signup` job locks the channel
@@ -206,7 +203,6 @@ async def test_a_signup_in_review_has_its_channel_closed():
     assert str(cancelled.args[0]) == "1004"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     """Max (1002) was Assigned when the season ended, and holds the league's driver role 555:
     his `take_driver_role` job takes it back."""
@@ -225,7 +221,6 @@ async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     assert role in member.remove_roles.await_args.args
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db_path):
     """The driver role is the league's (issue #276). It lived in the signup module's
     configuration row, which disabling the module deletes, so the season's end then found no
@@ -254,7 +249,6 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
     member.remove_roles.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass():
     """Driver 1004's inactivity timeout has already fired, so the scheduler no longer holds it:
     their `close_signup` job still locks the channel and is done, raising nothing."""
@@ -518,7 +512,6 @@ async def test_the_pass_on_the_save_handed_names_each_driver_its_discord_side_re
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_a_signup_channel_that_cannot_be_held_raises():
     """Driver 1004's signup is in review when the season ends. Discord refuses the closing
     notice in their signup channel: the `signup_notice` job raises, for the queue to stop on,
@@ -548,7 +541,6 @@ async def test_a_signup_channel_that_cannot_be_held_raises():
     hooks.cancel_signup_timeout.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_JOBS)
 async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     """Max (1002) was Assigned when the season ended, and the league's driver role is 555.
     Discord refuses to take it back (403): the `take_driver_role` job raises, from the refusal,

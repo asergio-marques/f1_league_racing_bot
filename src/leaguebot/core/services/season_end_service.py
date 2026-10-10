@@ -24,16 +24,37 @@ import logging
 from typing import TYPE_CHECKING
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import StepKind, StepResult
+from leaguebot.core.services.change_queue import Step, StepContext
+from leaguebot.core.services.season_lifecycle_service import (
+    SeasonEndHooks,
+    close_signup_steps,
+    close_signup_window,
+    require_guild,
+    window_closed_jobs,
+)
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.member_names import member_named
 
 if TYPE_CHECKING:
     import aiosqlite
     import discord
+    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.core.models.season import Season
 
 log = logging.getLogger(__name__)
+
+#: The jobs every end of a season shares, as the stop notice, the tests and ``StepView`` know them.
+REVOKE_ROLES = "revoke_roles"
+CLOSE_WINDOW = "close_window"
+FLUSH_FORECASTS = "flush_forecasts"
+DISCARD_PORTRAITS = "discard_portraits"
+DISCARD_BACKUP = "discard_backup"
+FORGET_SETUP = "forget_setup"
+
+#: The cause the window's close is recorded under, where a season's end closes it.
+SEASON_END_CAUSE = "season end"
 
 
 async def execute_season_end(
@@ -447,3 +468,97 @@ async def _revoke_season_roles(
         len(assigned_rows),
         season_id,
     )
+
+
+def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> dict[str, Step]:
+    """The jobs the completion, the cancellation and the abort share (#439), each an ACT.
+
+    - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
+      the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
+    - `close_window`: the signup close timer cancelled and the window closed, where it stands open;
+      it plans a `signup_notice` and a `close_signup` for each driver the close returned.
+    - `flush_forecasts`: the forecasts posted under test mode deleted.
+    - `discard_portraits`: the portraits of the drivers the driver pass deleted removed.
+    - `discard_backup`: the saved test-mode state deleted (a completion's alone).
+    - `forget_setup`: the setup held in memory let go of (an abort's alone).
+    - the three jobs of one driver's Discord side (`close_signup_steps`).
+
+    Every one raises where it fails, for the queue to stop on.
+    """
+
+    async def revoke_roles(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        each = ctx.step_payload
+        revoked = await placement.revoke_roles(
+            guild, int(each["user_id"]), *[int(r) for r in each["role_ids"]],
+            reason=str(each.get("reason", "Season ended")),
+        )
+        return StepResult(result={"revoked": revoked})
+
+    async def describe_revoke(ctx: StepContext) -> str:
+        number = ctx.payload.get("season_number")
+        of = f" of season {number}" if number else ""
+        return f"taking back <@{ctx.step_payload['user_id']}>'s roles{of}"
+
+    async def window_due(_ctx: StepContext) -> bool:
+        return await hooks.window_open()
+
+    async def close_window(ctx: StepContext) -> StepResult:
+        returned = await close_signup_window(
+            ctx.bot, hooks, str(ctx.step_payload.get("cause", SEASON_END_CAUSE))
+        )
+        return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
+
+    async def describe_window(ctx: StepContext) -> str:
+        number = ctx.payload.get("season_number")
+        return (
+            f"closing the signup window as season {number} ends"
+            if number
+            else "closing the signup window as the season ends"
+        )
+
+    async def flush_forecasts(_ctx: StepContext) -> StepResult:
+        await hooks.flush_forecasts()
+        return StepResult()
+
+    async def describe_flush(_ctx: StepContext) -> str:
+        return "clearing the forecasts posted under test mode"
+
+    async def discard_portraits(ctx: StepContext) -> StepResult:
+        discarded = await hooks.discard_portraits([str(a) for a in ctx.step_payload["accounts"]])
+        return StepResult(result={"discarded": discarded if isinstance(discarded, int) else 0})
+
+    async def describe_portraits(_ctx: StepContext) -> str:
+        return "discarding the portraits of the drivers deleted"
+
+    async def discard_backup(_ctx: StepContext) -> StepResult:
+        hooks.discard_backup()
+        return StepResult()
+
+    async def describe_backup(_ctx: StepContext) -> str:
+        return "deleting the saved test-mode state"
+
+    async def forget_setup(_ctx: StepContext) -> StepResult:
+        hooks.forget_setup()
+        return StepResult()
+
+    async def describe_setup(_ctx: StepContext) -> str:
+        return "letting go of the setup the bot holds in memory"
+
+    return {
+        REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
+        CLOSE_WINDOW: Step(
+            CLOSE_WINDOW, StepKind.ACT, close_window, still_due=window_due, describe=describe_window
+        ),
+        FLUSH_FORECASTS: Step(
+            FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush
+        ),
+        DISCARD_PORTRAITS: Step(
+            DISCARD_PORTRAITS, StepKind.ACT, discard_portraits, describe=describe_portraits
+        ),
+        DISCARD_BACKUP: Step(
+            DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup
+        ),
+        FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_setup, describe=describe_setup),
+        **close_signup_steps(placement, hooks),
+    }

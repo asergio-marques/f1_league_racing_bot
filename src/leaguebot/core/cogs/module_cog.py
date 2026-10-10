@@ -335,7 +335,9 @@ _UNATTENDED_HEADS: dict[str, str] = {
 }
 
 
-async def close_signups_unattended(bot: LeagueBot, *, cause: str) -> ForcedCloseOutcome | None:
+async def close_signups_unattended(
+    bot: LeagueBot, *, cause: str, hold_channels: bool = True
+) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close, and record it in one line.
 
     *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
@@ -345,6 +347,9 @@ async def close_signups_unattended(bot: LeagueBot, *, cause: str) -> ForcedClose
     member runs do. Formed here, beside ``execute_forced_close``, so that no caller forms it:
     the timer and the restart sweep in ``__main__`` and the two season closes keep only the
     call.
+
+    *hold_channels* False is the change queue's form (``execute_forced_close``): the outcome gives
+    the drivers it returned and the queue's jobs tell and close each one's signup channel.
 
     Written only where a window was actually closed: a module that is disabled produces nothing
     (the core specification, Modules), and a window not open needs no close, so both return
@@ -359,7 +364,9 @@ async def close_signups_unattended(bot: LeagueBot, *, cause: str) -> ForcedClose
         return None
     close_at = cfg.close_at  # the close clears it, so it is read first
 
-    outcome = await execute_forced_close(bot, audit_action=audit_action)
+    outcome = await execute_forced_close(
+        bot, audit_action=audit_action, hold_channels=hold_channels
+    )
 
     head = _UNATTENDED_HEADS.get(cause, "🔒 Signups closed automatically at their set time")
     if cause in ("timer", "restart") and close_at is not None:

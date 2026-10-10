@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.cancellation_changes import SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
+    from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
 
 load_dotenv()
 
@@ -159,6 +160,67 @@ def _forget_setup(bot: LeagueBot) -> None:
     cog = bot.get_cog("SeasonCog")
     if isinstance(cog, SeasonCog):
         cog.clear_pending()
+
+
+def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
+    """What a season's end needs of signup, results, weather, image and the cog, handed it here so
+    that core imports none of them. Each is looked up as it is called, so that nothing is bound
+    before it is needed."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
+    from leaguebot.image.services import driver_portrait_service
+    from leaguebot.results.services import result_submission_service
+    from leaguebot.signup.services.wizard_service import inactivity_job_id
+    from leaguebot.weather.services import forecast_cleanup_service
+
+    async def close_signups(bot_: LeagueBot, cause: str):
+        return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
+
+    async def window_open() -> bool:
+        if not await bot.module_service.is_signup_enabled():
+            return False
+        config = await bot.signup_module_service.get_config()
+        return config is not None and config.signups_open
+
+    async def post_signup_notice(user_id: str, guild: discord.Guild, notice: str):
+        return await bot.wizard_service.trigger_channel_hold(
+            user_id, guild, notice, lock=False, raise_on_failure=True
+        )
+
+    async def lock_signup_channel(user_id: str, guild: discord.Guild) -> None:
+        await bot.wizard_service.lock_signup_channel(user_id, guild)
+
+    def cancel_signup_timeout(user_id: str) -> None:
+        bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
+
+    async def discard_portraits(accounts):
+        return await driver_portrait_service.discard_portraits(bot, accounts)
+
+    async def amendment_open(db_path: str, season_id: int):
+        return await result_submission_service.open_amendment_in_season(db_path, season_id)
+
+    async def flush_forecasts() -> None:
+        await forecast_cleanup_service.flush_pending_deletions(bot)
+
+    def discard_backup() -> object:
+        return backup_service.discard(
+            bot.db_path, backup_service.jobstore_path_of(bot), raise_on_failure=True
+        )
+
+    return SeasonEndHooks(
+        close_signups=close_signups,
+        window_open=window_open,
+        cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
+        post_signup_notice=post_signup_notice,
+        lock_signup_channel=lock_signup_channel,
+        cancel_signup_timeout=cancel_signup_timeout,
+        discard_portraits=discard_portraits,
+        amendment_open=amendment_open,
+        flush_forecasts=flush_forecasts,
+        discard_backup=discard_backup,
+        forget_setup=lambda: _forget_setup(bot),
+    )
 
 
 def _submission_hooks() -> "SubmissionHooks":
