@@ -274,6 +274,9 @@ async def execute_forced_close(
         # is cleaned up after a 24-hour hold.
         reached: list[str] = []
         if hold_channels:
+            # The notice the start-up's finish looks for in the channel to know it was held.
+            from leaguebot.core.services.season_lifecycle_service import WINDOW_CLOSED_NOTICE
+
             _guild = await league_guild(bot)
             if _guild is None:
                 failed.extend(f"<@{uid}> was not told signups had closed." for uid in returned_ids)
@@ -283,7 +286,7 @@ async def execute_forced_close(
                     try:
                         held = await _wizard_svc.trigger_channel_hold(
                             uid, _guild,
-                            "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
+                            WINDOW_CLOSED_NOTICE,
                             arm_when_refused=True,
                         )
                         reached.append(uid)
