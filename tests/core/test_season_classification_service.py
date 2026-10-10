@@ -310,8 +310,6 @@ async def test_the_final_is_drawn_against_the_last_round_with_results(db_path):
 # are posted beside the last round's (results spec :561, image spec :1025: "Neither posting
 # replaces a standings message nor has its ID recorded").
 
-_XFAIL_FINAL = "#439: the final standings and the final sheet are not yet jobs of their own"
-
 
 async def _second_round_with_results(path, division_id: int, *, message_id=None) -> int:
     """Round 2 of the division, with an accepted session and Lewis (500) leading its standings,
@@ -378,7 +376,6 @@ def _final_inputs(round_id: int, division_id: int):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_FINAL)
 async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_nothing(db_path):
     """Div A's round 2 has its standings posted as message 9100, recorded against it. The final
     standings are posted as text: a new message is sent beside it, and 9100 is neither edited
@@ -432,7 +429,6 @@ async def test_final_standings_whose_channel_was_deleted_raise(db_path):
     standings.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_FINAL)
 async def test_the_final_standings_record_no_message_id(db_path):
     """The final standings of Div A, drawn against its round 2, go out as message 9200 through
     results' posting that records nothing, asked to post afresh as the final classification:
@@ -461,7 +457,6 @@ async def test_the_final_standings_record_no_message_id(db_path):
     assert await _recorded_standings_ids(db_path, round_id) == [None]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_FINAL)
 async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try(db_path):
     """Div A's final standings are posted in part: message 9201 went out and the rest was
     refused. The job raises with 9201 to keep; the next try, handed it, removes 9201 from the
