@@ -366,8 +366,6 @@ async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
 # finds nothing written.
 # ---------------------------------------------------------------------------
 
-_XFAIL = "#439: the season's end has no form writing on the save it is handed"
-
 ACTOR_ID = 999
 ACTOR_NAME = "Race Director"
 
@@ -660,7 +658,6 @@ async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_path) -> None:
     """A season being set up, its division and its rounds, deleted on the save; rolled back,
     every row of it is still there."""

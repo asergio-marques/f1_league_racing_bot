@@ -91,7 +91,6 @@ async def test_every_season_abort_refusal_is_recorded(stage, word, reply):
     assert logged == [f"\u26d4 `/season abort` refused for Admin (<@42>) \u2014 {reply[2:]}"]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: delete_season does not write on the save handed")
 async def test_deleting_the_season_takes_its_signups_windows_and_configuration(tmp_path):
     path = str(tmp_path / "abort.db")
     await run_migrations(path)

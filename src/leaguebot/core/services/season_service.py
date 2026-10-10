@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 
 import aiosqlite
@@ -100,6 +101,18 @@ def division_amendment_changes_nothing(
 
 class SeasonImmutableError(Exception):
     """Raised when a mutation is attempted on a COMPLETED (archived) season."""
+
+
+@asynccontextmanager
+async def _own_or_handed(
+    handed_or_service: SeasonService | aiosqlite.Connection,
+) -> AsyncIterator[aiosqlite.Connection]:
+    """The connection handed in, or a new one on the service's own database."""
+    if isinstance(handed_or_service, aiosqlite.Connection):
+        yield handed_or_service
+        return
+    async with get_connection(handed_or_service._db_path) as db:  # noqa: SLF001
+        yield db
 
 
 class SeasonService:
@@ -706,18 +719,27 @@ class SeasonService:
             await db.commit()
             return discarded
 
-    async def delete_season(self, season_id: int) -> None:
+    async def delete_season(
+        self: SeasonService | aiosqlite.Connection, season_id: int
+    ) -> None:
         """FK-safe cascade delete of one season and all its child records.
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
         at all, its signups included (issue #220).
+
+        Called as ``SeasonService.delete_season(db, season_id)`` it writes on the connection
+        handed to it and commits nothing, for the abort's one save to commit. Called on a
+        service, as ``service.delete_season(season_id)``, it opens its own connection and
+        commits, until the abort asks the queue and that form goes (#439). It is a plain
+        function either way, so the writes below stay keyed to this name (#283).
 
         Raises ``ValueError`` for a season not in SETUP, before anything is deleted. Its number
         is committed from the moment it leaves SETUP, and that number is how a league names
         its own history: removing one would leave a gap nothing explains (issue #153). A season
         id that names no season is not an error.
         """
-        async with get_connection(self._db_path) as db:
+        handed = isinstance(self, aiosqlite.Connection)
+        async with _own_or_handed(self) as db:
             cursor = await db.execute(
                 "SELECT status FROM seasons WHERE id = ?", (season_id,)
             )
@@ -811,7 +833,8 @@ class SeasonService:
             await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
             # The season's signups, windows and signup configuration go with it by cascade.
             await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
-            await db.commit()
+            if not handed:
+                await db.commit()
 
     # ------------------------------------------------------------------
     # Division
