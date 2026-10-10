@@ -1,21 +1,15 @@
-"""season_end_service — season completion and archival.
+"""season_end_service — what the end of a season does, as jobs on the change queue (#439).
 
-One entry point:
+A season ends when a league admin runs `/season complete`, `/season cancel` or `/season abort`,
+and in no other way: each is a change type of the queue (`season_end_changes`,
+`cancellation_changes`), whose jobs this module holds the shared ones of (`season_end_steps`) and
+whose saves it holds the writes of (`write_driver_history_entries_on`, `season_role_targets_on`).
 
-execute_season_end(season_id, bot, *, actor)
-    Archives the season (status → COMPLETED), writes DriverHistoryEntry
-    records for every assigned driver, posts each division's final standings
-    and attendance sheet.  The caller records the outcome.  All
-    season data is permanently retained.
-    Idempotent: a no-op if no active season is found (handles duplicate calls).
-
-A season ends when a league manager runs `/season complete`, and in no other way. There was once
-a second entry point, `check_and_schedule_season_end`, which armed a timer to end a season seven
-days after its last round. Nothing ever called it — `_recover_season_end_jobs` was a documented
-no-op and `/season complete` calls `execute_season_end` directly — so it sat unreachable while
-reading as live code, and it misled the README into describing automatic completion until
-2026-08-17. It was deleted with issue #154, whose lifecycle settles the question the other way:
-a season is completed explicitly, once every division is finished or cancelled.
+There was once a second entry point, `check_and_schedule_season_end`, which armed a timer to end a
+season seven days after its last round. Nothing ever called it, so it sat unreachable while reading
+as live code, and it misled the README into describing automatic completion until 2026-08-17. It
+was deleted with issue #154, whose lifecycle settles the question the other way: a season is
+completed explicitly, once every division is finished or cancelled.
 """
 
 from __future__ import annotations
@@ -34,8 +28,6 @@ from leaguebot.core.services.season_lifecycle_service import (
     require_guild,
     window_closed_jobs,
 )
-from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.member_names import member_named
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -56,94 +48,6 @@ FORGET_SETUP = "forget_setup"
 
 #: The cause the window's close is recorded under, where a season's end closes it.
 SEASON_END_CAUSE = "season end"
-
-
-async def execute_season_end(
-    season_id: int, bot: "LeagueBot", *, actor: "discord.User | discord.Member"
-) -> None:
-    """Archive the season. The caller records the outcome.
-
-    All season data is permanently retained (status → COMPLETED).
-    Idempotent: returns immediately if no active season is found for the server.
-
-    **This writes no success line** (#482): `/season complete`, the one caller, writes the
-    command's own, naming the member, as soon as this returns. *actor* is the member who
-    completes the season, named in the one line this does write, the report of a final
-    classification that had problems, as every line names the member.
-    """
-    season_svc = bot.season_service
-
-    # Idempotency guard: verify the season still exists and is active
-    season = await season_svc.get_confirmed_season()
-    if season is None:
-        log.info(
-            "execute_season_end: no active season — already archived.",
-        )
-        return
-
-    # Cancel any pending season-end scheduler job (no-op if already fired)
-    bot.scheduler_service.cancel_season_end()
-
-    guild = await league_guild(bot)
-
-    # The season's end, in the order the core specification sets (issue #220).
-    # 1. The final classification, per division. The season's last word: each division's
-    #    standings and attendance record posted once more, headed `Final Classification`, as
-    #    graphics with no text above them. Posted while the season is still active, because
-    #    everything downstream of here reads it as the live one. A failure never blocks the
-    #    archival — the season completes either way, and a picture is not what the completion
-    #    is for (XIV.7).
-    if guild is not None:
-        from leaguebot.core.services import season_classification_service as classification
-
-        try:
-            problems = await classification.post_final_classifications(
-                bot, guild, bot.db_path, season.id
-            )
-        except Exception:  # noqa: BLE001 — never fail an archival on a picture
-            log.exception("execute_season_end: the final classifications failed")
-            problems = []
-
-        if problems:
-            log.error(
-                "execute_season_end: final classification problems - %s",
-                "; ".join(problems),
-            )
-            try:
-                await bot.output_router.post_log(
-                    "\n".join(
-                        [
-                            f"{member_named(getattr(actor, 'display_name', None), actor.id)}"
-                            " | /season complete | Final classification",
-                            *(
-                                f"    - {line}" for line in problems
-                            ),
-                        ]
-                    ),
-                )
-            except Exception:  # noqa: BLE001
-                log.exception(
-                    "execute_season_end: could not post the final classification report"
-                )
-
-    # 2. History entries, for every driver holding a committed placement.
-    await _write_driver_history_entries(season, bot)
-
-    # 3. The division and team roles, and the driver role, of the season's drivers.
-    if guild is not None:
-        await _revoke_season_roles(season.id, guild, bot)
-
-    # 4-6. The signup window, the driver pass and test mode, shared with cancelling. The
-    # saved test-mode backup goes too: the season it belonged to has been run to its end.
-    await end_of_season_pass(bot, guild, discard_backup=True)
-
-    # 7. Archive: flip status to COMPLETED (all data retained)
-    await season_svc.complete_season(season.id)
-
-    log.info(
-        "Season %s archived (COMPLETED).",
-        season_id,
-    )
 
 
 async def end_of_season_pass(

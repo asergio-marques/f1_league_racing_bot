@@ -1287,7 +1287,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The season end
-    ("core/services/season_service.py", "SeasonService.complete_season"): (1, SLICE[5]),
     ("core/services/season_service.py", "SeasonService.refresh_division_status"): (1, SLICE[5]),
     ("core/services/season_end_service.py", "_write_driver_history_entries"): (1, SLICE[5]),
     ("core/services/season_lifecycle_service.py", "run_driver_pass"): (1, SLICE[5]),
