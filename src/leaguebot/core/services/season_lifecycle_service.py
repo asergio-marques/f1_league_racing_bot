@@ -288,6 +288,14 @@ class SeasonEndHooks:
     - *flush_forecasts*: deletes the forecasts posted under test mode.
     - *discard_backup*: deletes the saved test-mode state, raising where it cannot.
     - *forget_setup*: lets go of the setup the season cog holds in memory.
+    - *owed_closing_notices*: the accounts the window's close returned and owes their closing
+      notice, read on a connection of its own, for a check before a step or a step with no save
+      open.
+    - *clear_closing_notices_on*: sets those accounts' mark back to none, on the save's connection.
+    - *take_closing_notices_on*: reads the accounts still owed and clears them, on the save's
+      connection, for a change's last save to name the drivers a discarded close left untold.
+    - *end_wizards_on*: marks these accounts' signup wizards over, on the save's connection, for
+      the driver pass and the turn-down to end a signup in the save that returns the driver.
     """
 
     close_signups: Callable[[LeagueBot, str], Awaitable[WindowClosed | None]]
@@ -301,6 +309,10 @@ class SeasonEndHooks:
     flush_forecasts: Callable[[], Awaitable[None]]
     discard_backup: Callable[[], object]
     forget_setup: Callable[[], None]
+    owed_closing_notices: Callable[[], Awaitable[list[str]]]
+    clear_closing_notices_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
+    take_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
+    end_wizards_on: Callable[[aiosqlite.Connection, Sequence[str]], Awaitable[None]]
 
 
 #: The jobs of one driver's Discord side of a season's end, as the stop notice, the tests and

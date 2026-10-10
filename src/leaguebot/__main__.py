@@ -5,9 +5,10 @@ import json
 import logging
 import os
 from datetime import datetime
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
+import aiosqlite
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -208,6 +209,19 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
             bot.db_path, backup_service.jobstore_path_of(bot), raise_on_failure=True
         )
 
+    async def owed_closing_notices() -> list[str]:
+        return await bot.signup_module_service.owed_closing_notices()
+
+    async def clear_closing_notices_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> None:
+        await bot.signup_module_service.clear_closing_notices_on(db, accounts)
+
+    async def take_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
+        return await bot.signup_module_service.take_closing_notices_on(db)
+
+    async def end_wizards_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> None:
+        for account in accounts:
+            await bot.signup_module_service.end_wizard_on(db, str(account))
+
     return SeasonEndHooks(
         close_signups=close_signups,
         window_open=window_open,
@@ -220,6 +234,10 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         flush_forecasts=flush_forecasts,
         discard_backup=discard_backup,
         forget_setup=lambda: _forget_setup(bot),
+        owed_closing_notices=owed_closing_notices,
+        clear_closing_notices_on=clear_closing_notices_on,
+        take_closing_notices_on=take_closing_notices_on,
+        end_wizards_on=end_wizards_on,
     )
 
 
