@@ -3232,7 +3232,22 @@ class SeasonCog(commands.Cog):
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None or season.stage not in PRE_CONFIRMATION:
+        if season is None:
+            await refuse(interaction, ABORT_ONLY_BEFORE, what=describe(interaction))
+            return
+
+        # Another end of the season in hand is named before the stage is judged, whatever stage
+        # the season is in (owner, 2026-10-09, answer B): a cancellation stopped over an ongoing
+        # season is told so, not that an ongoing season is cancelled.
+        hand = await season_end_in_hand(self.bot.db_path, season.id)
+        if hand is not None:
+            await refuse(
+                interaction,
+                season_end_refusal(SEASON_ABORT, hand, season.season_number),
+                what=describe(interaction),
+            )
+            return
+        if season.stage not in PRE_CONFIRMATION:
             await refuse(interaction, ABORT_ONLY_BEFORE, what=describe(interaction))
             return
 

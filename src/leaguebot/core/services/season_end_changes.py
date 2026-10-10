@@ -700,21 +700,21 @@ def season_abort_change(
 
     async def check(ctx: CheckContext) -> Verdict:
         season = await seasons.get_setup_or_active_season()
-        if (
-            season is None
-            or season.id != int(ctx.payload["season_id"])
-            or season.stage not in PRE_CONFIRMATION
-        ):
+        if season is None or season.id != int(ctx.payload["season_id"]):
             return Verdict.refuse(ABORT_ONLY_BEFORE)
 
-        # **A second abort, asked while the first is in hand** (owner, 2026-10-09): refused at
-        # once, naming the job. Only as it is asked: as the change runs, it would find itself.
+        # **Another end of the season in hand** (owner, 2026-10-09, answers A and B): refused at
+        # once, naming the job, ahead of the stage gate, whatever stage the season is in: a second
+        # abort, or a cancellation or completion of a season past its placements. Only as it is
+        # asked: as the change runs, it would find itself.
         if ctx.change_id is None:
             hand = await season_end_in_hand(ctx.db_path, season.id)
             if hand is not None:
                 return Verdict.refuse(
                     season_end_refusal(SEASON_ABORT, hand, season.season_number)
                 )
+        if season.stage not in PRE_CONFIRMATION:
+            return Verdict.refuse(ABORT_ONLY_BEFORE)
         return Verdict.go()
 
     async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
