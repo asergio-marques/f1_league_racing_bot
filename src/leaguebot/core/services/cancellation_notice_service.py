@@ -19,47 +19,25 @@ driver is told by. Each module speaks only while it is enabled — a disabled mo
 nothing, whatever the path arrives at it (core specification) — and the calendar, owned by
 core, is refreshed whatever the modules.
 
-**Every send is on its own.** One failure never stops another, nor the cancellation that
-called it: the cancellation has already been decided and recorded, or is about to be, and
-losing a notice is not a reason to undo it. What failed is returned so the command can name
-it to the admin who ran it, as well as being logged; a missed notice that only reached the
-bot's own log was the second half of #175.
-
-That holds for a season's cancellation. A round's or a division's runs on the change queue
-(`cancellation_changes`), where each notice (`post_module_notice`) and each call taken down
-(`take_down_call`) is a job of its own: one Discord refuses stops the queue until it is retried
-or discarded, and is named only once discarded. So each has a raising form, which turns only a
-failure Discord caused into `StepFailedOnDiscord` and lets a fault of the bot's own through
-unchanged.
+**Every send is a job of its own.** A season's, a division's and a round's cancellation all run
+on the change queue (`cancellation_changes`), where each notice (`post_module_notice`) and each
+call taken down (`take_down_call`) is a job: one Discord refuses stops the queue until it is
+retried or discarded, and is named only once discarded. So each raises, turning only a failure
+Discord caused into `StepFailedOnDiscord` and letting a fault of the bot's own through unchanged.
 """
 from __future__ import annotations
 
-import dataclasses
-import logging
 from dataclasses import dataclass
 
 import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.utils.league_bot import LeagueBot
-
-log = logging.getLogger(__name__)
 
 SCOPE_ROUND = "round"
 SCOPE_DIVISION = "division"
 SCOPE_SEASON = "season"
-
-
-@dataclass
-class CancellationReport:
-    """What announcing a cancellation left for the command to report."""
-
-    #: Every place the cancellation could not reach, for the admin's reply and the log.
-    failures: list["NoticeFailure"] = dataclasses.field(default_factory=list)
-    #: The log-channel audit of each cancelled round's check-in; empty where there is none.
-    audit: str = ""
 
 
 @dataclass(frozen=True)
@@ -136,58 +114,7 @@ def attendance_notice(scope: str, division_name: str, round_number=None, track_n
     )
 
 
-# ── The calendar ──────────────────────────────────────────────────────────
-
-
-async def refresh_division_calendar(
-    bot: LeagueBot,
-    guild,
-    division,
-    *,
-    season_number=None,
-    round_ids: frozenset[int] = frozenset(),
-) -> str | None:
-    """Post *division*'s calendar again, as it now stands. Returns what went wrong, or None.
-
-    *round_ids* names the rounds the cancellation calls off, drawn as cancelled whether or not
-    they are recorded so yet. A season
-    is cancelled by a cascade, and its calendars must be refreshed **before** it — once the
-    season is recorded cancelled its channels are no longer read — so the rounds the cascade
-    is about to call off are named here instead.
-
-    A division whose calendar was never posted is left alone: there is nothing to bring up
-    to date, and posting a first calendar is the approval's to do, not a cancellation's.
-
-    Not a commanded posting. The command asked for the cancellation, not the calendar, so a
-    graphic that cannot be drawn falls back to text as it does at approval (XIV.7).
-    """
-    if not getattr(division, "calendar_message_id", None):
-        return None
-
-    from leaguebot.core.services import calendar_post_service as calendar
-
-    rounds = await bot.season_service.get_division_rounds(division.id)
-    if round_ids:
-        rounds = [
-            dataclasses.replace(r, status=RoundStatus.CANCELLED.value)
-            if r.id in round_ids
-            else r
-            for r in rounds
-        ]
-    tracks = await calendar.tracks_by_name(bot.db_path)
-    posting = await calendar.post_division_calendar(
-        bot, guild, division, rounds, tracks, season_number=season_number
-    )
-    if posting.message_id is None:
-        return posting.problem or "the calendar could not be posted"
-    if posting.fell_back:
-        # Posted, but not as the league asked: the picture could not be drawn and the text
-        # stands in. Worth the admin's knowing, since the calendar now looks different.
-        return f"posted as text, as the picture could not be drawn ({posting.problem})"
-    return None
-
-
-# ── The one entry point ───────────────────────────────────────────────────
+# ── The posts and take-downs, each a job ───────────────────────────────────────────────────
 
 
 async def _module_channels(bot: LeagueBot, division_id: int) -> dict[str, int | None]:
@@ -215,55 +142,25 @@ async def _module_channels(bot: LeagueBot, division_id: int) -> dict[str, int | 
     }
 
 
-async def _rounds_of(bot: LeagueBot, division_id: int, round_ids: frozenset[int]) -> list[int]:
-    """Those of *round_ids* that belong to *division_id*, in order.
+async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
+    """Send *content* to *channel_id*, as a job on the change queue. Returns what went wrong, or None.
 
-    A season's cancellation names every round it calls off, across every division; each
-    division is told only of its own. Read in one query rather than by asking each round's
-    check-in in turn, which is a connection per round per division.
-    """
-    if not round_ids:
-        return []
-    placeholders = ",".join("?" * len(round_ids))
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            f"SELECT id FROM rounds WHERE division_id = ? AND id IN ({placeholders})"  # noqa: S608
-            " ORDER BY round_number",
-            (division_id, *sorted(round_ids)),
-        )
-        return [row["id"] for row in await cursor.fetchall()]
-
-
-async def _send(
-    guild, channel_id, content: str, *, raise_on_failure: bool = False, **kwargs
-) -> str | None:
-    """Send *content* to *channel_id*. Returns what went wrong, or None.
-
-    A channel never set is returned as "no channel is set" either way: there is nothing to
-    retry. With *raise_on_failure*, the form a job on the change queue calls, a channel that is
-    set and no longer on the server raises `StepFailedOnDiscord` (no cause), and a send Discord
-    refuses raises it `from` the `discord.HTTPException`; any other exception is a fault of the
-    bot's own and propagates unchanged. Without it, every failure is returned, so one notice
-    never stops another.
+    A channel never set is returned as "no channel is set": there is nothing to retry. A channel
+    that is set and no longer on the server raises `StepFailedOnDiscord` (no cause), and a send
+    Discord refuses raises it `from` the `discord.HTTPException`; any other exception is a fault
+    of the bot's own and propagates unchanged.
     """
     if not channel_id:
         return "no channel is set"
     channel = guild.get_channel(int(channel_id)) if guild is not None else None
     if channel is None:
-        if raise_on_failure:
-            raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
-        return "the channel could not be found"
+        raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
     try:
         await channel.send(content, **kwargs)
-    except Exception as exc:  # noqa: BLE001 — one notice never stops another
-        if raise_on_failure:
-            if isinstance(exc, discord.HTTPException):
-                raise StepFailedOnDiscord(
-                    f"the message could not be posted to <#{channel_id}>: {exc}"
-                ) from exc
-            raise
-        log.warning("cancellation notice: could not post to channel %s", channel_id, exc_info=True)
-        return f"the message could not be posted ({exc})"
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord(
+            f"the message could not be posted to <#{channel_id}>: {exc}"
+        ) from exc
     return None
 
 
@@ -278,7 +175,7 @@ async def post_module_notice(
     track_name: str | None = None,
 ) -> str | None:
     """Post *module*'s ("attendance", "weather" or "results") notice of a cancellation to
-    *division*'s channel for it, in the words `announce_cancellation` uses, and raise on a
+    *division*'s channel for it, in the cancellation's words, and raise on a
     failure Discord caused (`_send`). Returns "no channel is set" where the division has none.
 
     The caller has decided that the module is on; this does not look.
@@ -292,7 +189,6 @@ async def post_module_notice(
             guild,
             channels["attendance"],
             ping + attendance_notice(scope, division.name, **words),
-            raise_on_failure=True,
             allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
         )
     if module == "weather":
@@ -301,7 +197,7 @@ async def post_module_notice(
         note = results_note(scope, division.name, **words)
     else:
         raise ValueError(f"no cancellation notice for module {module!r}")
-    return await _send(guild, channels[module], note, raise_on_failure=True, silent=True)
+    return await _send(guild, channels[module], note, silent=True)
 
 
 #: The order the audit lists the answers in, and the words it lists them under.
@@ -364,34 +260,6 @@ async def _checkin_audit(bot: LeagueBot, division, round_id: int) -> str:
     return "".join(lines)
 
 
-async def _withdraw_call(bot: LeagueBot, round_id: int, division_id: int) -> str | None:
-    """Take down *round_id*'s check-in call in *division_id*, if one stands. Returns what went
-    wrong, or None.
-
-    `withdraw_rsvp_call` is what an amendment uses to take a call down. It deletes the call,
-    its last notice and its distribution announcement, and the row recording which messages
-    those were — the row being read elsewhere as "the call now standing", by the restart that
-    re-arms its buttons among others, so it must not outlive the call. The answers in
-    `driver_round_attendance` are not touched.
-    """
-    from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
-
-    undeleted: list[str] = []
-    try:
-        await withdraw_rsvp_call(round_id, division_id, bot, undeleted=undeleted)
-    except Exception as exc:  # noqa: BLE001 — one call never stops the rest
-        log.exception("cancellation notice: could not take down the call of round %s", round_id)
-        return f"could not be taken down ({exc})"
-    if undeleted:
-        # Left standing, so a league manager must delete it by hand; its buttons refuse a
-        # cancelled round's answers in the meantime.
-        return (
-            f"{len(undeleted)} message(s) could not be deleted and must be removed by hand "
-            f"(ids {', '.join(undeleted)})"
-        )
-    return None
-
-
 async def take_down_call(bot: LeagueBot, division, round_id: int) -> dict:
     """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
 
@@ -413,126 +281,6 @@ async def take_down_call(bot: LeagueBot, division, round_id: int) -> dict:
             exc.reason, result={"audit": audit, "undeleted": undeleted}
         ) from exc.__cause__
     return {"audit": audit, "taken_down": taken_down}
-
-
-async def announce_cancellation(
-    bot: LeagueBot,
-    guild,
-    divisions,
-    *,
-    scope: str,
-    round_number: int | None = None,
-    track_name: str | None = None,
-    season_number=None,
-    round_ids: frozenset[int] = frozenset(),
-) -> CancellationReport:
-    """Have each enabled module say what the cancellation means for it, in each division.
-
-    *divisions* are those told: the one a round or division belongs to, or every division of
-    a season still running. *round_ids* are the rounds this cancellation calls off — the one
-    round, or every round of the division or season whose results are not yet in. Returns
-    every place that could not be reached, and the audit of those rounds' check-ins.
-
-    **Never raises.** It is called in the middle of a cancellation — before the cascade, for a
-    season — and an exception escaping it would stop the cancellation part-done, its jobs gone
-    and its records untouched. Whatever goes wrong is returned as a failure instead.
-    """
-    report = CancellationReport()
-    try:
-        await _announce(
-            bot, guild, divisions, report,
-            scope=scope, round_number=round_number, track_name=track_name,
-            season_number=season_number, round_ids=frozenset(round_ids),
-        )
-    except Exception as exc:  # noqa: BLE001 — see the docstring
-        log.exception("cancellation notice: the announcement raised")
-        report.failures.append(NoticeFailure("Every division", "the announcement", str(exc)))
-    return report
-
-
-async def _announce(
-    bot: LeagueBot, guild, divisions, report: CancellationReport, *,
-    scope, round_number, track_name, season_number, round_ids,
-) -> None:
-    import discord
-
-    enabled = {
-        "weather": await bot.module_service.is_weather_enabled(),
-        "results": await bot.module_service.is_results_enabled(),
-        "attendance": await bot.module_service.is_attendance_enabled(),
-    }
-
-    def _fail(division, target: str, reason: str | None) -> None:
-        if reason is None:
-            return
-        log.warning("cancellation notice: %s — %s: %s", division.name, target, reason)
-        report.failures.append(NoticeFailure(division.name, target, reason))
-
-    words = dict(round_number=round_number, track_name=track_name)
-    for division in divisions:
-        try:
-            channels = await _module_channels(bot, division.id)
-        except Exception as exc:  # noqa: BLE001 — one division never stops the next
-            log.exception("cancellation notice: could not read %s's channels", division.name)
-            _fail(division, "its module channels", f"could not be read ({exc})")
-            channels = None
-
-        if channels is not None and enabled["attendance"]:
-            role_id = getattr(division, "mention_role_id", None)
-            ping = f"<@&{role_id}>\n" if role_id else ""
-            _fail(division, "check-in channel", await _send(
-                guild,
-                channels["attendance"],
-                ping + attendance_notice(scope, division.name, **words),
-                allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
-            ))
-        if enabled["attendance"]:
-            try:
-                own_rounds = await _rounds_of(bot, division.id, round_ids)
-            except Exception as exc:  # noqa: BLE001 — one division never stops the next
-                log.exception("cancellation notice: could not read %s's rounds", division.name)
-                _fail(division, "its cancelled rounds", f"could not be read ({exc})")
-                own_rounds = []
-            # Each round called off has its check-in written into the log first, so the answers
-            # its call gathered stand on record beside the cancellation (decided 2026-09-19).
-            # Then the call comes down with its last notice and its distribution announcement,
-            # whether or not the notice above could be posted: it has nothing left to ask, and
-            # its buttons would go on recording answers to it. The answers are kept.
-            for round_id in own_rounds:
-                try:
-                    block = await _checkin_audit(bot, division, round_id)
-                except Exception as exc:  # noqa: BLE001 — the audit never stops the rest
-                    log.exception("cancellation notice: could not audit round %s", round_id)
-                    _fail(division, "check-in audit", f"could not be read ({exc})")
-                else:
-                    report.audit += block
-                _fail(division, "check-in call", await _withdraw_call(bot, round_id, division.id))
-        if channels is not None and enabled["weather"]:
-            _fail(division, "forecast channel", await _send(
-                guild,
-                channels["weather"],
-                weather_note(scope, division.name, **words),
-                silent=True,
-            ))
-        if channels is not None and enabled["results"]:
-            _fail(division, "results channel", await _send(
-                guild,
-                channels["results"],
-                results_note(scope, division.name, **words),
-                silent=True,
-            ))
-
-        # The calendar is core's and needs none of the module channels above.
-        try:
-            reason = await refresh_division_calendar(
-                bot, guild, division,
-                season_number=season_number,
-                round_ids=round_ids,
-            )
-        except Exception as exc:  # noqa: BLE001 — the calendar never stops the cancellation
-            log.exception("cancellation notice: calendar refresh raised for %s", division.name)
-            reason = str(exc)
-        _fail(division, "calendar", reason)
 
 
 #: How many failures a reply names before summing up the rest, and how long one line may run.
