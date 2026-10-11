@@ -28,15 +28,32 @@ pins that, and fails if the value is ever normalised to `None` again.
 from __future__ import annotations
 
 import logging
-from datetime import date
+import re
+import sys
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import run_migrations
 from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
+from leaguebot.core.services.calendar_post_service import CalendarPosting
+from tests.support.change_queue import (
+    attach_queue,
+    league_double,
+    run_queue,
+    seed_server,
+)
 from tests.support.undecorate import undecorate
+
+#: Where the bot's database is built: the running test's own `tmp_path`, set by `_home`.
+_HOME = None
+
+#: The change queue's message for #439, which a test that fails until the sync runs on the
+#: queue carries.
+ON_THE_QUEUE = "#439: /division calendar-sync does not yet run on the change queue"
 
 SERVER_ID = 13208
 
@@ -63,15 +80,24 @@ def _season(stage: SeasonStage = SeasonStage.ONGOING, *, season_number: int = 7)
 
 
 def _division(*, name="Pro", calendar=700):
-    return SimpleNamespace(id=11, name=name, tier=1, calendar_channel_id=calendar)
+    return SimpleNamespace(id=11, name=name, tier=1, calendar_channel_id=calendar,
+                           calendar_message_id=None)
 
 
 _UNSET = object()
 
 
+@pytest.fixture(autouse=True)
+def _home(tmp_path, monkeypatch):
+    """Build each test's bot on a database of its own, under its `tmp_path`."""
+    monkeypatch.setattr(sys.modules[__name__], "_HOME", tmp_path)
+
+
 def _make_cog(*, season=_UNSET, divisions=None):
-    bot = MagicMock()
-    bot.db_path = "/tmp/not-read.db"
+    """The cog on a bot with the league's log channel and a real change queue (#439), whose
+    season service finds *season* and *divisions*. The queue is attached by `_sync`, once the
+    database is built."""
+    bot = league_double(str(_HOME / "calendar_sync.db"))
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=_season() if season is _UNSET else season
@@ -80,11 +106,20 @@ def _make_cog(*, season=_UNSET, divisions=None):
         return_value=divisions if divisions is not None else [_division()]
     )
     bot.season_service.get_division_rounds = AsyncMock(return_value=["round"])
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock()
+    bot.get_guild = MagicMock(return_value=MagicMock())
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     return cog
+
+
+async def _queue_for(bot) -> None:
+    """The bot's database built by the migrations and its queue attached, once."""
+    if getattr(bot, "_calendar_sync_queue", None) is True:
+        return
+    await run_migrations(bot.db_path)
+    await seed_server(bot.db_path)
+    attach_queue(bot, bot.db_path, now=datetime.now(timezone.utc))
+    bot._calendar_sync_queue = True
 
 
 def _interaction():
@@ -97,15 +132,21 @@ def _interaction():
     interaction.response = MagicMock()
     interaction.response.defer = AsyncMock()
     interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+    # The acknowledgement of a deferred command is a follow-up, which the outcome edits.
+    interaction.followup.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
     return interaction
 
 
 def _posting(*, problem=None, image=False, notices=()):
-    return SimpleNamespace(problem=problem, posted_as_image=image, notices=list(notices))
+    return CalendarPosting(
+        division_id=11, posted_as_image=image, message_id=None if problem else 9001,
+        problem=problem, notices=list(notices),
+    )
 
 
 async def _sync(cog, interaction, *, name="Pro", posting=None):
+    """Run the command, then the queue, with the calendar's posting stubbed."""
+    await _queue_for(cog.bot)
     with patch(
         "leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
     ), patch(
@@ -113,6 +154,7 @@ async def _sync(cog, interaction, *, name="Pro", posting=None):
         new=AsyncMock(return_value=posting or _posting()),
     ) as post:
         await undecorate(SeasonCog.division_calendar_sync)(cog, interaction, name)
+        await run_queue(cog.bot)
     return post
 
 
@@ -125,15 +167,37 @@ def _run_by_the_manager(cog):
     return interaction
 
 
+#: What the log channel appends to every line: a rule of 36 horizontal bars.
+_SEPARATOR = "\n" + chr(0x2015) * 36
+
+
+def _raw(line: str) -> str:
+    """A line as the bot wrote it: the log channel's separator and the backticks it wraps a
+    mention in taken off."""
+    return re.sub(r"`(<@&?\d+>)`", r"\1", line.removesuffix(_SEPARATOR)).rstrip("\n")
+
+
 def _logged(cog) -> list[str]:
-    """The lines the command wrote to the log channel, in order."""
-    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    """The lines the log channel took, in order, each as the bot wrote it."""
+    return [_raw(line) for line in cog.bot.log_channel.sent]
 
 
 def _replied(interaction) -> str:
+    """Everything the member was told: the follow-ups, then the acknowledgement's updates."""
+    calls = (list(interaction.followup.send.await_args_list)
+             + list(interaction.followup.send.return_value.edit.await_args_list))
     return "\n".join(
-        str(c.args[0]) for c in interaction.followup.send.await_args_list if c.args
+        str(c.args[0]) if c.args else str(c.kwargs.get("content", "")) for c in calls
     )
+
+
+def _outcome(interaction) -> str:
+    """What the acknowledgement was last updated to say."""
+    edits = interaction.followup.send.return_value.edit.await_args_list
+    if not edits:
+        return ""
+    last = edits[-1]
+    return str(last.args[0]) if last.args else str(last.kwargs.get("content", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -141,14 +205,17 @@ def _replied(interaction) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_calendar_is_reposted(tmp_path):
+    """The calendar is posted once, by the queue's job, and the acknowledgement is updated to
+    say so."""
     cog = _make_cog()
     interaction = _interaction()
 
     post = await _sync(cog, interaction)
 
     post.assert_awaited_once()
-    assert "Calendar for **Pro** reposted as text" in _replied(interaction)
+    assert _outcome(interaction) == "✅ Calendar for **Pro** reposted as text."
 
 
 async def test_it_is_a_commanded_posting(tmp_path):
@@ -169,16 +236,18 @@ async def test_the_reply_says_it_was_posted_as_an_image(tmp_path):
     assert "reposted as image" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(tmp_path):
     """A manager who has just been refused will otherwise assume the channel is empty. The
     refusal is recorded (#482): the log channel gets exactly one refusal line, naming the member
-    and carrying the render's problem."""
+    and carrying the render's problem, written by the change's closing job as the
+    acknowledgement is updated with the refusal."""
     cog = _make_cog()
     interaction = _run_by_the_manager(cog)
 
     await _sync(cog, interaction, posting=_posting(problem="the template has no rows"))
 
-    replied = _replied(interaction)
+    replied = _outcome(interaction)
     assert "was not posted — the template has no rows" in replied
     assert "previous calendar still stands" in replied
     assert _logged(cog) == [
@@ -194,7 +263,7 @@ async def test_render_notices_are_shown_and_logged(tmp_path):
     await _sync(cog, interaction, posting=_posting(notices=["round 12 did not fit"]))
 
     assert "round 12 did not fit" in _replied(interaction)
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
+    logged = _logged(cog)[-1]
     assert "notice: round 12 did not fit" in logged
 
 
@@ -203,7 +272,7 @@ async def test_a_successful_sync_is_logged(tmp_path):
 
     await _sync(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
+    logged = _logged(cog)[-1]
     assert "/division calendar-sync | Success" in logged
     assert "posted as: text" in logged
 

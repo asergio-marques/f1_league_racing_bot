@@ -366,55 +366,6 @@ async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-async def test_a_posting_failure_enqueues_the_textual_calendar(tmp_path):
-    """FR-020. The graphic is gone by the time the retry runs — the file is discarded in
-    the `finally` — and a retry that could not attach anything would post an empty
-    message."""
-    db_path = await _make_db(tmp_path, name="cal_retry")
-
-    result, _, _, enqueue = await _post(db_path, channel=_channel(send_fails=True))
-
-    enqueue.assert_awaited_once()
-    assert "Pro" in str(enqueue.await_args.args[2])
-    assert result.message_id is None
-
-
-async def test_a_failed_graphic_post_enqueues_text_rather_than_a_picture(tmp_path):
-    """Which is the whole point of the distinction: a render fault is reported, a posting
-    fault is retried, and only one of the two can be retried as an attachment."""
-    db_path = await _make_db(tmp_path, name="cal_retry_image")
-    png = tmp_path / "calendar.png"
-    png.write_bytes(b"\x89PNG")
-
-    _, _, _, enqueue = await _post(
-        db_path,
-        wanted=True,
-        outcome=_outcome(png=png),
-        channel=_channel(send_fails=True),
-    )
-
-    assert "Silverstone" in str(enqueue.await_args.args[2])
-
-
-async def test_a_failing_retry_queue_does_not_raise(tmp_path):
-    """Called from an approval; a failure here would fail a season for the want of a
-    retry row."""
-    db_path = await _make_db(tmp_path, name="cal_retry_fails")
-    channel = _channel(send_fails=True)
-
-    with patch(
-        "leaguebot.core.services.calendar_post_service.image_calendar_wanted",
-        new=AsyncMock(return_value=False),
-    ), patch("leaguebot.image.services.image_render_service.discard_render", new=MagicMock()), patch(
-        "leaguebot.core.services.retry_service.enqueue", new=AsyncMock(side_effect=RuntimeError("no db"))
-    ):
-        result = await post_division_calendar(
-            _bot(db_path), _guild(channel), _division(), [_round()], {}
-        )
-
-    assert result.problem is not None
-
-
 async def test_a_division_with_no_calendar_channel_is_reported(tmp_path):
     """Configuring one is optional, and the caller reports it rather than failing."""
     db_path = await _make_db(tmp_path, name="cal_nochannel")

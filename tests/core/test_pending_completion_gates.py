@@ -178,7 +178,10 @@ async def _team_reserve_role(bot, interaction):
 
 
 async def _calendar_sync(bot, interaction):
+    """The sync is asked of the change queue once its gates pass (#439), so the queue's `ask`
+    is recorded rather than run."""
     cog = _cog(SeasonCog, bot)
+    bot.change_queue.ask = AsyncMock(return_value=1)
     with patch("leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
             patch(
                 "leaguebot.core.services.calendar_post_service.post_division_calendar",
@@ -322,16 +325,30 @@ async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
 # Still open while the season is being raced
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", _NAMES)
+#: The command that runs on the change queue (#439): while the season is raced it is asked of
+#: the queue, which it is not yet.
+_ASKED_OF_THE_QUEUE = "/division calendar-sync"
+
+
+@pytest.mark.parametrize("name", [
+    pytest.param(name, marks=pytest.mark.xfail(
+        strict=True, reason="#439: /division calendar-sync is not yet asked of the change queue",
+    )) if name == _ASKED_OF_THE_QUEUE else name
+    for name in _NAMES
+])
 async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_path, name):
     db_path = await _db(tmp_path, SeasonStage.ONGOING)
     interaction = _interaction()
+    bot = _bot(db_path, SeasonStage.ONGOING)
 
-    await REFUSED[name](_bot(db_path, SeasonStage.ONGOING), interaction)
+    await REFUSED[name](bot, interaction)
 
     said = _said(interaction)
     assert "Every division of this season is done" not in said
     assert "no longer has anything to act on" not in said
+    if name == _ASKED_OF_THE_QUEUE:
+        bot.change_queue.ask.assert_awaited_once()
+        assert bot.change_queue.ask.await_args.args[0] == "calendar.sync"
 
 
 async def test_the_bulk_amend_modal_is_shown_while_the_season_is_ongoing(tmp_path):
