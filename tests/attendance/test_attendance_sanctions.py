@@ -723,14 +723,7 @@ async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, anno
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the test patches the sheet through the `sheet` fixture and again through "
-    "`_asking_for_sheets`, which then reads a mock's signature",
-)
-async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(
-    tmp_path, announcer, sheet
-):
+async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(tmp_path, announcer):
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
