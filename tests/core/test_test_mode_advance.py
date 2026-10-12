@@ -683,8 +683,9 @@ CLEANUPS_ASKED = [
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
 async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, label, prefix):
     """The forecast cleanup (8) is asked of the change queue as a `weather.forecast.clean_up`
-    of the round, the reply saying it is on the queue; the check-in cleanup (9) runs its own
-    runner, as today, and asks nothing."""
+    of the round, replying '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on
+    the change queue: …'; the check-in cleanup (9) runs its own runner, as today, and asks
+    nothing."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
@@ -694,7 +695,8 @@ async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, labe
         [(kind, payload)] = _asked(cog)
         assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
         mocks["run_rsvp_cleanup"].assert_not_awaited()
-        assert "is on the change queue" in _replied(interaction)
+        assert ("🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
+                "queue") in _replied(interaction)
     else:
         mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
         assert _asked(cog) == []
