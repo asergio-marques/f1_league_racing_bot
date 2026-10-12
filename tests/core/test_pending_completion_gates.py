@@ -210,7 +210,7 @@ async def _rounds_sync(bot, interaction):
     bot.change_queue.ask = AsyncMock(return_value=1)
     with patch(
         "leaguebot.results.services.results_post_service.division_repost_status",
-        new=AsyncMock(return_value="ok"), create=True,
+        new=AsyncMock(return_value="ok"),
     ):
         await undecorate(ResultsCog.rounds_sync)(_cog(ResultsCog, bot), interaction, "Pro")
 
@@ -253,12 +253,24 @@ REFUSED = {
 
 _NAMES = sorted(REFUSED)
 
+#: `/results rounds sync` reads its division's channel and rounds through
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches and the
+#: service does not yet have.
+_NO_REPOST_STATUS = "#439: results_post_service has no division_repost_status"
+
+#: `_NAMES` as parameters, `/results rounds sync` marked to fail until it has its read.
+_REFUSED_PARAMS = [
+    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_NO_REPOST_STATUS))
+    if name == "/results rounds sync" else name
+    for name in _NAMES
+]
+
 
 # ---------------------------------------------------------------------------
 # Refused once every division is done
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _REFUSED_PARAMS)
 async def test_every_closed_command_is_refused_in_pending_completion(tmp_path, name):
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
@@ -293,7 +305,7 @@ async def test_the_reserves_setting_is_not_written_in_pending_completion(tmp_pat
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("stage", [SeasonStage.COMPLETED, SeasonStage.CANCELLED])
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _REFUSED_PARAMS)
 async def test_every_closed_command_is_refused_on_an_archived_season(tmp_path, name, stage):
     """A completed or cancelled season is never changed — core specification, *The archive*."""
     db_path = await _db(tmp_path, stage)
@@ -310,7 +322,7 @@ async def test_every_closed_command_is_refused_on_an_archived_season(tmp_path, n
     assert _said(interaction), f"{name} said nothing on a {stage.value} season"
 
 
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _REFUSED_PARAMS)
 async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
     """The lookup itself is the fix: reading the live season is what makes the archive
     unreachable. A command still on `get_season_for_server` would pass the test above by

@@ -15,7 +15,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions
-from tests.attendance.test_attendance_sanctions import _asking_for_sheets, _with_the_queue
+from tests.attendance.test_attendance_sanctions import _asking_for_sheets
 
 SERVER_ID = 22170
 PRO, AM = 1, 2
@@ -183,7 +183,7 @@ async def _enforce(db_path, *, sack=None):
                   # for every run in this file. It must return a list (#237).
                   new=AsyncMock(return_value=[])):
         await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
-                                           **_with_the_queue(enforce_attendance_sanctions, bot))
+                                           queue=bot.change_queue)
     return asked
 
 
@@ -197,6 +197,7 @@ async def test_a_division_that_has_posted_no_sheet_is_not_reposted(db_path):
     assert [division for division, _round, _marked in asked] == [PRO]
 
 
+@pytest.mark.xfail(strict=True, reason=SHEETS_ASKED)
 async def test_a_sack_that_fails_reposts_no_other_division(db_path):
     """Only a driver actually sacked has been taken out of the other divisions."""
     await _seat_driver_two_in_pro_past_the_threshold(db_path)

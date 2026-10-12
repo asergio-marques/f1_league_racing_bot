@@ -28,9 +28,13 @@ from tests.attendance.test_attendance_sanctions import (
     _make_db,
     _asking_for_sheets,
     _seed_totals,
-    _with_the_queue,
 )
 from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
+
+
+#: The sync is handed the change queue, which it hands its sanctions and asks for its sheet
+#: (#439); it takes none yet.
+QUEUE_HANDED = "#439: the sync takes no change queue"
 
 
 async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:
@@ -71,10 +75,11 @@ def pipeline():
 async def _sync(bot, db_path: str, from_round_id: int = ROUND_ID) -> SanctionOutcome:
     return await sync_attendance(
         bot, MagicMock(), db_path, DIVISION_ID, from_round_id, SEASON_ID,
-        **_with_the_queue(sync_attendance, bot),
+        queue=bot.change_queue,
     )
 
 
+@pytest.mark.xfail(strict=True, reason=QUEUE_HANDED)
 async def test_sync_recalculates_from_the_input_round_forward(tmp_path, pipeline):
     """Every round from the one named on is recomputed from its results, not merely
     redistributed — a later round whose recording failed is repaired too."""
@@ -88,6 +93,7 @@ async def test_sync_recalculates_from_the_input_round_forward(tmp_path, pipeline
     assert [c.args[1] for c in distribute.await_args_list] == [1, 2, 3]
 
 
+@pytest.mark.xfail(strict=True, reason=QUEUE_HANDED)
 async def test_sync_leaves_earlier_rounds_and_unfinished_ones_alone(tmp_path, pipeline):
     recompute, distribute, _, _ = pipeline
     db_path = await _make_db(tmp_path, autosack=20)
@@ -119,6 +125,7 @@ async def test_sync_posts_the_sheet_and_enforces_against_the_latest_round(
     assert sanctions.await_args.kwargs["queue"] is bot.change_queue
 
 
+@pytest.mark.xfail(strict=True, reason=QUEUE_HANDED)
 async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
     _, _, _, sanctions = pipeline
     outcome = SanctionOutcome(failed=[("<@5>", "autosack", "no")])
@@ -129,6 +136,7 @@ async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
     assert await _sync(_make_bot(db_path), db_path) is outcome
 
 
+@pytest.mark.xfail(strict=True, reason=QUEUE_HANDED)
 async def test_a_second_sync_applies_nothing_twice(tmp_path):
     """The recovery is to run it again, so running it again must be harmless: the driver
     sacked by the first run is not attempted by the second, and nothing is announced."""
@@ -174,6 +182,7 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     announce.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=QUEUE_HANDED)
 async def test_sync_is_one_transaction(tmp_path, monkeypatch):
     """#187's rule holds for the sync as for an amendment: a failure part-way through the
     rounds writes nothing, rather than leaving the division scored to two rules."""
@@ -196,7 +205,7 @@ async def test_sync_is_one_transaction(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError):
         await sync_attendance(None, None, db_file, division_id, round_ids[0], 1,
-                              **_with_the_queue(sync_attendance, MagicMock()))
+                              queue=MagicMock())
 
     assert calls == round_ids
     assert await _awarded(db_file, round_ids[0]) is None

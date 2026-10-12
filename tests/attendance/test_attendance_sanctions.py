@@ -50,7 +50,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import attendance_service
 from leaguebot.attendance.services.attendance_service import enforce_attendance_sanctions
 
 SERVER_ID = 8208
@@ -67,6 +66,14 @@ BOT_USER_ID = 9999
 #: The sanctions ask the change queue for each lineup they touch (#439), which they do not yet:
 #: they post it through the placement service.
 LINEUPS_ASKED = "#439: the sanctions still post the lineup rather than asking the change queue"
+
+#: Every run here is handed the change queue, and every one patches the sheet it asks of it
+#: through `sheet_posting.ask_sheet_post` (#439): the sanctions take no queue yet, and
+#: attendance has no `sheet_posting`.
+pytestmark = pytest.mark.xfail(
+    strict=True,
+    reason="#439: the sanctions take no change queue, and attendance has no sheet_posting",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -215,16 +222,6 @@ def _make_bot(db_path: str) -> MagicMock:
     return bot
 
 
-def _with_the_queue(function, bot) -> dict:
-    """`queue=` the bot's change queue, for *function* where it takes one: the attendance sync
-    and its sanctions are handed the change queue to ask for the lineups and sheets they owe
-    (#439), and take none until then."""
-    import inspect
-
-    return ({"queue": bot.change_queue}
-            if "queue" in inspect.signature(function).parameters else {})
-
-
 def _lineups_asked(bot) -> list[int]:
     """The division of each `lineup.post` asked of the bot's change queue, in order."""
     return [call.args[1]["division_id"] for call in bot.change_queue.ask.await_args_list
@@ -245,7 +242,7 @@ async def _run(bot, db_path: str, *, head=None):
         division_id=DIVISION_ID,
         season_id=SEASON_ID,
         head=head,
-        **_with_the_queue(enforce_attendance_sanctions, bot),
+        queue=bot.change_queue,
     )
 
 
@@ -274,33 +271,21 @@ def announcer():
 @pytest.fixture
 def sheet():
     """Patch the sheet the run asks the change queue to post (`sheet_posting.ask_sheet_post`,
-    #439), which has its own test file, and the sheet it posted itself until then, under one
-    double: a test asks only whether a sheet was owed, and how many."""
-    import contextlib
+    #439), which has its own test file: a test asks only whether a sheet was owed, and how
+    many."""
+    from leaguebot.attendance.services import sheet_posting
 
-    posted = AsyncMock(return_value=None)
-    with contextlib.ExitStack() as stack:
-        stack.enter_context(patch.object(attendance_service, "post_attendance_sheet", new=posted))
-        try:
-            from leaguebot.attendance.services import sheet_posting
-        except ImportError:
-            pass
-        else:
-            stack.enter_context(patch.object(sheet_posting, "ask_sheet_post", new=posted))
-        yield posted
+    with patch.object(sheet_posting, "ask_sheet_post", new=AsyncMock(return_value=None)) as asked:
+        yield asked
 
 
 @contextmanager
 def _asking_for_sheets() -> Iterator[list[tuple[int, int, set[int]]]]:
     """Record each sheet asked of the change queue through `sheet_posting.ask_sheet_post`, as
-    (division, round, the drivers it marks), in order. Records nothing until the module exists
-    (#439)."""
+    (division, round, the drivers it marks), in order (#439)."""
+    from leaguebot.attendance.services import sheet_posting
+
     asked: list[tuple[int, int, set[int]]] = []
-    try:
-        from leaguebot.attendance.services import sheet_posting
-    except ImportError:
-        yield asked
-        return
     signature = inspect.signature(sheet_posting.ask_sheet_post)
 
     async def _ask(*args, **kwargs):

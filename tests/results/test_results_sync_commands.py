@@ -168,7 +168,7 @@ async def _rounds_sync(cog, interaction, *, division="Pro", status="ok"):
     recorded rather than run. Gives the `ask`."""
     with patch(
         "leaguebot.results.services.results_post_service.division_repost_status",
-        new=AsyncMock(return_value=status), create=True,
+        new=AsyncMock(return_value=status),
     ):
         await undecorate(ResultsCog.rounds_sync)(cog, interaction, division)
     return cog.bot.change_queue.ask
@@ -188,7 +188,15 @@ async def _reserves(db_path) -> int | None:
         return row["reserves_in_standings"] if row else None
 
 
-SYNCS = [("standings", _standings_sync), ("rounds", _rounds_sync)]
+#: The rounds sync reads its division's channel and rounds through
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches and the
+#: service does not yet have.
+REPOST_STATUS = "#439: results_post_service has no division_repost_status"
+SYNCS = [
+    ("standings", _standings_sync),
+    pytest.param("rounds", _rounds_sync,
+                 marks=pytest.mark.xfail(strict=True, reason=REPOST_STATUS)),
+]
 
 #: The rounds sync's cases that hold once it is asked of the change queue (#439).
 ON_THE_QUEUE = "#439: /results rounds sync is not yet asked of the change queue"
@@ -403,7 +411,9 @@ async def test_an_ended_amendment_does_not_hold_a_sync(tmp_path, label, run):
 
 
 def _refusal(case_id, command, run, reply, **kwargs):
-    return pytest.param(command, run, reply, kwargs, id=case_id)
+    marks = (pytest.mark.xfail(strict=True, reason=REPOST_STATUS)
+             if run is _rounds_sync else ())
+    return pytest.param(command, run, reply, kwargs, id=case_id, marks=marks)
 
 
 @pytest.mark.parametrize(
