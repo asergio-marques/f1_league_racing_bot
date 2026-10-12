@@ -37,6 +37,7 @@ from leaguebot.core.services.test_mode_service import (
     get_next_pending_phase,
     PhaseEntry,
     build_review_summary,
+    get_passed_over_steps,
     standing_forecast_phases,
 )
 from leaguebot.core.models.change import (
@@ -56,6 +57,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.weather.utils.message_builder import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -282,16 +284,34 @@ class TestModeCog(commands.Cog):
             self.bot.db_path,
             self.bot.scheduler_service,
         )
+        # The weather steps of raced rounds passed over on the way, named before the step
+        # advanced (owner, 2026-10-12, "Advance names what it skipped").
+        passed_over = [
+            _passed_over_line(step) for step in await get_passed_over_steps(self.bot.db_path)
+            if entry is None
+            or (step["round_id"], step["phase_number"])
+            != (entry["round_id"], entry["phase_number"])
+        ]
 
         if entry is None:
+            nothing_left = (
+                "Nothing else is due: the weather steps above were passed over, their races "
+                "having been run. There is nothing left to advance."
+                if passed_over
+                else "All phases for all rounds and divisions have been executed. "
+                "There is nothing left to advance."
+            )
             await refuse(
                 interaction,
-                "ℹ️ All phases for all rounds and divisions have been executed. "
-                "There is nothing left to advance.\n"
-                "Use `/season complete` when all rounds are finalized to end the season.",
+                "\n".join([*passed_over, f"ℹ️ {nothing_left}"])
+                + "\nUse `/season complete` when all rounds are finalized to end the season.",
                 what=describe(interaction),
+                reason=nothing_left,
             )
             return
+
+        for part in chunk_message("\n".join(passed_over)) if passed_over else ():
+            await interaction.followup.send(part, ephemeral=True)
 
         phase_number = entry["phase_number"]
 
@@ -1355,6 +1375,18 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
             f"  drivers_seated: {seated}\n"
             f"  divisions: {', '.join(divisions)}",
         )
+
+
+def _passed_over_line(step: PhaseEntry) -> str:
+    """The line naming a raced round's weather step `/test-mode advance` passed over, in the shape
+    of its reply where the change queue drops a step as not due, marked ⏭️ as the review marks
+    it: a mystery round's notice as advance names it, a phase by its number."""
+    where = f"**{step['division_name']}** — **Round {step['round_number']}**"
+    what = (
+        "The **Mystery Round notice**" if step["phase_number"] == 0
+        else f"**Phase {step['phase_number']}**"
+    )
+    return f"⏭️ {what} for {where} was not due: its race has been run."
 
 
 def _format_roster_errors(errors: list[str]) -> str:

@@ -556,6 +556,73 @@ async def get_next_pending_phase(
     return None
 
 
+async def get_passed_over_steps(
+    db_path: str, *, now: datetime | None = None
+) -> list[PhaseEntry]:
+    """The weather steps `get_next_pending_phase` passes over, in the order it would have offered
+    them: each Phase 1 to 3, or mystery round notice, not done for a round whose race has been run
+    by *now* (the present, where not given), the change queue dropping a forecast for a race
+    already run (A25). `/test-mode advance` names each in its reply before the step it advances
+    (owner, 2026-10-12, "Advance names what it skipped").
+
+    Only while the weather module is on, as nothing of it is armed while it is off, and never a
+    step already in hand on the change queue. A round that has ended, or whose appeals are being
+    judged, is left out: advance offers nothing more for it, so it passes nothing of it over.
+    Nothing is recorded of a step named, so advance names it again on each run until the round
+    ends.
+    """
+    from leaguebot.core.services.change_queue import unfinished
+
+    in_hand: set[tuple[int, int]] = {
+        (int(p["round_id"]), int(p["phase"])) for p in await unfinished(db_path, (FORECAST,))
+    }
+    moment = now if now is not None else datetime.now(timezone.utc)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
+        found = await cursor.fetchone()
+        if found is None or not found[0]:
+            return []
+        cursor = await db.execute(
+            """
+            SELECT r.id AS round_id, r.round_number, r.division_id, r.format, r.track_name,
+                   r.phase1_done, r.phase2_done, r.phase3_done, r.scheduled_at,
+                   d.name AS division_name
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons   s ON s.id = d.season_id
+            WHERE s.status = 'ACTIVE'
+              AND d.status != 'CANCELLED'
+              AND r.status NOT IN ('CANCELLED', 'FINAL', 'AWAITING_APPEAL_VERDICTS')
+            ORDER BY r.scheduled_at ASC, d.id ASC
+            """,
+        )
+        rows = list(await cursor.fetchall())
+    steps: list[PhaseEntry] = []
+    for row in rows:
+        if not _race_run(row["scheduled_at"], moment):
+            continue
+        is_mystery = str(row["format"]).upper() == "MYSTERY"
+        undone = (
+            [0] if is_mystery and not row["phase1_done"]
+            else [] if is_mystery
+            else [n for n in (1, 2, 3) if not row[f"phase{n}_done"]]
+        )
+        steps += [
+            PhaseEntry(
+                round_id=row["round_id"],
+                round_number=row["round_number"],
+                division_id=row["division_id"],
+                phase_number=phase,
+                track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+                division_name=row["division_name"],
+                job_id=None,
+            )
+            for phase in undone
+            if (row["round_id"], phase) not in in_hand
+        ]
+    return steps
+
+
 async def standing_forecast_phases(db_path: str, round_id: int) -> list[int]:
     """The phases, of 1 to 3, whose forecast of *round_id* is still recorded: what the forecast
     clean-up deletes, by which `/test-mode advance` names it."""

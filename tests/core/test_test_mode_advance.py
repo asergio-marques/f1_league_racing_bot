@@ -1036,3 +1036,73 @@ async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_wa
             if row["kind"] == FORECAST_CLEAN_UP] == []
     assert await stopped_job(league.db_path) is None
 
+
+# ---------------------------------------------------------------------------
+# The weather steps advance passed over, named in its reply (#439)
+# ---------------------------------------------------------------------------
+
+
+def _passed_over(phase_number: int, round_number: int) -> dict:
+    """A raced round's weather step advance passes over, as `get_passed_over_steps` gives it."""
+    return {"phase_number": phase_number, "round_id": 100 + round_number,
+            "round_number": round_number, "division_name": "Division 1",
+            "track_name": "Bahrain", "job_id": None}
+
+
+PHASE_2_PASSED = ("⏭️ **Phase 2** for **Division 1** — **Round 2** was not due: its race has "
+                  "been run.")
+NOTICE_PASSED = ("⏭️ The **Mystery Round notice** for **Division 1** — **Round 1** was not due: "
+                 "its race has been run.")
+ADVANCED = "⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue"
+
+
+@pytest.mark.parametrize("passed, named", [
+    pytest.param([], [], id="none passed over"),
+    pytest.param([(2, 2)], [PHASE_2_PASSED], id="one passed over"),
+    pytest.param([(0, 1), (2, 2)], [NOTICE_PASSED, PHASE_2_PASSED], id="two passed over"),
+])
+async def test_advance_names_the_raced_steps_it_passed_over_before_the_step_it_advanced(
+    tmp_path, passed, named,
+):
+    """Advance passes over the weather steps of a round whose race has been run (owner,
+    2026-10-12, "Advance names what it skipped"). Advancing round 3's Phase 1, the reply first
+    names each step passed over, "⏭️ **Phase 2** for **Division 1** — **Round 2** was not due:
+    its race has been run.", a mystery round's notice as advance names it, in order, then the
+    step advanced. With nothing passed over the reply is as before, naming nothing."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+    steps = [_passed_over(phase, number) for phase, number in passed]
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps",
+               new=AsyncMock(return_value=steps)):
+        await _advance(cog, interaction, _entry(1, job_id=None))
+
+    replied = _replied(interaction)
+    assert ADVANCED in replied
+    places = [replied.index(line) for line in named]
+    assert places == sorted(places)
+    assert all(place < replied.index(ADVANCED) for place in places)
+    assert replied.count("⏭️") == len(named)
+    [(kind, payload)] = _asked(cog)
+    assert (kind, payload["phase"]) == (FORECAST, 1)
+
+
+async def test_advance_with_only_raced_steps_left_names_them_and_says_nothing_else_is_due(
+    tmp_path,
+):
+    """Nothing is pending but round 2's Phase 2, whose race has been run: advance names it as
+    passed over and says nothing else is due, as it says when nothing is pending; nothing is
+    asked of the change queue."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps",
+               new=AsyncMock(return_value=[_passed_over(2, 2)])):
+        await _advance(cog, interaction, None)
+
+    replied = _replied(interaction)
+    assert PHASE_2_PASSED in replied
+    assert "There is nothing left to advance." in replied
+    assert replied.index(PHASE_2_PASSED) < replied.index("There is nothing left to advance.")
+    assert _asked(cog) == []
+

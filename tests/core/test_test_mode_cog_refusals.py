@@ -119,8 +119,15 @@ def _real_drivers(cog, monkeypatch):
     monkeypatch.setattr(cog_module, "count_live_real_drivers", AsyncMock(return_value=2))
 
 
+def _nothing_passed_over(monkeypatch) -> None:
+    """No raced round's weather step for advance to name as passed over; the cog's database is
+    none to read it from."""
+    monkeypatch.setattr(cog_module, "get_passed_over_steps", AsyncMock(return_value=[]))
+
+
 def _nothing_left(cog, monkeypatch):
     monkeypatch.setattr(cog_module, "get_next_pending_phase", AsyncMock(return_value=None))
+    _nothing_passed_over(monkeypatch)
 
 
 def _submission_open(status: str):
@@ -134,6 +141,7 @@ def _submission_open(status: str):
             "track_name": "Monza",
         }
         monkeypatch.setattr(cog_module, "get_next_pending_phase", AsyncMock(return_value=entry))
+        _nothing_passed_over(monkeypatch)
         monkeypatch.setattr(
             result_submission_service, "is_submission_open", AsyncMock(return_value=True)
         )

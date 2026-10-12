@@ -1369,3 +1369,50 @@ async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
+
+# ---------------------------------------------------------------------------
+# The weather steps advance passes over, which its reply names (#439)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tmp_path) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
+    with none of its phases done; round 2 is a mystery round raced an hour ago whose notice never
+    went out; round 3 (Monza), raced too, had all three phases done; round 4 (Spa) is a week
+    ahead. Advance passes over the weather steps of a raced round (owner, 2026-10-12, "Advance
+    names what it skipped"), so the steps it names as passed over are round 1's Phases 1, 2 and
+    3 and round 2's notice, in that order, and nothing of rounds 3 or 4."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    raced = "2026-10-12T11:00:00"
+    db_path = str(tmp_path / "passed_over.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Mystery", "scheduled_at": raced, "format": "MYSTERY"},
+        {"track_name": "Monza", "scheduled_at": raced,
+         "phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
+        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00"},
+    ])
+
+    steps = await get_passed_over_steps(db_path, now=now)
+
+    assert [(step["round_number"], step["phase_number"]) for step in steps] == [
+        (1, 1), (1, 2), (1, 3), (2, 0),
+    ]
+    assert {step["division_name"] for step in steps} == {"Division A"}
+
+
+async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) -> None:
+    """Weather is off, so nothing of it was armed and advance offers none of it: a raced round's
+    undone phases are not named as passed over."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "passed_over_off.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00"}])
+
+    assert await get_passed_over_steps(db_path, now=now) == []
+
