@@ -1298,9 +1298,9 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
                    "the Phase 3 forecast a day after the round as a withdrawn forecast")
 async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_names_it(tmp_path):
     """Weather on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
-    results not yet in and its Phase 3 forecast (message 8003) standing. It is moved a day
-    later; the save stops, and ten minutes on, past the clean-up due a day after the old moment,
-    a league admin discards it. The round stands at its old moment, so its Phase 3 forecast is
+    results not yet in and its Phase 3 forecast (message 8003) standing. It is moved to a day
+    from now; the save stops, and ten minutes on, past the clean-up due a day after the old
+    moment, a league admin discards it. The round stands at its old moment, so its Phase 3 forecast is
     to be deleted, as its clean-up deletes it; Discord refuses, and the queue stops, its notice
     naming the job "deleting the Phase 3 forecast of round 3 in **Pro** a day after it". A league
     admin discards that too: the reply, still within Discord's fourteen minutes, names it as the
