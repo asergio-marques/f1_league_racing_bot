@@ -110,8 +110,8 @@ async def forecast_deletes(
 ) -> tuple[PlannedStep, ...]:
     """One `delete_forecast` job for each recorded forecast, in round, division, phase order.
 
-    The clean-up a day after a round (T010, SC-005) asks for the Phase 3 forecast of one round
-    (*round_id* and *phases* given); the flush when test mode is switched off (T013, SC-004, FR-015)
+    The clean-up a day after a round (T010, SC-005) asks for whichever of Phases 1 to 3 still
+    stands for one round (*round_id* and *phases* given); the flush when test mode is switched off (T013, SC-004, FR-015)
     and the season end's for all of them (neither given). Each job carries the round (and its
     number), division, phase and message it was planned for, and deletes that message alone: the
     deletion is a job of the change queue, whose refusal stops it, so nothing is deleted here.
