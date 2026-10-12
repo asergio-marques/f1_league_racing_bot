@@ -13,9 +13,9 @@ shorter one published days early. The config is resolved once per server rather 
 round, and only *after* the module gate, so a server with weather switched off is never queried
 for it.
 
-**A mystery round is never caught up.** Its track is not known, so there is nothing to forecast,
-and the query excludes it rather than the loop skipping it — worth a test either way, because
-the exclusion is invisible in the loop where a reader would look for it.
+**A missed phase is asked of the change queue** (#439), through weather's `ask_forecast`, by
+number, a mystery round's alike: the mystery rule is weather's, which asks a mystery round's
+phase 1 as its notice and nothing for its phases 2 and 3, so the sweep names no format.
 
 **Every standing review prompt is expired by definition.** The approve button's five minutes are
 a `discord.ui.View` timeout held in memory; the bot was down, so they cannot have been served,
@@ -50,6 +50,9 @@ import pytest
 import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.review_prompts import store_review_prompt
+
+#: Why the phase sweep's tests fail until the restart asks the change queue.
+RECOVERY_UNBUILT = "#439: the restart does not yet ask the change queue for the weather phases"
 
 SERVER_ID = 11808
 SEASON_ID = 1
@@ -143,14 +146,18 @@ def _config(phase_1_days=PHASE_1_DAYS, phase_2_days=PHASE_2_DAYS, phase_3_hours=
 
 
 async def _phases(stub, *, config=None):
+    """Run the phase sweep; one recorder per phase holds the rounds it asked the queue for."""
     get_config = AsyncMock(return_value=config or _config())
+    p1, p2, p3 = AsyncMock(), AsyncMock(), AsyncMock()
+
+    async def _ask(_queue, _db_path, round_id, phase):
+        await {1: p1, 2: p2, 3: p3}[phase](round_id)
+
     with patch(
         "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config", new=get_config
-    ), patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()) as p1, patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ) as p2, patch(
-        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
-    ) as p3:
+    ), patch(
+        "leaguebot.weather.services.forecast_changes.ask_forecast", new=AsyncMock(side_effect=_ask)
+    ):
         await bot_module._recover_missed_phases(stub)
     return p1, p2, p3, get_config
 
@@ -159,6 +166,7 @@ def _fired(stub_call) -> list[int]:
     return [call.args[0] for call in stub_call.await_args_list]
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_phase_whose_horizon_has_passed_is_fired(tmp_path):
     """The job that would have run it died with the process; without this the round simply
     never gets its forecast."""
@@ -171,6 +179,7 @@ async def test_a_phase_whose_horizon_has_passed_is_fired(tmp_path):
     assert _fired(p2) == []
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_phase_still_ahead_of_its_horizon_is_left_to_the_scheduler(tmp_path):
     """Firing it now would publish a forecast days early and mark the phase done."""
     db_path = await _base_db(tmp_path, "phases_early")
@@ -183,6 +192,7 @@ async def test_a_phase_still_ahead_of_its_horizon_is_left_to_the_scheduler(tmp_p
     assert _fired(p3) == []
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     db_path = await _base_db(tmp_path, "phases_all")
     await _seed_round(db_path, days_away=0.1)
@@ -192,6 +202,7 @@ async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 @pytest.mark.parametrize(
     "done,expected",
     [
@@ -211,6 +222,7 @@ async def test_a_phase_already_done_is_not_fired_again(tmp_path, done, expected)
     assert (_fired(p1), _fired(p2), _fired(p3)) == expected
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_the_horizons_are_the_leagues_own(tmp_path):
     """Issue #111: a restart judging by the packaged 5/2/2 made the same league see one set
     of timings on an enable and another on a restart."""
@@ -222,6 +234,7 @@ async def test_the_horizons_are_the_leagues_own(tmp_path):
     assert _fired(p1) == [ROUND_ID]
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_shorter_horizon_leaves_the_same_round_alone(tmp_path):
     """The other side of the comparison — and the failure mode is silence, not an error."""
     db_path = await _base_db(tmp_path, "phases_horizons_short")
@@ -232,6 +245,7 @@ async def test_a_shorter_horizon_leaves_the_same_round_alone(tmp_path):
     assert _fired(p1) == []
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_path):
     """The module gate comes first deliberately: a league that has never enabled weather
     should not have its pipeline configuration read on every start-up."""
@@ -244,6 +258,7 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_pat
     get_config.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_the_horizons_are_read_once(tmp_path):
     """The league has one configuration, and a query per round would be a database read for
     every round of every division on every start-up."""
@@ -256,17 +271,19 @@ async def test_the_horizons_are_read_once(tmp_path):
     assert get_config.await_count == 1
 
 
-async def test_a_mystery_round_is_never_caught_up(tmp_path):
-    """There is nothing to forecast for a track nobody knows. Excluded by the query rather
-    than skipped in the loop, which is why it is worth a test of its own."""
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
+async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
+    """A mystery round past every horizon has each phase asked by number; weather, not the
+    sweep, turns phase 1 into its notice and asks nothing for phases 2 and 3."""
     db_path = await _base_db(tmp_path, "phases_mystery")
     await _seed_round(db_path, days_away=0.1, fmt="MYSTERY")
 
     p1, p2, p3, _ = await _phases(_stub_bot(db_path))
 
-    assert _fired(p1) == _fired(p2) == _fired(p3) == []
+    assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_season_that_is_not_active_is_not_caught_up(tmp_path):
     """A season in setup has not started and an archived one is finished; forecasting for
     either would post into a division that is not racing."""
@@ -278,6 +295,7 @@ async def test_a_season_that_is_not_active_is_not_caught_up(tmp_path):
     assert _fired(p1) == []
 
 
+@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
     """SQLite hands the column back as text with no offset, and comparing the parsed value
     to an aware "now" raises — which would abort the sweep partway through a season."""

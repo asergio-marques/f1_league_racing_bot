@@ -577,3 +577,54 @@ async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tm
     assert job["done_at"]
     assert await _forecasts(league) == {}
     assert ("delete", 9303) not in _events(league)
+
+
+# ---------------------------------------------------------------------------
+# The weather timers ask the change queue
+# ---------------------------------------------------------------------------
+
+#: Why this fails until the scheduler's weather callbacks ask the change queue.
+TIMERS_UNBUILT = "#439: the weather timers do not yet ask the change queue"
+
+
+@pytest.mark.xfail(strict=True, reason=TIMERS_UNBUILT)
+@pytest.mark.parametrize(
+    "timer, mystery, expected",
+    [
+        ("phase 1", False, (KIND, 1)),
+        ("phase 2", False, (KIND, 2)),
+        ("phase 3", False, (KIND, 3)),
+        ("mystery notice", True, (KIND, 0)),
+        ("phase 1 of a mystery round", True, (KIND, 0)),
+        ("clean-up", False, (CLEAN_UP_KIND, None)),
+    ],
+)
+async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expected):
+    """Each callback `timer_callbacks` gives the scheduler, fired for Pro's round 3, puts one
+    change on the queue it was handed, and runs nothing: phases 1 to 3 their forecast, the
+    mystery notice's timer and a mystery round's phase 1 the notice (phase 0), and the clean-up,
+    a day after the race with the Phase 3 forecast (9303) standing, its deletion."""
+    from leaguebot.weather.services.forecast_changes import timer_callbacks
+
+    league = await _league(tmp_path, mystery=mystery)
+    if timer == "clean-up":
+        await posted_forecast(league, ROUND, 3, 9303)
+    callbacks = timer_callbacks(league.bot.change_queue, league.db_path)
+
+    fire = {
+        "phase 1": callbacks.phases[1],
+        "phase 2": callbacks.phases[2],
+        "phase 3": callbacks.phases[3],
+        "mystery notice": callbacks.mystery_notice,
+        "phase 1 of a mystery round": callbacks.phases[1],
+        "clean-up": callbacks.clean_up,
+    }[timer]
+    await fire(ROUND)
+
+    [row] = await change_rows(league.db_path)
+    payload = json.loads(row["payload"])
+    kind, phase = expected
+    assert (row["kind"], payload["round_id"]) == (kind, ROUND)
+    if phase is not None:
+        assert payload["phase"] == phase
+    assert all(not job["done_at"] for job in await step_rows(league.db_path))
