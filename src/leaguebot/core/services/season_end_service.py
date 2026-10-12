@@ -39,6 +39,9 @@ log = logging.getLogger(__name__)
 REVOKE_ROLES = "revoke_roles"
 CLOSE_WINDOW = "close_window"
 FLUSH_FORECASTS = "flush_forecasts"
+#: Weather's job that deletes one forecast, which `flush_forecasts` plans for each (the hooks hand
+#: the step, as `SeasonEndHooks.forecast_steps`).
+DELETE_FORECAST = "delete_forecast"
 DISCARD_PORTRAITS = "discard_portraits"
 DISCARD_BACKUP = "discard_backup"
 FORGET_SETUP = "forget_setup"
@@ -260,7 +263,8 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
       the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
     - `close_window`: the signup close timer cancelled and the window closed, where it stands open;
       it plans a `signup_notice` and a `close_signup` for each driver the close returned.
-    - `flush_forecasts`: the forecasts posted under test mode deleted.
+    - `flush_forecasts`: plans weather's `delete_forecast` for each forecast posted under test
+      mode, so that each deletion is a job of its own and a refusal stops the queue there.
     - `discard_portraits`: the portraits of the drivers the driver pass deleted removed.
     - `discard_backup`: the saved test-mode state deleted (a completion's alone).
     - `forget_setup`: the setup held in memory let go of (an abort's alone).
@@ -306,8 +310,8 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         )
 
     async def flush_forecasts(_ctx: StepContext) -> StepResult:
-        await hooks.flush_forecasts()
-        return StepResult()
+        planned = await hooks.plan_forecast_flush()
+        return StepResult(result={"planned": len(planned)}, then=planned)
 
     async def describe_flush(_ctx: StepContext) -> str:
         return "clearing the forecasts posted under test mode"
@@ -350,5 +354,6 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
             DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup
         ),
         FORGET_SETUP: Step(FORGET_SETUP, StepKind.ACT, forget_setup, describe=describe_setup),
+        DELETE_FORECAST: hooks.forecast_steps[DELETE_FORECAST],
         **close_signup_steps(placement, hooks),
     }

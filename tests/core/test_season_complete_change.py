@@ -1833,9 +1833,6 @@ async def test_the_final_sheet_replaces_nothing_and_saves_no_id(tmp_path):
 
 # ── The forecasts posted under test mode, each deleted by a job of its own ──────────
 
-#: Why these fail until the build makes the season end's flush plan a delete job per forecast.
-FLUSH_UNBUILT = ("#439: the season end's clearing of the forecasts posted under test mode is not "
-                 "yet a delete job for each forecast")
 #: The forecasts standing as the season is completed: Pro's Phase 1 and 2 of round 4 and Am's
 #: Phase 1 of round 4, each with the channel it stands in.
 TEST_FORECASTS = {9401: (PRO, 1, PRO_CH.forecast), 9402: (PRO, 2, PRO_CH.forecast),
@@ -1850,7 +1847,6 @@ async def _test_forecasts_posted(tmp_path: Any) -> Any:
     return league
 
 
-@pytest.mark.xfail(strict=True, reason=FLUSH_UNBUILT)
 async def test_each_forecast_posted_under_test_mode_is_deleted_by_a_job_of_its_own(tmp_path):
     """Season 3 is pending completion under test mode, and three forecasts posted under it
     stand: Pro's Phase 1 and 2 of round 4 and Am's Phase 1 of round 4. Admin 77 completes the
@@ -1875,7 +1871,6 @@ async def test_each_forecast_posted_under_test_mode_is_deleted_by_a_job_of_its_o
     assert await league.rows("SELECT * FROM forecast_messages") == []
 
 
-@pytest.mark.xfail(strict=True, reason=FLUSH_UNBUILT)
 async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_discarded_is_named_with_its_link(
     tmp_path,
 ):

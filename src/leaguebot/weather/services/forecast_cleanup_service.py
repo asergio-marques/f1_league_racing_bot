@@ -114,9 +114,9 @@ async def forecast_deletes(
 
     The clean-up a day after a round (T010, SC-005) asks for the Phase 3 forecast of one round
     (*round_id* and *phases* given); the flush when test mode is switched off (T013, SC-004, FR-015)
-    and the season end's for all of them (neither given). Each job carries the round, division,
-    phase and message it was planned for, and deletes that message alone: the deletion is a job
-    of the change queue, whose refusal stops it, so nothing is deleted here.
+    and the season end's for all of them (neither given). Each job carries the round (and its
+    number), division, phase and message it was planned for, and deletes that message alone: the
+    deletion is a job of the change queue, whose refusal stops it, so nothing is deleted here.
     """
     where: list[str] = []
     params: list[int] = []
@@ -128,8 +128,10 @@ async def forecast_deletes(
         params.extend(phases)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT fm.round_id, fm.division_id, fm.phase_number, fm.message_id "
+            "SELECT fm.round_id, fm.division_id, fm.phase_number, fm.message_id, "
+            "       r.round_number "
             "FROM forecast_messages fm "
+            "JOIN rounds r ON r.id = fm.round_id "
             "JOIN divisions d ON d.id = fm.division_id "
             "JOIN seasons s ON s.id = d.season_id "
             + (f"WHERE {' AND '.join(where)} " if where else "")
@@ -141,6 +143,7 @@ async def forecast_deletes(
         PlannedStep(DELETE_FORECAST, {
             "round_id": row["round_id"], "division_id": row["division_id"],
             "phase": row["phase_number"], "message_id": row["message_id"],
+            "round_number": row["round_number"],
         })
         for row in rows
     )

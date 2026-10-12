@@ -168,6 +168,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     that core imports none of them. Each is looked up as it is called, so that nothing is bound
     before it is needed."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import (
         WINDOW_CLOSED_NOTICE,
@@ -177,6 +178,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
     from leaguebot.weather.services import forecast_cleanup_service
+    from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
         return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
@@ -204,8 +206,8 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     async def amendment_open(db_path: str, season_id: int):
         return await result_submission_service.open_amendment_in_season(db_path, season_id)
 
-    async def flush_forecasts() -> None:
-        await forecast_cleanup_service.flush_pending_deletions(bot)
+    async def plan_forecast_flush() -> "tuple[PlannedStep, ...]":
+        return await forecast_cleanup_service.forecast_deletes(bot.db_path)
 
     def discard_backup() -> object:
         return backup_service.discard(
@@ -249,7 +251,8 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         cancel_signup_timeout=cancel_signup_timeout,
         discard_portraits=discard_portraits,
         amendment_open=amendment_open,
-        flush_forecasts=flush_forecasts,
+        plan_forecast_flush=plan_forecast_flush,
+        forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
         discard_backup=discard_backup,
         forget_setup=lambda: _forget_setup(bot),
         owed_closing_notices=owed_closing_notices,
