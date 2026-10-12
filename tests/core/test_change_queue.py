@@ -2696,3 +2696,51 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
     assert any(
         "the hook broke" in str(record.exc_info[1]) for record in _host_errors(caplog)
     )
+
+
+# ---------------------------------------------------------------------------
+# A failure's notice: what a job's failure leaves, on its stop notice (#439, slice 6)
+# ---------------------------------------------------------------------------
+
+#: Why the notice case fails until a failure on Discord may carry a notice of its own.
+NOTICE_UNBUILT = "#439: a job's failure on Discord cannot yet add what it leaves to its stop notice"
+
+
+@pytest.mark.parametrize(
+    "notice, fault",
+    [
+        pytest.param("the old one stands", "Forbidden; the old one stands", id="with a notice",
+                     marks=pytest.mark.xfail(strict=True, reason=NOTICE_UNBUILT)),
+        pytest.param(None, "Forbidden", id="with none"),
+    ],
+)
+async def test_a_failure_s_notice_is_carried_on_the_stop_notice_and_a_failed_retry_s_line(
+    env, notice, fault,
+):
+    """A job Discord refuses (Forbidden) raises its failure with a notice saying what it leaves,
+    "the old one stands": the stop notice in the log channel reads "failed (Forbidden; the old one
+    stands)", and so does the line of a Retry that fails again. Raised with no notice, both read
+    "(Forbidden)", as before."""
+    api = _api()
+    refused = http_error(discord.Forbidden, status=403, text="Missing Access")
+
+    async def _post(_ctx):
+        extra = {} if notice is None else {"notice": notice}
+        raise api.StepFailedOnDiscord("x", **extra) from refused
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    stop = STOPPED_AT.format(id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault=fault)
+    assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+
+    await retry_job(env.bot)
+
+    assert await stopped_job(env.db_path) is not None
+    retried = [m.content for m in env.bot.log_channel.posted
+               if m.content.startswith(f"❌ Retry of job #{job['id']} ")]
+    assert retried and f"failed ({fault}). The queue stays stopped." in retried[-1]
