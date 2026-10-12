@@ -1358,8 +1358,9 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     """Take down what a round's cleanups would have, their moment passing while the bot was down.
 
     A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names),
-    and its check-in call with its last notice and its distribution message, come down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and
-    ``rsvp_cleanup`` jobs (#425). A job falling due while the bot is stopped is discarded by the
+    and its check-in call with its last notice and its distribution message, come down
+    `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and ``rsvp_cleanup``
+    jobs (#425). A job falling due while the bot is stopped is discarded by the
     scheduler's misfire grace rather than run late, and nothing else would take those messages
     down: a forecast whose cleanup was missed used to stay for good.
 
