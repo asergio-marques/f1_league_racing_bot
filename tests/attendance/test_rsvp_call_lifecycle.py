@@ -421,12 +421,6 @@ async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path, n
     assert await _answers(db_path) == {}
 
 
-#: Why the raising form of a call's post fails until an amendment's call stops the queue.
-RAISING_UNBUILT = ("#439: a call posted again cannot yet raise for the change queue, saying what "
-                   "it left, in place of its report")
-
-
-@pytest.mark.xfail(strict=True, reason=RAISING_UNBUILT)
 async def test_a_repost_posts_the_call_again(tmp_path, notice):
     """Round 1's call stands. Posting it again hands the call poster the call it replaces, and,
     asked by no change, does not ask it to raise: a call its timer, a restart or
@@ -548,7 +542,6 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     assert "the earlier call still stands, and the answers given to it count" in line
 
 
-@pytest.mark.xfail(strict=True, reason=RAISING_UNBUILT)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_raising_repost_raises_with_what_it_left_and_reports_nothing(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers, and an

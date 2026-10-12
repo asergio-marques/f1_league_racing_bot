@@ -303,10 +303,12 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
     async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
-        await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
+        await rsvp_service.repost_rsvp_call(
+            round_id, division_id, bot_, raise_on_failure=True
+        )
 
     async def post_call(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_notice(round_id, bot_)
+        await rsvp_service.run_rsvp_notice(round_id, bot_, raise_on_failure=True)
 
     async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> bool:
         return await _give_up_missed_check_in_call(bot_, row)

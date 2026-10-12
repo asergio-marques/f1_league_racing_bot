@@ -1810,7 +1810,6 @@ async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take
     )) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answers_are_kept(
     tmp_path, monkeypatch, fault,
@@ -1853,7 +1852,6 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
     assert "no attendance rows were opened" not in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 @pytest.mark.parametrize("refused", [
     pytest.param(CALL_MESSAGES[0], id="the call itself refused, so it stands"),
     pytest.param(CALL_MESSAGES[1], id="the last notice refused, the call gone"),
@@ -1969,7 +1967,6 @@ async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_i
     assert int(row["message_id"]) in league.channel(PRO_CH.checkin).messages
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_posted_again(
     tmp_path, monkeypatch,
 ):
@@ -2038,7 +2035,6 @@ async def test_a_call_posted_again_that_discord_refuses_stops_the_queue_and_is_p
     assert int(row["message_id"]) in checkin.messages
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 @pytest.mark.parametrize("left", ["earlier call kept", "no call can be seen", "nothing"])
 async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, left):
     """Attendance on; Pro's round 3, its call standing (7001 to 7003) and answered, is brought

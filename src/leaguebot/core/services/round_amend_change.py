@@ -721,9 +721,9 @@ def round_amend_change(
         return StepResult(result={"taken_down": taken["taken_down"]})
 
     async def post_call(ctx: StepContext) -> StepResult:
-        """Post the call, carrying every answer already given. Discord refusing it fails as the
-        timer's call does, reported by attendance; a fault of the bot's own stops the queue
-        (owner, 2026-10-08: slice 6 deals with the rest).
+        """Post the call, carrying every answer already given. Discord refusing it stops the queue
+        (owner, 2026-10-10, decision 3), attendance raising with what is left for the round, which
+        the stop notice says (owner, 2026-10-11) and a Discard reads in `not_done`.
 
         A first post goes through `post_call`, which posts nothing where a call already stands,
         judged under the round's check-in lock, so that a call posted by the timer or a restart
@@ -767,20 +767,12 @@ def round_amend_change(
                 return StepResult(result={"left": True})
             return StepResult(result={"given_up": True})
         if reposting(ctx):
-            earlier = await call_message(ctx.db_path, rnd.id) if replacing(ctx) else None
             await hooks.repost_call(rnd.id, rnd.division_id, ctx.bot)
-            after = await call_message(ctx.db_path, rnd.id) if earlier is not None else None
-            if earlier is not None and after == earlier:
-                # The repost failed and left the earlier call standing, the round's only one:
-                # the reply must not bid it be deleted by hand (`not_done`).
-                return StepResult(result={"posted": False, "earlier_left": True})
-            if earlier is not None and after is None:
-                # The repost failed and the earlier call could not be seen either, its record
-                # dropped: the reply says none can be seen (`not_done`).
-                return StepResult(result={"posted": False, "vanished": True})
         else:
             await hooks.post_call(rnd.id, ctx.bot)
-        return StepResult(result={"posted": True})
+        return StepResult(
+            result={"posted": True, "message_id": await call_message(ctx.db_path, rnd.id)}
+        )
 
     async def notify_invalidation(ctx: StepContext) -> StepResult:
         """Tell the division's forecast channel that its forecasts no longer stand. A channel never
@@ -876,7 +868,8 @@ def round_amend_change(
             result = each.result or {}
             if each.name == TAKE_DOWN_CALL:
                 ids = [str(one) for one in result.get("undeleted", [])]
-                if (view(ctx, POST_CALL).result or {}).get("vanished"):
+                posted = view(ctx, POST_CALL).result or {}
+                if posted.get("vanished"):
                     # The call itself was deleted, posting it again failed, and no call can be
                     # seen: what is left of it is named in the log channel.
                     failures.append(notices.NoticeFailure(
@@ -886,13 +879,13 @@ def round_amend_change(
                         "check-in channel is set), and see the log channel",
                     ))
                     continue
-                if (view(ctx, POST_CALL).result or {}).get("earlier_left"):
+                if posted.get("earlier_left"):
                     # Posting the call again failed too, and the earlier call was kept: it is the
                     # round's only call, not one to delete.
                     failures.append(notices.NoticeFailure(
                         division, "check-in call",
-                        "it could not be taken down, and posting it again failed, so the "
-                        "earlier call was kept and its answers count; see the log channel",
+                        "it could not be posted again, so the earlier call was kept and its "
+                        "answers count; see the log channel",
                     ))
                     continue
                 failures.append(notices.NoticeFailure(
@@ -901,11 +894,29 @@ def round_amend_change(
                     f"(ids {', '.join(ids)})",
                 ))
             elif each.name == POST_CALL:
-                failures.append(notices.NoticeFailure(
-                    division, "check-in call",
-                    "the call could not be posted again, and a league admin discarded it; post "
-                    "it with `/attendance post-check-in`",
-                ))
+                if result.get("vanished") or result.get("earlier_left"):
+                    if discarded(view(ctx, TAKE_DOWN_CALL)):
+                        # The discarded take-down's entry says what is left of the call.
+                        continue
+                if result.get("vanished"):
+                    failures.append(notices.NoticeFailure(
+                        division, "check-in call",
+                        "it could not be posted again and none can be seen; post it by hand "
+                        "with `/attendance post-check-in` once the cause is cleared (or the "
+                        "check-in channel is set), and see the log channel",
+                    ))
+                elif result.get("earlier_left"):
+                    failures.append(notices.NoticeFailure(
+                        division, "check-in call",
+                        "it could not be posted again, so the earlier call was kept and its "
+                        "answers count; see the log channel",
+                    ))
+                else:
+                    failures.append(notices.NoticeFailure(
+                        division, "check-in call",
+                        "the call could not be posted again, and a league admin discarded it; "
+                        "post it with `/attendance post-check-in`",
+                    ))
             elif each.name == DELETE_FORECAST:
                 where = (
                     f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/"
