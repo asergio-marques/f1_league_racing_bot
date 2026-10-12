@@ -107,6 +107,8 @@ def _make_cog(*, season=_UNSET, divisions=None):
     )
     bot.season_service.get_division_rounds = AsyncMock(return_value=["round"])
     bot.get_guild = MagicMock(return_value=MagicMock())
+    # Whether `_queue_for` has built the database and attached the queue yet.
+    bot.calendar_sync_queue_attached = False
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     return cog
@@ -114,12 +116,12 @@ def _make_cog(*, season=_UNSET, divisions=None):
 
 async def _queue_for(bot) -> None:
     """The bot's database built by the migrations and its queue attached, once."""
-    if getattr(bot, "_calendar_sync_queue", None) is True:
+    if bot.calendar_sync_queue_attached:
         return
     await run_migrations(bot.db_path)
     await seed_server(bot.db_path)
     attach_queue(bot, bot.db_path, now=datetime.now(timezone.utc))
-    bot._calendar_sync_queue = True
+    bot.calendar_sync_queue_attached = True
 
 
 def _interaction():
