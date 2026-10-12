@@ -121,12 +121,12 @@ def _drawing():
 
 
 async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -144,12 +144,12 @@ async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
 
 
 async def test_the_module_being_disabled_leaves_the_text(tmp_path):
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -166,12 +166,12 @@ async def test_the_module_being_disabled_leaves_the_text(tmp_path):
 
 
 async def test_the_aspect_being_off_leaves_the_text(tmp_path):
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -189,12 +189,12 @@ async def test_the_aspect_being_off_leaves_the_text(tmp_path):
 
 async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
     """An uncommanded posting whose render fails leaves the league its results."""
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -284,7 +284,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     """The league keeps the results it had rather than losing them to a failed rebuild."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     sent: list = []
@@ -296,7 +296,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
         "render_png",
         AsyncMock(return_value=_decision(posts=False, problem=MagicMock(detail="boom"))),
     ):
-        await post_session_results(
+        posted = await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -309,8 +309,11 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
             bot=_bot(db_path),
         )
 
-    # The textual table went out in its place, and the stored id moved to it.
+    # The textual table went out in its place, handed back with the message it replaces, 111,
+    # which still stands and is still the stored id: the caller's job saves the new one.
     assert len(sent) == 1 and "file" not in sent[0][1]
+    assert posted.new == [4242]
+    assert [int(i) for i in posted.old] == [111]
     async with get_connection(db_path) as db:
         row = await (
             await db.execute(
@@ -318,7 +321,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
                 (session_result.id,),
             )
         ).fetchone()
-    assert row["results_message_id"] == 4242
+    assert row["results_message_id"] == 111
 
 
 # ── Reporting and the commanded/uncommanded split (T041, T042) ────────────
@@ -326,7 +329,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
 
 async def test_a_problem_is_reported_naming_the_session(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -341,7 +344,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
             return_value=_decision(posts=False, problem=MagicMock(detail="no such field"))
         ),
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -401,7 +404,7 @@ async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
 
 async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -419,7 +422,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     ), patch.object(
         image_results_post, "report_notices", AsyncMock()
     ) as reporter:
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -481,7 +484,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 ):
     """The stage is read from the round, so the label drawn and the phase rule agree."""
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, result_status=status)
     sent: list = []
@@ -497,7 +500,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
     with patch.object(image_results_post, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -520,7 +523,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
 async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -535,7 +538,7 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     with patch.object(image_results_post, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -563,7 +566,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     import discord
 
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = tmp_path / "results.png"
@@ -590,7 +593,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -610,7 +613,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
 async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tmp_path):
     """The unit of failure is one graphic (XIV.4): the league still gets its results."""
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -620,7 +623,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
         "try_post",
         AsyncMock(side_effect=RuntimeError("something unforeseen")),
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -640,7 +643,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
 
 async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -651,7 +654,7 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
         "build_drawing",
         AsyncMock(side_effect=RuntimeError("no name could be resolved")),
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -685,7 +688,7 @@ def _render_artifact(tmp_path, name="results_race_template.png"):
 
 async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
@@ -695,7 +698,7 @@ async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -717,7 +720,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     import discord
 
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
@@ -738,7 +741,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],

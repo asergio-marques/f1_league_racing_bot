@@ -834,7 +834,7 @@ async def test_apply_penalties_on_neither_reposts_nor_logs(tmp_path):
     ]
 
     with patch.object(rps, "post_standings", new=standings), \
-            patch.object(rps, "post_round_results", new=repost):
+            patch.object(rps, "produce_session_results", new=repost):
         async with get_connection(db_path) as db:
             inserted = await apply_penalties_on(db, round_id, division_id, staged, 999, now=_NOW)
             await db.commit()
