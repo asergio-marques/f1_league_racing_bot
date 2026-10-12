@@ -53,9 +53,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
 
-#: Why the tests through `_recover` fail until the recovery asks the change queue.
-RECOVERY_UNBUILT = "#439: the restart does not yet ask the change queue for the weather phases"
-
 SERVER_ID = 12008
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -295,7 +292,6 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tm
     assert reads == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     """A mystery round past every horizon has each of its overdue phases asked by number: the
     recovery names no format, and weather turns phase 1 into the round's notice and asks nothing
@@ -414,8 +410,7 @@ async def _forecasts_asked(league) -> list[tuple[int, int]]:
 @pytest.mark.parametrize(
     "hours_until_race, notice_posted, expected",
     [
-        pytest.param(0.5, False, [(round_id(PRO, 3), 0)], id="its notice owed",
-                     marks=pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)),
+        pytest.param(0.5, False, [(round_id(PRO, 3), 0)], id="its notice owed"),
         pytest.param(0.5, True, [], id="its notice already posted"),
         pytest.param(-1, False, [], id="its race already run"),
     ],

@@ -612,37 +612,15 @@ async def main() -> None:
         # Start the persistent APScheduler
         bot.scheduler_service.start()
 
-        # Wire phase service callbacks into scheduler
-        from leaguebot.weather.services.phase1_service import run_phase1
-        from leaguebot.weather.services.phase2_service import run_phase2
-        from leaguebot.weather.services.phase3_service import run_phase3
+        # Wire weather's callbacks into the scheduler: each asks the change queue
+        from leaguebot.weather.services.forecast_changes import timer_callbacks
 
-        async def _p1(round_id: int) -> None:
-            await run_phase1(round_id, bot)
-
-        async def _p2(round_id: int) -> None:
-            await run_phase2(round_id, bot)
-
-        async def _p3(round_id: int) -> None:
-            await run_phase3(round_id, bot)
-
-        bot.scheduler_service.register_callbacks(_p1, _p2, _p3)
-
-        # Register mystery round notice callback
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
-
-        async def _mystery_notice_cb(round_id: int) -> None:
-            await run_mystery_notice(round_id, bot)
-
-        bot.scheduler_service.register_mystery_notice_callback(_mystery_notice_cb)
-
-        # Register post-race forecast cleanup callback
-        from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
-
-        async def _forecast_cleanup_cb(round_id: int) -> None:
-            await run_post_race_cleanup(round_id, bot)
-
-        bot.scheduler_service.register_forecast_cleanup_callback(_forecast_cleanup_cb)
+        callbacks = timer_callbacks(bot.change_queue, bot.db_path)
+        bot.scheduler_service.register_callbacks(
+            callbacks.phases[1], callbacks.phases[2], callbacks.phases[3]
+        )
+        bot.scheduler_service.register_mystery_notice_callback(callbacks.mystery_notice)
+        bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
 
         # Register result submission callback
         from leaguebot.results.services.result_submission_service import run_result_submission_job
@@ -912,7 +890,13 @@ async def main() -> None:
 
 
 async def _recover_missed_phases(bot: LeagueBot) -> None:
-    """Re-fire any weather phases whose horizon has passed but were not executed.
+    """Ask the change queue for any weather phases whose horizon has passed but were not executed.
+
+    Every round is asked for alike, a mystery round included: the mystery rule is weather's
+    (`forecast_changes.ask_forecast`), which turns a mystery round's phase 1 into its notice and
+    asks nothing for its phases 2 and 3. A notice missed while the bot was down is therefore posted
+    on starting, while the round's race is still ahead. A request no longer due is dropped by its
+    change's check.
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
     5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
@@ -932,9 +916,7 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
     was discarded by the scheduler's misfire grace rather than run.
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.weather.services.phase1_service import run_phase1
-    from leaguebot.weather.services.phase2_service import run_phase2
-    from leaguebot.weather.services.phase3_service import run_phase3
+    from leaguebot.weather.services.forecast_changes import ask_forecast
     from leaguebot.weather.models.weather_config import WeatherPipelineConfig
     from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
     from datetime import datetime, timedelta, timezone
@@ -952,7 +934,6 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
             WHERE s.status = 'ACTIVE'
-              AND r.format != 'MYSTERY'
               AND r.status != 'CANCELLED'
               AND d.status != 'CANCELLED'
             """
@@ -982,13 +963,13 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 
         if not p1 and now >= phase1_horizon:
             log.info("Recovery: firing Phase 1 for round %s", round_id)
-            await run_phase1(round_id, bot)
+            await ask_forecast(bot.change_queue, bot.db_path, round_id, 1)
         if not p2 and now >= phase2_horizon:
             log.info("Recovery: firing Phase 2 for round %s", round_id)
-            await run_phase2(round_id, bot)
+            await ask_forecast(bot.change_queue, bot.db_path, round_id, 2)
         if not p3 and now >= phase3_horizon:
             log.info("Recovery: firing Phase 3 for round %s", round_id)
-            await run_phase3(round_id, bot)
+            await ask_forecast(bot.change_queue, bot.db_path, round_id, 3)
 
 
 async def _recover_missed_check_in_calls(
@@ -1391,7 +1372,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     from datetime import datetime, timezone
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
+    from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
     from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
     from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 
@@ -1443,7 +1424,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     for round_id in forecasts:
         log.info("_recover_missed_cleanups: deleting round %d's Phase 3 forecast", round_id)
         try:
-            await run_post_race_cleanup(round_id, bot)
+            await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
         except Exception:
             log.exception(
                 "_recover_missed_cleanups: forecast cleanup failed for round %d", round_id

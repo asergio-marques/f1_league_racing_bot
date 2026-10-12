@@ -36,9 +36,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why these fail until the restart asks the change queue for the weather phases.
-RECOVERY_UNBUILT = "#439: the restart does not yet ask the change queue for the weather phases"
-
 SERVER_ID = 5511
 SEASON_ID = 1
 DIVISION_ID = 1
@@ -220,7 +217,6 @@ async def test_a_restart_recovers_nothing_for_a_server_with_weather_disabled(tmp
     phases.three.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
     """A mystery round past every horizon of the league's: its notice is put on the change
     queue, as weather's real `ask_forecast` asks it, and no phase is."""

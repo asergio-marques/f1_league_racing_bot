@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -569,6 +570,43 @@ async def ask_forecast_flush(queue: ChangeQueue) -> None:
     """Ask the queue to delete every recorded forecast, as test mode being switched off does."""
     await queue.ask(FORECAST_FLUSH, {}, what="clearing the forecasts posted under test mode",
                     origin=ChangeOrigin.BOT)
+
+
+@dataclass(frozen=True)
+class TimerCallbacks:
+    """The callbacks the scheduler fires for weather: each phase's, the mystery round notice's
+    and the clean-up's. Each takes a round id and asks the change queue."""
+
+    phases: Mapping[int, Callable[[int], Awaitable[None]]]
+    mystery_notice: Callable[[int], Awaitable[None]]
+    clean_up: Callable[[int], Awaitable[None]]
+
+
+def timer_callbacks(queue: ChangeQueue, db_path: str) -> TimerCallbacks:
+    """The callbacks the scheduler fires for weather, each asking *queue* as its timer does.
+
+    Handed the queue rather than reading it off the bot (architecture.md, "How modules and core
+    fit together"). A mystery round's phase 1 timer asks for its notice, by the mystery rule in
+    `ask_forecast`; its phases 2 and 3 ask for nothing.
+    """
+
+    def _phase(phase: int) -> Callable[[int], Awaitable[None]]:
+        async def fire(round_id: int) -> None:
+            await ask_forecast(queue, db_path, round_id, phase)
+
+        return fire
+
+    async def notice(round_id: int) -> None:
+        await ask_forecast(queue, db_path, round_id, 0)
+
+    async def clean_up(round_id: int) -> None:
+        await ask_forecast_clean_up(queue, db_path, round_id)
+
+    return TimerCallbacks(
+        phases={1: _phase(1), 2: _phase(2), 3: _phase(3)},
+        mystery_notice=notice,
+        clean_up=clean_up,
+    )
 
 
 def forecast_failure(view: StepView) -> tuple[str, str] | None:

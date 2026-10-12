@@ -51,9 +51,6 @@ import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.review_prompts import store_review_prompt
 
-#: Why the phase sweep's tests fail until the restart asks the change queue.
-RECOVERY_UNBUILT = "#439: the restart does not yet ask the change queue for the weather phases"
-
 SERVER_ID = 11808
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -263,7 +260,6 @@ async def test_the_horizons_are_read_once(tmp_path):
     assert get_config.await_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     """A mystery round past every horizon has each phase asked by number; weather, not the
     sweep, turns phase 1 into its notice and asks nothing for phases 2 and 3."""

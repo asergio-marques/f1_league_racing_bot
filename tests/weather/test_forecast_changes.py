@@ -565,11 +565,7 @@ async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tm
 # The weather timers ask the change queue
 # ---------------------------------------------------------------------------
 
-#: Why this fails until the scheduler's weather callbacks ask the change queue.
-TIMERS_UNBUILT = "#439: the weather timers do not yet ask the change queue"
 
-
-@pytest.mark.xfail(strict=True, reason=TIMERS_UNBUILT)
 @pytest.mark.parametrize(
     "timer, mystery, expected",
     [
