@@ -29,12 +29,11 @@ import json
 import math
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services.phase2_service import run_phase2
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -115,14 +114,6 @@ async def _seed(
         await db.commit()
 
 
-def _make_bot(db_path: str) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 async def _phase2_state(db_path: str) -> tuple[int, int]:
     """Return ``(phase2_done, phase_2_result_row_count)``."""
     async with get_connection(db_path) as db:
@@ -167,26 +158,6 @@ def _expected_pool(rpc: float) -> tuple[int, int, int]:
     ir = math.floor((1000 * rpc * (1 + rpc) ** 2) / 5)
     im = max(0, math.floor(1000 * rpc) - ir)
     return ir, im, 1000 - im - ir
-
-
-def _run(db_path: str, *, drawn: str = "mixed"):
-    """Run Phase 2 with the slot draw pinned, returning the doubles the test inspects."""
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
-
-    async def _invoke():
-        with patch(
-            "leaguebot.weather.services.phase2_service.random.choice", return_value=drawn
-        ) as choice, patch(
-            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
-        ), patch(
-            "leaguebot.image.services.image_weather_post.attach_forecast",
-            new=AsyncMock(return_value=None),
-        ):
-            await run_phase2(ROUND_ID, bot)
-        return choice
-
-    return bot, posted, _invoke
 
 
 async def _draw(db_path: str, *, drawn: str = "mixed"):
@@ -337,27 +308,6 @@ async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
     assert result.payload is not None and result.line
     assert await _phase2_state(db_path) == (0, 0)
     assert [slot for _, slot in await _slot_types(db_path)] == [None, None]
-
-
-# ---------------------------------------------------------------------------
-# Posting and supersession
-# ---------------------------------------------------------------------------
-
-
-async def test_the_phase_2_post_supersedes_the_phase_1_post(tmp_path):
-    """Phase 2 replaces the Phase 1 forecast rather than standing beside it."""
-    db_path = await _make_db(tmp_path)
-    await _seed(db_path)
-    bot, posted, invoke = _run(db_path)
-
-    await invoke()
-
-    posted.assert_awaited_once()
-    kwargs = posted.await_args.kwargs
-    assert kwargs["supersedes"] == 1
-    assert kwargs["phase_number"] == 2
-    assert kwargs["channel_id"] == 999
-    bot.output_router.post_log.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

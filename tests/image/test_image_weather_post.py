@@ -4,19 +4,18 @@ Covers the contract in
 ``specs/042-weather-image-generation/contracts/weather-posting.md`` and Constitution XIV.4,
 XIV.7 and XIV.8.
 
-The tests that matter most are the ordering ones. **Produce before destroy** (XIV.8) is what
-stops a failed phase 3 render leaving a division with no forecast two hours before its race,
-and the natural way to write a chain — delete the old, post the new — has that failure built
-in. It was the shipped behaviour until this increment.
+**Produce before destroy** (XIV.8) is what stops a failed phase 3 render leaving a division
+with no forecast two hours before its race. The forecast's post and the deletion of the one it
+supersedes are now two jobs of the change queue (#439), so the ordering is pinned where those
+jobs are, in ``tests/weather/test_forecast_changes.py``, and no longer by reading this path's
+source.
 """
 from __future__ import annotations
 
-import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.weather.services import forecast_cleanup_service, phase2_service, phase3_service
 from leaguebot.image.services.image_weather_post import (
     ForecastRender,
     describe,
@@ -89,143 +88,6 @@ async def test_a_reader_that_raises_never_breaks_the_posting():
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
     assert await weather_enabled(bot, "weather_p1_template") is False
-
-
-# ── 2. Produce before destroy (FR-045, XIV.8) ─────────────────────────────
-
-
-def _cleanup_bot(*, send_fails=False, post_returns=MagicMock()):
-    bot = MagicMock()
-    bot.db_path = ":memory:"
-    bot.output_router.post_forecast = AsyncMock(return_value=post_returns)
-    return bot
-
-
-@pytest.mark.asyncio
-async def test_the_superseded_message_is_deleted_only_after_the_new_one_exists(monkeypatch):
-    order: list[str] = []
-
-    async def _store(*a, **k):
-        order.append("store")
-
-    async def _delete(*a, **k):
-        order.append("delete")
-
-    async def _post(div, text, enqueue_on_failure=False):
-        order.append("post")
-        return MagicMock()
-
-    monkeypatch.setattr(forecast_cleanup_service, "store_forecast_message", _store)
-    monkeypatch.setattr(forecast_cleanup_service, "delete_forecast_message", _delete)
-    bot = MagicMock()
-    bot.db_path = ":memory:"
-    bot.output_router.post_forecast = _post
-
-    await forecast_cleanup_service.post_phase_message(
-        bot, round_id=1, division_id=1, channel_id=1,
-        phase_number=2, text="forecast", supersedes=1,
-    )
-    assert order == ["post", "store", "delete"], order
-
-
-@pytest.mark.asyncio
-async def test_a_failed_post_deletes_nothing(monkeypatch):
-    """The window this rule exists to close: the previous forecast must still stand."""
-    deleted: list = []
-
-    async def _delete(*a, **k):
-        deleted.append(a)
-
-    async def _post(div, text, enqueue_on_failure=False):
-        return None  # the router's own failure signal
-
-    monkeypatch.setattr(forecast_cleanup_service, "delete_forecast_message", _delete)
-    monkeypatch.setattr(forecast_cleanup_service, "store_forecast_message", AsyncMock())
-    bot = MagicMock()
-    bot.db_path = ":memory:"
-    bot.output_router.post_forecast = _post
-
-    result = await forecast_cleanup_service.post_phase_message(
-        bot, round_id=1, division_id=1, channel_id=1,
-        phase_number=3, text="forecast", supersedes=2,
-    )
-    assert result is None
-    assert deleted == []
-
-
-@pytest.mark.asyncio
-async def test_the_first_occasion_supersedes_nothing(monkeypatch):
-    deleted: list = []
-    monkeypatch.setattr(
-        forecast_cleanup_service, "delete_forecast_message",
-        AsyncMock(side_effect=lambda *a, **k: deleted.append(a)),
-    )
-    monkeypatch.setattr(forecast_cleanup_service, "store_forecast_message", AsyncMock())
-    bot = MagicMock()
-    bot.db_path = ":memory:"
-    bot.output_router.post_forecast = AsyncMock(return_value=MagicMock())
-
-    await forecast_cleanup_service.post_phase_message(
-        bot, round_id=1, division_id=1, channel_id=1,
-        phase_number=1, text="forecast",
-    )
-    assert deleted == []
-
-
-# ── 3. The manner of a message is no part of the chain (FR-046) ───────────
-
-
-def test_the_chain_names_a_phase_and_never_a_drawing():
-    """FR-046 — each occasion reads which message stands, never how it was drawn."""
-    signature = inspect.signature(forecast_cleanup_service.post_phase_message)
-    assert signature.parameters["supersedes"].annotation in (int, "int | None")
-
-    source = inspect.getsource(forecast_cleanup_service.post_phase_message)
-    # The delete is driven by the phase number alone.
-    assert "delete_forecast_message(round_id, division_id, supersedes, bot)" in source
-    # Nothing about the superseded message's manner is consulted.
-    for forbidden in ("was_image", "had_attachment", "is_graphic"):
-        assert forbidden not in source
-
-
-def test_both_manners_take_the_one_send_site():
-    """A second send site is a second ordering, and two orderings drift."""
-    for module in (phase2_service, phase3_service):
-        source = inspect.getsource(module)
-        assert source.count("post_phase_message(") == 1, module.__name__
-        # The old delete-then-post pair must be gone from the phase services entirely.
-        assert "delete_forecast_message" not in source, module.__name__
-
-
-# ── 4. The graphic gates nothing (FR-051, XIV.7) ──────────────────────────
-
-
-@pytest.mark.parametrize("module", [phase2_service, phase3_service])
-def test_the_graphic_is_reached_after_the_draw_is_persisted(module):
-    """XIV.7's precondition clause: a failed render must find the work already done."""
-    source = inspect.getsource(module)
-    persisted = source.index("db.commit()")
-    attached = source.index("attach_forecast(")
-    assert persisted < attached, (
-        f"{module.__name__} reaches the graphic before persisting its draw"
-    )
-
-
-@pytest.mark.parametrize("module", [phase2_service, phase3_service])
-def test_the_calculation_log_is_written_whatever_the_graphic_does(module):
-    """FR-033 — the log channel stays textual in its entirety."""
-    source = inspect.getsource(module)
-    assert "post_log(" in source
-    assert source.index("attach_forecast(") < source.index("post_log(")
-
-
-# ── 5. A transport failure retries as text (FR-057) ───────────────────────
-
-
-def test_the_text_is_what_is_enqueued_never_the_image():
-    source = inspect.getsource(forecast_cleanup_service.post_phase_message)
-    assert "content=text" in source
-    assert "attachment" not in source.split("retry_service.enqueue")[1][:400]
 
 
 # ── 6. What a report names (FR-059) ───────────────────────────────────────
@@ -422,28 +284,6 @@ async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
 
 
 # ── 10. The mystery notice's posting (T047, FR-052, FR-053) ───────────────
-
-
-def test_the_mystery_notice_rides_on_a_message_carrying_no_mention():
-    """FR-052 — its textual counterpart tags nobody, and neither does the graphic's."""
-    import inspect
-
-    from leaguebot.weather.services import mystery_notice_service
-
-    source = inspect.getsource(mystery_notice_service.run_mystery_notice)
-    assert 'attachment_text=""' in source, "the notice must carry no role mention"
-    assert "mention_role_id" not in source
-
-
-def test_the_mystery_notice_supersedes_nothing():
-    """It is the only weather posting such a round makes."""
-    import inspect
-
-    from leaguebot.weather.services import mystery_notice_service
-
-    source = inspect.getsource(mystery_notice_service.run_mystery_notice)
-    assert "supersedes" not in source
-    assert "phase_number=0" in source
 
 
 def test_no_phase_is_armed_for_a_mystery_round():

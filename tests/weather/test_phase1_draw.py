@@ -36,12 +36,11 @@ import math
 import os
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services.phase1_service import run_phase1
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -119,14 +118,6 @@ async def _add_infeasible_track(db_path: str) -> None:
         await db.commit()
 
 
-def _make_bot(db_path: str) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 async def _phase1_state(db_path: str) -> tuple[int, int]:
     """Return ``(phase1_done, phase_results_row_count)``."""
     async with get_connection(db_path) as db:
@@ -153,23 +144,6 @@ async def _payload(db_path: str) -> dict:
     return json.loads(row["payload"])
 
 
-def _run(db_path: str, *, raw_draw: float = 0.05):
-    """Run Phase 1 with the Beta draw pinned, returning the `post_phase_message` double."""
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
-
-    async def _invoke():
-        with patch("random.betavariate", return_value=raw_draw), patch(
-            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
-        ), patch(
-            "leaguebot.image.services.image_weather_post.attach_forecast",
-            new=AsyncMock(return_value=None),
-        ):
-            await run_phase1(ROUND_ID, bot)
-
-    return bot, posted, _invoke
-
-
 async def _draw(db_path: str, *, raw_draw: float | None = 0.05, round_id: int = ROUND_ID):
     """Draw Phase 1 on a save this opens and commits, returning the `Drawn`.
 
@@ -189,24 +163,6 @@ async def _draw(db_path: str, *, raw_draw: float | None = 0.05, round_id: int = 
 # ---------------------------------------------------------------------------
 # The successful draw
 # ---------------------------------------------------------------------------
-
-
-async def test_successful_draw_records_posts_and_logs(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed(db_path)
-    bot, posted, invoke = _run(db_path, raw_draw=0.3456)
-
-    await invoke()
-
-    assert await _phase1_state(db_path) == (1, 1)
-    posted.assert_awaited_once()
-    bot.output_router.post_log.assert_awaited_once()
-
-    # The forecast went to the division's own channel, for the round it was drawn for.
-    kwargs = posted.await_args.kwargs
-    assert kwargs["round_id"] == ROUND_ID
-    assert kwargs["channel_id"] == 999
-    assert kwargs["phase_number"] == 1
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)

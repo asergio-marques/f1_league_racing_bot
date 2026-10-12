@@ -35,13 +35,12 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.session import MAX_SLOTS, SessionType
-from leaguebot.weather.services.phase3_service import run_phase3
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -124,14 +123,6 @@ async def _seed(
         await db.commit()
 
 
-def _make_bot(db_path: str) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 def _highest(weights: dict[str, float]) -> str:
     """The highest-weighted label, ties broken by name.
 
@@ -180,39 +171,6 @@ async def _payload(db_path: str) -> dict:
         )
         row = await cursor.fetchone()
     return json.loads(row["payload"])
-
-
-def _run(db_path: str, *, pick: str = "max"):
-    """Run Phase 3 deterministically.
-
-    *pick* chooses which end of the permitted slot-count range `randint` returns, so a test
-    can drive either bound. Returns the bot, the posting double, and an invoker that yields
-    the `randint` double and the list of weight maps `draw_weighted` was handed.
-    """
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
-    seen_weights: list[dict[str, float]] = []
-
-    def _draw(weights):
-        seen_weights.append(dict(weights))
-        return _highest(weights)
-
-    async def _invoke():
-        with patch(
-            "leaguebot.weather.services.phase3_service.random.randint",
-            side_effect=lambda lo, hi: hi if pick == "max" else lo,
-        ) as randint, patch(
-            "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_draw
-        ), patch(
-            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
-        ), patch(
-            "leaguebot.image.services.image_weather_post.attach_forecast",
-            new=AsyncMock(return_value=None),
-        ):
-            await run_phase3(ROUND_ID, bot)
-        return randint, seen_weights
-
-    return bot, posted, _invoke
 
 
 async def _draw(db_path: str, *, pick: str = "max"):
@@ -444,22 +402,6 @@ async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
     assert result.payload is not None and result.line
     assert await _phase3_state(db_path) == (0, 0)
     assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
-
-
-async def test_the_phase_3_post_supersedes_the_phase_2_post(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed(db_path, sessions=[("FULL_RACE", "mixed")])
-    bot, posted, invoke = _run(db_path)
-
-    await invoke()
-
-    posted.assert_awaited_once()
-    kwargs = posted.await_args.kwargs
-    assert kwargs["supersedes"] == 2
-    assert kwargs["phase_number"] == 3
-    assert kwargs["channel_id"] == 999
-    bot.output_router.post_log.assert_awaited_once()
-    assert await _phase3_state(db_path) == (1, 1)
 
 
 # ---------------------------------------------------------------------------

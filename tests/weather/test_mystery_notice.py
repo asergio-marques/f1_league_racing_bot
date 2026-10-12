@@ -339,30 +339,6 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
 
 class TestRunMysteryNotice:
 
-    async def test_posts_to_forecast_not_log(self):
-        from leaguebot.core.db.database import run_migrations
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
-
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            db_path = f.name
-        try:
-            await run_migrations(db_path)
-            await _seed_mystery_round(db_path, round_id=1)
-
-            mock_msg = MagicMock()
-            mock_msg.id = 111
-            mock_bot = MagicMock()
-            mock_bot.db_path = db_path
-            mock_bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-            mock_bot.output_router.post_forecast = AsyncMock(return_value=mock_msg)
-            mock_bot.output_router.post_log = AsyncMock()
-
-            await run_mystery_notice(1, mock_bot)
-
-            assert mock_bot.output_router.post_forecast.call_count == 1
-            assert mock_bot.output_router.post_log.call_count == 0
-        finally:
-            os.unlink(db_path)
 
     async def test_posted_message_has_no_role_tag(self):
         from leaguebot.core.db.database import run_migrations
