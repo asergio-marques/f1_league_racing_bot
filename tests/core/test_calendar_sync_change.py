@@ -41,8 +41,6 @@ from tests.support.season_league import (
 )
 from tests.support.undecorate import undecorate
 
-UNBUILT = "#439: /division calendar-sync is not yet a change on the change queue"
-
 KIND = "calendar.sync"
 PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 
@@ -137,7 +135,6 @@ def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> list[str]:
     return drawn
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_calendar_sync_is_acknowledged_and_updated_with_its_outcome(tmp_path):
     league = await ongoing_league(tmp_path)
 
@@ -155,10 +152,8 @@ async def test_a_calendar_sync_is_acknowledged_and_updated_with_its_outcome(tmp_
 
 
 @pytest.mark.parametrize("failure", [
-    pytest.param("send refused", id="send refused",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param("id not saved", id="its id cannot be saved",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("send refused", id="send refused"),
+    pytest.param("id not saved", id="its id cannot be saved"),
 ])
 async def test_a_calendar_sync_that_cannot_post_stops_the_queue_and_queues_nothing_on_the_old_retry_queue(
     tmp_path, failure,
@@ -185,7 +180,6 @@ async def test_a_calendar_sync_that_cannot_post_stops_the_queue_and_queues_nothi
     assert await _retried_posts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     """Images on: Discord refuses the picture, and the queue stops; Retry posts the textual
     calendar, drawing nothing again."""
@@ -207,7 +201,6 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     assert _outcome(interaction) == "✅ Calendar for **Pro** reposted as text."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old_calendar_stands(
     tmp_path, monkeypatch,
 ):
@@ -239,7 +232,6 @@ async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old
     assert "the template has no rows" in refusals[0]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_calendar_sync_asked_before_the_season_is_done_is_refused_when_it_runs(tmp_path):
     """The queue stopped ahead of the sync, and every division finished meanwhile: once the
     queue moves, the sync is refused in the command's own words, and nothing is posted."""
@@ -264,7 +256,6 @@ async def test_a_calendar_sync_asked_before_the_season_is_done_is_refused_when_i
             if row["kind"] == KIND] == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_second_calendar_sync_is_not_refused_as_a_repeat(tmp_path):
     """Two syncs asked while the queue is stopped: a repost reads what it posts when it runs,
     so the second is queued too."""
@@ -278,7 +269,6 @@ async def test_a_second_calendar_sync_is_not_refused_as_a_repeat(tmp_path):
             if row["kind"] == KIND] == ["QUEUED", "QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_discarded_calendar_sync_says_the_previous_calendar_still_stands(tmp_path):
     league = await ongoing_league(tmp_path)
     league.channel(PRO_CALENDAR).send_fails = http_error(

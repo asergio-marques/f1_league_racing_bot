@@ -13,7 +13,8 @@ one can be produced; the text is what the league falls back to, never what it lo
 A graphic does not. The picture draws the division's own name and says what it is, so a
 line of message text above it repeats the picture rather than introducing it, and the
 lineup graphic has never carried one either (2026-09-07). The heading is still built in
-one place, because the text is posted from two — the ordinary posting and the retry queue.
+one place, because the text is posted from two — the first try and the retry that follows a
+refusal, both of them the change queue's.
 
 Both forms persist their message id against the division, so whichever posted last is the
 one the next replacement deletes.
@@ -24,10 +25,34 @@ import logging
 from dataclasses import dataclass, field
 from datetime import timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import (
+    GuildUnavailable,
+    PlannedStep,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.change_queue import (
+    CheckContext,
+    ChangeType,
+    OutcomeContext,
+    Step,
+    StepContext,
+    StepView,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.core.utils.season_gate import stage_refusal
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.season_service import SeasonService
 
 log = logging.getLogger(__name__)
 
@@ -373,7 +398,8 @@ async def post_division_calendar(
     *read_previous*), not taken from *division*, which a job may have read before the queue
     waited, so an approval that waited cannot delete a calendar already gone and leave the
     newer one standing. A calendar channel
-    never set still returns the posting with its problem, there being nothing to retry.
+    never set still returns the posting with its problem, there being nothing to retry. A
+    posting not raising reports a fault in its problem; it queues nothing for retry.
 
     *as_text* posts the textual calendar without drawing: the retry of a job whose picture
     could not be posted goes as text (Constitution XIV, rule 8).
@@ -403,7 +429,7 @@ async def post_division_calendar(
 
     # Everything from the render to the post sits inside one `finally`, so the picture is
     # removed whichever way this ends — posted, refused to a commanded caller, or lost to
-    # a Discord fault that sends the textual calendar to the retry queue instead.
+    # a Discord fault that stops the change queue at the posting.
     try:
         if not as_text and await image_calendar_wanted(bot):
             try:
@@ -450,19 +476,6 @@ async def post_division_calendar(
                     ) from exc
                 raise
             log.exception("calendar: posting failed for division %s", division.id)
-            # A Discord fault rather than a generation fault: the *textual* calendar is
-            # what is enqueued for retry (FR-020).
-            from leaguebot.core.services import retry_service
-
-            try:
-                await retry_service.enqueue(
-                    bot.db_path,
-                    division.calendar_channel_id,
-                    textual_calendar(division.name, rounds),
-                    f"calendar post failed: {exc}",
-                )
-            except Exception:  # noqa: BLE001
-                log.exception("calendar: could not enqueue the retry")
             result.problem = result.problem or str(exc)
             return result
 
@@ -471,3 +484,191 @@ async def post_division_calendar(
         return result
     finally:
         discard_render(image_path)
+
+
+# ── /division calendar-sync, on the change queue ─────────────────────────────
+
+#: The kind of the change that posts a division's calendar again on a member's command.
+CALENDAR_SYNC = "calendar.sync"
+POST_CALENDAR = "post_calendar"
+CLOSE = "close"
+_COMMAND = "`/division calendar-sync`"
+
+
+def calendar_steps(seasons: "SeasonService") -> dict[str, Step]:
+    """The jobs that post a division's calendar, for a change type's `steps`.
+
+    The payload is `{"division_id", "division_name", "season_id"}`, and `"commanded": True` for a
+    posting a member asked for (Constitution XIV.7). The season's number is the job's own or the
+    change's. The division and its rounds are read as the job runs, and a retry posts the text
+    (rule 8).
+    """
+
+    def field(ctx: StepContext, key: str) -> Any:
+        """The job's own value, else the change's."""
+        return ctx.step_payload.get(key, ctx.payload.get(key))
+
+    async def division_of(ctx: StepContext) -> Any:
+        wanted = int(field(ctx, "division_id"))
+        return next(
+            (each for each in await seasons.get_divisions(int(field(ctx, "season_id")))
+             if each.id == wanted),
+            None,
+        )
+
+    async def still_due(ctx: StepContext) -> bool:
+        return await division_of(ctx) is not None
+
+    async def post_calendar(ctx: StepContext) -> StepResult:
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise GuildUnavailable("the league's server is not in the cache")
+        division = await division_of(ctx)
+        if division is None:
+            raise LookupError(f"division {field(ctx, 'division_id')} is no longer there")
+        season_number = field(ctx, "season_number")
+        if not season_number:
+            log.warning(
+                "calendar: season %s carries no number; the calendar of %s will draw 'SEASON 0'",
+                field(ctx, "season_id"),
+                division.name,
+            )
+        posting = await post_division_calendar(
+            ctx.bot,
+            guild,
+            division,
+            await seasons.get_division_rounds(division.id),
+            await tracks_by_name(ctx.db_path),
+            season_number=season_number,
+            commanded=bool(field(ctx, "commanded")),
+            raise_on_failure=True,
+            as_text=ctx.tries > 0,
+        )
+        return StepResult(
+            result={
+                "division": division.name,
+                "problem": posting.problem,
+                "fell_back": posting.fell_back,
+                "notices": list(posting.notices),
+                "rejected": posting.problem is not None and posting.message_id is None,
+                "posted_as_image": posting.posted_as_image,
+            }
+        )
+
+    async def describe(ctx: StepContext) -> str:
+        return f"posting the calendar of **{field(ctx, 'division_name')}**"
+
+    return {POST_CALENDAR: Step(POST_CALENDAR, StepKind.ACT, post_calendar,
+                                still_due=still_due, describe=describe)}
+
+
+def calendar_sync_change(seasons: "SeasonService") -> ChangeType:
+    """`/division calendar-sync` carried out on the change queue, whole: it only posts.
+
+    A member's change, acknowledged at once and the acknowledgement updated with the outcome.
+    Its check holds the command's gates again as the change runs (core specification, "How a
+    change is carried out"): the season's stage, the division still of the season and its
+    calendar channel. Repeatable, a repost reading what it posts when it runs. A commanded
+    posting: a render that fails posts nothing and the closing job writes the refusal.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        payload = ctx.payload
+        season = await seasons.get_setup_or_active_season()
+        if season is None:
+            return Verdict.refuse(str(stage_refusal(None, "division calendar-sync")))
+        refusal = stage_refusal(season.stage, "division calendar-sync")
+        if refusal is not None:
+            return Verdict.refuse(refusal)
+        name = payload["division_name"]
+        division = next(
+            (each for each in await seasons.get_divisions(season.id)
+             if each.id == int(payload["division_id"])),
+            None,
+        )
+        if division is None:
+            return Verdict.refuse(f"❌ Division **{name}** not found in the current season.")
+        if not division.calendar_channel_id:
+            return Verdict.refuse(
+                f"❌ **{name}** has no calendar channel configured. "
+                f"Set one with `/division calendar-channel` first."
+            )
+        return Verdict.go()
+
+    def view(ctx: OutcomeContext, name: str) -> StepView | None:
+        return next((each for each in reversed(ctx.steps) if each.name == name), None)
+
+    def discarded(each: StepView | None) -> bool:
+        return each is not None and "discarded" in (each.result or {})
+
+    def rejection(ctx: OutcomeContext) -> str | None:
+        posted = view(ctx, POST_CALENDAR)
+        result = (posted.result if posted is not None else None) or {}
+        if discarded(posted) or not result.get("rejected"):
+            return None
+        return (
+            f"❌ The calendar for **{ctx.payload['division_name']}** was not posted — "
+            f"{result['problem']}\nNothing was deleted; the previous calendar still stands."
+        )
+
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        posted = view(ctx, POST_CALENDAR)
+        result = (posted.result if posted is not None else None) or {}
+        if discarded(posted) or not result:
+            return StepResult(result={"closed": True})
+        rejected = rejection(ctx)
+        if rejected is not None:
+            return StepResult(
+                result={"closed": True},
+                lines=(refusal_line(ctx.named, _COMMAND, reply_reason(rejected)),),
+            )
+        drawn = "image" if result.get("posted_as_image") else "text"
+        return StepResult(
+            result={"closed": True},
+            lines=(
+                f"{ctx.named} | /division calendar-sync | Success\n"
+                f"  division: {ctx.payload['division_name']}\n"
+                f"  posted as: {drawn}\n"
+                + "".join(f"  notice: {each}\n" for each in result.get("notices", [])),
+            ),
+        )
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording the calendar sync"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        name = ctx.payload["division_name"]
+        posted = view(ctx, POST_CALENDAR)
+        if discarded(posted):
+            return (
+                f"⛔ The calendar for **{name}** was not posted: a league admin discarded it. "
+                f"The previous calendar still stands; run `/division calendar-sync` again."
+            )
+        rejected = rejection(ctx)
+        if rejected is not None:
+            return rejected
+        result = (posted.result if posted is not None else None) or {}
+        drawn = "image" if result.get("posted_as_image") else "text"
+        lines = [f"✅ Calendar for **{name}** reposted as {drawn}."]
+        if result.get("notices"):
+            lines.append("")
+            lines.append("**Notices**")
+            lines.extend(f"  • {detail}" for detail in result["notices"])
+        return "\n".join(lines)
+
+    return ChangeType(
+        kind=CALENDAR_SYNC,
+        opening=(
+            PlannedStep(POST_CALENDAR, {"commanded": True}),
+            PlannedStep(CLOSE),
+        ),
+        steps={
+            **calendar_steps(seasons),
+            CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
+        },
+        check=check,
+        key=lambda payload: f"{CALENDAR_SYNC}:{payload['division_id']}",
+        doing=lambda payload: f"Posting the calendar of **{payload['division_name']}** again",
+        outcome=outcome,
+        repeatable=True,
+    )

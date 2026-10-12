@@ -341,7 +341,7 @@ async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
 # ---------------------------------------------------------------------------
 
 #: The commands that run on the change queue (#439), each with the kind it asks for: while the
-#: season is raced each is asked of the queue, which neither is yet.
+#: season is raced each is asked of the queue, which `/results rounds sync` is not yet.
 _ASKED_OF_THE_QUEUE = {
     "/division calendar-sync": "calendar.sync",
     "/results rounds sync": "results.rounds.sync",
@@ -351,7 +351,7 @@ _NOT_ON_THE_QUEUE = "#439: the command is not yet asked of the change queue"
 
 @pytest.mark.parametrize("name", [
     pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_NOT_ON_THE_QUEUE))
-    if name in _ASKED_OF_THE_QUEUE else name
+    if name == "/results rounds sync" else name
     for name in _NAMES
 ])
 async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_path, name):

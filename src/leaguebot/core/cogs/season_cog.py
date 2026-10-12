@@ -4114,15 +4114,19 @@ class SeasonCog(commands.Cog):
     async def division_calendar_sync(
         self, interaction: discord.Interaction, name: str
     ) -> None:
-        """Delete a division's calendar message and post it anew.
+        """Post a division's calendar anew, as a change on the change queue.
 
         Gated on **no** module: it refreshes whichever form the server's configuration
         calls for — the graphic where the images module and the `calendar` aspect are both
         on, the traditional textual calendar otherwise.
 
-        A **commanded** posting, so a fatal render rejects the command and posts nothing
-        rather than quietly substituting text (Constitution XIV.7): the person at the
-        keyboard is the one able to fix the template.
+        The command keeps its gates and answers them at once in its own words; the posting is
+        the queue's (`calendar_post_service.calendar_sync_change`), acknowledged and the
+        acknowledgement updated with the outcome, the old calendar deleted by a job after the
+        new one stands. A **commanded** posting, so a fatal render rejects the change and posts
+        nothing rather than quietly substituting text (Constitution XIV.7): the person at the
+        keyboard is the one able to fix the template, and the outcome says that nothing was
+        deleted and the previous calendar still stands.
 
         **The season's number is passed bare, and a falsy one is drawn rather than hidden**
         (issue #213, decided 2026-09-20). `seasons.season_number` is `NOT NULL` with no
@@ -4131,7 +4135,7 @@ class SeasonCog(commands.Cog):
         obvious reflex, `season.season_number or None`, would empty the template's field
         and silently drop the whole "SEASON n" line where the template groups it — the same
         quiet failure this issue was raised for. Drawing "SEASON 0" is visibly wrong and
-        gets reported, so the value goes through untouched and the fault is logged beside
+        gets reported, so the value goes through untouched and the job logs the fault beside
         it. Pinned by `test_a_season_with_no_number_still_draws_and_is_logged`.
         """
         from leaguebot.core.services import calendar_post_service as _calendar
@@ -4168,50 +4172,17 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        rounds = await self.bot.season_service.get_division_rounds(div.id)
-        tracks = await _calendar.tracks_by_name(self.bot.db_path)
-
-        if not season.season_number:
-            log.warning(
-                "division_calendar_sync: season %s carries no number; the calendar for "
-                "%s will draw 'SEASON 0'",
-                season.id,
-                div.name,
-            )
-
-        posting = await _calendar.post_division_calendar(
-            self.bot,
-            interaction.guild,
-            div,
-            rounds,
-            tracks,
-            season_number=season.season_number,
-            commanded=True,
-        )
-
-        if posting.problem is not None:
-            await refuse(
-                interaction,
-                f"❌ The calendar for **{name}** was not posted — {posting.problem}\n"
-                f"Nothing was deleted; the previous calendar still stands.",
-                what=describe(interaction),
-            )
-            return
-
-        drawn = "image" if posting.posted_as_image else "text"
-        lines = [f"✅ Calendar for **{name}** reposted as {drawn}."]
-        if posting.notices:
-            lines.append("")
-            lines.append("**Notices**")
-            lines.extend(f"  • {detail}" for detail in posting.notices)
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /division calendar-sync | Success\n"
-            f"  division: {name}\n"
-            f"  posted as: {drawn}\n"
-            + "".join(f"  notice: {d}\n" for d in posting.notices),
+        await self.bot.change_queue.ask(
+            _calendar.CALENDAR_SYNC,
+            {
+                "division_id": div.id,
+                "division_name": div.name,
+                "season_id": season.id,
+                "season_number": season.season_number,
+            },
+            interaction=interaction,
+            what=f"posting the calendar of **{div.name}** again",
+            refusal_what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

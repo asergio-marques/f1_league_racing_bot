@@ -51,10 +51,6 @@ from tests.support.undecorate import undecorate
 #: Where the bot's database is built: the running test's own `tmp_path`, set by `_home`.
 _HOME = None
 
-#: The change queue's message for #439, which a test that fails until the sync runs on the
-#: queue carries.
-ON_THE_QUEUE = "#439: /division calendar-sync does not yet run on the change queue"
-
 SERVER_ID = 13208
 
 
@@ -207,7 +203,6 @@ def _outcome(interaction) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_calendar_is_reposted(tmp_path):
     """The calendar is posted once, by the queue's job, and the acknowledgement is updated to
     say so."""
@@ -238,7 +233,6 @@ async def test_the_reply_says_it_was_posted_as_an_image(tmp_path):
     assert "reposted as image" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(tmp_path):
     """A manager who has just been refused will otherwise assume the channel is empty. The
     refusal is recorded (#482): the log channel gets exactly one refusal line, naming the member
