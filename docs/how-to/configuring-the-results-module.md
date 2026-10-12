@@ -401,7 +401,7 @@ While a points approval of the season is waiting, running or stopped on the queu
 /results rounds sync division: Division One
 ```
 
-Both delete what the bot posted and post it again from what it holds: the first for the standings, the second for every session of every round. Reach for them when somebody deleted a channel's history, or after a correction made outside the normal flow.
+Both post again from what the bot holds what it posted: the first the standings, the second every session of every round, deleting the messages they replace. `/results rounds sync` is acknowledged at once and carried out on the change queue, each table posted before the one it replaces is deleted; the reply is updated when it is done, saying it synced or naming any table a league admin discarded. A table Discord refuses stops the queue and is tried again as text. A sync waiting on the queue is refused when its turn comes if an amendment of the division has opened, or the season is done, meanwhile. Reach for them when somebody deleted a channel's history, or after a correction made outside the normal flow.
 
 > **Both are refused once every division is done,** and on a season already completed or cancelled. While a season is pending completion the one thing that still reposts is `/results rounds amend` — see the next section.
 

@@ -33,7 +33,7 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 **Test mode is left one of two ways**: by the toggle, while the season is still in Configuration, or by the season ending — completed, cancelled or aborted, it switches test mode off in the save that records its end, on the change queue, the forecasts having been cleared by a job just before. Nothing else turns it off, so there is no mid-run toggle to destroy a roster by accident. Either way:
 
-- Pending forecast-message deletions are flushed.
+- Pending forecast-message deletions are flushed: on the change queue, each forecast's deletion a job of its own, so one Discord refuses stops the queue until it is retried.
 - **Every fake driver on the server is deleted**, across all divisions, with no confirmation.
 - **The saved backup is deleted**, the lock with it, when you toggle test mode off and when the season is completed. The backup commands run in test mode alone, so a state kept past it is one nothing could restore. A season **cancelled or aborted** keeps its saved state: that is the one you go back to.
 - **Their history is kept.** A completed or cancelled season has already written a history entry for every division each fake driver took part in, and the entry is kept by the driver's synthetic ID rather than by the profile. A fake driver created later under the same ID — which the roster generator's CSV does, run after run — holds that history again, so career statistics can be tested across seasons.
@@ -49,6 +49,8 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 ```
 
 Runs the single next pending event and reports what it did. Run it repeatedly to walk a season forward.
+
+> **A weather step is asked of the change queue** (decided 2026-10-10). A phase, a mystery round's notice or the forecast clean-up cancels its scheduled job and asks the queue for the same work; the reply says it is on the change queue ("⏩ **Phase 2** for **Pro** — **Monza** is on the change queue: …"), and the forecast and its calculation follow as soon as the queue reaches it. A second `advance` before the queue has run the first offers the next step, not the same one. A step of a round whose race has been run is not fired (decided 2026-10-12): the reply says it was not due ("⏩ **Phase 1** for **Pro** — **Round 3** was not due: its race has been run.") and `advance` moves on, so rehearsing weather needs rounds dated in the future.
 
 **The queue is led by the APScheduler job store rather than by the database.** That is the design decision worth knowing, because it means the queue holds only what a live season would genuinely fire: with the weather module disabled at approval time, no weather phase jobs exist, and `advance` will never produce one. Enablement is honoured on the database side too — the fallback described below checks each module's flag before offering its phase, a mystery round's notice under the weather module's. Nor does it offer a last notice where `/attendance config rsvp-last-notice` is 0, since a live season sends none. If an event you expected does not appear, the question is whether that module was on when the season was approved, not whether `advance` skipped it.
 
@@ -74,7 +76,7 @@ Phase numbers in the queue entry mean:
 | 5 | RSVP notice |
 | 6 | RSVP last notice |
 | 7 | RSVP deadline |
-| 8 | Forecast cleanup — the Phase 3 message deleted a day after the round |
+| 8 | Forecast cleanup — whichever of the round's Phase 1, 2 and 3 messages still stands, deleted a day after the round |
 | 9 | Check-in cleanup — the call, last notice and distribution taken down a day after the round |
 
 A mystery round's notice is armed as a `weather_p1` job, with `weather_p2` and `weather_p3` beside it that do nothing when they fire. The job store knows nothing of a round's format, so `get_next_pending_phase` reads it: a mystery round's `weather_p1` job comes back as phase 0 unless the notice has already been posted, and its `weather_p2` and `weather_p3` are passed over. Phases 1–3 go to `run_phase1`–`run_phase3`, which do not read the format. When `advance` posts a notice it takes the round's `weather_p1` job down by round and prefix, whether the entry came from the job store or from database state, so the notice cannot be posted twice.
