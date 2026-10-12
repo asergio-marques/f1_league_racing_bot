@@ -1355,7 +1355,7 @@ async def _abandon_interrupted_resubmission(
 async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     """Take down what a round's cleanups would have, their moment passing while the bot was down.
 
-    A round's Phase 3 forecast, and its check-in call with its last notice and its distribution
+    A round's forecast (whichever of Phases 1 to 3 still stands), and its check-in call with its last notice and its distribution
     message, come down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and
     ``rsvp_cleanup`` jobs (#425). A job falling due while the bot is stopped is discarded by the
     scheduler's misfire grace rather than run late, and nothing else would take those messages
@@ -1395,7 +1395,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
                   FROM forecast_messages fm
                   JOIN rounds r ON r.id = fm.round_id
                   JOIN divisions d ON d.id = r.division_id
-                 WHERE fm.phase_number = 3
+                 WHERE fm.phase_number IN (1, 2, 3)
                    AND r.status != 'CANCELLED'
                    AND d.status != 'CANCELLED'
                  ORDER BY r.scheduled_at, fm.round_id
@@ -1422,7 +1422,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
         forecasts = []
 
     for round_id in forecasts:
-        log.info("_recover_missed_cleanups: deleting round %d's Phase 3 forecast", round_id)
+        log.info("_recover_missed_cleanups: deleting round %d's forecast", round_id)
         try:
             await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
         except Exception:

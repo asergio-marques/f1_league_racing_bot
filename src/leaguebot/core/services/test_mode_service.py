@@ -332,10 +332,10 @@ async def get_next_pending_phase(
         else:
             rsvp_state = {}
 
-        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (8).
+        # Rounds with a Phase 1 to 3 forecast still standing, for the forecast cleanup (8).
         if weather_module_enabled:
             forecast_cursor = await db.execute(
-                "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+                "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)",
             )
             standing_forecasts: set[int] = {
                 r["round_id"] for r in await forecast_cursor.fetchall()
@@ -365,7 +365,7 @@ async def get_next_pending_phase(
         `_first_pending_for_row` offers nothing for one, which would discard its cleanup job as
         stale.
 
-        Pending means there is still something to take down: a Phase 3 forecast (8), or a
+        Pending means there is still something to take down: a forecast of Phase 1 to 3 (8), or a
         check-in call recorded as standing (9). Once taken down there is nothing, and a cleanup
         with nothing to take down is not offered either.
         """
@@ -671,9 +671,9 @@ async def build_review_summary(
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
 
-        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (#425)
+        # Rounds with a Phase 1 to 3 forecast still standing, for the forecast cleanup (#425)
         forecast_cursor = await db.execute(
-            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)",
         )
         standing_forecasts: set[int] = {r["round_id"] for r in await forecast_cursor.fetchall()}
 

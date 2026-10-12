@@ -160,12 +160,6 @@ async def test_only_what_is_standing_is_cleaned(tmp_path):
     assert await _recover(_bot(db_path)) == ([], [ROUND_ID])
 
 
-#: Why these fail until the catch-up asks a clean-up of whichever forecast phase still stands.
-EARLIER_PHASE_STANDING = ("#439: the catch-up asks a clean-up only where a Phase 3 forecast "
-                          "stands, not whichever phase is still standing")
-
-
-@pytest.mark.xfail(strict=True, reason=EARLIER_PHASE_STANDING)
 @pytest.mark.parametrize(
     "phases",
     [(2,), (1,), (1, 2)],

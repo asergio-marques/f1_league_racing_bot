@@ -854,12 +854,6 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
-#: Why these fail until advance offers the forecast clean-up of whichever phase still stands.
-EARLIER_PHASE_STANDING = ("#439: advance offers the forecast clean-up only where a Phase 3 "
-                          "forecast stands, not whichever phase is still standing")
-
-
-@pytest.mark.xfail(strict=True, reason=EARLIER_PHASE_STANDING)
 @pytest.mark.parametrize("found", ["job in the store", "database fallback"])
 async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
     tmp_path, found
@@ -923,8 +917,6 @@ async def test_the_review_shows_the_forecast_cleanup(
     assert shown in await build_review_summary(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the review counts the forecast cleanup done once "
-                   "no Phase 3 forecast stands, though an earlier phase still does")
 async def test_the_review_shows_the_forecast_cleanup_to_come_while_an_earlier_phase_stands(
     tmp_path,
 ) -> None:

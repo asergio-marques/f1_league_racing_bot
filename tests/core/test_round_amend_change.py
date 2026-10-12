@@ -1295,9 +1295,7 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
 
 
 @pytest.mark.parametrize("standing", [
-    pytest.param("phase 2", id="phase 3 never posted", marks=pytest.mark.xfail(
-        strict=True, reason="#439: the amendment's late clean-up deletes only a Phase 3 forecast, "
-        "not whichever phase is still standing")),
+    pytest.param("phase 2", id="phase 3 never posted"),
     pytest.param("mystery notice", id="a mystery round's notice"),
 ])
 async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):

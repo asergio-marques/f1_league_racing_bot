@@ -900,8 +900,6 @@ async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
     assert row["phase1_done"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#439: advance's forecast cleanup deletes only a Phase 3 "
-                   "forecast, not whichever phase is still standing")
 async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_standing(tmp_path):
     """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
     an hour ago, and its Phase 3 never posted, so its Phase 2 forecast (message 8002) stands.

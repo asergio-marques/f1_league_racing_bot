@@ -497,8 +497,8 @@ class TestModeCog(commands.Cog):
             if phase_number == 8:
                 reply = (
                     f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** is on the change queue: its Phase 3 "
-                    f"forecast is deleted as soon as the queue reaches it."
+                    f"**Round {entry['round_number']}** is on the change queue: its forecast "
+                    f"is deleted as soon as the queue reaches it."
                 )
             else:
                 reply = (
@@ -569,18 +569,18 @@ class TestModeCog(commands.Cog):
         )
 
     async def _ask_forecast_clean_up(self, entry: PhaseEntry) -> None:
-        """Ask the change queue, as the bot's, to delete the Phase 3 forecast of the entry's
-        round, as its timer does a day after the race."""
+        """Ask the change queue, as the bot's, to delete the forecast still standing (Phase 1 to 3)
+        of the entry's round, as its timer does a day after the race."""
         await self.bot.change_queue.ask(
             FORECAST_CLEAN_UP,
             {
                 "round_id": entry["round_id"],
-                "phases": [3],
+                "phases": [1, 2, 3],
                 "division_name": entry["division_name"],
                 "round_number": entry["round_number"],
             },
             what=(
-                f"deleting the Phase 3 forecast of round {entry['round_number']} in "
+                f"deleting the forecast of round {entry['round_number']} in "
                 f"**{entry['division_name']}** a day after it"
             ),
             origin=ChangeOrigin.BOT,

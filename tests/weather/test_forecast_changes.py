@@ -515,19 +515,11 @@ async def test_a_clean_up_deletes_the_phase_3_forecast_by_a_job_and_a_refusal_st
     assert job["payload"]["phase"] == 3
 
 
-#: Why a clean-up finding an earlier phase standing fails until the build deletes it.
-EARLIER_PHASE_STANDING = ("#439: the clean-up deletes only a Phase 3 forecast, not whichever "
-                          "phase is still standing")
-
-
 @pytest.mark.parametrize("standing", [
     pytest.param((3,), id="phase 3 posted"),
-    pytest.param((2,), id="phase 3 never posted", marks=pytest.mark.xfail(
-        strict=True, reason=EARLIER_PHASE_STANDING)),
-    pytest.param((1,), id="phase 2 never posted", marks=pytest.mark.xfail(
-        strict=True, reason=EARLIER_PHASE_STANDING)),
-    pytest.param((1, 2), id="phases 1 and 2 standing", marks=pytest.mark.xfail(
-        strict=True, reason=EARLIER_PHASE_STANDING)),
+    pytest.param((2,), id="phase 3 never posted"),
+    pytest.param((1,), id="phase 2 never posted"),
+    pytest.param((1, 2), id="phases 1 and 2 standing"),
 ])
 async def test_a_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
     """A day after round 3's race, Pro's forecasts still recorded are the ones standing: Phase 3

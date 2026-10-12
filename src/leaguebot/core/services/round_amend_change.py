@@ -149,7 +149,8 @@ class AmendHooks:
     ``season_number``.
     *run_deadline* runs the round's check-in deadline and *clean_up_check_in* takes its check-in
     down, each as its timer would, for a moment that passed while the amendment stood stopped (its
-    Phase 3 forecast is deleted by a job planned through *forecast_steps*). *round_list* formats
+    forecast, whichever of Phases 1 to 3 stands, is deleted by a job planned through
+    *forecast_steps*). *round_list* formats
     the division's rounds for the reply.
     """
 
@@ -522,7 +523,7 @@ def round_amend_change(
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
                 "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
                 "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
-                "AND f.phase_number = 3) AS phase3_posted, "
+                "AND f.phase_number IN (1, 2, 3)) AS forecast_posted, "
                 "EXISTS (SELECT 1 FROM server_configs c WHERE c.test_mode_active = 1) AS test_mode "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
@@ -584,7 +585,7 @@ def round_amend_change(
         notice that the forecasts no longer stand, each phase in *draw* drawn, and the clean-ups
         due a day after the round. Planned once the round is armed, which is where the amendment
         stood before them; what the save withdraws, from what it read (`apply`), and only where it
-        was saved. *standing* is what the arming read of the round's call and Phase 3 forecast.
+        was saved. *standing* is what the arming read of the round's call and whether a Phase 1 to 3 forecast stands.
 
         A call that stood at the save is taken down and its post planned with it, the post
         judging when it runs whether the call is due then (`call_still_due`): the take-down can
@@ -598,8 +599,8 @@ def round_amend_change(
         What fell due while the amendment stood stopped is caught up as the start-up recovery
         catches it up (`_recover_rsvp_views_and_deadlines`, `_recover_missed_cleanups`; owner,
         2026-10-09): a standing call left in place whose deadline has passed with no
-        distribution recorded has its deadline run, and a day after the round its Phase 3
-        forecast is deleted and its standing call taken down."""
+        distribution recorded has its deadline run, and a day after the round its forecast
+        (whichever of Phases 1 to 3 still stands) is deleted and its standing call taken down."""
         after = (view(ctx, APPLY).result or {}) if saved(ctx) else {}
         attendance = judgement["windows"]["attendance"]
         taking_down = bool(after.get("reopened") and after.get("called"))
@@ -619,8 +620,8 @@ def round_amend_change(
             planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": after["track"]}))
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
         if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
-            if standing["phase3_posted"]:
-                planned.append(PlannedStep(CLEAN_UP_FORECAST, {"phases": [3]}))
+            if standing["forecast_posted"]:
+                planned.append(PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3]}))
             if call_left:
                 planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
         return tuple(planned)
@@ -939,7 +940,7 @@ def round_amend_change(
             elif each.name == CLEAN_UP_FORECAST:
                 failures.append(notices.NoticeFailure(
                     division, "forecast channel",
-                    "the Phase 3 forecast was not deleted a day after the round, and a league "
+                    "the forecast was not deleted a day after the round, and a league "
                     "admin discarded it; it is deleted when the bot next starts",
                 ))
             elif each.name == CLEAN_UP_CHECK_IN:
@@ -1013,7 +1014,7 @@ def round_amend_change(
             hooks.forecast_steps[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST,
             still_due=weather_on,
             describe=named(
-                "deleting the Phase 3 forecast of round {number} in **{division}** a day after it"
+                "deleting the forecast of round {number} in **{division}** a day after it"
             ),
         ),
         CLEAN_UP_CHECK_IN: Step(

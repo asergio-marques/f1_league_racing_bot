@@ -15,8 +15,8 @@ and 3 nothing. The change's jobs are:
   forecast Discord refuses, or whose forecast channel is unset, stops the queue (XIV.8).
 - `delete_forecast`: the deletion of one recorded forecast, whose record carries the forgetting
   of the row; a refusal stops the queue and keeps the row.
-- `plan_forecast_deletes`: finds the forecasts a clean-up (the Phase 3 forecast of a round, a day
-  after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
+- `plan_forecast_deletes`: finds the forecasts a clean-up (whichever of a round's Phase 1 to 3
+  forecasts still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
   `delete_forecast` for each, so that each deletion is a job of its own.
 
 A forecast whose turn comes after its round's race is dropped, at the draw and again at the post
@@ -459,16 +459,22 @@ async def ask_forecast(
     await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
 
 
+#: The phases whose forecasts a clean-up deletes: whichever of them still stands a day after the
+#: race. A mystery round's notice (phase 0) is no forecast, and stands.
+CLEAN_UP_PHASES = [1, 2, 3]
+
+
 def _clean_up_doing(payload: dict[str, Any]) -> str:
     return (
-        f"deleting the Phase 3 forecast of round {payload.get('round_number', '?')} in "
+        f"deleting the forecast of round {payload.get('round_number', '?')} in "
         f"**{payload.get('division_name', '?')}** a day after it"
     )
 
 
 def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
-    """`weather.forecast.clean_up`: the bot's change that deletes a round's Phase 3 forecast a day
-    after its race, one `delete_forecast` job planned by `plan_forecast_deletes`.
+    """`weather.forecast.clean_up`: the bot's change that deletes a round's forecast a day after its
+    race, whichever of Phases 1 to 3 still stands (a Phase 3 never posted leaves Phase 2 standing),
+    one `delete_forecast` job for each, planned by `plan_forecast_deletes`.
 
     Not repeatable: a second request for a round still waiting is dropped by the queue's own
     rule, and one after the forecast is deleted finds nothing recorded and is not due.
@@ -478,7 +484,10 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
         async with get_connection(ctx.db_path) as db:
             row = await _round_row(db, int(ctx.payload["round_id"]))
             weather_on = await weather_enabled_on(db)
-            recorded = row is not None and await _recorded(db, int(ctx.payload["round_id"]), 3)
+            recorded = row is not None and any([
+                await _recorded(db, int(ctx.payload["round_id"]), phase)
+                for phase in CLEAN_UP_PHASES
+            ])
         if row is None:
             return Verdict.not_due("the round is gone")
         if row["round_status"] == RoundStatus.CANCELLED.value or row[
@@ -487,7 +496,7 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
         if not weather_on:
             return Verdict.not_due("the weather module is off")
         if not recorded:
-            return Verdict.not_due("no Phase 3 forecast is recorded")
+            return Verdict.not_due("no Phase 1 to 3 forecast is recorded")
         return Verdict.go()
 
     def outcome(_ctx: OutcomeContext) -> str:
@@ -544,8 +553,8 @@ async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool
 
 
 async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int) -> None:
-    """Ask the queue to delete the Phase 3 forecast of *round_id*, as its timer does a day after
-    the race. A round that is not there asks nothing; the change's check drops a request that is
+    """Ask the queue to delete the forecast of *round_id* that still stands (Phase 1 to 3), as its
+    timer does a day after the race. A round that is not there asks nothing; the change's check drops a request that is
     no longer due."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -559,7 +568,7 @@ async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int)
                   round_id)
         return
     payload = {
-        "round_id": round_id, "phases": [3], "division_name": row["name"],
+        "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "division_name": row["name"],
         "round_number": row["round_number"],
     }
     await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
