@@ -643,41 +643,6 @@ async def produce_session_results(
     return PostedTable([m.id for m in sent], previous)
 
 
-async def post_session_results(
-    db_path: str,
-    session_result: SessionResult,
-    driver_rows: list,  # list[QualifyingSessionResult] | list[RaceSessionResult] | list[DriverSessionResult]
-    points_map: dict[int, int],
-    results_channel: discord.TextChannel,
-    guild: discord.Guild,
-    round_number: int,
-    track_name: str,
-    label: str,
-    is_sprint: bool = True,
-    *,
-    bot: LeagueBot | None = None,
-    result_status: str | None = None,
-) -> int:
-    """Format, send and record a single session result. Returns the Discord message ID.
-
-    :func:`produce_session_results`, then the session's message ids saved on a connection of
-    its own. It deletes nothing: the callers that repost clear the stored ids and take the old
-    posting down themselves.
-    """
-    posted = await produce_session_results(
-        db_path, session_result, driver_rows, points_map, results_channel, guild,
-        round_number, track_name, label, is_sprint, bot=bot, result_status=result_status,
-    )
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
-            "WHERE id = ?",
-            (posted.new[0], json.dumps(posted.new), session_result.id),
-        )
-        await db.commit()
-    return posted.new[0]
-
-
 # ---------------------------------------------------------------------------
 # Standings posting
 # ---------------------------------------------------------------------------
@@ -1454,84 +1419,8 @@ async def _load_driver_rows(
 
 
 # ---------------------------------------------------------------------------
-# Round-level posting
+# What a repost needs of a channel
 # ---------------------------------------------------------------------------
-
-async def post_round_results(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    results_channel: discord.TextChannel,
-    guild: discord.Guild,
-    label: str,
-    *,
-    bot: LeagueBot | None = None,
-) -> None:
-    """Post results for all non-cancelled sessions of a round in session order."""
-    from leaguebot.results.services.result_submission_service import SESSION_ORDER_SPRINT, SESSION_ORDER_NORMAL
-    from leaguebot.core.models.round import RoundFormat
-
-    # Load round context (round_number, track_name, format) for message headers
-    async with get_connection(db_path) as db:
-        rnd_cursor = await db.execute(
-            "SELECT round_number, track_name, format FROM rounds WHERE id = ?",
-            (round_id,),
-        )
-        rnd_row = await rnd_cursor.fetchone()
-
-    if rnd_row is None:
-        log.warning("post_round_results: round %s not found", round_id)
-        return
-
-    round_number: int = rnd_row["round_number"]
-    track_name: str = rnd_row["track_name"] or "Unknown"
-    is_sprint: bool = str(rnd_row["format"]).upper() == "SPRINT"
-
-    # Load session results for this round
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT id, round_id, division_id, session_type, status, config_name,
-                   submitted_by, submitted_at, results_message_id
-            FROM session_results
-            WHERE round_id = ? AND status = 'ACTIVE'
-            ORDER BY id
-            """,
-            (round_id,),
-        )
-        session_rows = await cursor.fetchall()
-
-    if not session_rows:
-        log.debug("post_round_results: no ACTIVE sessions for round %s", round_id)
-        return
-
-    for sr_row in session_rows:
-        session_result = SessionResult(
-            id=sr_row["id"],
-            round_id=sr_row["round_id"],
-            division_id=sr_row["division_id"],
-            session_type=sr_row["session_type"],
-            status=sr_row["status"],
-            config_name=sr_row["config_name"],
-            submitted_by=sr_row["submitted_by"],
-            submitted_at=sr_row["submitted_at"],
-            results_message_id=sr_row["results_message_id"],
-        )
-
-        # Load driver rows from new tables (QualifyingSessionResult / RaceSessionResult)
-        session_type = SessionType(session_result.session_type)
-        driver_rows = await _load_driver_rows(db_path, session_result.id, session_type)
-
-        points_map = {
-            r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
-            for r in driver_rows
-        }
-
-        await post_session_results(
-            db_path, session_result, driver_rows, points_map, results_channel, guild,
-            round_number, track_name, label, is_sprint, bot=bot,
-        )
-
 
 #: What the repost needs of a channel before it starts, by the names Discord's own
 #: interface uses. ``view_channel`` is listed even though a bot that cannot see a channel
@@ -1823,214 +1712,6 @@ async def division_repost_status(
     return "ok" if found is not None else "no_rounds"
 
 
-async def repost_results_for_division(
-    db_path: str,
-    division_id: int,
-    guild: discord.Guild,
-    *,
-    bot: LeagueBot | None = None,
-) -> str:
-    """Repost every round's session results, in round order, then take the old ones down.
-
-    **The replacement is produced before the original is destroyed** (Constitution XIV.8, and
-    #345). Every round's new messages are posted first, in round order, and only once all of
-    them are up are the messages they replace deleted. It used to go the other way, one session
-    at a time, which meant a failure part-way left the division's channel holding the rounds it
-    had reached and nothing for the rest — with the originals already gone.
-
-    Two things follow. The channel briefly carries **both** copies, the new set beneath the old,
-    for as long as the rebuild takes; that is accepted, and it resolves itself. And a failure
-    before the deletions takes down every replacement already posted, puts back the ids of the
-    postings they were to replace — still standing, nothing having been deleted — and raises,
-    so the league is left exactly the channel it had.
-
-    Returns one of three status strings:
-    - ``"ok"``         — results reposted successfully
-    - ``"no_rounds"``  — no completed rounds exist for this division
-    - ``"no_channel"`` — no results channel is configured for the division
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT d.id, drc.results_channel_id
-            FROM divisions d
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.id = ?
-            """,
-            (division_id,),
-        )
-        div_row = await cursor.fetchone()
-
-    if div_row is None:
-        return "no_rounds"
-
-    results_ch_id: int | None = div_row["results_channel_id"]
-    if not results_ch_id:
-        return "no_channel"
-
-    rc = as_text_channel(guild.get_channel(results_ch_id))
-    if rc is None:
-        log.warning(
-            "repost_results_for_division: results channel %s not found in guild",
-            results_ch_id,
-        )
-        return "no_channel"
-
-    # Fetch all rounds with at least one ACTIVE session, ordered by round_number
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT DISTINCT r.id AS round_id, r.round_number, r.track_name, r.format,
-                   r.status
-            FROM rounds r
-            JOIN session_results sr ON sr.round_id = r.id
-            WHERE r.division_id = ? AND sr.status = 'ACTIVE'
-            ORDER BY r.round_number
-            """,
-            (division_id,),
-        )
-        round_rows = await cursor.fetchall()
-
-    if not round_rows:
-        return "no_rounds"
-
-    # ── Produce ───────────────────────────────────────────────────────────
-    # Each session's superseded posting, remembered while the replacement goes up. Nothing is
-    # deleted until every round has been reposted, so a failure part-way leaves the league the
-    # results it already had rather than a channel half rebuilt.
-    superseded: list[tuple[int, int, list[int] | None]] = []
-    # Each session whose stored id now names its replacement, or nothing — the ones a failure
-    # has to take down again.
-    touched: list[int] = []
-
-    try:
-        await _repost_results_rounds(
-            db_path, round_rows, rc, guild, bot, superseded, touched
-        )
-    except Exception:
-        await _undo_results_repost(db_path, rc, superseded, touched)
-        raise
-
-    # ── Then destroy ──────────────────────────────────────────────────────
-    # Every replacement is up. The originals go now, oldest first, so the channel reads in
-    # round order throughout rather than shuffling as it empties.
-    for _session_id, old_msg_id, old_ids in superseded:
-        await _delete_posting(rc, old_msg_id, old_ids, label="results message")
-
-    return "ok"
-
-
-async def _repost_results_rounds(
-    db_path: str, round_rows, rc, guild, bot: LeagueBot | None,
-    superseded: list[tuple[int, int, list[int] | None]],
-    touched: list[int],
-) -> None:
-    """The produce half of :func:`repost_results_for_division`, filling in *superseded* and
-    *touched* as it goes so that a failure part-way can be undone from what they hold."""
-    for rnd in round_rows:
-        round_id: int = rnd["round_id"]
-        round_number: int = rnd["round_number"]
-        track_name: str = rnd["track_name"] or "Unknown"
-        is_sprint: bool = str(rnd["format"]).upper() == "SPRINT"
-        rnd_label: str = _label_from_status(rnd["status"] or "")
-
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT id, round_id, division_id, session_type, status, config_name,
-                       submitted_by, submitted_at, results_message_id,
-                       results_message_ids
-                FROM session_results
-                WHERE round_id = ? AND status = 'ACTIVE'
-                ORDER BY id
-                """,
-                (round_id,),
-            )
-            session_rows = await cursor.fetchall()
-
-        for sr_row in session_rows:
-            session_result = _sr_from_row(sr_row)
-
-            old_msg_id: int | None = sr_row["results_message_id"]
-            if old_msg_id is not None:
-                superseded.append(
-                    (sr_row["id"], old_msg_id, _parse_ids(sr_row["results_message_ids"]))
-                )
-
-            # The stored id is cleared **before** the repost, so `post_session_results` writes
-            # a new one rather than believing it is editing the message it is replacing. The
-            # id itself is already held in `superseded`, so clearing it loses nothing.
-            if old_msg_id is not None:
-                async with get_connection(db_path) as db:
-                    await db.execute(
-                        "UPDATE session_results SET results_message_id = NULL, "
-                        "results_message_ids = NULL WHERE id = ?",
-                        (sr_row["id"],),
-                    )
-                    await db.commit()
-            # Only once the id is cleared: whatever this session records from here on is the
-            # replacement's, and so safe for an undo to take down.
-            touched.append(sr_row["id"])
-
-            driver_rows = await _load_driver_rows(db_path, sr_row["id"], SessionType(sr_row["session_type"]))
-            points_map = {
-                r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
-                for r in driver_rows
-            }
-
-            await post_session_results(
-                db_path, session_result, driver_rows, points_map, rc, guild,
-                round_number, track_name, rnd_label, is_sprint, bot=bot,
-            )
-            await throttle()
-
-
-async def _undo_results_repost(
-    db_path: str,
-    channel,
-    superseded: list[tuple[int, int, list[int] | None]],
-    touched: list[int],
-) -> None:
-    """Take down the replacements a failed division repost had posted, and give each session
-    back the posting it had (Constitution XIV.8, #345).
-
-    Nothing was deleted before the failure, so every superseded posting is still in the channel;
-    only its id had been cleared, to make room for the replacement's. Without this the failure
-    left the originals recorded nowhere — standing beside the half-built replacement for good,
-    with no route by which the bot could ever take them down.
-    """
-    replacements: list[tuple[int, list[int] | None]] = []
-    async with get_connection(db_path) as db:
-        for session_id in touched:
-            cursor = await db.execute(
-                "SELECT results_message_id, results_message_ids FROM session_results "
-                "WHERE id = ?",
-                (session_id,),
-            )
-            row = await cursor.fetchone()
-            if row and row["results_message_id"] is not None:
-                replacements.append(
-                    (row["results_message_id"], _parse_ids(row["results_message_ids"]))
-                )
-    for anchor, chunk_ids in replacements:
-        await _delete_posting(channel, anchor, chunk_ids, label="replacement results message")
-
-    async with get_connection(db_path) as db:
-        for session_id in touched:
-            await db.execute(
-                "UPDATE session_results SET results_message_id = NULL, "
-                "results_message_ids = NULL WHERE id = ?",
-                (session_id,),
-            )
-        for session_id, old_msg_id, old_ids in superseded:
-            await db.execute(
-                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
-                "WHERE id = ?",
-                (old_msg_id, json.dumps(old_ids) if old_ids else None, session_id),
-            )
-        await db.commit()
-
-
 async def repost_standings_for_division(
     db_path: str,
     division_id: int,
@@ -2041,9 +1722,9 @@ async def repost_standings_for_division(
     """Repost every round's standings, in round order, then take the old ones down.
 
     **The replacement is produced before the original is destroyed** (Constitution XIV.8,
-    #345), as :func:`repost_results_for_division` now does for results — and for the same
-    reason: a rebuild that deleted as it went left a failure part-way through with the rounds
-    it had reached rebuilt and the rest destroyed with nothing put back.
+    #345), as `/results rounds sync` does for results on the change queue (`rounds_sync_change`)
+    — and for the same reason: a rebuild that deleted as it went left a failure part-way through
+    with the rounds it had reached rebuilt and the rest destroyed with nothing put back.
 
     The stored ids are forgotten before each repost so that :func:`post_standings` inserts a
     new message rather than editing the one it is replacing, and the ids themselves are held
@@ -2137,7 +1818,7 @@ async def _undo_standings_repost(
     touched: list[int],
 ) -> None:
     """Take down the replacements a failed standings rebuild had posted, and give each round
-    back the standings it had — as :func:`_undo_results_repost` does for results (#345)."""
+    back the standings it had (#345)."""
     for round_id in touched:
         await _clear_standings_messages(db_path, division_id, round_id, channel)
     for round_id, championship, anchor, chunk_ids in superseded:
