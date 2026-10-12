@@ -10,15 +10,18 @@ Public API:
   store_forecast_message_on — persist a message ID, on the save the post job's record has
   forget_forecast_on      — drop a message ID once its message is deleted
   post_phase_message      — the one send site of a weather posting
-  delete_forecast_message — delete a stored message (with test-mode guard)
-  run_post_race_cleanup   — delete Phase 3 message 24 h after round start
-  flush_pending_deletions — on test-mode disable, delete all stored messages
-                            for a server at once
+  forecast_deletes        — the delete jobs a clean-up or a flush plans, one for each
+                            recorded forecast
+  delete_forecast_message — delete a stored message, raising for the change queue
+  run_post_race_cleanup   — ask the queue to delete Phase 3 message 24 h after round start
+  flush_pending_deletions — on test-mode disable, ask the queue to delete all stored
+                            messages at once
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -26,12 +29,15 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
+
+#: The name of a forecast's deletion job, which `forecast_changes` gives its step.
+DELETE_FORECAST = "delete_forecast"
 
 
 # ---------------------------------------------------------------------------
@@ -104,25 +110,19 @@ async def delete_forecast_message(
     division_id: int,
     phase_number: int,
     bot: "LeagueBot",
-    *,
-    raise_on_failure: bool = False,
 ) -> None:
-    """Delete the stored Discord message for *phase_number* of *round_id*.
+    """Delete the stored Discord message for *phase_number* of *round_id*, raising for a caller
+    that must stop on a failure and be tried again, as a round amendment on the change queue is.
 
     **No test-mode guard.** This once skipped the deletion while test mode was active and
-    retained the row for ``flush_pending_deletions``; that was removed at an earlier
-    increment and deletion now behaves identically in test mode and live. The docstring said
-    otherwise until 2026-08-14.
+    retained the row for the flush; that was removed at an earlier increment and deletion now
+    behaves identically in test mode and live. The docstring said otherwise until 2026-08-14.
 
-    On Discord API failure (NotFound / Forbidden / HTTPException) the DB row is
-    still removed so a stale reference does not block future clean-ups.
-
-    *raise_on_failure* is for a caller that must stop on a failure and be tried again, as a
-    round amendment on the change queue is. A message Discord refuses to delete (or whose channel
-    is not one the bot can delete in) raises `StepFailedOnDiscord` whose `result` is
-    `{"channel_id": ..., "message_id": ...}`, raised `from` the refusal, and **keeps the row**,
-    so the next try finds the message again. A message already gone, or whose channel is gone,
-    counts as gone and drops the row. A fault that is not Discord's propagates unchanged.
+    A message Discord refuses to delete (or whose channel is not one the bot can delete in)
+    raises `StepFailedOnDiscord` whose `result` is `{"channel_id": ..., "message_id": ...}`,
+    raised `from` the refusal, and **keeps the row**, so the next try finds the message again. A
+    message already gone, or whose channel is gone, counts as gone and drops the row. A fault
+    that is not Discord's propagates unchanged.
     """
     db_path: str = bot.db_path
 
@@ -151,22 +151,18 @@ async def delete_forecast_message(
     channel_id: int = row["forecast_channel_id"]
 
     # --- Attempt Discord deletion ---
-    if raise_on_failure:
-        _delete_ok = True
-        try:
-            await _discord_delete(bot, channel_id, message_id, raising=True)
-        except discord.NotFound:
-            pass  # Already gone, or its channel is: which is what was asked.
-        except discord.HTTPException as exc:
-            raise StepFailedOnDiscord(
-                f"the Phase {phase_number} forecast message {message_id} in channel"
-                f" {channel_id} could not be deleted",
-                result={"channel_id": channel_id, "message_id": message_id},
-            ) from exc
-    else:
-        _delete_ok = await _discord_delete(bot, channel_id, message_id)
+    try:
+        await _discord_delete(bot, channel_id, message_id, raising=True)
+    except discord.NotFound:
+        pass  # Already gone, or its channel is: which is what was asked.
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord(
+            f"the Phase {phase_number} forecast message {message_id} in channel"
+            f" {channel_id} could not be deleted",
+            result={"channel_id": channel_id, "message_id": message_id},
+        ) from exc
 
-    # --- Remove DB row (even on Discord error to avoid stale references) ---
+    # --- Remove DB row ---
     async with get_connection(db_path) as db:
         await db.execute(
             "DELETE FROM forecast_messages "
@@ -175,88 +171,82 @@ async def delete_forecast_message(
         )
         await db.commit()
 
-    if _delete_ok:
-        log.info(
-            "Deleted forecast message: round=%s div=%s phase=%s msg=%s",
-            round_id, division_id, phase_number, message_id,
-        )
-    else:
-        log.warning(
-            "forecast message Discord delete failed but DB row removed: "
-            "round=%s div=%s phase=%s msg=%s",
-            round_id, division_id, phase_number, message_id,
-        )
+    log.info(
+        "Deleted forecast message: round=%s div=%s phase=%s msg=%s",
+        round_id, division_id, phase_number, message_id,
+    )
 
 
 # ---------------------------------------------------------------------------
-# T010 — run_post_race_cleanup (Phase 3 message, 24 h after round start)
+# T010 + T013 — the forecasts a clean-up or a flush deletes, as jobs
 # ---------------------------------------------------------------------------
 
-async def run_post_race_cleanup(round_id: int, bot: "LeagueBot") -> None:
-    """Delete the Phase 3 forecast message for all divisions of *round_id*.
+async def forecast_deletes(
+    db_path: str,
+    *,
+    round_id: int | None = None,
+    phases: Sequence[int] | None = None,
+) -> tuple[PlannedStep, ...]:
+    """One `delete_forecast` job for each recorded forecast, in round, division, phase order.
 
-    Invoked 24 hours after round start by the APScheduler
-    ``cleanup_s{S}_d{D}_r{N}_id{round_id}`` job registered in SchedulerService.
-
-    Each division is processed independently so a single failure does not block
-    the others.
+    The clean-up a day after a round (T010, SC-005) asks for the Phase 3 forecast of one round
+    (*round_id* and *phases* given); the flush when test mode is switched off (T013, SC-004, FR-015)
+    and the season end's for all of them (neither given). Each job carries the round, division,
+    phase and message it was planned for, and deletes that message alone: the deletion is a job
+    of the change queue, whose refusal stops it, so nothing is deleted here.
     """
-    db_path: str = bot.db_path
-
+    where: list[str] = []
+    params: list[int] = []
+    if round_id is not None:
+        where.append("fm.round_id = ?")
+        params.append(round_id)
+    if phases is not None:
+        where.append(f"fm.phase_number IN ({', '.join('?' for _ in phases)})")
+        params.extend(phases)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT division_id FROM forecast_messages WHERE round_id = ? AND phase_number = 3",
-            (round_id,),
-        )
-        rows = await cursor.fetchall()
-
-    for row in rows:
-        await delete_forecast_message(round_id, row["division_id"], phase_number=3, bot=bot)
-
-
-# ---------------------------------------------------------------------------
-# T013 — flush_pending_deletions (test-mode disable hook)
-# ---------------------------------------------------------------------------
-
-async def flush_pending_deletions(bot: "LeagueBot") -> None:
-    """Delete all pending forecast messages.
-
-    Called when test mode is disabled (FR-015).  By the time this function
-    runs, test mode has already been persisted as ``False`` in the DB, so the
-    test-mode guard inside ``delete_forecast_message`` will not fire.
-
-    All stored messages for the server are iterated and deleted.  Individual
-    Discord API failures are logged but do not halt the batch.
-    """
-    db_path: str = bot.db_path
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT fm.round_id, fm.division_id, fm.phase_number
-            FROM forecast_messages fm
-            JOIN divisions d ON d.id = fm.division_id
-            JOIN seasons s ON s.id = d.season_id
-            ORDER BY fm.round_id, fm.division_id, fm.phase_number
-            """,
+            "SELECT fm.round_id, fm.division_id, fm.phase_number, fm.message_id "
+            "FROM forecast_messages fm "
+            "JOIN divisions d ON d.id = fm.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            + (f"WHERE {' AND '.join(where)} " if where else "")
+            + "ORDER BY fm.round_id, fm.division_id, fm.phase_number",
+            params,
         )
         rows = list(await cursor.fetchall())
+    return tuple(
+        PlannedStep(DELETE_FORECAST, {
+            "round_id": row["round_id"], "division_id": row["division_id"],
+            "phase": row["phase_number"], "message_id": row["message_id"],
+        })
+        for row in rows
+    )
 
-    if not rows:
+
+async def run_post_race_cleanup(round_id: int, bot: "LeagueBot") -> None:
+    """Ask the change queue to delete the Phase 3 forecast of *round_id*, a day after its race.
+
+    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
+    the one thing that still calls this; it deletes nothing itself.
+    """
+    from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
+
+    await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
+
+
+async def flush_pending_deletions(bot: "LeagueBot") -> None:
+    """Ask the change queue to delete every recorded forecast, where there is one.
+
+    Until test mode and the season end ask the queue themselves (`forecast_changes`), the one
+    thing that still calls this when test mode is disabled (FR-015); it deletes nothing itself,
+    and leaves the queue alone where no forecast is recorded.
+    """
+    from leaguebot.weather.services.forecast_changes import ask_forecast_flush
+
+    if not await forecast_deletes(bot.db_path):
         log.debug("flush_pending_deletions: no pending messages")
         return
-
-    log.info(
-        "flush_pending_deletions: flushing %d message(s)",
-        len(rows),
-    )
-    for row in rows:
-        await delete_forecast_message(
-            row["round_id"],
-            row["division_id"],
-            row["phase_number"],
-            bot,
-        )
+    await ask_forecast_flush(bot.change_queue)
 
 
 # ---------------------------------------------------------------------------

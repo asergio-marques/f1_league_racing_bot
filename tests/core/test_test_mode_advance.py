@@ -709,7 +709,7 @@ async def test_a_fired_cleanup_cancels_its_job_by_kind(
     )
 
 
-@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
     """The standard failure reply and one failure line name the cleanup, the division and the
     round (#482): the forecast cleanup where the change queue cannot save its ask, the check-in

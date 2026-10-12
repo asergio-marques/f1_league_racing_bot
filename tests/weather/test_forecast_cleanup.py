@@ -154,10 +154,6 @@ class TestStoreForecastMessage:
 # T010 / SC-005)
 # ---------------------------------------------------------------------------
 
-#: Why these fail until the build plans a forecast's deletion as a job of its own.
-DELETES_UNBUILT = ("#439: the forecasts to delete are not yet planned as delete_forecast jobs on "
-                   "the change queue")
-
 
 async def _planned(db_path: str, **which) -> list[tuple[str, int, int, int]]:
     """The jobs `forecast_deletes` plans for *which*: each name, division, phase and message."""
@@ -194,7 +190,6 @@ async def _div_b(db_path: str) -> None:
 
 class TestFlushPendingDeletions:
 
-    @pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
     async def test_flushes_all_stored_messages_for_server(self, tmp_path):
         """SC-004: Div A's Phase 1, 2 and 3 forecasts of round 1 (1001-1003) recorded when test
         mode is switched off: the flush plans one delete_forecast job for each, and deletes
@@ -212,7 +207,6 @@ class TestFlushPendingDeletions:
             cursor = await db.execute("SELECT COUNT(*) FROM forecast_messages")
             assert (await cursor.fetchone())[0] == 3
 
-    @pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
     async def test_flush_empty_is_noop(self, tmp_path):
         """No forecast recorded: the flush plans nothing."""
         db_path = await _make_db(str(tmp_path))
@@ -220,7 +214,6 @@ class TestFlushPendingDeletions:
 
         assert await _planned(db_path) == []
 
-    @pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
     async def test_flush_pending_deletions_clears_accumulated_rows(self, tmp_path):
         """T014: Phase 1 and 2 forecasts of round 1 recorded in Div A (1001, 1002) and Div B
         (2001, 2002): the flush plans four delete_forecast jobs, one for each."""
@@ -241,7 +234,6 @@ class TestFlushPendingDeletions:
 
 class TestRunPostRaceCleanup:
 
-    @pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
     async def test_deletes_phase3_for_all_divisions(self, tmp_path):
         """SC-005: round 1's Phase 3 forecasts stand in Div A (301) and Div B (302): the clean-up
         a day after the race plans the deletion of both."""
@@ -254,7 +246,6 @@ class TestRunPostRaceCleanup:
 
         assert sorted(planned) == [("delete_forecast", 1, 3, 301), ("delete_forecast", 2, 3, 302)]
 
-    @pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
     async def test_does_not_delete_earlier_phases(self, tmp_path):
         """Round 1's Phase 1, 2 and 3 forecasts recorded in Div A: the clean-up plans the
         deletion of Phase 3's alone."""

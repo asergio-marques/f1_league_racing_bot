@@ -284,16 +284,6 @@ def _failing(name: str) -> ExitStack:
     return _everywhere(name, AsyncMock(side_effect=RuntimeError("disk I/O error")))
 
 
-#: Weather reads the forecasts the season end's flush deletes through `forecast_deletes`
-#: (#439), which `_flush_failing` patches; weather has no `forecast_changes` and no
-#: `forecast_deletes` yet.
-FORECAST_DELETES = pytest.mark.xfail(
-    strict=True,
-    raises=(ImportError, AttributeError),
-    reason="#439: weather has no forecast_deletes for the season end's flush",
-)
-
-
 def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
     """Weather's reading of the forecasts posted under test mode (`forecast_deletes`, which
     plans a delete job for each), which the season end's `flush_forecasts` job makes, raises
@@ -493,7 +483,7 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
 
 
 @pytest.mark.parametrize("where", [
-    pytest.param("the flush", marks=FORECAST_DELETES), "the test drivers' deletion",
+    "the flush", "the test drivers' deletion",
 ])
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
@@ -1236,10 +1226,7 @@ _DISCARDS = {
 }
 
 
-@pytest.mark.parametrize("job", [
-    pytest.param(job, marks=FORECAST_DELETES) if job == "flush_forecasts" else job
-    for job in sorted(_DISCARDS)
-])
+@pytest.mark.parametrize("job", sorted(_DISCARDS))
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_and_the_line_says_incomplete(
     tmp_path, monkeypatch, job,
 ):

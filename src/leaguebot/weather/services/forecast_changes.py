@@ -15,6 +15,9 @@ and 3 nothing. The change's jobs are:
   forecast Discord refuses, or whose forecast channel is unset, stops the queue (XIV.8).
 - `delete_forecast`: the deletion of one recorded forecast, whose record carries the forgetting
   of the row; a refusal stops the queue and keeps the row.
+- `plan_forecast_deletes`: finds the forecasts a clean-up (the Phase 3 forecast of a round, a day
+  after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
+  `delete_forecast` for each, so that each deletion is a job of its own.
 
 A forecast whose turn comes after its round's race is dropped, at the draw and again at the post
 (its draw is kept). The draws are reached through their modules as they run, so that a test sees
@@ -35,6 +38,8 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     FORECAST,
+    FORECAST_CLEAN_UP,
+    FORECAST_FLUSH,
     ChangeOrigin,
     PlannedStep,
     StepFailedOnDiscord,
@@ -67,7 +72,8 @@ log = logging.getLogger(__name__)
 
 DRAW_FORECAST = "draw_forecast"
 POST_FORECAST = "post_forecast"
-DELETE_FORECAST = "delete_forecast"
+DELETE_FORECAST = forecast_cleanup_service.DELETE_FORECAST
+PLAN_FORECAST_DELETES = "plan_forecast_deletes"
 
 _DONE_COLUMN = {0: "phase1_done", 1: "phase1_done", 2: "phase2_done", 3: "phase3_done"}
 
@@ -342,6 +348,15 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                                                        else row["round_number"])
         return f"deleting the Phase {phase} forecast of round {number} in {where}"
 
+    async def plan_deletes(ctx: StepContext) -> StepResult:
+        planned = await forecast_cleanup_service.forecast_deletes(
+            ctx.db_path, round_id=_value(ctx, "round_id"), phases=_value(ctx, "phases"),
+        )
+        return StepResult(result={"planned": len(planned)}, then=planned)
+
+    async def describe_plan(_ctx: StepContext) -> str:
+        return "finding the forecasts to delete"
+
     return {
         DRAW_FORECAST: Step(DRAW_FORECAST, StepKind.SAVE, draw, describe=describe_draw),
         POST_FORECAST: Step(
@@ -351,6 +366,9 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         DELETE_FORECAST: Step(
             DELETE_FORECAST, StepKind.DELETE, delete, describe=describe_delete,
             record=record_delete,
+        ),
+        PLAN_FORECAST_DELETES: Step(
+            PLAN_FORECAST_DELETES, StepKind.ACT, plan_deletes, describe=describe_plan,
         ),
     }
 
@@ -437,3 +455,116 @@ async def ask_forecast(
         "round_number": row["round_number"],
     }
     await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
+
+
+def _clean_up_doing(payload: dict[str, Any]) -> str:
+    return (
+        f"deleting the Phase 3 forecast of round {payload.get('round_number', '?')} in "
+        f"**{payload.get('division_name', '?')}** a day after it"
+    )
+
+
+def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
+    """`weather.forecast.clean_up`: the bot's change that deletes a round's Phase 3 forecast a day
+    after its race, one `delete_forecast` job planned by `plan_forecast_deletes`.
+
+    Not repeatable: a second request for a round still waiting is dropped by the queue's own
+    rule, and one after the forecast is deleted finds nothing recorded and is not due.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await _round_row(db, int(ctx.payload["round_id"]))
+            weather_on = await weather_enabled_on(db)
+            recorded = row is not None and await _recorded(db, int(ctx.payload["round_id"]), 3)
+        if row is None:
+            return Verdict.not_due("the round is gone")
+        if row["round_status"] == RoundStatus.CANCELLED.value or row[
+                "division_status"] == "CANCELLED":
+            return Verdict.not_due("the round or its division is cancelled")
+        if not weather_on:
+            return Verdict.not_due("the weather module is off")
+        if not recorded:
+            return Verdict.not_due("no Phase 3 forecast is recorded")
+        return Verdict.go()
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=FORECAST_CLEAN_UP,
+        opening=(PlannedStep(PLAN_FORECAST_DELETES),),
+        steps=forecast_steps(now=now),
+        check=check,
+        key=lambda payload: f"{FORECAST_CLEAN_UP}:{payload['round_id']}",
+        doing=_clean_up_doing,
+        outcome=outcome,
+    )
+
+
+def forecast_flush_change(*, now: Callable[[], datetime]) -> ChangeType:
+    """`weather.forecast.flush`: the bot's change that clears every recorded forecast, when test
+    mode is switched off, one `delete_forecast` job for each.
+
+    Repeatable: two switch-offs in a row are two requests, the second finding less. It is not
+    gated on the weather module, a forecast withdrawn being deleted whatever the module's state
+    (weather spec :153).
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute("SELECT 1 FROM forecast_messages LIMIT 1")
+            found = await cursor.fetchone()
+        return Verdict.go() if found is not None else Verdict.not_due("no forecast is recorded")
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=FORECAST_FLUSH,
+        opening=(PlannedStep(PLAN_FORECAST_DELETES),),
+        steps=forecast_steps(now=now),
+        check=check,
+        key=lambda _payload: FORECAST_FLUSH,
+        doing=lambda _payload: "clearing the forecasts posted under test mode",
+        outcome=outcome,
+        repeatable=True,
+    )
+
+
+async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool:
+    """Whether a forecast of *phase* is recorded for *round_id*."""
+    cursor = await db.execute(
+        "SELECT 1 FROM forecast_messages WHERE round_id = ? AND phase_number = ? LIMIT 1",
+        (round_id, phase),
+    )
+    return await cursor.fetchone() is not None
+
+
+async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int) -> None:
+    """Ask the queue to delete the Phase 3 forecast of *round_id*, as its timer does a day after
+    the race. A round that is not there asks nothing; the change's check drops a request that is
+    no longer due."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.round_number, d.name FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        log.error("Forecast clean-up: round_id=%s not found — nothing asked of the queue.",
+                  round_id)
+        return
+    payload = {
+        "round_id": round_id, "phases": [3], "division_name": row["name"],
+        "round_number": row["round_number"],
+    }
+    await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
+                    origin=ChangeOrigin.BOT)
+
+
+async def ask_forecast_flush(queue: ChangeQueue) -> None:
+    """Ask the queue to delete every recorded forecast, as test mode being switched off does."""
+    await queue.ask(FORECAST_FLUSH, {}, what="clearing the forecasts posted under test mode",
+                    origin=ChangeOrigin.BOT)

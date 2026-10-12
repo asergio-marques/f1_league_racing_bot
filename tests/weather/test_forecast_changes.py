@@ -464,9 +464,6 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
 # The deletion of forecasts a day after the round, and their clearing, as jobs
 # ---------------------------------------------------------------------------
 
-#: Why these fail until the build puts the clean-up and the flush on the change queue.
-DELETES_UNBUILT = ("#439: the forecast clean-up and the test-mode flush are not yet jobs on the "
-                   "change queue")
 #: The kinds of the clean-up a day after a round and of the clearing of every forecast.
 CLEAN_UP_KIND = "weather.forecast.clean_up"
 FLUSH_KIND = "weather.forecast.flush"
@@ -492,7 +489,6 @@ async def _clean_up(league: Any, round_: int = ROUND) -> None:
     await ask_forecast_clean_up(league.bot.change_queue, league.db_path, round_)
 
 
-@pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
 async def test_a_clean_up_deletes_the_phase_3_forecast_by_a_job_and_a_refusal_stops_the_queue(
     tmp_path,
 ):
@@ -520,7 +516,6 @@ async def test_a_clean_up_deletes_the_phase_3_forecast_by_a_job_and_a_refusal_st
     assert job["payload"]["phase"] == 3
 
 
-@pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
 async def test_a_flush_deletes_every_forecast_each_by_a_job_of_its_own(tmp_path):
     """Test mode switched off with three forecasts standing (Pro's Phase 1 and 2 of round 3,
     9301 and 9302, and Am's Phase 1 of round 3, 9401): the flush deletes each by a
@@ -543,7 +538,6 @@ async def test_a_flush_deletes_every_forecast_each_by_a_job_of_its_own(tmp_path)
     assert await league.rows("SELECT * FROM forecast_messages") == []
 
 
-@pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
 @pytest.mark.parametrize("gone", ["message gone", "row already gone"])
 async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tmp_path, gone):
     """Pro's round 3 Phase 3 forecast (9303) is gone before its clean-up's delete runs: deleted

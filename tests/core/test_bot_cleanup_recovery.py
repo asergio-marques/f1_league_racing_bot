@@ -37,9 +37,6 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
 
-#: Why the tests through `_recover` fail until the restart asks the queue for the clean-up.
-CLEAN_UP_UNBUILT = "#439: the restart does not yet ask the change queue for a forecast clean-up"
-
 
 async def _make_db(
     tmp_path,
@@ -128,14 +125,12 @@ async def _recover(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_a_round_a_day_past_has_both_its_cleanups_run(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=25)
 
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_a_round_exactly_a_day_past_is_due(tmp_path):
     """The live jobs fire at the round's start plus a day, so that moment is already due."""
     db_path = await _make_db(tmp_path, hours_since_start=24)
@@ -143,14 +138,12 @@ async def test_a_round_exactly_a_day_past_is_due(tmp_path):
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=23)
 
     assert await _recover(_bot(db_path)) == ([], [])
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_a_completed_season_is_still_cleaned_up(tmp_path):
     """The live jobs outlive the season's completion, and the catch-up does as they would."""
     db_path = await _make_db(tmp_path, season_status="COMPLETED")
@@ -158,7 +151,6 @@ async def test_a_completed_season_is_still_cleaned_up(tmp_path):
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_only_what_is_standing_is_cleaned(tmp_path):
     db_path = await _make_db(tmp_path, forecast=False)
 
@@ -170,7 +162,6 @@ async def test_only_what_is_standing_is_cleaned(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 @pytest.mark.parametrize(
     "kwargs",
     [{"round_status": "CANCELLED"}, {"division_status": "CANCELLED"}],
@@ -183,7 +174,6 @@ async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
     assert await _recover(_bot(db_path)) == ([], [])
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_weather_switched_off_keeps_its_forecasts(tmp_path):
     """Disabling weather cancels its cleanup jobs; the catch-up must not run them anyway. The
     check-in's gate is attendance's own, inside `run_rsvp_cleanup`."""
@@ -192,7 +182,6 @@ async def test_weather_switched_off_keeps_its_forecasts(tmp_path):
     assert await _recover(_bot(db_path, weather_enabled=False)) == ([], [ROUND_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
     db_path = await _make_db(tmp_path)
 
@@ -202,7 +191,6 @@ async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
     assert "forecast cleanup failed" in caplog.text
 
 
-@pytest.mark.xfail(strict=True, reason=CLEAN_UP_UNBUILT)
 async def test_a_database_it_cannot_read_stops_the_recovery_quietly(tmp_path, caplog):
     bot = _bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
 
