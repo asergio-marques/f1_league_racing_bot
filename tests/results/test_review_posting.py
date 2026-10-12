@@ -1291,10 +1291,6 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
 # A table drawn as a picture is saved and replaced by the jobs, as a text table is
 # ---------------------------------------------------------------------------
 
-DRAWN = ("#439: the results picture saves its own id and deletes the table it replaces, "
-         "outside the job")
-
-
 def _results_drawn(league: _League, tmp_path: Any) -> Any:
     """Image generation on for the results aspect, its template valid and its render giving a
     PNG: the real picture poster runs, posting the table as a picture. Gives the patches, to
@@ -1319,7 +1315,6 @@ def _results_drawn(league: _League, tmp_path: Any) -> Any:
     return stack
 
 
-@pytest.mark.xfail(strict=True, reason=DRAWN)
 async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_deleted_by_a_job(
     tmp_path,
 ):
@@ -1346,7 +1341,6 @@ async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_delet
     assert len(deletes) == 1 and deletes[0]["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=DRAWN)
 async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(tmp_path):
     """Round 3's results are posted again as a picture, and Discord refuses to delete the old
     table, 8800: the queue stops at the `delete_message` job, both tables standing and the

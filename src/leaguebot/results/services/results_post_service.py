@@ -50,8 +50,8 @@ class PostedTable(NamedTuple):
     posting; empty where nothing stood or where it was edited in place and keeps its anchor.
     *edited* is true where the stored message was edited in place, so that *old* is only the
     continuations a shorter table no longer fills. *drawn* is true where the picture was
-    posted: image generation saved those ids and deleted what it replaced itself, so there is
-    nothing for the caller to save or take down. *championship* names the standings column the
+    posted, which replaces what stood before as a text table does: *new* is its one message and
+    *old* what it replaces. *championship* names the standings column the
     ids belong to, ``None`` for a session's results.
     """
 
@@ -561,8 +561,10 @@ async def produce_session_results(
     This function is the single funnel every reposting occasion reaches, which is why the
     hook is here and not at its three call sites.
 
-    **The picture saves and replaces for itself** (``image_results_post.try_post``), so a
-    picture is returned as ``drawn``, with nothing to save or delete.
+    **A picture's message replaces what stood before as a text table's does**
+    (``image_results_post.try_post`` saves and deletes nothing): it is returned as ``drawn``,
+    with its one message as *new* and what stood before as *old*, for the caller to save and
+    take down.
     """
     session_type = SessionType(session_result.session_type)
     session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
@@ -597,6 +599,17 @@ async def produce_session_results(
     season_prefix = f"Season {season_number} " if season_number is not None else ""
     heading = f"**{season_prefix}{division_name} Round {round_number} — {session_label}**"
 
+    # What stood before: read here so that the caller need not, and left standing.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+            (session_result.id,),
+        )
+        stored = await cursor.fetchone()
+    previous: list[int] = []
+    if stored is not None and stored["results_message_id"] is not None:
+        previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+
     # ── The image path (039) ──────────────────────────────────────────────
     if bot is not None:
         try:
@@ -622,20 +635,9 @@ async def produce_session_results(
                 dsq_phase_map=dsq_phase_map,
             )
             if outcome.applicable and outcome.message_id is not None:
-                return PostedTable([outcome.message_id], [], drawn=True)
+                return PostedTable([outcome.message_id], previous, drawn=True)
         except Exception as exc:  # noqa: BLE001 — never block a posting on the image path
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
-
-    # What stood before: read here so that the caller need not, and left standing.
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
-            (session_result.id,),
-        )
-        stored = await cursor.fetchone()
-    previous: list[int] = []
-    if stored is not None and stored["results_message_id"] is not None:
-        previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
 
     sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
     return PostedTable([m.id for m in sent], previous)
@@ -666,14 +668,13 @@ async def post_session_results(
         db_path, session_result, driver_rows, points_map, results_channel, guild,
         round_number, track_name, label, is_sprint, bot=bot, result_status=result_status,
     )
-    if not posted.drawn:
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
-                "WHERE id = ?",
-                (posted.new[0], json.dumps(posted.new), session_result.id),
-            )
-            await db.commit()
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+            "WHERE id = ?",
+            (posted.new[0], json.dumps(posted.new), session_result.id),
+        )
+        await db.commit()
     return posted.new[0]
 
 

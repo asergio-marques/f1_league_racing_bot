@@ -27,9 +27,8 @@ refused midway, which the bot could not take down itself, travel on the failure;
 removes them first, so a retry leaves no second copy.
 
 **A retry posts as text** (Constitution XIV, rule 8): the picture is attempted on the first try
-alone. The picture is posted through image's own function, which saves its ids and deletes what it
-replaces itself, so a drawn table has nothing for the job to record or delete (image's results
-poster and the attendance sheet save their own ids until their passes move them, #288).
+alone. The picture is posted through image's own function, which saves and deletes nothing, so a
+drawn table is recorded and its old messages deleted as a text table's are.
 
 **A standings job covers a round's both championships**, since the text flow posts one message
 carrying both and only the graphics are posted one each.
@@ -606,7 +605,7 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
             ) from error
         raise
     result = {
-        "new": [] if posted.drawn else posted.new, "old": posted.old,
+        "new": posted.new, "old": posted.old,
         "drawn": posted.drawn, "channel_id": channel_id,
     }
     what = f"round {rnd['round_number']}'s {_session_name(row['session_type'])} results"
@@ -624,7 +623,7 @@ async def _round_format(db_path: str, round_id: int) -> str:
 async def _record_session_post(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult
 ) -> None:
-    """Save the new ids on the session, with the job's mark. A picture saved its own."""
+    """Save the new ids on the session, with the job's mark, a picture's as a text table's."""
     new = result.result.get("new") or []
     if not new:
         return

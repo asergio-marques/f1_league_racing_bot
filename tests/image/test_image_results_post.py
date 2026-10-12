@@ -214,8 +214,6 @@ async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
 # ── The image path, when it does run ──────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the results picture deletes the message it "
-                   "replaces and saves its own id")
 async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_path):
     """The picture is posted and handed back with the message it replaces, 111, which it leaves
     standing and the stored id unchanged: the caller's job saves the new id and deletes the old
@@ -763,8 +761,6 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the results picture deletes the posting it "
-                   "replaces and saves its own id")
 async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     """A session's results stand as a text table of three messages, 111, 112 and 113. Posted
     again as a picture, none of the three is fetched or deleted and nothing is written: the

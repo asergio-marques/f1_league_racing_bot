@@ -585,8 +585,6 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._bot_member"): (1, PASS["results"]),
     ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._channel_fault"): (1, PASS["results"]),
-    ("image/services/image_results_post.py", "leaguebot.results.services.results_post_service._delete_posting"): (1, PASS["results"]),
-    ("image/services/image_results_post.py", "leaguebot.results.services.results_post_service._parse_ids"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._delete_posting"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._get_standings_message_id"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._get_standings_message_ids"): (1, PASS["results"]),
@@ -1110,7 +1108,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/season_service.py", "SeasonService.update_session_phase3"): (1, PASS["core"]),
     ("core/services/season_service.py", "_sync_division_rounds"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
-    ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
@@ -1288,7 +1285,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The standing posts
     ("weather/services/forecast_cleanup_service.py", "store_forecast_message"): (1, SLICE[6]),
     ("weather/services/forecast_cleanup_service.py", "delete_forecast_message"): (1, SLICE[6]),
-    ("image/services/image_results_post.py", "try_post"): (1, SLICE[6]),
     # The results, weather and image settings commands
     ("results/services/points_config_service.py", "create_config"): (1, SLICE[7]),
     ("results/services/points_config_service.py", "remove_config"): (1, SLICE[7]),

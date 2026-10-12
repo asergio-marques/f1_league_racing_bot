@@ -966,8 +966,6 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a session's results drawn as a picture hand back "
-                   "nothing they replace")
 @pytest.mark.asyncio
 async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     from leaguebot.core.db.database import get_connection
