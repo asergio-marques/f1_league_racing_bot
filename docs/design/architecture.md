@@ -579,7 +579,7 @@ kind has its own rules for failures and for later changes:
 | Kind | Examples | What sets it apart |
 |---|---|---|
 | **Log line** | configuration changes, outcomes, failures | sent to the log channel and retried by its own handler, not by the change queue; what a log line may hold is the core specification's "The record of what changed". The queue's stop notice is a log line with buttons, which the router posts without putting it on that retry |
-| **Standing post** | calendar, lineup, standings, attendance sheet, forecast | each new one replaces the last, and the old message is deleted after the new one is up |
+| **Standing post** | calendar, lineup, standings, results table, attendance sheet, forecast | each new one replaces the last, and the old message is deleted after the new one is up |
 | **Notice** | a cancellation notice, a verdict | its id is kept wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
 
