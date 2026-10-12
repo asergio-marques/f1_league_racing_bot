@@ -16,15 +16,11 @@ it (`record_mystery_notice_on`); the notice itself is posted after it (`forecast
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
-
-if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -53,16 +49,3 @@ async def record_mystery_notice_on(db: aiosqlite.Connection, round_id: int) -> D
         return Drawn(0)
     await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = ?", (round_id,))
     return Drawn(0, written=True)
-
-
-async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
-    """Ask the change queue to record the mystery round notice of *round_id* and post it.
-
-    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
-    the one thing that still calls this; it posts nothing itself. The notice is the posting made
-    at the phase 1 horizon for such a round (Principle IV, as corrected at constitution v4.7.0),
-    and carries **no division role mention** (FR-052).
-    """
-    from leaguebot.weather.services.forecast_changes import ask_forecast
-
-    await ask_forecast(bot.change_queue, bot.db_path, round_id, 0)

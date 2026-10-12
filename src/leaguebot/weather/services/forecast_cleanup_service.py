@@ -12,9 +12,6 @@ Public API:
   post_phase_message      — the one send site of a weather posting
   forecast_deletes        — the delete jobs a clean-up or a flush plans, one for each
                             recorded forecast
-  run_post_race_cleanup   — ask the queue to delete Phase 3 message 24 h after round start
-  flush_pending_deletions — on test-mode disable, ask the queue to delete all stored
-                            messages at once
 """
 
 from __future__ import annotations
@@ -147,32 +144,6 @@ async def forecast_deletes(
         })
         for row in rows
     )
-
-
-async def run_post_race_cleanup(round_id: int, bot: "LeagueBot") -> None:
-    """Ask the change queue to delete the Phase 3 forecast of *round_id*, a day after its race.
-
-    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
-    the one thing that still calls this; it deletes nothing itself.
-    """
-    from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
-
-    await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
-
-
-async def flush_pending_deletions(bot: "LeagueBot") -> None:
-    """Ask the change queue to delete every recorded forecast, where there is one.
-
-    Until test mode and the season end ask the queue themselves (`forecast_changes`), the one
-    thing that still calls this when test mode is disabled (FR-015); it deletes nothing itself,
-    and leaves the queue alone where no forecast is recorded.
-    """
-    from leaguebot.weather.services.forecast_changes import ask_forecast_flush
-
-    if not await forecast_deletes(bot.db_path):
-        log.debug("flush_pending_deletions: no pending messages")
-        return
-    await ask_forecast_flush(bot.change_queue)
 
 
 # ---------------------------------------------------------------------------

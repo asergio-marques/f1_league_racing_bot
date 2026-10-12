@@ -474,8 +474,7 @@ async def get_next_pending_phase(
             # `_weather_phase_job` reads the format as the job fires, and this is where advance
             # reads it, once. `weather_p1` is the notice (0) — and stale once the notice is up,
             # since advancing it would post the notice a second time. The other two do nothing
-            # when they fire, so there is nothing to advance for them. Handed on as phases 1 to 3
-            # they reached `run_phase1` to `run_phase3`, which read no format (#426).
+            # when they fire, so there is nothing to advance for them (#426).
             if phase in (1, 2, 3) and str(rnd["format"]).upper() == "MYSTERY":
                 if phase != 1 or rnd["phase1_done"]:
                     continue

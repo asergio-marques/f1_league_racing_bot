@@ -14,7 +14,6 @@ import json
 import logging
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 import aiosqlite
 
@@ -22,9 +21,6 @@ from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
 from leaguebot.weather.utils.message_builder import phase_log_message
-
-if TYPE_CHECKING:
-    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -115,15 +111,3 @@ async def draw_phase2_on(
     return Drawn(
         2, payload=payload, line=phase_log_message(2, round_id, track_name, payload), written=True
     )
-
-
-async def run_phase2(round_id: int, bot: "LeagueBot") -> None:
-    """Ask the change queue to draw Phase 2 of *round_id* (Phase 1 first where it is not done) and post its forecast.
-
-    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
-    the one thing that still calls this: it asks the change queue for the phase's draw, its post
-    and the deletion of the forecast it supersedes, and posts nothing itself.
-    """
-    from leaguebot.weather.services.forecast_changes import ask_forecast
-
-    await ask_forecast(bot.change_queue, bot.db_path, round_id, 2)
