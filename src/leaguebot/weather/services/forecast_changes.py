@@ -348,11 +348,13 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         )
         number = _value(ctx, "round_number", None) or (None if row is None
                                                        else row["round_number"])
-        return f"deleting the Phase {phase} forecast of round {number} in {where}"
+        later = " a day after it" if _value(ctx, "clean_up", False) else ""
+        return f"deleting the Phase {phase} forecast of round {number} in {where}{later}"
 
     async def plan_deletes(ctx: StepContext) -> StepResult:
         planned = await forecast_cleanup_service.forecast_deletes(
             ctx.db_path, round_id=_value(ctx, "round_id"), phases=_value(ctx, "phases"),
+            clean_up=bool(_value(ctx, "clean_up", False)),
         )
         return StepResult(result={"planned": len(planned)}, then=planned)
 
@@ -568,7 +570,8 @@ async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int)
                   round_id)
         return
     payload = {
-        "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "division_name": row["name"],
+        "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "clean_up": True,
+        "division_name": row["name"],
         "round_number": row["round_number"],
     }
     await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),

@@ -1338,8 +1338,6 @@ async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_pat
         assert len(recorded) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the amendment names the clean-up's deletion of "
-                   "the Phase 3 forecast a day after the round as a withdrawn forecast")
 async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_names_it(tmp_path):
     """Weather on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
     results not yet in and its Phase 3 forecast (message 8003) standing. It is moved to a day

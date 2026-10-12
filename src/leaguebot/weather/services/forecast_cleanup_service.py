@@ -106,6 +106,7 @@ async def forecast_deletes(
     *,
     round_id: int | None = None,
     phases: Sequence[int] | None = None,
+    clean_up: bool = False,
 ) -> tuple[PlannedStep, ...]:
     """One `delete_forecast` job for each recorded forecast, in round, division, phase order.
 
@@ -114,6 +115,8 @@ async def forecast_deletes(
     and the season end's for all of them (neither given). Each job carries the round (and its
     number), division, phase and message it was planned for, and deletes that message alone: the
     deletion is a job of the change queue, whose refusal stops it, so nothing is deleted here.
+    Under *clean_up* each job is marked (``"clean_up": True``), so that a change naming it says it
+    is the race's own forecast, deleted a day after the round, not a withdrawn or superseded one.
     """
     where: list[str] = []
     params: list[int] = []
@@ -141,6 +144,7 @@ async def forecast_deletes(
             "round_id": row["round_id"], "division_id": row["division_id"],
             "phase": row["phase_number"], "message_id": row["message_id"],
             "round_number": row["round_number"],
+            **({"clean_up": True} if clean_up else {}),
         })
         for row in rows
     )

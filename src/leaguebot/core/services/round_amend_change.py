@@ -621,7 +621,7 @@ def round_amend_change(
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
         if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
             if standing["forecast_posted"]:
-                planned.append(PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3]}))
+                planned.append(PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True}))
             if call_left:
                 planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
         return tuple(planned)
@@ -913,11 +913,14 @@ def round_amend_change(
                     if "guild_id" in result and "message_id" in result
                     else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
                 )
-                which = "superseded" if each.payload.get("superseded") else "withdrawn"
+                if each.payload.get("clean_up"):
+                    what = f"the Phase {result.get('phase')} forecast could not be deleted a day after the round"
+                else:
+                    which = "superseded" if each.payload.get("superseded") else "withdrawn"
+                    what = f"the {which} Phase {result.get('phase')} forecast could not be deleted"
                 failures.append(notices.NoticeFailure(
                     division, "forecast channel",
-                    f"the {which} Phase {result.get('phase')} forecast could not be deleted, "
-                    f"and a league admin discarded it; delete it by hand ({where})",
+                    f"{what}, and a league admin discarded it; delete it by hand ({where})",
                 ))
             elif each.name == NOTIFY_INVALIDATION:
                 failures.append(notices.NoticeFailure(
@@ -956,6 +959,12 @@ def round_amend_change(
         return "\n⚠️ **Not done**\n" + "\n".join(f"  • {each.describe()}" for each in failures)
 
     async def describe_forecast_delete(ctx: StepContext) -> str:
+        if ctx.step_payload.get("clean_up"):
+            return (
+                f"deleting the Phase {ctx.step_payload['phase']} forecast of round "
+                f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}** a day "
+                f"after it"
+            )
         if ctx.step_payload.get("superseded"):
             return (
                 f"deleting the superseded Phase {ctx.step_payload['phase']} forecast of round "

@@ -576,6 +576,7 @@ class TestModeCog(commands.Cog):
             {
                 "round_id": entry["round_id"],
                 "phases": [1, 2, 3],
+                "clean_up": True,
                 "division_name": entry["division_name"],
                 "round_number": entry["round_number"],
             },
