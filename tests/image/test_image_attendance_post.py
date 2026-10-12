@@ -113,8 +113,6 @@ def test_the_image_path_has_no_send_site_of_its_own():
     assert ".delete()" not in source
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the sheet's posting still deletes the one it "
-                   "replaces")
 def test_the_sheet_flow_still_has_exactly_one_send_site_and_no_delete_site():
     """The sheet it replaces is deleted by the change queue's job after the post, never by the
     posting itself."""
@@ -123,8 +121,6 @@ def test_the_sheet_flow_still_has_exactly_one_send_site_and_no_delete_site():
     assert ".delete()" not in source
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the sheet's posting still deletes the one it "
-                   "replaces")
 def test_the_graphic_is_rendered_before_anything_is_sent_or_destroyed():
     source = inspect.getsource(attendance_service.post_attendance_sheet)
     render_at = source.index("_sheet_attachment(")

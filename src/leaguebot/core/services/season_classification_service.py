@@ -25,9 +25,11 @@ picture.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
+
+import aiosqlite
 
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -219,19 +221,25 @@ async def post_opening_standings(
 
 async def post_opening_sheet(
     bot: LeagueBot, guild, db_path: str, division_id: int, *, as_text: bool = False
-) -> None:
-    """Post one division's opening attendance sheet, raising where it cannot be posted.
+) -> dict[str, Any]:
+    """Post one division's opening attendance sheet, raising where it cannot be posted, and
+    give the job its result (`attendance_service.sheet_result`).
 
-    Attendance's own posting, which always raises: it saves its own message id,
-    posts nothing for a division never given a channel and raises for one given a channel the
-    guild no longer holds. *as_text* leaves the graphic out, which is how a job retries.
+    Attendance's own posting, which always raises and saves nothing: it posts nothing for a
+    division never given a channel and raises for one given a channel the guild no longer holds.
+    The opening sheet takes the division's live slot, which the job saves with its mark
+    (`record_sheet_on`) and replaces by a job of its own. *as_text* leaves the graphic out, which
+    is how a job retries.
     """
-    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
+    from leaguebot.attendance.services.attendance_service import (
+        post_attendance_sheet,
+        sheet_result,
+    )
 
     opener = await _opening_round(db_path, division_id)
     if opener is None:
-        return
-    await post_attendance_sheet(
+        return sheet_result(None)
+    return sheet_result(await post_attendance_sheet(
         bot,
         guild,
         db_path,
@@ -239,7 +247,17 @@ async def post_opening_sheet(
         division_id,
         occasion=ClassificationOccasion.SEASON_OPENING,
         as_text=as_text,
-    )
+    ))
+
+
+async def record_sheet_on(
+    db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
+) -> None:
+    """Save the opening sheet as the division's live one, on the save handed (attendance's own
+    record: this only reaches it, as the posting does)."""
+    from leaguebot.attendance.services.attendance_service import record_sheet_on as record
+
+    await record(db, division_id, posted)
 
 
 async def _final_round(db_path: str, division_id: int, round_id: int):
@@ -343,17 +361,21 @@ async def post_final_standings(
 
 async def post_final_sheet(
     bot: LeagueBot, guild, db_path: str, division_id: int, round_id: int, *, as_text: bool = False
-) -> None:
+) -> dict[str, Any]:
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
-    cannot be posted.
+    cannot be posted, and give the job its result (`attendance_service.sheet_result`).
 
-    Attendance's own posting, which always raises: it saves its own message id,
-    posts nothing for a division never given a channel and raises for one given a channel the
-    guild no longer holds. *as_text* leaves the graphic out, which is how a job retries.
+    Attendance's own posting, which always raises and saves nothing: it posts nothing for a
+    division never given a channel and raises for one given a channel the guild no longer holds.
+    The final sheet stands beside the last round's and takes no live slot, so nothing is saved for
+    it and nothing deleted. *as_text* leaves the graphic out, which is how a job retries.
     """
-    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
+    from leaguebot.attendance.services.attendance_service import (
+        post_attendance_sheet,
+        sheet_result,
+    )
 
-    await post_attendance_sheet(
+    return sheet_result(await post_attendance_sheet(
         bot,
         guild,
         db_path,
@@ -361,4 +383,4 @@ async def post_final_sheet(
         division_id,
         occasion=ClassificationOccasion.SEASON_FINAL,
         as_text=as_text,
-    )
+    ))

@@ -127,6 +127,11 @@ def verdict_steps(
             int(result.result["message_id"]), result.result["channel_id"],
         )
 
+    async def record_sheet(db: Any, ctx: StepContext, result: StepResult) -> None:
+        await attendance.record_sheet_on(
+            db, int(ctx.step_payload["division_id"]), result.result
+        )
+
     return {
         POST_APPEALS_PROMPT: appeals_prompt_step(),
         ANNOUNCE_HEADING: Step(
@@ -140,7 +145,7 @@ def verdict_steps(
         ),
         ATTENDANCE_SHEET: Step(
             ATTENDANCE_SHEET, StepKind.ACT, bound(_attendance_sheet), still_due=_after_a_sanction,
-            describe=_describe_sheet,
+            describe=_describe_sheet, record=record_sheet,
         ),
         PLAN_SANCTIONS: Step(
             PLAN_SANCTIONS, StepKind.ACT, bound(_plan_sanctions), describe=_describe_plan,
@@ -535,14 +540,23 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
     if payload.get("after_sanctions"):
         # Only a driver whose sanction applied is marked: one discarded or dropped is not.
         sanctioned &= {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
+    await standing_posts.remove_kept(ctx.bot, ctx.kept)
     try:
-        await hook.post_sheet(
+        result = await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
             sanctioned=sanctioned, as_text=ctx.tries > 0,
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
-    return StepResult()
+    if not result or result.get("new") is None:
+        return StepResult(result=result or {})
+    old = result.get("old")
+    then = (
+        _deletes(int(result["channel_id"]), [int(old)], "attendance sheet")
+        if result.get("takes_slot") and old is not None and int(old) != int(result["new"])
+        else ()
+    )
+    return StepResult(result=result, then=then)
 
 
 async def _division_name(db_path: str, division_id: int) -> str:

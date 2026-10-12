@@ -22,6 +22,7 @@ claimed or it is not in the cache the method raises `GuildUnavailable`.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -100,14 +101,22 @@ class AttendanceAfterReview:
 
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
-    ) -> None:
+    ) -> dict[str, Any] | None:
         if not await self.enabled():
-            return
-        await _att.post_attendance_sheet(
+            return None
+        posted = await _att.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
             as_text=as_text,
         )
+        return _att.sheet_result(posted)
+
+    async def record_sheet_on(
+        self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
+    ) -> None:
+        if not await self._enabled_on(db):
+            return
+        await _att.record_sheet_on(db, division_id, posted)
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
         if not await self.enabled():

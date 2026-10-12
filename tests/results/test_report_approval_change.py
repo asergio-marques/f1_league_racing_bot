@@ -381,8 +381,6 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the review's sheet still deletes the one it "
-                   "replaces and saves its own id, outside the job's save")
 async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
     """Attendance is on, with its real hook (the placement service a double: no sanction is
     owed). Pro's attendance channel 707 holds its sheet 8805, recorded as the live one. Alex

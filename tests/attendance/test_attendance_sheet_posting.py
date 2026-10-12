@@ -26,11 +26,6 @@ from leaguebot.attendance.services.attendance_service import (
     post_attendance_sheet,
 )
 
-#: Why the tests of the posting alone fail until the build (#439, slice 6).
-POSTS_ONLY = ("#439: the sheet still saves its own id and deletes the one it replaces, and a "
-              "refused send does not raise")
-
-
 # ── The deadline derivation (T010/T011) ───────────────────────────────────
 
 
@@ -207,7 +202,6 @@ async def _stored_message_id(db_path) -> str | None:
 # ── The replacement ordering (T012–T014) ──────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_exactly_one_send_site_is_exercised_and_nothing_is_deleted(sheet_db):
     """The sheet is sent once; the one it replaces is deleted by the job after the post
@@ -240,7 +234,6 @@ async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
     assert await _stored_message_id(sheet_db) == "4242"
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_the_replacements_id_is_returned(sheet_db):
     """The new sheet's id, its channel and the sheet it replaces are given back for the job to
@@ -258,7 +251,6 @@ async def test_the_replacements_id_is_returned(sheet_db):
     assert await _stored_message_id(sheet_db) == "4242"
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_a_first_posting_deletes_nothing(sheet_db):
     await _config(sheet_db, prior=None)
@@ -542,7 +534,6 @@ def _occasion(name):
     return getattr(ClassificationOccasion, name)
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
     """Round one then replaces it, so the division never holds two sheets. The posting says
@@ -581,7 +572,6 @@ async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
     assert [entry for entry in journal if entry.startswith("send:")]
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
     """The occasion that predates the enum is untouched by it."""

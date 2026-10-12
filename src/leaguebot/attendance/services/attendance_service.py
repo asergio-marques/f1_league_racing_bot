@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
@@ -1060,8 +1061,14 @@ async def post_attendance_sheet(
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     *,
     as_text: bool = False,
-) -> None:
-    """Post a new sheet to the division's attendance channel, replacing the prior one.
+) -> PostedSheet | None:
+    """Post a new sheet to the division's attendance channel, which replaces the prior one.
+
+    **This posts and nothing else** (#439): it saves no id and deletes no message. It returns
+    the `PostedSheet` (the message posted, its channel, the sheet it replaces, and whether the
+    occasion takes the division's live slot) for the job to save with its mark
+    (`record_sheet_on`) and to plan the old sheet's deletion after (`standing_posts`); `None`
+    where nothing was posted.
 
     **A sheet that cannot be posted is raised** (#439): a channel the division was given and the
     guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, so the queue
@@ -1078,10 +1085,11 @@ async def post_attendance_sheet(
     without a sheet. A failed post therefore leaves the division holding the sheet it had,
     rather than none at all.
 
-    This ordering belongs to *this* function and the image path inherits it, rather than
-    carrying a rule of its own: two orderings in one flow would drift, and the half left
-    deleting first would be the fallback — the path reached precisely because something has
-    already gone wrong. There is exactly one send site and exactly one delete site below.
+    This ordering belongs to the flow and the image path inherits it, rather than carrying a
+    rule of its own: two orderings in one flow would drift, and the half left deleting first
+    would be the fallback — the path reached precisely because something has already gone
+    wrong. There is exactly one send site below; the deletion of the sheet replaced is the job
+    after it.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -1092,7 +1100,7 @@ async def post_attendance_sheet(
 
     if row is None or not row["attendance_channel_id"]:
         log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
-        return
+        return None
 
     # A round recorded as cancelled distributes no attendance points and produces no sheet,
     # whatever the `attendance` toggle says (FR-047). The recording flow already skips a
@@ -1111,7 +1119,7 @@ async def post_attendance_sheet(
         # A season-boundary sheet is about the season and not about a round, so no round's
         # cancellation bears on it (see `leaguebot.core.models.classification_occasion`).
         log.info("post_attendance_sheet: skipping cancelled round %s", round_id)
-        return
+        return None
 
     channel_id = int(row["attendance_channel_id"])
     prior_msg_id = row["attendance_message_id"]
@@ -1250,28 +1258,47 @@ async def post_attendance_sheet(
     # The final sheet is terminal: it stands *beside* the last round's rather than replacing
     # it, so it neither claims the slot nor deletes what is in it. Claiming the slot would
     # only hand some later posting the means to delete the season's last word.
-    if not occasion.takes_the_live_slot:
+    return PostedSheet(
+        message_id=new_msg.id, channel_id=channel_id, previous=prior_msg_id,
+        takes_slot=occasion.takes_the_live_slot,
+    )
+
+
+@dataclass(frozen=True)
+class PostedSheet:
+    """What `post_attendance_sheet` posted: *message_id* in *channel_id*, replacing *previous*
+    (the id recorded as the division's live sheet when it ran, or None), and whether the
+    occasion *takes_slot*, that is, replaces the live sheet and is recorded as it."""
+
+    message_id: int
+    channel_id: int
+    previous: str | None
+    takes_slot: bool
+
+
+def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
+    """A sheet job's result: the sheet posted (`new`, `old`, `channel_id`, `takes_slot`), or
+    `{"unset": True}` where nothing was posted."""
+    if posted is None:
+        return {"unset": True}
+    return {
+        "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
+        "takes_slot": posted.takes_slot,
+    }
+
+
+async def record_sheet_on(db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]) -> None:
+    """Save the sheet posted as the division's live one, on *db*, committing nothing.
+
+    Only a sheet that takes the live slot is saved: the final sheet of a season stands beside the
+    last round's and leaves the live sheet as it was.
+    """
+    if not posted.get("takes_slot") or posted.get("new") is None:
         return
-
-    # Persist the replacement's id before removing what it replaces, so that a failed
-    # deletion leaves the config pointing at the message that actually exists.
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
-            (str(new_msg.id), division_id),
-        )
-        await db.commit()
-
-    # ── Then destroy ──────────────────────────────────────────────────────
-    # The one delete site, so that at most one sheet stands in the channel at any moment.
-    if prior_msg_id and str(prior_msg_id) != str(new_msg.id):
-        try:
-            prior_msg = await channel.fetch_message(int(prior_msg_id))
-            await prior_msg.delete()
-        except discord.NotFound:
-            pass  # already gone — skip silently
-        except discord.HTTPException as exc:
-            log.warning("post_attendance_sheet: failed to delete prior message: %s", exc)
+    await db.execute(
+        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+        (str(posted["new"]), division_id),
+    )
 
 
 async def _sheet_rows(db, round_id: int, division_id: int) -> list:

@@ -529,7 +529,6 @@ async def test_a_sanction_announcement_shares_the_round_s_verdict_heading(tmp_pa
     assert verdict_headings(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the hook has no record_sheet_on")
 async def test_the_sheet_s_record_writes_nothing_while_attendance_is_off(tmp_path):
     """The review's sheet job saves the new sheet's id through the hook, on the job's own save.
     Pro's sheet 7401 stands and a new one, 7402, has been posted in its place. With attendance

@@ -530,12 +530,27 @@ def season_approval_change(
         return await modules.is_results_enabled()
 
     async def opening_sheet(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
         guild = await _guild(ctx.bot)
-        await season_classification_service.post_opening_sheet(
+        result = await season_classification_service.post_opening_sheet(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
             as_text=ctx.tries > 0,
         )
-        return StepResult()
+        then: tuple[PlannedStep, ...] = ()
+        if result.get("takes_slot"):
+            then = standing_posts.replaced(
+                result.get("channel_id"), result.get("old"), result.get("new"),
+                what="attendance sheet",
+                division_name=str(ctx.step_payload.get("division_name", "the division")),
+            )
+        return StepResult(result=result, then=then)
+
+    async def record_opening_sheet(
+        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+    ) -> None:
+        await season_classification_service.record_sheet_on(
+            db, int(ctx.step_payload["division_id"]), result.result
+        )
 
     async def sheet_due(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()
@@ -735,6 +750,7 @@ def season_approval_change(
         OPENING_SHEET: Step(
             OPENING_SHEET, StepKind.ACT, opening_sheet, still_due=sheet_due,
             describe=describing("posting the opening attendance sheet of **{name}**"),
+            record=record_opening_sheet,
         ),
         DELETE_BATCH_NOTICE: Step(
             DELETE_BATCH_NOTICE, StepKind.DELETE, delete_batch_notice, still_due=notice_posted,

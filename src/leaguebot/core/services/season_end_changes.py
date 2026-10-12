@@ -614,11 +614,13 @@ def season_complete_change(
     async def final_sheet(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
-        await season_classification_service.post_final_sheet(
+        result = await season_classification_service.post_final_sheet(
             ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
             as_text=ctx.tries > 0,
         )
-        return StepResult()
+        # The final sheet stands beside the last round's: nothing is saved for it and nothing
+        # deleted, so it plans no deletion and carries no record.
+        return StepResult(result=result)
 
     async def sheet_due(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()

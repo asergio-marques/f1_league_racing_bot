@@ -13,6 +13,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+import aiosqlite
+
 from leaguebot.attendance.services import attendance_service
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
@@ -31,6 +33,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services import standing_posts
 from leaguebot.core.utils.league_server import league_guild
 
 POST_SHEET = "post_sheet"
@@ -43,20 +46,35 @@ def sheet_step() -> Step:
     The payload is `{"division_id", "division_name", "round_id", "sanctioned"}`, `sanctioned`
     being the ids of the driver profiles the sheet marks as having reached the limit. The first
     try posts as configured (the picture where the image module has one); a try again posts the
-    text.
+    text. The job returns the sheet posted, saves its id as the division's live sheet with its
+    mark (`record_sheet_on`) and plans, where the sheet takes the slot, the deletion of the one it
+    replaces; a sheet discarded plans none, so the earlier one stands.
     """
 
     async def run(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
         payload = ctx.step_payload or ctx.payload
         sanctioned = {int(each) for each in payload.get("sanctioned") or []}
-        await attendance_service.post_attendance_sheet(
+        posted = await attendance_service.post_attendance_sheet(
             ctx.bot, guild, ctx.db_path, int(payload["round_id"]), int(payload["division_id"]),
             sanctioned_profile_ids=sanctioned or None, as_text=ctx.tries > 0,
         )
-        return StepResult()
+        result = attendance_service.sheet_result(posted)
+        then: tuple[PlannedStep, ...] = ()
+        if posted is not None and posted.takes_slot:
+            then = standing_posts.replaced(
+                posted.channel_id, posted.previous, posted.message_id,
+                what="attendance sheet",
+                division_name=str(payload.get("division_name", "the division")),
+            )
+        return StepResult(result=result, then=then)
+
+    async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        payload = ctx.step_payload or ctx.payload
+        await attendance_service.record_sheet_on(db, int(payload["division_id"]), result.result)
 
     async def still_due(ctx: StepContext) -> bool:
         return await ctx.bot.module_service.is_attendance_enabled()
@@ -65,7 +83,9 @@ def sheet_step() -> Step:
         payload = ctx.step_payload or ctx.payload
         return f"posting the attendance sheet of **{payload.get('division_name', 'the division')}**"
 
-    return Step(POST_SHEET, StepKind.ACT, run, still_due=still_due, describe=describe)
+    return Step(
+        POST_SHEET, StepKind.ACT, run, still_due=still_due, describe=describe, record=record,
+    )
 
 
 def sheet_post_change() -> ChangeType:
@@ -108,7 +128,7 @@ def sheet_post_change() -> ChangeType:
     return ChangeType(
         kind=SHEET_POST,
         opening=(PlannedStep(POST_SHEET),),
-        steps={POST_SHEET: sheet_step()},
+        steps={POST_SHEET: sheet_step(), standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step()},
         check=check,
         key=lambda payload: f"{SHEET_POST}:{payload['division_id']}",
         doing=lambda payload: (

@@ -187,9 +187,6 @@ async def test_a_sheet_for_a_division_with_no_attendance_channel_stops_the_queue
 
 # ── The post and the deletion of the sheet it replaces, as two jobs ──────────────────
 
-TWO_JOBS = ("#439: a sheet's post and the deletion of the one it replaces are not yet two "
-            "jobs")
-
 #: Pro's sheet standing in its attendance channel before the ask.
 OLD_SHEET = 6200
 #: The link Discord gives Pro's old sheet, which a discarded deletion names.
@@ -238,7 +235,6 @@ async def _ask_pro_s_sheet(league: Any) -> None:
     await ask_sheet_post(league.bot.change_queue, league.db_path, PRO, ROUND_1)
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tmp_path):
     league = await _scored_league(tmp_path)
     await _old_sheet_standing(league)
@@ -258,7 +254,6 @@ async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tm
     assert str(await _sheet_id(league)) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_none(tmp_path):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new sheet as its live one. A sheet that takes no live slot, as the final sheet of a
@@ -283,7 +278,6 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     assert str(await _sheet_id(league)) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):

@@ -1977,8 +1977,6 @@ async def test_a_discard_of_the_approval_stopped_at_its_check_after_a_restart_is
     assert _told(league, CHANNEL_NOT_APPROVED) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the opening sheet still deletes the sheet it "
-                   "replaces and saves its own id, outside the job's save")
 async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_path, monkeypatch):
     """Attendance is on, and Pro's attendance channel already holds a sheet, 6200, recorded as
     its live one. Once the season is approved, Pro's opening sheet is posted and recorded as the
