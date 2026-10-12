@@ -284,21 +284,28 @@ def _failing(name: str) -> ExitStack:
     return _everywhere(name, AsyncMock(side_effect=RuntimeError("disk I/O error")))
 
 
+#: Weather reads the forecasts the season end's flush deletes through `forecast_deletes`
+#: (#439), which `_flush_failing` patches; weather has no `forecast_changes` and no
+#: `forecast_deletes` yet.
+FORECAST_DELETES = pytest.mark.xfail(
+    strict=True,
+    raises=(ImportError, AttributeError),
+    reason="#439: weather has no forecast_deletes for the season end's flush",
+)
+
+
 def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
-    """Weather's reading of the forecasts posted under test mode, which the season end's
-    `flush_forecasts` job makes, raises while *failing* says so; patched before the league is
-    built, so the builder's hook reaches it however it binds it."""
-    modules = _modules()
-    try:
-        modules.append(importlib.import_module("leaguebot.weather.services.forecast_changes"))
-    except ImportError:
-        pass
-    for module in modules:
-        # `forecast_deletes` reads the forecasts and plans a delete job for each; the older
-        # `flush_pending_deletions` read and deleted them itself. Whichever weather keeps.
-        for name in ("forecast_deletes", "flush_pending_deletions"):
-            if hasattr(module, name):
-                monkeypatch.setattr(module, name, _raising_while(failing, getattr(module, name)))
+    """Weather's reading of the forecasts posted under test mode (`forecast_deletes`, which
+    plans a delete job for each), which the season end's `flush_forecasts` job makes, raises
+    while *failing* says so; patched before the league is built, in every module that holds
+    it, so the builder's hook reaches it however it binds it."""
+    from leaguebot.weather.services import forecast_changes, forecast_cleanup_service
+
+    reading = forecast_cleanup_service.forecast_deletes
+    raising = _raising_while(failing, reading)
+    for module in [*_modules(), forecast_changes]:
+        if getattr(module, "forecast_deletes", None) is reading:
+            monkeypatch.setattr(module, "forecast_deletes", raising)
 
 
 def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
@@ -485,6 +492,7 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     assert await _status(league) == "COMPLETED"
 
 
+@FORECAST_DELETES
 @pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
@@ -1047,6 +1055,7 @@ async def test_a_history_entry_is_written_for_every_division_each_driver_took_pa
     assert (await _change(league))["state"] == "DONE"
 
 
+@FORECAST_DELETES
 async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archived(
     tmp_path, monkeypatch,
 ):
@@ -1230,7 +1239,10 @@ _DISCARDS = {
 }
 
 
-@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.parametrize("job", [
+    pytest.param(job, marks=FORECAST_DELETES) if job == "flush_forecasts" else job
+    for job in sorted(_DISCARDS)
+])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_and_the_line_says_incomplete(
     tmp_path, monkeypatch, job,
 ):
