@@ -1294,6 +1294,52 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     assert row["checkin_cleared"] == 1
 
 
+@pytest.mark.parametrize("standing", [
+    pytest.param("phase 2", id="phase 3 never posted", marks=pytest.mark.xfail(
+        strict=True, reason="#439: the amendment's late clean-up deletes only a Phase 3 forecast, "
+        "not whichever phase is still standing")),
+    pytest.param("mystery notice", id="a mystery round's notice"),
+])
+async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
+    """Weather on. Pro's round 3 is thirty minutes out with one forecast recorded: (phase 3 never
+    posted) its Phase 2 forecast (message 8002), or (a mystery round's notice) round 3 a mystery
+    round with its notice (message 8000). It is moved to a day from now; the save stops, and a
+    day and forty minutes on, past the clean-up due a day after the old moment, a league admin
+    discards it. The round stands at its old moment, and its clean-up deletes whichever of Phases
+    1 to 3 is still recorded (owner, 2026-10-12): Phase 2 goes, its record with it. A mystery
+    round's notice is no such forecast, and stands with its record."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _place_r3(league, minutes=30)
+    forecast = league.channel(PRO_CH.forecast)
+    if standing == "phase 2":
+        message, phase = 8002, 2
+        await posted_forecast(league, R3, 2, message)
+    else:
+        message, phase = 8000, 0
+        await league.write("UPDATE rounds SET format = 'MYSTERY', phase1_done = 1 WHERE id = ?",
+                           R3)
+        await league.write(
+            "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+            "posted_at) VALUES (?, ?, 0, ?, ?)", R3, PRO, message, league.clock.now.isoformat())
+        forecast.seed(message, "Mystery Round notice")
+    await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(days=1, minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    recorded = await league.rows(
+        "SELECT * FROM forecast_messages WHERE round_id = ? AND phase_number = ?", R3, phase)
+    if standing == "phase 2":
+        assert message not in forecast.messages
+        assert recorded == []
+    else:
+        assert message in forecast.messages
+        assert len(recorded) == 1
+
+
 @pytest.mark.xfail(strict=True, reason="#439: the amendment names the clean-up's deletion of "
                    "the Phase 3 forecast a day after the round as a withdrawn forecast")
 async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_names_it(tmp_path):
