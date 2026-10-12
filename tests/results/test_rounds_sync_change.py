@@ -180,8 +180,6 @@ def _results_drawn(league: ReviewLeague, tmp_path: Any) -> tuple[ExitStack, Asyn
     return stack, render
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the log channel writes a member's mention in "
-                   "backticks, which this test awaits bare")
 async def test_a_rounds_sync_is_acknowledged_and_updated_with_synced(tmp_path):
     league = await _league(tmp_path)
 
@@ -195,7 +193,7 @@ async def test_a_rounds_sync_is_acknowledged_and_updated_with_synced(tmp_path):
     )
     [line] = [line for line in league.bot.log_channel.sent
               if "| /results rounds sync |" in line]
-    assert line.startswith("Admin (<@4242>) | /results rounds sync | Success\n")
+    assert line.startswith("Admin (`<@4242>`) | /results rounds sync | Success\n")
     assert "division: Pro" in line
     [new] = league.sent_to(RESULTS_CHANNEL)
     assert set(league.channel(RESULTS_CHANNEL).messages) == {new}
@@ -336,8 +334,6 @@ async def test_a_rounds_sync_waiting_while_the_season_reaches_pending_completion
     assert await _sync_states(league) == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the log channel writes a member's mention in "
-                   "backticks, which this test awaits bare")
 async def test_a_rounds_sync_with_a_discarded_table_says_what_was_not_synced(tmp_path):
     """Discord refuses round 3's table and a league admin discards it: the reply says the
     results were not all synced, naming the table and `/results rounds sync`, the old table
@@ -359,4 +355,4 @@ async def test_a_rounds_sync_with_a_discarded_table_says_what_was_not_synced(tmp
     assert OLD_RESULTS in league.channel(RESULTS_CHANNEL).messages
     [line] = [line for line in league.bot.log_channel.sent
               if "| /results rounds sync |" in line]
-    assert line.startswith("Admin (<@4242>) | /results rounds sync | Incomplete")
+    assert line.startswith("Admin (`<@4242>`) | /results rounds sync | Incomplete")
