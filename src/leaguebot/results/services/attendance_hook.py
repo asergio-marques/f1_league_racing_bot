@@ -84,8 +84,9 @@ class AttendanceAfterReview(Protocol):
         *round_id*, which is the round whose verdicts it follows. Raises where it could not
         post."""
 
-    async def refresh_lineup(self, division_id: int) -> None:
-        """Post the division's lineup afresh. Raises where it could not post."""
+    async def refresh_lineup(self, division_id: int, *, as_text: bool) -> None:
+        """Post the division's lineup afresh, as text where *as_text* (a job tried again, #439).
+        Raises where it could not post."""
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         """The line telling a manager how to finish sanctions that did not all apply."""

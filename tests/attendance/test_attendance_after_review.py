@@ -347,7 +347,6 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the hook's refresh_lineup takes no as_text")
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a

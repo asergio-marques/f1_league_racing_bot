@@ -145,10 +145,10 @@ class AttendanceAfterReview:
             as_text=as_text,
         )
 
-    async def refresh_lineup(self, division_id: int) -> None:
+    async def refresh_lineup(self, division_id: int, *, as_text: bool) -> None:
         if not await self.enabled():
             return
-        await self._placement.refresh_lineup(await self._guild(), division_id)
+        await self._placement.refresh_lineup(await self._guild(), division_id, as_text=as_text)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         return await _att.sync_hint(self._db_path, division_id, round_id)

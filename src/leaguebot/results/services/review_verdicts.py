@@ -516,10 +516,11 @@ async def _after_a_sanction(ctx: StepContext) -> bool:
     if ctx.step_name == ATTENDANCE_SHEET and not ctx.step_payload.get("after_sanctions"):
         return True
     applied = {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
-    if ctx.step_name != ATTENDANCE_SHEET:
+    if ctx.step_name != ATTENDANCE_SHEET and "sanctioned" not in ctx.step_payload:
         return bool(applied)
-    # A sheet is redrawn for the drivers it marks: a sacked driver's other division is redrawn
-    # only where that driver's own sack applied, as `enforce_attendance_sanctions` has it.
+    # A sheet, and the lineup of another division, are redrawn for the drivers they mark: a sacked
+    # driver's other division is redrawn only where that driver's own sack applied, as
+    # `enforce_attendance_sanctions` has it.
     return bool(applied & {int(p) for p in ctx.step_payload.get("sanctioned", [])})
 
 
@@ -587,11 +588,19 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         planned.append(PlannedStep(APPLY_SANCTION, job))
         planned.append(PlannedStep(ANNOUNCE_SANCTION, job))
     if owed:
-        planned.append(PlannedStep(REFRESH_LINEUP, {"division_id": division_id, "division": division}))
         sheets: dict[int, set[int]] = {division_id: {int(c["driver_profile_id"]) for c in owed}}
         for candidate in owed:
             for other in candidate.get("other_divisions", []):
                 sheets.setdefault(int(other), set()).add(int(candidate["driver_profile_id"]))
+        # Placement posts no lineup, so the review posts the lineup of each division a sanction
+        # reached, once: the division itself and every other one an autosack touched.
+        for lineup_division in [division_id, *sorted(d for d in sheets if d != division_id)]:
+            planned.append(PlannedStep(REFRESH_LINEUP, {
+                "division_id": lineup_division,
+                "division": division if lineup_division == division_id
+                else await _division_name(ctx.db_path, lineup_division),
+                "sanctioned": sorted(sheets[lineup_division]),
+            }))
         for sheet_division in [division_id, *sorted(d for d in sheets if d != division_id)]:
             # Another division's sheet is drawn as at that division's own latest round, not the
             # round the sack was decided at, whose number means nothing there; a division with
@@ -716,7 +725,8 @@ async def _describe_lineup(ctx: StepContext) -> str:
 
 
 async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
-    await hook.refresh_lineup(int(ctx.step_payload["division_id"]))
+    # A try again posts the text (Constitution XIV, rule 8), as the review's other posts do.
+    await hook.refresh_lineup(int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0)
     return StepResult()
 
 

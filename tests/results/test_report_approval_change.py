@@ -1141,7 +1141,6 @@ async def test_a_discarded_lineup_refresh_says_it_is_posted_with_the_next_change
     assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the review's lineup is never asked for as text")
 async def test_a_lineup_refused_after_a_sanction_is_retried_as_text(tmp_path):
     """Max is owed an autoreserve; Discord refuses Pro's lineup once. The queue stops at
     `refresh_lineup`, and Retry asks for the lineup as text, as any job tried again does
@@ -1229,9 +1228,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
 
 
 @pytest.mark.parametrize("case", [
-    pytest.param("applied", marks=pytest.mark.xfail(
-        strict=True, reason="#439: the review plans no lineup for a sacked driver's other "
-                            "division")),
+    "applied",
     "discarded",
 ])
 async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_path, case):
