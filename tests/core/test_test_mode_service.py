@@ -800,7 +800,8 @@ async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
 
 
 async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -> None:
-    """A mystery round, or a Phase 3 that never posted, leaves nothing to take down."""
+    """A round with no forecast recorded leaves nothing to take down, so its cleanup job is
+    stale."""
     db_path = str(tmp_path / "nothing_to_clean.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": "Monaco"}])
