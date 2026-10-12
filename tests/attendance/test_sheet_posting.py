@@ -44,8 +44,6 @@ from tests.support.season_league import (
     round_id,
 )
 
-UNBUILT = "#439: an attendance sheet is not yet asked of the change queue"
-
 KIND = "attendance.sheet.post"
 SHEET = DIVISIONS[PRO][3].attendance
 ROUND_1 = round_id(PRO, 1)
@@ -84,7 +82,6 @@ async def _said(league: Any) -> str:
     return "\n".join([league.log(), *await queued_log_lines(league.db_path)])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sync_asks_the_queue_for_the_sheet_and_replies_as_before(tmp_path):
     league = await _scored_league(tmp_path)
 
@@ -103,7 +100,6 @@ async def test_a_sync_asks_the_queue_for_the_sheet_and_replies_as_before(tmp_pat
     assert len(league.texts(SHEET)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sheet_a_sync_asked_for_that_discord_refuses_stops_the_queue_and_queues_nothing_on_the_old_retry_queue(
     tmp_path,
 ):
@@ -125,7 +121,6 @@ async def test_a_sheet_a_sync_asked_for_that_discord_refuses_stops_the_queue_and
     assert len(league.texts(SHEET)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sync_s_sanctions_ask_for_the_sheet_of_each_division_a_sack_reached(db_path):
     """Driver 2 is past Pro's autosack threshold at round 102 and has a sheet in Am, whose latest
     scored round is 201. The sanctions ask the queue for Pro's sheet at round 102 marking driver
@@ -154,7 +149,6 @@ async def test_a_sync_s_sanctions_ask_for_the_sheet_of_each_division_a_sack_reac
     posted.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sheet_for_a_division_with_no_attendance_channel_stops_the_queue_naming_the_command(
     tmp_path,
 ):

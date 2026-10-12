@@ -63,20 +63,6 @@ RESERVE_PROFILE = 102
 
 BOT_USER_ID = 9999
 
-#: The sanctions ask the change queue for each lineup they touch (#439), which they do not yet:
-#: they post it through the placement service.
-LINEUPS_ASKED = "#439: the sanctions still post the lineup rather than asking the change queue"
-
-#: Every run here is handed the change queue, and every one patches the sheet it asks of it
-#: through `sheet_posting.ask_sheet_post` (#439): the sanctions take no queue yet, and
-#: attendance has no `sheet_posting`.
-pytestmark = pytest.mark.xfail(
-    strict=True,
-    raises=(ImportError, TypeError),
-    reason="#439: the sanctions take no change queue, and attendance has no sheet_posting",
-)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -737,7 +723,11 @@ async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, anno
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_ASKED)
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the test patches the sheet through the `sheet` fixture and again through "
+    "`_asking_for_sheets`, which then reads a mock's signature",
+)
 async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(
     tmp_path, announcer, sheet
 ):
@@ -753,7 +743,6 @@ async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(
     assert _lineups_asked(bot) == [DIVISION_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_ASKED)
 async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
     tmp_path, announcer, sheet
 ):

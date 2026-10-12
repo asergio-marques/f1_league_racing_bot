@@ -26,6 +26,9 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.utils.league_bot import LeagueBot
 
+if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
+
 
 @asynccontextmanager
 async def _shared_or_own(db_path: str, db):
@@ -1056,18 +1059,16 @@ async def post_attendance_sheet(
     sanctioned_profile_ids: set[int] | None = None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
     *,
-    raise_on_failure: bool = False,
     as_text: bool = False,
 ) -> None:
     """Post a new sheet to the division's attendance channel, replacing the prior one.
 
-    **A sheet that cannot be posted is raised, where the caller is a job on the change queue**
-    (*raise_on_failure*, #439): a channel the division was given and the guild no longer holds,
-    or a send Discord refuses, raises `StepFailedOnDiscord`, so the queue stops on the job and
-    tries it again, and nothing is put on the old retry queue, which would post a second copy
-    beside the retry. A division never given a channel, and a cancelled round, post nothing and
-    raise nothing either way. *as_text* leaves the graphic out, which is how a job retries
-    (Constitution XIV rule 8).
+    **A sheet that cannot be posted is raised** (#439): a channel the division was given and the
+    guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, so the queue
+    stops on the job that called this and tries it again, and nothing is put on the old retry
+    queue, which would post a second copy beside the retry. A division never given a channel, and
+    a cancelled round, post nothing and raise nothing. *as_text* leaves the graphic out, which is
+    how a job retries (Constitution XIV rule 8).
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
@@ -1118,11 +1119,9 @@ async def post_attendance_sheet(
     channel = as_text_channel(guild.get_channel(channel_id))
     if channel is None:
         log.warning("post_attendance_sheet: channel %s not found for division %s", channel_id, division_id)
-        if raise_on_failure:
-            raise StepFailedOnDiscord(
-                f"the attendance channel (id {channel_id}) is not in the server"
-            )
-        return
+        raise StepFailedOnDiscord(
+            f"the attendance channel (id {channel_id}) is not in the server"
+        )
 
     # Build sheet content.
     async with get_connection(db_path) as db:
@@ -1238,30 +1237,12 @@ async def post_attendance_sheet(
             new_msg = await channel.send(content)
     except discord.HTTPException as exc:
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
-        if raise_on_failure:
-            raise StepFailedOnDiscord(
-                f"the attendance sheet could not be posted: {exc}"
-            ) from exc
-        # A failure of the **service** rather than of the generation: it is the textual sheet
-        # that is enqueued, never the rendered image (XIV.8, FR-060). The queue is durable and
-        # outlives the state that filled it, so a picture retried an hour from now would be a
-        # picture of a division that has moved on; the text is composed when it is finally
-        # sent. Nothing has been deleted at this point, so the previous sheet still stands.
-        try:
-            from leaguebot.core.services import retry_service
-
-            await retry_service.enqueue(
-                db_path,
-                channel_id=channel_id,
-                content=content,
-                failure_reason=f"attendance sheet for division {division_id}: {exc}",
-            )
-        except Exception:  # noqa: BLE001 — the queue must never mask the original failure
-            log.exception("post_attendance_sheet: could not enqueue the textual sheet")
-        return
+        raise StepFailedOnDiscord(
+            f"the attendance sheet could not be posted: {exc}"
+        ) from exc
     finally:
-        # Posted or not, the picture has done all it will ever do: the retry queue carries
-        # the textual sheet and never the image, so nothing reads this file again.
+        # Posted or not, the picture has done all it will ever do: a try again posts the text
+        # and never the image, so nothing reads this file again.
         from leaguebot.image.services.image_render_service import discard_attachment
 
         discard_attachment(attachment)
@@ -1935,6 +1916,8 @@ async def enforce_attendance_sanctions(
     division_id: int,
     season_id: int,
     head=None,
+    *,
+    queue: "ChangeQueue",
 ) -> SanctionOutcome:
     """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027).
 
@@ -1945,6 +1928,11 @@ async def enforce_attendance_sanctions(
     raising a second. Reached any other way — a recalculation after a pardon or an amendment
     — this builds one of its own, which is the case that would otherwise post sanctions
     with nothing above them.
+
+    **The lineups and the sheets a sanction touches are asked of *queue*,** the change queue the
+    caller hands in, and not posted here (#439): the lineup of the division, and of every other
+    division an applied autosack reached, and the sheet of each division that has one. A post
+    Discord refuses stops the queue and is tried again, instead of being reported with this run.
 
     **No driver's failure stops the run, and none is swallowed** (decided 2026-09-18, #239).
     A sanction that raises is recorded in the returned :class:`SanctionOutcome` and the next
@@ -2028,25 +2016,21 @@ async def enforce_attendance_sanctions(
                 exc, applied=profile_id in sanctioned_profile_ids
             )))
 
-    # Refresh lineup and re-post attendance sheet with sanctioned annotations.
+    # Ask for the lineup and the attendance sheet to be posted again, the sheet with the
+    # sanctioned drivers annotated. The queue posts them (#439).
     if sanctioned_profile_ids:
-        try:
-            await placement._refresh_lineup_post(guild, division_id)
-        except Exception as exc:  # noqa: BLE001 — reported with the outcome
-            log.exception("enforce_attendance_sanctions: lineup refresh failed")
-            outcome.posting_faults.append(f"the lineup could not be posted again: {exc}")
-        try:
-            await post_attendance_sheet(
-                bot, guild, db_path, round_id, division_id,
-                sanctioned_profile_ids=sanctioned_profile_ids,
-            )
-        except Exception as exc:  # noqa: BLE001 — reported with the outcome
-            log.exception("enforce_attendance_sanctions: sheet repost failed")
-            outcome.posting_faults.append(f"the attendance sheet could not be posted again: {exc}")
-        for other_division_id, profile_ids in other_divisions.items():
-            sacked_here = profile_ids & sanctioned_profile_ids
-            if not sacked_here:
-                continue
+        from leaguebot.attendance.services import sheet_posting
+        from leaguebot.core.services.lineup_posting import ask_lineup_posts
+
+        reached = [
+            other_division_id for other_division_id, profile_ids in other_divisions.items()
+            if profile_ids & sanctioned_profile_ids
+        ]
+        await ask_lineup_posts(queue, db_path, [division_id, *reached])
+        await sheet_posting.ask_sheet_post(
+            queue, db_path, division_id, round_id, sanctioned_profile_ids
+        )
+        for other_division_id in reached:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
                     "SELECT r.id FROM rounds r "
@@ -2058,21 +2042,10 @@ async def enforce_attendance_sanctions(
                 latest = await cursor.fetchone()
             if latest is None:
                 continue  # the division has posted no sheet yet, so there is none to correct
-            try:
-                await post_attendance_sheet(
-                    bot, guild, db_path, latest["id"], other_division_id,
-                    sanctioned_profile_ids=sacked_here,
-                )
-            except Exception as exc:  # noqa: BLE001 — one division's sheet is not worth the others
-                log.exception(
-                    "enforce_attendance_sanctions: could not repost the sheet of division %s",
-                    other_division_id,
-                )
-                outcome.posting_faults.append(
-                    f"the attendance sheet of "
-                    f"{await _division_name(db_path, other_division_id)} "
-                    f"could not be posted again: {exc}"
-                )
+            await sheet_posting.ask_sheet_post(
+                queue, db_path, other_division_id, latest["id"],
+                other_divisions[other_division_id] & sanctioned_profile_ids,
+            )
 
     if not outcome.complete:
         lines = "\n".join(f"  {line}" for line in outcome.failure_lines())
@@ -2229,14 +2202,17 @@ async def sync_attendance(
     division_id: int,
     from_round_id: int,
     season_id: int,
+    *,
+    queue: "ChangeQueue",
 ) -> SanctionOutcome:
     """What `/attendance sync` does: recalculate from a round forward, then finish the job.
 
     Decided 2026-09-18 (#239), as the recovery for sanctions that did not all apply. Every
     finalised round from *from_round_id* on is recomputed from its results and its points
-    redistributed, in one transaction; the division's sheet is then posted for the latest of
-    them, the channel holding one sheet; and the sanctions are enforced against that latest
-    round, where the running totals now stand.
+    redistributed, in one transaction; the change queue (*queue*, handed in by the command) is then
+    asked to post the division's sheet for the latest of them, the channel holding one sheet; and
+    the sanctions are enforced against that latest round, where the running totals now stand,
+    asking the same queue for the lineups and sheets they touch (#439).
 
     **Safe to run again.** A driver already sacked is no longer a candidate and one already
     in Reserve is passed over, so a second run applies only what the first did not.
@@ -2245,9 +2221,11 @@ async def sync_attendance(
         db_path, from_round_id, division_id, recompute="all"
     )
     latest = touched[-1]
-    await post_attendance_sheet(bot, guild, db_path, latest, division_id)
+    from leaguebot.attendance.services import sheet_posting
+
+    await sheet_posting.ask_sheet_post(queue, db_path, division_id, latest)
     return await enforce_attendance_sanctions(
-        bot, guild, db_path, latest, division_id, season_id
+        bot, guild, db_path, latest, division_id, season_id, queue=queue
     )
 
 

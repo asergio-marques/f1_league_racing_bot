@@ -106,7 +106,7 @@ class AttendanceAfterReview:
         await _att.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
-            raise_on_failure=True, as_text=as_text,
+            as_text=as_text,
         )
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:

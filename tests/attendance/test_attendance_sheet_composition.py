@@ -20,10 +20,6 @@ from tests.attendance.test_attendance_sanctions import _asking_for_sheets
 SERVER_ID = 22170
 PRO, AM = 1, 2
 
-#: The sanctions ask the change queue for each sheet they owe (#439), which they do not yet:
-#: they post it themselves.
-SHEETS_ASKED = "#439: the sanctions still post the sheets rather than asking the change queue"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -187,7 +183,6 @@ async def _enforce(db_path, *, sack=None):
     return asked
 
 
-@pytest.mark.xfail(strict=True, reason=SHEETS_ASKED)
 async def test_a_division_that_has_posted_no_sheet_is_not_reposted(db_path):
     """There is no sheet in it to correct."""
     await _seat_driver_two_in_pro_past_the_threshold(db_path, am_scored=False)
@@ -197,7 +192,6 @@ async def test_a_division_that_has_posted_no_sheet_is_not_reposted(db_path):
     assert [division for division, _round, _marked in asked] == [PRO]
 
 
-@pytest.mark.xfail(strict=True, reason=SHEETS_ASKED)
 async def test_a_sack_that_fails_reposts_no_other_division(db_path):
     """Only a driver actually sacked has been taken out of the other divisions."""
     await _seat_driver_two_in_pro_past_the_threshold(db_path)
@@ -207,7 +201,6 @@ async def test_a_sack_that_fails_reposts_no_other_division(db_path):
     assert asked == []
 
 
-@pytest.mark.xfail(strict=True, reason=SHEETS_ASKED)
 async def test_autosack_reposts_every_division(db_path):
     """A driver sacked for their points in one division loses every seat in every division,
     so every division they sat in has its sheet posted again."""

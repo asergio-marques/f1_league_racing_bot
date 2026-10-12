@@ -254,7 +254,6 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     standings.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the opening sheet is still asked to raise")
 async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     """Discord refuses Div A's opening attendance sheet: what the sheet's posting raises (it
     always raises, so it is asked for no `raise_on_failure`) reaches the job, for the queue to
@@ -523,7 +522,6 @@ async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
     standings.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the final sheet is still asked to raise")
 async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_path):
     """Div A's final attendance sheet, drawn against its round 2 and retried as text: attendance's
     posting, which always raises, is asked for it as the final classification, and as text."""

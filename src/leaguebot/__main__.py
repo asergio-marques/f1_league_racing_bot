@@ -347,6 +347,7 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
         division_cancel_change,
@@ -408,6 +409,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(calendar_sync_change(bot.season_service))
     bot.change_queue.register(lineup_post_change(bot.placement_service))
+    bot.change_queue.register(sheet_post_change())
     hooks = _season_end_hooks(bot)
     bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
     bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))

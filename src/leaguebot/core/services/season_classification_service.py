@@ -222,7 +222,7 @@ async def post_opening_sheet(
 ) -> None:
     """Post one division's opening attendance sheet, raising where it cannot be posted.
 
-    Attendance's own posting, asked to raise (`raise_on_failure`): it saves its own message id,
+    Attendance's own posting, which always raises: it saves its own message id,
     posts nothing for a division never given a channel and raises for one given a channel the
     guild no longer holds. *as_text* leaves the graphic out, which is how a job retries.
     """
@@ -238,7 +238,6 @@ async def post_opening_sheet(
         opener["id"],
         division_id,
         occasion=ClassificationOccasion.SEASON_OPENING,
-        raise_on_failure=True,
         as_text=as_text,
     )
 
@@ -348,7 +347,7 @@ async def post_final_sheet(
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
     cannot be posted.
 
-    Attendance's own posting, asked to raise (`raise_on_failure`): it saves its own message id,
+    Attendance's own posting, which always raises: it saves its own message id,
     posts nothing for a division never given a channel and raises for one given a channel the
     guild no longer holds. *as_text* leaves the graphic out, which is how a job retries.
     """
@@ -361,6 +360,5 @@ async def post_final_sheet(
         round_id,
         division_id,
         occasion=ClassificationOccasion.SEASON_FINAL,
-        raise_on_failure=True,
         as_text=as_text,
     )

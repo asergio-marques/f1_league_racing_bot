@@ -224,7 +224,6 @@ async def test_exactly_one_send_site_is_exercised_and_nothing_is_deleted(sheet_d
     assert await _stored_message_id(sheet_db) == "4242"
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
     """The whole point of the ordering: a failure costs the league nothing it had. The refused
@@ -512,7 +511,6 @@ async def test_the_sheet_graphic_is_gone_once_it_has_posted(
     assert not png.parent.exists()
 
 
-@pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
 @pytest.mark.asyncio
 async def test_the_sheet_graphic_is_gone_when_the_send_fails(
     sheet_db, monkeypatch, tmp_path
