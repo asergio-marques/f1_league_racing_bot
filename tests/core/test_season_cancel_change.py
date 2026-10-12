@@ -340,20 +340,31 @@ def _failing(name: str) -> ExitStack:
 
 
 def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
-    """Weather's flush of the forecasts posted under test mode raises while *failing* says so;
-    patched before the league is built, so the builder's hook reaches it however it binds it."""
-    from leaguebot.weather.services import forecast_cleanup_service
+    """Weather's reading of the forecasts posted under test mode, which the season end's
+    `flush_forecasts` job makes, raises while *failing* says so; patched before the league is
+    built, so the builder's hook reaches it however it binds it."""
+    modules = _modules()
+    try:
+        modules.append(importlib.import_module("leaguebot.weather.services.forecast_changes"))
+    except ImportError:
+        pass
+    for module in modules:
+        # `forecast_deletes` reads the forecasts and plans a delete job for each; the older
+        # `flush_pending_deletions` read and deleted them itself. Whichever weather keeps.
+        for name in ("forecast_deletes", "flush_pending_deletions"):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, _raising_while(failing, getattr(module, name)))
 
-    flushing = forecast_cleanup_service.flush_pending_deletions
 
-    async def _flush(bot: Any) -> None:
+def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
+    """*reading*, raising as a fault of the database would while *failing* says so."""
+
+    async def _read(*args: Any, **kwargs: Any) -> Any:
         if failing["now"]:
             raise RuntimeError("the forecasts could not be read")
-        await flushing(bot)
+        return await reading(*args, **kwargs)
 
-    for module in _modules():
-        if hasattr(module, "flush_pending_deletions"):
-            monkeypatch.setattr(module, "flush_pending_deletions", _flush)
+    return _read
 
 
 def _unarming_fails(league: Any) -> None:
