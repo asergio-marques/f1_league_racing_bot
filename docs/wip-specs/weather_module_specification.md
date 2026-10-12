@@ -169,5 +169,5 @@
 ## Test mode
 - The test mode "advance" command shall fire the next pending weather phase or mystery round notice immediately, cancelling the scheduled job for it so that it cannot fire twice, and posting its output to the configured forecast and log channels.
 - It shall likewise fire the deletion of a round's forecast in its turn. Decided 2026-09-24 (#425).
-- A weather step it fires shall be asked of the change queue, and its reply shall say so; the forecast follows as soon as the queue reaches it. Where the round's race has been run, the step shall not be fired: the reply shall say it was not due, and the command shall move on to the next step, so that rehearsing weather in test mode needs rounds dated in the future. Decided 2026-10-10, 2026-10-12.
+- A weather step it fires shall be asked of the change queue, and its reply shall say so; the forecast follows as soon as the queue reaches it. A weather step of a round whose race has been run shall not be fired: the command shall pass over it to the next step, so that rehearsing weather in test mode needs rounds dated in the future; where the queue drops a step the command has asked for, the reply shall say it was not due. Decided 2026-10-10, 2026-10-12.
 - Disabling test mode shall delete the forecast messages posted while it was active, each deletion a job on the change queue.
