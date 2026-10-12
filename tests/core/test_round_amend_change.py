@@ -1417,7 +1417,7 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     assert ("**Pro** — Phase 2 forecast: not drawn, and a league admin discarded it; it is drawn "
             "when the bot next starts, while the round is still to be run") in outcome
     assert any("| Discard job #" in line
-               and "not done: drawing a forecast of round 3 in **Pro** now" in line
+               and "not done: drawing the Phase 2 forecast of round 3 in **Pro** now" in line
                for line in _log_lines(league))
 
 

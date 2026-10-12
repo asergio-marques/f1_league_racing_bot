@@ -983,6 +983,15 @@ def round_amend_change(
             )
         return await named("deleting a withdrawn forecast of round {number} in **{division}**")(ctx)
 
+    async def describe_draw(ctx: StepContext) -> str:
+        """The draw of a phase the amendment makes at once, and the job that plans it, each
+        naming its phase."""
+        phase = ctx.step_payload.get("phase", ctx.payload.get("phase"))
+        return (
+            f"drawing the Phase {phase} forecast of round {await round_number_now(ctx)} in "
+            f"**{ctx.payload['division_name']}** now"
+        )
+
     steps: dict[str, Step] = {
         JUDGE: Step(
             JUDGE, StepKind.ACT, judge,
@@ -1011,8 +1020,7 @@ def round_amend_change(
         # Weather's own jobs, the draw and the deletion named for what the amendment does with them.
         **hooks.forecast_steps,
         DRAW_FORECAST: dataclasses.replace(
-            hooks.forecast_steps[DRAW_FORECAST],
-            describe=named("drawing a forecast of round {number} in **{division}** now"),
+            hooks.forecast_steps[DRAW_FORECAST], describe=describe_draw,
         ),
         DELETE_FORECAST: dataclasses.replace(
             hooks.forecast_steps[DELETE_FORECAST], describe=describe_forecast_delete,
@@ -1023,7 +1031,7 @@ def round_amend_change(
         ),
         RERUN_PHASE: Step(
             RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=phase_still_due,
-            describe=named("drawing a forecast of round {number} in **{division}** now"),
+            describe=describe_draw,
         ),
         RUN_DEADLINE: Step(
             RUN_DEADLINE, StepKind.ACT, catching_up(hooks.run_deadline, "run"),
