@@ -1342,3 +1342,30 @@ async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp
     assert "Notice: ⏭️" in _round_row(summary, 3)
     assert "P1: ⚠️  P2: ⚠️  P3: ⚠️  Cleanup: ⚠️" in _round_row(summary, 4)
     assert "⏭️ passed over (its race has been run)" in summary
+
+
+@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
+async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 is a mystery round raced an hour
+    ago whose notice never went out, and round 2 (Monza) is a week ahead. The change queue drops
+    a notice for a race already run (A25), so advance offers round 2's Phase 1, and not round
+    1's notice: whether round 1's `weather_p1` job is still in the store, the store is empty, or
+    no scheduler is given."""
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "raced_mystery.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Mystery", "format": "MYSTERY", "scheduled_at": "2026-10-12T11:00:00"},
+        {"track_name": "Monza", "scheduled_at": "2026-10-19T12:00:00"},
+    ])
+    stub = {
+        "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
+        "job store empty": _StubScheduler(),
+        "no scheduler": None,
+    }[scheduler]
+
+    result = await get_next_pending_phase(db_path, stub, now=now)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 1)
+

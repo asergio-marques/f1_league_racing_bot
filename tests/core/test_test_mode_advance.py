@@ -964,3 +964,75 @@ async def test_an_advanced_forecast_cleanup_names_the_phase_it_deletes(tmp_path)
     [row] = [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST_CLEAN_UP]
     assert row["what"] == "deleting the Phase 2 forecast of round 3 in **Pro** a day after it"
 
+
+async def test_an_advanced_mystery_notice_of_a_raced_round_says_it_was_not_due(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 is a mystery round
+    raced an hour ago whose notice never went out. The maintainer advances its notice (0): the
+    change queue drops it as not due (A25), so the reply says it was not due and why, and not
+    that it is on the change queue; nothing is asked of the queue, and nothing posted."""
+    from tests.support.change_queue import change_rows, run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = DIVISIONS[PRO][3].forecast
+    raced = (league.clock.now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET format = 'MYSTERY', scheduled_at = ? WHERE id = ?",
+                       raced, round_)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 0, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Mystery", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+    await run_queue(league.bot)
+
+    replied = _replied(interaction)
+    assert "is on the change queue" not in replied
+    assert ("🔮 The **Mystery Round notice** for **Pro** — **Round 3** was not due: its race "
+            "has been run.") in replied
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST] == []
+    assert await stopped_job(league.db_path) is None
+    assert [mid for kind, cid, mid in league.events if cid == forecast] == []
+
+
+async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_was_not_due(
+    tmp_path,
+):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
+    an hour ago and no forecast of it is recorded. The maintainer advances its forecast cleanup
+    (8): the change queue drops it as not due, so the reply says it was not due as no forecast
+    stands, and not that it is on the change queue; nothing is asked of the queue."""
+    from tests.support.change_queue import change_rows, stopped_job
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
+    await league.write("DELETE FROM forecast_messages WHERE round_id = ?", round_)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 8, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "is on the change queue" not in replied
+    assert ("🧹 The **forecast cleanup** for **Pro** — **Round 3** was not due: no forecast "
+            "stands.") in replied
+    assert [row for row in await change_rows(league.db_path)
+            if row["kind"] == FORECAST_CLEAN_UP] == []
+    assert await stopped_job(league.db_path) is None
+
