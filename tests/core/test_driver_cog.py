@@ -96,13 +96,15 @@ def _make_cog(
 
     bot.placement_service = MagicMock()
     bot.placement_service.resolve_division = AsyncMock(return_value=division)
+    # No lineup is owed, so none is asked of the change queue (#439).
     bot.placement_service.assign_driver = AsyncMock(
-        return_value={"team_name": "Alpha", "division_name": "Division 1"}
+        return_value={"team_name": "Alpha", "division_name": "Division 1", "lineups": []}
     )
     bot.placement_service.unassign_driver = AsyncMock(
-        return_value={"team_name": "Alpha", "division_name": "Division 1"}
+        return_value={"team_name": "Alpha", "division_name": "Division 1", "lineups": []}
     )
-    bot.placement_service.sack_driver = AsyncMock(return_value=None)
+    bot.placement_service.sack_driver = AsyncMock(return_value=[])
+    bot.change_queue.ask = AsyncMock()
     bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
     bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
 
@@ -532,7 +534,7 @@ async def test_unassigning_a_driver_who_held_no_seat_omits_the_team(tmp_path):
     "from ****" would read as a missing name rather than as no team."""
     cog = _make_cog(season=_season())
     cog.bot.placement_service.unassign_driver = AsyncMock(
-        return_value={"team_name": None, "division_name": "Division 1"}
+        return_value={"team_name": None, "division_name": "Division 1", "lineups": []}
     )
     interaction = _interaction()
 

@@ -22,6 +22,10 @@ from tests.core.test_placement_assign import (
     _service,
 )
 
+#: The divisions whose lineup a change owes, returned for the command to ask of the change queue
+#: (#439), which the service does not yet return: it posts them itself.
+LINEUPS_NAMED = "#439: the placement service still posts lineups itself and names none"
+
 
 def _guild():
     member = MagicMock()
@@ -83,6 +87,7 @@ async def _set_season_status(db_path, status: str) -> None:
 # ── Assigning ──────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_an_uncommitted_placement_grants_no_role_and_posts_no_lineup(tmp_path):
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
@@ -93,8 +98,10 @@ async def test_an_uncommitted_placement_grants_no_role_and_posts_no_lineup(tmp_p
     assert await _committed(db_path) == 0
     service._grant_roles.assert_not_awaited()
     service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == []
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_placement_in_a_confirmed_season_defaults_to_committed(tmp_path):
     db_path = await _make_db(tmp_path)  # the fixture season is ACTIVE
     service = _service(db_path)
@@ -103,7 +110,8 @@ async def test_a_placement_in_a_confirmed_season_defaults_to_committed(tmp_path)
 
     assert result["committed"] is True
     service._grant_roles.assert_awaited_once()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [DIVISION_ID]
 
 
 async def test_a_placement_in_a_season_in_setup_defaults_to_uncommitted(tmp_path):
@@ -140,26 +148,30 @@ async def test_a_committed_driver_is_refused_where_only_uncommitted_ones_may_be_
 # ── Unassigning ────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_removing_an_uncommitted_placement_revokes_nothing_and_posts_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     await _assign(service, committed=False)
 
-    await _unassign(service)
+    result = await _unassign(service)
 
     service._revoke_roles.assert_not_awaited()
     service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == []
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_removing_a_committed_placement_revokes_its_roles(tmp_path):
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     await _assign(service)
 
-    await _unassign(service)
+    result = await _unassign(service)
 
     service._revoke_roles.assert_awaited_once()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [DIVISION_ID]
 
 
 async def test_a_committed_placement_is_refused_where_only_uncommitted_ones_may_be_removed(tmp_path):
@@ -209,6 +221,7 @@ async def test_the_placement_commands_are_refused_outside_the_placing_stages(com
     cog.bot.placement_service.unassign_driver.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_committed_placement_of_a_member_who_left_grants_nothing(tmp_path):
     """The placement is recorded; a member Discord cannot find has no role to be granted."""
     import discord
@@ -233,4 +246,5 @@ async def test_a_committed_placement_of_a_member_who_left_grants_nothing(tmp_pat
 
     assert result["committed"] is True
     service._grant_roles.assert_not_awaited()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [DIVISION_ID]

@@ -176,6 +176,10 @@ def _guild(*, member_missing: bool = False, fetch_fails: bool = False, has_role:
     guild._role = role
     return guild
 
+#: The divisions whose lineup a change owes, returned for the command to ask of the change queue
+#: (#439), which the service does not yet return: it posts them itself.
+LINEUPS_NAMED = "#439: the placement service still posts lineups itself and names none"
+
 
 def _service(db_path: str) -> PlacementService:
     service = PlacementService(db_path)
@@ -186,7 +190,7 @@ def _service(db_path: str) -> PlacementService:
 
 
 async def _sack(service, guild, *, season_id: int | None = SEASON_ID):
-    await service.sack_driver(
+    return await service.sack_driver(
         PROFILE_ID,
         season_id,
         ACTOR_ID,
@@ -583,13 +587,14 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
     assert json.loads(row["new_value"])["former_driver"] is True
 
 
-async def test_the_lineup_post_is_refreshed_for_the_division_they_left(tmp_path):
+@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
+async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
     """The posted lineup is what a division reads to know who is racing, and a sacked
-    driver left standing in it is the visible half of the sack not happening."""
+    driver left standing in it is the visible half of the sack not happening. The sack names
+    the division they left, for its caller to ask the change queue for its lineup (#439)."""
     db_path = await _make_db(tmp_path, name="sack_lineup")
     service = _service(db_path)
     guild = _guild()
 
-    await _sack(service, guild)
-
-    service._refresh_lineup_post.assert_awaited_once_with(guild, DIVISION_ID)
+    assert await _sack(service, guild) == [DIVISION_ID]
+    service._refresh_lineup_post.assert_not_awaited()

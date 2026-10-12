@@ -15,6 +15,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions
+from tests.attendance.test_attendance_sanctions import _with_the_queue
 
 SERVER_ID = 22170
 PRO, AM = 1, 2
@@ -162,8 +163,10 @@ async def _enforce(db_path, *, sack=None, post=None):
     bot = MagicMock()
     bot.user.id = 1
     bot.output_router.post_log = AsyncMock()
-    bot.placement_service.sack_driver = sack or AsyncMock()
+    # The sack of driver 2 names the lineups it owes (#439): both divisions they sat in.
+    bot.placement_service.sack_driver = sack or AsyncMock(return_value=[PRO, AM])
     bot.placement_service._refresh_lineup_post = AsyncMock()
+    bot.change_queue.ask = AsyncMock()
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
                new=post or AsyncMock()) as posted, \
@@ -173,7 +176,8 @@ async def _enforce(db_path, *, sack=None, post=None):
                   # than extending it, which leaves SanctionOutcome.complete false
                   # for every run in this file. It must return a list (#237).
                   new=AsyncMock(return_value=[])):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
+                                           **_with_the_queue(enforce_attendance_sanctions, bot))
     return posted
 
 
@@ -231,8 +235,9 @@ async def test_autosack_reposts_every_division(db_path):
     bot = MagicMock()
     bot.user.id = 1
     bot.output_router.post_log = AsyncMock()
-    bot.placement_service.sack_driver = AsyncMock()
+    bot.placement_service.sack_driver = AsyncMock(return_value=[PRO, AM])
     bot.placement_service._refresh_lineup_post = AsyncMock()
+    bot.change_queue.ask = AsyncMock()
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet", new=AsyncMock()) as posted, \
             patch("leaguebot.results.services.verdict_announcement_service.banner_for_round", return_value=None), \
@@ -241,7 +246,8 @@ async def test_autosack_reposts_every_division(db_path):
                   # than extending it, which leaves SanctionOutcome.complete false
                   # for every run in this file. It must return a list (#237).
                   new=AsyncMock(return_value=[])):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
+                                           **_with_the_queue(enforce_attendance_sanctions, bot))
 
     posted_divisions = sorted(call.args[4] for call in posted.await_args_list)
     assert posted_divisions == [PRO, AM]

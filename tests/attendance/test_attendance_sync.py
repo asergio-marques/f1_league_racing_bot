@@ -27,6 +27,7 @@ from tests.attendance.test_attendance_sanctions import (
     _make_bot,
     _make_db,
     _seed_totals,
+    _with_the_queue,
 )
 from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
@@ -68,7 +69,8 @@ def pipeline():
 
 async def _sync(bot, db_path: str, from_round_id: int = ROUND_ID) -> SanctionOutcome:
     return await sync_attendance(
-        bot, MagicMock(), db_path, DIVISION_ID, from_round_id, SEASON_ID
+        bot, MagicMock(), db_path, DIVISION_ID, from_round_id, SEASON_ID,
+        **_with_the_queue(sync_attendance, bot),
     )
 
 

@@ -61,6 +61,10 @@ RESERVE_PROFILE = 102
 
 BOT_USER_ID = 9999
 
+#: The sanctions ask the change queue for each lineup they touch (#439), which they do not yet:
+#: they post it through the placement service.
+LINEUPS_ASKED = "#439: the sanctions still post the lineup rather than asking the change queue"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -192,8 +196,9 @@ def _make_bot(db_path: str) -> MagicMock:
     bot.user.id = BOT_USER_ID
     bot.user.__str__ = lambda self: "LeagueBot#0001"  # type: ignore[assignment]
 
+    # A sack names the divisions whose lineup it owes (#439): the one the driver sat in.
     placement = MagicMock()
-    placement.sack_driver = AsyncMock(return_value=None)
+    placement.sack_driver = AsyncMock(return_value=[DIVISION_ID])
     placement.assign_driver = AsyncMock(return_value=None)
     placement.unassign_driver = AsyncMock(return_value=None)
     placement.move_driver = AsyncMock(return_value=None)
@@ -201,7 +206,26 @@ def _make_bot(db_path: str) -> MagicMock:
     bot.placement_service = placement
 
     bot.output_router.post_log = AsyncMock(return_value=None)
+    # The change queue the caller hands the run (#439), recording what it is asked.
+    bot.change_queue = MagicMock()
+    bot.change_queue.ask = AsyncMock()
     return bot
+
+
+def _with_the_queue(function, bot) -> dict:
+    """`queue=` the bot's change queue, for *function* where it takes one: the attendance sync
+    and its sanctions are handed the change queue to ask for the lineups and sheets they owe
+    (#439), and take none until then."""
+    import inspect
+
+    return ({"queue": bot.change_queue}
+            if "queue" in inspect.signature(function).parameters else {})
+
+
+def _lineups_asked(bot) -> list[int]:
+    """The division of each `lineup.post` asked of the bot's change queue, in order."""
+    return [call.args[1]["division_id"] for call in bot.change_queue.ask.await_args_list
+            if call.args[0] == "lineup.post"]
 
 
 async def _run(bot, db_path: str, *, head=None):
@@ -218,6 +242,7 @@ async def _run(bot, db_path: str, *, head=None):
         division_id=DIVISION_ID,
         season_id=SEASON_ID,
         head=head,
+        **_with_the_queue(enforce_attendance_sanctions, bot),
     )
 
 
@@ -702,6 +727,7 @@ async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, anno
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=LINEUPS_ASKED)
 async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(
     tmp_path, announcer, sheet
 ):
@@ -713,7 +739,56 @@ async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(
 
     sheet.assert_awaited_once()
     assert sheet.await_args.kwargs["sanctioned_profile_ids"] == {FULL_TIME_PROFILE}
-    bot.placement_service._refresh_lineup_post.assert_awaited_once()
+    bot.placement_service._refresh_lineup_post.assert_not_awaited()
+    assert _lineups_asked(bot) == [DIVISION_ID]
+
+
+@pytest.mark.xfail(strict=True, reason=LINEUPS_ASKED)
+async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
+    tmp_path, announcer, sheet
+):
+    """The full-timer, past the autosack threshold, also sits in Division 2: the sack takes
+    them out of both, and the run asks the change queue once for each division's lineup,
+    posting none itself."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'ASSIGNED', former_driver = 0 "
+            "WHERE id = ?",
+            (FULL_TIME_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (2, ?, 'Division 2', 2, 556)",
+            (SEASON_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (20, 2, 'Alpha', 'Alpha', 2, 0)"
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (30, 20, 1, ?)",
+            (FULL_TIME_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, 2, 30)",
+            (FULL_TIME_PROFILE, SEASON_ID),
+        )
+        await db.commit()
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+    placement = PlacementService(db_path)
+    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.placement_service = placement
+
+    await _run(bot, db_path)
+
+    assert sorted(_lineups_asked(bot)) == [DIVISION_ID, 2]
+    placement._refresh_lineup_post.assert_not_awaited()
 
 
 async def test_a_caller_s_banner_is_reused_rather_than_raising_a_second(
