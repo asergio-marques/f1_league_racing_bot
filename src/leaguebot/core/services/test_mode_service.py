@@ -614,9 +614,15 @@ def _phase_status(
     return "⏳" if event in queued else "⚠️"
 
 
+#: The mark of a raced round's weather step that was never done: advance passes it over.
+PASSED_OVER = "⏭️"
+
+
 async def build_review_summary(
     db_path: str,
     scheduler_service: Any = None,
+    *,
+    now: datetime | None = None,
 ) -> str:
     """Return a formatted multi-line string summarising all rounds and phase status.
 
@@ -630,6 +636,12 @@ async def build_review_summary(
     When *scheduler_service* is supplied, each pending phase is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
       ⚠️  = job is absent (misfired, evicted, or never created — needs /advance)
+
+    A weather step left undone on a round whose race has been run by *now* (the present, where
+    not given) is marked ⏭️ (`PASSED_OVER`), scheduler or not: `get_next_pending_phase` passes it
+    over, the change queue dropping a forecast for a race already run (A25), so neither ⏳ nor
+    "use /test-mode advance" would be true of it. Such a round's clean-up is done once nothing
+    of Phases 1 to 3 stands, whether or not Phase 3 ever ran.
 
     Returns an informative message string if no active season exists.
     """
@@ -732,6 +744,8 @@ async def build_review_summary(
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
 
+    moment = now if now is not None else datetime.now(timezone.utc)
+
     # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
     round_ids: set[int] = {r["round_id"] for r in rows}
     queued: set[tuple[int, str]] | None = (
@@ -762,20 +776,28 @@ async def build_review_summary(
             is_mystery = fmt == "MYSTERY"
 
             parts: list[str] = []
+            raced = _race_run(row["scheduled_at"], moment)
+
+            def _weather(done: bool, event: str) -> str:
+                """A weather step's mark: passed over where undone on a raced round."""
+                if raced and not done:
+                    return PASSED_OVER
+                return _phase_status(done, (rid, event), queued)
 
             # ── Weather / mystery notice phases ───────────────────────────
             if weather_module_enabled and is_mystery:
                 # A mystery round's notice is armed as `weather_p1`: `_weather_phase_job` reads
                 # the round's format as it fires.
-                notice = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
+                notice = _weather(bool(row["phase1_done"]), "weather_p1")
                 parts.append(f"Notice: {notice}")
             elif weather_module_enabled:
-                p1 = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
-                p2 = _phase_status(bool(row["phase2_done"]), (rid, "weather_p2"), queued)
-                p3 = _phase_status(bool(row["phase3_done"]), (rid, "weather_p3"), queued)
-                # Done once Phase 3 has run and nothing of it is left standing (#425).
+                p1 = _weather(bool(row["phase1_done"]), "weather_p1")
+                p2 = _weather(bool(row["phase2_done"]), "weather_p2")
+                p3 = _weather(bool(row["phase3_done"]), "weather_p3")
+                # Done once Phase 3 has run, or the race has (Phase 3 passed over), and nothing
+                # of Phases 1 to 3 is left standing (#425).
                 cleanup = _phase_status(
-                    bool(row["phase3_done"]) and rid not in standing_forecasts,
+                    (bool(row["phase3_done"]) or raced) and rid not in standing_forecasts,
                     (rid, "cleanup"),
                     queued,
                 )
@@ -821,6 +843,9 @@ async def build_review_summary(
         lines.append("")  # blank line between divisions
 
     if queued is not None:
-        lines.append("*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode advance)*")
+        lines.append(
+            "*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode "
+            f"advance)  {PASSED_OVER} passed over (its race has been run)*"
+        )
 
     return "\n".join(lines).rstrip()

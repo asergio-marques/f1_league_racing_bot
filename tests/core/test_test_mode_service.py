@@ -1312,3 +1312,33 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (1, 4)
+
+
+async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp_path) -> None:
+    """Weather is on, and it is noon on 12 October 2026; no job is queued. Round 1 (Bahrain) was
+    raced an hour ago with none of its phases done; round 2 (Monza), raced an hour ago too, had
+    Phases 1 and 2 done, Phase 3 never, and its Phase 2 forecast stands; round 3 is a mystery
+    round raced an hour ago whose notice never went out; round 4 (Spa) is a week ahead. Advance
+    passes over the weather steps of a raced round (the change queue drops them, A25), so the
+    review marks each undone one ⏭️, not ⚠️ ("use /test-mode advance"): round 1's clean-up has
+    nothing standing to delete and is done, round 2's still has its Phase 2 forecast to delete.
+    Round 4's steps are still to be advanced, ⚠️ with no job, and the legend explains ⏭️."""
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    raced = "2026-10-12T11:00:00"
+    db_path = str(tmp_path / "review_raced.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Monza", "scheduled_at": raced, "phase1_done": 1, "phase2_done": 1},
+        {"track_name": "Mystery", "scheduled_at": raced, "format": "MYSTERY"},
+        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00"},
+    ])
+    await _stand(db_path, 2, forecast=True, forecast_phase=2)
+
+    summary = await build_review_summary(db_path, _StubScheduler(), now=now)
+
+    assert "P1: ⏭️  P2: ⏭️  P3: ⏭️  Cleanup: ✅" in _round_row(summary, 1)
+    assert "P1: ✅  P2: ✅  P3: ⏭️  Cleanup: ⚠️" in _round_row(summary, 2)
+    assert "Notice: ⏭️" in _round_row(summary, 3)
+    assert "P1: ⚠️  P2: ⚠️  P3: ⚠️  Cleanup: ⚠️" in _round_row(summary, 4)
+    assert "⏭️ passed over (its race has been run)" in summary
