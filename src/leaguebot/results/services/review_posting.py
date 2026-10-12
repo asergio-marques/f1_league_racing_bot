@@ -259,7 +259,8 @@ def _standings_job(
 
 
 async def plan_division_posts(
-    db: aiosqlite.Connection, division_id: int, *, division_name: str | None = None
+    db: aiosqlite.Connection, division_id: int, *, division_name: str | None = None,
+    results_only: bool = False,
 ) -> list[PlannedStep]:
     """The jobs that rebuild everything a division's results and standings channels show, read on
     *db*: every round's results in round order, then every round's standings in round order, each
@@ -272,6 +273,9 @@ async def plan_division_posts(
     With *division_name*, every job carries it as `"division"` and `not_done` names it ("Round 2's
     Feature Race results in Pro were not posted"): a change that reposts several divisions says
     which. Planned with none, as the amendment's rebuild plans them, the lines name no division.
+
+    With *results_only*, the standings jobs are left out: `/results rounds sync` reposts the
+    results, and the standings are `/results standings sync`'s.
     """
     config = await (
         await db.execute(
@@ -315,7 +319,7 @@ async def plan_division_posts(
                     "session": f"{_session_name(session['session_type'])} results",
                     "remedy": _AMEND if pending else _RESULTS_SYNC,
                 }))
-        if config["standings_channel_id"]:
+        if config["standings_channel_id"] and not results_only:
             standings.append(
                 _standings_job(int(rnd["id"]), rnd["round_number"], label, pending, fresh=True)
             )

@@ -189,21 +189,16 @@ async def _reserves(db_path) -> int | None:
 
 
 #: The rounds sync reads its division's channel and rounds through
-#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches and the
-#: service does not yet have.
-REPOST_STATUS = "#439: results_post_service has no division_repost_status"
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches.
 SYNCS = [
     ("standings", _standings_sync),
-    pytest.param("rounds", _rounds_sync,
-                 marks=pytest.mark.xfail(strict=True, reason=REPOST_STATUS)),
+    ("rounds", _rounds_sync),
 ]
 
 #: The rounds sync's cases that hold once it is asked of the change queue (#439).
-ON_THE_QUEUE = "#439: /results rounds sync is not yet asked of the change queue"
 SYNCS_ON_THE_QUEUE = [
     ("standings", _standings_sync),
-    pytest.param("rounds", _rounds_sync,
-                 marks=pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)),
+    ("rounds", _rounds_sync),
 ]
 
 
@@ -411,9 +406,7 @@ async def test_an_ended_amendment_does_not_hold_a_sync(tmp_path, label, run):
 
 
 def _refusal(case_id, command, run, reply, **kwargs):
-    marks = (pytest.mark.xfail(strict=True, reason=REPOST_STATUS)
-             if run is _rounds_sync else ())
-    return pytest.param(command, run, reply, kwargs, id=case_id, marks=marks)
+    return pytest.param(command, run, reply, kwargs, id=case_id)
 
 
 @pytest.mark.parametrize(

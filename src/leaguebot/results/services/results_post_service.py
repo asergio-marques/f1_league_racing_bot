@@ -1790,6 +1790,39 @@ async def _get_show_reserves(db_path: str, division_id: int) -> bool:
     return bool(val) if val is not None else True
 
 
+async def division_repost_status(
+    db_path: str, division_id: int, guild: discord.Guild | None
+) -> str:
+    """What a division's results sync finds before it is asked: the read half of the sync.
+
+    One of ``"ok"`` (a results channel set and on the server, and a round with results to post),
+    ``"no_rounds"`` (the division is gone, or no round of it has results) and ``"no_channel"``
+    (no results channel set, or one the server no longer holds). With no *guild* to look in, a
+    channel that is set is taken as on the server. The repost itself is a change on the queue
+    (`rounds_sync_change`).
+    """
+    async with get_connection(db_path) as db:
+        div_row = await (await db.execute(
+            "SELECT d.id, drc.results_channel_id FROM divisions d "
+            "LEFT JOIN division_results_config drc ON drc.division_id = d.id WHERE d.id = ?",
+            (division_id,),
+        )).fetchone()
+        if div_row is None:
+            return "no_rounds"
+        results_ch_id: int | None = div_row["results_channel_id"]
+        if not results_ch_id:
+            return "no_channel"
+        if guild is not None and as_text_channel(guild.get_channel(results_ch_id)) is None:
+            log.warning("division_repost_status: results channel %s not found in guild", results_ch_id)
+            return "no_channel"
+        found = await (await db.execute(
+            "SELECT 1 FROM rounds r JOIN session_results sr ON sr.round_id = r.id "
+            "WHERE r.division_id = ? AND sr.status = 'ACTIVE' LIMIT 1",
+            (division_id,),
+        )).fetchone()
+    return "ok" if found is not None else "no_rounds"
+
+
 async def repost_results_for_division(
     db_path: str,
     division_id: int,

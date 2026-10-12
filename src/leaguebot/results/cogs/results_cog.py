@@ -891,22 +891,12 @@ class ResultsCog(commands.Cog):
         The wait is a refusal and is recorded as one (#482), *what* being the caller's own name
         of the command as the log channel should read it.
         """
-        from leaguebot.results.services.result_submission_service import (
-            amendment_wait_text,
-            open_amendment_in_division,
-        )
+        from leaguebot.results.services.result_submission_service import sync_held_by_amendment
 
-        row = await open_amendment_in_division(self.bot.db_path, div.id)
-        if row is None:
+        reply = await sync_held_by_amendment(self.bot.db_path, div.id)
+        if reply is None:
             return True
-        await refuse(
-            interaction,
-            f"\u23f8\ufe0f Round {row['round_number']} of **{div.name}** is being amended in "
-            f"<#{row['channel_id']}>, and its corrections are not approved yet, so the "
-            f"division cannot be synced until that ends — {amendment_wait_text()}. "
-            "Run this again then.",
-            what=what,
-        )
+        await refuse(interaction, reply, what=what)
         return False
 
     # ------------------------------------------------------------------
@@ -2222,19 +2212,18 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
-        from leaguebot.results.services.results_post_service import repost_results_for_division
-        status = await repost_results_for_division(
-            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
-        )
+        from leaguebot.results.services.results_post_service import division_repost_status
+        from leaguebot.results.services.rounds_sync_change import ROUNDS_SYNC
+
+        # The channel and the rounds are read here to answer at once, as the command always has;
+        # the repost itself is a change on the queue, which checks them again when it runs.
+        status = await division_repost_status(self.bot.db_path, div.id, guild_of(interaction))
 
         if status == "ok":
-            await interaction.followup.send(
-                f"\u2705 Results for all rounds in **{division}** synced to the results channel.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results rounds sync | Success\n"
-                f"  division: {division}",
+            await self.bot.change_queue.ask(
+                ROUNDS_SYNC, {"division_id": div.id, "division_name": div.name},
+                interaction=interaction, what="`/results rounds sync`",
+                refusal_what=describe(interaction),
             )
         elif status == "no_rounds":
             await self._answer_nothing_changed(

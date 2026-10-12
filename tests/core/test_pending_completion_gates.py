@@ -254,16 +254,8 @@ REFUSED = {
 _NAMES = sorted(REFUSED)
 
 #: `/results rounds sync` reads its division's channel and rounds through
-#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches and the
-#: service does not yet have.
-_NO_REPOST_STATUS = "#439: results_post_service has no division_repost_status"
-
-#: `_NAMES` as parameters, `/results rounds sync` marked to fail until it has its read.
-_REFUSED_PARAMS = [
-    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_NO_REPOST_STATUS))
-    if name == "/results rounds sync" else name
-    for name in _NAMES
-]
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches.
+_REFUSED_PARAMS = list(_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -346,14 +338,9 @@ _ASKED_OF_THE_QUEUE = {
     "/division calendar-sync": "calendar.sync",
     "/results rounds sync": "results.rounds.sync",
 }
-_NOT_ON_THE_QUEUE = "#439: the command is not yet asked of the change queue"
 
 
-@pytest.mark.parametrize("name", [
-    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_NOT_ON_THE_QUEUE))
-    if name == "/results rounds sync" else name
-    for name in _NAMES
-])
+@pytest.mark.parametrize("name", _NAMES)
 async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_path, name):
     db_path = await _db(tmp_path, SeasonStage.ONGOING)
     interaction = _interaction()

@@ -56,8 +56,6 @@ from tests.support.review_league import (
 )
 from tests.support.undecorate import undecorate
 
-UNBUILT = "#439: /results rounds sync is not yet a change on the change queue"
-
 KIND = "results.rounds.sync"
 #: Round 4's Feature Race results, standing where a test posts them.
 OLD_LATER_RESULTS = 8810
@@ -182,7 +180,8 @@ def _results_drawn(league: ReviewLeague, tmp_path: Any) -> tuple[ExitStack, Asyn
     return stack, render
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
+@pytest.mark.xfail(strict=True, reason="#439: the log channel writes a member's mention in "
+                   "backticks, which this test awaits bare")
 async def test_a_rounds_sync_is_acknowledged_and_updated_with_synced(tmp_path):
     league = await _league(tmp_path)
 
@@ -202,7 +201,6 @@ async def test_a_rounds_sync_is_acknowledged_and_updated_with_synced(tmp_path):
     assert set(league.channel(RESULTS_CHANNEL).messages) == {new}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_every_session_is_posted_in_round_order_each_before_its_old_message_is_deleted(
     tmp_path,
 ):
@@ -233,7 +231,6 @@ async def test_every_session_is_posted_in_round_order_each_before_its_old_messag
     assert deleted == [OLD_RESULTS, OLD_LATER_RESULTS]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_repost_discord_refuses_stops_the_queue_and_leaves_the_old_table(tmp_path):
     league = await _league(tmp_path)
     league.channel(RESULTS_CHANNEL).send_fails = http_error(
@@ -250,7 +247,6 @@ async def test_a_repost_discord_refuses_stops_the_queue_and_leaves_the_old_table
     assert ("delete", OLD_RESULTS) not in _results_events(league)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_rounds_sync_posts_no_standings(tmp_path):
     """The sync, carried out on the queue, reposts the results; the standings are
     `/results standings sync`'s."""
@@ -266,7 +262,6 @@ async def test_a_rounds_sync_posts_no_standings(tmp_path):
             if row["name"] == "post_standings"] == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_retried_repost_posts_the_text(tmp_path):
     """Images on: Discord refuses every post, so the picture and the text in its place both
     fail, and the queue stops; once Discord takes posts again, Retry posts the table as text,
@@ -292,7 +287,6 @@ async def test_a_retried_repost_posts_the_text(tmp_path):
     assert await _session_ids(league) == new
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_rounds_sync_waiting_while_an_amendment_opens_is_refused_when_it_runs(tmp_path):
     """The queue is stopped ahead of the sync; meanwhile an amendment of round 3 opens in
     channel 705. Once the queue moves, the sync is refused in the command's own words, and
@@ -315,7 +309,6 @@ async def test_a_rounds_sync_waiting_while_an_amendment_opens_is_refused_when_it
     assert await _sync_states(league) == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_rounds_sync_waiting_while_the_season_reaches_pending_completion_is_refused_when_it_runs(
     tmp_path,
 ):
@@ -343,7 +336,8 @@ async def test_a_rounds_sync_waiting_while_the_season_reaches_pending_completion
     assert await _sync_states(league) == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
+@pytest.mark.xfail(strict=True, reason="#439: the log channel writes a member's mention in "
+                   "backticks, which this test awaits bare")
 async def test_a_rounds_sync_with_a_discarded_table_says_what_was_not_synced(tmp_path):
     """Discord refuses round 3's table and a league admin discards it: the reply says the
     results were not all synced, naming the table and `/results rounds sync`, the old table

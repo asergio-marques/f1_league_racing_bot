@@ -46,8 +46,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.results_post_service import repost_standings_for_division
 
-UNBUILT = "#439: the results sync's status is not yet read by division_repost_status"
-
 SERVER_ID = 12508
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -162,7 +160,6 @@ async def _standings(db_path, *, guild=None):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_division_with_no_results_channel_says_so(tmp_path):
     db_path = await _make_db(tmp_path, name="results_nochannel", results_channel=None)
 
@@ -171,7 +168,6 @@ async def test_a_division_with_no_results_channel_says_so(tmp_path):
     assert status == "no_channel"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_division_with_no_configuration_at_all_says_no_channel(tmp_path):
     """The LEFT JOIN finds nothing, which is the same problem from the manager's side and
     has the same fix."""
@@ -182,7 +178,6 @@ async def test_a_division_with_no_configuration_at_all_says_no_channel(tmp_path)
     assert status == "no_channel"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_channel_that_has_been_deleted_says_no_channel(tmp_path):
     """Configured but gone. From the manager's side there is nowhere to post, and the fix
     is the same `/results channel results` command."""
@@ -193,7 +188,6 @@ async def test_a_channel_that_has_been_deleted_says_no_channel(tmp_path):
     assert status == "no_channel"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_division_with_no_rounds_says_so(tmp_path):
     db_path = await _make_db(tmp_path, name="results_norounds", rounds=())
 
@@ -202,7 +196,6 @@ async def test_a_division_with_no_rounds_says_so(tmp_path):
     assert status == "no_rounds"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_division_that_does_not_exist_says_no_rounds(tmp_path):
     """Deleted between the command resolving it and the service reading it — there is
     nothing to post and nothing configured, and "no rounds" is the honest half."""
