@@ -31,6 +31,7 @@ import discord
 from leaguebot.attendance.services import attendance_service as _att
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.services import lineup_posting
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
@@ -145,10 +146,15 @@ class AttendanceAfterReview:
             as_text=as_text,
         )
 
-    async def refresh_lineup(self, division_id: int, *, as_text: bool) -> None:
+    async def refresh_lineup(
+        self, division_id: int, *, as_text: bool
+    ) -> dict[str, Any] | None:
         if not await self.enabled():
-            return
-        await self._placement.refresh_lineup(await self._guild(), division_id, as_text=as_text)
+            return None
+        posted = await self._placement.refresh_lineup(
+            await self._guild(), division_id, as_text=as_text
+        )
+        return lineup_posting.posted_result(posted)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         return await _att.sync_hint(self._db_path, division_id, round_id)

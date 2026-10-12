@@ -1,29 +1,26 @@
 """Post a division's lineup as a graphic, or stand aside (038).
 
 **This module exists to keep one decision in one place.** The lineup has five posting
-surfaces against the calendar's two, and FR-025/FR-025a require the image path and the
-textual path to differ in exactly one respect — the order of the delete and the build.
-Spreading that across five call sites is how the two would drift apart.
+surfaces against the calendar's two, and the image path and the textual path must not drift
+apart across five call sites.
 
 The shape every caller uses:
 
     outcome = await try_post(bot, guild, division_id, origin=PostingOrigin.SCHEDULED)
     if outcome.applicable:
         return                      # the graphic was posted, or the caller was told why
-    ...existing textual body, unchanged...
+    ...the textual body...
 
-**The textual path is not reformed by this module.** Where the image flow does not run —
-the module disabled, the `lineup` toggle off, no template configured — ``try_post``
-answers ``NOT_APPLICABLE`` and the caller's existing body runs exactly as it did before
-this feature, delete-then-build order included (FR-025a). That order was specified in
-specs/028-season-signup-flow/ and is deliberately not reopened here.
+Both paths post first, and neither deletes: the message a lineup replaces is deleted by a job
+of the change queue after the post, which also saves the new id (#439; Constitution XIV rule 8;
+image spec :706). A picture Discord refuses stands aside, so the caller's text is posted in the
+same try. Where the image flow does not run — the module disabled, the `lineup` toggle off, no
+template configured — ``try_post`` answers ``NOT_APPLICABLE`` and the caller's textual body runs.
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,6 +53,8 @@ class LineupPostOutcome:
     message: str | None = None
     notices: list = field(default_factory=list)
     png_path: Path | None = None
+    #: The message the graphic was posted as, where it was; the caller's job saves it.
+    message_id: int | None = None
 
     @property
     def applicable(self) -> bool:
@@ -283,10 +282,10 @@ async def try_post(
 ) -> LineupPostOutcome:
     """Post this division's lineup as a graphic, or stand aside.
 
-    **The replacement ordering (FR-025).** The PNG is produced first; only once it exists
-    is the previously posted message deleted and the new one posted in its place. A render
-    that fails therefore leaves the channel holding the message it had — the league keeps a
-    lineup rather than losing one — and the caller falls back to text.
+    **The replacement ordering (FR-025).** The PNG is produced first and posted; the message it
+    replaces is deleted by a job after the post, never here. A render that fails therefore
+    leaves the channel holding the message it had — the league keeps a lineup rather than
+    losing one — and the caller falls back to text.
     """
     if guild is None:
         return LineupPostOutcome()
@@ -297,7 +296,7 @@ async def try_post(
     async with get_connection(bot.db_path) as db:
         row = await (
             await db.execute(
-                "SELECT d.name, d.lineup_channel_id, d.lineup_message_id "
+                "SELECT d.name, d.lineup_channel_id "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -353,45 +352,11 @@ async def try_post(
         # the attachment so the handle is closed before the file is removed.
         discard_attachment(attachment)
 
-    # Only now is the previous message removed. This is the whole of FR-025: the channel
-    # never holds nothing, and a failed rebuild leaves the league its existing lineup.
-    if row["lineup_message_id"] is not None:
-        try:
-            previous = await channel.fetch_message(row["lineup_message_id"])
-            await previous.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            pass
-
-    now = datetime.now(timezone.utc).isoformat()
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "UPDATE divisions SET lineup_message_id = ? WHERE id = ?",
-            (message.id, division_id),
-        )
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, "
-            " new_value, timestamp) "
-            "VALUES (0, 'system', ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
-            (
-                division_id,
-                json.dumps(
-                    {
-                        "channel_id": row["lineup_channel_id"],
-                        "division": row["name"],
-                        "form": "image",
-                    }
-                ),
-                now,
-            ),
-        )
-        await db.commit()
-
     # No ``png_path``: the file was discarded the moment the send returned. Only
     # ``render_for_command`` still hands one back, because its two cog callers post it
     # themselves and discard it themselves.
     return LineupPostOutcome(
-        action=POSTED, notices=decision.notices
+        action=POSTED, notices=decision.notices, message_id=message.id
     )
 
 

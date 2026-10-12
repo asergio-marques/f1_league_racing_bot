@@ -115,8 +115,6 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
     raise AssertionError(f"{name} not found in {path}")
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the lineup's image path deletes the message it "
-                   "replaces")
 def test_the_image_path_deletes_nothing():
     """FR-025, read structurally: the picture is posted, and the lineup it replaces is deleted by
     the change queue's job after it, never here."""

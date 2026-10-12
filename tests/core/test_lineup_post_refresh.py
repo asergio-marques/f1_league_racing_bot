@@ -349,8 +349,6 @@ async def test_an_empty_division_posts_an_empty_lineup(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the lineup's poster saves the id itself and "
-                   "returns nothing")
 async def test_the_new_message_id_is_returned(tmp_path):
     """The post job's own save records it, and its next job deletes the lineup it replaces by
     the id read here; the poster itself writes nothing."""
@@ -369,7 +367,6 @@ async def test_the_new_message_id_is_returned(tmp_path):
     channel.fetch_message.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a refused lineup is logged, not raised")
 async def test_a_failed_post_stores_no_message_id(tmp_path):
     """A refused send raises for the change queue to stop on and try again; nothing is stored,
     so the old lineup stays the one the division records."""
@@ -425,8 +422,6 @@ async def test_a_channel_missing_from_the_cache_is_fetched(tmp_path):
     channel.send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a lineup channel gone from the server is "
-                   "logged, not raised")
 async def test_a_channel_that_cannot_be_fetched_raises(tmp_path):
     """Genuinely deleted. The placement has already happened and is not undone for it; the
     post raises for the change queue to stop on, and posts nothing."""
@@ -439,8 +434,6 @@ async def test_a_channel_that_cannot_be_fetched_raises(tmp_path):
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a lineup channel that is not a text channel "
-                   "posts nothing and raises nothing")
 async def test_a_lineup_channel_that_is_not_a_text_channel_raises(tmp_path):
     """A voice or forum channel configured by mistake; `send` on one would raise or behave
     differently. The post raises for the change queue to stop on, and sends nothing."""

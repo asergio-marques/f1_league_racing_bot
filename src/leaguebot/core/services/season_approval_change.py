@@ -58,7 +58,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services import approval_checks, season_classification_service
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -518,13 +518,6 @@ def season_approval_change(
         """The notice is deleted only where it was posted: a discarded post leaves none."""
         return posted_notice(ctx) is not None
 
-    async def refresh_lineup(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
-        await placement.refresh_lineup(
-            guild, int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
-        )
-        return StepResult()
-
     async def opening_standings(ctx: StepContext) -> StepResult:
         guild = await _guild(ctx.bot)
         await season_classification_service.post_opening_standings(
@@ -733,10 +726,7 @@ def season_approval_change(
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),
-        REFRESH_LINEUP: Step(
-            REFRESH_LINEUP, StepKind.ACT, refresh_lineup,
-            describe=describing("posting the lineup of **{name}**"),
-        ),
+        REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP),
         **calendar_steps(seasons),
         OPENING_STANDINGS: Step(
             OPENING_STANDINGS, StepKind.ACT, opening_standings, still_due=standings_due,

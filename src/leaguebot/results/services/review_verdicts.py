@@ -69,6 +69,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
 )
+from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
@@ -79,7 +80,7 @@ from leaguebot.results.services.result_submission_service import (
     send_appeals_prompt,
 )
 from leaguebot.results.services.results_post_service import _delete_posting
-from leaguebot.results.services.review_posting import _channel, _league_guild
+from leaguebot.results.services.review_posting import _channel, _deletes, _league_guild
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +155,7 @@ def verdict_steps(
         ),
         REFRESH_LINEUP: Step(
             REFRESH_LINEUP, StepKind.ACT, bound(_refresh_lineup), still_due=_after_a_sanction,
-            describe=_describe_lineup,
+            describe=_describe_lineup, record=lineup_posting.record_lineup_on,
         ),
     }
 
@@ -725,9 +726,24 @@ async def _describe_lineup(ctx: StepContext) -> str:
 
 
 async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
-    # A try again posts the text (Constitution XIV, rule 8), as the review's other posts do.
-    await hook.refresh_lineup(int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0)
-    return StepResult()
+    """Post the division's lineup, once, as text on a try again (Constitution XIV, rule 8).
+
+    Placement posts none of its own, so this is the one post a sanction owes. The job returns the
+    message posted and the one it replaces, saves the new id with its mark and plans the
+    review's own `delete_message` for the old one (`review_posting.not_done` names a discard).
+    """
+    await standing_posts.remove_kept(ctx.bot, ctx.kept)
+    result = await hook.refresh_lineup(
+        int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
+    )
+    if not result or result.get("new") is None:
+        return StepResult(result=result or {})
+    old = result.get("old")
+    then = (
+        _deletes(int(result["channel_id"]), [int(old)], "lineup")
+        if old is not None and int(old) != int(result["new"]) else ()
+    )
+    return StepResult(result=result, then=then)
 
 
 __all__ = [

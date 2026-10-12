@@ -235,8 +235,6 @@ async def test_a_lineup_for_a_division_with_no_lineup_channel_stops_the_queue_na
 
 # ── The post and the deletion of the lineup it replaces, as two jobs ─────────────────
 
-TWO_JOBS = "#439: a lineup's post and the deletion of the one it replaces are not yet two jobs"
-
 #: Pro's lineup standing in its lineup channel before the ask.
 OLD_LINEUP = 6100
 #: The link Discord gives Pro's old lineup, which a discarded deletion names.
@@ -300,7 +298,6 @@ def _pictures_on(monkeypatch: Any, tmp_path: Any) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path):
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
@@ -321,7 +318,6 @@ async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path)
     assert await _lineup_id(league) == new
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
@@ -338,7 +334,6 @@ async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
     assert await _lineup_id(league) == OLD_LINEUP
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_job(
     tmp_path, monkeypatch,
 ):
@@ -362,10 +357,7 @@ async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_
     ]
 
 
-@pytest.mark.parametrize("form", [
-    pytest.param("text", marks=pytest.mark.xfail(strict=True, reason=TWO_JOBS)),
-    pytest.param("image", marks=pytest.mark.xfail(strict=True, reason=TWO_JOBS)),
-])
+@pytest.mark.parametrize("form", ["text", "image"])
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying
@@ -388,7 +380,6 @@ async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monke
     assert value.get("form") == ("image" if form == "image" else None)
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_an_old_lineup_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
@@ -416,7 +407,6 @@ async def test_an_old_lineup_discord_will_not_delete_stops_the_queue_and_once_di
     assert len([kind for kind, _ in _lineup_events(league) if kind == "send"]) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
 async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one_on_restart(
     tmp_path,
 ):

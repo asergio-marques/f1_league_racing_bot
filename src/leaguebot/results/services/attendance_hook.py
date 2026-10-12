@@ -84,9 +84,15 @@ class AttendanceAfterReview(Protocol):
         *round_id*, which is the round whose verdicts it follows. Raises where it could not
         post."""
 
-    async def refresh_lineup(self, division_id: int, *, as_text: bool) -> None:
+    async def refresh_lineup(
+        self, division_id: int, *, as_text: bool
+    ) -> dict[str, Any] | None:
         """Post the division's lineup afresh, as text where *as_text* (a job tried again, #439).
-        Raises where it could not post."""
+        Raises where it could not post.
+
+        Gives the message posted and the one it replaces (`new`, `old`, `channel_id`,
+        `division_name`, `form`), for the job to save and to plan the old one's deletion; None
+        while attendance is off."""
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         """The line telling a manager how to finish sanctions that did not all apply."""

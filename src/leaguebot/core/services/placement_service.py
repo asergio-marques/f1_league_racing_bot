@@ -50,6 +50,23 @@ class PlacementsCommitted:
 
 
 @dataclass
+class LineupPosted:
+    """A lineup posted: the message sent and the one it replaces, for the jobs after the post.
+
+    *previous* is the division's recorded lineup message as it stood when the post was made, and
+    *form* is "image" for a picture and "text" for the embed. Nothing is saved: the post job's
+    `record` saves *message_id* (`lineup_posting.record_lineup_on`) and the job after it deletes
+    *previous*.
+    """
+
+    message_id: int
+    channel_id: int
+    previous: int | None
+    division_name: str
+    form: str
+
+
+@dataclass
 class RoleGrantOutcome:
     """What granting one role to every driver did (#374).
 
@@ -2037,56 +2054,40 @@ class PlacementService:
 
     async def refresh_lineup(
         self, guild: discord.Guild, division_id: int, *, as_text: bool = False
-    ) -> None:
+    ) -> LineupPosted | None:
         """Post the division's lineup afresh, **raising** where it could not be posted.
 
-        What a job on the change queue calls (#439): a lineup channel the division was given and
-        the guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, for
-        the queue to stop on and try again, where `_refresh_lineup_post` logs and returns. A
-        division never given a lineup channel posts nothing and raises nothing.
+        What the post job of a change on the change queue calls (#439): a lineup channel the
+        division was given and the guild no longer holds, or a send Discord refuses, raises
+        `StepFailedOnDiscord`, for the queue to stop on and try again. A division never given a
+        lineup channel posts nothing and gives None. The post is all it does: the job's `record`
+        saves the new id and a job after it deletes the message replaced.
 
         *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
         (Constitution XIV, rule 8).
         """
-        await self._refresh_lineup_post(
-            guild, division_id, raise_on_failure=True, as_text=as_text
-        )
+        return await self._refresh_lineup_post(guild, division_id, as_text=as_text)
 
     async def _refresh_lineup_post(
         self,
         guild: discord.Guild,
         division_id: int,
         *,
-        bot: LeagueBot | None = None,
-        raise_on_failure: bool = False,
         as_text: bool = False,
-    ) -> None:
+    ) -> LineupPosted | None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
 
         *as_text* leaves the image path out altogether, whatever is configured.
 
-        **The image path is a guard clause in front of an untouched body.** Where the
-        images module is enabled, the `lineup` aspect is on and a valid template is
-        configured, ``image_lineup_post.try_post`` produces the PNG *before* deleting the
-        message it replaces (FR-025) and this method returns.
+        **The image path is a guard clause in front of the textual body.** Where the images
+        module is enabled, the `lineup` aspect is on and a valid template is configured,
+        ``image_lineup_post.try_post`` produces the PNG and posts it, and this method returns.
 
-        Where it is not — the module off, the aspect off, no template — everything below
-        runs exactly as it did before 038, **delete-then-build order included**
-        (FR-025a, SC-007). That order was specified in specs/028-season-signup-flow/ and
-        is deliberately not reopened by this feature: the lineup image is an alternative
-        output beside the text, not a reform of it.
+        Either way the lineup is posted before the message it replaces is deleted, by a job after
+        it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves
+        nothing, and a refusal raises `StepFailedOnDiscord` for the queue to stop on. A picture
+        Discord refuses stands aside, so the text is posted in the same try.
         """
-        owner = None if as_text else (bot if bot is not None else getattr(self, "_bot", None))
-        if owner is not None:
-            try:
-                from leaguebot.image.services.image_lineup_post import try_post
-
-                outcome = await try_post(owner, guild, division_id)
-                if outcome.applicable:
-                    return
-            except Exception as exc:  # noqa: BLE001 — never block a placement on this
-                log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
-
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 "SELECT d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
@@ -2096,37 +2097,45 @@ class PlacementService:
             div_row = await cur.fetchone()
 
         if div_row is None or div_row["lineup_channel_id"] is None:
-            return
+            return None
 
         lineup_channel_id: int = div_row["lineup_channel_id"]
         lineup_message_id: int | None = div_row["lineup_message_id"]
         div_name: str = div_row["div_name"] or str(division_id)
+
+        owner = None if as_text else getattr(self, "_bot", None)
+        if owner is not None:
+            try:
+                from leaguebot.image.services.image_lineup_post import try_post
+
+                outcome = await try_post(owner, guild, division_id)
+                if outcome.applicable:
+                    if outcome.message_id is None:
+                        return None
+                    return LineupPosted(
+                        outcome.message_id, lineup_channel_id, lineup_message_id, div_name,
+                        "image",
+                    )
+            except Exception as exc:  # noqa: BLE001 — never block a placement on this
+                log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
 
         # Resolve the channel
         channel = as_text_channel(guild.get_channel(lineup_channel_id))
         if channel is None:
             try:
                 channel = as_text_channel(await guild.fetch_channel(lineup_channel_id))
-            except (discord.NotFound, discord.HTTPException):
+            except (discord.NotFound, discord.HTTPException) as exc:
                 log.error(
                     "_refresh_lineup_post: lineup channel %s not found for division %s",
                     lineup_channel_id, division_id,
                 )
-                if raise_on_failure:
-                    raise StepFailedOnDiscord(
-                        f"the lineup channel (id {lineup_channel_id}) is not in the server"
-                    )
-                return
+                raise StepFailedOnDiscord(
+                    f"the lineup channel (id {lineup_channel_id}) is not in the server"
+                ) from exc
         if not isinstance(channel, discord.TextChannel):
-            return
-
-        # Delete old message if present
-        if lineup_message_id is not None:
-            try:
-                old_msg = await channel.fetch_message(lineup_message_id)
-                await old_msg.delete()
-            except (discord.NotFound, discord.Forbidden):
-                pass  # Already gone or no permission — safe to continue
+            raise StepFailedOnDiscord(
+                f"the lineup channel (id {lineup_channel_id}) is not a text channel"
+            )
 
         # Fetch teams with assigned drivers for this division
         async with get_connection(self._db_path) as db:
@@ -2178,29 +2187,14 @@ class PlacementService:
             color=discord.Color.blurple(),
         )
 
-        # Post and persist new message ID
+        # Post: the id is saved by the job's record, the old message deleted by the job after it
         try:
             new_msg = await channel.send(embed=embed)
         except discord.HTTPException as exc:
             log.error("_refresh_lineup_post: failed to post embed: %s", exc)
-            if raise_on_failure:
-                raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
-            return
+            raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
 
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE divisions SET lineup_message_id = ? WHERE id = ?",
-                (new_msg.id, division_id),
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
-                (0, "system", division_id,
-                 json.dumps({"channel_id": lineup_channel_id, "division": div_name}), now),
-            )
-            await db.commit()
+        return LineupPosted(new_msg.id, lineup_channel_id, lineup_message_id, div_name, "text")
 
     async def resolve_division(
         self, season_id: int, division_input: str
