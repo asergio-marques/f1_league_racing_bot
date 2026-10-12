@@ -1416,3 +1416,60 @@ async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) 
 
     assert await get_passed_over_steps(db_path, now=now) == []
 
+
+async def _queue_forecast(db_path: str, round_id: int, phase: int) -> None:
+    """A `weather.forecast` change for *phase* of *round_id* asked of the queue and not yet run."""
+    import json
+
+    payload = {"round_id": round_id, "phase": phase, "division_name": "Division A",
+               "round_number": round_id}
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('weather.forecast', ?, ?, 'BOT', 'QUEUED', 'drawing a forecast')",
+            (f"weather.forecast:{round_id}:{phase}", json.dumps(payload)),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("case, left", [
+    pytest.param("FINAL", [], id="round final"),
+    pytest.param("AWAITING_APPEAL_VERDICTS", [], id="round awaiting appeal verdicts"),
+    pytest.param("phase 1 in hand", [2, 3], id="phase 1 in hand on the queue"),
+    pytest.param("division cancelled", [], id="division cancelled"),
+    pytest.param("round cancelled", [], id="round cancelled"),
+])
+async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passed_over(
+    tmp_path, case, left,
+) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
+    with none of its phases done, so Phases 1, 2 and 3 would be named as passed over. But advance
+    offers nothing of a round that has ended (final, or its appeals being judged), of a cancelled
+    round or division, nor a step already in hand on the change queue: so none of those is named
+    either, and with Phase 1 in hand only Phases 2 and 3 are."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "passed_over_limits.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00"},
+    ])
+    if case == "phase 1 in hand":
+        await _queue_forecast(db_path, 1, 1)
+    else:
+        sql = {
+            "FINAL": "UPDATE rounds SET status = 'FINAL' WHERE id = 1",
+            "AWAITING_APPEAL_VERDICTS":
+                "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = 1",
+            "division cancelled": "UPDATE divisions SET status = 'CANCELLED' WHERE id = 1",
+            "round cancelled": "UPDATE rounds SET status = 'CANCELLED' WHERE id = 1",
+        }[case]
+        async with get_connection(db_path) as db:
+            await db.execute(sql)
+            await db.commit()
+
+    steps = await get_passed_over_steps(db_path, now=now)
+
+    assert [step["phase_number"] for step in steps] == left
+
