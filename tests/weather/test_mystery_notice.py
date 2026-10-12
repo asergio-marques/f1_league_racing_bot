@@ -461,3 +461,44 @@ class TestRunMysteryNotice:
         async with get_connection(db_path) as db:
             cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 4")
             assert (await cursor.fetchone())["phase1_done"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 5. The notice's record, on the save its job hands it (#439)
+# ---------------------------------------------------------------------------
+
+#: Why the notice's record fails until the build moves it onto a handed connection (slice 6).
+RECORD_UNBUILT = (
+    "#439: the mystery notice's record is not yet written on a connection a save hands it "
+    "(record_mystery_notice_on)"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=RECORD_UNBUILT)
+async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tmp_path):
+    """The notice marks the round's Phase 1 done on the save handed, committing nothing of its
+    own: its flag stands or falls with the job, and the notice is posted by a job after it, so
+    a notice Discord refuses no longer leaves the flag set and nothing posted (#439)."""
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.weather.services.mystery_notice_service import record_mystery_notice_on
+
+    db_path = str(tmp_path / "notice_record.db")
+    await run_migrations(db_path)
+    await _seed_mystery_round(db_path, round_id=5)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        drawn = await record_mystery_notice_on(db, 5)
+        cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 5")
+        assert (await cursor.fetchone())["phase1_done"] == 1
+        await db.rollback()
+
+    # Nothing is drawn for a notice, and it writes no line (weather spec :128).
+    assert drawn.payload is None
+    assert drawn.line is None
+    assert not drawn.blocked
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 5")
+        assert (await cursor.fetchone())["phase1_done"] == 0
