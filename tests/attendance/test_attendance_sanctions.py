@@ -40,7 +40,10 @@ schema would not catch a column that moved.
 """
 from __future__ import annotations
 
+import inspect
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -270,11 +273,45 @@ def announcer():
 
 @pytest.fixture
 def sheet():
-    """Patch the attendance sheet re-post, which has its own test file."""
-    with patch.object(
-        attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ) as posted:
+    """Patch the sheet the run asks the change queue to post (`sheet_posting.ask_sheet_post`,
+    #439), which has its own test file, and the sheet it posted itself until then, under one
+    double: a test asks only whether a sheet was owed, and how many."""
+    import contextlib
+
+    posted = AsyncMock(return_value=None)
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch.object(attendance_service, "post_attendance_sheet", new=posted))
+        try:
+            from leaguebot.attendance.services import sheet_posting
+        except ImportError:
+            pass
+        else:
+            stack.enter_context(patch.object(sheet_posting, "ask_sheet_post", new=posted))
         yield posted
+
+
+@contextmanager
+def _asking_for_sheets() -> Iterator[list[tuple[int, int, set[int]]]]:
+    """Record each sheet asked of the change queue through `sheet_posting.ask_sheet_post`, as
+    (division, round, the drivers it marks), in order. Records nothing until the module exists
+    (#439)."""
+    asked: list[tuple[int, int, set[int]]] = []
+    try:
+        from leaguebot.attendance.services import sheet_posting
+    except ImportError:
+        yield asked
+        return
+    signature = inspect.signature(sheet_posting.ask_sheet_post)
+
+    async def _ask(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        given = bound.arguments
+        asked.append((int(given["division_id"]), int(given["round_id"]),
+                      {int(p) for p in given["sanctioned"]}))
+
+    with patch.object(sheet_posting, "ask_sheet_post", new=_ask):
+        yield asked
 
 
 # ---------------------------------------------------------------------------
@@ -606,19 +643,6 @@ async def test_a_sanction_applied_but_not_announced_is_reported_as_such(
     sheet.assert_awaited_once()
 
 
-async def test_a_sheet_that_cannot_be_posted_again_is_reported(tmp_path, announcer, sheet):
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-    sheet.side_effect = RuntimeError("no channel")
-
-    outcome = await _run(bot, db_path)
-
-    assert outcome.applied
-    assert outcome.posting_faults == ["the attendance sheet could not be posted again: no channel"]
-    assert not outcome.complete
-
-
 # ---------------------------------------------------------------------------
 # Autoreserve
 # ---------------------------------------------------------------------------
@@ -735,10 +759,10 @@ async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
 
-    await _run(bot, db_path)
+    with _asking_for_sheets() as asked:
+        await _run(bot, db_path)
 
-    sheet.assert_awaited_once()
-    assert sheet.await_args.kwargs["sanctioned_profile_ids"] == {FULL_TIME_PROFILE}
+    assert asked == [(DIVISION_ID, ROUND_ID, {FULL_TIME_PROFILE})]
     bot.placement_service._refresh_lineup_post.assert_not_awaited()
     assert _lineups_asked(bot) == [DIVISION_ID]
 

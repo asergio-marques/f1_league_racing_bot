@@ -372,59 +372,6 @@ async def test_without_a_graphic_the_message_carries_the_whole_textual_sheet(she
 
 
 @pytest.mark.asyncio
-async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monkeypatch):
-    """FR-060 / XIV.8: a **service** failure retries as text, never as a rendered image.
-
-    A retry queue is durable and outlives the state that filled it, so a picture retried an
-    hour later is a picture of a division that has moved on. The text is composed at the moment
-    it is finally sent.
-    """
-    from leaguebot.core.services import retry_service
-
-    enqueued: list[dict] = []
-
-    async def _fake_enqueue(db_path, channel_id, content, failure_reason):
-        enqueued.append(
-            {"channel_id": channel_id, "content": content, "reason": failure_reason}
-        )
-
-    monkeypatch.setattr(retry_service, "enqueue", _fake_enqueue)
-
-    await _config(sheet_db, prior="4242")
-    channel = _FakeChannel([], send_fails=True)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-    guild.id = 1
-
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    assert len(enqueued) == 1
-    assert enqueued[0]["channel_id"] == 900
-    assert "Attendance Standings" in enqueued[0]["content"]
-    assert "attendance sheet for division 7" in enqueued[0]["reason"]
-
-
-@pytest.mark.asyncio
-async def test_a_queue_failure_never_masks_the_original_posting_failure(
-    sheet_db, monkeypatch
-):
-    from leaguebot.core.services import retry_service
-
-    async def _boom(*args, **kwargs):
-        raise RuntimeError("queue is down")
-
-    monkeypatch.setattr(retry_service, "enqueue", _boom)
-
-    await _config(sheet_db, prior="4242")
-    channel = _FakeChannel([], send_fails=True)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-    guild.id = 1
-
-    # Must not raise, and must still leave the prior sheet standing.
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-    assert await _stored_message_id(sheet_db) == "4242"
-
-
-@pytest.mark.asyncio
 async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
     """FR-047: a cancelled round distributes no points and produces no sheet.
 

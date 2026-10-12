@@ -26,6 +26,7 @@ from tests.attendance.test_attendance_sanctions import (
     SEASON_ID,
     _make_bot,
     _make_db,
+    _asking_for_sheets,
     _seed_totals,
     _with_the_queue,
 )
@@ -98,19 +99,24 @@ async def test_sync_leaves_earlier_rounds_and_unfinished_ones_alone(tmp_path, pi
     assert [c.args[1] for c in distribute.await_args_list] == [2, 3]
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the sync posts the sheet itself rather than "
+                   "asking the change queue")
 async def test_sync_posts_the_sheet_and_enforces_against_the_latest_round(
     tmp_path, pipeline
 ):
     """The running totals are carried forward, so the latest round is where they stand —
     and the channel holds one sheet, which is that round's."""
-    _, _, sheet, sanctions = pipeline
+    _, _, _, sanctions = pipeline
     db_path = await _make_db(tmp_path, autosack=20)
     await _add_rounds(db_path, {2: "FINAL", 3: "FINAL"})
+    bot = _make_bot(db_path)
 
-    await _sync(_make_bot(db_path), db_path)
+    with _asking_for_sheets() as asked:
+        await _sync(bot, db_path)
 
-    assert sheet.await_args.args[3] == 3
+    assert asked == [(DIVISION_ID, 3, set())]
     assert sanctions.await_args.args[3] == 3
+    assert sanctions.await_args.kwargs["queue"] is bot.change_queue
 
 
 async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
@@ -150,7 +156,7 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
         attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
     ), patch.object(
         attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ), patch(
+    ), _asking_for_sheets(), patch(
         "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
         # Returns the sanctions it could not announce (#237). `None` is not merely
         # inert here: the run does `posting_faults += <return>`, which raises inside
@@ -189,7 +195,8 @@ async def test_sync_is_one_transaction(tmp_path, monkeypatch):
     monkeypatch.setattr(attendance_service, "enforce_attendance_sanctions", AsyncMock())
 
     with pytest.raises(RuntimeError):
-        await sync_attendance(None, None, db_file, division_id, round_ids[0], 1)
+        await sync_attendance(None, None, db_file, division_id, round_ids[0], 1,
+                              **_with_the_queue(sync_attendance, MagicMock()))
 
     assert calls == round_ids
     assert await _awarded(db_file, round_ids[0]) is None
@@ -343,6 +350,7 @@ async def test_a_channel_fault_refuses_it_with_nothing_changed(tmp_path):
     assert "the attendance channel is gone" in replied
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the cog hands the sync no change queue")
 async def test_it_syncs_from_the_named_round_and_lists_what_applied_and_failed(tmp_path):
     db_path = await _make_db(tmp_path, autosack=20)
     await _add_rounds(db_path, {2: "FINAL"})
@@ -356,6 +364,7 @@ async def test_it_syncs_from_the_named_round_and_lists_what_applied_and_failed(t
     synced = await _invoke(cog, interaction, round=2, outcome=outcome)
 
     assert synced.await_args.args[3:] == (DIVISION_ID, 2, SEASON_ID)
+    assert synced.await_args.kwargs["queue"] is cog.bot.change_queue
     replied = _replied(interaction)
     assert "• <@4> (Four) — autosack" in replied
     assert "Still not applied" in replied
