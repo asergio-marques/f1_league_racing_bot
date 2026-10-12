@@ -5,8 +5,6 @@ together with what holds them, and their history entries are kept by identifier.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -175,23 +173,18 @@ async def _flag_on(db):
 
 
 async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
-    """The two test drivers go and the flag is cleared on the save, the forecasts untouched;
-    rolled back, both drivers and the flag are as they were."""
+    """The two test drivers go and the flag is cleared on the save; rolled back, both drivers and
+    the flag are as they were. It takes the save alone, with no bot to flush forecasts through,
+    their clearing being a change on the queue of its own (#439)."""
     from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
 
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions",
-        new=AsyncMock(),
-    ) as flushed:
-        async with get_connection(db_path) as db:
-            assert await switch_test_mode_off_on(db) == 2
-            assert await _profiles_on(db) == [3]
-            assert await _flag_on(db) == 0
-            await db.rollback()
-            assert await _profiles_on(db) == [1, 2, 3]
-            assert await _flag_on(db) == 1
-
-    flushed.assert_not_awaited()
+    async with get_connection(db_path) as db:
+        assert await switch_test_mode_off_on(db) == 2
+        assert await _profiles_on(db) == [3]
+        assert await _flag_on(db) == 0
+        await db.rollback()
+        assert await _profiles_on(db) == [1, 2, 3]
+        assert await _flag_on(db) == 1
 
 
 async def test_clearing_the_test_drivers_on_the_save_handed_commits_nothing(db_path):
