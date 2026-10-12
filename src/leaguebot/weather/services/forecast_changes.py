@@ -56,6 +56,7 @@ from leaguebot.core.services.change_queue import (
     OutcomeContext,
     Step,
     StepContext,
+    StepView,
 )
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services import (
@@ -568,3 +569,33 @@ async def ask_forecast_flush(queue: ChangeQueue) -> None:
     """Ask the queue to delete every recorded forecast, as test mode being switched off does."""
     await queue.ask(FORECAST_FLUSH, {}, what="clearing the forecasts posted under test mode",
                     origin=ChangeOrigin.BOT)
+
+
+def forecast_failure(view: StepView) -> tuple[str, str] | None:
+    """What a league admin's discard of a forecast job leaves, as a core outcome names it: the
+    thing and what to do, or None for a job that is not a forecast's.
+
+    Handed to core's amendment and season end through their hooks, so that each names a discarded
+    weather job without importing weather. A discarded draw is made when the bot next starts, while
+    its round is still to be run; a discarded post leaves the draw standing in the log channel and
+    nothing to post it again; a discarded deletion leaves the forecast to be deleted by hand.
+    """
+    result = view.result or {}
+    phase = view.payload.get("phase", result.get("phase"))
+    occasion = f"Phase {phase} forecast" if phase else "mystery round notice"
+    if view.name == DRAW_FORECAST:
+        return (occasion, "not drawn, and a league admin discarded it; it is drawn when the bot "
+                "next starts, while the round is still to be run")
+    if view.name == POST_FORECAST:
+        return (occasion, "drawn but not posted, and a league admin discarded it; the draw "
+                "stands in the log channel, and nothing posts it again")
+    if view.name == DELETE_FORECAST:
+        message = result.get("message_id", view.payload.get("message_id"))
+        if "guild_id" in result and message is not None:
+            where = (f"https://discord.com/channels/{result['guild_id']}/"
+                     f"{result['channel_id']}/{message}")
+        else:
+            where = f"message {message} in <#{result.get('channel_id')}>"
+        return ("forecast channel", f"the Phase {phase} forecast could not be deleted, and a "
+                f"league admin discarded it; delete it by hand ({where})")
+    return None

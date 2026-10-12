@@ -87,6 +87,9 @@ CLOSE = "close"
 TAKE_DOWN_CALL = "take_down_call"
 POST_CALL = "post_call"
 DELETE_FORECAST = "delete_forecast"
+#: Weather's own job, which the amendment plans a clean-up through under its own name.
+PLAN_FORECAST_DELETES = "plan_forecast_deletes"
+DRAW_FORECAST = "draw_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
 RERUN_PHASE = "rerun_phase"
 RUN_DEADLINE = "run_deadline"
@@ -129,8 +132,10 @@ class AmendHooks:
     core fit together"). *windows* gives the lead times the amendment is judged against, as
     `LeagueBot.amendment_windows` does: attendance's only where it is on, weather's always.
     *withdraw_phases_on*, *reopen_check_in_on* write on the connection a save hands them and commit
-    nothing. *delete_forecast* raises `StepFailedOnDiscord` and keeps the forecast's record where
-    Discord refuses. *run_phase* draws a phase now. *repost_call* posts the check-in call again,
+    nothing. *forecast_steps* are weather's jobs (its draw, its post, the deletion of a forecast
+    and the planning of deletions), which the amendment runs as jobs of its own: *plan_phase* plans
+    the draw of a phase now, the draw planning its post and the post the deletion of the forecast
+    it supersedes, and *forecast_failure* names what a discarded one of them leaves. *repost_call* posts the check-in call again,
     beside any call still standing, which it takes down only once the new one has landed, and
     leaves standing where the new one fails. *post_call* posts it where none stands, posting
     nothing where one does (judged under the round's check-in lock, so that a call posted by its
@@ -142,23 +147,23 @@ class AmendHooks:
     that the queue stops rather than report a give-up never made. It is handed the bot and the
     round's ``round_id``, ``round_number``, ``division_id``, ``division_name`` and
     ``season_number``.
-    *run_deadline* runs the round's check-in deadline, *clean_up_forecast* deletes its Phase 3
-    forecast and *clean_up_check_in* takes its check-in down, each as its timer would, for a
-    moment that passed while the amendment stood stopped. *round_list* formats the division's
-    rounds for the reply.
+    *run_deadline* runs the round's check-in deadline and *clean_up_check_in* takes its check-in
+    down, each as its timer would, for a moment that passed while the amendment stood stopped (its
+    Phase 3 forecast is deleted by a job planned through *forecast_steps*). *round_list* formats
+    the division's rounds for the reply.
     """
 
     windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
     withdraw_phases_on: Callable[[aiosqlite.Connection, int, Iterable[int]], Awaitable[None]]
-    delete_forecast: Callable[[Any, int, int, int], Awaitable[None]]
+    forecast_steps: Mapping[str, Step]
+    plan_phase: Callable[[int, int], tuple[PlannedStep, ...]]
+    forecast_failure: Callable[[StepView], tuple[str, str] | None]
     invalidation_text: Callable[[str], str]
-    run_phase: Callable[[int, int, Any], Awaitable[None]]
     reopen_check_in_on: Callable[[aiosqlite.Connection, int], Awaitable[None]]
     repost_call: Callable[[int, int, Any], Awaitable[None]]
     post_call: Callable[[int, Any], Awaitable[None]]
     give_up_call: Callable[[Any, Mapping[str, Any]], Awaitable[bool]]
     run_deadline: Callable[[int, Any], Awaitable[None]]
-    clean_up_forecast: Callable[[int, Any], Awaitable[None]]
     clean_up_check_in: Callable[[int, Any], Awaitable[None]]
     round_list: Callable[[list[Round]], str]
 
@@ -615,7 +620,7 @@ def round_amend_change(
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
         if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
             if standing["phase3_posted"]:
-                planned.append(PlannedStep(CLEAN_UP_FORECAST))
+                planned.append(PlannedStep(CLEAN_UP_FORECAST, {"phases": [3]}))
             if call_left:
                 planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
         return tuple(planned)
@@ -776,22 +781,6 @@ def round_amend_change(
             await hooks.post_call(rnd.id, ctx.bot)
         return StepResult(result={"posted": True})
 
-    async def delete_forecast(ctx: StepContext) -> StepResult:
-        """Delete the withdrawn forecast of one phase, keeping its record and stopping the queue
-        where Discord refuses."""
-        phase = int(ctx.step_payload["phase"])
-        try:
-            await hooks.delete_forecast(
-                ctx.bot, int(ctx.payload["round_id"]), int(ctx.payload["division_id"]), phase
-            )
-        except StepFailedOnDiscord as exc:
-            guild = await league_guild(ctx.bot)
-            kept = {**(exc.result or {}), "phase": phase}
-            if guild is not None:
-                kept["guild_id"] = guild.id
-            raise StepFailedOnDiscord(exc.reason, result=kept) from exc.__cause__
-        return StepResult(result={"phase": phase})
-
     async def notify_invalidation(ctx: StepContext) -> StepResult:
         """Tell the division's forecast channel that its forecasts no longer stand. A channel never
         set is done and unnamed; one set and gone, or a send Discord refuses, stops the queue."""
@@ -817,13 +806,15 @@ def round_amend_change(
         return StepResult(result={"sent": True})
 
     async def rerun_phase(ctx: StepContext) -> StepResult:
-        """Draw a phase whose horizon has already passed, by the amended moment or while the
-        amendment stood stopped, where it is still due when the job runs (`phase_still_due`).
-        Discord refusing its post goes the way weather's own posts go (owner, 2026-10-08:
-        slice 6)."""
+        """Plan the draw of a phase whose horizon has already passed, by the amended moment or while
+        the amendment stood stopped, where it is still due when the job runs (`phase_still_due`).
+        The draw, its post and the deletion of the forecast it supersedes are jobs of the
+        amendment's own, in that order, before the next phase's: Discord refusing the post or the
+        deletion stops the queue (owner, 2026-10-10)."""
         phase = int(ctx.step_payload["phase"])
-        await hooks.run_phase(phase, int(ctx.payload["round_id"]), ctx.bot)
-        return StepResult(result={"phase": phase})
+        return StepResult(
+            result={"phase": phase}, then=hooks.plan_phase(int(ctx.payload["round_id"]), phase)
+        )
 
     def catching_up(
         hook: Callable[[int, Any], Awaitable[None]], done: str
@@ -921,9 +912,10 @@ def round_amend_change(
                     if "guild_id" in result and "message_id" in result
                     else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
                 )
+                which = "superseded" if each.payload.get("superseded") else "withdrawn"
                 failures.append(notices.NoticeFailure(
                     division, "forecast channel",
-                    f"the withdrawn Phase {result.get('phase')} forecast could not be deleted, "
+                    f"the {which} Phase {result.get('phase')} forecast could not be deleted, "
                     f"and a league admin discarded it; delete it by hand ({where})",
                 ))
             elif each.name == NOTIFY_INVALIDATION:
@@ -956,9 +948,19 @@ def round_amend_change(
                     "the check-in was not taken down a day after the round, and a league admin "
                     "discarded it; it is taken down when the bot next starts",
                 ))
+            elif (weather := hooks.forecast_failure(each)) is not None:
+                failures.append(notices.NoticeFailure(division, *weather))
         if not failures:
             return ""
         return "\n⚠️ **Not done**\n" + "\n".join(f"  • {each.describe()}" for each in failures)
+
+    async def describe_forecast_delete(ctx: StepContext) -> str:
+        if ctx.step_payload.get("superseded"):
+            return (
+                f"deleting the superseded Phase {ctx.step_payload['phase']} forecast of round "
+                f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}**"
+            )
+        return await named("deleting a withdrawn forecast of round {number} in **{division}**")(ctx)
 
     steps: dict[str, Step] = {
         JUDGE: Step(
@@ -985,9 +987,14 @@ def round_amend_change(
             POST_CALL, StepKind.ACT, post_call, still_due=call_still_due,
             describe=named("posting the check-in call of round {number} in **{division}** again"),
         ),
-        DELETE_FORECAST: Step(
-            DELETE_FORECAST, StepKind.ACT, delete_forecast,
-            describe=named("deleting a withdrawn forecast of round {number} in **{division}**"),
+        # Weather's own jobs, the draw and the deletion named for what the amendment does with them.
+        **hooks.forecast_steps,
+        DRAW_FORECAST: dataclasses.replace(
+            hooks.forecast_steps[DRAW_FORECAST],
+            describe=named("drawing a forecast of round {number} in **{division}** now"),
+        ),
+        DELETE_FORECAST: dataclasses.replace(
+            hooks.forecast_steps[DELETE_FORECAST], describe=describe_forecast_delete,
         ),
         NOTIFY_INVALIDATION: Step(
             NOTIFY_INVALIDATION, StepKind.ACT, notify_invalidation, still_due=weather_on,
@@ -1002,8 +1009,8 @@ def round_amend_change(
             still_due=attendance_on,
             describe=named("running the check-in deadline of round {number} in **{division}**"),
         ),
-        CLEAN_UP_FORECAST: Step(
-            CLEAN_UP_FORECAST, StepKind.ACT, catching_up(hooks.clean_up_forecast, "cleaned_up"),
+        CLEAN_UP_FORECAST: dataclasses.replace(
+            hooks.forecast_steps[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST,
             still_due=weather_on,
             describe=named(
                 "deleting the Phase 3 forecast of round {number} in **{division}** a day after it"

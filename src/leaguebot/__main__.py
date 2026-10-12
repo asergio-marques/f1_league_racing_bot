@@ -283,27 +283,21 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
     needed."""
     from leaguebot.attendance.services import rsvp_service
+    from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services.round_amend_change import AmendHooks
-    from leaguebot.weather.services import forecast_cleanup_service, phase_withdrawal
+    from leaguebot.weather.services import phase_withdrawal
+    from leaguebot.weather.services.forecast_changes import (
+        DRAW_FORECAST,
+        forecast_failure,
+        forecast_steps,
+    )
     from leaguebot.weather.utils.message_builder import format_round_list, invalidation_message
 
     async def windows() -> "tuple[AttendanceWindows | None, WeatherWindows]":
         return await bot.amendment_windows()
 
-    async def delete_forecast(bot_: Any, round_id: int, division_id: int, phase: int) -> None:
-        await forecast_cleanup_service.delete_forecast_message(
-            round_id, division_id, phase, bot_
-        )
-
-    async def run_phase(phase: int, round_id: int, bot_: Any) -> None:
-        from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
-
-        runner = {
-            1: phase1_service.run_phase1,
-            2: phase2_service.run_phase2,
-            3: phase3_service.run_phase3,
-        }[phase]
-        await runner(round_id, bot_)
+    def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
+        return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
     async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
         await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
@@ -317,24 +311,21 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def run_deadline(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_deadline(round_id, bot_)
 
-    async def clean_up_forecast(round_id: int, bot_: Any) -> None:
-        await forecast_cleanup_service.run_post_race_cleanup(round_id, bot_)
-
     async def clean_up_check_in(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_cleanup(round_id, bot_)
 
     return AmendHooks(
         windows=windows,
         withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
-        delete_forecast=delete_forecast,
+        forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
+        plan_phase=plan_phase,
+        forecast_failure=forecast_failure,
         invalidation_text=invalidation_message,
-        run_phase=run_phase,
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
         repost_call=repost_call,
         post_call=post_call,
         give_up_call=give_up_call,
         run_deadline=run_deadline,
-        clean_up_forecast=clean_up_forecast,
         clean_up_check_in=clean_up_check_in,
         round_list=format_round_list,
     )

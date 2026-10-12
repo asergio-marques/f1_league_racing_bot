@@ -81,10 +81,6 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
-#: Why a phase an amendment draws at once fails until the build makes its draw, post and
-#: supersession jobs of the amendment's own.
-FORECAST_JOBS = ("#439: a phase an amendment draws at once is not yet drawn, posted and "
-                 "superseded by jobs of the amendment's own")
 #: The message a check-in call posted by the `reposts` recorder stands as.
 LATE_CALL = 7101
 #: Why an amendment's check-in call fails until Discord refusing it stops the queue, its stop
@@ -771,8 +767,8 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("weather, attendance", [
-    pytest.param(True, True, marks=pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)),
-    pytest.param(True, False, marks=pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)),
+    pytest.param(True, True),
+    pytest.param(True, False),
     pytest.param(False, True),
     pytest.param(False, False),
 ], ids=["weather and attendance on", "weather on", "attendance on", "both off"])
@@ -945,7 +941,6 @@ async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path,
             "discarded it; post it with `/attendance post-check-in`") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 async def test_a_discarded_phase_run_says_it_is_drawn_when_the_bot_next_starts(tmp_path, phases):
     """Weather on; round 3 is brought forward to three days out, so its phase 1, never drawn,
     is due at once. Drawing it fails on a fault of the bot's own and a league admin discards it:
@@ -1299,7 +1294,6 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     assert row["checkin_cleared"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     tmp_path, phases, ending,
@@ -2103,7 +2097,6 @@ async def test_a_phase_drawn_at_once_whose_forecast_discord_refuses_stops_the_qu
     assert await _forecasts(league) == {1: new}
 
 
-@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 async def test_a_phase_drawn_at_once_supersedes_the_earlier_forecast_by_a_delete_job(tmp_path):
     """Round 3 brought forward to one day out, so phases 1 and 2 are drawn at once: phase 1's
     forecast is posted, then phase 2's, and phase 1's is deleted by a `delete_forecast` job after
@@ -2123,7 +2116,6 @@ async def test_a_phase_drawn_at_once_supersedes_the_earlier_forecast_by_a_delete
                                  "delete_forecast"]
 
 
-@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 async def test_a_discarded_forecast_post_of_an_amendment_is_named_in_its_reply(tmp_path):
     """Round 3 brought forward to three days out; Discord refuses phase 1's forecast and a
     league admin discards the post: the reply names it under "Not done", the draw standing."""
@@ -2142,7 +2134,6 @@ async def test_a_discarded_forecast_post_of_an_amendment_is_named_in_its_reply(t
             "the draw stands in the log channel, and nothing posts it again") in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded_once_discarded(
     tmp_path,
 ):

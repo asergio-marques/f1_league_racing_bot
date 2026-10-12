@@ -12,7 +12,6 @@ Public API:
   post_phase_message      — the one send site of a weather posting
   forecast_deletes        — the delete jobs a clean-up or a flush plans, one for each
                             recorded forecast
-  delete_forecast_message — delete a stored message, raising for the change queue
   run_post_race_cleanup   — ask the queue to delete Phase 3 message 24 h after round start
   flush_pending_deletions — on test-mode disable, ask the queue to delete all stored
                             messages at once
@@ -98,82 +97,6 @@ async def forget_forecast_on(
         "DELETE FROM forecast_messages "
         "WHERE round_id = ? AND division_id = ? AND phase_number = ? AND message_id = ?",
         (round_id, division_id, phase_number, message_id),
-    )
-
-
-# ---------------------------------------------------------------------------
-# T004 + T012 — delete_forecast_message (with test-mode guard)
-# ---------------------------------------------------------------------------
-
-async def delete_forecast_message(
-    round_id: int,
-    division_id: int,
-    phase_number: int,
-    bot: "LeagueBot",
-) -> None:
-    """Delete the stored Discord message for *phase_number* of *round_id*, raising for a caller
-    that must stop on a failure and be tried again, as a round amendment on the change queue is.
-
-    **No test-mode guard.** This once skipped the deletion while test mode was active and
-    retained the row for the flush; that was removed at an earlier increment and deletion now
-    behaves identically in test mode and live. The docstring said otherwise until 2026-08-14.
-
-    A message Discord refuses to delete (or whose channel is not one the bot can delete in)
-    raises `StepFailedOnDiscord` whose `result` is `{"channel_id": ..., "message_id": ...}`,
-    raised `from` the refusal, and **keeps the row**, so the next try finds the message again. A
-    message already gone, or whose channel is gone, counts as gone and drops the row. A fault
-    that is not Discord's propagates unchanged.
-    """
-    db_path: str = bot.db_path
-
-    # --- Load stored message row ---
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT fm.message_id, d.forecast_channel_id
-            FROM forecast_messages fm
-            JOIN divisions d ON d.id = fm.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE fm.round_id = ? AND fm.division_id = ? AND fm.phase_number = ?
-            """,
-            (round_id, division_id, phase_number),
-        )
-        row = await cursor.fetchone()
-
-    if row is None:
-        log.debug(
-            "delete_forecast_message: no row for round=%s div=%s phase=%s — nothing to delete",
-            round_id, division_id, phase_number,
-        )
-        return
-
-    message_id: int = row["message_id"]
-    channel_id: int = row["forecast_channel_id"]
-
-    # --- Attempt Discord deletion ---
-    try:
-        await _discord_delete(bot, channel_id, message_id, raising=True)
-    except discord.NotFound:
-        pass  # Already gone, or its channel is: which is what was asked.
-    except discord.HTTPException as exc:
-        raise StepFailedOnDiscord(
-            f"the Phase {phase_number} forecast message {message_id} in channel"
-            f" {channel_id} could not be deleted",
-            result={"channel_id": channel_id, "message_id": message_id},
-        ) from exc
-
-    # --- Remove DB row ---
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "DELETE FROM forecast_messages "
-            "WHERE round_id = ? AND division_id = ? AND phase_number = ?",
-            (round_id, division_id, phase_number),
-        )
-        await db.commit()
-
-    log.info(
-        "Deleted forecast message: round=%s div=%s phase=%s msg=%s",
-        round_id, division_id, phase_number, message_id,
     )
 
 

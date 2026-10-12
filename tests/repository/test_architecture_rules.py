@@ -1281,7 +1281,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The standing posts
-    ("weather/services/forecast_cleanup_service.py", "delete_forecast_message"): (1, SLICE[6]),
     # The results, weather and image settings commands
     ("results/services/points_config_service.py", "create_config"): (1, SLICE[7]),
     ("results/services/points_config_service.py", "remove_config"): (1, SLICE[7]),
