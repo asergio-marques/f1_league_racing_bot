@@ -48,9 +48,6 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 5
 
-#: Why the weather steps' tests fail until the build has advance ask the change queue.
-ADVANCE_UNBUILT = ("#439: /test-mode advance does not yet ask the change queue for its weather "
-                   "steps")
 #: The kinds of a forecast's change and of the clean-up a day after the round.
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
@@ -260,7 +257,6 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_mystery_notice_is_posted(tmp_path):
     """Round 3 of Division 1 is a mystery round whose notice is next. Advance asks the change
     queue for its notice (a `weather.forecast` of phase 0 for the round) and says it is on the
@@ -665,7 +661,7 @@ CLEANUPS = [
 
 #: The cleanups, the forecast's asked of the change queue once the build makes it a job.
 CLEANUPS_ASKED = [
-    pytest.param(*CLEANUPS[0], marks=pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)),
+    pytest.param(*CLEANUPS[0]),
     CLEANUPS[1],
 ]
 
@@ -743,7 +739,6 @@ async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_each_weather_phase_asks_the_queue_for_its_phase(tmp_path, phase):
     """Phase *phase* of round 3 of Division 1 (Silverstone Circuit) is next. Advance asks the
@@ -761,7 +756,6 @@ async def test_each_weather_phase_asks_the_queue_for_its_phase(tmp_path, phase):
             "change queue") in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_weather_phase_cancels_its_job_before_asking(tmp_path):
     """Before, not after: an ask that raised would otherwise leave the real job queued to fire
     the same phase again."""
@@ -806,7 +800,7 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
 
 
 @pytest.mark.parametrize("phase", [
-    pytest.param(0, id="mystery notice", marks=pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)),
+    pytest.param(0, id="mystery notice"),
     pytest.param(1, id="phase 1"),
 ])
 async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phase):

@@ -152,11 +152,6 @@ ignore_imports =
     # message builder:
     leaguebot.core.cogs.season_cog -> leaguebot.weather.services.weather_config_service
     leaguebot.core.cogs.season_cog -> leaguebot.weather.utils.message_builder
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.forecast_cleanup_service
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.mystery_notice_service
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase1_service
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase2_service
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase3_service
     leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.utils.message_builder
     leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
     # #284: the points amendment in the amendment service is results' code, to move there.

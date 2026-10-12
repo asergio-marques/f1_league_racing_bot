@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import FORECAST, FORECAST_CLEAN_UP
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -176,8 +177,30 @@ async def get_next_pending_phase(
     the check of earlier rounds made before each scheduler job, and in the fallback once
     the job store is exhausted.
 
+    A weather step whose forecast or clean-up is already in hand on the change queue (asked by
+    an earlier advance, and not yet run) is passed over, so a second advance before the queue
+    has run the first offers the next step and not the same one. The scheduler's own job was
+    cancelled by that first advance, so the database would otherwise offer the step again.
+
+    A weather step whose forecast or clean-up is already in hand on the change queue (asked by
+    an earlier advance, and not yet run) is passed over, so a second advance before the queue
+    has run the first offers the next step and not the same one. The scheduler's own job was
+    cancelled by that first advance, so the database would otherwise offer the step again.
+
     If there is no ACTIVE season for this server, returns None.
     """
+    from leaguebot.core.services.change_queue import unfinished
+
+    # (round, phase) of each forecast asked of the queue and not yet run; the round alone for a
+    # clean-up (phase 8).
+    forecasts_in_hand: set[tuple[int, int]] = {
+        (int(p["round_id"]), int(p["phase"]))
+        for p in await unfinished(db_path, (FORECAST,))
+    }
+    clean_ups_in_hand: set[int] = {
+        int(p["round_id"]) for p in await unfinished(db_path, (FORECAST_CLEAN_UP,))
+    }
+
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
@@ -232,7 +255,7 @@ async def get_next_pending_phase(
         for row in rows:
             is_mystery = str(row["format"]).upper() == "MYSTERY"
             if is_mystery:
-                if not row["phase1_done"]:
+                if not row["phase1_done"] and (row["round_id"], 0) not in forecasts_in_hand:
                     return PhaseEntry(
                         round_id=row["round_id"],
                         round_number=row["round_number"],
@@ -243,15 +266,16 @@ async def get_next_pending_phase(
                         job_id=None,
                     )
                 continue  # noticed mystery → skip
-            # Normal round: find first incomplete phase
-            if not row["phase1_done"]:
+            # Normal round: find first incomplete phase not already in hand on the queue
+            rid = row["round_id"]
+            if not row["phase1_done"] and (rid, 1) not in forecasts_in_hand:
                 phase = 1
-            elif not row["phase2_done"]:
+            elif not row["phase2_done"] and (rid, 2) not in forecasts_in_hand:
                 phase = 2
-            elif not row["phase3_done"]:
+            elif not row["phase3_done"] and (rid, 3) not in forecasts_in_hand:
                 phase = 3
             else:
-                continue  # all weather phases done
+                continue  # all weather phases done, or in hand
             return PhaseEntry(
                 round_id=row["round_id"],
                 round_number=row["round_number"],
@@ -346,7 +370,7 @@ async def get_next_pending_phase(
         with nothing to take down is not offered either.
         """
         rid = row["round_id"]
-        if phase in (None, 8) and rid in standing_forecasts:
+        if phase in (None, 8) and rid in standing_forecasts and rid not in clean_ups_in_hand:
             return _make_entry(row, 8)
         if phase in (None, 9) and attendance_module_enabled and rid in rsvp_state:
             return _make_entry(row, 9)
@@ -388,7 +412,11 @@ async def get_next_pending_phase(
         # ── Phase 0 / Phase 1: mystery notice or weather P1 ──────────────
         # The notice is a weather posting like Phase 1, and a disabled module produces
         # nothing: a live season arms no job for either while weather is off (#426).
-        if weather_module_enabled and not row["phase1_done"]:
+        if (
+            weather_module_enabled
+            and not row["phase1_done"]
+            and (rid, 0 if is_mystery else 1) not in forecasts_in_hand
+        ):
             return _make(0 if is_mystery else 1)
 
         # ── Phase 5: RSVP notice ──────────────────────────────────────────
@@ -398,7 +426,12 @@ async def get_next_pending_phase(
             return _make(5)
 
         # ── Phase 2: weather P2 (normal rounds only) ──────────────────────
-        if not is_mystery and weather_module_enabled and not row["phase2_done"]:
+        if (
+            not is_mystery
+            and weather_module_enabled
+            and not row["phase2_done"]
+            and (rid, 2) not in forecasts_in_hand
+        ):
             return _make(2)
 
         # ── Phase 6: RSVP last-notice ─────────────────────────────────────
@@ -409,7 +442,12 @@ async def get_next_pending_phase(
                 return _make(6)
 
         # ── Phase 3: weather P3 (normal rounds only) ──────────────────────
-        if not is_mystery and weather_module_enabled and not row["phase3_done"]:
+        if (
+            not is_mystery
+            and weather_module_enabled
+            and not row["phase3_done"]
+            and (rid, 3) not in forecasts_in_hand
+        ):
             return _make(3)
 
         # ── Phase 7: RSVP deadline ────────────────────────────────────────
@@ -442,6 +480,8 @@ async def get_next_pending_phase(
                 if phase != 1 or rnd["phase1_done"]:
                     continue
                 phase = 0
+            if (job["round_id"], phase) in forecasts_in_hand:
+                continue  # asked of the change queue by an earlier advance, not yet run
             is_cleanup = phase in (8, 9)
             # Before returning this scheduler job, check all earlier rounds (by
             # scheduled_at) for any pending work that the scheduler cannot see —

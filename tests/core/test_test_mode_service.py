@@ -1179,8 +1179,6 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: advance does not yet pass over a weather step "
-                   "whose change is in hand on the change queue")
 async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path) -> None:
     """Weather is on and round 1 (Monza) has none of its phases done; its scheduler job was
     cancelled by the advance that asked the change queue for its Phase 1, which waits there

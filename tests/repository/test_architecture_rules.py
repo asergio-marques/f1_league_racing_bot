@@ -227,7 +227,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (2, PASS["signup"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (2, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (2, PASS["core"]),
     ("core/cogs/track_cog.py", "TrackCog.track_list"): (1, PASS["core"]),
 }
@@ -1075,7 +1074,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "disable_amendment_mode"): (3, PASS["results"]),
     ("core/services/amendment_service.py", "enable_amendment_mode"): (5, PASS["results"]),
     ("core/services/amendment_service.py", "modify_fl_bonus"): (2, PASS["results"]),
@@ -1323,7 +1321,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "_ApproveView._forget"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "_ApproveView.bind"): (1, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
     ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.release_claim"): (1, PASS["core"]),
     ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),

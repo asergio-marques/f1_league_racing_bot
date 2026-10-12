@@ -25,7 +25,6 @@ is open, and to *disable* it while a running season holds fake drivers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 
 import discord
 from discord import app_commands
@@ -38,6 +37,12 @@ from leaguebot.core.services.test_mode_service import (
     get_next_pending_phase,
     PhaseEntry,
     build_review_summary,
+)
+from leaguebot.core.models.change import (
+    FORECAST,
+    FORECAST_CLEAN_UP,
+    FORECAST_FLUSH,
+    ChangeOrigin,
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
@@ -161,8 +166,14 @@ class TestModeCog(commands.Cog):
         else:
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
-            from leaguebot.weather.services.forecast_cleanup_service import flush_pending_deletions
-            await flush_pending_deletions(self.bot)
+            # The forecasts posted under test mode are deleted by the change queue, each by a
+            # job of its own, once the flag reads off.
+            await self.bot.change_queue.ask(
+                FORECAST_FLUSH,
+                {},
+                what="clearing the forecasts posted under test mode",
+                origin=ChangeOrigin.BOT,
+            )
             from leaguebot.core.services.test_roster_service import clear_all_test_drivers
             removed = await clear_all_test_drivers(self.bot.db_path)
             if removed:
@@ -280,11 +291,6 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        # Dispatch to the appropriate phase service
-        from leaguebot.weather.services.phase1_service import run_phase1
-        from leaguebot.weather.services.phase2_service import run_phase2
-        from leaguebot.weather.services.phase3_service import run_phase3
-
         phase_number = entry["phase_number"]
 
         log.info(
@@ -298,33 +304,26 @@ class TestModeCog(commands.Cog):
 
         # ── Mystery round notice (phase_number=0) ──────────────────────────────
         if phase_number == 0:
-            from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
-            from leaguebot.core.db.database import get_connection
+            # Take the round's notice job down so it doesn't ask for the notice again at its own
+            # moment, and before asking, so that an ask that raised leaves no job to fire the
+            # notice a second time. By round and the `weather_p1` it is armed under, rather
+            # than by the entry's job: one found from database state carries none, yet its job
+            # may still be queued (#426).
+            self.bot.scheduler_service.cancel_round(
+                entry["round_id"], only=frozenset({"weather_p1"})
+            )
             try:
-                await run_mystery_notice(entry["round_id"], self.bot)
+                await self._ask_forecast(entry, 0)
             except Exception as exc:  # noqa: BLE001 — reported here, to name the round
                 await report_failure(
                     interaction, exc, what=self._advance_what(interaction, "the Mystery Round notice", entry)
                 )
                 return
-            # Mark notice as sent so this round is excluded from future advance calls
-            # Take the round's notice job down so it doesn't post the notice again at its own
-            # moment. By round and the `weather_p1` it is armed under, rather than by the entry's
-            # job: one found from database state carries none, yet its job may still be queued,
-            # and `run_mystery_notice` does not ask whether a notice is already up (#426).
-            self.bot.scheduler_service.cancel_round(
-                entry["round_id"], only=frozenset({"weather_p1"})
-            )
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
-                    (entry["round_id"],),
-                )
-                await db.commit()
             await interaction.followup.send(
-                f"🔮 Posted **Mystery Round notice** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
-                f"Notice posted to the division forecast channel.",
+                f"🔮 The **Mystery Round notice** for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}** is on the "
+                f"change queue: it goes to the division forecast channel as soon as the queue "
+                f"reaches it.",
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
@@ -478,35 +477,37 @@ class TestModeCog(commands.Cog):
 
         # ── The cleanups a day after the round (phase_number=8 and 9, #425) ─────
         if phase_number in (8, 9):
-            from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
             from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
 
-            # The check-in's says whether it marked the check-in over, which this does not read.
-            cleanup: Callable[[int, LeagueBot], Awaitable[object]]
-            if phase_number == 8:
-                prefix, what, cleanup = "cleanup", "forecast cleanup", run_post_race_cleanup
-                done = "Its Phase 3 forecast has been deleted."
-            else:
-                prefix, what, cleanup = "rsvp_cleanup", "check-in cleanup", run_rsvp_cleanup
-                done = (
-                    "Its check-in call, last notice and reserve distribution have been "
-                    "taken down."
-                )
             # By prefix rather than by the entry's job, which is None where the step was found
             # from database state; a job left queued would fire again at its own moment.
+            prefix = "cleanup" if phase_number == 8 else "rsvp_cleanup"
+            what = "forecast cleanup" if phase_number == 8 else "check-in cleanup"
             self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
             try:
-                await cleanup(entry["round_id"], self.bot)
+                if phase_number == 8:
+                    await self._ask_forecast_clean_up(entry)
+                else:
+                    await run_rsvp_cleanup(entry["round_id"], self.bot)
             except Exception as exc:  # noqa: BLE001 — reported here, to name the round
                 await report_failure(
                     interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
                 )
                 return
-            await interaction.followup.send(
-                f"🧹 Fired the **{what}** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}**. {done}",
-                ephemeral=True,
-            )
+            if phase_number == 8:
+                reply = (
+                    f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
+                    f"**Round {entry['round_number']}** is on the change queue: its Phase 3 "
+                    f"forecast is deleted as soon as the queue reaches it."
+                )
+            else:
+                reply = (
+                    f"🧹 Fired the **check-in cleanup** for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
+                    f"Its check-in call, last notice and reserve distribution have been "
+                    f"taken down."
+                )
+            await interaction.followup.send(reply, ephemeral=True)
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"  phase: {prefix}\n"
@@ -516,15 +517,12 @@ class TestModeCog(commands.Cog):
             return
 
         # ── Normal weather phase dispatch ───────────────────────────────────────
-        phase_runners = {1: run_phase1, 2: run_phase2, 3: run_phase3}
-        runner = phase_runners[phase_number]
-
-        # Cancel the scheduler job before running so it doesn't double-fire later
+        # Cancel the scheduler job before asking so it doesn't double-fire later
         if entry["job_id"] is not None:
             self.bot.scheduler_service.cancel_job(entry["job_id"])
 
         try:
-            await runner(entry["round_id"], self.bot)
+            await self._ask_forecast(entry, phase_number)
         except Exception as exc:  # noqa: BLE001 — reported here, to name the phase and the round
             await report_failure(
                 interaction,
@@ -535,16 +533,11 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        # After running this phase, check if the entire season is now complete
-        next_entry = await get_next_pending_phase(
-            self.bot.db_path,
-            self.bot.scheduler_service,
-        )
-
         await interaction.followup.send(
-            f"⏩ Advanced **Phase {phase_number}** for "
-            f"**{entry['division_name']}** — **{entry['track_name']}**. "
-            f"Outputs posted to the configured forecast and log channels.",
+            f"⏩ **Phase {phase_number}** for "
+            f"**{entry['division_name']}** — **{entry['track_name']}** is on the change "
+            f"queue: its forecast goes to the forecast channel and its calculation to the log "
+            f"channel as soon as the queue reaches it.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -554,6 +547,45 @@ class TestModeCog(commands.Cog):
             f"  track: {entry['track_name']}\n"
             f"  round: {entry['round_number']}",
         )
+    async def _ask_forecast(self, entry: PhaseEntry, phase: int) -> None:
+        """Ask the change queue, as the bot's, for *phase* of the entry's round (0 is a mystery
+        round's notice), standing in for the timer that `/test-mode advance` fires early."""
+        where = f"round {entry['round_number']} in **{entry['division_name']}**"
+        what = (
+            f"posting the mystery round notice of {where}"
+            if phase == 0
+            else f"drawing the Phase {phase} forecast of {where}"
+        )
+        await self.bot.change_queue.ask(
+            FORECAST,
+            {
+                "round_id": entry["round_id"],
+                "phase": phase,
+                "division_name": entry["division_name"],
+                "round_number": entry["round_number"],
+            },
+            what=what,
+            origin=ChangeOrigin.BOT,
+        )
+
+    async def _ask_forecast_clean_up(self, entry: PhaseEntry) -> None:
+        """Ask the change queue, as the bot's, to delete the Phase 3 forecast of the entry's
+        round, as its timer does a day after the race."""
+        await self.bot.change_queue.ask(
+            FORECAST_CLEAN_UP,
+            {
+                "round_id": entry["round_id"],
+                "phases": [3],
+                "division_name": entry["division_name"],
+                "round_number": entry["round_number"],
+            },
+            what=(
+                f"deleting the Phase 3 forecast of round {entry['round_number']} in "
+                f"**{entry['division_name']}** a day after it"
+            ),
+            origin=ChangeOrigin.BOT,
+        )
+
     @staticmethod
     def _advance_what(
         interaction: discord.Interaction,

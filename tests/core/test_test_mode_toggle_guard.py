@@ -347,8 +347,6 @@ async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, 
 # ── The forecasts posted under test mode are cleared by the change queue ───────
 
 
-@pytest.mark.xfail(strict=True, reason="#439: switching test mode off does not yet ask the "
-                   "change queue to clear the forecasts")
 async def test_switching_test_mode_off_asks_the_queue_to_clear_the_forecasts(cog, db_path):
     """The season is in Configuration. Switching test mode on asks the change queue for
     nothing; switching it off asks it once, as the bot's, for the clearing of every forecast
