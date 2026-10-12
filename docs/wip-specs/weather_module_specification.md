@@ -136,8 +136,9 @@
 
 ## Supersession and cleanup
 - Each phase's message shall supersede the previous phase's, so that a division holds only one forecast for a round at any time.
-- The superseded message shall be deleted only once the new message has been posted, so that a failure to post leaves the previous forecast standing.
-- 24 hours after a round's scheduled start, the Phase 3 message shall be deleted from every division's forecast channel.
+- The superseded message shall be deleted only once the new message has been posted, so that a failure to post leaves the previous forecast standing. The deletion of the superseded message is a job of its own on the change queue: one Discord refuses stops the queue and is tried again, the earlier forecast and its record standing meanwhile. Decided 2026-10-10.
+- Each phase shall be drawn and recorded, and its calculation written to the log channel, in one step, and its forecast posted in a step after it; a forecast Discord refuses, or whose forecast channel is unset or gone, stops the change queue, saying which, and is tried again as text. A forecast a league admin discards is not posted: its draw stands, recorded and logged. A phase or forecast whose turn on the queue comes after its round's race time is dropped, nothing drawn or posted for it. Decided 2026-10-10, 2026-10-11.
+- 24 hours after a round's scheduled start, whichever of the round's Phase 1, 2 and 3 messages still stands shall be deleted from every division's forecast channel, each deletion a job on the change queue: a Phase 3 message that was never posted, or was dropped because the race had been run, thus leaves no earlier forecast standing for good. A mystery round's notice is not deleted. Decided 2026-10-10, 2026-10-12.
 
 ## Changes to a round after generation
 - A round's track shall not be amended while the Phase 1 forecast drawn for it still stands, and its format shall not be amended while the Phase 2 forecast drawn for its sessions still stands. What was forecast was forecast for that circuit and those sessions and cannot be unsaid. The league's remedy is to amend the round's moment as well, which puts the phases back in question.
@@ -145,7 +146,7 @@
     - Where it would not, its result shall be marked invalidated, the slot type and weather slots it recorded cleared, the phase marked as not performed, the message posted for it deleted, and the phase armed again for its new horizon.
     - Where it would, its result shall stand, its recorded slots shall stand, and the message posted for it shall stand with it.
 - A phase that would have been performed under the round's new moment but never was shall be performed at once.
-- Where the round is amended on the change queue, the deletion of each such message, the notice and each phase performed at once shall each be a job of its own. A deletion or a notice Discord refuses stops the queue until it is retried or discarded; a phase performed at once posts as a phase on its own clock does. Decided 2026-10-08. Which forecasts are withdrawn shall be judged when the amendment is saved, and which phases are performed at once when the round is armed again, so that a phase whose horizon passed while the amendment stood stopped is performed at once, as a restart performs it, whether or not the amendment was saved, and a Phase 3 message due to be deleted a day after the round meanwhile is deleted then. Decided 2026-10-09.
+- Where the round is amended on the change queue, the deletion of each such message, the notice and each phase performed at once shall each be a job of its own. A deletion or a notice Discord refuses stops the queue until it is retried or discarded; a phase performed at once is drawn, posted and supersedes the forecast before it in jobs of the amendment's own, a post or a deletion Discord refuses stopping the queue. Decided 2026-10-10, replacing 2026-10-08. Which forecasts are withdrawn shall be judged when the amendment is saved, and which phases are performed at once when the round is armed again, so that a phase whose horizon passed while the amendment stood stopped is performed at once, as a restart performs it, whether or not the amendment was saved, and a forecast due to be deleted a day after the round meanwhile is deleted then. Decided 2026-10-09.
 - The forecast a division holds for the round shall be the latest phase that stands. Where no phase stands, the division shall hold none until the next is performed.
 - Where any forecast has been withdrawn, the bot shall post a notice informing drivers that the forecasts for that round no longer stand and that an updated forecast shall follow. Where none has been withdrawn no notice shall be posted, the forecast the division holds being still the one that stands.
 - The phases of an amended round shall be armed at the league's own configured horizons, not at the packaged ones.
@@ -158,7 +159,7 @@
 - Upon starting, the bot shall perform any phase of any round of a season whose placements have been confirmed, and which is not yet completed or cancelled, whose horizon has passed and which has not yet been performed.
 - It shall do so only for a round still to be run. No phase shall be performed on starting for a cancelled round, for a round of a cancelled division, or for a round whose scheduled race time has passed.
 - The horizons it shall judge those phases by are the league's own configured ones, not the packaged ones, so that a restart, the confirmation of placements and an amendment cannot disagree about a round.
-- Upon starting, the bot shall also delete any Phase 3 message whose deletion fell due while it was stopped, 24 hours after its round's scheduled start, while the module is enabled. No message shall be deleted so for a cancelled round or a round of a cancelled division. Decided 2026-09-24 (#425).
+- Upon starting, the bot shall also post the notice of a mystery round whose Phase 1 horizon has passed, where it has not been posted, only while the round's race is still ahead, as it performs any other phase; and shall delete whichever forecast of a round still stands whose deletion fell due while it was stopped, 24 hours after its round's scheduled start, while the module is enabled. No message shall be deleted so for a cancelled round or a round of a cancelled division. Decided 2026-09-24 (#425).
 
 ## Image generation
 - Where the image module is enabled and its weather output switched on, each forecast shall be posted as a graphic in place of its text, on a message carrying the division role mention and nothing besides.
@@ -167,5 +168,6 @@
 
 ## Test mode
 - The test mode "advance" command shall fire the next pending weather phase or mystery round notice immediately, cancelling the scheduled job for it so that it cannot fire twice, and posting its output to the configured forecast and log channels.
-- It shall likewise fire the deletion of a round's Phase 3 message in its turn. Decided 2026-09-24 (#425).
-- Disabling test mode shall delete the forecast messages posted while it was active.
+- It shall likewise fire the deletion of a round's forecast in its turn. Decided 2026-09-24 (#425).
+- A weather step it fires shall be asked of the change queue, and its reply shall say so; the forecast follows as soon as the queue reaches it. Where the round's race has been run, the step shall not be fired: the reply shall say it was not due, and the command shall move on to the next step, so that rehearsing weather in test mode needs rounds dated in the future. Decided 2026-10-10, 2026-10-12.
+- Disabling test mode shall delete the forecast messages posted while it was active, each deletion a job on the change queue.
