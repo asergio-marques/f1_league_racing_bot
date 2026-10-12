@@ -1267,12 +1267,6 @@ async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path
 # A weather step of a round whose race has been run (#439)
 # ---------------------------------------------------------------------------
 
-#: Why these fail until advance passes over a weather step the forecast check would drop.
-RACED_STEP_OFFERED = ("#439: advance offers a weather step of a round whose race has been run, "
-                      "which the change queue drops as not due")
-
-
-@pytest.mark.xfail(strict=True, reason=RACED_STEP_OFFERED)
 @pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
 async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler) -> None:
     """Weather is on. Round 1 (Bahrain) was raced an hour ago with none of its phases done (the
@@ -1299,7 +1293,6 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=RACED_STEP_OFFERED)
 async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and

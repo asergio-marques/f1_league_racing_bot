@@ -11,6 +11,7 @@ Provides four async functions consumed by TestModeCog:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
@@ -152,9 +153,19 @@ async def count_live_real_drivers(db_path: str) -> int:
 # Phase advancement queue
 # ---------------------------------------------------------------------------
 
+def _race_run(scheduled_at: str, now: datetime) -> bool:
+    """Whether a round scheduled at *scheduled_at* (naive means UTC) has been raced by *now*."""
+    moment = datetime.fromisoformat(scheduled_at)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment <= now
+
+
 async def get_next_pending_phase(
     db_path: str,
     scheduler_service: Any = None,
+    *,
+    now: datetime | None = None,
 ) -> PhaseEntry | None:
     """Return the earliest pending action entry based on the APScheduler job store.
 
@@ -177,10 +188,9 @@ async def get_next_pending_phase(
     the check of earlier rounds made before each scheduler job, and in the fallback once
     the job store is exhausted.
 
-    A weather step whose forecast or clean-up is already in hand on the change queue (asked by
-    an earlier advance, and not yet run) is passed over, so a second advance before the queue
-    has run the first offers the next step and not the same one. The scheduler's own job was
-    cancelled by that first advance, so the database would otherwise offer the step again.
+    A weather step of a round whose race has been run by *now* (the present, where not given) is
+    passed over, since the change queue drops a forecast for a race already run as not due
+    (A25). Rehearsing weather in test mode needs rounds dated in the future (owner, 2026-10-12).
 
     A weather step whose forecast or clean-up is already in hand on the change queue (asked by
     an earlier advance, and not yet run) is passed over, so a second advance before the queue
@@ -215,6 +225,7 @@ async def get_next_pending_phase(
                 r.phase3_done,
                 r.checkin_cleared,
                 r.status,
+                r.scheduled_at,
                 d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
@@ -231,6 +242,12 @@ async def get_next_pending_phase(
 
         round_ids: set[int] = {r["round_id"] for r in rows}
         round_info = {r["round_id"]: r for r in rows}
+        # Rounds whose race has been run: the change queue drops their forecasts as not due (A25),
+        # so none of their weather steps is offered.
+        moment = now if now is not None else datetime.now(timezone.utc)
+        raced: set[int] = {
+            r["round_id"] for r in rows if _race_run(r["scheduled_at"], moment)
+        }
 
         # Rounds that already have at least one ACTIVE session_result (for mystery fallback)
         results_cursor = await db.execute(
@@ -254,6 +271,8 @@ async def get_next_pending_phase(
     if scheduler_service is None:
         for row in rows:
             is_mystery = str(row["format"]).upper() == "MYSTERY"
+            if row["round_id"] in raced:
+                continue  # its race has been run: no forecast of it is due
             if is_mystery:
                 if not row["phase1_done"] and (row["round_id"], 0) not in forecasts_in_hand:
                     return PhaseEntry(
@@ -414,6 +433,7 @@ async def get_next_pending_phase(
         # nothing: a live season arms no job for either while weather is off (#426).
         if (
             weather_module_enabled
+            and rid not in raced
             and not row["phase1_done"]
             and (rid, 0 if is_mystery else 1) not in forecasts_in_hand
         ):
@@ -429,6 +449,7 @@ async def get_next_pending_phase(
         if (
             not is_mystery
             and weather_module_enabled
+            and rid not in raced
             and not row["phase2_done"]
             and (rid, 2) not in forecasts_in_hand
         ):
@@ -445,6 +466,7 @@ async def get_next_pending_phase(
         if (
             not is_mystery
             and weather_module_enabled
+            and rid not in raced
             and not row["phase3_done"]
             and (rid, 3) not in forecasts_in_hand
         ):
@@ -481,6 +503,8 @@ async def get_next_pending_phase(
                 phase = 0
             if (job["round_id"], phase) in forecasts_in_hand:
                 continue  # asked of the change queue by an earlier advance, not yet run
+            if phase in (0, 1, 2, 3) and job["round_id"] in raced:
+                continue  # its race has been run: the change queue would drop the forecast
             is_cleanup = phase in (8, 9)
             # Before returning this scheduler job, check all earlier rounds (by
             # scheduled_at) for any pending work that the scheduler cannot see —

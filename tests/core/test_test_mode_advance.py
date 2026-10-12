@@ -857,8 +857,6 @@ async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phas
         assert row["n"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: advance says a weather step is on the change queue "
-                   "when the queue dropped it as not due")
 async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
     """Season 3 is being raced in test mode, with weather on; Pro's round 3 (Silverstone
     Circuit) was raced an hour ago with its Phase 1 not done (weather switched on after it).

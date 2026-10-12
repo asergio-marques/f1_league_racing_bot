@@ -313,10 +313,17 @@ class TestModeCog(commands.Cog):
                 entry["round_id"], only=frozenset({"weather_p1"})
             )
             try:
-                await self._ask_forecast(entry, 0)
+                asked = await self._ask_forecast(entry, 0)
             except Exception as exc:  # noqa: BLE001 — reported here, to name the round
                 await report_failure(
                     interaction, exc, what=self._advance_what(interaction, "the Mystery Round notice", entry)
+                )
+                return
+            if asked is None:
+                await interaction.followup.send(
+                    f"🔮 The **Mystery Round notice** for **{entry['division_name']}** — "
+                    f"**Round {entry['round_number']}** was not due: its race has been run.",
+                    ephemeral=True,
                 )
                 return
             await interaction.followup.send(
@@ -486,12 +493,20 @@ class TestModeCog(commands.Cog):
             self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
             try:
                 if phase_number == 8:
-                    await self._ask_forecast_clean_up(entry)
+                    asked = await self._ask_forecast_clean_up(entry)
                 else:
+                    asked = True
                     await run_rsvp_cleanup(entry["round_id"], self.bot)
             except Exception as exc:  # noqa: BLE001 — reported here, to name the round
                 await report_failure(
                     interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
+                )
+                return
+            if asked is None:
+                await interaction.followup.send(
+                    f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
+                    f"**Round {entry['round_number']}** was not due: no forecast stands.",
+                    ephemeral=True,
                 )
                 return
             if phase_number == 8:
@@ -522,7 +537,7 @@ class TestModeCog(commands.Cog):
             self.bot.scheduler_service.cancel_job(entry["job_id"])
 
         try:
-            await self._ask_forecast(entry, phase_number)
+            asked = await self._ask_forecast(entry, phase_number)
         except Exception as exc:  # noqa: BLE001 — reported here, to name the phase and the round
             await report_failure(
                 interaction,
@@ -530,6 +545,14 @@ class TestModeCog(commands.Cog):
                 what=self._advance_what(
                     interaction, f"Phase {phase_number}", entry, track=entry["track_name"]
                 ),
+            )
+            return
+        if asked is None:
+            # The forecast's check dropped it (A25): its race has been run. Nothing is on the queue.
+            await interaction.followup.send(
+                f"⏩ **Phase {phase_number}** for **{entry['division_name']}** — "
+                f"**Round {entry['round_number']}** was not due: its race has been run.",
+                ephemeral=True,
             )
             return
 
@@ -547,16 +570,17 @@ class TestModeCog(commands.Cog):
             f"  track: {entry['track_name']}\n"
             f"  round: {entry['round_number']}",
         )
-    async def _ask_forecast(self, entry: PhaseEntry, phase: int) -> None:
+    async def _ask_forecast(self, entry: PhaseEntry, phase: int) -> int | None:
         """Ask the change queue, as the bot's, for *phase* of the entry's round (0 is a mystery
-        round's notice), standing in for the timer that `/test-mode advance` fires early."""
+        round's notice), standing in for the timer that `/test-mode advance` fires early. Returns
+        the change's id, or None where the forecast's check dropped it as not due."""
         where = f"round {entry['round_number']} in **{entry['division_name']}**"
         what = (
             f"posting the mystery round notice of {where}"
             if phase == 0
             else f"drawing the Phase {phase} forecast of {where}"
         )
-        await self.bot.change_queue.ask(
+        return await self.bot.change_queue.ask(
             FORECAST,
             {
                 "round_id": entry["round_id"],
@@ -568,10 +592,11 @@ class TestModeCog(commands.Cog):
             origin=ChangeOrigin.BOT,
         )
 
-    async def _ask_forecast_clean_up(self, entry: PhaseEntry) -> None:
+    async def _ask_forecast_clean_up(self, entry: PhaseEntry) -> int | None:
         """Ask the change queue, as the bot's, to delete the forecast still standing (Phase 1 to 3)
-        of the entry's round, as its timer does a day after the race."""
-        await self.bot.change_queue.ask(
+        of the entry's round, as its timer does a day after the race. Returns the change's id, or
+        None where no forecast stands."""
+        return await self.bot.change_queue.ask(
             FORECAST_CLEAN_UP,
             {
                 "round_id": entry["round_id"],
