@@ -205,9 +205,12 @@ async def _standings_sync(bot, interaction):
 
 
 async def _rounds_sync(bot, interaction):
+    """The sync is asked of the change queue once its gates pass (#439), so the queue's `ask`
+    is recorded rather than run."""
+    bot.change_queue.ask = AsyncMock(return_value=1)
     with patch(
-        "leaguebot.results.services.results_post_service.repost_results_for_division",
-        new=AsyncMock(return_value="ok"),
+        "leaguebot.results.services.results_post_service.division_repost_status",
+        new=AsyncMock(return_value="ok"), create=True,
     ):
         await undecorate(ResultsCog.rounds_sync)(_cog(ResultsCog, bot), interaction, "Pro")
 
@@ -325,15 +328,18 @@ async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
 # Still open while the season is being raced
 # ---------------------------------------------------------------------------
 
-#: The command that runs on the change queue (#439): while the season is raced it is asked of
-#: the queue, which it is not yet.
-_ASKED_OF_THE_QUEUE = "/division calendar-sync"
+#: The commands that run on the change queue (#439), each with the kind it asks for: while the
+#: season is raced each is asked of the queue, which neither is yet.
+_ASKED_OF_THE_QUEUE = {
+    "/division calendar-sync": "calendar.sync",
+    "/results rounds sync": "results.rounds.sync",
+}
+_NOT_ON_THE_QUEUE = "#439: the command is not yet asked of the change queue"
 
 
 @pytest.mark.parametrize("name", [
-    pytest.param(name, marks=pytest.mark.xfail(
-        strict=True, reason="#439: /division calendar-sync is not yet asked of the change queue",
-    )) if name == _ASKED_OF_THE_QUEUE else name
+    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_NOT_ON_THE_QUEUE))
+    if name in _ASKED_OF_THE_QUEUE else name
     for name in _NAMES
 ])
 async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_path, name):
@@ -346,9 +352,9 @@ async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_p
     said = _said(interaction)
     assert "Every division of this season is done" not in said
     assert "no longer has anything to act on" not in said
-    if name == _ASKED_OF_THE_QUEUE:
+    if name in _ASKED_OF_THE_QUEUE:
         bot.change_queue.ask.assert_awaited_once()
-        assert bot.change_queue.ask.await_args.args[0] == "calendar.sync"
+        assert bot.change_queue.ask.await_args.args[0] == _ASKED_OF_THE_QUEUE[name]
 
 
 async def test_the_bulk_amend_modal_is_shown_while_the_season_is_ongoing(tmp_path):
