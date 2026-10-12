@@ -33,7 +33,14 @@ from tests.support.change_queue import (
     step_rows,
     stopped_job,
 )
-from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
+from tests.support.season_league import (
+    AM,
+    DIVISIONS,
+    PRO,
+    ongoing_league,
+    posted_forecast,
+    round_id,
+)
 
 UNBUILT = "#439: a forecast's draw, post and supersession are not yet jobs on the change queue"
 
@@ -463,3 +470,110 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
     assert await _draws(league, 2, later) == 0
     assert await _forecasts(league, later) == {}
     assert await stopped_job(league.db_path) is None
+
+
+# ---------------------------------------------------------------------------
+# The deletion of forecasts a day after the round, and their clearing, as jobs
+# ---------------------------------------------------------------------------
+
+#: Why these fail until the build puts the clean-up and the flush on the change queue.
+DELETES_UNBUILT = ("#439: the forecast clean-up and the test-mode flush are not yet jobs on the "
+                   "change queue")
+#: The kinds of the clean-up a day after a round and of the clearing of every forecast.
+CLEAN_UP_KIND = "weather.forecast.clean_up"
+FLUSH_KIND = "weather.forecast.flush"
+#: Am's forecast channel, and its round 3.
+AM_FORECAST = DIVISIONS[AM][3].forecast
+AM_ROUND = round_id(AM, 3)
+
+
+async def _deletes_of(league: Any, kind: str) -> list[dict[str, Any]]:
+    """The `delete_forecast` jobs of every change of *kind*, in order, payloads read back."""
+    ids = [row["id"] for row in await change_rows(league.db_path) if row["kind"] == kind]
+    jobs = [job for job in await step_rows(league.db_path)
+            if job["change_id"] in ids and job["name"] == "delete_forecast"]
+    for job in jobs:
+        job["payload"] = json.loads(job["payload"] or "{}")
+    return jobs
+
+
+async def _clean_up(league: Any, round_: int = ROUND) -> None:
+    """Ask the queue for *round_*'s clean-up, as its timer does a day after the race."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
+
+    await ask_forecast_clean_up(league.bot.change_queue, league.db_path, round_)
+
+
+@pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
+async def test_a_clean_up_deletes_the_phase_3_forecast_by_a_job_and_a_refusal_stops_the_queue(
+    tmp_path,
+):
+    """Pro's round 3 has its Phase 3 forecast (9303) standing, which Discord refuses to delete:
+    the clean-up stops the queue at its `delete_forecast` job, the forecast and its record kept.
+    Discord accepting, Retry deletes it and drops its record."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    league.undeletable.add(9303)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "delete_forecast"
+    assert 9303 in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {3: 9303}
+
+    league.undeletable.discard(9303)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert ("delete", 9303) in _events(league)
+    assert await _forecasts(league) == {}
+    [job] = await _deletes_of(league, CLEAN_UP_KIND)
+    assert job["payload"]["phase"] == 3
+
+
+@pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
+async def test_a_flush_deletes_every_forecast_each_by_a_job_of_its_own(tmp_path):
+    """Test mode switched off with three forecasts standing (Pro's Phase 1 and 2 of round 3,
+    9301 and 9302, and Am's Phase 1 of round 3, 9401): the flush deletes each by a
+    `delete_forecast` job of its own, and no forecast record is left."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 1, 9301)
+    await posted_forecast(league, ROUND, 2, 9302)
+    await posted_forecast(league, AM_ROUND, 1, 9401)
+
+    from leaguebot.weather.services.forecast_changes import ask_forecast_flush
+
+    await ask_forecast_flush(league.bot.change_queue)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    deleted = {mid for kind, cid, mid in league.events
+               if kind == "delete" and cid in (FORECAST, AM_FORECAST)}
+    assert deleted == {9301, 9302, 9401}
+    assert len(await _deletes_of(league, FLUSH_KIND)) == 3
+    assert await league.rows("SELECT * FROM forecast_messages") == []
+
+
+@pytest.mark.xfail(strict=True, reason=DELETES_UNBUILT)
+@pytest.mark.parametrize("gone", ["message gone", "row already gone"])
+async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tmp_path, gone):
+    """Pro's round 3 Phase 3 forecast (9303) is gone before its clean-up's delete runs: deleted
+    by hand from the channel, or its record dropped after the clean-up planned the delete. The
+    delete job completes without stopping the queue, and no record of it is left."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+
+    await _clean_up(league)
+    if gone == "message gone":
+        del league.channel(FORECAST).messages[9303]
+    else:
+        await run_queue(league.bot, steps=1)
+        await league.write("DELETE FROM forecast_messages WHERE round_id = ?", ROUND)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [job] = await _deletes_of(league, CLEAN_UP_KIND)
+    assert job["done_at"]
+    assert await _forecasts(league) == {}
+    assert ("delete", 9303) not in _events(league)
