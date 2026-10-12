@@ -649,8 +649,9 @@ async def test_misfired_fallback_canonical_order() -> None:
 
 async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
     """Earlier round with misfired phases must be advanced before a later
-    round whose scheduler job is still pending."""
-    earlier = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+    round whose scheduler job is still pending. The earlier round is still to be raced: a
+    raced round's weather steps are passed over (#439)."""
+    earlier = (datetime.now(timezone.utc) + timedelta(days=2)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
     later = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
