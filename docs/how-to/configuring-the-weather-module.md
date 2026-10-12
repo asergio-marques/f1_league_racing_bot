@@ -184,7 +184,7 @@ The higher the chance of rain from phase 1, the more rain and mixed sessions pha
 
 > **Nothing arrives with the module switched off.** The cancellation note, the mystery round notice and the invalidation notice are all this module's own output and wait for it. With weather off, a cancellation posts nothing in the forecast channel, and amending a round still throws its old forecasts away and deletes the messages that carried them, but nothing is posted in their place and no new forecast is drawn. Switch weather on afterwards and that round's forecasts are drawn then, as though they had never been attempted.
 
-**And one disappears.** Twenty-four hours after a race starts, the bot deletes that round's final forecast, so the channel holds the forecast that matters and nothing else.
+**And one disappears.** Twenty-four hours after a race starts, the bot deletes whichever of that round's forecasts still stands — the final one, unless it was never posted — so the channel holds the forecast that matters and nothing else. A mystery round's notice stays.
 
 ---
 
