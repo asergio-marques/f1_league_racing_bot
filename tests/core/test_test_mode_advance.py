@@ -855,3 +855,46 @@ async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phas
             "SELECT COUNT(*) AS n FROM phase_results WHERE round_id = ? AND phase_number = 1 "
             "AND status = 'ACTIVE'", round_)
         assert row["n"] == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#439: advance says a weather step is on the change queue "
+                   "when the queue dropped it as not due")
+async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 (Silverstone
+    Circuit) was raced an hour ago with its Phase 1 not done (weather switched on after it).
+    The maintainer advances its Phase 1: the change queue drops it as not due (A25), so the reply
+    says it was not due and why, and not that it is on the change queue; nothing is asked of the
+    queue, nothing posted, and the phase stays undone."""
+    from tests.support.change_queue import change_rows, run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = DIVISIONS[PRO][3].forecast
+    raced = (league.clock.now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit', scheduled_at = ? "
+                       "WHERE id = ?", raced, round_)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           round_, session)
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 1, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone Circuit", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+    await run_queue(league.bot)
+
+    replied = _replied(interaction)
+    assert "is on the change queue" not in replied
+    assert ("⏩ **Phase 1** for **Pro** — **Round 3** was not due: its race has been run."
+            in replied)
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST] == []
+    assert await stopped_job(league.db_path) is None
+    assert [mid for kind, cid, mid in league.events if cid == forecast] == []
+    [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_)
+    assert row["phase1_done"] == 0

@@ -1205,3 +1205,61 @@ async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path
 
     result = await get_next_pending_phase(db_path, _StubScheduler())
     assert result is None or (result["round_id"], result["phase_number"]) != (1, 1)
+
+
+# ---------------------------------------------------------------------------
+# A weather step of a round whose race has been run (#439)
+# ---------------------------------------------------------------------------
+
+#: Why these fail until advance passes over a weather step the forecast check would drop.
+RACED_STEP_OFFERED = ("#439: advance offers a weather step of a round whose race has been run, "
+                      "which the change queue drops as not due")
+
+
+@pytest.mark.xfail(strict=True, reason=RACED_STEP_OFFERED)
+@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
+async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler) -> None:
+    """Weather is on. Round 1 (Bahrain) was raced an hour ago with none of its phases done (the
+    module was switched on after it), and round 2 (Monza) is a week ahead. The change queue
+    drops a forecast for a race already run (A25), so advance offers round 2's Phase 1, and not
+    round 1's: whether round 1's Phase 1 job is still in the store, the store is empty, or no
+    scheduler is given."""
+    raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    db_path = str(tmp_path / "raced.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Monza"},
+    ])
+    stub = {
+        "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
+        "job store empty": _StubScheduler(),
+        "no scheduler": None,
+    }[scheduler]
+
+    result = await get_next_pending_phase(db_path, stub)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 1)
+
+
+@pytest.mark.xfail(strict=True, reason=RACED_STEP_OFFERED)
+async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
+    """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
+    phases done and no results submitted: advance passes over its weather steps alone, and
+    offers its result submission."""
+    raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    db_path = str(tmp_path / "raced_results.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Monza"},
+    ])
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.commit()
+
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (1, 4)
