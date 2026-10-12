@@ -72,6 +72,7 @@ LINEUPS_ASKED = "#439: the sanctions still post the lineup rather than asking th
 #: attendance has no `sheet_posting`.
 pytestmark = pytest.mark.xfail(
     strict=True,
+    raises=(ImportError, TypeError),
     reason="#439: the sanctions take no change queue, and attendance has no sheet_posting",
 )
 
