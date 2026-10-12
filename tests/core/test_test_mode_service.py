@@ -706,15 +706,17 @@ async def _stand(
     call: bool = False,
     distributed: bool = True,
     status: str | None = None,
+    forecast_phase: int = 3,
 ) -> None:
-    """Record what is standing for *round_id*, and the state it is in."""
+    """Record what is standing for *round_id*, and the state it is in: its forecast is of
+    *forecast_phase*, Phase 3 unless given (0 a mystery round's notice)."""
     async with get_connection(db_path) as db:
         if forecast:
             await db.execute(
                 "INSERT INTO forecast_messages "
                 "(round_id, division_id, phase_number, message_id, posted_at) "
-                "VALUES (?, 1, 3, ?, '2026-01-01T00:00:00')",
-                (round_id, 800 + round_id),
+                "VALUES (?, 1, ?, ?, '2026-01-01T00:00:00')",
+                (round_id, forecast_phase, 800 + round_id),
             )
         if call:
             await db.execute(
@@ -851,6 +853,50 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
+#: Why these fail until advance offers the forecast clean-up of whichever phase still stands.
+EARLIER_PHASE_STANDING = ("#439: advance offers the forecast clean-up only where a Phase 3 "
+                          "forecast stands, not whichever phase is still standing")
+
+
+@pytest.mark.xfail(strict=True, reason=EARLIER_PHASE_STANDING)
+@pytest.mark.parametrize("found", ["job in the store", "database fallback"])
+async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
+    tmp_path, found
+) -> None:
+    """Round 1 is finished, its check-in cleared, and its Phase 3 never posted, so its Phase 2
+    forecast stands. A day after the race the clean-up deletes whichever of Phases 1 to 3 is
+    still recorded (owner, 2026-10-12), so its cleanup (8) is offered: from its job in the store,
+    or from the database once the store is empty."""
+    db_path = str(tmp_path / "phase_2_standing.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}])
+    await _stand(db_path, 1, forecast=True, forecast_phase=2, status="FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+    stub = _StubScheduler([_job(1, 8, days=1)] if found == "job in the store" else [])
+
+    result = await get_next_pending_phase(db_path, stub)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (1, 8)
+
+
+async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
+    """A finished mystery round, its check-in cleared, with its notice (phase 0) standing: the
+    notice is not a forecast the clean-up deletes, so nothing is offered."""
+    db_path = str(tmp_path / "notice_standing.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": None, "format": "MYSTERY"}])
+    await _stand(db_path, 1, forecast=True, forecast_phase=0, status="FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+
+    assert await get_next_pending_phase(db_path, _StubScheduler([_job(1, 8, days=1)])) is None
+    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+
+
 # ---------------------------------------------------------------------------
 # The review reports the cleanups (#425)
 # ---------------------------------------------------------------------------
@@ -874,6 +920,22 @@ async def test_the_review_shows_the_forecast_cleanup(
     await _stand(db_path, 1, forecast=forecast_standing)
 
     assert shown in await build_review_summary(db_path)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the review counts the forecast cleanup done once "
+                   "no Phase 3 forecast stands, though an earlier phase still does")
+async def test_the_review_shows_the_forecast_cleanup_to_come_while_an_earlier_phase_stands(
+    tmp_path,
+) -> None:
+    """Round 1's Phase 3 was drawn but never posted, so its Phase 2 forecast stands. The
+    clean-up deletes whichever of Phases 1 to 3 is still recorded (owner, 2026-10-12), so the
+    review shows it still to come."""
+    db_path = str(tmp_path / "review_phase_2_standing.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": 1}])
+    await _stand(db_path, 1, forecast=True, forecast_phase=2)
+
+    assert "Cleanup: ⏳" in await build_review_summary(db_path)
 
 
 async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) -> None:

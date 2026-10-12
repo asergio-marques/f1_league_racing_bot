@@ -898,3 +898,39 @@ async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
     assert [mid for kind, cid, mid in league.events if cid == forecast] == []
     [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_)
     assert row["phase1_done"] == 0
+
+
+@pytest.mark.xfail(strict=True, reason="#439: advance's forecast cleanup deletes only a Phase 3 "
+                   "forecast, not whichever phase is still standing")
+async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_standing(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
+    an hour ago, and its Phase 3 never posted, so its Phase 2 forecast (message 8002) stands.
+    The maintainer advances its forecast cleanup (8). The clean-up deletes whichever of Phases 1
+    to 3 is still recorded (owner, 2026-10-12): once the change queue has run, the Phase 2
+    forecast is gone from Pro's forecast channel, its record with it."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import (
+        DIVISIONS, PRO, ongoing_league, posted_forecast, round_id,
+    )
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = league.channel(DIVISIONS[PRO][3].forecast)
+    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
+    await posted_forecast(league, round_, 2, 8002)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    entry = {"phase_number": 8, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, _interaction())
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert 8002 not in forecast.messages
+    assert await league.rows("SELECT * FROM forecast_messages WHERE round_id = ?", round_) == []
