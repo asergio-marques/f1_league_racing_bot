@@ -87,6 +87,20 @@ FORECAST_JOBS = ("#439: a phase an amendment draws at once is not yet drawn, pos
                  "superseded by jobs of the amendment's own")
 #: The message a check-in call posted by the `reposts` recorder stands as.
 LATE_CALL = 7101
+#: Why an amendment's check-in call fails until Discord refusing it stops the queue, its stop
+#: notice saying what is left for the round.
+CALL_STOPS = ("#439: an amendment's check-in call that Discord refuses does not yet stop the "
+              "queue with a notice saying what is left for the round")
+#: What each stop notice adds where an amendment's call is refused, by what is left of the round.
+EARLIER_STANDS = "the earlier call still stands, and the answers given to it count"
+ANSWERS_KEPT = ("no call stands; the answers given to the earlier call are kept, and count if "
+                "this call is posted before the check-in deadline")
+NONE_SEEN = "no call for this round can be seen, its message or its channel gone"
+NOTHING_LEFT = ("no call stands, and no attendance rows are open for this round until this call "
+                "is posted")
+MAY_HAVE_LANDED = ("; it may have reached Discord all the same: the bot posts it again on its "
+                   "next try, and any second copy is to be deleted by hand")
+NOT_POSTED = "ATTENDANCE | check-in call | NOT POSTED"
 
 
 # ── Recorders, patched before the league is built ──────────────────────────────────
@@ -278,6 +292,24 @@ def _said_to(interaction: Any) -> list[str]:
 
 def _log_lines(league: Any) -> list[str]:
     return list(league.bot.log_channel.sent)
+
+
+def _stop_notices(league: Any) -> list[str]:
+    """The log channel's notices that the queue stopped, and its lines of a Retry that failed."""
+    return [line for line in _log_lines(league)
+            if "The queue is stopped at job #" in line or line.startswith("❌ Retry of job #")]
+
+
+def _real_call(league: Any, monkeypatch: Any) -> None:
+    """Attendance's own call poster, drawing no picture and reading the division's check-in
+    channel as it stands."""
+    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    league.bot.attendance_service.get_division_config = AttendanceService(
+        league.db_path
+    ).get_division_config
 
 
 def _success_lines(league: Any) -> list[str]:
@@ -1699,26 +1731,22 @@ async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take
     )) == 2
 
 
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answers_are_kept(
     tmp_path, monkeypatch, fault,
 ):
     """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not),
     is brought forward to three days out, so its call is taken down, which goes through, and
-    posted again. Posting it fails, Discord refusing the message or the check-in channel gone,
-    as a call's own timer fails, and the queue goes on. The answers to the earlier call are kept,
-    and the log channel says so, and that they count, naming `/attendance post-check-in` to post
-    the call by hand, never that no attendance rows were opened (owner, 2026-10-09: "Make the
-    line tell the truth")."""
-    from leaguebot.attendance.services import rsvp_service
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    posted again. Posting it fails, Discord refusing the message or the check-in channel gone:
+    the queue stops at `post_call`, and its stop notice says no call stands and that the answers
+    to the earlier call are kept and count if this call is posted before the deadline (owner,
+    2026-10-11: "Notice says what's left"); the log channel says nothing of a call not posted.
+    The answers are kept. A league admin discards the job: the reply names the check-in call and
+    `/attendance post-check-in`."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
-    await _amended(league, scheduled_at=_at(league, days=3))
+    _real_call(league, monkeypatch)
+    press = await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
     if fault == "Discord refuses the post":
         league.channel(PRO_CH.checkin).send_fails = http_error(
@@ -1729,18 +1757,24 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
 
     await run_queue(league.bot)
 
-    assert await stopped_job(league.db_path) is None
-    assert (await _change(league))["state"] == "DONE"
+    assert await _stopped_at(league) == "post_call"
+    assert (await _change(league))["state"] != "DONE"
     assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
     assert len(await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
     )) == 2
-    [line] = _given_up_lines(league)
-    assert "answers given to an earlier call of this round are kept, and count" in line
-    assert "`/attendance post-check-in division: Pro round: 3`" in line
-    assert "no attendance rows were opened" not in line
+    assert any(ANSWERS_KEPT in line for line in _stop_notices(league))
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert NOT_DONE in outcome
+    assert "**Pro** — check-in call:" in outcome and "`/attendance post-check-in`" in outcome
+    assert "no attendance rows were opened" not in outcome
 
 
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 @pytest.mark.parametrize("refused", [
     pytest.param(CALL_MESSAGES[0], id="the call itself refused, so it stands"),
     pytest.param(CALL_MESSAGES[1], id="the last notice refused, the call gone"),
@@ -1750,20 +1784,16 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
 ):
     """Attendance on; round 3's call stands (7001 to 7003) and the round is brought forward to
     three days out, so its call is to be posted again. Discord refuses to delete one of its
-    messages, and a league admin discards the take-down; posting the call again is refused too.
-    (the call itself refused) The earlier call is kept, standing with its answers: the reply
-    names the check-in call as not taken down, but never bids the manager remove by hand a call
-    that is the round's only one. (the last notice refused) The call itself was deleted, so no
-    call can be seen: its record is dropped, the reply never says it was kept but that none can
-    be seen and to post it by hand, and the log channel says so (owner, 2026-10-09: "Make it")."""
-    from leaguebot.attendance.services import rsvp_service
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    messages, and a league admin discards the take-down; posting the call again is refused too,
+    which stops the queue at `post_call`, and a league admin discards that as well.
+    (the call itself refused) The earlier call is kept, standing with its answers: the stop
+    notice says so, and the reply names the check-in call as not taken down, but never bids the
+    manager remove by hand a call that is the round's only one. (the last notice refused) The
+    call itself was deleted, so no call can be seen: its record is dropped, the stop notice says
+    none can be seen, and the reply never says it was kept but that none can be seen and to post
+    it by hand (owner, 2026-10-09: "Make it"; 2026-10-11: "Notice says what's left")."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
+    _real_call(league, monkeypatch)
     league.undeletable.add(refused)
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
@@ -1774,6 +1804,11 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
 
     await discard_job(league.bot)
 
+    assert await _stopped_at(league) == "post_call"
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+    notices = _stop_notices(league)
+    await discard_job(league.bot)
+
     assert await stopped_job(league.db_path) is None
     rows = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
     outcome = _outcome(press)
@@ -1781,17 +1816,16 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     assert "**Pro** — check-in call:" in outcome
     assert "removed by hand" not in outcome
     if refused == CALL_MESSAGES[0]:
+        assert any(EARLIER_STANDS in line for line in notices)
         assert [row["message_id"] for row in rows] == [str(CALL_MESSAGES[0])]
         assert "the earlier call was kept" in outcome
         return
+    assert any(NONE_SEEN in line for line in notices)
     assert rows == []
-    assert (await _job(league, "post_call"))["result"] == {"posted": False, "vanished": True}
+    assert ((await _job(league, "post_call"))["result"] or {}).get("vanished") is True
     assert "kept" not in outcome
     assert "none can be seen" in outcome and "`/attendance post-check-in`" in outcome
     assert "once the cause is cleared (or the check-in channel is set)" in outcome
-    [line] = [line for line in _log_lines(league)
-              if line.startswith("ATTENDANCE | check-in call | NOT POSTED")]
-    assert "no call for this round can be seen" in line
 
 
 async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
@@ -1823,32 +1857,192 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
 
 
-async def test_a_call_posted_again_whose_send_times_out_lets_the_amendment_go_on(
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
+async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_it_may_have_landed(
     tmp_path, monkeypatch,
 ):
     """Attendance on. Pro's round 3, its call standing, is brought forward to three days out;
-    its call is taken down and posted again, and the send times out. As a call that fails on its
-    own timer, it does not stop the queue: the amendment goes through, and the log channel says
-    the call was not posted, that it may have reached Discord all the same, and to check the
-    channel (owner, 2026-10-08: slice 6; 2026-10-09: "Fold it in")."""
-    from leaguebot.attendance.services import rsvp_service
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    its call is taken down and posted again, and the send times out. The queue stops at
+    `post_call`, the amendment not finished, its stop notice saying the call may have reached
+    Discord all the same; the log channel says nothing of a call not posted (owner, 2026-10-10,
+    decision 3; 2026-10-11, "Notice says what's left"). Once the send goes through, Retry posts
+    the call, once, and the amendment finishes."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
+    _real_call(league, monkeypatch)
     await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
     league.channel(PRO_CH.checkin).send_fails = asyncio.TimeoutError()
 
     await run_queue(league.bot)
 
+    assert await _stopped_at(league) == "post_call"
+    assert (await _change(league))["state"] != "DONE"
+    assert any("it may have reached Discord all the same" in line
+               for line in _stop_notices(league))
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+
+    league.channel(PRO_CH.checkin).send_fails = None
+    await retry_job(league.bot)
+
     assert await stopped_job(league.db_path) is None
     assert (await _change(league))["state"] == "DONE"
-    [line] = _given_up_lines(league)
-    assert "may have reached Discord all the same; check the channel" in line
+    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    assert int(row["message_id"]) in league.channel(PRO_CH.checkin).messages
+
+
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
+async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_posted_again(
+    tmp_path, monkeypatch,
+):
+    """Attendance on. Pro's round 3, its call standing and answered, is brought forward to three
+    days out; its call is taken down and posted again, and the send times out, and times out
+    again on Retry. The stop notice, and the line of the Retry that failed, each say that no call
+    stands and the answers are kept, and end that the call may have reached Discord all the same:
+    the bot posts it again on its next try, and any second copy is to be deleted by hand (owner,
+    2026-10-11: "Notice says what's left")."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await _amended(league, scheduled_at=_at(league, days=3))
+    await _run_through(league, "take_down_call")
+    league.channel(PRO_CH.checkin).send_fails = asyncio.TimeoutError()
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_call"
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    [stop] = [line for line in _stop_notices(league) if "The queue is stopped at job #" in line]
+    retried = [line for line in _stop_notices(league) if line.startswith("❌ Retry of job #")]
+    assert retried
+    for line in (stop, retried[-1]):
+        assert f"{ANSWERS_KEPT}{MAY_HAVE_LANDED}" in line
+
+
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
+@pytest.mark.parametrize("fault", ["the call is refused", "the channel is gone"])
+async def test_a_call_posted_again_that_discord_refuses_stops_the_queue_and_is_posted_on_retry(
+    tmp_path, monkeypatch, fault,
+):
+    """Attendance on, its call five days before the round. Pro's round 3 has no call standing
+    and no answers; an amendment's save stops and is discarded past the call's moment, so the
+    amendment is to post the call at once (`_call_to_post_at_once`). Posting it fails, Discord
+    refusing it or the check-in channel gone: the queue stops at `post_call`, its stop notice
+    saying no call stands and no attendance rows are open until this one is posted; the log
+    channel says nothing of a call not posted. Once the cause is cleared, Retry posts the call
+    once and the amendment finishes (owner, 2026-10-10, decision 3: "Stop the queue")."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await league.write("DELETE FROM driver_round_attendance WHERE round_id = ?", R3)
+    await _call_to_post_at_once(league)
+    checkin = league.channel(PRO_CH.checkin)
+    if fault == "the call is refused":
+        checkin.send_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    else:
+        league.remove_channel(PRO_CH.checkin)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    assert any(NOTHING_LEFT in line for line in _stop_notices(league))
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+    assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+
+    if fault == "the call is refused":
+        checkin.send_fails = None
+    else:
+        league.restore_channel(PRO_CH.checkin)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    assert int(row["message_id"]) in checkin.messages
+
+
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
+@pytest.mark.parametrize("left", ["earlier call kept", "no call can be seen", "nothing"])
+async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, left):
+    """Attendance on; Pro's round 3, its call standing (7001 to 7003) and answered, is brought
+    forward to three days out, so its call is taken down and posted again. (earlier call kept)
+    Discord refuses to delete the call itself and a league admin discards the take-down; (no
+    call can be seen) it refuses to delete the last notice, the call itself deleted, and the
+    take-down is discarded; (nothing) the take-down goes through. Posting the call again is then
+    refused, stopping the queue, and a league admin discards it: the reply's entry for the
+    check-in call says what is left — the earlier call kept with its answers counting; none to
+    be seen, to post by hand once the cause is cleared; or that the call was not posted again,
+    to post with `/attendance post-check-in`."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    if left == "earlier call kept":
+        league.undeletable.add(CALL_MESSAGES[0])
+    elif left == "no call can be seen":
+        league.undeletable.add(CALL_MESSAGES[1])
+    press = await _amended(league, scheduled_at=_at(league, days=3))
+    if left == "nothing":
+        await _run_through(league, "take_down_call")
+    else:
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "take_down_call"
+    league.channel(PRO_CH.checkin).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+    if left == "nothing":
+        await run_queue(league.bot)
+    else:
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "post_call"
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    outcome = _outcome(press)
+    assert NOT_DONE in outcome
+    said = {
+        "earlier call kept": "it could not be posted again, so the earlier call was kept and its "
+                             "answers count; see the log channel",
+        "no call can be seen": "it could not be posted again and none can be seen; post it by "
+                               "hand with `/attendance post-check-in` once the cause is cleared "
+                               "(or the check-in channel is set), and see the log channel",
+        "nothing": "the call could not be posted again, and a league admin discarded it; post it "
+                   "with `/attendance post-check-in`",
+    }[left]
+    assert f"**Pro** — check-in call: {said}" in outcome
+
+
+@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
+async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the_command(
+    tmp_path, monkeypatch,
+):
+    """Attendance on. Pro's round 3, its call standing, is brought forward to three days out;
+    its call is taken down, and then Pro's check-in channel is unset before the call is posted
+    again. The queue stops at `post_call`, its stop notice naming the command that sets the
+    channel; nothing is skipped quietly. Once the channel is set again, Retry posts the call and
+    the amendment finishes."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await _amended(league, scheduled_at=_at(league, days=3))
+    await _run_through(league, "take_down_call")
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = NULL WHERE division_id = ?", PRO
+    )
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    assert ("**Pro** has no check-in channel set: set one with `/attendance channel rsvp`, then "
+            "press Retry.") in league.log()
+    assert "run_rsvp_notice | SKIP" not in league.log()
+
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = ? WHERE division_id = ?",
+        str(PRO_CH.checkin), PRO,
+    )
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    assert int(row["message_id"]) in league.channel(PRO_CH.checkin).messages
 
 
 # ── The forecasts an amendment draws at once, as jobs of its own (slice 6) ─────────────

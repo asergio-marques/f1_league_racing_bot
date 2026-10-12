@@ -421,7 +421,16 @@ async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path, n
     assert await _answers(db_path) == {}
 
 
+#: Why the raising form of a call's post fails until an amendment's call stops the queue.
+RAISING_UNBUILT = ("#439: a call posted again cannot yet raise for the change queue, saying what "
+                   "it left, in place of its report")
+
+
+@pytest.mark.xfail(strict=True, reason=RAISING_UNBUILT)
 async def test_a_repost_posts_the_call_again(tmp_path, notice):
+    """Round 1's call stands. Posting it again hands the call poster the call it replaces, and,
+    asked by no change, does not ask it to raise: a call its timer, a restart or
+    `/attendance post-check-in` posts keeps today's report (owner, 2026-10-10, decision 3)."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     bot = _make_bot(db_path, _make_channel())
@@ -431,6 +440,7 @@ async def test_a_repost_posts_the_call_again(tmp_path, notice):
     notice.assert_awaited_once_with(
         ROUND_ID, bot,
         replacing=await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID),
+        raise_on_failure=False,
     )
 
 
@@ -536,6 +546,46 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     if channel is not None:
         assert channel.deleted == []
     assert "the earlier call still stands, and the answers given to it count" in line
+
+
+@pytest.mark.xfail(strict=True, reason=RAISING_UNBUILT)
+@pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
+async def test_a_raising_repost_raises_with_what_it_left_and_reports_nothing(tmp_path, fault):
+    """Round 1's call stands (900001, its last notice 900002), answered by both drivers, and an
+    amendment's job posts it again, asking it to raise. (Discord refuses the post) It raises for
+    the queue, keeping that the earlier call stands, with a notice saying so and that its answers
+    count; the earlier call and its record stand. (the channel is gone, the earlier call's with
+    it) It raises keeping that the call vanished, its record dropped, with a notice saying no call
+    for the round can be seen. Either way the answers are kept and the log channel is told
+    nothing: the stop notice is the report (owner, 2026-10-11: "Notice says what's left")."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
+    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
+    channel = _refusing_channel() if fault == "Discord refuses the post" else None
+    bot = _make_bot(db_path, channel)
+
+    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
+        with pytest.raises(StepFailedOnDiscord) as raised:
+            await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
+
+    bot.output_router.post_log.assert_not_awaited()
+    assert await _answers(db_path) == {
+        FULL_TIME_PROFILE: "ACCEPTED",
+        RESERVE_PROFILE: "DECLINED",
+    }
+    result = raised.value.result or {}
+    notice = str(getattr(raised.value, "notice", "") or "")
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    if fault == "the channel is gone":
+        assert result.get("vanished") is True and not result.get("earlier_left")
+        assert stored is None
+        assert notice.startswith("no call for this round can be seen")
+        return
+    assert result.get("earlier_left") is True and not result.get("vanished")
+    assert stored is not None and stored.message_id == CALL_MSG_ID
+    assert notice.startswith("the earlier call still stands, and the answers given to it count")
 
 
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
