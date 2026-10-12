@@ -544,6 +544,26 @@ async def test_a_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, st
     assert sorted(job["payload"]["phase"] for job in jobs) == list(standing)
 
 
+@pytest.mark.parametrize("standing, named", [
+    pytest.param((3,), "the Phase 3 forecast", id="phase 3 posted"),
+    pytest.param((2,), "the Phase 2 forecast", id="phase 3 never posted"),
+    pytest.param((1, 2), "the Phase 1 and 2 forecasts", id="phases 1 and 2 standing"),
+])
+async def test_a_clean_up_is_named_by_the_phases_it_deletes(tmp_path, standing, named):
+    """A day after round 3's race, Pro's clean-up is asked with Phase 3 standing, or Phase 2 alone
+    (Phase 3 never posted), or Phases 1 and 2. The change is named by the forecast it really
+    deletes, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it", never by a
+    phase that is not standing."""
+    league = await _league(tmp_path)
+    for phase in standing:
+        await posted_forecast(league, ROUND, phase, 9300 + phase)
+
+    await _clean_up(league)
+
+    [row] = [row for row in await change_rows(league.db_path) if row["kind"] == CLEAN_UP_KIND]
+    assert row["what"] == f"deleting {named} of round 3 in **Pro** a day after it"
+
+
 async def test_a_clean_up_leaves_a_mystery_round_s_notice_standing(tmp_path):
     """Round 3 is a mystery round, whose notice (phase 0) was posted in place of its forecasts:
     a day after its race the clean-up deletes nothing, and the notice and its record stand."""

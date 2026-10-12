@@ -38,6 +38,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    forecasts_named,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
 from leaguebot.core.services.amendment_rules_service import (
@@ -523,7 +524,9 @@ def round_amend_change(
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
                 "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
                 "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
-                "AND f.phase_number IN (1, 2, 3)) AS forecast_posted, "
+                "AND f.phase_number IN (1, 2, 3)) AS forecast_posted, ("
+                "SELECT group_concat(f.phase_number) FROM forecast_messages f "
+                "WHERE f.round_id = r.id AND f.phase_number IN (1, 2, 3)) AS forecast_phases, "
                 "EXISTS (SELECT 1 FROM server_configs c WHERE c.test_mode_active = 1) AS test_mode "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
@@ -585,7 +588,9 @@ def round_amend_change(
         notice that the forecasts no longer stand, each phase in *draw* drawn, and the clean-ups
         due a day after the round. Planned once the round is armed, which is where the amendment
         stood before them; what the save withdraws, from what it read (`apply`), and only where it
-        was saved. *standing* is what the arming read of the round's call and whether a Phase 1 to 3 forecast stands.
+        was saved. *standing* is what the arming read of the round's call and of its forecasts of
+        Phases 1 to 3, whether one stands and which (`forecast_phases`), by which the clean-up is
+        named.
 
         A call that stood at the save is taken down and its post planned with it, the post
         judging when it runs whether the call is due then (`call_still_due`): the take-down can
@@ -621,7 +626,12 @@ def round_amend_change(
         planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
         if moment_of(rnd) + POST_RACE_CLEANUP_DELAY <= now():
             if standing["forecast_posted"]:
-                planned.append(PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True}))
+                phases = sorted(
+                    {int(n) for n in str(standing["forecast_phases"] or "").split(",") if n}
+                )
+                planned.append(PlannedStep(
+                    CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True, "standing": phases}
+                ))
             if call_left:
                 planned.append(PlannedStep(CLEAN_UP_CHECK_IN))
         return tuple(planned)
@@ -952,10 +962,13 @@ def round_amend_change(
                     "run when the bot next starts, while the call stands",
                 ))
             elif each.name == CLEAN_UP_FORECAST:
+                standing = each.payload.get("standing", ())
+                several = len(set(standing)) > 1
                 failures.append(notices.NoticeFailure(
                     division, "forecast channel",
-                    "the forecast was not deleted a day after the round, and a league "
-                    "admin discarded it; it is deleted when the bot next starts",
+                    f"{forecasts_named(standing)} {'were' if several else 'was'} not deleted a "
+                    f"day after the round, and a league admin discarded it; "
+                    f"{'they are' if several else 'it is'} deleted when the bot next starts",
                 ))
             elif each.name == CLEAN_UP_CHECK_IN:
                 failures.append(notices.NoticeFailure(
@@ -982,6 +995,14 @@ def round_amend_change(
                 f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}**"
             )
         return await named("deleting a withdrawn forecast of round {number} in **{division}**")(ctx)
+
+    async def describe_clean_up(ctx: StepContext) -> str:
+        """The clean-up a day after the round, named by the forecasts standing when it was planned
+        (`standing`), never by a phase that is not."""
+        return (
+            f"deleting {forecasts_named(ctx.step_payload.get('standing', ()))} of round "
+            f"{await round_number_now(ctx)} in **{ctx.payload['division_name']}** a day after it"
+        )
 
     async def describe_draw(ctx: StepContext) -> str:
         """The draw of a phase the amendment makes at once, and the job that plans it, each
@@ -1041,9 +1062,7 @@ def round_amend_change(
         CLEAN_UP_FORECAST: dataclasses.replace(
             hooks.forecast_steps[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST,
             still_due=weather_on,
-            describe=named(
-                "deleting the forecast of round {number} in **{division}** a day after it"
-            ),
+            describe=describe_clean_up,
         ),
         CLEAN_UP_CHECK_IN: Step(
             CLEAN_UP_CHECK_IN, StepKind.ACT, catching_up(hooks.clean_up_check_in, "cleaned_up"),

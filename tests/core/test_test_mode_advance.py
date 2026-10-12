@@ -930,3 +930,37 @@ async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_stand
     assert await stopped_job(league.db_path) is None
     assert 8002 not in forecast.messages
     assert await league.rows("SELECT * FROM forecast_messages WHERE round_id = ?", round_) == []
+
+
+async def test_an_advanced_forecast_cleanup_names_the_phase_it_deletes(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
+    an hour ago, and its Phase 3 never posted, so its Phase 2 forecast (message 8002) stands.
+    The maintainer advances its forecast cleanup (8): the reply names the forecast it deletes,
+    "🧹 The **forecast cleanup** for **Pro** — **Round 3** is on the change queue: it deletes the
+    Phase 2 forecast as soon as the queue reaches it.", and so does the change asked of the
+    queue, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it"."""
+    from tests.support.change_queue import change_rows
+    from tests.support.season_league import PRO, ongoing_league, posted_forecast, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
+    await posted_forecast(league, round_, 2, 8002)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 8, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+
+    assert ("🧹 The **forecast cleanup** for **Pro** — **Round 3** is on the change queue: it "
+            "deletes the Phase 2 forecast as soon as the queue reaches it.") in _replied(interaction)
+    [row] = [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST_CLEAN_UP]
+    assert row["what"] == "deleting the Phase 2 forecast of round 3 in **Pro** a day after it"
+

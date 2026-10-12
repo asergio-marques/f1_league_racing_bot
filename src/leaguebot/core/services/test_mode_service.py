@@ -556,6 +556,18 @@ async def get_next_pending_phase(
     return None
 
 
+async def standing_forecast_phases(db_path: str, round_id: int) -> list[int]:
+    """The phases, of 1 to 3, whose forecast of *round_id* is still recorded: what the forecast
+    clean-up deletes, by which `/test-mode advance` names it."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT DISTINCT phase_number FROM forecast_messages "
+            "WHERE round_id = ? AND phase_number IN (1, 2, 3) ORDER BY phase_number",
+            (round_id,),
+        )
+        return [int(row["phase_number"]) for row in await cursor.fetchall()]
+
+
 async def round_result_status(db_path: str, round_id: int) -> str | None:
     """Return a round's lifecycle state, or None if there is no such round.
 

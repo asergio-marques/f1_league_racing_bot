@@ -47,6 +47,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
     Verdict,
+    forecasts_named,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services import standing_posts
@@ -467,9 +468,11 @@ CLEAN_UP_PHASES = [1, 2, 3]
 
 
 def _clean_up_doing(payload: dict[str, Any]) -> str:
+    """How the clean-up is named: by the forecasts standing when it was asked (`standing`)."""
     return (
-        f"deleting the forecast of round {payload.get('round_number', '?')} in "
-        f"**{payload.get('division_name', '?')}** a day after it"
+        f"deleting {forecasts_named(payload.get('standing', ()))} of round "
+        f"{payload.get('round_number', '?')} in **{payload.get('division_name', '?')}** a day "
+        f"after it"
     )
 
 
@@ -556,8 +559,9 @@ async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool
 
 async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int) -> None:
     """Ask the queue to delete the forecast of *round_id* that still stands (Phase 1 to 3), as its
-    timer does a day after the race. A round that is not there asks nothing; the change's check drops a request that is
-    no longer due."""
+    timer does a day after the race. A round that is not there asks nothing; the change's check
+    drops a request that is no longer due. The phases standing as it is asked (`standing`) name
+    the change; the jobs delete what stands when they run."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT r.round_number, d.name FROM rounds r "
@@ -565,12 +569,16 @@ async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int)
             (round_id,),
         )
         row = await cursor.fetchone()
+        standing = [
+            phase for phase in CLEAN_UP_PHASES if await _recorded(db, round_id, phase)
+        ]
     if row is None:
         log.error("Forecast clean-up: round_id=%s not found — nothing asked of the queue.",
                   round_id)
         return
     payload = {
         "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "clean_up": True,
+        "standing": standing,
         "division_name": row["name"],
         "round_number": row["round_number"],
     }

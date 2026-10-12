@@ -1,10 +1,10 @@
 """A round's cleanups that fell due while the bot was stopped are run when it starts again.
 
-Issue #425. A round's Phase 3 forecast, and its check-in call with its last notice and its
-distribution message, come down 24 hours after the round's start, by the ``cleanup`` and
-``rsvp_cleanup`` jobs. A job that falls due while the bot is down is discarded by the
-scheduler's five-minute misfire grace rather than run late, so without this a restart at the
-wrong moment left those messages standing for good. The league decided both modules catch up
+Issue #425. A round's forecast (whichever of Phases 1 to 3 still stands), and its check-in call
+with its last notice and its distribution message, come down 24 hours after the round's start, by
+the ``cleanup`` and ``rsvp_cleanup`` jobs. A job that falls due while the bot is down is discarded
+by the scheduler's five-minute misfire grace rather than run late, so without this a restart at
+the wrong moment left those messages standing for good. The league decided both modules catch up
 (2026-09-24).
 
 **Only what is at least a day past is taken down.** A round that started under a day ago still
@@ -174,6 +174,26 @@ async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecas
     db_path = await _make_db(tmp_path, phases=phases)
 
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
+
+
+@pytest.mark.parametrize(
+    "phases, named",
+    [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
+     ((1, 2), "the Phase 1 and 2 forecasts")],
+    ids=["phase-3-posted", "phase-3-never-posted", "phases-1-and-2-standing"],
+)
+async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
+    tmp_path, caplog, phases, named
+):
+    """The host's log line for a forecast clean-up the catch-up asks names the forecast still
+    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not."""
+    db_path = await _make_db(tmp_path, phases=phases)
+
+    with caplog.at_level("INFO", logger=bot_module.__name__):
+        await _recover(_bot(db_path))
+
+    lines = [record.getMessage() for record in caplog.records]
+    assert f"_recover_missed_cleanups: deleting {named} of round_id={ROUND_ID}" in lines, lines
 
 
 async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):

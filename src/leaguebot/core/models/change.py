@@ -11,6 +11,7 @@ to them by `tests/core/test_schema_rules.py`.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -164,3 +165,17 @@ def module_off(module: str) -> str:
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 FORECAST_FLUSH = "weather.forecast.flush"
+
+
+def forecasts_named(phases: Iterable[int]) -> str:
+    """The forecasts a clean-up deletes, named by their phases as every text of the clean-up
+    names them: "the Phase 2 forecast", "the Phase 1 and 2 forecasts", or "the forecast" where no
+    phase is known. Here so that core (test mode, the amendment, the restart) and weather name
+    the clean-up alike, the phase it really deletes and never one that is not standing."""
+    known = sorted(set(phases))
+    if not known:
+        return "the forecast"
+    if len(known) == 1:
+        return f"the Phase {known[0]} forecast"
+    listed = ", ".join(str(phase) for phase in known[:-1])
+    return f"the Phase {listed} and {known[-1]} forecasts"

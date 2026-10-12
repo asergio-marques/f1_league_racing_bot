@@ -37,12 +37,14 @@ from leaguebot.core.services.test_mode_service import (
     get_next_pending_phase,
     PhaseEntry,
     build_review_summary,
+    standing_forecast_phases,
 )
 from leaguebot.core.models.change import (
     FORECAST,
     FORECAST_CLEAN_UP,
     FORECAST_FLUSH,
     ChangeOrigin,
+    forecasts_named,
 )
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
@@ -491,9 +493,11 @@ class TestModeCog(commands.Cog):
             prefix = "cleanup" if phase_number == 8 else "rsvp_cleanup"
             what = "forecast cleanup" if phase_number == 8 else "check-in cleanup"
             self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
+            standing: list[int] = []
             try:
                 if phase_number == 8:
-                    asked = await self._ask_forecast_clean_up(entry)
+                    standing = await standing_forecast_phases(self.bot.db_path, entry["round_id"])
+                    asked = await self._ask_forecast_clean_up(entry, standing)
                 else:
                     asked = True
                     await run_rsvp_cleanup(entry["round_id"], self.bot)
@@ -512,8 +516,8 @@ class TestModeCog(commands.Cog):
             if phase_number == 8:
                 reply = (
                     f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** is on the change queue: its forecast "
-                    f"is deleted as soon as the queue reaches it."
+                    f"**Round {entry['round_number']}** is on the change queue: it deletes "
+                    f"{forecasts_named(standing)} as soon as the queue reaches it."
                 )
             else:
                 reply = (
@@ -592,21 +596,22 @@ class TestModeCog(commands.Cog):
             origin=ChangeOrigin.BOT,
         )
 
-    async def _ask_forecast_clean_up(self, entry: PhaseEntry) -> int | None:
+    async def _ask_forecast_clean_up(self, entry: PhaseEntry, standing: list[int]) -> int | None:
         """Ask the change queue, as the bot's, to delete the forecast still standing (Phase 1 to 3)
-        of the entry's round, as its timer does a day after the race. Returns the change's id, or
-        None where no forecast stands."""
+        of the entry's round, as its timer does a day after the race, named by the phases
+        *standing*. Returns the change's id, or None where no forecast stands."""
         return await self.bot.change_queue.ask(
             FORECAST_CLEAN_UP,
             {
                 "round_id": entry["round_id"],
                 "phases": [1, 2, 3],
                 "clean_up": True,
+                "standing": standing,
                 "division_name": entry["division_name"],
                 "round_number": entry["round_number"],
             },
             what=(
-                f"deleting the forecast of round {entry['round_number']} in "
+                f"deleting {forecasts_named(standing)} of round {entry['round_number']} in "
                 f"**{entry['division_name']}** a day after it"
             ),
             origin=ChangeOrigin.BOT,

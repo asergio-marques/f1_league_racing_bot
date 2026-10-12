@@ -1377,6 +1377,44 @@ async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_name
     assert 8003 in league.channel(PRO_CH.forecast).messages
 
 
+async def test_a_late_clean_up_is_named_by_the_phase_still_standing(tmp_path, monkeypatch):
+    """Weather on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
+    Phase 3 never posted, so its Phase 2 forecast (message 8002) stands. It is moved to a day
+    from now; the save stops, and ten minutes on, past the clean-up due a day after the old
+    moment, a league admin discards it. The round stands at its old moment, so its clean-up is
+    due; finding the forecasts to delete fails, and the queue stops, its notice naming the job
+    "deleting the Phase 2 forecast of round 3 in **Pro** a day after it". A league admin discards
+    that too: the reply names the Phase 2 forecast as not deleted a day after the round. Neither
+    names a phase that is not standing."""
+    import leaguebot.weather.services.forecast_cleanup_service as cleanup
+
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _place_r3(league, hours=-23, minutes=-55)
+    await posted_forecast(league, R3, 2, 8002)
+    press = await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        monkeypatch.setattr(cleanup, "forecast_deletes",
+                            AsyncMock(side_effect=RuntimeError("unreadable")))
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "clean_up_forecast"
+
+    notices = _stop_notices(league)
+    assert any("deleting the Phase 2 forecast of round 3 in **Pro** a day after it" in line
+               for line in notices), notices
+    assert not any("Phase 3" in line for line in notices), notices
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert ("**Pro** — forecast channel: the Phase 2 forecast was not deleted a day after the "
+            "round, and a league admin discarded it; it is deleted when the bot next starts"
+            ) in outcome, outcome
+    assert 8002 in league.channel(PRO_CH.forecast).messages
+
+
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     tmp_path, phases, ending,

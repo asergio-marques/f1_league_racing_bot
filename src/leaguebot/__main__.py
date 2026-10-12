@@ -1357,8 +1357,8 @@ async def _abandon_interrupted_resubmission(
 async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     """Take down what a round's cleanups would have, their moment passing while the bot was down.
 
-    A round's forecast (whichever of Phases 1 to 3 still stands), and its check-in call with its last notice and its distribution
-    message, come down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and
+    A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names),
+    and its check-in call with its last notice and its distribution message, come down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and
     ``rsvp_cleanup`` jobs (#425). A job falling due while the bot is stopped is discarded by the
     scheduler's misfire grace rather than run late, and nothing else would take those messages
     down: a forecast whose cleanup was missed used to stay for good.
@@ -1374,6 +1374,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     from datetime import datetime, timezone
 
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.change import forecasts_named
     from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
     from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
     from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
@@ -1393,17 +1394,21 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT DISTINCT fm.round_id, r.scheduled_at
+                SELECT fm.round_id, r.scheduled_at, fm.phase_number
                   FROM forecast_messages fm
                   JOIN rounds r ON r.id = fm.round_id
                   JOIN divisions d ON d.id = r.division_id
                  WHERE fm.phase_number IN (1, 2, 3)
                    AND r.status != 'CANCELLED'
                    AND d.status != 'CANCELLED'
-                 ORDER BY r.scheduled_at, fm.round_id
+                 ORDER BY r.scheduled_at, fm.round_id, fm.phase_number
                 """
             )
-            forecasts = [r["round_id"] for r in await cursor.fetchall() if _due(r["scheduled_at"])]
+            # Each round due, in order, with the phases of its forecast still standing.
+            forecasts: dict[int, list[int]] = {}
+            for r in await cursor.fetchall():
+                if _due(r["scheduled_at"]):
+                    forecasts.setdefault(r["round_id"], []).append(r["phase_number"])
             cursor = await db.execute(
                 """
                 SELECT DISTINCT rem.round_id, r.scheduled_at
@@ -1421,10 +1426,13 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
         return
 
     if forecasts and not await bot.module_service.is_weather_enabled():
-        forecasts = []
+        forecasts = {}
 
-    for round_id in forecasts:
-        log.info("_recover_missed_cleanups: deleting round %d's forecast", round_id)
+    for round_id, phases in forecasts.items():
+        log.info(
+            "_recover_missed_cleanups: deleting %s of round_id=%d", forecasts_named(phases),
+            round_id,
+        )
         try:
             await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
         except Exception:
