@@ -293,8 +293,8 @@ def _stop_notices(league: Any) -> list[str]:
 
 
 def _real_call(league: Any, monkeypatch: Any) -> None:
-    """Attendance's own call poster, drawing no picture and reading the division's check-in
-    channel as it stands."""
+    """Attendance's own call poster, drawing no picture, reading the division's check-in channel
+    as it stands, and recording a call it posts through attendance's own service."""
     from leaguebot.attendance.services import rsvp_service
     from leaguebot.attendance.services.attendance_service import AttendanceService
 
