@@ -305,10 +305,7 @@ async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disable
     assert len(_success_lines(league)) == 1
 
 
-@DRAWS_RECORDED
-async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enabled(
-    tmp_path, phases
-):
+async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enabled(tmp_path):
     """A league with weather on must still be told which forecasts were thrown away: the same
     amendment with weather on posts one notice to Am's forecast channel."""
     league = await _amended_league(
@@ -320,8 +317,7 @@ async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enable
     assert len(league.texts(AM_FORECAST)) == 1
 
 
-@DRAWS_RECORDED
-async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_path, phases):
+async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_path):
     """Nothing withdrawn, nothing announced.
 
     A round whose phases would all have run under its new moment loses no forecast, so the
