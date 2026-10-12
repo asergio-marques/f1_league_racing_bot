@@ -1171,3 +1171,43 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
     await _seed(db_path, [{"format": "MYSTERY", "track_name": None}])
 
     assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+
+
+
+# ---------------------------------------------------------------------------
+# A weather step already in hand on the change queue (#439)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason="#439: advance does not yet pass over a weather step "
+                   "whose change is in hand on the change queue")
+async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again() -> None:
+    """Weather is on and round 1 (Monza) has none of its phases done; its scheduler job was
+    cancelled by the advance that asked the change queue for its Phase 1, which waits there
+    unrun. The next advance does not offer round 1's Phase 1 again. Before that change was
+    asked, it was the step offered."""
+    import json
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
+    try:
+        await run_migrations(db_path)
+        await _seed_with_weather(db_path, [{"track_name": "Monza"}])
+        first = await get_next_pending_phase(db_path, _StubScheduler())
+        assert first is not None
+        assert (first["round_id"], first["phase_number"]) == (1, 1)
+
+        payload = {"round_id": 1, "phase": 1, "division_name": "Division A", "round_number": 1}
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+                "VALUES ('weather.forecast', 'weather.forecast:1:1', ?, 'BOT', 'QUEUED', "
+                "'drawing the Phase 1 forecast of round 1 in **Division A**')",
+                (json.dumps(payload),),
+            )
+            await db.commit()
+
+        result = await get_next_pending_phase(db_path, _StubScheduler())
+        assert result is None or (result["round_id"], result["phase_number"]) != (1, 1)
+    finally:
+        os.unlink(db_path)
