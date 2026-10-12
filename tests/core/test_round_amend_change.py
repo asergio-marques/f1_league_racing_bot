@@ -81,6 +81,10 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
+#: Why a phase an amendment draws at once fails until the build makes its draw, post and
+#: supersession jobs of the amendment's own.
+FORECAST_JOBS = ("#439: a phase an amendment draws at once is not yet drawn, posted and "
+                 "superseded by jobs of the amendment's own")
 #: The message a check-in call posted by the `reposts` recorder stands as.
 LATE_CALL = 7101
 
@@ -90,19 +94,12 @@ LATE_CALL = 7101
 
 @pytest.fixture
 def phases(monkeypatch):
-    """Weather's three phase runners, recording `(phase, round id)` in `ran`; a phase in
-    `failing` raises its fault instead, as a fault of the bot's own."""
-    record = SimpleNamespace(ran=[], failing={})
-    for number in (1, 2, 3):
-        module = importlib.import_module(f"leaguebot.weather.services.phase{number}_service")
+    """Weather's draw of each phase, recording `(phase, round id)` in `ran` as the amendment's
+    `draw_forecast` job makes it, then drawn as weather draws it; a phase in `failing` raises its
+    fault instead, as a fault of the bot's own (`tests/support/weather_draws.py`)."""
+    from tests.support.weather_draws import recorded_draws
 
-        async def _run(rid: int, *_args: Any, _number: int = number, **_kwargs: Any) -> None:
-            if _number in record.failing:
-                raise record.failing[_number]
-            record.ran.append((_number, rid))
-
-        monkeypatch.setattr(module, f"run_phase{number}", _run)
-    return record
+    return recorded_draws(monkeypatch)
 
 
 @pytest.fixture
@@ -742,16 +739,20 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("weather, attendance", [
-    (True, True), (True, False), (False, True), (False, False),
+    pytest.param(True, True, marks=pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)),
+    pytest.param(True, False, marks=pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)),
+    (False, True), (False, False),
 ], ids=["weather and attendance on", "weather on", "attendance on", "both off"])
 async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather, attendance):
     """Round 3's call stands, and its phase 2 forecast (message 8002) was posted though phase 1
     never ran. The round is brought forward to three days out: phase 1 is now due and was never
     drawn, phase 2 is ahead again and withdrawn, and the call's window has passed, so the call is
-    posted again. The jobs run in today's order; a module off drops its own (the forecast's
+    posted again. The jobs run in today's order, phase 1 drawn and its forecast posted by jobs of
+    the amendment's own after its `rerun_phase`; a module off drops its own (the forecast's
     deletion runs whatever weather's state)."""
     league = await ongoing_league(tmp_path, weather=weather, attendance=attendance,
                                   horizons=HORIZONS)
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit' WHERE id = ?", R3)
     await posted_forecast(league, R3, 2, 8002)
     await _amended(league, scheduled_at=_at(league, days=3))
 
@@ -762,7 +763,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
         expected += ["take_down_call", "post_call"]
     expected += ["delete_forecast"]
     if weather:
-        expected += ["notify_invalidation", "rerun_phase"]
+        expected += ["notify_invalidation", "rerun_phase", "draw_forecast", "post_forecast"]
     expected += ["close"]
     assert await _ran(league) == expected
     assert league.armed == [("weather" if weather else "results", [R3])] + (
@@ -911,6 +912,7 @@ async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path,
             "discarded it; post it with `/attendance post-check-in`") in outcome
 
 
+@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 async def test_a_discarded_phase_run_says_it_is_drawn_when_the_bot_next_starts(tmp_path, phases):
     """Weather on; round 3 is brought forward to three days out, so its phase 1, never drawn,
     is due at once. Drawing it fails on a fault of the bot's own and a league admin discards it:
@@ -919,7 +921,7 @@ async def test_a_discarded_phase_run_says_it_is_drawn_when_the_bot_next_starts(t
     phases.failing[1] = RuntimeError("forecast could not be drawn")
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "rerun_phase"
+    assert await _stopped_at(league) == "draw_forecast"
 
     await discard_job(league.bot)
 
@@ -1264,6 +1266,7 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     assert row["checkin_cleared"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     tmp_path, phases, ending,
@@ -1273,7 +1276,8 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     out and the save stops. Twelve minutes on, past the old Phase 2 horizon, (discarded) a league
     admin discards the save, or (refused) Retry is pressed and the save refuses it, its new moment
     having passed. The round is armed again at its old moment and its Phase 2, due meanwhile, is
-    drawn at once; drawing it fails and a league admin discards it. The reply names it under
+    drawn at once; drawing it fails, stopping the queue at its `draw_forecast` job, and a league admin
+    discards it. The reply names it under
     "Not done" beneath what became of the save, and the log channel names the job discarded."""
     league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS,
                                   phases_done={R3: (1,)})
@@ -1288,7 +1292,7 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
             await discard_job(league.bot)
     if ending == "refused":
         await retry_job(league.bot)
-    assert await _stopped_at(league) == "rerun_phase"
+    assert await _stopped_at(league) == "draw_forecast"
 
     await discard_job(league.bot)
 
@@ -1845,3 +1849,127 @@ async def test_a_call_posted_again_whose_send_times_out_lets_the_amendment_go_on
     assert (await _change(league))["state"] == "DONE"
     [line] = _given_up_lines(league)
     assert "may have reached Discord all the same; check the channel" in line
+
+
+# ── The forecasts an amendment draws at once, as jobs of its own (slice 6) ─────────────
+
+
+async def _drawn_at_once(tmp_path: Any, *, days: float) -> Any:
+    """Weather on, horizons 5 days, 2 days, 2 hours; Pro's round 3 at Silverstone Circuit, with
+    a short qualifying and a long race, nothing drawn. It is brought forward to *days* out: at
+    three days phase 1 falls due at once, at one day phases 1 and 2. Gives the league and the
+    press; the queue is not run."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit' WHERE id = ?", R3)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           R3, session)
+    press = await _amended(league, scheduled_at=_at(league, days=days))
+    return league, press
+
+
+def _forecast_events(league: Any) -> list[tuple[str, int]]:
+    """What Pro's forecast channel saw, in order: each send and delete, with its message."""
+    return [(kind, mid) for kind, cid, mid in league.events if cid == PRO_CH.forecast]
+
+
+async def _forecasts(league: Any) -> dict[int, int]:
+    """Round 3's forecasts recorded: each phase's message id."""
+    return {row["phase_number"]: int(row["message_id"]) for row in await league.rows(
+        "SELECT phase_number, message_id FROM forecast_messages WHERE round_id = ?", R3)}
+
+
+@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
+async def test_a_phase_drawn_at_once_whose_forecast_discord_refuses_stops_the_queue(tmp_path):
+    """Round 3 brought forward to three days out, so its phase 1 is drawn at once, and Discord
+    refuses its forecast: the queue stops at the amendment's `post_forecast` job, the draw
+    recorded and nothing put on the old retry queue. Discord accepting, Retry posts it and
+    records its id."""
+    league, _press = await _drawn_at_once(tmp_path, days=3)
+    league.channel(PRO_CH.forecast).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "post_forecast"
+    [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", R3)
+    assert row["phase1_done"] == 1
+    assert _forecast_events(league) == []
+    assert await league.rows(
+        "SELECT * FROM pending_messages WHERE channel_id = ?", PRO_CH.forecast
+    ) == []
+
+    league.channel(PRO_CH.forecast).send_fails = None
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    [(kind, new)] = _forecast_events(league)
+    assert kind == "send"
+    assert await _forecasts(league) == {1: new}
+
+
+@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
+async def test_a_phase_drawn_at_once_supersedes_the_earlier_forecast_by_a_delete_job(tmp_path):
+    """Round 3 brought forward to one day out, so phases 1 and 2 are drawn at once: phase 1's
+    forecast is posted, then phase 2's, and phase 1's is deleted by a `delete_forecast` job after
+    it. Only phase 2's forecast is left recorded."""
+    league, _press = await _drawn_at_once(tmp_path, days=1)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    first, second, deleted = _forecast_events(league)
+    assert (first[0], second[0], deleted[0]) == ("send", "send", "delete")
+    assert deleted[1] == first[1]
+    assert await _forecasts(league) == {2: second[1]}
+    weather_jobs = [name for name in await _ran(league)
+                    if name in ("rerun_phase", "draw_forecast", "post_forecast", "delete_forecast")]
+    assert weather_jobs[-4:] == ["rerun_phase", "draw_forecast", "post_forecast",
+                                 "delete_forecast"]
+
+
+@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
+async def test_a_discarded_forecast_post_of_an_amendment_is_named_in_its_reply(tmp_path):
+    """Round 3 brought forward to three days out; Discord refuses phase 1's forecast and a
+    league admin discards the post: the reply names it under "Not done", the draw standing."""
+    league, press = await _drawn_at_once(tmp_path, days=3)
+    league.channel(PRO_CH.forecast).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_forecast"
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    assert ("**Pro** — Phase 1 forecast: drawn but not posted, and a league admin discarded it; "
+            "the draw stands in the log channel, and nothing posts it again") in outcome
+
+
+@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
+async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded_once_discarded(
+    tmp_path,
+):
+    """Round 3 brought forward to one day out; phase 1's forecast is posted, and Discord refuses
+    to delete it when phase 2's supersedes it: the queue stops at `delete_forecast`. A league
+    admin discards it: the reply names the superseded forecast, with its link, to delete by
+    hand."""
+    league, press = await _drawn_at_once(tmp_path, days=1)
+    await _run_through(league, "post_forecast")
+    [(_, earlier)] = _forecast_events(league)
+    league.channel(PRO_CH.forecast).messages[earlier].delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "delete_forecast"
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    named = ("**Pro** — forecast channel: the superseded Phase 1 forecast could not be deleted, "
+             "and a league admin discarded it; delete it by hand (")
+    [bullet] = [line for line in outcome.splitlines() if named in line]
+    assert str(earlier) in bullet

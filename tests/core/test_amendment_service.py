@@ -191,22 +191,12 @@ PRO_3 = round_id(PRO, 3)
 
 @pytest.fixture
 def phases(monkeypatch):
-    """Weather's three phase runners, recording `(phase, round id)` in `ran`; a phase in
-    `failing` raises its fault instead, as a fault of the bot's own."""
-    import importlib
-    from types import SimpleNamespace
+    """Weather's draw of each phase, recording `(phase, round id)` in `ran`, then drawn as weather
+    draws it; a phase in `failing` raises its fault instead, as a fault of the bot's own
+    (`tests/support/weather_draws.py`)."""
+    from tests.support.weather_draws import recorded_draws
 
-    record = SimpleNamespace(ran=[], failing={})
-    for number in (1, 2, 3):
-        module = importlib.import_module(f"leaguebot.weather.services.phase{number}_service")
-
-        async def _run(rid, *_args, _number=number, **_kwargs):
-            if _number in record.failing:
-                raise record.failing[_number]
-            record.ran.append((_number, rid))
-
-        monkeypatch.setattr(module, f"run_phase{number}", _run)
-    return record
+    return recorded_draws(monkeypatch)
 
 
 @pytest.fixture
@@ -351,7 +341,12 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
     assert "track:" not in body
 
 
-@pytest.mark.parametrize("fault_in", ["arming the round's jobs", "re-running a phase"])
+@pytest.mark.parametrize("fault_in", [
+    "arming the round's jobs",
+    pytest.param("re-running a phase", marks=pytest.mark.xfail(strict=True, reason=(
+        "#439: a phase an amendment draws at once is not yet drawn by a draw_forecast job of its "
+        "own"))),
+])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
     tmp_path, phases, fault_in
 ):
@@ -371,7 +366,7 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
     await _amend(league, track=SILVERSTONE, scheduled_at=_at(league, timedelta(hours=1)))
 
     assert await _stopped_at(league) == (
-        "arm" if fault_in == "arming the round's jobs" else "rerun_phase"
+        "arm" if fault_in == "arming the round's jobs" else "draw_forecast"
     )
     assert (await _round(league))["track_name"] == SILVERSTONE
     [line] = _success_lines(league)

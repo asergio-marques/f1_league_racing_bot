@@ -17,12 +17,10 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
 from tests.support.change_queue import run_queue
 from tests.support.season_league import (
     AM,
@@ -189,16 +187,11 @@ AM_FORECAST = DIVISIONS[AM][3].forecast
 
 @pytest.fixture
 def phases(monkeypatch):
-    """Weather's three phase runners, recording `(phase, round id)` in `ran` rather than
-    drawing anything; patched before the league is built."""
-    record = SimpleNamespace(ran=[])
-    for number, module in ((1, phase1_service), (2, phase2_service), (3, phase3_service)):
+    """Weather's draw of each phase, recording `(phase, round id)` in `ran`, then drawn as weather
+    draws it; patched before the league is built (`tests/support/weather_draws.py`)."""
+    from tests.support.weather_draws import recorded_draws
 
-        async def _run(rid, *_args, _number=number, **_kwargs):
-            record.ran.append((_number, rid))
-
-        monkeypatch.setattr(module, f"run_phase{number}", _run)
-    return record
+    return recorded_draws(monkeypatch)
 
 
 async def _amended_league(tmp_path, *, weather: bool, at: timedelta, phase1_done: int = 0):
