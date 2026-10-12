@@ -246,9 +246,11 @@ class TestRunPostRaceCleanup:
 
         assert sorted(planned) == [("delete_forecast", 1, 3, 301), ("delete_forecast", 2, 3, 302)]
 
-    async def test_does_not_delete_earlier_phases(self, tmp_path):
-        """Round 1's Phase 1, 2 and 3 forecasts recorded in Div A: the clean-up plans the
-        deletion of Phase 3's alone."""
+    async def test_a_phases_filter_plans_only_the_phases_it_names(self, tmp_path):
+        """Round 1's Phase 1, 2 and 3 forecasts recorded in Div A: asked for Phase 3 alone
+        (`phases=[3]`), `forecast_deletes` plans the deletion of Phase 3's alone. Which phases a
+        clean-up a day after the race asks for is the clean-up's own choice, pinned in
+        `test_forecast_changes.py` (whichever of Phases 1 to 3 is still recorded)."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
         await _record(db_path, (1, 1, 101), (1, 2, 102), (1, 3, 103))
