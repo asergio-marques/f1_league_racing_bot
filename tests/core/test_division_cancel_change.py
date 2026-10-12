@@ -501,8 +501,6 @@ async def test_the_division_is_told_in_the_division_s_words(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="#439: the calendar replaced is not yet deleted by a job of its own")
 async def test_the_jobs_run_in_today_s_order(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, results=True, attendance=True)
     await _second_call(league)

@@ -96,8 +96,6 @@ SAVE_DISCARDED = (
 )
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
-#: Why a test of the jobs' order fails until the build.
-REPLACED_UNBUILT = "#439: the calendar replaced is not yet deleted by a job of its own"
 WIND_DOWN = "season.wind_down"
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
@@ -895,8 +893,7 @@ _MODULES = {
 
 
 @pytest.mark.parametrize("modules", [
-    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=REPLACED_UNBUILT))
-    for name in sorted(_MODULES)
+    pytest.param(name) for name in sorted(_MODULES)
 ])
 async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of_its_own(
     tmp_path, modules,

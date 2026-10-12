@@ -721,7 +721,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "_confirm_privately"): (1, HANDLERS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, PASS["signup"]),
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (3, PASS["attendance"]),
-    ("core/services/calendar_post_service.py", "replace_calendar_message"): (3, HANDLERS),
+    ("core/services/calendar_post_service.py", "replace_calendar_message"): (2, HANDLERS),
     ("core/services/cancellation_notice_service.py", "_send"): (1, HANDLERS),
     ("weather/services/forecast_cleanup_service.py", "post_phase_message"): (1, PASS["weather"]),
     ("core/services/hub_service.py", "refresh_panel"): (2, HANDLERS),
@@ -1287,7 +1287,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The standing posts
-    ("core/services/calendar_post_service.py", "replace_calendar_message"): (1, SLICE[6]),
     ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, SLICE[6]),
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (1, SLICE[6]),
     ("weather/services/forecast_cleanup_service.py", "store_forecast_message"): (1, SLICE[6]),

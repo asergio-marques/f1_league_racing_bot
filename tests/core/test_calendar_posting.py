@@ -50,8 +50,6 @@ CALENDAR_CHANNEL = 700
 OLD_MESSAGE_ID = 8800
 NEW_MESSAGE_ID = 9900
 
-UNBUILT = "#439: posting a calendar still saves its id, deletes the one it replaces, or reports a channel gone"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -217,7 +215,6 @@ async def test_the_textual_calendar_lists_the_rounds(tmp_path):
     assert "Silverstone" in text
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_new_message_id_is_returned_and_nothing_is_written(tmp_path):
     """The calendar's post job saves the id in its own save; posting writes nothing."""
     db_path = await _make_db(tmp_path, name="cal_store")
@@ -364,8 +361,7 @@ async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path)
 
 
 @pytest.mark.parametrize("channel", [
-    pytest.param("set and gone", id="set and gone",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("set and gone", id="set and gone"),
     pytest.param("never set", id="never set"),
 ])
 async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel):
@@ -392,7 +388,6 @@ async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_attachment_is_released_before_the_caller_removes_the_file(tmp_path):
     """Closed where the attachment is, so the handle is gone before the caller's `finally`
     removes the path — Windows refuses to delete a file that is still open."""
@@ -406,7 +401,6 @@ async def test_the_attachment_is_released_before_the_caller_removes_the_file(tmp
     discard.assert_called_once()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_attachment_is_released_even_when_the_post_fails(tmp_path):
     """The `finally` covers it, or a failed post leaves a file handle open for the life of
     the process."""

@@ -43,8 +43,6 @@ from tests.support.season_league import (
     season_league,
 )
 
-UNBUILT = "#439: a calendar's post and the deletion of the one it replaces are not yet two jobs"
-
 PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 #: The link Discord gives Pro's old calendar, which a discarded deletion names.
 OLD_LINK = f"https://discord.test/{PRO_CALENDAR}/{CALENDAR_MESSAGE}"
@@ -97,7 +95,6 @@ def _undeletable(league: Any, message_id: int) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_new_calendar_is_posted_before_the_old_one_is_deleted_by_a_job_of_its_own(
     tmp_path,
 ):
@@ -139,10 +136,8 @@ async def test_a_calendar_post_refused_leaves_the_old_calendar_and_plans_no_dele
 
 
 @pytest.mark.parametrize("occasion", [
-    pytest.param("round cancel", id="round cancel",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param("season approval", id="season approval",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("round cancel", id="round cancel"),
+    pytest.param("season approval", id="season approval"),
 ])
 async def test_an_old_calendar_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path, monkeypatch, occasion,
@@ -178,7 +173,6 @@ async def test_an_old_calendar_discord_will_not_delete_stops_the_queue_and_once_
     assert len(league.texts(PRO_CALENDAR)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_stop_between_the_calendar_post_and_its_delete_deletes_the_old_one_on_restart(
     tmp_path,
 ):
@@ -198,7 +192,6 @@ async def test_a_stop_between_the_calendar_post_and_its_delete_deletes_the_old_o
         "delete_replaced") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_calendar_whose_id_could_not_be_saved_removes_the_copy_before_it_posts_again(
     tmp_path,
 ):
@@ -229,7 +222,6 @@ async def test_a_calendar_whose_id_could_not_be_saved_removes_the_copy_before_it
     assert await _calendar_id(league) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_calendar_replaced_is_read_when_the_job_runs(tmp_path):
     """The division's calendar was posted again (6005) while the cancellation waited: its post
     deletes 6005, the calendar standing as it ran, and not the 6001 it held when asked."""
@@ -264,7 +256,6 @@ async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     assert await _calendar_id(league) == str(new)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_calendar_sync_posts_then_deletes_the_old_calendar(tmp_path):
     """`/division calendar-sync` end to end: one calendar left in the channel, the new one, and
     its id saved."""

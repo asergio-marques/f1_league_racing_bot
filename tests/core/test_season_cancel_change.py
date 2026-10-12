@@ -882,8 +882,6 @@ async def test_a_cancellation_is_refused_at_once_while_another_end_of_the_season
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="#439: the calendar replaced is not yet deleted by a job of its own")
 async def test_the_jobs_run_in_order(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True, test_mode=True,
                                   held=True)

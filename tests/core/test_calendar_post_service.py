@@ -391,8 +391,6 @@ def test_a_round_still_on_is_not_struck_through():
 
 # ── The form a job on the change queue calls (#439, slices 4a and 6) ─────
 
-UNBUILT = "#439: posting a calendar does not yet always raise for the change queue"
-
 def _discord_refusal():
     import discord
 
@@ -400,8 +398,8 @@ def _discord_refusal():
 
 
 @pytest.mark.parametrize("fault", [
-    pytest.param("channel gone", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param("send refused", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("channel gone"),
+    pytest.param("send refused"),
 ])
 @pytest.mark.asyncio
 async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, fault):
