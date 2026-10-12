@@ -654,7 +654,7 @@ section states the rules it holds to.
 - Test mode shall be a state of the server, persisted and surviving a restart, switched by a toggle asking what configuring a league asks. It is chosen for a season, and holds for that season until it ends.
 - Test mode shall provide a command firing the next scheduled event at once, in the order the events would have fired, without altering the moment any of them was scheduled for.
     - The deletion of a round's forecasts and check-in messages 24 hours after it shall be such an event, each fired in its turn. Decided 2026-09-24 (#425).
-    - Advancing a weather step, and switching test mode off, ask the change queue for the forecast's draw and post, its deletion, or the clearing of every forecast; the advance's reply says the step is on the queue, or that it was not due where the queue drops it. A weather step of a round whose race has been run is passed over. Decided 2026-10-10, 2026-10-12.
+    - Advancing a weather step, and switching test mode off, ask the change queue for the forecast's draw and post, its deletion, or the clearing of every forecast; the advance's reply says the step is on the queue, or that it was not due where the queue drops it. A weather step of a round whose race has been run is passed over, and the reply names it. Decided 2026-10-10, 2026-10-12.
 - Test mode shall provide a command reporting, for every round, which of its scheduled work has run and which remains.
     - A step of a module that is switched off, or one the league has switched off in its configuration, shall not be reported. Decided 2026-09-24 (#426).
 - Test mode shall provide synthetic drivers, so that a division may be filled and raced without real Discord accounts.
