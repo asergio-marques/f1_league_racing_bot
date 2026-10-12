@@ -1294,6 +1294,48 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     assert row["checkin_cleared"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the amendment names the clean-up's deletion of "
+                   "the Phase 3 forecast a day after the round as a withdrawn forecast")
+async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_names_it(tmp_path):
+    """Weather on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
+    results not yet in and its Phase 3 forecast (message 8003) standing. It is moved a day
+    later; the save stops, and ten minutes on, past the clean-up due a day after the old moment,
+    a league admin discards it. The round stands at its old moment, so its Phase 3 forecast is
+    to be deleted, as its clean-up deletes it; Discord refuses, and the queue stops, its notice
+    naming the job "deleting the Phase 3 forecast of round 3 in **Pro** a day after it". A league
+    admin discards that too: the reply, still within Discord's fourteen minutes, names it as the
+    Phase 3 forecast that could not be deleted a day after the round, with its link to delete it
+    by hand. Neither calls it withdrawn: it is the race's own forecast."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _place_r3(league, hours=-23, minutes=-55)
+    await posted_forecast(league, R3, 3, 8003)
+    league.undeletable.add(8003)
+    press = await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "delete_forecast"
+
+    notices = _stop_notices(league)
+    assert any("deleting the Phase 3 forecast of round 3 in **Pro** a day after it" in line
+               for line in notices), notices
+    assert not any("withdrawn" in line for line in notices), notices
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert NOT_DONE in outcome, outcome
+    named = ("**Pro** — forecast channel: the Phase 3 forecast could not be deleted a day after "
+             "the round, and a league admin discarded it; delete it by hand (")
+    bullets = [line for line in outcome.splitlines() if named in line]
+    assert len(bullets) == 1, outcome
+    assert "8003" in bullets[0]
+    assert "withdrawn" not in outcome
+    assert 8003 in league.channel(PRO_CH.forecast).messages
+
+
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     tmp_path, phases, ending,
