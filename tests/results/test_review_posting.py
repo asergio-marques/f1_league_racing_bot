@@ -1285,3 +1285,81 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
         "⚠️ Round 3's standings were not posted.",
         "Repair the cause, then run `/results rounds sync` and `/results standings sync`.",
     ]
+
+
+# ---------------------------------------------------------------------------
+# A table drawn as a picture is saved and replaced by the jobs, as a text table is
+# ---------------------------------------------------------------------------
+
+DRAWN = ("#439: the results picture saves its own id and deletes the table it replaces, "
+         "outside the job")
+
+
+def _results_drawn(league: _League, tmp_path: Any) -> Any:
+    """Image generation on for the results aspect, its template valid and its render giving a
+    PNG: the real picture poster runs, posting the table as a picture. Gives the patches, to
+    enter."""
+    from contextlib import ExitStack
+
+    png = tmp_path / "results.png"
+    png.write_bytes(b"\x89PNG")
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    league.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"results_race_template": MagicMock(valid=True)}
+    )
+    decision = MagicMock(posts_image=True, rejects=False, png_paths=[png], notices=[],
+                         problem=None)
+    drawing = MagicMock(template_key="results_race_template", session_name="Race")
+    stack = ExitStack()
+    stack.enter_context(patch("leaguebot.image.services.image_results_post.build_drawing",
+                              new=AsyncMock(return_value=drawing)))
+    stack.enter_context(patch("leaguebot.image.services.image_results_post.render_png",
+                              new=AsyncMock(return_value=decision)))
+    return stack
+
+
+@pytest.mark.xfail(strict=True, reason=DRAWN)
+async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_deleted_by_a_job(
+    tmp_path,
+):
+    """Round 3's Feature Race results stand as message 8800; they are posted again as a picture.
+    Once `post_session_results` is done, the picture's id is the session's, saved with the job,
+    and 8800 still stands; then a `delete_message` job deletes 8800."""
+    league = await _league(tmp_path)
+    with _results_drawn(league, tmp_path):
+        await _ask(league)
+        await _run_until_done(league, "post_session_results")
+
+        [new] = league.sent_to(RESULTS_CHANNEL)
+        assert OLD_RESULTS in league.channel(RESULTS_CHANNEL).messages, (
+            "the picture deleted the old table itself"
+        )
+        assert await _session_ids(league.db_path) == (new, [new])
+
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert set(league.channel(RESULTS_CHANNEL).messages) == {new}
+    deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
+               and json.loads(row["payload"])["message_id"] == OLD_RESULTS]
+    assert len(deletes) == 1 and deletes[0]["done_at"] is not None
+
+
+@pytest.mark.xfail(strict=True, reason=DRAWN)
+async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(tmp_path):
+    """Round 3's results are posted again as a picture, and Discord refuses to delete the old
+    table, 8800: the queue stops at the `delete_message` job, both tables standing and the
+    picture's id saved."""
+    league = await _league(tmp_path)
+    results = league.channel(RESULTS_CHANNEL)
+    results.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    with _results_drawn(league, tmp_path):
+        await _ask(league)
+        await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "delete_message"
+    [new] = league.sent_to(RESULTS_CHANNEL)
+    assert set(results.messages) == {OLD_RESULTS, new}
+    assert await _session_ids(league.db_path) == (new, [new])

@@ -966,6 +966,8 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a session's results drawn as a picture hand back "
+                   "nothing they replace")
 @pytest.mark.asyncio
 async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     from leaguebot.core.db.database import get_connection
@@ -1068,13 +1070,14 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     tables = await _standings()
     assert len(tables) == 1 and tables[0].old == [] and tables[0].edited is False
 
-    # The picture saves and replaces for itself, leaving the caller nothing to do.
+    # A session's results drawn as a picture: handed back with the posting it replaces, as a
+    # text table is, for the caller's jobs to save and delete.
     drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
     bot = MagicMock()
     with patch(
         "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
     ):
-        assert await _results(bot=bot) == PostedTable([9990], [], drawn=True)
+        assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
     with patch(
         "leaguebot.image.services.image_standings_post.try_post", new=AsyncMock(return_value=drew)
     ):
