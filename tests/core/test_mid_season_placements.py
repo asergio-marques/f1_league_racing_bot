@@ -727,6 +727,32 @@ async def test_confirming_asks_the_queue_for_each_division_s_lineup(db_path):
     assert "not done" not in _logged(cog)
 
 
+async def test_lineups_that_cannot_be_put_on_the_queue_are_named_and_the_confirmation_stands(
+    db_path,
+):
+    """The placements are committed by the confirmation, and asking the change queue for Pro's
+    lineup then fails (the database locked). Nothing after the commit refuses it: the season
+    moves to Ongoing, and the reply and the log line say, under what was not done, "The lineups
+    of the confirmed placements could not be put on the change queue: each is posted with the
+    next change to its division's drivers."
+    """
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    cog.bot.placement_service.commit_mid_season_placements = AsyncMock(
+        return_value=PlacementsCommitted(placements=[{}], lineups=[DIVISION_ID])
+    )
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("database is locked"))
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    said = ("The lineups of the confirmed placements could not be put on the change queue: each "
+            "is posted with the next change to its division's drivers.")
+    assert said in _replied(interaction)
+    assert said in _logged(cog)
+    cog.bot.season_service.set_stage.assert_awaited_once_with(1, SeasonStage.ONGOING)
+
+
 async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and_the_placements_stand(
     tmp_path,
 ):
