@@ -478,11 +478,13 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@FORECAST_DELETES
-@pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
+@pytest.mark.parametrize("where", [
+    pytest.param("the flush", marks=FORECAST_DELETES), "the test drivers' deletion",
+])
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
-    _flush_failing(monkeypatch, failing)
+    if where == "the flush":
+        _flush_failing(monkeypatch, failing)
     league = await ongoing_league(tmp_path, test_mode=True)
     await _asked(league)
 

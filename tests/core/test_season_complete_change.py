@@ -492,11 +492,13 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     assert await _status(league) == "COMPLETED"
 
 
-@FORECAST_DELETES
-@pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
+@pytest.mark.parametrize("where", [
+    pytest.param("the flush", marks=FORECAST_DELETES), "the test drivers' deletion",
+])
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
-    _flush_failing(monkeypatch, failing)
+    if where == "the flush":
+        _flush_failing(monkeypatch, failing)
     league = await pending_completion_league(tmp_path, test_mode=True)
     await _asked(league)
 
@@ -1055,12 +1057,7 @@ async def test_a_history_entry_is_written_for_every_division_each_driver_took_pa
     assert (await _change(league))["state"] == "DONE"
 
 
-@FORECAST_DELETES
-async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archived(
-    tmp_path, monkeypatch,
-):
-    failing = {"now": False}
-    _flush_failing(monkeypatch, failing)
+async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archived(tmp_path):
     league = await pending_completion_league(tmp_path, test_mode=True)
     await _asked(league)
 
