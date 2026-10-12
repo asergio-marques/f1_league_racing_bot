@@ -164,7 +164,8 @@ class AttendanceDouble:
     by `sanction_candidates` while attendance is on, each on every call while it is set.
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
     reads the hint the league would. `lineup_as_text` holds, call by call, whether
-    `refresh_lineup` was asked for the text.
+    `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
+    to be saved, and writes nothing.
     """
 
     def __init__(self, league: "ReviewLeague") -> None:
@@ -211,6 +212,11 @@ class AttendanceDouble:
         self.calls.append(("post_sheet", division_id, as_text))
         if self.sheet_fails:
             raise self.sheet_fails.pop(0)
+
+    async def record_sheet_on(self, db: Any, division_id: int, posted: Any) -> None:
+        if not self.league.attendance_on:
+            return
+        self.calls.append(("record_sheet", division_id))
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
         if not self.league.attendance_on:

@@ -113,18 +113,24 @@ def test_the_image_path_has_no_send_site_of_its_own():
     assert ".delete()" not in source
 
 
-def test_the_sheet_flow_still_has_exactly_one_send_site_and_one_delete_site():
+@pytest.mark.xfail(strict=True, reason="#439: the sheet's posting still deletes the one it "
+                   "replaces")
+def test_the_sheet_flow_still_has_exactly_one_send_site_and_no_delete_site():
+    """The sheet it replaces is deleted by the change queue's job after the post, never by the
+    posting itself."""
     source = inspect.getsource(attendance_service.post_attendance_sheet)
     assert source.count("channel.send(") == 2  # the file branch and the text branch
-    assert source.count(".delete()") == 1
+    assert ".delete()" not in source
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the sheet's posting still deletes the one it "
+                   "replaces")
 def test_the_graphic_is_rendered_before_anything_is_sent_or_destroyed():
     source = inspect.getsource(attendance_service.post_attendance_sheet)
     render_at = source.index("_sheet_attachment(")
     send_at = source.index("channel.send(")
-    delete_at = source.index(".delete()")
-    assert render_at < send_at < delete_at
+    assert render_at < send_at
+    assert ".delete()" not in source
 
 
 # ── The graphic adds no precondition (XIV.7) ──────────────────────────────

@@ -26,10 +26,12 @@ from tests.attendance.test_attendance_sheet_composition import (  # noqa: F401 �
 )
 from tests.support.change_queue import (
     change_rows,
+    discard_job,
     http_error,
     queued_log_lines,
     retry_job,
     run_queue,
+    step_rows,
     stopped_job,
 )
 from tests.support.season_league import (
@@ -187,3 +189,129 @@ async def test_a_sheet_for_a_division_with_no_attendance_channel_stops_the_queue
 
     assert await stopped_job(league.db_path) is None
     assert len(league.texts(SHEET)) == 1
+
+
+# ── The post and the deletion of the sheet it replaces, as two jobs ──────────────────
+
+TWO_JOBS = ("#439: a sheet's post and the deletion of the one it replaces are not yet two "
+            "jobs")
+
+#: Pro's sheet standing in its attendance channel before the ask.
+OLD_SHEET = 6200
+#: The link Discord gives Pro's old sheet, which a discarded deletion names.
+OLD_SHEET_LINK = f"https://discord.test/{SHEET}/{OLD_SHEET}"
+
+
+async def _old_sheet_standing(league: Any) -> None:
+    """Pro's sheet stands as message 6200, recorded as the division's live sheet."""
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+        str(OLD_SHEET), PRO,
+    )
+    league.channel(SHEET).seed(OLD_SHEET, "Pro's attendance sheet")
+
+
+async def _sheet_jobs(league: Any) -> list[dict[str, Any]]:
+    """The jobs of the one `attendance.sheet.post` asked, in order."""
+    [change] = await _sheet_asks(league)
+    return await step_rows(league.db_path, change["id"])
+
+
+async def _run_sheet_through(league: Any, name: str) -> None:
+    """Run the queue a job at a time until the sheet's job called *name* is done."""
+    for _ in range(50):
+        if any(job["name"] == name and job["done_at"] for job in await _sheet_jobs(league)):
+            return
+        await run_queue(league.bot, steps=1)
+    raise AssertionError(f"the job {name} never finished: {await _sheet_jobs(league)}")
+
+
+def _sheet_events(league: Any) -> list[tuple[str, int]]:
+    """What Pro's attendance channel saw, in order: each send and delete, with its message."""
+    return [(kind, mid) for kind, cid, mid in league.events if cid == SHEET]
+
+
+async def _sheet_id(league: Any) -> Any:
+    [row] = await league.rows(
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    return row["attendance_message_id"]
+
+
+async def _ask_pro_s_sheet(league: Any) -> None:
+    from leaguebot.attendance.services.sheet_posting import ask_sheet_post
+
+    await ask_sheet_post(league.bot.change_queue, league.db_path, PRO, ROUND_1)
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tmp_path):
+    league = await _scored_league(tmp_path)
+    await _old_sheet_standing(league)
+
+    await _ask_pro_s_sheet(league)
+    await _run_sheet_through(league, "post_sheet")
+
+    [(sent, new)] = _sheet_events(league)
+    assert sent == "send"
+    assert OLD_SHEET in league.channel(SHEET).messages
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _sheet_events(league) == [("send", new), ("delete", OLD_SHEET)]
+    assert [job["name"] for job in await _sheet_jobs(league)] == ["post_sheet", "delete_replaced"]
+    assert str(await _sheet_id(league)) == str(new)
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_none(tmp_path):
+    """Once the post job is done, and before the deletion after it runs, the division records
+    the new sheet as its live one. A sheet that takes no live slot, as the final sheet of a
+    season, is saved nowhere: its record leaves the live sheet as it was."""
+    from leaguebot.core.db.database import get_connection
+
+    league = await _scored_league(tmp_path)
+    await _old_sheet_standing(league)
+
+    await _ask_pro_s_sheet(league)
+    await _run_sheet_through(league, "post_sheet")
+
+    [(_sent, new)] = _sheet_events(league)
+    assert str(await _sheet_id(league)) == str(new)
+    assert OLD_SHEET in league.channel(SHEET).messages, "the old sheet went too soon"
+
+    async with get_connection(league.db_path) as db:
+        await attendance_service.record_sheet_on(
+            db, PRO, {"new": 6300, "old": str(new), "channel_id": SHEET, "takes_slot": False},
+        )
+        await db.commit()
+    assert str(await _sheet_id(league)) == str(new)
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
+    tmp_path,
+):
+    """The new sheet is posted; Discord refuses to delete the old one: the queue stops at the
+    deletion, keeping the old sheet's link. Once a league admin discards it, the log channel's
+    Discard line names the deletion not done, and both sheets stand."""
+    league = await _scored_league(tmp_path)
+    await _old_sheet_standing(league)
+    league.channel(SHEET).messages[OLD_SHEET].delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await _ask_pro_s_sheet(league)
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "delete_replaced"
+    assert OLD_SHEET_LINK in str(stopped["result"])
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert "deleting the earlier attendance sheet of **Pro**" in await _said(league)
+    assert OLD_SHEET in league.channel(SHEET).messages
+    assert len([kind for kind, _ in _sheet_events(league) if kind == "send"]) == 1

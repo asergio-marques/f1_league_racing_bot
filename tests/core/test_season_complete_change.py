@@ -1783,3 +1783,41 @@ async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
     rows = await change_rows(league.db_path)
     assert [row["kind"] for row in rows][-2:] == [kind, SEASON_COMPLETE_KIND]
     assert rows[-1]["state"] == "QUEUED"
+
+
+async def test_the_final_sheet_replaces_nothing_and_saves_no_id(tmp_path):
+    """Attendance is on, and Pro's attendance channel holds its last round's sheet, 6200,
+    recorded as its live one. Completing the season posts Pro's final sheet beside it: once the
+    final sheet is posted, 6200 is still the live sheet recorded; once the season is complete,
+    6200 still stands, nothing was deleted from the channel, and no job deleted a sheet."""
+    old_sheet = 6200
+    league = await pending_completion_league(tmp_path, attendance=True)
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+        str(old_sheet), PRO,
+    )
+    league.channel(PRO_CH.attendance).seed(old_sheet, "Pro's last round's sheet")
+    await _asked(league)
+
+    def _sheet_events() -> list[tuple[str, int]]:
+        return [(kind, mid) for kind, cid, mid in league.events if cid == PRO_CH.attendance]
+
+    for _ in range(100):
+        if _sheet_events():
+            break
+        await run_queue(league.bot, steps=1)
+    [(sent, _final)] = _sheet_events()
+    assert sent == "send"
+    [row] = await league.rows(
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert str(row["attendance_message_id"]) == str(old_sheet)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert await _status(league) == "COMPLETED"
+    assert old_sheet in league.channel(PRO_CH.attendance).messages
+    assert [kind for kind, _ in _sheet_events()] == ["send"]
+    names = [job["name"] for job in await _jobs(league)]
+    assert "delete_replaced" not in names

@@ -528,3 +528,37 @@ async def test_a_sanction_announcement_shares_the_round_s_verdict_heading(tmp_pa
 
     assert len(league.sent_to(VERDICTS_CHANNEL)) == 1
     assert verdict_headings(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the hook has no record_sheet_on")
+async def test_the_sheet_s_record_writes_nothing_while_attendance_is_off(tmp_path):
+    """The review's sheet job saves the new sheet's id through the hook, on the job's own save.
+    Pro's sheet 7401 stands and a new one, 7402, has been posted in its place. With attendance
+    off, the record writes nothing and 7401 is still Pro's sheet; switched on, the record makes
+    7402 Pro's sheet. Neither commits: the save handed does."""
+    db_path = await _db(tmp_path, attendance=False)
+    hook = _hook(_bot(db_path, attendance=False), _placement())
+    posted = {"new": 7402, "old": str(OLD_SHEET), "channel_id": ATTENDANCE_CHANNEL,
+              "takes_slot": True}
+
+    async def _recorded() -> tuple[int, Any]:
+        async with get_connection(db_path) as db:
+            before = db.total_changes
+            await hook.record_sheet_on(db, DIVISION_ID, posted)
+            written = db.total_changes - before
+            await db.commit()
+            row = await (await db.execute(
+                "SELECT attendance_message_id FROM attendance_division_config "
+                "WHERE division_id = ?", (DIVISION_ID,),
+            )).fetchone()
+        return written, row["attendance_message_id"]
+
+    assert await _recorded() == (0, str(OLD_SHEET))
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE attendance_config SET module_enabled = 1")
+        await db.commit()
+
+    written, saved = await _recorded()
+    assert written == 1
+    assert str(saved) == "7402"

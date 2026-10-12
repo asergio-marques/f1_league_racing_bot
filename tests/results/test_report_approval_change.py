@@ -381,6 +381,58 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the review's sheet still deletes the one it "
+                   "replaces and saves its own id, outside the job's save")
+async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
+    """Attendance is on, with its real hook (the placement service a double: no sanction is
+    owed). Pro's attendance channel 707 holds its sheet 8805, recorded as the live one. Alex
+    approves round 3's reports: the `attendance_sheet` job posts the new sheet and its save
+    records it, the old one still standing; then a `delete_message` job of the review deletes
+    the old sheet."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from tests.support.change_queue import attach_queue
+    from tests.support.review_league import NOW, channel
+
+    sheet_channel, old_sheet = 707, 8805
+    league = await review_league(tmp_path, attendance=True)
+    league.channels[sheet_channel] = channel(sheet_channel, league.events)
+    league.channels[sheet_channel].guild = league.guild
+    league.channel(sheet_channel).seed(old_sheet, "Pro's attendance sheet")
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id, "
+            "attendance_message_id) VALUES (?, ?, ?)",
+            (DIVISION_ID, str(sheet_channel), str(old_sheet)),
+        )
+        await db.commit()
+    placement = MagicMock()
+    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+        setattr(placement, name, AsyncMock(return_value=None))
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve(league, staged=[penalty(LEWIS)])
+    await run_until_done(league, "attendance_sheet")
+
+    [new] = league.sent_to(sheet_channel)
+    assert old_sheet in league.channel(sheet_channel).messages, "the old sheet went too soon"
+    assert await one(
+        league.db_path,
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?",
+        DIVISION_ID,
+    ) == str(new)
+
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert [(kind, mid) for kind, cid, mid in league.events if cid == sheet_channel] == [
+        ("send", new), ("delete", old_sheet),
+    ]
+    deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
+               and str(old_sheet) in (row["payload"] or "")]
+    assert len(deletes) == 1
+
+
 # ---------------------------------------------------------------------------
 # Defect 11: a repost Discord refuses
 # ---------------------------------------------------------------------------
