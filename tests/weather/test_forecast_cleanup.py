@@ -96,7 +96,7 @@ async def _get_stored_row(db_path: str, round_id: int, division_id: int, phase_n
 
 
 # ---------------------------------------------------------------------------
-# store_forecast_message (T003 / SC-001)
+# store_forecast_message_on (T003 / SC-001)
 # ---------------------------------------------------------------------------
 
 #: Why the record's tests fail until the build saves a forecast's id on a handed connection.
