@@ -351,23 +351,26 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 
 @pytest.mark.parametrize("fault_in", [
-    pytest.param("arming the round's jobs", marks=DRAWS_RECORDED),
+    "arming the round's jobs",
     pytest.param("re-running a phase", marks=pytest.mark.xfail(strict=True, reason=(
         "#439: a phase an amendment draws at once is not yet drawn by a draw_forecast job of its "
         "own"))),
 ])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
-    tmp_path, phases, fault_in
+    tmp_path, request, fault_in
 ):
     """Admin moves Am's round 3, 90 days out with no forecast drawn, from Bahrain International
     Circuit to Silverstone Circuit and brings it forward to an hour from now, so that every phase
     falls due at once, with weather on. The amendment is saved, then fails: the scheduler cannot arm the round's jobs again, or the first overdue forecast cannot
     be drawn. The queue stops at that job; the round stands amended, and its one success line,
     saved with the amendment, has been written, so the record holds what changed."""
+    # Only the draw's case records the draws, before the league is built: the arming case stops
+    # before any draw is made.
+    phases = request.getfixturevalue("phases") if fault_in == "re-running a phase" else None
     league = await ongoing_league(tmp_path, weather=True)
     await _place(league, at=timedelta(days=90))
     fault = RuntimeError("the fault after the save")
-    if fault_in == "arming the round's jobs":
+    if phases is None:
         league.arming_fails = fault
     else:
         phases.failing[1] = fault
@@ -482,8 +485,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@DRAWS_RECORDED
-async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path, phases):
+async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
     `schedule_round` falls back to the packaged 5 / 2 / 2 when it is not told otherwise, and the
@@ -580,8 +582,7 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
 
 
-@DRAWS_RECORDED
-async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path, phases):
+async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
     """With weather on, `schedule_round` has already created it — arming again would duplicate.
     Am's round 3 moved from 90 to 100 days out."""
     league = await ongoing_league(tmp_path, weather=True)
