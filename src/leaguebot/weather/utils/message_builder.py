@@ -247,9 +247,15 @@ def forecast_text(phase: int, division_role_id: int | None, payload: dict | None
     A forecast is posted by a job after its draw, and a try again composes the text at the moment
     it is sent, so the text is built from what the draw stored rather than carried from it. Phase
     0 is a mystery round's notice, which has no draw and no payload and tags no role.
+
+    A phase of 1 to 3 handed no payload raises `ValueError`: its draw is gone, and the post job's
+    check drops that case before it gets here, so reaching it is a fault to stop the queue at,
+    never a reason to post the mystery notice as that phase's forecast.
     """
-    if phase == 0 or payload is None:
+    if phase == 0:
         return mystery_notice_message()
+    if payload is None:
+        raise ValueError(f"the Phase {phase} forecast has no recorded draw to be built from")
     role = int(division_role_id or 0)
     track = payload["track"]
     if phase == 1:

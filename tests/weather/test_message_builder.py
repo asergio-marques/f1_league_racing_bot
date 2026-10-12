@@ -358,3 +358,14 @@ def test_the_forecast_text_is_built_from_the_recorded_draw(phase):
     payload, built_at_the_draw = RECORDED[phase]
 
     assert forecast_text(phase, 801, payload) == built_at_the_draw()
+
+
+@pytest.mark.parametrize("phase", [1, 2, 3])
+def test_a_phase_with_no_recorded_draw_has_no_text_rather_than_the_mystery_notice(phase):
+    """A forecast of Phases 1 to 3 is built from the draw its phase recorded. Where none is handed
+    over, its text is refused (a ValueError, which stops the queue at the post) rather than the
+    mystery round notice being posted as that phase's forecast."""
+    from leaguebot.weather.utils.message_builder import forecast_text
+
+    with pytest.raises(ValueError):
+        forecast_text(phase, 801, None)
