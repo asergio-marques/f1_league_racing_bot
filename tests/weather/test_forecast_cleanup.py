@@ -99,10 +99,6 @@ async def _get_stored_row(db_path: str, round_id: int, division_id: int, phase_n
 # store_forecast_message_on (T003 / SC-001)
 # ---------------------------------------------------------------------------
 
-#: Why the record's tests fail until the build saves a forecast's id on a handed connection.
-STORE_UNBUILT = "#439: a forecast's id is not yet saved on a connection a save hands it"
-
-
 async def _store(db_path: str, phase: int, message_id: int) -> None:
     """Record *message_id* as phase *phase*'s forecast of round 1 in Div A, on a save this opens
     and commits, as the post job's record does."""
@@ -118,7 +114,6 @@ async def _store(db_path: str, phase: int, message_id: int) -> None:
 
 class TestStoreForecastMessage:
 
-    @pytest.mark.xfail(strict=True, reason=STORE_UNBUILT)
     async def test_inserts_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -130,7 +125,6 @@ class TestStoreForecastMessage:
         assert row["message_id"] == 111
         assert row["phase_number"] == 1
 
-    @pytest.mark.xfail(strict=True, reason=STORE_UNBUILT)
     async def test_replace_on_duplicate(self, tmp_path):
         """INSERT OR REPLACE: re-running a phase updates the stored ID."""
         db_path = await _make_db(str(tmp_path))
@@ -142,7 +136,6 @@ class TestStoreForecastMessage:
         row = await _get_stored_row(db_path, 1, 1, 1)
         assert row["message_id"] == 222  # updated, not duplicated
 
-    @pytest.mark.xfail(strict=True, reason=STORE_UNBUILT)
     async def test_different_phases_coexist(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -291,11 +284,6 @@ class TestRunPostRaceCleanup:
 # `finally` that did not cover them would leak on every unreachable channel.
 # ---------------------------------------------------------------------------
 
-#: Why these fail until the build has the post raise for the change queue and save nothing.
-POSTS_ONLY = ("#439: post_phase_message still takes the round, saves its id and swallows a "
-              "failure rather than raising for the change queue")
-
-
 class TestTheForecastGraphicIsDiscarded:
 
     @staticmethod
@@ -312,7 +300,6 @@ class TestTheForecastGraphicIsDiscarded:
 
         return discord.File(str(png), filename="weather_2.png")
 
-    @pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
     @pytest.mark.asyncio
     async def test_it_is_gone_once_the_forecast_has_posted(self, tmp_path):
         from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
@@ -332,7 +319,6 @@ class TestTheForecastGraphicIsDiscarded:
 
         assert not png.exists()
 
-    @pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
     @pytest.mark.asyncio
     async def test_it_is_gone_when_the_send_fails(self, tmp_path):
         """The post raises for the change queue, whose next try posts the text; the picture goes
@@ -359,7 +345,6 @@ class TestTheForecastGraphicIsDiscarded:
 
         assert not png.exists()
 
-    @pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
     @pytest.mark.asyncio
     async def test_it_is_gone_when_the_channel_cannot_be_fetched(self, tmp_path):
         """An abandonment path: the picture is built, and no send is ever attempted."""
@@ -386,7 +371,6 @@ class TestTheForecastGraphicIsDiscarded:
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
 
-    @pytest.mark.xfail(strict=True, reason=POSTS_ONLY)
     @pytest.mark.asyncio
     async def test_it_is_gone_when_the_channel_is_not_a_text_channel(self, tmp_path):
         """The second abandonment path, and the same requirement."""

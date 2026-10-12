@@ -28,6 +28,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import inserted_id
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.answering import answering_now
 from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 from leaguebot.core.utils.messages import chunk_message
@@ -91,13 +92,15 @@ class OutputRouter:
     # ------------------------------------------------------------------
 
     async def post_forecast(
-        self, division: ForecastTarget, content: str, *, enqueue_on_failure: bool = False
+        self, division: ForecastTarget, content: str
     ) -> "Optional[discord.Message]":
         """Post *content* to the division's forecast channel.
 
-        Returns the ``discord.Message`` on success, or ``None`` on failure.
-        On failure, enqueues for retry where *enqueue_on_failure* is set and retry_db_path
-        is configured.
+        Returns the ``discord.Message`` sent (the last, where the text is split), or ``None``
+        where the division has no forecast channel set. A post Discord refuses, or to a channel
+        the bot cannot reach, raises `StepFailedOnDiscord` naming the channel: a forecast is a
+        job of the change queue, which stops on the failure and tries the text again itself, so
+        nothing is put on the old retry queue (#439).
         """
         channel_id = division.forecast_channel_id
         if channel_id is None:
@@ -105,10 +108,12 @@ class OutputRouter:
             # channel with no id and logged the failure — less the request.
             log.error("post_forecast: the division has no forecast channel")
             return None
-        return await self._send(
-            channel_id, content, enqueue_on_failure=enqueue_on_failure,
-            fallback_label="forecast",
-        )
+        message, reason, _retryable = await self._try_send(channel_id, content, "forecast", False)
+        if message is None:
+            raise StepFailedOnDiscord(
+                f"the forecast could not be posted to <#{channel_id}>: {reason}"
+            )
+        return message
 
     async def log_destination(self) -> "Optional[int]":
         """Where the log goes now: the log channel's id, or ``None`` before the bot is set up.

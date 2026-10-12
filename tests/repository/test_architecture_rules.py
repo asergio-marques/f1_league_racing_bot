@@ -1281,7 +1281,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The standing posts
-    ("weather/services/forecast_cleanup_service.py", "store_forecast_message"): (1, SLICE[6]),
     ("weather/services/forecast_cleanup_service.py", "delete_forecast_message"): (1, SLICE[6]),
     # The results, weather and image settings commands
     ("results/services/points_config_service.py", "create_config"): (1, SLICE[7]),
@@ -1444,10 +1443,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
     ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["signup"]),
     # Weather's pass
-    ("weather/services/phase1_service.py", "run_phase1"): (1, PASS["weather"]),
-    ("weather/services/phase2_service.py", "run_phase2"): (1, PASS["weather"]),
-    ("weather/services/phase3_service.py", "run_phase3"): (1, PASS["weather"]),
-    ("weather/services/mystery_notice_service.py", "run_mystery_notice"): (1, PASS["weather"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),

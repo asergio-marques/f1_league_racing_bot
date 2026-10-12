@@ -166,7 +166,6 @@ def _fired(stub_call) -> list[int]:
     return [call.args[0] for call in stub_call.await_args_list]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_phase_whose_horizon_has_passed_is_fired(tmp_path):
     """The job that would have run it died with the process; without this the round simply
     never gets its forecast."""
@@ -179,7 +178,6 @@ async def test_a_phase_whose_horizon_has_passed_is_fired(tmp_path):
     assert _fired(p2) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_phase_still_ahead_of_its_horizon_is_left_to_the_scheduler(tmp_path):
     """Firing it now would publish a forecast days early and mark the phase done."""
     db_path = await _base_db(tmp_path, "phases_early")
@@ -192,7 +190,6 @@ async def test_a_phase_still_ahead_of_its_horizon_is_left_to_the_scheduler(tmp_p
     assert _fired(p3) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     db_path = await _base_db(tmp_path, "phases_all")
     await _seed_round(db_path, days_away=0.1)
@@ -202,7 +199,6 @@ async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 @pytest.mark.parametrize(
     "done,expected",
     [
@@ -222,7 +218,6 @@ async def test_a_phase_already_done_is_not_fired_again(tmp_path, done, expected)
     assert (_fired(p1), _fired(p2), _fired(p3)) == expected
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_the_horizons_are_the_leagues_own(tmp_path):
     """Issue #111: a restart judging by the packaged 5/2/2 made the same league see one set
     of timings on an enable and another on a restart."""
@@ -234,7 +229,6 @@ async def test_the_horizons_are_the_leagues_own(tmp_path):
     assert _fired(p1) == [ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_shorter_horizon_leaves_the_same_round_alone(tmp_path):
     """The other side of the comparison — and the failure mode is silence, not an error."""
     db_path = await _base_db(tmp_path, "phases_horizons_short")
@@ -245,7 +239,6 @@ async def test_a_shorter_horizon_leaves_the_same_round_alone(tmp_path):
     assert _fired(p1) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_path):
     """The module gate comes first deliberately: a league that has never enabled weather
     should not have its pipeline configuration read on every start-up."""
@@ -258,7 +251,6 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_pat
     get_config.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_the_horizons_are_read_once(tmp_path):
     """The league has one configuration, and a query per round would be a database read for
     every round of every division on every start-up."""
@@ -283,7 +275,6 @@ async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_season_that_is_not_active_is_not_caught_up(tmp_path):
     """A season in setup has not started and an archived one is finished; forecasting for
     either would post into a division that is not racing."""
@@ -295,7 +286,6 @@ async def test_a_season_that_is_not_active_is_not_caught_up(tmp_path):
     assert _fired(p1) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
     """SQLite hands the column back as text with no offset, and comparing the parsed value
     to an aware "now" raises — which would abort the sweep partway through a season."""

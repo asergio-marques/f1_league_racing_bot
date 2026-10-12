@@ -199,15 +199,6 @@ def phases(monkeypatch):
     return recorded_draws(monkeypatch)
 
 
-#: `phases` records each draw through weather's `draw_phaseN_on` and `forecast_changes` (#439),
-#: which weather does not have yet.
-DRAWS_RECORDED = pytest.mark.xfail(
-    strict=True,
-    raises=(ImportError, AttributeError),
-    reason="#439: weather has no draw_phaseN_on or forecast_changes to record the draws through",
-)
-
-
 @pytest.fixture
 def reposts(monkeypatch):
     """Attendance's repost of a check-in call, recording `(round id, division id)` in `posted`."""
@@ -352,9 +343,7 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 @pytest.mark.parametrize("fault_in", [
     "arming the round's jobs",
-    pytest.param("re-running a phase", marks=pytest.mark.xfail(strict=True, reason=(
-        "#439: a phase an amendment draws at once is not yet drawn by a draw_forecast job of its "
-        "own"))),
+    "re-running a phase",
 ])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
     tmp_path, request, fault_in
@@ -391,7 +380,6 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
-@DRAWS_RECORDED
 async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 

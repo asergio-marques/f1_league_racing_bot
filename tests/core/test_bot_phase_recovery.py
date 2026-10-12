@@ -176,7 +176,6 @@ async def _recover(bot, *, config=None, reads: list | None = None):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     """A restart after a round's phase 3 horizon, and before its race, has to catch up on
     everything."""
@@ -187,7 +186,6 @@ async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     assert sorted(p for p, _ in fired) == [1, 2, 3]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_round_before_every_horizon_fires_nothing(tmp_path):
     """Its jobs are re-armed by the scheduler; firing now would publish a forecast days
     early."""
@@ -196,7 +194,6 @@ async def test_a_round_before_every_horizon_fires_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_only_the_horizons_that_have_passed_fire(tmp_path):
     """Four days out, with a five-day phase 1 and a two-day phase 2: the first is overdue
     and the second is not."""
@@ -207,7 +204,6 @@ async def test_only_the_horizons_that_have_passed_fire(tmp_path):
     assert [p for p, _ in fired] == [1]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_phase_already_done_is_not_fired_again(tmp_path):
     """Otherwise every restart would republish the whole season's forecasts."""
     db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, True, True, False, "NORMAL"),))
@@ -217,7 +213,6 @@ async def test_a_phase_already_done_is_not_fired_again(tmp_path):
     assert [p for p, _ in fired] == [3]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_every_overdue_round_is_recovered(tmp_path):
     """A restart after a weekend away can leave several behind."""
     db_path = await _make_db(
@@ -238,7 +233,6 @@ async def test_every_overdue_round_is_recovered(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_the_league_s_own_horizons_are_used_not_the_packaged_ones(tmp_path):
     """The regression. A league with a ten-day phase 1 has a round eight days out already
     past it; judged by the packaged five days it would not be, and the forecast would
@@ -250,7 +244,6 @@ async def test_the_league_s_own_horizons_are_used_not_the_packaged_ones(tmp_path
     assert [p for p, _ in fired] == [1]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_shorter_horizon_holds_a_phase_back(tmp_path):
     """The other direction of the same fault: judged by the packaged five days, a league
     running a two-day phase 1 would have its forecast published three days early."""
@@ -261,7 +254,6 @@ async def test_a_shorter_horizon_holds_a_phase_back(tmp_path):
     assert fired == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_the_configuration_is_read_once(tmp_path):
     """The league has one, and a league with seventy-two rounds would otherwise read it
     seventy-two times on every start. Held against the obvious "simplification" of moving
@@ -286,14 +278,12 @@ async def test_the_configuration_is_read_once(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_server_with_weather_off_recovers_nothing(tmp_path):
     db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
 
     assert await _recover(_bot(db_path, weather_enabled=False)) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tmp_path):
     """The module gate runs first, so a server that does not use the config is not queried
     for it — the module-output rule applied to reads."""
@@ -317,7 +307,6 @@ async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     assert sorted(fired) == [(1, 1), (2, 1), (3, 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_season_not_running_recovers_nothing(tmp_path):
     """A season in setup has not started, and a completed one is over — neither has a
     forecast owing."""
@@ -330,7 +319,6 @@ async def test_a_season_not_running_recovers_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_round_already_raced_recovers_nothing(tmp_path):
     """Every horizon has passed and no phase was performed, but so has the race: a
     forecast now would tell the division nothing, and its record would read as though it
@@ -341,7 +329,6 @@ async def test_a_round_already_raced_recovers_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     """The skip is per round: a raced round does not end the sweep for the one still to
     be run."""
@@ -358,7 +345,6 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_cancelled_round_recovers_nothing(tmp_path):
     """The division was told no forecast would follow, and its phase jobs were cancelled
     without being marked done — so the flags alone would have a restart post them anyway."""
@@ -371,7 +357,6 @@ async def test_a_cancelled_round_recovers_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_round_of_a_cancelled_division_recovers_nothing(tmp_path):
     """A cancelled division has no round left to forecast, whatever each round records."""
     db_path = await _make_db(
@@ -383,7 +368,6 @@ async def test_a_round_of_a_cancelled_division_recovers_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
-@pytest.mark.xfail(strict=True, reason=RECOVERY_UNBUILT)
 async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     """Rows written before the timestamps carried a zone still exist. Read as local time
     the horizon would move by the host's offset, so the same database would recover

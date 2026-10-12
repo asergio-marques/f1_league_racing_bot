@@ -336,10 +336,6 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
         await db.commit()
 
 
-#: Why the notice's tests through the queue fail until the build puts it on the change queue.
-QUEUE_UNBUILT = "#439: the mystery round notice is not yet asked of and posted by the change queue"
-
-
 async def _notice_league(tmp_path, *, weather: bool = True):
     """`ongoing_league`'s season 3, Pro's round 3 (id 213) a mystery round, weather as asked."""
     from tests.support.season_league import PRO, ongoing_league, round_id
@@ -370,7 +366,6 @@ async def _phase1_done(league, round_id: int) -> int:
 class TestRunMysteryNotice:
     """The notice asked of the change queue for Pro's mystery round 3, and the queue run."""
 
-    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
     async def test_posted_message_has_no_role_tag(self, tmp_path):
         from tests.support.change_queue import run_queue
         from tests.support.season_league import PRO, round_id
@@ -385,7 +380,6 @@ class TestRunMysteryNotice:
         assert "🏁" in posted_msg
         assert "Mystery" in posted_msg
 
-    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
     async def test_skips_if_format_amended_to_non_mystery(self, tmp_path):
         """Guard: the round amended away from MYSTERY while its notice waited on the queue: the
         change is dropped at its check, nothing posted and Phase 1 left undone."""
@@ -402,7 +396,6 @@ class TestRunMysteryNotice:
         assert await _phase1_done(league, round_id(PRO, 3)) == 0
         assert await stopped_job(league.db_path) is None
 
-    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
     async def test_skips_if_round_not_found(self, tmp_path):
         """A round that does not exist (999): nothing is asked of the queue."""
         from tests.support.change_queue import change_rows
@@ -414,7 +407,6 @@ class TestRunMysteryNotice:
         assert [row for row in await change_rows(league.db_path)
                 if row["kind"].startswith("weather.")] == []
 
-    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
     async def test_no_notice_is_posted_while_the_weather_module_is_off(self, tmp_path):
         """The notice is a weather posting, and a disabled module produces nothing whatever the
         path arrives at it — so its change is dropped at its check, as the phases' are (#113),

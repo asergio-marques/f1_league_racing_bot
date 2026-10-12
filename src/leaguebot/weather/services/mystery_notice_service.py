@@ -20,10 +20,8 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
-from leaguebot.weather.utils.message_builder import mystery_notice_message
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -58,48 +56,13 @@ async def record_mystery_notice_on(db: aiosqlite.Connection, round_id: int) -> D
 
 
 async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
-    """Record the mystery round notice for *round_id*, then post it to its forecast channel.
+    """Ask the change queue to record the mystery round notice of *round_id* and post it.
 
-    Until the timers, the recovery and test mode ask the change queue for a forecast's jobs
-    (`forecast_changes`), the one caller of the record that still posts as it did.
+    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
+    the one thing that still calls this; it posts nothing itself. The notice is the posting made
+    at the phase 1 horizon for such a round (Principle IV, as corrected at constitution v4.7.0),
+    and carries **no division role mention** (FR-052).
     """
-    async with get_connection(bot.db_path) as db:
-        drawn = await record_mystery_notice_on(db, round_id)
-        await db.commit()
-    if not drawn.written:
-        return
+    from leaguebot.weather.services.forecast_changes import ask_forecast
 
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.division_id, d.forecast_channel_id "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return
-
-    # The graphic, where the league draws one. The notice is the posting made at the phase 1
-    # horizon for such a round (Principle IV, as corrected at constitution v4.7.0), and it is
-    # a posting the module makes rather than one it withholds — which is the whole of what
-    # lets an image type draw it at all (XIV.8, "no posting, no graphic").
-    #
-    # It carries **no division role mention**, as its textual counterpart carries none: the
-    # conditions are unknown to every participant alike (FR-052).
-    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-    from leaguebot.image.services.image_weather_post import attach_forecast
-
-    attachment = await attach_forecast(bot, round_id, 1)
-
-    await post_phase_message(
-        bot,
-        round_id=round_id,
-        division_id=row["division_id"],
-        channel_id=row["forecast_channel_id"],
-        phase_number=0,
-        text=mystery_notice_message(),
-        attachment=attachment,
-        attachment_text="",
-    )
-
-    log.info("Mystery notice posted for round %s.", round_id)
+    await ask_forecast(bot.change_queue, bot.db_path, round_id, 0)

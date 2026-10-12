@@ -241,6 +241,29 @@ def mystery_notice_message() -> str:
     )
 
 
+def forecast_text(phase: int, division_role_id: int | None, payload: dict | None) -> str:
+    """The text of phase *phase*'s forecast, built from the *payload* its draw recorded.
+
+    A forecast is posted by a job after its draw, and a try again composes the text at the moment
+    it is sent, so the text is built from what the draw stored rather than carried from it. Phase
+    0 is a mystery round's notice, which has no draw and no payload and tags no role.
+    """
+    if phase == 0 or payload is None:
+        return mystery_notice_message()
+    role = int(division_role_id or 0)
+    track = payload["track"]
+    if phase == 1:
+        return phase1_message(role, track, payload["rpc"])
+    draws = payload["session_draws"]
+    if phase == 2:
+        return phase2_message(
+            role, track, [(session_type_label(d["session_type"]), d["slot"]) for d in draws]
+        )
+    return phase3_message(
+        role, track, [(session_type_label(d["session_type"]), d["slots"]) for d in draws]
+    )
+
+
 def _slot_icon(slot: str) -> str:
     return {"rain": "🌧️", "mixed": "🌦️", "sunny": "☀️"}.get(slot, "❓")
 

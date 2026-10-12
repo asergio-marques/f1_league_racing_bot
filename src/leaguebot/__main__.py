@@ -368,6 +368,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.weather.services.forecast_changes import forecast_change
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.points_amendment_change import points_amendment_change
@@ -412,6 +413,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
+    bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
     bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
     bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))

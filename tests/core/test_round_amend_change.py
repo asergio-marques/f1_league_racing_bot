@@ -116,15 +116,6 @@ def phases(monkeypatch):
     return recorded_draws(monkeypatch)
 
 
-#: `phases` records each draw through weather's `draw_phaseN_on` and `forecast_changes` (#439),
-#: which weather does not have yet.
-DRAWS_RECORDED = pytest.mark.xfail(
-    strict=True,
-    raises=(ImportError, AttributeError),
-    reason="#439: weather has no draw_phaseN_on or forecast_changes to record the draws through",
-)
-
-
 @pytest.fixture
 def reposts(monkeypatch):
     """Attendance's posts of a check-in call, recording `(round id, division id)` in `posted`,
@@ -782,8 +773,8 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 @pytest.mark.parametrize("weather, attendance", [
     pytest.param(True, True, marks=pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)),
     pytest.param(True, False, marks=pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)),
-    pytest.param(False, True, marks=DRAWS_RECORDED),
-    pytest.param(False, False, marks=DRAWS_RECORDED),
+    pytest.param(False, True),
+    pytest.param(False, False),
 ], ids=["weather and attendance on", "weather on", "attendance on", "both off"])
 async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather, attendance):
     """Round 3's call stands, and its phase 2 forecast (message 8002) was posted though phase 1
@@ -1129,7 +1120,6 @@ async def _place_r3(league: Any, **delta: float) -> None:
     )
 
 
-@DRAWS_RECORDED
 async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_once(
     tmp_path, phases,
 ):
@@ -1497,7 +1487,6 @@ async def test_a_call_standing_when_the_amendment_s_post_runs_past_its_deadline_
     assert reposts.posted == []
 
 
-@DRAWS_RECORDED
 async def test_a_phase_whose_race_passed_while_a_job_before_it_stood_stopped_is_not_drawn(
     tmp_path, phases, reposts,
 ):
@@ -1621,7 +1610,6 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
 
 
-@DRAWS_RECORDED
 async def test_a_phase_drawn_at_once_is_not_armed_as_well(tmp_path, phases):
     """Weather on, horizons 5 days, 2 days, 2 hours. Pro's round 3, its Phase 1 never drawn, is
     brought forward to four days, twenty-three hours and fifty-eight minutes out: its Phase 1
@@ -1701,7 +1689,6 @@ async def test_a_call_whose_check_in_was_closed_is_not_posted(tmp_path, reposts)
     assert reposts.posted == []
 
 
-@DRAWS_RECORDED
 async def test_no_phase_is_drawn_for_a_round_whose_race_passed_while_its_save_stood_stopped(
     tmp_path, phases,
 ):
@@ -2087,7 +2074,6 @@ async def _forecasts(league: Any) -> dict[int, int]:
         "SELECT phase_number, message_id FROM forecast_messages WHERE round_id = ?", R3)}
 
 
-@pytest.mark.xfail(strict=True, reason=FORECAST_JOBS)
 async def test_a_phase_drawn_at_once_whose_forecast_discord_refuses_stops_the_queue(tmp_path):
     """Round 3 brought forward to three days out, so its phase 1 is drawn at once, and Discord
     refuses its forecast: the queue stops at the amendment's `post_forecast` job, the draw

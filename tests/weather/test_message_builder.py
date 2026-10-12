@@ -351,8 +351,6 @@ RECORDED = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#439: no forecast_text builds a forecast from its "
-                                        "recorded draw")
 @pytest.mark.parametrize("phase", [0, 1, 2, 3])
 def test_the_forecast_text_is_built_from_the_recorded_draw(phase):
     from leaguebot.weather.utils.message_builder import forecast_text

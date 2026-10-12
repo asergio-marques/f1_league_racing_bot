@@ -13,17 +13,16 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.core.models.session import MAX_SLOTS, SessionType
 from leaguebot.weather.utils.math_utils import get_phase3_weights, draw_weighted
-from leaguebot.weather.utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
+from leaguebot.weather.utils.message_builder import phase_log_message, format_slots_for_log
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -138,59 +137,12 @@ async def draw_phase3_on(
 
 
 async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
-    """Draw Phase 3 for *round_id* (Phase 2 first where it is not done), then post its forecast
-    and calculation line.
+    """Ask the change queue to draw Phase 3 of *round_id* (Phase 2 first where it is not done) and post its forecast.
 
-    Until the timers, the recovery and test mode ask the change queue for a forecast's jobs
-    (`forecast_changes`), the one caller of the draw that still posts as it did.
+    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
+    the one thing that still calls this: it asks the change queue for the phase's draw, its post
+    and the deletion of the forecast it supersedes, and posts nothing itself.
     """
-    for _attempt in (1, 2):
-        async with get_connection(bot.db_path) as db:
-            drawn = await draw_phase3_on(db, round_id, now=datetime.now(timezone.utc))
-            await db.commit()
-        if not drawn.earlier or _attempt == 2:
-            break
-        from leaguebot.weather.services.phase2_service import run_phase2
-        await run_phase2(round_id, bot)
-    if drawn.payload is None:
-        return
-    payload = drawn.payload
+    from leaguebot.weather.services.forecast_changes import ask_forecast
 
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.division_id, d.forecast_channel_id, d.mention_role_id "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return
-    track_name = payload["track"]
-    session_weather = [
-        (session_type_label(d["session_type"]), d["slots"]) for d in payload["session_draws"]
-    ]
-
-    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-    from leaguebot.image.services.image_weather_post import attach_forecast
-
-    attachment = await attach_forecast(bot, round_id, 3)
-
-    # Produce before destroy (Constitution XIV.8) — see phase2_service for the reasoning.
-    # This is the phase where it matters most: the phase 3 render is the one that falls back
-    # two hours before a race, and deleting the phase 2 forecast first would strip the
-    # division of its standing forecast on exactly the path where something already failed.
-    await post_phase_message(
-        bot,
-        round_id=round_id,
-        division_id=row["division_id"],
-        channel_id=row["forecast_channel_id"],
-        phase_number=3,
-        text=phase3_message(row["mention_role_id"], track_name, session_weather),
-        attachment=attachment,
-        attachment_text=f"<@&{row['mention_role_id']}>",
-        supersedes=2,
-    )
-
-    await bot.output_router.post_log(drawn.line or "")
-    log.info("Phase 3 complete for round %s", round_id)
-
+    await ask_forecast(bot.change_queue, bot.db_path, round_id, 3)

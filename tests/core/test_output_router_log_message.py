@@ -138,8 +138,6 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing(
     bot.fetch_channel.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a forecast the channel refuses is still put on the "
-                                        "old retry queue rather than raised for the change queue")
 async def test_a_forecast_the_channel_refuses_raises_for_the_queue_and_queues_nothing(
     tmp_path, monkeypatch
 ):

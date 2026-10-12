@@ -168,7 +168,6 @@ async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before
     assert (await _forecasts(league))[phase] == new
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("refused", ["picture refused", "text refused"])
 async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_text(
     tmp_path, monkeypatch, refused,
@@ -205,7 +204,6 @@ async def test_a_forecast_discord_refuses_stops_the_queue_and_is_tried_again_as_
         assert drawn.await_count == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", [2, 3])
 async def test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job(tmp_path, phase):
     league = await _league(tmp_path)
@@ -223,7 +221,6 @@ async def test_a_phase_posts_before_the_superseded_forecast_is_deleted_by_a_job(
     assert names == ["draw_forecast", "post_forecast", "delete_forecast"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_superseded_forecast_discord_will_not_delete_stops_the_queue_keeping_its_record(
     tmp_path,
 ):
@@ -271,7 +268,6 @@ async def test_a_stop_after_the_draw_posts_the_forecast_when_the_bot_starts(tmp_
     assert await _draws(league, 1) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_forecast_whose_id_could_not_be_saved_removes_the_copy_before_it_posts_again(
     tmp_path,
 ):
@@ -298,7 +294,6 @@ async def test_a_forecast_whose_id_could_not_be_saved_removes_the_copy_before_it
     assert await _forecasts(league) == {1: new}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_notice_stops_the_queue(
     tmp_path,
 ):
@@ -324,7 +319,6 @@ async def test_the_mystery_notice_s_flag_is_saved_with_its_record_and_a_refused_
     assert await _forecasts(league) == {0: new}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier_first(tmp_path):
     """Phase 3 asked while phase 2 is undone: phase 2 is drawn, posted and supersedes phase 1,
     and only then is phase 3 drawn, posted and supersedes phase 2."""
@@ -346,7 +340,6 @@ async def test_a_phase_whose_earlier_phase_is_undone_draws_and_posts_the_earlier
                      "draw_forecast", "post_forecast", "delete_forecast"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path):
     """Round 3's circuit is one the bot has no row for: the phase's ⚠️ BLOCKED line is written,
     nothing is drawn or posted, and the queue goes on."""
@@ -363,7 +356,6 @@ async def test_a_blocked_phase_writes_its_line_and_nothing_else(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_asked_twice_is_drawn_once(tmp_path):
     """Phase 1 asked twice before the queue runs, and again once it has: drawn and posted once."""
     league = await _league(tmp_path)
@@ -379,7 +371,6 @@ async def test_a_phase_asked_twice_is_drawn_once(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_its_post_stops_the_queue(
     tmp_path,
 ):
@@ -405,7 +396,6 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_i
     assert await _forecasts(league) == {1: new}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_whose_race_passed_while_it_waited_is_dropped_at_its_draw(tmp_path):
     """Phase 1 asked, and its turn comes only after round 3's race: nothing drawn or posted (A25)."""
     league = await _league(tmp_path)
@@ -420,7 +410,6 @@ async def test_a_phase_whose_race_passed_while_it_waited_is_dropped_at_its_draw(
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_forecast_whose_race_passed_while_its_post_stood_stopped_is_dropped(tmp_path):
     """Phase 2 is drawn and its post refused; the queue stays stopped past round 3's race. Retry:
     nothing posted, phase 1's forecast still standing, and phase 2's draw kept (A25)."""
@@ -446,7 +435,6 @@ async def test_a_forecast_whose_race_passed_while_its_post_stood_stopped_is_drop
     assert await _done(league, 2) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_phases_not_at_all(
     tmp_path,
 ):

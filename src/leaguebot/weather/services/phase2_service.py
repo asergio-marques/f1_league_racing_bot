@@ -13,16 +13,15 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_ir, compute_im, compute_is, build_slot_pool
-from leaguebot.weather.utils.message_builder import phase2_message, phase_log_message, session_type_label
+from leaguebot.weather.utils.message_builder import phase_log_message
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -119,61 +118,12 @@ async def draw_phase2_on(
 
 
 async def run_phase2(round_id: int, bot: "LeagueBot") -> None:
-    """Draw Phase 2 for *round_id* (Phase 1 first where it is not done), then post its forecast
-    and calculation line.
+    """Ask the change queue to draw Phase 2 of *round_id* (Phase 1 first where it is not done) and post its forecast.
 
-    Until the timers, the recovery and test mode ask the change queue for a forecast's jobs
-    (`forecast_changes`), the one caller of the draw that still posts as it did.
+    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
+    the one thing that still calls this: it asks the change queue for the phase's draw, its post
+    and the deletion of the forecast it supersedes, and posts nothing itself.
     """
-    for _attempt in (1, 2):
-        async with get_connection(bot.db_path) as db:
-            drawn = await draw_phase2_on(db, round_id, now=datetime.now(timezone.utc))
-            await db.commit()
-        if not drawn.earlier or _attempt == 2:
-            break
-        from leaguebot.weather.services.phase1_service import run_phase1
-        await run_phase1(round_id, bot)
-    if drawn.payload is None:
-        return
-    payload = drawn.payload
+    from leaguebot.weather.services.forecast_changes import ask_forecast
 
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.division_id, d.forecast_channel_id, d.mention_role_id "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return
-    track_name = payload["track"]
-    session_slots = [
-        (session_type_label(d["session_type"]), d["slot"]) for d in payload["session_draws"]
-    ]
-
-    # --- Post output ---
-    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-    from leaguebot.image.services.image_weather_post import attach_forecast
-
-    attachment = await attach_forecast(bot, round_id, 2)
-
-    # Produce before destroy (Constitution XIV.8). The phase 1 message stands until the phase
-    # 2 message replacing it exists: deleting first would leave the division with no forecast
-    # at all whenever this posting fails, which is the window the rule exists to close. Both
-    # manners take this one send site, so the image flow inherits the ordering rather than
-    # holding a second copy of it.
-    await post_phase_message(
-        bot,
-        round_id=round_id,
-        division_id=row["division_id"],
-        channel_id=row["forecast_channel_id"],
-        phase_number=2,
-        text=phase2_message(row["mention_role_id"], track_name, session_slots),
-        attachment=attachment,
-        attachment_text=f"<@&{row['mention_role_id']}>",
-        supersedes=1,
-    )
-
-    await bot.output_router.post_log(drawn.line or "")
-    log.info("Phase 2 complete for round %s", round_id)
-
+    await ask_forecast(bot.change_queue, bot.db_path, round_id, 2)

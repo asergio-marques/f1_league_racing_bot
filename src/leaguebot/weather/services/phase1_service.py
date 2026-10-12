@@ -13,16 +13,15 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.weather.utils.math_utils import compute_rpc_beta
-from leaguebot.weather.utils.message_builder import phase1_message, phase_log_message
+from leaguebot.weather.utils.message_builder import phase_log_message
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -115,50 +114,12 @@ async def draw_phase1_on(
 
 
 async def run_phase1(round_id: int, bot: "LeagueBot") -> None:
-    """Draw Phase 1 for *round_id*, then post its forecast and calculation line.
+    """Ask the change queue to draw Phase 1 of *round_id* and post its forecast.
 
-    Until the timers, the recovery and test mode ask the change queue for a forecast's jobs
-    (`forecast_changes`), the one caller of the draw that still posts as it did.
+    Until the timers, the recovery and test mode ask the queue themselves (`forecast_changes`),
+    the one thing that still calls this: it asks the change queue for the phase's draw, its post
+    and the deletion of the forecast it supersedes, and posts nothing itself.
     """
-    async with get_connection(bot.db_path) as db:
-        drawn = await draw_phase1_on(db, round_id, now=datetime.now(timezone.utc))
-        await db.commit()
+    from leaguebot.weather.services.forecast_changes import ask_forecast
 
-    if drawn.blocked and drawn.line:
-        await bot.output_router.post_log(drawn.line)
-        return
-    if drawn.payload is None:
-        return
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.division_id, d.forecast_channel_id, d.mention_role_id "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return
-    track_name = drawn.payload["track"]
-
-    # The graphic, where the league draws one. Reached only now — after the draw, after the
-    # persistence — so that it can gate nothing (XIV.7). A failure leaves ``attachment`` None
-    # and the textual forecast below is posted exactly as it always was.
-    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-    from leaguebot.image.services.image_weather_post import attach_forecast
-
-    attachment = await attach_forecast(bot, round_id, 1)
-
-    await post_phase_message(
-        bot,
-        round_id=round_id,
-        division_id=row["division_id"],
-        channel_id=row["forecast_channel_id"],
-        phase_number=1,
-        text=phase1_message(row["mention_role_id"], track_name, drawn.payload["rpc"]),
-        attachment=attachment,
-        attachment_text=f"<@&{row['mention_role_id']}>",
-    )
-
-    await bot.output_router.post_log(drawn.line or "")
-    log.info("Phase 1 complete for round %s — Rpc=%.2f", round_id, drawn.payload["rpc"])
+    await ask_forecast(bot.change_queue, bot.db_path, round_id, 1)

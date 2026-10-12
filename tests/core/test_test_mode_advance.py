@@ -331,7 +331,6 @@ async def test_a_phase_with_no_job_cancels_nothing(tmp_path):
     cog.bot.scheduler_service.cancel_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
     """The change queue cannot save the notice's ask. The maintainer is stepping through a season and needs to know which round failed: the
     standard failure reply and one failure line name the notice, the division and the round
@@ -348,7 +347,6 @@ async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
     _assert_failure_recorded(cog, interaction, "Mystery Round notice")
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_failing_notice_is_not_marked_done(tmp_path):
     """The change queue cannot save the notice's ask: it did not happen, and marking it would
     skip the round on the next advance. The cog marks nothing; the notice's draw does."""
@@ -777,7 +775,6 @@ async def test_a_weather_phase_cancels_its_job_before_asking(tmp_path):
     assert order == ["cancel", "ask"]
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
     """The change queue cannot save Phase 1's ask. The standard failure reply names the phase,
     the division, the round and the track, and one failure line the phase, the division and
@@ -808,8 +805,10 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
-@pytest.mark.parametrize("phase", [0, 1], ids=["mystery notice", "phase 1"])
+@pytest.mark.parametrize("phase", [
+    pytest.param(0, id="mystery notice", marks=pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)),
+    pytest.param(1, id="phase 1"),
+])
 async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phase):
     """Season 3 is being raced in test mode, with weather on; Pro's round 3 (Silverstone
     Circuit, a mystery round for the notice) has its notice, or Phase 1, next. The maintainer

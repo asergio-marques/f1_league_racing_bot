@@ -328,7 +328,7 @@ def league_double(db_path: str) -> Any:
     bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
     hook = MagicMock()
     for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
-                 "apply_sanction", "announce_sanction", "refresh_lineup"):
+                 "apply_sanction", "announce_sanction", "refresh_lineup", "record_sheet_on"):
         setattr(hook, name, AsyncMock(return_value=None))
     hook.sanction_candidates = AsyncMock(return_value=[])
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
