@@ -83,10 +83,6 @@ NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to
 NOT_DONE = "⚠️ **Not done**"
 #: The message a check-in call posted by the `reposts` recorder stands as.
 LATE_CALL = 7101
-#: Why an amendment's check-in call fails until Discord refusing it stops the queue, its stop
-#: notice saying what is left for the round.
-CALL_STOPS = ("#439: an amendment's check-in call that Discord refuses does not yet stop the "
-              "queue with a notice saying what is left for the round")
 #: What each stop notice adds where an amendment's call is refused, by what is left of the round.
 EARLIER_STANDS = "the earlier call still stands, and the answers given to it count"
 ANSWERS_KEPT = ("no call stands; the answers given to the earlier call are kept, and count if "
@@ -303,9 +299,12 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
     from leaguebot.attendance.services.attendance_service import AttendanceService
 
     monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
+    attendance = AttendanceService(league.db_path)
+    league.bot.attendance_service.get_division_config = attendance.get_division_config
+    league.bot.attendance_service.insert_embed_message = attendance.insert_embed_message
+    league.bot.attendance_service.bulk_insert_attendance_rows = (
+        attendance.bulk_insert_attendance_rows
+    )
 
 
 def _success_lines(league: Any) -> list[str]:
@@ -1934,7 +1933,6 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_it_may_have_landed(
     tmp_path, monkeypatch,
 ):
@@ -1994,7 +1992,6 @@ async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_pos
         assert f"{ANSWERS_KEPT}{MAY_HAVE_LANDED}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 @pytest.mark.parametrize("fault", ["the call is refused", "the channel is gone"])
 async def test_a_call_posted_again_that_discord_refuses_stops_the_queue_and_is_posted_on_retry(
     tmp_path, monkeypatch, fault,
@@ -2084,7 +2081,6 @@ async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, le
     assert f"**Pro** — check-in call: {said}" in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=CALL_STOPS)
 async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the_command(
     tmp_path, monkeypatch,
 ):
