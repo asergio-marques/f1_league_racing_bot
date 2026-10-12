@@ -4,15 +4,14 @@ Covers NFR-003 cases:
   1. mystery_notice_message() exact content (FR-003)
   2. schedule_round for MYSTERY schedules weather phase jobs (FR-001)
   3. cancel_round removes all round jobs via kwargs lookup (FR-002)
-  4. run_mystery_notice posts to forecast channel only, not log channel (FR-005, FR-008)
+  4. the notice, asked of the change queue, posts to the forecast channel with no role tag,
+     and nothing where the round is no longer a mystery round, is gone or weather is off
   5. schedule_attendance_round treats MYSTERY identically to other formats (RSVP jobs)
 """
 from __future__ import annotations
 
-import os
-import tempfile
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -308,7 +307,7 @@ class TestScheduleAttendanceRoundMystery:
 
 
 # ---------------------------------------------------------------------------
-# 4. run_mystery_notice: forecast yes, log no (FR-005, FR-008)
+# 4. The notice on the change queue (FR-005, FR-008; #439, slice 6)
 # ---------------------------------------------------------------------------
 
 async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
@@ -337,106 +336,100 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
         await db.commit()
 
 
+#: Why the notice's tests through the queue fail until the build puts it on the change queue.
+QUEUE_UNBUILT = "#439: the mystery round notice is not yet asked of and posted by the change queue"
+
+
+async def _notice_league(tmp_path, *, weather: bool = True):
+    """`ongoing_league`'s season 3, Pro's round 3 (id 213) a mystery round, weather as asked."""
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=weather)
+    await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", round_id(PRO, 3))
+    return league
+
+
+async def _ask_notice(league, round_id: int) -> None:
+    """Ask for the round's phase 1, as its timer does: a mystery round's is its notice."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
+
+    await ask_forecast(league.bot.change_queue, league.db_path, round_id, 1)
+
+
+def _forecast_texts(league) -> list[str]:
+    from tests.support.season_league import DIVISIONS, PRO
+
+    return league.texts(DIVISIONS[PRO][3].forecast)
+
+
+async def _phase1_done(league, round_id: int) -> int:
+    [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_id)
+    return row["phase1_done"]
+
+
 class TestRunMysteryNotice:
+    """The notice asked of the change queue for Pro's mystery round 3, and the queue run."""
 
+    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
+    async def test_posted_message_has_no_role_tag(self, tmp_path):
+        from tests.support.change_queue import run_queue
+        from tests.support.season_league import PRO, round_id
 
-    async def test_posted_message_has_no_role_tag(self):
-        from leaguebot.core.db.database import run_migrations
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
+        league = await _notice_league(tmp_path)
 
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            db_path = f.name
-        try:
-            await run_migrations(db_path)
-            await _seed_mystery_round(db_path, round_id=2)
+        await _ask_notice(league, round_id(PRO, 3))
+        await run_queue(league.bot)
 
-            mock_msg = MagicMock()
-            mock_msg.id = 222
-            mock_bot = MagicMock()
-            mock_bot.db_path = db_path
-            mock_bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-            mock_bot.output_router.post_forecast = AsyncMock(return_value=mock_msg)
-            mock_bot.output_router.post_log = AsyncMock()
+        [posted_msg] = _forecast_texts(league)
+        assert "<@&" not in posted_msg
+        assert "🏁" in posted_msg
+        assert "Mystery" in posted_msg
 
-            await run_mystery_notice(2, mock_bot)
+    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
+    async def test_skips_if_format_amended_to_non_mystery(self, tmp_path):
+        """Guard: the round amended away from MYSTERY while its notice waited on the queue: the
+        change is dropped at its check, nothing posted and Phase 1 left undone."""
+        from tests.support.change_queue import run_queue, stopped_job
+        from tests.support.season_league import PRO, round_id
 
-            posted_msg = mock_bot.output_router.post_forecast.call_args.args[1]
-            assert "<@&" not in posted_msg
-            assert "🏁" in posted_msg
-            assert "Mystery" in posted_msg
-        finally:
-            os.unlink(db_path)
+        league = await _notice_league(tmp_path)
+        await _ask_notice(league, round_id(PRO, 3))
+        await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", round_id(PRO, 3))
 
-    async def test_skips_if_format_amended_to_non_mystery(self):
-        """Guard: if round was amended away from MYSTERY before job fires, do nothing."""
-        from leaguebot.core.db.database import run_migrations, get_connection
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
+        await run_queue(league.bot)
 
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            db_path = f.name
-        try:
-            await run_migrations(db_path)
-            await _seed_mystery_round(db_path, round_id=3)
+        assert _forecast_texts(league) == []
+        assert await _phase1_done(league, round_id(PRO, 3)) == 0
+        assert await stopped_job(league.db_path) is None
 
-            async with get_connection(db_path) as db:
-                await db.execute("UPDATE rounds SET format = 'NORMAL' WHERE id = 3")
-                await db.commit()
+    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
+    async def test_skips_if_round_not_found(self, tmp_path):
+        """A round that does not exist (999): nothing is asked of the queue."""
+        from tests.support.change_queue import change_rows
 
-            mock_bot = MagicMock()
-            mock_bot.db_path = db_path
-            mock_bot.output_router.post_forecast = AsyncMock()
-            mock_bot.output_router.post_log = AsyncMock()
+        league = await _notice_league(tmp_path)
 
-            await run_mystery_notice(3, mock_bot)
+        await _ask_notice(league, 999)
 
-            assert mock_bot.output_router.post_forecast.call_count == 0
-        finally:
-            os.unlink(db_path)
+        assert [row for row in await change_rows(league.db_path)
+                if row["kind"].startswith("weather.")] == []
 
-    async def test_skips_if_round_not_found(self):
-        from leaguebot.core.db.database import run_migrations
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
-
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            db_path = f.name
-        try:
-            await run_migrations(db_path)
-
-            mock_bot = MagicMock()
-            mock_bot.db_path = db_path
-            mock_bot.output_router.post_forecast = AsyncMock()
-            mock_bot.output_router.post_log = AsyncMock()
-
-            # round_id 999 does not exist
-            await run_mystery_notice(999, mock_bot)
-
-            assert mock_bot.output_router.post_forecast.call_count == 0
-        finally:
-            os.unlink(db_path)
-
+    @pytest.mark.xfail(strict=True, reason=QUEUE_UNBUILT)
     async def test_no_notice_is_posted_while_the_weather_module_is_off(self, tmp_path):
         """The notice is a weather posting, and a disabled module produces nothing whatever the
-        path arrives at it — so the runner refuses, as `run_phase1` to `run_phase3` do (#113),
-        and leaves the round's Phase 1 undone (#426)."""
-        from leaguebot.core.db.database import get_connection, run_migrations
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
+        path arrives at it — so its change is dropped at its check, as the phases' are (#113),
+        and the round's Phase 1 is left undone (#426)."""
+        from tests.support.change_queue import run_queue, stopped_job
+        from tests.support.season_league import PRO, round_id
 
-        db_path = str(tmp_path / "notice_weather_off.db")
-        await run_migrations(db_path)
-        await _seed_mystery_round(db_path, round_id=4)
+        league = await _notice_league(tmp_path, weather=False)
 
-        mock_bot = MagicMock()
-        mock_bot.db_path = db_path
-        mock_bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-        mock_bot.output_router.post_forecast = AsyncMock(return_value=MagicMock(id=444))
-        mock_bot.output_router.post_log = AsyncMock()
+        await _ask_notice(league, round_id(PRO, 3))
+        await run_queue(league.bot)
 
-        await run_mystery_notice(4, mock_bot)
-
-        assert mock_bot.output_router.post_forecast.call_count == 0
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 4")
-            assert (await cursor.fetchone())["phase1_done"] == 0
+        assert _forecast_texts(league) == []
+        assert await _phase1_done(league, round_id(PRO, 3)) == 0
+        assert await stopped_job(league.db_path) is None
 
 
 # ---------------------------------------------------------------------------

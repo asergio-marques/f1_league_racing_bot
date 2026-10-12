@@ -9,7 +9,7 @@ that module's work, so that enabling the module later does not find its work alr
 `/round amend` broke both halves: it re-ran any forecast whose horizon had passed without asking
 whether weather was on, and marked the phase done, so the later enable skipped it for good.
 
-These tests hold the gate at both ends — inside the three phase runners, where it holds for every
+These tests hold the gate at both ends — inside the three phase draws, where it holds for every
 route in, and in `/round amend`'s change on the change queue — and pin the enabled path
 alongside, so the gate cannot be over-applied and quietly switch the feature off for everyone.
 """
@@ -18,17 +18,11 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services import (
-    mystery_notice_service,
-    phase1_service,
-    phase2_service,
-    phase3_service,
-)
+from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
 from tests.support.change_queue import run_queue
 from tests.support.season_league import (
     AM,
@@ -102,19 +96,6 @@ async def _set_weather(db_path: str, enabled: bool, server_id: int = 1) -> None:
         await db.commit()
 
 
-def _make_bot(db_path: str, *, weather_enabled: bool) -> MagicMock:
-    """A bot double whose module_service answers from the flag under test."""
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
-    # These tests are about the weather gate, so attendance is off throughout and the
-    # amendment's check-in re-arm has nothing to do.
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_forecast = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 async def _phase_state(db_path: str, round_id: int = 1) -> tuple[int, int, int, int]:
     """Return ``(phase1_done, phase2_done, phase3_done, phase_results_rows)``."""
     async with get_connection(db_path) as db:
@@ -131,49 +112,64 @@ async def _phase_state(db_path: str, round_id: int = 1) -> tuple[int, int, int, 
 
 
 # ---------------------------------------------------------------------------
-# The gate inside the phase runners
+# The gate inside the draws
 # ---------------------------------------------------------------------------
+#
+# A phase is drawn by a job of the change queue, on the connection its save hands it (#439,
+# slice 6). The draw reads weather's switch on that connection as a backstop to the change's own
+# check, so that nothing is drawn or recorded while weather is off, whatever route asked for it.
 
-@pytest.mark.parametrize(
-    "runner",
-    [phase1_service.run_phase1, phase2_service.run_phase2, phase3_service.run_phase3],
-    ids=["phase1", "phase2", "phase3"],
-)
-async def test_phase_runner_produces_nothing_while_weather_is_disabled(runner, tmp_path):
-    """Nothing computed, nothing recorded, nothing posted — for every runner."""
+#: Why the draws' tests fail until the build moves each draw onto a handed connection.
+DRAWS_UNBUILT = "#439: the phases are not yet drawn on a connection a save hands them"
+
+
+def _drawer(phase: int):
+    """Phase *phase*'s draw, written on the connection it is handed."""
+    from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
+
+    return {1: phase1_service.draw_phase1_on, 2: phase2_service.draw_phase2_on,
+            3: phase3_service.draw_phase3_on}[phase]
+
+
+async def _draw(db_path: str, phase: int):
+    """Draw *phase* of round 1 on a save this opens and commits; gives the `Drawn`."""
+    async with get_connection(db_path) as db:
+        drawn = await _drawer(phase)(db, 1, now=datetime.now(timezone.utc))
+        await db.commit()
+    return drawn
+
+
+@pytest.mark.xfail(strict=True, reason=DRAWS_UNBUILT)
+@pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
+async def test_phase_runner_produces_nothing_while_weather_is_disabled(phase, tmp_path):
+    """Nothing computed and nothing recorded, for every phase, and no calculation line."""
     db_path = await _make_db(str(tmp_path))
     await _seed(db_path)
-    bot = _make_bot(db_path, weather_enabled=False)
 
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ) as posted:
-        await runner(1, bot)
+    drawn = await _draw(db_path, phase)
 
+    assert drawn.payload is None and drawn.line is None and not drawn.blocked
     assert await _phase_state(db_path) == (0, 0, 0, 0)
-    posted.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
-    bot.output_router.post_forecast.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a forecast is not yet drawn and posted by jobs "
+                                        "of the change queue")
 async def test_phase_runner_runs_when_weather_is_enabled(tmp_path):
-    """The gate must not switch the feature off for a league that has it on."""
-    db_path = await _make_db(str(tmp_path))
-    await _seed(db_path)
-    await _set_weather(db_path, True)
-    bot = _make_bot(db_path, weather_enabled=True)
+    """The gate must not switch the feature off for a league that has it on: Am's round 3 asked
+    for its phase 1 through weather's `ask_forecast`, the queue run: drawn, recorded and posted
+    by the post job in Am's forecast channel."""
+    from leaguebot.weather.services.forecast_changes import ask_forecast
 
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ) as posted, patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
-    ):
-        await phase1_service.run_phase1(1, bot)
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.write("UPDATE rounds SET track_name = ? WHERE id = ?", SEEDED_TRACK, AM_3)
 
-    phase1_done, _, _, results = await _phase_state(db_path)
+    await ask_forecast(league.bot.change_queue, league.db_path, AM_3, 1)
+    await run_queue(league.bot)
+
+    phase1_done, _, _, results = await _phase_state(league.db_path, AM_3)
     assert phase1_done == 1
     assert results == 1
-    posted.assert_awaited_once()
+    assert len(league.texts(AM_FORECAST)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +345,6 @@ async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_
 # phase already running, or one fired late, reaches the runner all the same. The runner reads the
 # round again, and does nothing for a round that is cancelled or whose division is.
 
-_RUNNERS = [phase1_service.run_phase1, phase2_service.run_phase2, phase3_service.run_phase3]
-
-
 async def _cancel(db_path: str, what: str) -> None:
     async with get_connection(db_path) as db:
         if what == "round":
@@ -361,64 +354,47 @@ async def _cancel(db_path: str, what: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWS_UNBUILT)
 @pytest.mark.parametrize("what", ["round", "division"])
 @pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
 async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, phase, what):
-    """Weather is on and round 1 of Div A has had every earlier phase drawn and posted. The
-    round, or Div A, is then cancelled, and the phase falls due: nothing is drawn, recorded or
-    posted, and the earlier phases' record stands as it was."""
+    """Weather is on and round 1 of Div A has had every earlier phase drawn. The round, or Div A,
+    is then cancelled, and the phase is drawn: nothing is drawn or recorded, no calculation line
+    is given, and the earlier phases' record stands as it was."""
     db_path = await _make_db(str(tmp_path))
     await _seed(db_path)
     await _set_weather(db_path, True)
-    bot = _make_bot(db_path, weather_enabled=True)
+    for earlier in range(1, phase):
+        await _draw(db_path, earlier)
+    before = await _phase_state(db_path)
+    await _cancel(db_path, what)
 
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ) as posted, patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast",
-        new=AsyncMock(return_value=None),
-    ) as drawn:
-        for earlier in _RUNNERS[: phase - 1]:
-            await earlier(1, bot)
-        before = await _phase_state(db_path)
-        posted.reset_mock()
-        drawn.reset_mock()
-        bot.output_router.post_log.reset_mock()
-        await _cancel(db_path, what)
+    drawn = await _draw(db_path, phase)
 
-        await _RUNNERS[phase - 1](1, bot)
-
+    assert drawn.payload is None and drawn.line is None
     assert await _phase_state(db_path) == before
-    posted.assert_not_awaited()
-    drawn.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
-    bot.output_router.post_forecast.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a mystery round's notice is not yet recorded on a "
+                                        "connection a save hands it")
 @pytest.mark.parametrize("what", ["round", "division"])
 async def test_a_mystery_notice_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, what):
     """Weather is on and round 1 of Div A is a Mystery round. The round, or Div A, is cancelled,
-    and its notice falls due at the phase 1 horizon: nothing is posted and the round's Phase 1 is
-    left undone."""
+    and its notice is recorded at the phase 1 horizon: nothing is written and the round's Phase 1
+    is left undone."""
+    from leaguebot.weather.services.mystery_notice_service import record_mystery_notice_on
+
     db_path = await _make_db(str(tmp_path))
     await _seed(db_path)
     await _set_weather(db_path, True)
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET format = 'MYSTERY' WHERE id = 1")
         await db.commit()
-    bot = _make_bot(db_path, weather_enabled=True)
     await _cancel(db_path, what)
 
-    with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ) as posted, patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast",
-        new=AsyncMock(return_value=None),
-    ) as drawn:
-        await mystery_notice_service.run_mystery_notice(1, bot)
+    async with get_connection(db_path) as db:
+        drawn = await record_mystery_notice_on(db, 1)
+        await db.commit()
 
+    assert drawn.line is None
     assert await _phase_state(db_path) == (0, 0, 0, 0)
-    posted.assert_not_awaited()
-    drawn.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
-    bot.output_router.post_forecast.assert_not_awaited()
