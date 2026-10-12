@@ -515,6 +515,55 @@ async def test_a_clean_up_deletes_the_phase_3_forecast_by_a_job_and_a_refusal_st
     assert job["payload"]["phase"] == 3
 
 
+#: Why a clean-up finding an earlier phase standing fails until the build deletes it.
+EARLIER_PHASE_STANDING = ("#439: the clean-up deletes only a Phase 3 forecast, not whichever "
+                          "phase is still standing")
+
+
+@pytest.mark.parametrize("standing", [
+    pytest.param(3, id="phase 3 posted"),
+    pytest.param(2, id="phase 3 never posted", marks=pytest.mark.xfail(
+        strict=True, reason=EARLIER_PHASE_STANDING)),
+    pytest.param(1, id="phase 2 never posted", marks=pytest.mark.xfail(
+        strict=True, reason=EARLIER_PHASE_STANDING)),
+])
+async def test_a_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
+    """A day after round 3's race, Pro's last forecast to post is the one standing: Phase 3 in
+    the normal case; Phase 2 where Phase 3 never posted (discarded, or dropped as the race was
+    run), Phase 1 where Phase 2 never did either. The clean-up deletes that forecast by a
+    `delete_forecast` job of its own, and no record of it is left."""
+    league = await _league(tmp_path)
+    message = 9300 + standing
+    await posted_forecast(league, ROUND, standing, message)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert ("delete", message) in _events(league)
+    assert message not in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {}
+    [job] = await _deletes_of(league, CLEAN_UP_KIND)
+    assert job["payload"]["phase"] == standing
+
+
+async def test_a_clean_up_leaves_a_mystery_round_s_notice_standing(tmp_path):
+    """Round 3 is a mystery round, whose notice (phase 0) was posted in place of its forecasts:
+    a day after its race the clean-up deletes nothing, and the notice and its record stand."""
+    league = await _league(tmp_path, mystery=True)
+    await _posted(league, 1)
+    [notice] = _ids(_events(league), "send")
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert ("delete", notice) not in _events(league)
+    assert notice in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {0: notice}
+    assert await _deletes_of(league, CLEAN_UP_KIND) == []
+
+
 async def test_a_flush_deletes_every_forecast_each_by_a_job_of_its_own(tmp_path):
     """Test mode switched off with three forecasts standing (Pro's Phase 1 and 2 of round 3,
     9301 and 9302, and Am's Phase 1 of round 3, 9401): the flush deletes each by a
