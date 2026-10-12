@@ -1,8 +1,9 @@
-"""RetryCog — background worker that retries failed channel posts every 5 minutes.
+"""RetryCog — background worker that retries the log lines the log channel failed to take, every
+5 minutes.
 
-Constitution Principle VII: Messages that fail to post to their designated channel
-are retried until delivered, preserving output channel discipline even under
-transient Discord API errors (e.g., 503 upstream overflows).
+Constitution Principle V: a line that fails to post to the log channel is retried until
+delivered, so the log stays complete even under transient Discord API errors (e.g., 503
+upstream overflows). The posts of a change are not retried here but by the change queue.
 """
 
 from __future__ import annotations

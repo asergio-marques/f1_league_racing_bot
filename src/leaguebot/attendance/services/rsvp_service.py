@@ -340,10 +340,11 @@ async def _report_call_failure(
     toggle is on. The fault is in the call, not in the picture, and a league that never draws a
     graphic must still learn its calls are failing.
 
-    The call is deliberately **not** enqueued for retry. The retry queue carries text alone —
+    A call is never posted as text alone. The retry queue carries log lines, text alone —
     ``retry_service.enqueue`` takes a ``content: str`` and re-posts it in chunks — so a call
     replayed through it would arrive with no embed, no roster and no buttons: a message the
-    division cannot answer. Staff re-post it instead.
+    division cannot answer. Staff re-post it instead; the call an amendment posts again is a job
+    of the change queue, which tries it whole (`run_rsvp_notice`'s *raise_on_failure*).
 
     **The note names the command that does it** (#123). It used to say only "post the call
     again", which no command could do; `/attendance post-check-in` is that command, and naming

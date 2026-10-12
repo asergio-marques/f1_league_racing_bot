@@ -1,9 +1,10 @@
 """RetryService — persistent message retry queue.
 
-When a post fails, its text is kept here with ``enqueue``: by ``OutputRouter`` for log lines
-and a forecast's text, and by the forecast, calendar and attendance sheet posters for their
-own. ``RetryCog`` runs ``attempt_delivery`` on a 5-minute loop until the message is
-delivered.
+When the log channel cannot take a line, the line is kept here with ``enqueue`` by
+``OutputRouter``, and ``RetryCog`` runs ``attempt_delivery`` on a 5-minute loop until it is
+delivered. It carries log lines alone: the posts of a change (a calendar, a lineup, a sheet,
+a results table, a forecast) are jobs of the change queue, which stops on a post that fails and
+tries it again, as text, on its own schedule, so a late delivery never goes unrecorded here.
 
 Constitution Principle V: successful and stuck-entry retry outcomes are posted
 to the calculation log channel for full observability.

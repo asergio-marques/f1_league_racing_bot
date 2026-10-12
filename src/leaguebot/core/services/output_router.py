@@ -8,8 +8,9 @@ that does is the change queue's stop notice, sent to the log channel (`post_noti
 
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
 names without notifying, a record longer than one message is split, both are sent with
-mentions switched off, and a failed post is queued for retry where the caller asks. The log
-channel is written nowhere else, which `tests/repository/test_architecture_rules.py` checks. The
+mentions switched off, and a log line that fails to post is queued for retry where the caller
+asks. A forecast's text that fails to post is not queued: it raises, for the change queue to
+stop on and try again as text. The log channel is written nowhere else, which `tests/repository/test_architecture_rules.py` checks. The
 target is one handler for each kind of post, of which this is the log writer
 (`docs/design/architecture.md`, "Posting to Discord").
 """
