@@ -313,3 +313,50 @@ class TestAForecastNamesNoHorizon:
         wording was shortened to one line on 2026-09-20.
         """
         assert "accurate" in _phase2()
+
+
+# ---------------------------------------------------------------------------
+# The forecast's text, built from the recorded draw (#439, slice 6)
+#
+# A forecast is posted by a job after its draw, and a retry composes the text when it is sent:
+# so the text is built from the payload the draw recorded, and must read exactly as the forecast
+# built at the draw did.
+# ---------------------------------------------------------------------------
+
+from leaguebot.weather.utils.message_builder import mystery_notice_message  # noqa: E402
+
+#: Each phase's recorded payload, as its draw writes it, and the forecast built at the draw.
+RECORDED = {
+    0: (None, lambda: mystery_notice_message()),
+    1: ({"phase": 1, "track": "Spa", "rpc": 0.3}, lambda: phase1_message(801, "Spa", 0.3)),
+    2: (
+        {"phase": 2, "track": "Spa", "rpc": 0.3, "session_draws": [
+            {"session_id": 1, "session_type": "SHORT_QUALIFYING", "slot": "rain"},
+            {"session_id": 2, "session_type": "LONG_RACE", "slot": "mixed"},
+        ]},
+        lambda: phase2_message(801, "Spa", [(session_type_label("SHORT_QUALIFYING"), "rain"),
+                                            (session_type_label("LONG_RACE"), "mixed")]),
+    ),
+    3: (
+        {"phase": 3, "track": "Spa", "rpc": 0.3, "session_draws": [
+            {"session_id": 1, "session_type": "SHORT_QUALIFYING", "slot_type": "sunny",
+             "n_slots": 1, "slots": ["Clear"], "slots_display": "Clear"},
+            {"session_id": 2, "session_type": "LONG_RACE", "slot_type": "rain", "n_slots": 2,
+             "slots": ["Wet", "Very Wet"], "slots_display": "Wet → Very Wet"},
+        ]},
+        lambda: phase3_message(801, "Spa", [(session_type_label("SHORT_QUALIFYING"), ["Clear"]),
+                                            (session_type_label("LONG_RACE"),
+                                             ["Wet", "Very Wet"])]),
+    ),
+}
+
+
+@pytest.mark.xfail(strict=True, reason="#439: no forecast_text builds a forecast from its "
+                                        "recorded draw")
+@pytest.mark.parametrize("phase", [0, 1, 2, 3])
+def test_the_forecast_text_is_built_from_the_recorded_draw(phase):
+    from leaguebot.weather.utils.message_builder import forecast_text
+
+    payload, built_at_the_draw = RECORDED[phase]
+
+    assert forecast_text(phase, 801, payload) == built_at_the_draw()

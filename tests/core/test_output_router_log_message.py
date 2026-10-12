@@ -138,6 +138,29 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing(
     bot.fetch_channel.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a forecast the channel refuses is still put on the "
+                                        "old retry queue rather than raised for the change queue")
+async def test_a_forecast_the_channel_refuses_raises_for_the_queue_and_queues_nothing(
+    tmp_path, monkeypatch
+):
+    """A forecast is a job of the change queue, which stops on the failure and tries it again
+    itself: the router raises `StepFailedOnDiscord` naming the channel, and puts nothing on the
+    old retry queue, which carries log lines alone (#439, slice 6)."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.services import retry_service
+    from leaguebot.core.services.output_router import ForecastChannel
+
+    enqueue = AsyncMock()
+    monkeypatch.setattr(retry_service, "enqueue", enqueue)
+    bot = _bot(_refusing_channel())
+    router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
+
+    with pytest.raises(StepFailedOnDiscord, match="<#605>"):
+        await router.post_forecast(ForecastChannel(605), "forecast")
+
+    enqueue.assert_not_awaited()
+
+
 # ── The factory reset's closing line (#482) ───────────────────────────────
 #
 # A factory reset posts one line once its clean-up has finished, after the wipe has taken the
