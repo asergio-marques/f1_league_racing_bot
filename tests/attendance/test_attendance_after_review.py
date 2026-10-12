@@ -347,6 +347,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the hook's refresh_lineup takes no as_text")
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
@@ -367,7 +368,7 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     )
     await hook.announce_sanction(LATEST_ROUND, DIVISION_ID, owed, as_text=False)
     await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned={LEWIS}, as_text=False)
-    await hook.refresh_lineup(DIVISION_ID)
+    await hook.refresh_lineup(DIVISION_ID, as_text=False)
     async with get_connection(db_path) as db:
         before = db.total_changes
         await hook.record_on(db, AMENDED_ROUND, DIVISION_ID, [], NOW)

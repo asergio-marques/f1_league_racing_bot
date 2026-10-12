@@ -163,7 +163,8 @@ class AttendanceDouble:
     raise; so do `recalculate_fails`, raised by `recalculate_on`, and `candidates_fail`, raised
     by `sanction_candidates` while attendance is on, each on every call while it is set.
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
-    reads the hint the league would.
+    reads the hint the league would. `lineup_as_text` holds, call by call, whether
+    `refresh_lineup` was asked for the text.
     """
 
     def __init__(self, league: "ReviewLeague") -> None:
@@ -176,6 +177,7 @@ class AttendanceDouble:
         self.apply_fails: dict[int, Exception] = {}
         self.announce_fails: dict[int, Exception] = {}
         self.lineup_fails: list[Exception] = []
+        self.lineup_as_text: list[bool] = []
         self.recalculate_fails: Exception | None = None
         self.candidates_fail: Exception | None = None
 
@@ -242,10 +244,11 @@ class AttendanceDouble:
         if failure is not None:
             raise failure
 
-    async def refresh_lineup(self, division_id: int) -> None:
+    async def refresh_lineup(self, division_id: int, *, as_text: bool = False) -> None:
         if not self.league.attendance_on:
             return
         self.calls.append(("refresh_lineup", division_id))
+        self.lineup_as_text.append(as_text)
         if self.lineup_fails:
             raise self.lineup_fails.pop(0)
 
