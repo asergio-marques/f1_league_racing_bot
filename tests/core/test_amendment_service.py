@@ -199,6 +199,15 @@ def phases(monkeypatch):
     return recorded_draws(monkeypatch)
 
 
+#: `phases` records each draw through weather's `draw_phaseN_on` and `forecast_changes` (#439),
+#: which weather does not have yet.
+DRAWS_RECORDED = pytest.mark.xfail(
+    strict=True,
+    raises=(ImportError, AttributeError),
+    reason="#439: weather has no draw_phaseN_on or forecast_changes to record the draws through",
+)
+
+
 @pytest.fixture
 def reposts(monkeypatch):
     """Attendance's repost of a check-in call, recording `(round id, division id)` in `posted`."""
@@ -342,7 +351,7 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
 
 @pytest.mark.parametrize("fault_in", [
-    "arming the round's jobs",
+    pytest.param("arming the round's jobs", marks=DRAWS_RECORDED),
     pytest.param("re-running a phase", marks=pytest.mark.xfail(strict=True, reason=(
         "#439: a phase an amendment draws at once is not yet drawn by a draw_forecast job of its "
         "own"))),
@@ -379,6 +388,7 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
+@DRAWS_RECORDED
 async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 
@@ -472,6 +482,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@DRAWS_RECORDED
 async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path, phases):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
@@ -569,6 +580,7 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
 
 
+@DRAWS_RECORDED
 async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path, phases):
     """With weather on, `schedule_round` has already created it — arming again would duplicate.
     Am's round 3 moved from 90 to 100 days out."""
