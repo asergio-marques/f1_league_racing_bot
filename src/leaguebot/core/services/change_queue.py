@@ -1265,12 +1265,17 @@ class ChangeQueue:
     def _fault_kind(error: BaseException) -> str:
         """The kind of fault *error* is, as a stop line names it: the exception's type, or the
         reason for a bot change its check refused; for a failure a job gave Discord, the type of
-        the failure that caused it where it names one, else its reason."""
+        the failure that caused it where it names one, else its reason.
+
+        A job may add what its failure leaves (`StepFailedOnDiscord.notice`), which the stop
+        notice and a failed Retry's line then carry after the kind: the amendment's check-in call
+        says what is left for the round."""
         if isinstance(error, ChangeRefused):
             return str(error)
         if isinstance(error, StepFailedOnDiscord):
             cause = error.__cause__
-            return error.reason if cause is None else type(cause).__name__
+            kind = error.reason if cause is None else type(cause).__name__
+            return kind if error.notice is None else f"{kind}; {error.notice}"
         return type(error).__name__
 
     async def _stop(

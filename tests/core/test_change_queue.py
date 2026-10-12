@@ -2702,15 +2702,10 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
 # A failure's notice: what a job's failure leaves, on its stop notice (#439, slice 6)
 # ---------------------------------------------------------------------------
 
-#: Why the notice case fails until a failure on Discord may carry a notice of its own.
-NOTICE_UNBUILT = "#439: a job's failure on Discord cannot yet add what it leaves to its stop notice"
-
-
 @pytest.mark.parametrize(
     "notice, fault",
     [
-        pytest.param("the old one stands", "Forbidden; the old one stands", id="with a notice",
-                     marks=pytest.mark.xfail(strict=True, reason=NOTICE_UNBUILT)),
+        pytest.param("the old one stands", "Forbidden; the old one stands", id="with a notice"),
         pytest.param(None, "Forbidden", id="with none"),
     ],
 )

@@ -134,12 +134,19 @@ class StepFailedOnDiscord(Exception):
     raise it wrapping another fault, so that its `result` replaces the one the job kept, as
     `post_opening_standings` does once it has removed the kept tables; the stop then names the
     kind from that cause, as for any other.
+
+    `notice` is a short clause a job adds to its stop notice, saying what its failure leaves: the
+    amendment's check-in call says what is left for the round. The stop notice and the line of a
+    Retry that fails again carry it after the kind of fault.
     """
 
-    def __init__(self, reason: str, *, result: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, reason: str, *, result: dict[str, Any] | None = None, notice: str | None = None,
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.result = result
+        self.notice = notice
 
 
 class GuildUnavailable(Exception):
