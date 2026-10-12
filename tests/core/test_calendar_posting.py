@@ -4,10 +4,10 @@ Issue #208. `post_division_calendar` and `replace_calendar_message` were partly 
 Between them they decide what a division's calendar channel holds, and both carry ordering
 rules that are invisible until they are broken.
 
-**Post the replacement, then delete what it replaces — in that order.** The previous message
-goes only once its replacement is up, so a failure can never leave the channel with no calendar
-at all. `test_the_previous_calendar_goes_only_after_the_new_one_is_up` is what holds it, and the
-reverse order is the obvious "tidy" rewrite.
+**Post the replacement; deleting what it replaces is the job after it** (#439, slice 6). The
+functions here post and save nothing, deleting nothing: the calendar's post job saves the new id
+and plans the deletion of the old one after itself (`tests/core/test_calendar_steps.py`), so a
+failure can never leave the channel with no calendar at all.
 
 **A commanded posting refuses; an uncommanded one falls back to the text** (Constitution
 XIV.7). When a manager asks for a calendar and the template will not draw, they are told what is
@@ -19,13 +19,12 @@ not the thing being commanded and a division with no calendar at all is the wors
 it is, so a line above it repeats the picture rather than introducing it. The textual calendar
 keeps its heading, where it is the only thing naming the list.
 
-**A Discord fault sends the *textual* calendar to the retry queue** (FR-020). The graphic is
-gone by the time the retry runs — the file is discarded in the `finally` — and a retry that
-could not attach anything would post an empty message. This is the one place the two kinds of
+**A Discord fault raises, for the change queue to stop on** (#439, slice 6). The queue's next
+try posts the textual calendar (Constitution XIV, rule 8). This is the one place the two kinds of
 failure are told apart: a render fault is reported, a posting fault is retried.
 
 **The rendered file is discarded whichever way this ends.** Posted, refused to a commanded
-caller, or lost to a Discord fault — the `finally` covers all three, because a rehearsal that
+caller, or stopped by a Discord fault — the `finally` covers all three, because a rehearsal that
 leaves its renders behind fills the Pi's disk.
 """
 from __future__ import annotations
@@ -50,6 +49,8 @@ DIVISION_ID = 11
 CALENDAR_CHANNEL = 700
 OLD_MESSAGE_ID = 8800
 NEW_MESSAGE_ID = 9900
+
+UNBUILT = "#439: posting a calendar still saves its id, deletes the one it replaces, or reports a channel gone"
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ def _round(number: int = 1):
     )
 
 
-def _channel(*, send_fails: bool = False, delete_fails: bool = False):
+def _channel(*, send_fails: bool = False):
     channel = MagicMock()
     channel.id = CALENDAR_CHANNEL
     posted = MagicMock()
@@ -114,11 +115,7 @@ def _channel(*, send_fails: bool = False, delete_fails: bool = False):
         return_value=posted,
     )
     partial = MagicMock()
-    partial.delete = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(status=404), "gone")
-        if delete_fails
-        else None
-    )
+    partial.delete = AsyncMock()
     channel.get_partial_message = MagicMock(return_value=partial)
     channel._partial = partial
     return channel
@@ -220,15 +217,15 @@ async def test_the_textual_calendar_lists_the_rounds(tmp_path):
     assert "Silverstone" in text
 
 
-async def test_the_new_message_id_is_stored(tmp_path):
-    """The next posting deletes by it; without it the channel accumulates a calendar per
-    round added."""
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_new_message_id_is_returned_and_nothing_is_written(tmp_path):
+    """The calendar's post job saves the id in its own save; posting writes nothing."""
     db_path = await _make_db(tmp_path, name="cal_store")
 
     result, _, _, _ = await _post(db_path)
 
     assert result.message_id == NEW_MESSAGE_ID
-    assert await _stored_message_id(db_path) == str(NEW_MESSAGE_ID)
+    assert await _stored_message_id(db_path) is None
 
 
 # ---------------------------------------------------------------------------
@@ -366,156 +363,59 @@ async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-async def test_a_division_with_no_calendar_channel_is_reported(tmp_path):
-    """Configuring one is optional, and the caller reports it rather than failing."""
+@pytest.mark.parametrize("channel", [
+    pytest.param("set and gone", id="set and gone",
+                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param("never set", id="never set"),
+])
+async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel):
+    """A calendar channel never set is optional, and the caller reports it rather than failing.
+    One set and no longer on the server raises for the change queue to stop on: a league can put
+    it right and press Retry."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
     db_path = await _make_db(tmp_path, name="cal_nochannel")
 
-    result, channel, _, _ = await _post(db_path, guild=_guild(missing=True))
+    if channel == "set and gone":
+        with pytest.raises(StepFailedOnDiscord):
+            await _post(db_path, guild=_guild(missing=True))
+        return
+    result, sent_to, _, _ = await _post(db_path, division=_division(channel=None),
+                                        guild=_guild(missing=True))
 
     assert "no calendar channel is configured" in result.problem
-    channel.send.assert_not_awaited()
+    sent_to.send.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
-# Replacing the standing calendar
+# The attachment
 # ---------------------------------------------------------------------------
 
 
-async def test_the_previous_calendar_goes_only_after_the_new_one_is_up(tmp_path):
-    """The ordering is the contract: a failure can never leave the channel with no
-    calendar at all."""
-    db_path = await _make_db(tmp_path, name="cal_order")
-    channel = _channel()
-    order: list[str] = []
-    channel.send = AsyncMock(
-        side_effect=lambda *a, **k: order.append("send")
-        or SimpleNamespace(id=NEW_MESSAGE_ID)
-    )
-    channel._partial.delete = AsyncMock(side_effect=lambda: order.append("delete"))
-
-    await replace_calendar_message(
-        _bot(db_path),
-        channel,
-        DIVISION_ID,
-        content="calendar",
-        image_path=None,
-        previous_message_id=OLD_MESSAGE_ID,
-    )
-
-    assert order == ["send", "delete"]
-
-
-async def test_a_failed_post_deletes_nothing(tmp_path):
-    """The standing calendar is the best thing the channel has until a replacement is
-    actually up."""
-    db_path = await _make_db(tmp_path, name="cal_faildelete")
-    channel = _channel(send_fails=True)
-
-    with pytest.raises(RuntimeError):
-        await replace_calendar_message(
-            _bot(db_path),
-            channel,
-            DIVISION_ID,
-            content="calendar",
-            image_path=None,
-            previous_message_id=OLD_MESSAGE_ID,
-        )
-
-    channel._partial.delete.assert_not_awaited()
-
-
-async def test_a_first_calendar_deletes_nothing(tmp_path):
-    """There is no previous message, and asking Discord to delete message `None` would
-    raise."""
-    db_path = await _make_db(tmp_path, name="cal_first")
-    channel = _channel()
-
-    await replace_calendar_message(
-        _bot(db_path),
-        channel,
-        DIVISION_ID,
-        content="calendar",
-        image_path=None,
-        previous_message_id=None,
-    )
-
-    channel.get_partial_message.assert_not_called()
-
-
-async def test_a_message_that_is_its_own_replacement_is_not_deleted(tmp_path):
-    """An edit-in-place would otherwise delete the message it had just posted."""
-    db_path = await _make_db(tmp_path, name="cal_same")
-    channel = _channel()
-
-    await replace_calendar_message(
-        _bot(db_path),
-        channel,
-        DIVISION_ID,
-        content="calendar",
-        image_path=None,
-        previous_message_id=NEW_MESSAGE_ID,
-    )
-
-    channel.get_partial_message.assert_not_called()
-
-
-async def test_a_previous_message_already_gone_does_not_fail_the_replacement(tmp_path):
-    """The replacement is already up; a stale or hand-deleted message is not worth failing
-    over, and the stored id is overwritten either way."""
-    db_path = await _make_db(tmp_path, name="cal_delgone")
-    channel = _channel(delete_fails=True)
-
-    message_id = await replace_calendar_message(
-        _bot(db_path),
-        channel,
-        DIVISION_ID,
-        content="calendar",
-        image_path=None,
-        previous_message_id=OLD_MESSAGE_ID,
-    )
-
-    assert message_id == NEW_MESSAGE_ID
-    assert await _stored_message_id(db_path) == str(NEW_MESSAGE_ID)
-
-
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_attachment_is_released_before_the_caller_removes_the_file(tmp_path):
     """Closed where the attachment is, so the handle is gone before the caller's `finally`
     removes the path — Windows refuses to delete a file that is still open."""
-    db_path = await _make_db(tmp_path, name="cal_release")
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
     channel = _channel()
 
     with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
-        await replace_calendar_message(
-            _bot(db_path),
-            channel,
-            DIVISION_ID,
-            content=None,
-            image_path=Path(png),
-            previous_message_id=None,
-        )
+        await replace_calendar_message(channel, content=None, image_path=Path(png))
 
     discard.assert_called_once()
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_attachment_is_released_even_when_the_post_fails(tmp_path):
     """The `finally` covers it, or a failed post leaves a file handle open for the life of
     the process."""
-    db_path = await _make_db(tmp_path, name="cal_release_fail")
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
     channel = _channel(send_fails=True)
 
     with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
         with pytest.raises(RuntimeError):
-            await replace_calendar_message(
-                _bot(db_path),
-                channel,
-                DIVISION_ID,
-                content=None,
-                image_path=Path(png),
-                previous_message_id=None,
-            )
+            await replace_calendar_message(channel, content=None, image_path=Path(png))
 
     discard.assert_called_once()

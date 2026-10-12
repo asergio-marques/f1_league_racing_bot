@@ -861,6 +861,8 @@ async def test_a_cancellation_is_refused_at_once_while_another_end_of_the_season
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True,
+                   reason="#439: the calendar replaced is not yet deleted by a job of its own")
 async def test_the_jobs_run_in_order(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, attendance=True, test_mode=True,
                                   held=True)
@@ -873,15 +875,15 @@ async def test_the_jobs_run_in_order(tmp_path):
     names = [name for name, _key in await _names(league)]
     jobs = [pair for pair in await _names(league) if pair[0] != "close_window"]
     assert [name for name, _key in jobs[:3]] == ["unarm", "apply", "delete_channel"]
-    assert jobs[3:12] == [
+    assert jobs[3:14] == [
         ("notify_checkin", PRO), ("take_down_call", PRO), ("notify_forecast", PRO),
-        ("notify_results", PRO), ("post_calendar", PRO),
+        ("notify_results", PRO), ("post_calendar", PRO), ("delete_replaced", None),
         ("notify_checkin", AM), ("notify_forecast", AM), ("notify_results", AM),
-        ("post_calendar", AM),
+        ("post_calendar", AM), ("delete_replaced", None),
     ]
-    assert jobs[12:15] == [("revoke_roles", LEWIS), ("revoke_roles", MAX),
+    assert jobs[14:17] == [("revoke_roles", LEWIS), ("revoke_roles", MAX),
                            ("revoke_roles", CHARLES)]
-    assert jobs[15:17] == [("flush_forecasts", None), ("end", None)]
+    assert jobs[17:19] == [("flush_forecasts", None), ("end", None)]
     assert names[-2:] == ["discard_portraits", "close"]
     between = names[names.index("end") + 1:names.index("discard_portraits")]
     assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}

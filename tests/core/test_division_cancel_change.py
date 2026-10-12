@@ -501,6 +501,8 @@ async def test_the_division_is_told_in_the_division_s_words(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True,
+                   reason="#439: the calendar replaced is not yet deleted by a job of its own")
 async def test_the_jobs_run_in_today_s_order(tmp_path):
     league = await ongoing_league(tmp_path, weather=True, results=True, attendance=True)
     await _second_call(league)
@@ -510,7 +512,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path):
 
     assert [job["name"] for job in await _jobs(league)] == [
         "unarm", "apply", "notify_checkin", "take_down_call", "take_down_call",
-        "notify_forecast", "notify_results", "post_calendar", "close",
+        "notify_forecast", "notify_results", "post_calendar", "delete_replaced", "close",
     ]
     deleted = [mid for kind, cid, mid in league.events
                if kind == "delete" and cid == PRO_CH.checkin]
