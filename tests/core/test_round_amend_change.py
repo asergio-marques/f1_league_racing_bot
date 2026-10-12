@@ -2101,7 +2101,8 @@ async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the
 
     assert await _stopped_at(league) == "post_call"
     assert ("**Pro** has no check-in channel set: set one with `/attendance channel rsvp`, then "
-            "press Retry.") in league.log()
+            "press Retry. No call stands") in league.log()
+    assert "Retry.; " not in league.log()
     assert "run_rsvp_notice | SKIP" not in league.log()
 
     await league.write(

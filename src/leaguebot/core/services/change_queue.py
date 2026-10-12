@@ -1269,13 +1269,20 @@ class ChangeQueue:
 
         A job may add what its failure leaves (`StepFailedOnDiscord.notice`), which the stop
         notice and a failed Retry's line then carry after the kind: the amendment's check-in call
-        says what is left for the round."""
+        says what is left for the round. After a kind that is a sentence of its own (a reason
+        ending in a full stop, such as one telling the reader to press Retry) the notice follows
+        as a sentence too; after any other it follows a semicolon."""
         if isinstance(error, ChangeRefused):
             return str(error)
         if isinstance(error, StepFailedOnDiscord):
             cause = error.__cause__
             kind = error.reason if cause is None else type(cause).__name__
-            return kind if error.notice is None else f"{kind}; {error.notice}"
+            notice = error.notice
+            if notice is None:
+                return kind
+            if kind.endswith("."):
+                return f"{kind} {notice[:1].upper()}{notice[1:]}."
+            return f"{kind}; {notice}"
         return type(error).__name__
 
     async def _stop(
