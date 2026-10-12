@@ -354,6 +354,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_cancel_change,
     )
     from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.lineup_posting import lineup_post_change
     from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
@@ -406,6 +407,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(calendar_sync_change(bot.season_service))
+    bot.change_queue.register(lineup_post_change(bot.placement_service))
     hooks = _season_end_hooks(bot)
     bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
     bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))

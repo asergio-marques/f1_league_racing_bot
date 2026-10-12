@@ -31,7 +31,6 @@ from tests.support.change_queue import (
 )
 from tests.support.season_league import AM, DIVISIONS, PRO, ongoing_league
 
-UNBUILT = "#439: a lineup is not yet asked of the change queue"
 
 KIND = "lineup.post"
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
@@ -139,7 +138,6 @@ async def _release(league: Any, lineups: list[int]) -> Any:
     return cog, _interaction(), _release
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("command, lineups", [
     pytest.param(_assign, [PRO], id="assign"),
     pytest.param(_unassign, [PRO], id="unassign"),
@@ -173,7 +171,6 @@ async def test_a_driver_command_asks_the_queue_for_each_lineup_it_touched(tmp_pa
 # ── What the queue does with the ask ───────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_lineup_a_command_asked_for_that_discord_refuses_stops_the_queue(tmp_path):
     league = await ongoing_league(tmp_path)
     own = _refusing(league, LINEUP[PRO])
@@ -192,7 +189,6 @@ async def test_a_lineup_a_command_asked_for_that_discord_refuses_stops_the_queue
     assert len(league.texts(LINEUP[PRO])) == before + 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_two_commands_in_a_row_each_ask_for_the_lineup(tmp_path):
     league = await ongoing_league(tmp_path)
     await _stop_the_queue(league)
@@ -204,7 +200,6 @@ async def test_two_commands_in_a_row_each_ask_for_the_lineup(tmp_path):
     assert [row["state"] for row in rows] == ["QUEUED", "QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_lineup_for_a_division_with_no_lineup_channel_stops_the_queue_naming_the_command(
     tmp_path,
 ):

@@ -24,13 +24,6 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     db_path,  # noqa: F401 — the fixture
 )
 
-#: The divisions whose lineup a change owes, returned for the command to ask of the change queue
-#: (#439), which the service does not yet return: it posts them itself.
-LINEUPS_NAMED = "#439: the placement service still posts lineups itself and names none"
-
-#: The confirmation asks the change queue for each lineup (#439), which it does not yet.
-ASKED_OF_THE_QUEUE = "#439: confirming placements still posts each lineup itself"
-
 
 def _service(db_path) -> PlacementService:
     service = PlacementService.__new__(PlacementService)
@@ -58,7 +51,6 @@ async def test_the_uncommitted_placements_are_listed(db_path):
     assert placements[0]["team_name"] == "Alpha"
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_confirming_commits_grants_roles_and_names_each_lineup_once(db_path):
     service = _service(db_path)
 
@@ -72,7 +64,6 @@ async def test_confirming_commits_grants_roles_and_names_each_lineup_once(db_pat
     assert committed.lineups == [DIVISION_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_confirming_with_nothing_uncommitted_does_nothing(db_path):
     service = _service(db_path)
     await service.commit_mid_season_placements(1, _guild())
@@ -89,7 +80,6 @@ async def test_confirming_with_nothing_uncommitted_does_nothing(db_path):
 # nothing left to commit.
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_driver_whose_team_role_cannot_be_read_is_left_ungranted_and_named(db_path):
     service = _service(db_path)
     service.get_team_role_config = AsyncMock(
@@ -715,7 +705,6 @@ async def test_ungranted_drivers_are_named_in_the_reply_and_the_log(db_path):
     assert "not done: <@1002>, <@1003>" in _logged(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_QUEUE)
 async def test_confirming_asks_the_queue_for_each_division_s_lineup(db_path):
     """The placements are committed by the confirmation; each lineup they touch is asked of the
     change queue as the bot's, and the reply says nothing of a lineup."""
@@ -738,7 +727,6 @@ async def test_confirming_asks_the_queue_for_each_division_s_lineup(db_path):
     assert "not done" not in _logged(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_QUEUE)
 async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and_the_placements_stand(
     tmp_path,
 ):
@@ -976,7 +964,6 @@ async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
 # ── Committing mid-season: who gets roles ─────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_test_driver_is_committed_without_roles(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_profiles SET is_test_driver = 1 WHERE id = 2")
@@ -1003,7 +990,6 @@ async def test_a_member_not_cached_is_fetched_for_their_roles(db_path):
     assert service._grant_roles.await_args.args[0] is member
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_member_who_left_is_committed_and_the_lineup_still_named(db_path):
     import discord
 

@@ -21,10 +21,6 @@ PRO, AM = 11, 12
 PROFILE_ID = 5
 ROLES = {"Alpha": 501, "Bravo": 502, "Reserve": 509}
 
-#: The divisions whose lineup a change owes, returned for the command to ask of the change queue
-#: (#439), which the service does not yet return: it posts them itself.
-LINEUPS_NAMED = "#439: the placement service still posts lineups itself and names none"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -131,7 +127,6 @@ async def _move(service, to_division, team, from_division=PRO):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
@@ -147,7 +142,6 @@ async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
     assert result["lineups"] == [PRO]
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_driver_is_promoted_to_another_division(db_path):
     await _seat(db_path, AM, "Bravo")
     service = _service(db_path)
@@ -280,7 +274,6 @@ async def test_a_member_not_cached_is_fetched_to_swap_their_roles(db_path):
     assert service._grant_roles.await_args.args[0] is member
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     """The move is the league's record; a member Discord cannot find has no roles to swap."""
     import discord

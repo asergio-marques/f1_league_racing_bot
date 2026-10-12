@@ -50,6 +50,7 @@ from leaguebot.core.services.cancellation_changes import (
     SEASON_CANCEL,
     cancellation_holding_amendment,
 )
+from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.season_end_changes import (
     ABORT_ONLY_BEFORE,
@@ -64,7 +65,6 @@ from leaguebot.core.services.season_approval_change import (
     KIND as APPROVAL_KIND,
     approval_in_hand,
     ungranted_line as _ungranted_line,
-    unposted_lineup_line as _unposted_lineup_line,
 )
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
 from leaguebot.results.services import season_points_service
@@ -2610,7 +2610,15 @@ class SeasonCog(commands.Cog):
         not_done: list[str] = []
         if outcome.ungranted:
             not_done.append(_ungranted_line(outcome.ungranted))
-        not_done += [_unposted_lineup_line(name) for name in outcome.unposted_lineups]
+        # The lineups follow on the change queue; nothing after the commit raises (#387).
+        try:
+            await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, outcome.lineups)
+        except Exception:  # noqa: BLE001 — the placements are committed
+            log.exception("mid-season placements: could not ask for the lineups")
+            not_done.append(
+                "The lineups of the confirmed placements could not be put on the change queue: "
+                "each is posted with the next change to its division's drivers."
+            )
 
         returned = False
         try:

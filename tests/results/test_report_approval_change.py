@@ -1192,8 +1192,6 @@ async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the sanction's move posts the lineup, and the "
-                   "review's job posts it again")
 async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles not the
     subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex

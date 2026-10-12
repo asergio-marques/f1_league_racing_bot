@@ -24,10 +24,6 @@ from tests.core.test_driver_move import (
     db_path,  # noqa: F401 — the fixture
 )
 
-#: The divisions whose lineup a change owes, returned for the command to ask of the change queue
-#: (#439), which the service does not yet return: it posts them itself.
-LINEUPS_NAMED = "#439: the placement service still posts lineups itself and names none"
-
 
 async def _release(service, division_id):
     return await service.release_driver(
@@ -37,7 +33,6 @@ async def _release(service, division_id):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_a_driver_is_released_from_one_division_and_keeps_the_other(db_path):
     await _seat(db_path, PRO, "Alpha")
     await _seat(db_path, AM, "Bravo")

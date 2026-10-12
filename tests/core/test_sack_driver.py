@@ -176,10 +176,6 @@ def _guild(*, member_missing: bool = False, fetch_fails: bool = False, has_role:
     guild._role = role
     return guild
 
-#: The divisions whose lineup a change owes, returned for the command to ask of the change queue
-#: (#439), which the service does not yet return: it posts them itself.
-LINEUPS_NAMED = "#439: the placement service still posts lineups itself and names none"
-
 
 def _service(db_path: str) -> PlacementService:
     service = PlacementService(db_path)
@@ -587,7 +583,6 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
     assert json.loads(row["new_value"])["former_driver"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=LINEUPS_NAMED)
 async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
     """The posted lineup is what a division reads to know who is racing, and a sacked
     driver left standing in it is the visible half of the sack not happening. The sack names

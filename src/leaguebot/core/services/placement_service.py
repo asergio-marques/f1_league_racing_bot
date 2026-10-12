@@ -40,12 +40,13 @@ class PlacementsCommitted:
 
     *placements* is every placement committed, as ``uncommitted_placements`` read them.
     *ungranted* is the Discord id of each driver among them whose roles could not be granted,
-    and *unposted_lineups* the name of each division whose lineup could not be posted.
+    and *lineups* the id of each division holding a placement it committed, whose lineup the
+    caller asks the change queue to post (#439).
     """
 
     placements: list[dict] = field(default_factory=list)
     ungranted: list[str] = field(default_factory=list)
-    unposted_lineups: list[str] = field(default_factory=list)
+    lineups: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -535,19 +536,19 @@ class PlacementService:
     async def commit_mid_season_placements(
         self, season_id: int, guild: discord.Guild | None
     ) -> PlacementsCommitted:
-        """Commit the season's uncommitted placements, granting their roles and posting lineups.
+        """Commit the season's uncommitted placements, granting their roles.
 
-        Each driver committed is granted their division's role and their team's role; the
-        lineup of each division holding such a driver is posted once, however many of them
-        it holds.
+        Each driver committed is granted their division's role and their team's role. The
+        lineup of each division holding such a driver is not posted here: the divisions are
+        returned in ``lineups``, once each however many drivers they hold, for the caller to
+        ask the change queue to post (#439).
 
         **Nothing after the commit raises** (issue #387). The placements are committed by
-        then, and a raise would leave every driver and lineup not yet reached undone for
-        good: confirming again finds nothing left to commit. So each driver and each lineup
-        is guarded on its own, and what failed is returned for the manager to be told: a
-        driver whose roles could not be granted in ``ungranted``, a division whose lineup
-        could not be posted in ``unposted_lineups``. A driver no longer in the server is
-        passed over, there being nobody to give a role to.
+        then, and a raise would leave every driver not yet reached undone for good:
+        confirming again finds nothing left to commit. So each driver is guarded on its own,
+        and a driver whose roles could not be granted is returned in ``ungranted`` for the
+        manager to be told. A driver no longer in the server is passed over, there being
+        nobody to give a role to.
         """
         placements = await self.uncommitted_placements(season_id)
         if not placements:
@@ -561,7 +562,6 @@ class PlacementService:
             await db.commit()
 
         ungranted: list[str] = []
-        unposted: list[str] = []
         if guild is not None:
             for placement in placements:
                 if placement["is_test_driver"]:
@@ -587,18 +587,10 @@ class PlacementService:
                         placement["discord_user_id"],
                     )
                     ungranted.append(str(placement["discord_user_id"]))
-            names = {p["division_id"]: p["division_name"] for p in placements}
-            for division_id in names:
-                try:
-                    await self._refresh_lineup_post(guild, division_id)
-                except Exception:  # noqa: BLE001 — the placements are committed
-                    log.exception(
-                        "commit_mid_season_placements: lineup post failed for division %s",
-                        division_id,
-                    )
-                    unposted.append(names[division_id])
         return PlacementsCommitted(
-            placements=placements, ungranted=ungranted, unposted_lineups=unposted
+            placements=placements,
+            ungranted=ungranted,
+            lineups=list(dict.fromkeys(p["division_id"] for p in placements)),
         )
 
     # ------------------------------------------------------------------
@@ -1347,15 +1339,13 @@ class PlacementService:
                     grant.append(new_cfg.role_id)
                 await self._grant_roles(member, *grant)
 
-        if guild is not None:
-            for division_id in dict.fromkeys((from_division_id, to_division_id)):
-                await self._refresh_lineup_post(guild, division_id)
-
         return {
             "from_division": divisions[from_division_id]["name"],
             "to_division": divisions[to_division_id]["name"],
             "from_team": source["team_full_name"] or source["team_name"],
             "to_team": to_team_full_name,
+            # The lineups the move touched, for the caller to ask the change queue for (#439).
+            "lineups": list(dict.fromkeys((from_division_id, to_division_id))),
         }
 
     async def assign_driver(
@@ -1526,13 +1516,14 @@ class PlacementService:
                 role_ids_to_grant.append(team_cfg.role_id)
             await self._grant_roles(member, *role_ids_to_grant)
 
-        if guild is not None and is_committed:
-            await self._refresh_lineup_post(guild, division_id)
         return {
             "was_unassigned": was_unassigned,
             "team_name": team_full_name,
             "division_name": div_name,
             "committed": is_committed,
+            # The lineup to post, for the caller to ask the change queue for (#439): none while
+            # the placement is uncommitted.
+            "lineups": [division_id] if is_committed else [],
         }
 
     # ------------------------------------------------------------------
@@ -1760,13 +1751,14 @@ class PlacementService:
                 roles_to_revoke.append(team_role_id_to_revoke)
             await self._revoke_roles(member, *roles_to_revoke)
 
-        if guild is not None and was_committed:
-            await self._refresh_lineup_post(guild, division_id)
         return {
             "division_name": div_name,
             "has_remaining_assignments": has_remaining,
             # The name a reply shows is the full one; the shorthand stays a key (#381).
             "team_name": team_full_name,
+            # The lineup to post, for the caller to ask the change queue for (#439): none while
+            # the placement was uncommitted.
+            "lineups": [division_id] if was_committed else [],
         }
 
     # ------------------------------------------------------------------
@@ -1934,8 +1926,11 @@ class PlacementService:
         acting_user_name: str,
         guild: discord.Guild,
         discord_user_id: str,
-    ) -> None:
+    ) -> list[int]:
         """Sack a committed driver: revoke every role, free every seat, return to Not Signed Up.
+
+        Returns the divisions the driver left, whose lineups the caller asks the change queue
+        to post (#439); the sack posts none.
 
         Issue #220. Sacking is for a driver whose placement is confirmed — an uncommitted one
         is unassigned or rejected instead — and is available only while the season is
@@ -2034,9 +2029,7 @@ class PlacementService:
             )
             await db.commit()
 
-        if guild is not None:
-            for _div_id in division_ids:
-                await self._refresh_lineup_post(guild, _div_id)
+        return list(division_ids)
 
     # ------------------------------------------------------------------
     # Division resolution helper (used by cogs)
