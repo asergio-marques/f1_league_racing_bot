@@ -42,8 +42,6 @@ from tests.support.season_league import (
     round_id,
 )
 
-UNBUILT = "#439: a forecast's draw, post and supersession are not yet jobs on the change queue"
-
 #: The kind of a forecast's change.
 KIND = "weather.forecast"
 ROUND = round_id(PRO, 3)
@@ -79,11 +77,14 @@ async def _posted(league: Any, *phases: int) -> None:
 
 
 async def _jobs(league: Any) -> list[dict[str, Any]]:
-    """Every job of every forecast change, in order, each with its payload read back."""
-    ids = [row["id"] for row in await change_rows(league.db_path) if row["kind"] == KIND]
-    jobs = [job for job in await step_rows(league.db_path) if job["change_id"] in ids]
+    """Every job of every forecast change, in order, each with its payload read back and laid
+    over its change's payload, so a job that carries no phase of its own (the opening draw)
+    reads as its change's phase."""
+    changes = {row["id"]: json.loads(row["payload"] or "{}")
+               for row in await change_rows(league.db_path) if row["kind"] == KIND}
+    jobs = [job for job in await step_rows(league.db_path) if job["change_id"] in changes]
     for job in jobs:
-        job["payload"] = json.loads(job["payload"] or "{}")
+        job["payload"] = {**changes[job["change_id"]], **json.loads(job["payload"] or "{}")}
     return jobs
 
 
@@ -143,7 +144,6 @@ def _accepting(league: Any) -> None:
     league.channel(FORECAST).send_fails = None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", [1, 2, 3])
 async def test_a_phase_s_draw_and_its_calculation_line_are_saved_together_before_its_forecast_is_posted(
     tmp_path, phase,
@@ -251,7 +251,6 @@ async def test_a_superseded_forecast_discord_will_not_delete_stops_the_queue_kee
     assert list(await _forecasts(league)) == [2]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_stop_after_the_draw_posts_the_forecast_when_the_bot_starts(tmp_path):
     """The bot stops once phase 1 is drawn: started again, the queue posts the forecast, and the
     phase is not drawn twice."""
