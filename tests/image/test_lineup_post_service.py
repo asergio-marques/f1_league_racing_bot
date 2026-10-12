@@ -2,13 +2,10 @@
 
 The two behaviours this file exists to pin, and they are opposite:
 
-* **FR-025** — where the image flow runs, the PNG is produced *before* the previous
-  message is deleted. A failed rebuild leaves the league the lineup it had.
-* **FR-025a / SC-007** — where the image flow does **not** run, the textual path behaves
-  exactly as it did before 038, delete-then-build order included. That order was specified
-  in specs/028-season-signup-flow/ and this feature does not reopen it.
-
-The second is the one most at risk from a well-meant refactor that unifies the two paths.
+* **FR-025** — where the image flow runs, the PNG is produced and posted, and the poster
+  deletes nothing: the message it replaces is deleted by a job of the change queue after it
+  (#439), so a failed rebuild leaves the league the lineup it had.
+* **The image path is a guard clause** in front of the textual body, which posts first too.
 """
 from __future__ import annotations
 
@@ -118,46 +115,17 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
     raise AssertionError(f"{name} not found in {path}")
 
 
-def test_the_image_path_sends_before_it_deletes():
-    """FR-025 — read structurally, so a reordering is caught without a live Discord."""
-    source = _function_source(SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post")
-    send_at = source.index("channel.send(")
-    delete_at = source.index("previous.delete()")
-    assert send_at < delete_at, "the replacement must exist before the old message goes"
-
-
-def test_the_delete_is_guarded_by_a_persisted_message_id():
-    source = _function_source(SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post")
-    assert 'row["lineup_message_id"] is not None' in source
-
-
-def test_a_failed_send_never_reaches_the_delete():
-    source = _function_source(SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post")
-    failure = source.index("could not post image")
-    delete_at = source.index("previous.delete()")
-    assert failure < delete_at
-    assert "return LineupPostOutcome()" in source[failure:delete_at]
-
-
-# ── FR-025a / SC-007: the textual path is not reformed ────────────────────
-
-
-def test_the_textual_path_still_deletes_before_it_builds():
-    """SC-007 — the criterion the whole feature is measured against.
-
-    The textual body must keep the order specified in specs/028-season-signup-flow/. A
-    refactor that unifies the image and textual paths would silently change it, and this
-    is the test that catches that.
-    """
+@pytest.mark.xfail(strict=True, reason="#439: the lineup's image path deletes the message it "
+                   "replaces")
+def test_the_image_path_deletes_nothing():
+    """FR-025, read structurally: the picture is posted, and the lineup it replaces is deleted by
+    the change queue's job after it, never here."""
     source = _function_source(
-        SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
+        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post",
+        code_only=True,
     )
-    delete_at = source.index("old_msg.delete()")
-    build_at = source.index("discord.Embed(")
-    assert delete_at < build_at, (
-        "the textual lineup's delete-then-build order was specified in 028 and is "
-        "deliberately not reopened by 038"
-    )
+    assert "channel.send(" in source
+    assert ".delete(" not in source
 
 
 def test_the_image_path_is_a_guard_clause_in_front_of_the_textual_body():
@@ -166,10 +134,10 @@ def test_the_image_path_is_a_guard_clause_in_front_of_the_textual_body():
         SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
     )
     guard_at = source.index("try_post(")
-    delete_at = source.index("old_msg.delete()")
-    assert guard_at < delete_at
+    build_at = source.index("discord.Embed(")
+    assert guard_at < build_at
     assert "if outcome.applicable:" in source
-    assert "return" in source[guard_at:delete_at]
+    assert "return" in source[guard_at:build_at]
 
 
 def test_the_textual_body_runs_when_no_bot_is_attached():

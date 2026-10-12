@@ -20,11 +20,13 @@ import pytest
 from leaguebot.core.models.change import ChangeOrigin
 from tests.support.change_queue import (
     change_rows,
+    discard_job,
     http_error,
     queued_log_lines,
     register,
     retry_job,
     run_queue,
+    step_rows,
     stopped_job,
 )
 from tests.support.season_league import AM, DIVISIONS, PRO, ongoing_league
@@ -234,3 +236,205 @@ async def test_a_lineup_for_a_division_with_no_lineup_channel_stops_the_queue_na
     gone = [row["state"] for row in await change_rows(league.db_path)
             if row["kind"] == KIND and json.loads(row["payload"])["division_id"] == 999]
     assert gone in ([], ["DROPPED"])
+
+
+# ── The post and the deletion of the lineup it replaces, as two jobs ─────────────────
+
+TWO_JOBS = "#439: a lineup's post and the deletion of the one it replaces are not yet two jobs"
+
+#: Pro's lineup standing in its lineup channel before the ask.
+OLD_LINEUP = 6100
+#: The link Discord gives Pro's old lineup, which a discarded deletion names.
+OLD_LINEUP_LINK = f"https://discord.test/{LINEUP[PRO]}/{OLD_LINEUP}"
+
+
+async def _old_lineup_standing(league: Any) -> None:
+    """Pro's lineup stands as message 6100, recorded against the division."""
+    await league.write("UPDATE divisions SET lineup_message_id = ? WHERE id = ?", OLD_LINEUP, PRO)
+    league.channel(LINEUP[PRO]).seed(OLD_LINEUP, "Pro's lineup")
+
+
+async def _lineup_jobs(league: Any) -> list[dict[str, Any]]:
+    """The jobs of the one `lineup.post` asked, in order, each with its payload read back."""
+    [change] = [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
+    jobs = await step_rows(league.db_path, change["id"])
+    for job in jobs:
+        job["payload"] = json.loads(job["payload"] or "{}")
+    return jobs
+
+
+async def _run_lineup_through(league: Any, name: str) -> None:
+    """Run the queue a job at a time until the lineup's job called *name* is done."""
+    for _ in range(50):
+        if any(job["name"] == name and job["done_at"] for job in await _lineup_jobs(league)):
+            return
+        await run_queue(league.bot, steps=1)
+    raise AssertionError(f"the job {name} never finished: {await _lineup_jobs(league)}")
+
+
+def _lineup_events(league: Any) -> list[tuple[str, int]]:
+    """What Pro's lineup channel saw, in order: each send and delete, with its message."""
+    return [(kind, mid) for kind, cid, mid in league.events if cid == LINEUP[PRO]]
+
+
+async def _lineup_id(league: Any) -> Any:
+    [row] = await league.rows("SELECT lineup_message_id FROM divisions WHERE id = ?", PRO)
+    return row["lineup_message_id"]
+
+
+async def _lineup_audits(league: Any) -> list[dict[str, Any]]:
+    return await league.rows(
+        "SELECT actor_name, new_value FROM audit_entries "
+        "WHERE change_type = 'SIGNUP_LINEUP_POSTED' AND division_id = ?", PRO,
+    )
+
+
+def _pictures_on(monkeypatch: Any, tmp_path: Any) -> None:
+    """The lineup is drawn as a picture: the image module's lineup aspect on, and its render
+    giving a PNG."""
+    from types import SimpleNamespace
+
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr("leaguebot.image.services.image_lineup_post.lineup_enabled",
+                        AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "leaguebot.image.services.image_lineup_post.render_png",
+        AsyncMock(return_value=SimpleNamespace(rejects=False, posts_image=True,
+                                               png_paths=[png], notices=[], problem=None)),
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path):
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+
+    await _ask(league, PRO)
+    await _run_lineup_through(league, "post_lineup")
+
+    [(sent, new)] = _lineup_events(league)
+    assert sent == "send"
+    assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _lineup_events(league) == [("send", new), ("delete", OLD_LINEUP)]
+    names = [job["name"] for job in await _lineup_jobs(league)]
+    assert names == ["post_lineup", "delete_replaced"]
+    assert await _lineup_id(league) == new
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    league.channel(LINEUP[PRO]).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "post_lineup"
+    assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages
+    assert ("delete", OLD_LINEUP) not in _lineup_events(league)
+    assert await _lineup_id(league) == OLD_LINEUP
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_job(
+    tmp_path, monkeypatch,
+):
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    _pictures_on(monkeypatch, tmp_path)
+
+    await _ask(league, PRO)
+    await _run_lineup_through(league, "post_lineup")
+
+    [(sent, new)] = _lineup_events(league)
+    assert sent == "send"
+    assert league.channel(LINEUP[PRO]).files[-1] is not None, "the lineup was not a picture"
+    assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages
+
+    await run_queue(league.bot)
+
+    assert _lineup_events(league) == [("send", new), ("delete", OLD_LINEUP)]
+    assert [job["name"] for job in await _lineup_jobs(league)] == [
+        "post_lineup", "delete_replaced",
+    ]
+
+
+@pytest.mark.parametrize("form", [
+    pytest.param("text", marks=pytest.mark.xfail(strict=True, reason=TWO_JOBS)),
+    pytest.param("image", marks=pytest.mark.xfail(strict=True, reason=TWO_JOBS)),
+])
+async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
+    """Once the post job is done, and before the deletion after it runs, the division records
+    the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying
+    "image" where the lineup was a picture."""
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    if form == "image":
+        _pictures_on(monkeypatch, tmp_path)
+
+    await _ask(league, PRO)
+    await _run_lineup_through(league, "post_lineup")
+
+    [(_sent, new)] = _lineup_events(league)
+    assert await _lineup_id(league) == new
+    assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages, "the old lineup went too soon"
+    [audit] = await _lineup_audits(league)
+    assert audit["actor_name"] == "system"
+    value = json.loads(audit["new_value"])
+    assert value["division"] == "Pro"
+    assert value.get("form") == ("image" if form == "image" else None)
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_an_old_lineup_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
+    tmp_path,
+):
+    """The new lineup is posted; Discord refuses to delete the old one: the queue stops at the
+    deletion, keeping the old lineup's link. Once a league admin discards it, the log channel's
+    Discard line names the deletion not done, and both lineups stand."""
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    league.channel(LINEUP[PRO]).messages[OLD_LINEUP].delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "delete_replaced"
+    assert OLD_LINEUP_LINK in str(stopped["result"])
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert "deleting the earlier lineup of **Pro**" in await _said(league)
+    assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages
+    assert len([kind for kind, _ in _lineup_events(league) if kind == "send"]) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=TWO_JOBS)
+async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one_on_restart(
+    tmp_path,
+):
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    await _ask(league, PRO)
+    await _run_lineup_through(league, "post_lineup")
+    assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages
+
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert OLD_LINEUP not in league.channel(LINEUP[PRO]).messages
+    assert len([kind for kind, _ in _lineup_events(league) if kind == "send"]) == 1
+    assert [job["name"] for job in await _lineup_jobs(league) if job["done_at"]].count(
+        "delete_replaced") == 1

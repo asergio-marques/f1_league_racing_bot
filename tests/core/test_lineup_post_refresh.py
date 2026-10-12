@@ -7,10 +7,9 @@ placement change — a seat filled, a driver sacked, a team rearranged.
 **The image path is a guard clause in front of an untouched body.** Where the image module is
 on, the `lineup` aspect is enabled and a template is configured, `image_lineup_post.try_post`
 produces the graphic and this method returns. Where any of those is not true — and only then —
-the text embed below runs exactly as it did before the image module existed, **delete-then-build
-order included** (FR-025a). That order was specified in `specs/028-season-signup-flow/` and is
-deliberately not reopened: the lineup image is an alternative output beside the text, not a
-reform of it.
+the text embed below runs. Either way the lineup is posted before the message it replaces is
+deleted, and that deletion is a job of the change queue after it (#439; Constitution XIV, rule 8),
+so this method deletes nothing and saves nothing: it returns what it posted.
 
 **A failure in the image path falls through to the text.** A placement must never be blocked by
 a graphic that would not render — the seat is already assigned by the time this runs, and a
@@ -44,6 +43,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.placement_service import PlacementService
 
 SERVER_ID = 12308
@@ -154,13 +154,20 @@ def _guild(*, channel=None, cache_miss: bool = False, fetch_fails: bool = False)
 
 async def _refresh(db_path, guild, *, image_applicable: bool = False, image_error=None):
     service = PlacementService(db_path, bot=MagicMock())
-    outcome = SimpleNamespace(applicable=image_applicable)
+    outcome = SimpleNamespace(applicable=image_applicable,
+                              message_id=NEW_MESSAGE_ID if image_applicable else None)
     with patch(
         "leaguebot.image.services.image_lineup_post.try_post",
         new=AsyncMock(return_value=outcome, side_effect=image_error),
     ) as try_post:
         await service._refresh_lineup_post(guild, DIVISION_ID)
     return try_post
+
+
+async def _post(db_path, guild):
+    """The text lineup posted with no bot, so no image path: gives what
+    `_refresh_lineup_post` returns."""
+    return await PlacementService(db_path)._refresh_lineup_post(guild, DIVISION_ID)
 
 
 def _embed(channel):
@@ -342,70 +349,34 @@ async def test_an_empty_division_posts_an_empty_lineup(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_previous_lineup_is_deleted(tmp_path):
-    """Not edited, and deleted *before* the new one is built — the order specified in
-    028-season-signup-flow and deliberately not reopened by the image feature."""
-    db_path = await _make_db(tmp_path, name="lineup_delete", drivers=ONE_DRIVER)
-    channel = _channel()
-
-    await _refresh(db_path, _guild(channel=channel))
-
-    channel.fetch_message.assert_awaited_once_with(OLD_MESSAGE_ID)
-    channel._old.delete.assert_awaited_once()
-
-
-async def test_a_division_with_no_previous_post_deletes_nothing(tmp_path):
-    """The first lineup of a season; asking Discord for message `None` would raise."""
-    db_path = await _make_db(
-        tmp_path, name="lineup_first", message_id=None, drivers=ONE_DRIVER
-    )
-    channel = _channel()
-
-    await _refresh(db_path, _guild(channel=channel))
-
-    channel.fetch_message.assert_not_awaited()
-    channel.send.assert_awaited_once()
-
-
-async def test_a_previous_post_already_gone_does_not_stop_the_new_one(tmp_path):
-    """Deleted by hand, or with a channel purge — the division still needs its lineup."""
-    db_path = await _make_db(tmp_path, name="lineup_msggone", drivers=ONE_DRIVER)
-    channel = _channel(fetch_fails=True)
-
-    await _refresh(db_path, _guild(channel=channel))
-
-    channel.send.assert_awaited_once()
-
-
-async def test_the_new_message_id_is_stored(tmp_path):
-    """The next refresh deletes by it; without it the channel accumulates one lineup per
-    placement change."""
+@pytest.mark.xfail(strict=True, reason="#439: the lineup's poster saves the id itself and "
+                   "returns nothing")
+async def test_the_new_message_id_is_returned(tmp_path):
+    """The post job's own save records it, and its next job deletes the lineup it replaces by
+    the id read here; the poster itself writes nothing."""
     db_path = await _make_db(tmp_path, name="lineup_store", drivers=ONE_DRIVER)
+    channel = _channel()
 
-    await _refresh(db_path, _guild(channel=_channel()))
+    posted = await _post(db_path, _guild(channel=channel))
 
-    assert await _stored_message_id(db_path) == NEW_MESSAGE_ID
-
-
-async def test_the_post_is_audited(tmp_path):
-    """Attributed to the system rather than a person: the lineup is reposted by a placement
-    change, not by someone running a command."""
-    db_path = await _make_db(tmp_path, name="lineup_audit", drivers=ONE_DRIVER)
-
-    await _refresh(db_path, _guild(channel=_channel()))
-
-    rows = await _audit(db_path)
-    assert [r["change_type"] for r in rows] == ["SIGNUP_LINEUP_POSTED"]
-    assert rows[0]["actor_name"] == "system"
-    assert json.loads(rows[0]["new_value"])["division"] == "Pro"
+    assert posted.message_id == NEW_MESSAGE_ID
+    assert posted.previous == OLD_MESSAGE_ID
+    assert posted.channel_id == LINEUP_CHANNEL
+    assert posted.division_name == "Pro"
+    assert posted.form == "text"
+    assert await _stored_message_id(db_path) == OLD_MESSAGE_ID
+    assert await _audit(db_path) == []
+    channel.fetch_message.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a refused lineup is logged, not raised")
 async def test_a_failed_post_stores_no_message_id(tmp_path):
-    """Storing one would have the next refresh try to delete a message that was never
-    sent, and then post as though the first had succeeded."""
+    """A refused send raises for the change queue to stop on and try again; nothing is stored,
+    so the old lineup stays the one the division records."""
     db_path = await _make_db(tmp_path, name="lineup_sendfail", drivers=ONE_DRIVER)
 
-    await _refresh(db_path, _guild(channel=_channel(send_fails=True)))
+    with pytest.raises(StepFailedOnDiscord):
+        await _refresh(db_path, _guild(channel=_channel(send_fails=True)))
 
     assert await _stored_message_id(db_path) == OLD_MESSAGE_ID
     assert await _audit(db_path) == []
@@ -454,25 +425,31 @@ async def test_a_channel_missing_from_the_cache_is_fetched(tmp_path):
     channel.send.assert_awaited_once()
 
 
-async def test_a_channel_that_cannot_be_fetched_posts_nothing(tmp_path):
-    """Genuinely deleted. The placement has already happened and must not be undone for
-    it."""
+@pytest.mark.xfail(strict=True, reason="#439: a lineup channel gone from the server is "
+                   "logged, not raised")
+async def test_a_channel_that_cannot_be_fetched_raises(tmp_path):
+    """Genuinely deleted. The placement has already happened and is not undone for it; the
+    post raises for the change queue to stop on, and posts nothing."""
     db_path = await _make_db(tmp_path, name="lineup_chgone", drivers=ONE_DRIVER)
     channel = _channel()
 
-    await _refresh(db_path, _guild(channel=channel, cache_miss=True, fetch_fails=True))
+    with pytest.raises(StepFailedOnDiscord):
+        await _refresh(db_path, _guild(channel=channel, cache_miss=True, fetch_fails=True))
 
     channel.send.assert_not_awaited()
 
 
-async def test_a_lineup_channel_that_is_not_a_text_channel_posts_nothing(tmp_path):
+@pytest.mark.xfail(strict=True, reason="#439: a lineup channel that is not a text channel "
+                   "posts nothing and raises nothing")
+async def test_a_lineup_channel_that_is_not_a_text_channel_raises(tmp_path):
     """A voice or forum channel configured by mistake; `send` on one would raise or behave
-    differently."""
+    differently. The post raises for the change queue to stop on, and sends nothing."""
     db_path = await _make_db(tmp_path, name="lineup_notext", drivers=ONE_DRIVER)
     channel = MagicMock(spec=discord.VoiceChannel)
     channel.send = AsyncMock()
 
-    await _refresh(db_path, _guild(channel=channel))
+    with pytest.raises(StepFailedOnDiscord):
+        await _refresh(db_path, _guild(channel=channel))
 
     channel.send.assert_not_awaited()
 
