@@ -1092,9 +1092,11 @@ async def test_advance_with_only_raced_steps_left_names_them_and_says_nothing_el
 ):
     """Nothing is pending but round 2's Phase 2, whose race has been run: advance names it as
     passed over and says nothing else is due, as it says when nothing is pending; nothing is
-    asked of the change queue."""
+    asked of the change queue. The log channel's refusal line stands on its own, naming no step
+    "above", since nothing sits above it there."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
+    interaction.client = cog.bot
 
     with patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps",
                new=AsyncMock(return_value=[_passed_over(2, 2)])):
@@ -1105,4 +1107,29 @@ async def test_advance_with_only_raced_steps_left_names_them_and_says_nothing_el
     assert "There is nothing left to advance." in replied
     assert replied.index(PHASE_2_PASSED) < replied.index("There is nothing left to advance.")
     assert _asked(cog) == []
+    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    refusals = [line for line in logged if "refused" in line]
+    assert len(refusals) == 1, logged
+    assert ("Nothing is due but the weather steps of rounds whose races have been run, which "
+            "were passed over. There is nothing left to advance.") in refusals[0]
+    assert "above" not in refusals[0]
+
+
+async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_passes_over(
+    tmp_path,
+):
+    """The step advance offers and the steps it names as passed over are judged at one moment,
+    so that a race time falling between two readings of the clock cannot leave a step both
+    offered and named as passed over, or neither."""
+    cog = _make_cog(await _make_db(tmp_path))
+    offered = AsyncMock(return_value=None)
+    passed = AsyncMock(return_value=[])
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase", new=offered), \
+            patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps", new=passed):
+        await undecorate(_Cog.advance)(cog, _interaction())
+
+    moment = offered.await_args.kwargs["now"]
+    assert moment is not None
+    assert passed.await_args.kwargs["now"] == moment
 

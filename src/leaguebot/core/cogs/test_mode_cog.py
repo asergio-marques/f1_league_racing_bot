@@ -25,6 +25,7 @@ is open, and to *disable* it while a running season holds fake drivers.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -280,33 +281,43 @@ class TestModeCog(commands.Cog):
         # Defer because phase execution posts to Discord channels (can take seconds)
         await interaction.response.defer(ephemeral=True)
 
+        # One moment for the step offered and the steps passed over, so that a race time falling
+        # between two readings cannot leave a step both offered and named, or neither.
+        now = datetime.now(timezone.utc)
         entry = await get_next_pending_phase(
             self.bot.db_path,
             self.bot.scheduler_service,
+            now=now,
         )
         # The weather steps of raced rounds passed over on the way, named before the step
         # advanced (owner, 2026-10-12, "Advance names what it skipped").
         passed_over = [
-            _passed_over_line(step) for step in await get_passed_over_steps(self.bot.db_path)
-            if entry is None
-            or (step["round_id"], step["phase_number"])
-            != (entry["round_id"], entry["phase_number"])
+            _passed_over_line(step)
+            for step in await get_passed_over_steps(self.bot.db_path, now=now)
         ]
 
         if entry is None:
-            nothing_left = (
-                "Nothing else is due: the weather steps above were passed over, their races "
-                "having been run. There is nothing left to advance."
-                if passed_over
-                else "All phases for all rounds and divisions have been executed. "
-                "There is nothing left to advance."
-            )
+            if passed_over:
+                said = (
+                    "Nothing else is due: the weather steps above were passed over, their races "
+                    "having been run. There is nothing left to advance."
+                )
+                # The log channel's line stands alone: nothing sits above it there.
+                reason = (
+                    "Nothing is due but the weather steps of rounds whose races have been run, "
+                    "which were passed over. There is nothing left to advance."
+                )
+            else:
+                said = reason = (
+                    "All phases for all rounds and divisions have been executed. "
+                    "There is nothing left to advance."
+                )
             await refuse(
                 interaction,
-                "\n".join([*passed_over, f"ℹ️ {nothing_left}"])
+                "\n".join([*passed_over, f"ℹ️ {said}"])
                 + "\nUse `/season complete` when all rounds are finalized to end the season.",
                 what=describe(interaction),
-                reason=nothing_left,
+                reason=reason,
             )
             return
 
