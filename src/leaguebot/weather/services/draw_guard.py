@@ -8,6 +8,12 @@ cancelled, but a phase that fell due in between, or one fired late, can still ar
 round is read again, on the connection the draw writes on, and acted on only while it is still
 due (architecture.md, "The database says when something is due"); the skip is written to the
 host's log alone, the league having been told of the cancellation itself.
+
+A module of its own because the guards are shared: each of the four draws (`draw_phase1_on`,
+`draw_phase2_on`, `draw_phase3_on` and the mystery notice's `record_mystery_notice_on`) holds to
+`round_if_due`, and the forecast change's check reads the module's switch through
+`weather_enabled_on`, so that the draw and the queue read the switch the same way. It reads core's
+`server_configs` and writes nothing.
 """
 
 from __future__ import annotations
