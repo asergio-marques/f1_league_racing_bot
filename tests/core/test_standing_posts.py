@@ -27,8 +27,6 @@ from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixtur
 from tests.support.change_queue import http_error, run_queue, step_rows, stopped_job
 from tests.support.review_league import channel
 
-UNBUILT = "#439: standing_posts, the standing post's delete job and kept-copy removal, is not yet built"
-
 CALENDAR_CHANNEL = 601
 OLD, NEW = 6001, 7001
 
@@ -61,7 +59,6 @@ def _deleting(env) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 def test_replaced_plans_one_delete_of_the_old_message():
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import standing_posts
@@ -77,12 +74,9 @@ def test_replaced_plans_one_delete_of_the_old_message():
 
 
 @pytest.mark.parametrize("channel_id, old, new", [
-    pytest.param(CALENDAR_CHANNEL, None, NEW, id="no old message",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param(CALENDAR_CHANNEL, NEW, NEW, id="the old is the new",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param(None, OLD, NEW, id="no channel",
-                 marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param(CALENDAR_CHANNEL, None, NEW, id="no old message"),
+    pytest.param(CALENDAR_CHANNEL, NEW, NEW, id="the old is the new"),
+    pytest.param(None, OLD, NEW, id="no channel"),
 ])
 def test_replaced_plans_nothing(channel_id, old, new):
     from leaguebot.core.services import standing_posts
@@ -96,7 +90,6 @@ def test_replaced_plans_nothing(channel_id, old, new):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_replaced_message_already_gone_completes_its_delete(env):
     """The old calendar deleted by hand meanwhile: Discord answers NotFound, and the job is done."""
     calendar = _server(env)
@@ -115,7 +108,6 @@ async def test_a_replaced_message_already_gone_completes_its_delete(env):
     assert job["result"] == {"gone": True}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_replaced_message_discord_refuses_stops_the_queue_keeping_its_link(env):
     """Discord refuses the deletion: the queue stops at the job, which keeps the old calendar's
     link for a Discard to name."""
@@ -134,7 +126,6 @@ async def test_a_replaced_message_discord_refuses_stops_the_queue_keeping_its_li
     assert OLD in calendar.messages
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_replaced_message_whose_channel_is_gone_completes_its_delete(env):
     """The calendar channel deleted meanwhile: the message went with it, and the job is done."""
     _server(env, channel_standing=False)
@@ -149,7 +140,6 @@ async def test_a_replaced_message_whose_channel_is_gone_completes_its_delete(env
     assert job["result"] == {"gone": True}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 def test_a_discarded_delete_is_named_with_its_link_for_deletion_by_hand():
     from leaguebot.core.services import standing_posts
     from leaguebot.core.services.change_queue import StepView
@@ -174,8 +164,8 @@ def test_a_discarded_delete_is_named_with_its_link_for_deletion_by_hand():
 
 
 @pytest.mark.parametrize("refused", [
-    pytest.param(False, id="removed", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    pytest.param(True, id="refused", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    pytest.param(False, id="removed"),
+    pytest.param(True, id="refused"),
 ])
 async def test_a_copy_a_failed_record_left_is_removed_before_the_next_try(env, refused):
     """A post's record failed after it sent 7001: before the next try posts again, 7001 is

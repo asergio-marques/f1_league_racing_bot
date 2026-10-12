@@ -150,3 +150,10 @@ def module_off(module: str) -> str:
     """The kind of the change that turns *module* off, so core's cog names it without importing
     the module."""
     return f"module.off:{module}"
+
+
+#: The kinds of weather's forecast changes, named here so that core (test mode) asks for them
+#: without importing the module, as `module_off` names a module's switch-off.
+FORECAST = "weather.forecast"
+FORECAST_CLEAN_UP = "weather.forecast.clean_up"
+FORECAST_FLUSH = "weather.forecast.flush"
