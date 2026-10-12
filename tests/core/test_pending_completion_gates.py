@@ -333,7 +333,7 @@ async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
 # ---------------------------------------------------------------------------
 
 #: The commands that run on the change queue (#439), each with the kind it asks for: while the
-#: season is raced each is asked of the queue, which `/results rounds sync` is not yet.
+#: season is raced each is asked of the queue.
 _ASKED_OF_THE_QUEUE = {
     "/division calendar-sync": "calendar.sync",
     "/results rounds sync": "results.rounds.sync",
