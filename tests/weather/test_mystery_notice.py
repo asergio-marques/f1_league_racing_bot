@@ -436,14 +436,7 @@ class TestRunMysteryNotice:
 # 5. The notice's record, on the save its job hands it (#439)
 # ---------------------------------------------------------------------------
 
-#: Why the notice's record fails until the build moves it onto a handed connection (slice 6).
-RECORD_UNBUILT = (
-    "#439: the mystery notice's record is not yet written on a connection a save hands it "
-    "(record_mystery_notice_on)"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=RECORD_UNBUILT)
 async def test_the_notice_s_record_writes_only_on_the_connection_it_is_handed(tmp_path):
     """The notice marks the round's Phase 1 done on the save handed, committing nothing of its
     own: its flag stands or falls with the job, and the notice is posted by a job after it, so

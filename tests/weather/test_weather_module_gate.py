@@ -117,9 +117,6 @@ async def _phase_state(db_path: str, round_id: int = 1) -> tuple[int, int, int, 
 # slice 6). The draw reads weather's switch on that connection as a backstop to the change's own
 # check, so that nothing is drawn or recorded while weather is off, whatever route asked for it.
 
-#: Why the draws' tests fail until the build moves each draw onto a handed connection.
-DRAWS_UNBUILT = "#439: the phases are not yet drawn on a connection a save hands them"
-
 
 def _drawer(phase: int):
     """Phase *phase*'s draw, written on the connection it is handed."""
@@ -137,7 +134,6 @@ async def _draw(db_path: str, phase: int):
     return drawn
 
 
-@pytest.mark.xfail(strict=True, reason=DRAWS_UNBUILT)
 @pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
 async def test_phase_runner_produces_nothing_while_weather_is_disabled(phase, tmp_path):
     """Nothing computed and nothing recorded, for every phase, and no calculation line."""
@@ -356,7 +352,6 @@ async def _cancel(db_path: str, what: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=DRAWS_UNBUILT)
 @pytest.mark.parametrize("what", ["round", "division"])
 @pytest.mark.parametrize("phase", [1, 2, 3], ids=["phase1", "phase2", "phase3"])
 async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, phase, what):
@@ -377,8 +372,6 @@ async def test_a_phase_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, 
     assert await _phase_state(db_path) == before
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a mystery round's notice is not yet recorded on a "
-                                        "connection a save hands it")
 @pytest.mark.parametrize("what", ["round", "division"])
 async def test_a_mystery_notice_for_a_cancelled_round_posts_and_writes_nothing(tmp_path, what):
     """Weather is on and round 1 of Div A is a Mystery round. The round, or Div A, is cancelled,

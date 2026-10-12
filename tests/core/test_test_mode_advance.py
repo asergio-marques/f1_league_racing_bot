@@ -277,7 +277,6 @@ async def test_a_mystery_notice_is_posted(tmp_path):
             "queue") in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 @pytest.mark.parametrize("job_id", ["weather_p1_s1_d1_r3_id5", None], ids=["queued", "found-in-db"])
 async def test_a_posted_mystery_notice_takes_its_notice_job_down(tmp_path, job_id):
     """By the round and the `weather_p1` it is armed under, whatever the entry carries. A notice
@@ -299,7 +298,6 @@ def _log_lines(cog) -> list[str]:
     return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_posted_mystery_notice_is_recorded(tmp_path):
     """The notice is posted to the league, so the rehearsal records it as every other phase is
     recorded: one success line naming the maintainer and what was posted, for which round (#482)."""
@@ -795,7 +793,6 @@ async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
     assert "Silverstone Circuit" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=ADVANCE_UNBUILT)
 async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
     cog = _make_cog(await _make_db(tmp_path))
 

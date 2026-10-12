@@ -42,10 +42,6 @@ SEEDED_TRACK = "Bahrain International Circuit"
 #: The sessions of a full round, in the order Phase 2 reads them (`ORDER BY id`).
 SESSION_TYPES = ["FULL_QUALIFYING", "FULL_RACE"]
 
-#: Why the tests that draw on a connection handed to them fail until the build moves the draw
-#: there (#439, slice 6).
-UNBUILT = "#439: Phase 2 is not yet drawn on a connection a save hands it (draw_phase2_on)"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -185,7 +181,6 @@ async def _draw(db_path: str, *, drawn: str = "mixed"):
 @pytest.mark.parametrize(
     "rpc", [0.0, 0.05, 0.2, 0.5, 0.75, 1.0], ids=lambda v: f"rpc_{v}"
 )
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_pool_composition_follows_the_formulas(rpc, tmp_path):
     """Ir, Im and Is are recorded as the specification derives them."""
     db_path = await _make_db(tmp_path)
@@ -201,7 +196,6 @@ async def test_pool_composition_follows_the_formulas(rpc, tmp_path):
 @pytest.mark.parametrize(
     "rpc", [0.0, 0.05, 0.2, 0.5, 0.75, 1.0], ids=lambda v: f"rpc_{v}"
 )
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_pool_drawn_from_holds_exactly_one_thousand_slots(rpc, tmp_path):
     """"A 1000-entry map is to be filled with these three slots for a randomized drawing."
 
@@ -221,7 +215,6 @@ async def test_the_pool_drawn_from_holds_exactly_one_thousand_slots(rpc, tmp_pat
         assert pool.count("sunny") == is_
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_certainty_of_rain_leaves_no_sunny_slots(tmp_path):
     """Rpc = 1.0 gives 800 rain and 200 mixed, and no sunny slot to draw."""
     db_path = await _make_db(tmp_path)
@@ -233,7 +226,6 @@ async def test_a_certainty_of_rain_leaves_no_sunny_slots(tmp_path):
     assert (pool.count("rain"), pool.count("mixed")) == (800, 200)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_no_chance_of_rain_leaves_only_sunny_slots(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, rpc=0.0)
@@ -248,7 +240,6 @@ async def test_no_chance_of_rain_leaves_only_sunny_slots(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_one_slot_is_drawn_for_each_session(tmp_path):
     """"1 shall be taken at random for each of the sessions configured to take place." """
     db_path = await _make_db(tmp_path)
@@ -259,7 +250,6 @@ async def test_one_slot_is_drawn_for_each_session(tmp_path):
     assert await _slot_types(db_path) == [(t, "rain") for t in SESSION_TYPES]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_draw_is_remembered_for_phase_3(tmp_path):
     """The drawn slot is persisted on the session, which is what Phase 3 reads."""
     db_path = await _make_db(tmp_path)
@@ -272,7 +262,6 @@ async def test_the_draw_is_remembered_for_phase_3(tmp_path):
     assert [draw["session_type"] for draw in payload["session_draws"]] == SESSION_TYPES
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_round_with_more_sessions_draws_for_every_one(tmp_path):
     """A sprint round carries four sessions, and each takes its own draw."""
     sessions = [
@@ -289,7 +278,6 @@ async def test_a_round_with_more_sessions_draws_for_every_one(tmp_path):
     assert await _slot_types(db_path) == [(t, "sunny") for t in sessions]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
     """The draw, the slots and the flag are written on the save handed, committed by none of
     its own, so a save rolled back leaves the round's Phase 2 undrawn (#439)."""
@@ -315,7 +303,6 @@ async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_2_with_no_phase_1_asks_for_phase_1_first(tmp_path):
     """"Where Phase 1 has not been performed for the round, it shall be performed first."
 
@@ -342,7 +329,6 @@ async def test_a_phase_2_with_no_phase_1_asks_for_phase_1_first(tmp_path):
     assert (row["phase1_done"], row["phase2_done"], count["n"]) == (0, 0, 0)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_missing_phase_1_result_stops_phase_2(tmp_path):
     """A round marked as done but holding no ACTIVE result must not be guessed at."""
     db_path = await _make_db(tmp_path)
@@ -355,7 +341,6 @@ async def test_missing_phase_1_result_stops_phase_2(tmp_path):
     assert [slot for _, slot in await _slot_types(db_path)] == [None, None]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_invalidated_phase_1_result_is_not_read(tmp_path):
     """Only an ACTIVE Phase 1 result counts; a superseded one must not revive a forecast."""
     db_path = await _make_db(tmp_path)
@@ -384,7 +369,6 @@ async def test_an_invalidated_phase_1_result_is_not_read(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_already_performed_is_skipped(tmp_path):
     """"Each phase shall be performed at most once per round." """
     db_path = await _make_db(tmp_path)
@@ -398,7 +382,6 @@ async def test_a_phase_already_performed_is_skipped(tmp_path):
     assert [slot for _, slot in await _slot_types(db_path)] == [None, None]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_running_twice_records_one_result(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path)

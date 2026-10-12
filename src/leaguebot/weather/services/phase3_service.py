@@ -4,7 +4,8 @@ The horizon is configured (``weather_pipeline_config.phase_3_hours``, two hours 
 and is no fixed T−2; see ``phase1_service`` for the whole of that note.
 
 For each session, draws N weather labels using weighted probabilities
-derived from the Phase 2 slot type and Phase 1 Rpc.
+derived from the Phase 2 slot type and Phase 1 Rpc, on the connection a save hands it
+(`draw_phase3_on`); the forecast is posted after the draw (`forecast_changes`).
 """
 
 from __future__ import annotations
@@ -15,8 +16,11 @@ import random
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+import aiosqlite
+
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import RoundStatus
+from leaguebot.weather.models.forecast import Drawn
+from leaguebot.weather.services.draw_guard import round_if_due
 from leaguebot.core.models.session import MAX_SLOTS, SessionType
 from leaguebot.weather.utils.math_utils import get_phase3_weights, draw_weighted
 from leaguebot.weather.utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
@@ -29,97 +33,54 @@ log = logging.getLogger(__name__)
 _MIN_SLOTS = 2
 
 
-async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
-    """Execute Phase 3 for *round_id*.
+async def draw_phase3_on(
+    db: aiosqlite.Connection, round_id: int, *, now: datetime
+) -> Drawn:
+    """Draw Phase 3 for *round_id* on *db*, committing nothing.
 
-    Produces nothing at all while the weather module is disabled for the round's server: no
-    draw, no ``phase_results`` row, no ``phase3_done``, nothing posted. The check lives in the
-    runner rather than only at its call sites because a phase computes, records *and* posts,
-    and the core specification's rule — a disabled module produces nothing, "whatever the path
-    arrives at it" — can only hold for every route in if the runner itself refuses. Guarding the
-    callers alone is what let issue #113 through.
+    Writes each session's slots, the draw (``phase_results``, created at *now*) and
+    ``phase3_done`` on the connection it is handed, and returns the `Drawn` with its calculation
+    line. A round whose Phase 2 is not done gives ``Drawn(earlier=2)``, nothing written: the
+    caller draws Phase 2 first. A Phase 1 holding no ACTIVE result is not guessed at (nothing
+    written).
 
-    Nor does it do anything for a round that is cancelled, or whose division is, where it reads
-    the round after the cancellation is recorded: the cancellation removes the round's timed work
-    before it records the round cancelled, but a phase fired late, or one that fell due in
-    between, can still arrive here. One that read the round before the save is not caught, the
-    round not yet being cancelled when it fell due. The round is read again and acted on only
-    while it is still due (architecture.md, "The database says when something is due"); the skip
-    is written to the host's log alone, the league having been told of the cancellation itself.
+    Produces nothing at all, and says so by a `Drawn` with no payload and no line, while the
+    weather module is disabled, for a round that is cancelled, or whose division is, and for
+    a phase already done; see ``draw_guard`` for why the draw itself refuses.
     """
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.id, r.track_name, r.phase2_done, r.phase3_done, r.division_id, "
-            "       r.status AS round_status, d.status AS division_status, "
-            "       d.forecast_channel_id, d.mention_role_id "
-            "FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id "
-            "WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-
+    row = await round_if_due(db, round_id, label="Phase 3", done_column="phase3_done")
     if row is None:
-        log.error("Phase 3: round_id=%s not found", round_id)
-        return
-
-    # A cancelled round, or a round of a cancelled division — see the docstring.
-    if (
-        row["round_status"] == RoundStatus.CANCELLED.value
-        or row["division_status"] == "CANCELLED"
-    ):
-        log.info(
-            "Phase 3: round %s or its division is cancelled — round left untouched.",
-            round_id,
-        )
-        return
-
-    # The module gate — see the docstring for why it sits here.
-    if not await bot.module_service.is_weather_enabled():
-        log.info(
-            "Phase 3: weather module disabled — round %s left untouched.",
-            round_id,
-        )
-        return
-
-    if row["phase3_done"]:
-        log.info("Phase 3 already done for round %s — skipping.", round_id)
-        return
+        return Drawn(3)
 
     if not row["phase2_done"]:
-        log.warning("Phase 3: Phase 2 not done for round %s — running Phase 2 first.", round_id)
-        from leaguebot.weather.services.phase2_service import run_phase2
-        await run_phase2(round_id, bot)
+        log.warning("Phase 3: Phase 2 not done for round %s — it is drawn first.", round_id)
+        return Drawn(3, earlier=2)
 
     # Load active Phase 1 PhaseResult for Rpc
-    async with get_connection(bot.db_path) as db:
-        p1_cursor = await db.execute(
-            "SELECT payload FROM phase_results "
-            "WHERE round_id = ? AND phase_number = 1 AND status = 'ACTIVE' "
-            "ORDER BY id DESC LIMIT 1",
-            (round_id,),
-        )
-        p1_row = await p1_cursor.fetchone()
+    p1_cursor = await db.execute(
+        "SELECT payload FROM phase_results "
+        "WHERE round_id = ? AND phase_number = 1 AND status = 'ACTIVE' "
+        "ORDER BY id DESC LIMIT 1",
+        (round_id,),
+    )
+    p1_row = await p1_cursor.fetchone()
 
     if p1_row is None:
         log.error("Phase 3: no active Phase 1 PhaseResult for round %s", round_id)
-        return
+        return Drawn(3)
 
     p1_payload = json.loads(p1_row["payload"])
     rpc: float = p1_payload["rpc"]
     track_name: str = row["track_name"] or p1_payload.get("track", "Unknown")
 
     # Load sessions with their Phase 2 slot assignments
-    async with get_connection(bot.db_path) as db:
-        s_cursor = await db.execute(
-            "SELECT id, session_type, phase2_slot_type FROM sessions "
-            "WHERE round_id = ? ORDER BY id",
-            (round_id,),
-        )
-        sessions = await s_cursor.fetchall()
+    s_cursor = await db.execute(
+        "SELECT id, session_type, phase2_slot_type FROM sessions "
+        "WHERE round_id = ? ORDER BY id",
+        (round_id,),
+    )
+    sessions = await s_cursor.fetchall()
 
-    session_weather: list[tuple[str, list[str]]] = []
     session_draws: list[dict] = []
 
     for session_row in sessions:
@@ -141,7 +102,6 @@ async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
         weights = get_phase3_weights(slot_type, rpc)
         slots = [draw_weighted(weights) for _ in range(n_slots)]
 
-        session_weather.append((session_type_label(session_type_val), slots))
         session_draws.append({
             "session_id": session_id,
             "session_type": session_type_val,
@@ -159,21 +119,56 @@ async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
         "rpc": rpc,
         "session_draws": session_draws,
     }
-    now = datetime.now(timezone.utc)
+
+    for draw in session_draws:
+        await db.execute(
+            "UPDATE sessions SET phase3_slots = ? WHERE id = ?",
+            (json.dumps(draw["slots"]), draw["session_id"]),
+        )
+    await db.execute(
+        "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+        "VALUES (?, 3, ?, 'ACTIVE', ?)",
+        (round_id, json.dumps(payload), now.isoformat()),
+    )
+    await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
+    log.info("Phase 3 drawn for round %s", round_id)
+    return Drawn(
+        3, payload=payload, line=phase_log_message(3, round_id, track_name, payload), written=True
+    )
+
+
+async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
+    """Draw Phase 3 for *round_id* (Phase 2 first where it is not done), then post its forecast
+    and calculation line.
+
+    Until the timers, the recovery and test mode ask the change queue for a forecast's jobs
+    (`forecast_changes`), the one caller of the draw that still posts as it did.
+    """
+    for _attempt in (1, 2):
+        async with get_connection(bot.db_path) as db:
+            drawn = await draw_phase3_on(db, round_id, now=datetime.now(timezone.utc))
+            await db.commit()
+        if not drawn.earlier or _attempt == 2:
+            break
+        from leaguebot.weather.services.phase2_service import run_phase2
+        await run_phase2(round_id, bot)
+    if drawn.payload is None:
+        return
+    payload = drawn.payload
 
     async with get_connection(bot.db_path) as db:
-        for draw in session_draws:
-            await db.execute(
-                "UPDATE sessions SET phase3_slots = ? WHERE id = ?",
-                (json.dumps(draw["slots"]), draw["session_id"]),
-            )
-        await db.execute(
-            "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
-            "VALUES (?, 3, ?, 'ACTIVE', ?)",
-            (round_id, json.dumps(payload), now.isoformat()),
+        cursor = await db.execute(
+            "SELECT r.division_id, d.forecast_channel_id, d.mention_role_id "
+            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+            (round_id,),
         )
-        await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
-        await db.commit()
+        row = await cursor.fetchone()
+    if row is None:
+        return
+    track_name = payload["track"]
+    session_weather = [
+        (session_type_label(d["session_type"]), d["slots"]) for d in payload["session_draws"]
+    ]
 
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
     from leaguebot.image.services.image_weather_post import attach_forecast
@@ -196,9 +191,6 @@ async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
         supersedes=2,
     )
 
-    await bot.output_router.post_log(
-        phase_log_message(3, round_id, track_name, payload),
-    )
+    await bot.output_router.post_log(drawn.line or "")
     log.info("Phase 3 complete for round %s", round_id)
-
 

@@ -49,10 +49,6 @@ SEEDED_TRACK = "Bahrain International Circuit"
 DRY_LABELS = {"Clear", "Light Cloud", "Overcast"}
 WET_LABELS = {"Wet", "Very Wet"}
 
-#: Why the tests that draw on a connection handed to them fail until the build moves the draw
-#: there (#439, slice 6).
-UNBUILT = "#439: Phase 3 is not yet drawn on a connection a save hands it (draw_phase3_on)"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -218,7 +214,6 @@ async def _draw(db_path: str, *, pick: str = "max"):
     ],
     ids=lambda v: str(v),
 )
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_slot_count_bounds(session_type, slot_type, expected_bounds, tmp_path):
     """The minimum is 1, or 2 for a mixed session; the maximum is the session type's cap."""
     db_path = await _make_db(tmp_path)
@@ -230,7 +225,6 @@ async def test_slot_count_bounds(session_type, slot_type, expected_bounds, tmp_p
     assert expected_bounds[1] == MAX_SLOTS[SessionType(session_type)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_mixed_session_capped_at_one_slot_takes_one(tmp_path):
     """"... save where the session type permits fewer."
 
@@ -250,7 +244,6 @@ async def test_a_mixed_session_capped_at_one_slot_takes_one(tmp_path):
     assert set(slots) <= DRY_LABELS | WET_LABELS
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_unknown_session_type_falls_back_to_four_slots(tmp_path):
     """A session type outside the enum must not take the phase down."""
     db_path = await _make_db(tmp_path)
@@ -261,7 +254,6 @@ async def test_an_unknown_session_type_falls_back_to_four_slots(tmp_path):
 
 
 @pytest.mark.parametrize("pick", ["min", "max"], ids=["lower_bound", "upper_bound"])
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_drawn_count_is_the_number_of_slots_persisted(pick, tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")])
@@ -276,7 +268,6 @@ async def test_the_drawn_count_is_the_number_of_slots_persisted(pick, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_rain_session_draws_only_wet_weather(tmp_path):
     """The rain weight map is zero for every dry label, so none can be drawn."""
     db_path = await _make_db(tmp_path)
@@ -292,7 +283,6 @@ async def test_a_rain_session_draws_only_wet_weather(tmp_path):
     assert set(slots) <= WET_LABELS
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sunny_session_draws_only_dry_weather(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "sunny")])
@@ -306,7 +296,6 @@ async def test_a_sunny_session_draws_only_dry_weather(tmp_path):
     assert set(slots) <= DRY_LABELS
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_mixed_session_may_draw_either_end(tmp_path):
     """Mixed is the only slot type whose map offers both wet and dry outcomes."""
     db_path = await _make_db(tmp_path)
@@ -319,7 +308,6 @@ async def test_a_mixed_session_may_draw_either_end(tmp_path):
         assert any(weight_map[label] > 0.0 for label in WET_LABELS)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_session_without_a_phase_2_slot_type_is_treated_as_sunny(tmp_path):
     """"A session whose type was not determined in Phase 2 shall be treated as sunny." """
     db_path = await _make_db(tmp_path)
@@ -334,7 +322,6 @@ async def test_a_session_without_a_phase_2_slot_type_is_treated_as_sunny(tmp_pat
     assert (await _payload(db_path))["session_draws"][0]["slot_type"] == "sunny"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_weights_follow_the_rain_probability(tmp_path):
     """Rpc reaches the weight map, so a wetter round really does skew wetter.
 
@@ -362,7 +349,6 @@ async def test_the_weights_follow_the_rain_probability(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_every_session_is_drawn_for_and_recorded(tmp_path):
     sessions = [("FULL_QUALIFYING", "sunny"), ("FULL_RACE", "rain")]
     db_path = await _make_db(tmp_path)
@@ -381,7 +367,6 @@ async def test_every_session_is_drawn_for_and_recorded(tmp_path):
         assert draw["slots_display"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
     """The draw, the slots and the flag are written on the save handed, committed by none of
     its own, so a save rolled back leaves the round's Phase 3 undrawn (#439)."""
@@ -409,7 +394,6 @@ async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_phase_2_is_performed_first_when_it_has_not_been(tmp_path):
     """Phase 3 has Phase 2 drawn first rather than drawing against no slot type at all.
 
@@ -434,7 +418,6 @@ async def test_phase_2_is_performed_first_when_it_has_not_been(tmp_path):
     assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_missing_phase_1_result_stops_phase_3(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")], seed_phase_1=False)
@@ -446,7 +429,6 @@ async def test_missing_phase_1_result_stops_phase_3(tmp_path):
     assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_already_performed_is_skipped(tmp_path):
     """"Each phase shall be performed at most once per round." """
     db_path = await _make_db(tmp_path)
@@ -460,7 +442,6 @@ async def test_a_phase_already_performed_is_skipped(tmp_path):
     assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_running_twice_records_one_result(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")])

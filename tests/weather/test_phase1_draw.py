@@ -55,10 +55,6 @@ SEEDED_SIGMA = 0.02
 #: √(0.5 × 0.5) = 0.5, and 0.9 is well beyond it.
 INFEASIBLE_TRACK = "Impossible Circuit"
 
-#: Why the tests that draw on a connection handed to them fail until the build moves the draw
-#: there (#439, slice 6).
-UNBUILT = "#439: Phase 1 is not yet drawn on a connection a save hands it (draw_phase1_on)"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -165,7 +161,6 @@ async def _draw(db_path: str, *, raw_draw: float | None = 0.05, round_id: int = 
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
     """The draw and its flag are written on the save handed and committed by none of its own.
 
@@ -189,7 +184,6 @@ async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
     assert await _phase1_state(db_path) == (0, 0)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_payload_records_the_distribution_it_drew_from(tmp_path):
     """ν = μ(1 − μ)/σ² − 1, α = μν, β = (1 − μ)ν, recorded alongside the draw.
 
@@ -214,7 +208,6 @@ async def test_payload_records_the_distribution_it_drew_from(tmp_path):
     assert payload["raw_draw"] == pytest.approx(0.3456)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_draw_uses_the_circuit_parameters(tmp_path):
     """`betavariate` is called with the α and β derived from the round's own circuit."""
     db_path = await _make_db(tmp_path)
@@ -242,7 +235,6 @@ async def test_the_draw_uses_the_circuit_parameters(tmp_path):
     ],
     ids=["rounds_up", "rounds_down", "half_even", "zero", "one"],
 )
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_rpc_is_rounded_to_two_decimal_places(raw_draw, expected_rpc, tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
@@ -256,7 +248,6 @@ async def test_rpc_is_rounded_to_two_decimal_places(raw_draw, expected_rpc, tmp_
     [(1.5, 1.0), (-0.5, 0.0)],
     ids=["above_one", "below_zero"],
 )
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_rpc_is_clamped_to_the_unit_interval(raw_draw, expected_rpc, tmp_path):
     """A draw outside [0, 1] is clamped, and the raw value still recorded for audit.
 
@@ -277,7 +268,6 @@ async def test_rpc_is_clamped_to_the_unit_interval(raw_draw, expected_rpc, tmp_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_unresolvable_circuit_blocks_the_phase(tmp_path):
     """"Where the round's circuit cannot be resolved, Phase 1 shall ... be blocked."
 
@@ -295,7 +285,6 @@ async def test_unresolvable_circuit_blocks_the_phase(tmp_path):
     assert "BLOCKED" in drawn.line
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_infeasible_sigma_blocks_the_phase(tmp_path):
     """"σ shall satisfy 0 < σ < √(μ(1 − μ)). Where it does not ... Phase 1 shall be blocked."
 
@@ -316,7 +305,6 @@ async def test_infeasible_sigma_blocks_the_phase(tmp_path):
     assert 0.9 >= math.sqrt(0.5 * 0.5)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_round_without_a_circuit_blocks_the_phase(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, track_name=None)
@@ -327,7 +315,6 @@ async def test_round_without_a_circuit_blocks_the_phase(tmp_path):
     assert drawn.payload is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_unknown_round_produces_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
@@ -344,7 +331,6 @@ async def test_unknown_round_produces_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_phase_already_performed_is_skipped(tmp_path):
     """"Each phase shall be performed at most once per round." """
     db_path = await _make_db(tmp_path)
@@ -358,7 +344,6 @@ async def test_a_phase_already_performed_is_skipped(tmp_path):
     assert drawn.line is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_running_twice_records_one_result(tmp_path):
     """The guard holds on the second draw, not merely on a round seeded as done."""
     db_path = await _make_db(tmp_path)
