@@ -1456,19 +1456,22 @@ async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_
     assert [_pings_the_admins(call) for call in _notices(env)] == [True, True, False, True]
 
 
-async def test_a_re_posted_notice_a_restart_line_and_an_hour_line_mention_nobody(env):
-    """The league admins are pinged only when a stop's notice is first posted (decision 28, as
-    taken: re-posts, restart lines and hour lines ping nobody). A league change stops while the log
-    channel refuses every post, so its stop notice does not land. The log channel takes posts
-    again, and a minute on the bot posts the notice again: that re-posted notice mentions nobody.
-    The job still fails an hour on, and the hour line mentions nobody; the bot restarts, and the
-    line saying the queue is still stopped mentions nobody."""
+@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
+async def test_the_first_notice_to_land_pings_the_admins_once_and_restart_and_hour_lines_mention_nobody(env):
+    """The league admins are pinged when a stop's notice first lands (decision 28, "League always";
+    A28): where the first post of the notice is refused, the re-post is that first landing and pings
+    them. A league change stops while the log channel refuses every post, so its stop notice does
+    not land. The log channel takes posts again, and a minute on the bot posts the notice again:
+    that re-posted notice mentions the league admins' role. The job still fails an hour on, and the
+    hour line mentions nobody; the bot restarts, and the line saying the queue is still stopped
+    mentions nobody. Of the messages that landed, exactly one pings the admins: the notice."""
     _queue(env, _type("dummy", steps=[_failing("league_post")]))
     env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
     await _ask(env, "dummy")
     await run_queue(env.bot)
     job = await stopped_job(env.db_path)
     assert job is not None and job["notice_message_id"] is None
+    refused = len(_sends(env))
 
     env.bot.log_channel.fails = None
     env.clock.now = NOW + timedelta(minutes=1)
@@ -1484,7 +1487,9 @@ async def test_a_re_posted_notice_a_restart_line_and_an_hour_line_mention_nobody
     assert len([m for m in env.bot.log_channel.posted if m.view is not None]) == 1
     assert any("after an hour" in line for line in sent)
     assert any("after the restart" in line.lower() for line in sent)
-    assert not any(_pings_the_admins(call) for call in _sends(env))
+    pings = [call for call in _sends(env)[refused:] if _pings_the_admins(call)]
+    assert len(pings) == 1
+    assert pings[0].kwargs.get("view") is not None
 
 
 @pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
