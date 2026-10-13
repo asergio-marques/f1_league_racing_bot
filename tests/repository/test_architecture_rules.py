@@ -1048,6 +1048,266 @@ def test_the_posting_check_does_not_count_a_review_poster_reply():
     assert _direct_posts_among(nodes) == Counter({("core/cogs/sample_cog.py", "handler"): 1})
 
 
+# ── 10a. Every post is made in a job ────────────────────────────────────────────────────────
+
+#: The decorator that marks a function as posting, and refuses to run it outside a job
+#: (`core/utils/in_a_job.py`).
+POSTS_IN_A_JOB = "posts_in_a_job"
+
+#: A post made off the change queue, and why (#439 slice 6b). Every other function that posts
+#: carries `posts_in_a_job`.
+POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
+    ("core/services/factory_reset_service.py", "clean_discord"): (
+        "the factory reset's clean-up: the database the queue lives in is emptied, and no log "
+        "channel or roles remain for Retry and Discard"
+    ),
+    ("core/services/factory_reset_service.py", "_delete_own_messages"): (
+        "the factory reset's clean-up, which passes over a channel it cannot clean"
+    ),
+    ("core/cogs/bot_cog.py", "_open_progress"): (
+        "the factory reset's progress, the reply to the owner's own command"
+    ),
+    ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
+        "the factory reset's progress, the reply to the owner's own command"
+    ),
+    ("core/services/typed_turns.py", "turn_away"): (
+        "the turn-away's note and deletion, made at once while an earlier turn waits; a "
+        "refusal of either is lost, not retried"
+    ),
+}
+
+#: The calls that make a channel, which the job check counts beside the posts.
+_CHANNEL_MAKING_CALLS = frozenset({"create_text_channel", "create_category"})
+
+
+def _is_made_in_a_job(call: ast.Call) -> bool:
+    """Whether *call* reaches a channel as a post must be made in a job: a post, a delete or an
+    edit (`_is_a_post`), a channel made, or a message sent to be deleted later."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    return (
+        _is_a_post(call)
+        or func.attr in _CHANNEL_MAKING_CALLS
+        or (func.attr == "send" and any(k.arg == "delete_after" for k in call.keywords))
+    )
+
+
+def _names_the_guard(decorator: ast.expr) -> bool:
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    return (isinstance(target, ast.Name) and target.id == POSTS_IN_A_JOB) or (
+        isinstance(target, ast.Attribute) and target.attr == POSTS_IN_A_JOB
+    )
+
+
+def _functions_among(nodes) -> dict[tuple[str, str], ast.AST]:
+    """Every function among *nodes*, by ``(file, dotted name)``."""
+    return {
+        (path, node.name if owner == "<module>" else f"{owner}.{node.name}"): node
+        for path, owner, node in nodes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
+    """The posts among *nodes* made by a function that does not carry `posts_in_a_job` and is
+    not a post off the queue, counted by file and function."""
+    nodes = list(nodes)
+    guarded = {
+        key for key, node in _functions_among(nodes).items()
+        if any(_names_the_guard(d) for d in node.decorator_list)
+    }
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        key = (path, function)
+        if path in POSTING_ALLOWED or key in NOT_A_POST or key in POSTS_OFF_THE_QUEUE:
+            continue
+        if key in guarded:
+            continue
+        if isinstance(node, ast.Call) and _is_made_in_a_job(node):
+            found[key] += 1
+    return found
+
+
+KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
+    ("__main__.py", "_abandon_interrupted_resubmission"): (2, SLICE["6b"]),
+    ("__main__.py", "_recover_expired_review_prompts"): (2, SLICE["6b"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (1, SLICE["6b"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (1, SLICE["6b"]),
+    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, SLICE["6b"]),
+    ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (1, SLICE["6b"]),
+    ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, SLICE["6b"]),
+    ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (1, SLICE["6b"]),
+    ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (1, SLICE["6b"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_deadline"): (1, SLICE["6b"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_last_notice"): (1, SLICE["6b"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_notice"): (2, SLICE["6b"]),
+    ("attendance/services/rsvp_service.py", "withdraw_rsvp_call"): (1, SLICE["6b"]),
+    ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, SLICE["6b"]),
+    ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, SLICE["6b"]),
+    ("core/cogs/module_cog.py", "execute_forced_close"): (2, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog._review_mid_season_placements"): (7, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog._send_channel_faults"): (1, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog.on_message"): (2, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (3, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "SeasonCog.season_review"): (18, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "_ApproveView._clear_report"): (1, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "_ApproveView.on_timeout"): (3, SLICE["6b"]),
+    ("core/cogs/season_cog.py", "_confirm_privately"): (1, SLICE["6b"]),
+    ("core/services/calendar_post_service.py", "replace_calendar_message"): (2, SLICE["6b"]),
+    ("core/services/cancellation_notice_service.py", "_send"): (1, SLICE["6b"]),
+    ("core/services/hub_service.py", "refresh_panel"): (2, SLICE["6b"]),
+    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, SLICE["6b"]),
+    ("core/services/retry_service.py", "attempt_delivery"): (1, SLICE["6b"]),
+    ("core/utils/batch_notice.py", "delete_notice"): (1, SLICE["6b"]),
+    ("core/utils/batch_notice.py", "send_notice"): (1, SLICE["6b"]),
+    ("image/services/image_lineup_post.py", "try_post"): (1, SLICE["6b"]),
+    ("image/services/image_results_post.py", "try_post"): (1, SLICE["6b"]),
+    ("image/services/image_standings_post.py", "post_championship"): (1, SLICE["6b"]),
+    ("image/services/image_verdict_banner_post.py", "try_post"): (3, SLICE["6b"]),
+    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (7, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "_delete_review_message"): (1, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "_show_approval_step"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "_resubmit_collection_task"): (15, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "ask_review_open"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "create_submission_channel"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "enter_resubmit_flow"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "run_result_submission_job"): (14, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "send_appeals_prompt"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "send_cancelled_line"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "send_review_prompt"): (1, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, SLICE["6b"]),
+    ("results/services/results_post_service.py", "_delete_posting"): (1, SLICE["6b"]),
+    ("results/services/results_post_service.py", "_send_chunked"): (2, SLICE["6b"]),
+    ("results/services/results_post_service.py", "delete_round_channel"): (1, SLICE["6b"]),
+    ("results/services/results_post_service.py", "produce_standings"): (1, SLICE["6b"]),
+    ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, SLICE["6b"]),
+    ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, SLICE["6b"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._advance_wizard_in_channel"): (2, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._answer_stands"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._commit_correction"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._correction_timeout_callback"): (2, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._create_wizard_channel"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._execute_channel_delete"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_availability"): (3, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_driver_type"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_lap_time"): (2, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_nationality"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_notes"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_platform"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_platform_id"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_preferred_teams"): (2, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.commit_wizard"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.request_changes"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.select_correction_parameter"): (1, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, SLICE["6b"]),
+    ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, SLICE["6b"]),
+    ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, SLICE["6b"]),
+    ("weather/services/forecast_cleanup_service.py", "post_phase_message"): (1, SLICE["6b"]),
+}
+
+
+def test_every_post_is_made_in_a_job():
+    """Every message the bot posts, edits or deletes, and every channel it makes or deletes, is a
+    job of a change on the change queue, but a log line, a reply to a member's command or press,
+    the stop notice, and the posts named in `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change
+    is carried out" and "Posting to Discord"). The rule has two halves: a function that posts
+    carries `posts_in_a_job`, which raises where it runs outside a job, and this check finds every
+    function that posts and carries neither the decorator nor a reason here. The router is
+    excepted as the posting check excepts it (`POSTING_ALLOWED`): its log lines and stop notice
+    stay off the queue, and its forecast post carries the decorator. Today's undecorated posts are
+    listed under the slice that decorates or moves each."""
+    _check("every post is made in a job", _posts_outside_a_job_among(_nodes()),
+           KNOWN_POSTS_OUTSIDE_A_JOB)
+
+
+def _sample(source: str, path: str = "core/services/sample_service.py") -> list:
+    tree = ast.parse(source)
+    owners = _owners(tree)
+    return [(path, owners.get(node, "<module>"), node) for node in ast.walk(tree)]
+
+
+def test_the_job_check_counts_channel_creation_and_delayed_deletion():
+    """A channel made, with `create_text_channel` or `create_category`, and a message sent to be
+    deleted eight seconds on are each counted, though the posting check counts a channel made not
+    at all: each reaches Discord as a post does, and so is made in a job."""
+    nodes = _sample(
+        "async def handler(guild, channel):\n"
+        "    await guild.create_text_channel('signup-driver')\n"
+        "    await guild.create_category('Signups')\n"
+        "    await channel.send('locked', delete_after=8)\n"
+    )
+
+    assert _posts_outside_a_job_among(nodes) == Counter(
+        {("core/services/sample_service.py", "handler"): 3}
+    )
+    assert _direct_posts_among(nodes) == Counter(
+        {("core/services/sample_service.py", "handler"): 1}
+    )
+
+
+def test_the_job_check_passes_a_decorated_post_and_a_post_off_the_queue_with_its_reason():
+    """Of three functions that post, the one carrying `posts_in_a_job` (by name or through its
+    module) passes, the factory reset's clean-up, named with its reason, passes, and the third,
+    which carries neither, is counted."""
+    path = "core/services/factory_reset_service.py"
+    nodes = _sample(
+        "@posts_in_a_job\n"
+        "async def post_the_sheet(channel):\n"
+        "    await channel.send('sheet')\n"
+        "@in_a_job.posts_in_a_job\n"
+        "async def post_the_lineup(channel):\n"
+        "    await channel.send('lineup')\n"
+        "async def clean_discord(channel):\n"
+        "    await channel.delete()\n"
+        "async def post_the_calendar(channel):\n"
+        "    await channel.send('calendar')\n",
+        path,
+    )
+
+    assert (path, "clean_discord") in POSTS_OFF_THE_QUEUE
+    assert _posts_outside_a_job_among(nodes) == Counter({(path, "post_the_calendar"): 1})
+
+
+def test_a_not_a_post_entry_is_not_counted_by_the_job_check():
+    """The queue's edit of a member's own acknowledgement, named in `NOT_A_POST`, answers the
+    member and posts in no channel: undecorated, it is not counted, while the same edit in another
+    function of the file is."""
+    path = "core/services/change_queue.py"
+    nodes = _sample(
+        "class ChangeQueue:\n"
+        "    async def _update_reply(self, reply):\n"
+        "        await reply.edit(content='done')\n"
+        "    async def _elsewhere(self, reply):\n"
+        "        await reply.edit(content='done')\n",
+        path,
+    )
+
+    assert (path, "ChangeQueue._update_reply") in NOT_A_POST
+    assert _posts_outside_a_job_among(nodes) == Counter({(path, "ChangeQueue._elsewhere"): 1})
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: typed_turns.turn_away, the turn-away's note and deletion, is not written yet"
+))
+def test_every_post_off_the_queue_names_its_reason():
+    """Each post off the queue says why it is one, and names a function the source holds, so an
+    entry outliving its function, or added without a reason, fails."""
+    functions = _functions_among(_nodes())
+
+    assert all(reason.strip() for reason in POSTS_OFF_THE_QUEUE.values())
+    assert sorted(key for key in POSTS_OFF_THE_QUEUE if key not in functions) == []
+
+
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
 
 #: The schema, whose tables the rule is about.

@@ -1,5 +1,7 @@
 """The output router's stop notice, and the one mention it lets notify (#439, 6b).
 
+The router's forecast post is made in the forecast's job, and refuses to run outside one.
+
 A log line names members and roles without notifying them: the router wraps every mention in code
 and sends it with no mention allowed. The queue's stop notice is the one exception: it mentions
 the league admins' role, which the router leaves bare and allows, and nothing else.
@@ -17,6 +19,7 @@ LOG_CHANNEL_ID = 101
 ADMIN_ROLE_ID = 901
 
 NO_NOTICE_ROLE = "#439: the router's stop notice takes no role to mention"
+NO_FORECAST_GUARD = "#439: the router's forecast post runs outside a job"
 
 
 def _router() -> tuple[OutputRouter, MagicMock]:
@@ -57,3 +60,18 @@ async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
     quiet = str(silent.args[0])
     assert f"`<@&{ADMIN_ROLE_ID}>`" in quiet and "`<@4242>`" in quiet
     assert _role_ids(silent.kwargs["allowed_mentions"]) == set()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_FORECAST_GUARD)
+async def test_the_router_s_forecast_post_is_made_in_a_job():
+    """The router is asked, outside every job, to post a forecast to division channel 701: it
+    raises `PostedOutsideAJob` and sends nothing. A forecast is posted by its change's job, and
+    only there."""
+    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+
+    router, channel = _router()
+
+    with pytest.raises(PostedOutsideAJob, match="post_forecast"):
+        await router.post_forecast(MagicMock(forecast_channel_id=701), "☀️ Sunny")
+
+    channel.send.assert_not_awaited()

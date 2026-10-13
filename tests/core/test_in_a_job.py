@@ -5,6 +5,9 @@ that posts can tell whether it is being called from inside a job. The worker's t
 coroutine it awaits share it, a task a step starts copies it, and nothing outside a step sees it.
 These tests use dummy change types on a database built by the migrations, with "now" pinned.
 
+A function that posts carries `posts_in_a_job`, which refuses to run outside a job: it raises
+`PostedOutsideAJob`, naming the function, a fault in the bot and never Discord's.
+
 `in_a_job` is imported inside each test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
@@ -31,6 +34,7 @@ from tests.support.change_queue import (
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 NO_JOB_CONTEXT = "#439: the worker keeps no running job's number while a step runs"
+NO_GUARD = "#439: no guard refuses a post made outside a job"
 
 
 @pytest.fixture
@@ -183,3 +187,53 @@ async def test_a_step_s_check_and_still_due_run_outside_a_job(env):
     assert seen["check"] and set(seen["check"]) == {None}
     assert seen["still_due"] and set(seen["still_due"]) == {None}
     assert seen["run"] == [(await _job_ids(env))["post"]]
+
+
+async def _a_post() -> str:
+    """Stands for a function that posts a message: it says it ran."""
+    return "posted"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_GUARD)
+async def test_a_post_outside_a_job_raises_naming_the_function():
+    """A function that posts, marked as posting in a job, is called from the test's own code,
+    outside every job: it does not run, and the error raised names it."""
+    from leaguebot.core.utils.in_a_job import PostedOutsideAJob, posts_in_a_job
+
+    ran: list[str] = []
+
+    @posts_in_a_job
+    async def post_the_sheet() -> None:
+        ran.append("posted")
+
+    with pytest.raises(PostedOutsideAJob, match="post_the_sheet"):
+        await post_the_sheet()
+    assert ran == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_GUARD)
+async def test_a_post_inside_a_job_runs():
+    """The same function called while job 7 runs: it runs and gives back what it returned, its
+    name and docstring kept."""
+    from leaguebot.core.utils.in_a_job import posts_in_a_job, running_job
+
+    guarded = posts_in_a_job(_a_post)
+
+    with running_job(7):
+        assert await guarded() == "posted"
+    assert guarded.__name__ == "_a_post"
+    assert guarded.__doc__ == _a_post.__doc__
+
+
+@pytest.mark.xfail(strict=True, reason=NO_GUARD)
+async def test_the_guard_raises_no_discord_failure():
+    """A post outside a job is a fault in the bot's own code, not a refusal by Discord: the error
+    is no `StepFailedOnDiscord`, so a step that posts outside its job is never taken for a
+    message Discord refused and tried again on the schedule as one."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.utils.in_a_job import PostedOutsideAJob, posts_in_a_job
+
+    assert not issubclass(PostedOutsideAJob, StepFailedOnDiscord)
+    with pytest.raises(PostedOutsideAJob) as raised:
+        await posts_in_a_job(_a_post)()
+    assert not isinstance(raised.value, StepFailedOnDiscord)
