@@ -868,3 +868,212 @@ async def test_a_record_is_checked_again_inside_its_save(env):
     job = await _job(env, "post")
     assert job["done_at"] is not None and job["result"].get("dropped") is True
     assert len(asked) == 2 and asked[1] is True
+
+
+# ---------------------------------------------------------------------------
+# L8: a conversation the league has ended
+# ---------------------------------------------------------------------------
+
+
+async def _still_running(db, payload: dict[str, Any]) -> bool:
+    """A turn's `conversation_open`: its conversation is still running."""
+    cursor = await db.execute("SELECT open FROM conversations WHERE channel = ?",
+                              (payload["channel"],))
+    row = await cursor.fetchone()
+    return bool(row and row["open"])
+
+
+async def _channel_stands(db, payload: dict[str, Any]) -> bool:
+    """A closing change's `conversation_open`: only its channel need still stand."""
+    cursor = await db.execute("SELECT channel_stands FROM conversations WHERE channel = ?",
+                              (payload["channel"],))
+    row = await cursor.fetchone()
+    return bool(row and row["channel_stands"])
+
+
+def _turn(kind: str, steps, *, reader=_still_running) -> Any:
+    """A conversation's change type: on its channel's lane, its conversation read by *reader*."""
+    return dataclasses.replace(_type(kind, steps=steps, lane=_in_channel),
+                               conversation_open=reader)
+
+
+def _ender(*, asks: tuple[str, ...] = ()) -> Any:
+    """A league change type, "end", whose save ends the conversation in its payload's channel and
+    asks each kind in *asks* for that channel as a follow-on."""
+    api = _api()
+
+    async def _run(db, ctx):
+        await db.execute("UPDATE conversations SET open = 0 WHERE channel = ?",
+                         (ctx.payload["channel"],))
+        return api.StepResult(follow_ons=tuple(
+            api.FollowOn(kind, {"channel": ctx.payload["channel"]}, f"Asking {kind}")
+            for kind in asks
+        ))
+
+    return _type("end", steps=[api.Step("end", api.StepKind.SAVE, _run)])
+
+
+def _notice_buttons(env, job: dict[str, Any]) -> set[str]:
+    """The buttons on *job*'s stop notice in the log channel."""
+    [notice] = [m for m in env.bot.log_channel.posted if m.id == job["notice_message_id"]]
+    return {child.custom_id for child in getattr(notice.view, "children", None) or ()}
+
+
+async def _open_changes(env) -> list[str]:
+    return [row["kind"] for row in await change_rows(env.db_path)
+            if row["state"] in ("QUEUED", "RUNNING")]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
+async def test_a_conversation_s_waiting_change_is_dropped_once_the_league_has_ended_it(env):
+    """The league is asked to end the conversation in channel 7, and a turn there is asked behind
+    it, saving an answer. Once the league's change has ended the conversation, the waiting turn is
+    found no longer due when its turn comes: its answer is not written, a line says it is no
+    longer due, and nothing is left open."""
+    await _conversations(env)
+    _queue(env, _ender(), _turn("turn", [_saving("answer", "Max")]))
+
+    await _ask(env, "end", {"channel": 7})
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert await _answers(env) == []
+    assert (await _job(env, "answer"))["done_at"] is not None
+    assert any("no longer due" in line for line in env.bot.log_channel.sent)
+    assert await _open_changes(env) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
+async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_notice(env):
+    """A turn in channel 7 stops at a post Discord refuses. The league then ends that conversation,
+    and the bot carries on past the job's next scheduled try. The turn's job stays stopped: it is
+    not cleared or dropped, and its stop notice keeps its Retry and Discard buttons, until an admin
+    presses one of them."""
+    await _conversations(env)
+    _queue(env, _ender(), _turn("turn", [_failing()]))
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and _notice_buttons(env, job)
+
+    await _ask(env, "end", {"channel": 7})
+    await run_queue(env.bot)
+    env.clock.advance(minutes=5)
+    await run_queue(env.bot)
+
+    still = await stopped_job(env.db_path)
+    assert still is not None and still["id"] == job["id"] and still["done_at"] is None
+    assert _notice_buttons(env, job)
+    assert not await _is_open(env, 7)
+    assert not any(f"Job #{job['id']}" in line and "no longer stops" in line
+                   for line in env.bot.log_channel.sent)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
+async def test_retry_of_a_stopped_job_of_an_ended_conversation_finds_it_no_longer_due_and_clears_the_stop(env):
+    """A turn in channel 7 stops at a post Discord refuses, and the league then ends that
+    conversation. Discord would now take the post, but a league manager's Retry finds the job no
+    longer due: the post is not made, a line says the job no longer stops the turns, the notice
+    loses its buttons and nothing is left open."""
+    await _conversations(env)
+    holder = {"fail": True}
+    ran: list[str] = []
+    _queue(env, _ender(), _turn("turn", [_flaky("post", holder, ran)]))
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None
+    await _ask(env, "end", {"channel": 7})
+    await run_queue(env.bot)
+
+    holder["fail"] = False
+    await retry_job(env.bot)
+
+    assert ran == []
+    assert await stopped_job(env.db_path) is None
+    assert (await _job(env, "post"))["done_at"] is not None
+    assert any(f"Job #{job['id']}" in line and "no longer stops" in line
+               for line in env.bot.log_channel.sent)
+    assert _notice_buttons(env, job) == set()
+    assert await _open_changes(env) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
+async def test_discard_of_it_drops_it_and_the_lane_s_waiting_changes_are_then_dropped(env):
+    """In channel 7 a first turn stops at a post Discord refuses and a second turn, saving an
+    answer, waits behind it. The league ends the conversation. A league admin's Discard drops the
+    stopped job; the waiting turn is then found no longer due: its answer is not written and
+    nothing is left open."""
+    await _conversations(env)
+    _queue(env, _ender(), _turn("first", [_failing()]),
+           _turn("second", [_saving("answer", "Max")]))
+    await _ask(env, "first", {"channel": 7})
+    await _ask(env, "second", {"channel": 7})
+    await run_queue(env.bot)
+    await _ask(env, "end", {"channel": 7})
+    await run_queue(env.bot)
+    assert await _answers(env) == []
+
+    await discard_job(env.bot)
+
+    assert "discarded" in (await _job(env, "post"))["result"]
+    assert await _answers(env) == []
+    assert (await _job(env, "answer"))["done_at"] is not None
+    assert await _open_changes(env) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
+async def test_a_closing_change_asked_back_needs_only_its_channel_to_stand(env):
+    """A turn is asked in channel 7, then the league ends that conversation and, in the same save,
+    asks back a closing change of channel 7's lane, which needs only the channel to stand. The
+    waiting turn is found no longer due and writes nothing; the closing change runs, its notice
+    posted, though the conversation has ended."""
+    await _conversations(env)
+    ran: list[str] = []
+    _queue(env, _ender(asks=("closing",)), _turn("turn", [_saving("answer", "Max")]),
+           _turn("closing", [_act("notice", ran)], reader=_channel_stands))
+
+    await _ask(env, "end", {"channel": 7})
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert await _answers(env) == []
+    assert ran == ["notice"]
+    assert await _lanes(env) == [("end", "league"), ("turn", TURNS_7), ("closing", TURNS_7)]
+    assert await _open_changes(env) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
+async def test_a_job_failing_because_its_channel_was_deleted_under_it_stops_its_lane_and_retry_drops_it(env):
+    """A turn in channel 7 is posting when the league ends the conversation and deletes its
+    channel, so Discord refuses the post as the channel is unknown. The turn's lane stops at the
+    post, and a league change asked then is still carried out. A league manager's Retry then finds
+    the job no longer due: the post is not tried again and nothing is left open."""
+    api = _api()
+    await _conversations(env)
+    tries: list[int] = []
+    ran: list[str] = []
+
+    async def _post(ctx):
+        tries.append(1)
+        if len(tries) == 1:
+            await _end_now(env, ctx.payload["channel"], delete_channel=True)
+            raise api.StepFailedOnDiscord("Unknown Channel") from http_error(
+                discord.NotFound, status=404, text="Unknown Channel")
+        return api.StepResult()
+
+    _queue(env, _turn("turn", [api.Step("post", api.StepKind.ACT, _post)]),
+           _type("dummy", steps=[_act("d", ran)]))
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+    assert ran == ["d"]
+
+    await retry_job(env.bot)
+
+    assert tries == [1]
+    assert await stopped_job(env.db_path) is None
+    assert await _open_changes(env) == []
