@@ -1308,6 +1308,136 @@ def test_every_post_off_the_queue_names_its_reason():
     assert sorted(key for key in POSTS_OFF_THE_QUEUE if key not in functions) == []
 
 
+# ── 10b. No service reaches the change queue through the bot ────────────────────────────────
+
+#: The bot's attribute that holds the change queue (`core/utils/league_bot.py`).
+CHANGE_QUEUE = "change_queue"
+#: The results services files whose views' and forms' callbacks reach the change queue through
+#: the bot until results' pass moves them (#439 slice 6b, decision 20): the penalty review's
+#: buttons and forms, and the configuration picker.
+RESULTS_VIEW_FILES = frozenset({
+    "results/services/penalty_wizard.py",
+    "results/services/result_submission_service.py",
+})
+
+
+def _is_a_service_or_helper(path: str) -> bool:
+    """Whether *path* is a service or a helper: a file in a module's ``services`` or ``utils``."""
+    return _kind(path) in ("services", "utils")
+
+
+def _reaches_the_bot(node: ast.expr) -> bool:
+    """Whether *node* is the bot as a service may reach it: as `_is_the_bot` reads it, or as
+    ``self._bot`` or ``interaction.client``."""
+    return _is_the_bot(node) or (
+        isinstance(node, ast.Attribute) and node.attr in ("_bot", "client")
+    )
+
+
+def _attribute_read_on_the_bot(node: ast.AST) -> str | None:
+    """The name of the bot's attribute *node* reads, ``bot.X`` or ``getattr(bot, "X"[, d])``,
+    the bot reached as `_reaches_the_bot` reads it; else None."""
+    if (isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+            and _reaches_the_bot(node.value)):
+        return node.attr
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"
+            and len(node.args) >= 2 and _reaches_the_bot(node.args[0])
+            and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+        return node.args[1].value
+    return None
+
+
+def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
+    """The reads of the bot's change queue among *nodes* made in a service or a helper, counted
+    by file and function."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if _is_a_service_or_helper(path) and _attribute_read_on_the_bot(node) == CHANGE_QUEUE:
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/services/in_memory_state.py", "clear_in_memory_state"): (1, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "_ask_appeals_approved"): (2, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "_ask_reports_approved"): (2, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "ask_review_open"): (2, SLICE["6b"]),
+    ("results/services/result_submission_service.py", "run_result_submission_job"): (1, SLICE["6b"]),
+    ("results/services/review_recovery.py", "_put_back"): (3, SLICE["6b"]),
+}
+
+
+def test_no_service_reaches_the_change_queue_through_the_bot():
+    """A service or a helper is handed the change queue by whoever builds or calls it, and never
+    looks it up on the bot (architecture.md, "How modules and core fit together": "Services stay
+    attached to the bot, and are built in one place"; #439 slice 6b, fold-in 6). A cog may read it
+    there, as every command and press asks the queue on the bot. Today's reads are listed under
+    the slice that hands the queue, and the callbacks of the views and forms in results' services
+    files under results' pass, which moves them (decision 20)."""
+    _check(
+        "no service reaches the change queue through the bot",
+        _queue_reached_through_the_bot_among(_nodes()),
+        KNOWN_QUEUE_REACHED_THROUGH_THE_BOT,
+    )
+
+
+def test_the_queue_check_sees_bot_of_an_interaction():
+    """The bot reached from an interaction, ``bot_of(interaction).change_queue``, is counted in a
+    service, and so is the queue read from ``getattr`` or ``self._bot``; the same read in a cog is
+    not counted."""
+    source = (
+        "async def handler(self, interaction, bot):\n"
+        "    await bot_of(interaction).change_queue.ask('kind', {})\n"
+        "    queue = getattr(bot, 'change_queue', None)\n"
+        "    await self._bot.change_queue.ask('kind', {})\n"
+    )
+    service = "results/services/sample_service.py"
+    cog = "results/cogs/sample_cog.py"
+
+    assert _queue_reached_through_the_bot_among(_sample(source, service)) == Counter(
+        {(service, "handler"): 3}
+    )
+    assert _queue_reached_through_the_bot_among(_sample(source, cog)) == Counter()
+
+
+def _view_and_form_classes(path: str) -> set[str]:
+    """The classes the package file *path* defines that are views or forms: a base whose name
+    ends ``View`` or ``Modal``."""
+    tree = dict(_sources())[path]
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any(
+            (base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute)
+             else "").endswith(("View", "Modal"))
+            for base in node.bases
+        )
+    }
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: the penalty review's views and forms do not yet read the queue themselves and hand "
+    "it to the approvals"
+))
+def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_pass():
+    """The penalty review's buttons and forms, and the configuration picker, sit in results'
+    services files and reach the queue through the bot until results' pass moves them (#439
+    slice 6b, decision 20). Some line is listed under that pass, and each names a callback of a
+    view or form class in one of those files, never a helper the slice hands the queue to."""
+    listed = sorted(
+        key for key, (_count, issue) in KNOWN_QUEUE_REACHED_THROUGH_THE_BOT.items()
+        if issue == PASS["results"]
+    )
+
+    assert listed
+    for path, function in listed:
+        assert path in RESULTS_VIEW_FILES, (path, function)
+        assert "." in function and function.split(".")[0] in _view_and_form_classes(path), (
+            path, function,
+        )
+
+
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
 
 #: The schema, whose tables the rule is about.
