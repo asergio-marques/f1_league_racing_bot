@@ -1357,25 +1357,41 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
+#: Each callback of a view or form listed under results' pass reads the queue once and hands it
+#: on, binding it to a local where it asks twice (the penalty clear's staging and its approval
+#: message). Every read the slice adds is listed now, beside the commit that adds it, since the
+#: build may only delete or lower a line: the approve buttons (C9), the configuration picker
+#: (C48), Resubmit (C51), the two forms (C54), the Remove, clear-confirm and Make Changes buttons
+#: (C55) and No Penalties (C56).
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/in_memory_state.py", "clear_in_memory_state"): (1, SLICE["6b"]),
     ("results/services/penalty_wizard.py", "_ask_appeals_approved"): (2, SLICE["6b"]),
     ("results/services/penalty_wizard.py", "_ask_reports_approved"): (2, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_remove_cb.cb"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "ask_review_open"): (2, SLICE["6b"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, SLICE["6b"]),
     ("results/services/review_recovery.py", "_put_back"): (3, SLICE["6b"]),
 }
 
 
-#: Why the queue check fails until the penalty review's approvals are handed the queue.
+#: Why the queue check fails until the last view read it lists is made (C56).
 NO_VIEW_HANDS_THE_QUEUE = (
-    "#439: the penalty review's approve buttons do not yet read the queue themselves and hand "
-    "it to the approvals"
+    "#439: the penalty review's buttons and forms and the configuration picker do not yet each "
+    "read the queue once and ask their change (C9, C48, C51, C54-C56)"
 )
 
 
