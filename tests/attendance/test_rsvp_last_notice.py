@@ -389,3 +389,72 @@ async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
             (ROUND_ID,),
         )
         assert (await cursor.fetchone())["last_notice_msg_id"] == "991199"
+
+
+# ---------------------------------------------------------------------------
+# No last notice where no call stands (#439, slice 6b, fault 8)
+# ---------------------------------------------------------------------------
+#
+# A round with no check-in call standing has nobody to remind: the last notice used to post
+# "All drivers have responded" for it, tracked by nothing. It is now dropped as no longer due
+# when it is asked, and the host's log says so.
+#
+# These use `ongoing_league` with attendance on, its queue rebuilt on a real `AttendanceService`:
+# Pro's round 3 is three hours off, past its last-notice time and before its two-hour deadline,
+# and its call (seeded in Pro's check-in channel, 603) is taken off the record, as though it was
+# never posted. The last notice is asked of the queue as its timer asks it, and the queue run.
+
+NO_CALL_NO_NOTICE = (
+    "#439: the last notice is not yet a change on the queue whose check drops it where no "
+    "check-in call stands"
+)
+
+
+async def _no_call_league(tmp_path):
+    from tests.support.change_queue import attach_queue
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    when = league.clock.now + timedelta(hours=3)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), round_id(PRO, 3))
+    await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", round_id(PRO, 3))
+    return league
+
+
+async def _ask_last_notice(league) -> None:
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_last_notice
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import PRO, round_id
+
+    await ask_check_in_last_notice(league.bot.change_queue, league.db_path, round_id(PRO, 3),
+                                   origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_NO_NOTICE)
+async def test_no_last_notice_is_posted_where_no_call_stands(tmp_path):
+    from tests.support.change_queue import change_rows, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO
+
+    league = await _no_call_league(tmp_path)
+
+    await _ask_last_notice(league)
+
+    assert [kind for kind, cid, _ in league.events
+            if cid == DIVISIONS[PRO][3].checkin and kind == "send"] == []
+    assert await stopped_job(league.db_path) is None
+    assert await change_rows(league.db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_NO_NOTICE)
+async def test_a_last_notice_with_no_call_is_recorded_in_the_host_log(tmp_path, caplog):
+    league = await _no_call_league(tmp_path)
+
+    with caplog.at_level("INFO"):
+        await _ask_last_notice(league)
+
+    assert any("no longer due" in record.getMessage() for record in caplog.records)
