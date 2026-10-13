@@ -3,6 +3,8 @@ carried out on the change queue (#439)."""
 from __future__ import annotations
 
 import itertools
+import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -178,9 +180,9 @@ async def test_modify_raises_when_not_active(db_path):
 # `tests/support/season_league.py`'s ongoing season (season 3: Pro tier 1, Am tier 2), presses
 # the Confirm it offered as admin 77 and runs the queue, "now" pinned to the league's clock. Am's
 # round 3 (id 223), with no check-in call, is the round amended unless a test says otherwise;
-# Pro's round 3 (id 213) is used where its call must stand. Weather's phase runners and
-# attendance's repost of a call are recorded rather than run, patched before the league is
-# built. Today Confirm amends on the spot, which every test here but one passes as written; the
+# Pro's round 3 (id 213) is used where its call must stand. Weather's phase runners are
+# recorded rather than run, patched before the league is built; a check-in call is posted by
+# attendance's own service and read from what its check-in channel was sent. Today Confirm amends on the spot, which every test here but one passes as written; the
 # one marked fails until the build, since today a fault after the save stops no queue.
 
 BAHRAIN = "Bahrain International Circuit"
@@ -199,19 +201,64 @@ def phases(monkeypatch):
     return recorded_draws(monkeypatch)
 
 
+def _attendance_as_it_is(league, monkeypatch) -> None:
+    """Attendance's own service in the league's place, its writers included, drawing no picture
+    (the image module's check-in graphic gives none), so that a check-in call is posted and
+    recorded as attendance posts it, whichever of the bot's code posts it."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.image.services import image_rsvp_post
+
+    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
+    attendance = AttendanceService(league.db_path)
+    for name in dir(AttendanceService):
+        if not name.startswith("_") and callable(getattr(AttendanceService, name)):
+            setattr(league.bot.attendance_service, name, getattr(attendance, name))
+
+
+class _Reposts:
+    """What the `reposts` fixture saw of the league it wrapped: the check-in calls posted."""
+
+    def __init__(self) -> None:
+        self.league = None
+
+    @property
+    def posted(self) -> list[tuple[int, int]]:
+        """`(round id, division id)` of each check-in call sent since the league was built: a
+        send to a check-in channel whose message stands recorded as a round's call."""
+        if self.league is None:
+            return []
+        checkins = {DIVISIONS[division][3].checkin for division in DIVISIONS}
+        sent = [(cid, mid) for kind, cid, mid in self.league.events
+                if kind == "send" and cid in checkins]
+        with sqlite3.connect(self.league.db_path) as db:
+            calls = {(int(channel), int(message)): (rid, division)
+                     for rid, division, message, channel in db.execute(
+                         "SELECT round_id, division_id, message_id, channel_id "
+                         "FROM rsvp_embed_messages")}
+        return [calls[each] for each in sent if each in calls]
+
+
 @pytest.fixture
 def reposts(monkeypatch):
-    """Attendance's repost of a check-in call, recording `(round id, division id)` in `posted`."""
-    from types import SimpleNamespace
+    """The check-in call posted as attendance posts it, by whichever of the bot's code posts it
+    (#439, slice 6b, C28: today `repost_rsvp_call` whole, then the call's own jobs), and read
+    from what Discord was sent, so that no test leans on either.
 
-    from leaguebot.attendance.services import rsvp_service
+    It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
+    service (`_attendance_as_it_is`), and the fixture keeps it. `posted` is `(round id,
+    division id)` of each call sent to a check-in channel and recorded as the round's call."""
+    record = _Reposts()
+    built = ongoing_league
 
-    record = SimpleNamespace(posted=[])
+    async def _wrapped(*args, **kwargs):
+        league = await built(*args, **kwargs)
+        _attendance_as_it_is(league, monkeypatch)
+        record.league = league
+        return league
 
-    async def _repost(rid, division_id, *_args, **_kwargs):
-        record.posted.append((rid, division_id))
-
-    monkeypatch.setattr(rsvp_service, "repost_rsvp_call", _repost)
+    monkeypatch.setattr(sys.modules[__name__], "ongoing_league", _wrapped)
     return record
 
 
