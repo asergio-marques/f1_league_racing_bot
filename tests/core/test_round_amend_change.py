@@ -1332,6 +1332,35 @@ async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp
     assert _sent_in_check_in(league) == []
 
 
+NO_AMEND_CLEAN_UP_JOBS = (
+    "#439: the amendment's `clean_up_check_in` job runs `run_rsvp_cleanup` whole, which logs a "
+    "refused deletion and passes over it rather than stopping the queue"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_CLEAN_UP_JOBS)
+async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(tmp_path):
+    """Attendance on. Pro's round 3 is thirty minutes out, its call standing (7001 to 7003). It
+    is moved a day later; the save stops, and a day and forty minutes on, past the check-in's
+    clean-up due a day after the old moment, a league admin discards it. Discord refuses to
+    delete the last notice (7002): the queue stops there, the notice still standing and the
+    round's check-in not marked over, rather than the refusal being logged on the host alone."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place_r3(league, minutes=30)
+    league.undeletable.add(CALL_MESSAGES[1])
+    await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(days=1, minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    assert CALL_MESSAGES[1] in league.channel(PRO_CH.checkin).messages
+    [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", R3)
+    assert row["checkin_cleared"] == 0
+
+
 async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_once_it_is_discarded(
     tmp_path,
 ):
