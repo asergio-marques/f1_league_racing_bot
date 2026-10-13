@@ -497,11 +497,13 @@ async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
     ), patch.object(
         attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
     ), _asking_for_sheets(), patch(
+        # The announcer the sync posted through until now; `create=True` because the change
+        # deletes it, which leaves nothing to call.
         "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
-        new=AsyncMock(return_value=[]),
+        new=AsyncMock(return_value=[]), create=True,
     ) as announce, patch(
         "leaguebot.results.services.verdict_announcement_service.banner_for_round",
-        new=MagicMock(return_value=None),
+        new=MagicMock(return_value=None), create=True,
     ):
         outcome = await _sync(bot, db_path)
 
@@ -532,3 +534,94 @@ async def test_the_sync_s_reply_lists_the_sanctions_applied_and_says_the_announc
     assert "• <@4> (Four) — autosack" in replied
     assert "queue" in replied
     assert "not announced" not in replied
+
+
+# The announcement's own jobs, run by a real queue. The league is `review_league`'s: Pro's
+# round 3 at Silverstone, its verdicts channel 704 with no heading standing, attendance on, and
+# the card of each sanction posted through the attendance hook the builder hands the change types
+# (`AttendanceDouble`, which records each card and refuses one where told). The change is asked
+# as the sync asks it: as the bot's, its payload naming the round, the division and each
+# sanction applied, as the candidate the sanctions were owed as (`review_league.candidate`).
+
+from leaguebot.core.models.change import StepFailedOnDiscord  # noqa: E402
+from leaguebot.results.services import verdict_announcement_service as vas  # noqa: E402
+from tests.support import review_league as rl  # noqa: E402
+from tests.support.change_queue import (  # noqa: E402
+    change_rows,
+    discard_job,
+    run_queue,
+    step_rows,
+)
+
+
+async def _ask_announcement(league: rl.ReviewLeague, *drivers: tuple[int, int]) -> None:
+    """Ask the queue, as the bot, to announce the autoreserve of each (profile, driver) of
+    *drivers* in round 3 of Pro; the queue is not run."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    payload = {
+        "round_id": rl.ROUND_ID, "division_id": rl.DIVISION_ID, "division": "Pro",
+        "sanctions": [rl.candidate(profile, driver) for profile, driver in drivers],
+    }
+    await league.bot.change_queue.ask(
+        ANNOUNCE_KIND, payload, what="announcing round 3's attendance sanctions",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+def _cards(league: rl.ReviewLeague) -> list[int]:
+    """The profile of each sanction card the hook was asked to post, in order."""
+    return [call[1] for call in league.attendance.calls if call[0] == "announce_sanction"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
+async def test_a_sync_s_banner_is_posted_before_its_first_card_and_recorded_with_its_mark(
+    tmp_path,
+):
+    """A sync has moved Lewis (101) and Max (102) of Pro to reserve, and round 3 has no heading
+    standing in its verdicts channel. The queue is asked to announce both and run: its first job
+    posts a heading in the verdicts channel (704), recorded as round 3's banner; Lewis's card and
+    then Max's follow beneath it, each by a job of its own; nothing stops."""
+    league = await rl.review_league(tmp_path, attendance=True)
+
+    await _ask_announcement(
+        league, (rl.LEWIS_PROFILE, rl.LEWIS), (rl.MAX_PROFILE, rl.MAX),
+    )
+    await run_queue(league.bot)
+
+    assert await rl.stopped_at(league) is None
+    [change] = [row for row in await change_rows(league.db_path) if row["kind"] == ANNOUNCE_KIND]
+    steps = await step_rows(league.db_path, change["id"])
+    assert [step["name"] for step in steps] == [
+        "announce_heading", "announce_sanction", "announce_sanction",
+    ]
+    assert all(step["done_at"] is not None for step in steps)
+    [heading] = league.sent_to(rl.VERDICTS_CHANNEL)
+    assert [message_id for _, message_id in await vas._banners_of(league.db_path, rl.ROUND_ID)] == [
+        heading
+    ]
+    assert _cards(league) == [rl.LEWIS_PROFILE, rl.MAX_PROFILE]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
+async def test_a_refused_card_stops_the_queue_and_a_discard_names_it(tmp_path):
+    """As above, but Discord refuses Max's card (Missing Access). The queue stops at Max's card,
+    Lewis's posted beneath the heading. A league admin discards it: the queue goes on, and the
+    log channel names Max's autoreserve as applied but not announced, for posting by hand."""
+    league = await rl.review_league(tmp_path, attendance=True)
+    league.attendance.announce_fails = {rl.MAX_PROFILE: StepFailedOnDiscord("Missing Access")}
+
+    await _ask_announcement(
+        league, (rl.LEWIS_PROFILE, rl.LEWIS), (rl.MAX_PROFILE, rl.MAX),
+    )
+    await run_queue(league.bot)
+
+    assert await rl.stopped_at(league) == "announce_sanction"
+    assert _cards(league) == [rl.LEWIS_PROFILE, rl.MAX_PROFILE]
+    assert len(league.sent_to(rl.VERDICTS_CHANNEL)) == 1
+
+    await discard_job(league.bot)
+
+    assert await rl.stopped_at(league) is None
+    named = [line for line in league.log().splitlines() if f"<@{rl.MAX}>" in line]
+    assert any("not announced" in line for line in named)
