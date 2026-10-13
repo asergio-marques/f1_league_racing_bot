@@ -59,6 +59,7 @@ NO_WRITE_LOCK = "#439: the queue's saves take no write lock of their own"
 NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again inside it"
 NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
 NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
+NO_LANE_WORKERS = "#439: one worker runs the whole queue, one change at a time"
 
 
 def _api() -> SimpleNamespace:
@@ -1163,3 +1164,174 @@ async def test_a_conversation_save_s_mark_and_lines_pass_and_a_league_save_is_no
         assert (await cursor.fetchone())["n"] == 2
     assert any(line in sent for sent in env.bot.log_channel.sent)
     assert await _states(env) == ["DONE", "DONE"]
+
+
+# ---------------------------------------------------------------------------
+# L10: the production task runs a worker per lane
+# ---------------------------------------------------------------------------
+
+
+async def _eventually(predicate, *, within: float = 5.0) -> None:
+    """Wait, on the event loop, until *predicate()* (awaited) is true, failing after *within* s."""
+    async def _poll() -> None:
+        while not await predicate():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_poll(), within)
+
+
+async def _a_while() -> None:
+    """Give every task on the event loop a fair while to move."""
+    for _ in range(30):
+        await asyncio.sleep(0.01)
+
+
+def _holding() -> SimpleNamespace:
+    """A gate whose `_held` job holds at its first try until released, then goes through."""
+    gate = _gate(fail=False)
+    gate.hold = True
+    return gate
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
+async def test_two_lanes_run_side_by_side_in_the_production_task(env):
+    """With the bot running, a turn in channel 7 is in the middle of a job that takes its time. A
+    league change asked meanwhile is carried out to the end while the turn's job is still under
+    way; the turn then finishes once its job does."""
+    gate = _holding()
+    ran: list[str] = []
+    queue = _queue(env, _type("turn", steps=[_held("t", gate)], lane=_in_channel),
+                   _type("dummy", steps=[_act("d", ran)]))
+    await _ask(env, "turn", {"channel": 7})
+    await maybe_await(queue.start())
+    try:
+        await asyncio.wait_for(gate.entered.wait(), 5)
+        await _ask(env, "dummy")
+
+        async def _league_done() -> bool:
+            return await _states(env) == ["RUNNING", "DONE"]
+
+        await _eventually(_league_done)
+        assert ran == ["d"] and gate.ran == []
+
+        gate.release.set()
+
+        async def _all_done() -> bool:
+            return await _states(env) == ["DONE", "DONE"]
+
+        await _eventually(_all_done)
+    finally:
+        gate.release.set()
+        await maybe_await(queue.stop())
+
+    assert gate.ran == ["t"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
+async def test_at_most_three_conversation_lanes_run_beside_the_league(env):
+    """With the bot running, turns are asked in channels 7, 8, 9 and 10, in that order, then a
+    league change, each in the middle of a job that takes its time. The league change and the
+    three oldest turns, in channels 7, 8 and 9, are under way at once; the turn in channel 10 waits
+    untouched. Once the turn in channel 8 finishes, the turn in channel 10 starts."""
+    from leaguebot.core.services import change_queue
+
+    assert change_queue.CONVERSATION_LANES_AT_ONCE == 3
+    gates = {channel: _holding() for channel in (7, 8, 9, 10)}
+    league = _holding()
+    queue = _queue(
+        env,
+        *(_type(f"turn{channel}", steps=[_held(f"t{channel}", gate)], lane=_in_channel)
+          for channel, gate in gates.items()),
+        _type("dummy", steps=[_held("d", league)]),
+    )
+    for channel in gates:
+        await _ask(env, f"turn{channel}", {"channel": channel})
+    await _ask(env, "dummy")
+    await maybe_await(queue.start())
+    try:
+        await asyncio.wait_for(asyncio.gather(
+            league.entered.wait(), *(gates[c].entered.wait() for c in (7, 8, 9))), 5)
+        await _a_while()
+        assert not gates[10].entered.is_set()
+
+        gates[8].release.set()
+        await asyncio.wait_for(gates[10].entered.wait(), 5)
+        assert gates[8].ran == ["t8"]
+    finally:
+        for gate in (league, *gates.values()):
+            gate.release.set()
+
+        async def _all_done() -> bool:
+            return await _states(env) == ["DONE"] * 5
+
+        try:
+            await _eventually(_all_done)
+        finally:
+            await maybe_await(queue.stop())
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
+async def test_a_fault_outside_a_change_pauses_only_its_lane(env, monkeypatch):
+    """With the bot running, choosing the next change of channel 7's lane meets a fault outside
+    any change (the database locked), so that lane's worker pauses, for an hour here. Turns in
+    channel 8 and a league change, asked after it, are carried out all the same; the turn in
+    channel 7 waits, still asked and not started."""
+    import sqlite3
+
+    from leaguebot.core.services import change_queue
+
+    monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 3600.0)
+    ran: list[str] = []
+    queue = _queue(env, _type("turn", steps=[_act("t", ran)], lane=_in_channel),
+                   _type("dummy", steps=[_act("d", ran)]))
+    faults: list[str] = []
+    choose = queue._choose
+
+    async def _locked_for_channel_7(*args, **kwargs):
+        if TURNS_7 in (*args, *kwargs.values()) and not faults:
+            faults.append(TURNS_7)
+            raise sqlite3.OperationalError("database is locked")
+        return await choose(*args, **kwargs)
+
+    monkeypatch.setattr(queue, "_choose", _locked_for_channel_7)
+    await _ask(env, "turn", {"channel": 7})
+    await _ask(env, "turn", {"channel": 8})
+    await _ask(env, "dummy")
+    await maybe_await(queue.start())
+    try:
+        async def _others_done() -> bool:
+            return await _states(env) == ["QUEUED", "DONE", "DONE"]
+
+        await _eventually(_others_done)
+        assert faults == [TURNS_7]
+    finally:
+        await maybe_await(queue.stop())
+
+    assert sorted(ran) == ["d", "t"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
+async def test_stop_ends_every_lane_task(env):
+    """With the bot running, a turn in channel 7 and a league change are each in the middle of a
+    job that takes its time, side by side. Stopping the queue, as the bot does when it shuts down,
+    ends every task the queue started, and leaves both changes where they stood for the next start:
+    still running, their jobs not done."""
+    turn, league = _holding(), _holding()
+    queue = _queue(env, _type("turn", steps=[_held("t", turn)], lane=_in_channel),
+                   _type("dummy", steps=[_held("d", league)]))
+    await _ask(env, "turn", {"channel": 7})
+    await _ask(env, "dummy")
+    before = asyncio.all_tasks()
+    await maybe_await(queue.start())
+    started: set[asyncio.Task[Any]] = set()
+    try:
+        await asyncio.wait_for(asyncio.gather(turn.entered.wait(), league.entered.wait()), 5)
+        started = asyncio.all_tasks() - before - {asyncio.current_task()}
+    finally:
+        await maybe_await(queue.stop())
+    await asyncio.sleep(0)
+
+    assert len(started) >= 2
+    assert all(task.done() for task in started)
+    assert await _states(env) == ["RUNNING", "RUNNING"]
+    assert all(row["done_at"] is None for row in await step_rows(env.db_path))
