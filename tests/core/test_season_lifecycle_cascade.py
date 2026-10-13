@@ -33,6 +33,10 @@ from unittest.mock import MagicMock
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
 
+NO_QUEUE_HANDED = (
+    "#439: the round's submission job looks the change queue up on the bot rather than being handed it"
+)
+
 SERVER_ID = 7654
 ACTOR_ID = 999
 ACTOR_NAME = "Race Director"
@@ -708,9 +712,10 @@ async def _run_the_round_job(db_path, round_id, *, results_enabled):
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
 
     with contextlib.suppress(Exception):
-        await run_result_submission_job(round_id, bot)
+        await run_result_submission_job(round_id, bot, queue=bot.change_queue)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_round_begins_awaiting_results_when_its_moment_arrives(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=1)
@@ -724,6 +729,7 @@ async def test_the_round_begins_awaiting_results_when_its_moment_arrives(tmp_pat
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_without_the_results_module_the_round_ends_when_its_moment_arrives(tmp_path) -> None:
     """A league that does not run results has nothing to await, so the round ends there.
 
@@ -791,6 +797,7 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tmp_path) -> None:
     """The season's wind-down is asked of the change queue as the bot's, not run in-process
     (#439, slice 5). Today the job calls `wind_down_ongoing` itself and logs its failure."""
@@ -814,7 +821,7 @@ async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tm
     bot.module_service.is_results_enabled = AsyncMock(return_value=False)
     bot.change_queue.ask = AsyncMock(return_value=1)
     with contextlib.suppress(Exception):
-        await run_result_submission_job(round_id, bot)
+        await run_result_submission_job(round_id, bot, queue=bot.change_queue)
 
     assert await _round_status(db_path, round_id) == "FINAL"
     bot.change_queue.ask.assert_awaited_once()

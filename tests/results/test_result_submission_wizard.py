@@ -67,6 +67,10 @@ from leaguebot.results.services.result_submission_service import (
 from tests.support.change_queue import attach_queue, change_rows, register, run_queue, step_rows
 from tests.support.teams import seed_team_instances
 
+NO_QUEUE_HANDED = (
+    "#439: the round's submission job looks the change queue up on the bot rather than being handed it"
+)
+
 SERVER_ID = 14008
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -267,7 +271,7 @@ async def _run(
         )
     started = {k: p.start() for k, p in patches.items()}
     try:
-        await run_result_submission_job(ROUND_ID, bot)
+        await run_result_submission_job(ROUND_ID, bot, queue=bot.change_queue)
     finally:
         for p in patches.values():
             p.stop()
@@ -304,6 +308,7 @@ async def _sessions(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_round_starts_waiting_for_results(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -312,6 +317,7 @@ async def test_the_round_starts_waiting_for_results(tmp_path):
     assert await _round_status(db_path) == "AWAITING_RESULTS"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_with_results_off_the_round_ends_at_its_start(tmp_path):
     """#154: nobody will ever enter a result, so the round would otherwise stay outstanding
     for ever and the season could never be completed."""
@@ -330,6 +336,7 @@ async def test_with_results_off_the_round_ends_at_its_start(tmp_path):
     stubs["create"].assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_round_already_moved_on_is_not_moved_back(tmp_path):
     """The write is guarded to NOT_RUN, so a job firing late for a round already in review
     cannot reset it."""
@@ -340,6 +347,7 @@ async def test_a_round_already_moved_on_is_not_moved_back(tmp_path):
     assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_cancelled_round_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_cancelled", status="CANCELLED")
 
@@ -349,13 +357,14 @@ async def test_a_cancelled_round_opens_nothing(tmp_path):
     assert await _round_status(db_path) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_noround")
     bot = _bot(db_path, [])
 
     sub_patch = patch("leaguebot.results.services.result_submission_service.create_submission_channel", new=AsyncMock())
     with sub_patch as create:
-        await run_result_submission_job(9999, bot)
+        await run_result_submission_job(9999, bot, queue=bot.change_queue)
 
     create.assert_not_awaited()
 
@@ -365,6 +374,7 @@ async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_noguild")
 
@@ -373,6 +383,7 @@ async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     stubs["create"].assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_division_without_a_results_channel_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_nochan", results_channel=None)
 
@@ -381,6 +392,7 @@ async def test_a_division_without_a_results_channel_opens_nothing(tmp_path):
     stubs["create"].assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_chgone")
 
@@ -389,6 +401,7 @@ async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
     stubs["create"].assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_failing_to_build_validation_data_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_novalid")
     bot = _bot(db_path, [])
@@ -399,11 +412,12 @@ async def test_failing_to_build_validation_data_opens_nothing(tmp_path):
     ), patch(
         "leaguebot.results.services.result_submission_service.create_submission_channel", new=AsyncMock()
     ) as create:
-        await run_result_submission_job(ROUND_ID, bot)  # must not raise
+        await run_result_submission_job(ROUND_ID, bot, queue=bot.change_queue)  # must not raise
 
     create.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_createfail")
     bot = _bot(db_path, [QUALI_PASTE])
@@ -416,6 +430,7 @@ async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
     assert stubs["opened"] == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_roles")
 
@@ -432,6 +447,7 @@ async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_opening")
 
@@ -443,6 +459,7 @@ async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
     assert "Qualifying" in opening and "Race" in opening
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 @pytest.mark.parametrize(
     ("fmt", "label"),
     [("NORMAL", "Normal"), ("SPRINT", "Sprint"), ("MYSTERY", "Mystery"), ("ENDURANCE", "Endurance")],
@@ -461,6 +478,7 @@ async def test_the_opening_message_names_the_format_as_a_league_reads_it(tmp_pat
     assert fmt not in opening
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_opening_message_pings_the_interaction_role_and_not_the_division(tmp_path):
     """Issue #136. The channel is closed to the division's role, so a ping for it reached
     nobody and the league managers who enter the results were never told."""
@@ -474,6 +492,7 @@ async def test_the_opening_message_pings_the_interaction_role_and_not_the_divisi
     assert "<@&901>" not in opening
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_opening_message_pings_nobody_when_the_interaction_role_is_gone(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_ping_gone")
     bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
@@ -487,6 +506,7 @@ async def test_the_opening_message_pings_nobody_when_the_interaction_role_is_gon
     assert "<@&" not in opening
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_normal_round_is_saved_session_by_session(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_saved")
 
@@ -498,6 +518,7 @@ async def test_a_normal_round_is_saved_session_by_session(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_drivers_rows_are_written(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_rows")
 
@@ -513,6 +534,7 @@ async def test_the_drivers_rows_are_written(tmp_path):
         assert (await cursor.fetchone())[0] == 2
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_sprint_round_asks_for_all_four_sessions_in_order(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_sprint", fmt="SPRINT")
 
@@ -528,6 +550,7 @@ async def test_a_sprint_round_asks_for_all_four_sessions_in_order(tmp_path):
     assert len(prompts) == 4
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_points_are_applied_for_each_saved_session(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_points")
 
@@ -536,6 +559,7 @@ async def test_points_are_applied_for_each_saved_session(tmp_path):
     assert stubs["points"].await_count == 2
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_round_is_handed_to_penalty_review(tmp_path):
     """The last paste asks for round 3's review to open, its first results published under
     "Provisional Results"; the channel stays open for the review."""
@@ -552,6 +576,7 @@ async def test_the_round_is_handed_to_penalty_review(tmp_path):
     stubs["close"].assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 @pytest.mark.parametrize(
     "stopped",
     [pytest.param(False, id="queue_clear"), pytest.param(True, id="queue_stopped")],
@@ -589,6 +614,7 @@ async def test_the_last_paste_says_in_the_channel_that_the_review_is_being_opene
         assert "stopped" not in lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_wait_ignores_the_bot_and_other_channels(tmp_path):
     """Otherwise the bot's own prompt would be read as a paste."""
     db_path = await _make_db(tmp_path, name="wizard_check")
@@ -602,6 +628,7 @@ async def test_the_wait_ignores_the_bot_and_other_channels(tmp_path):
     assert check(_message("x", channel_id=999)) is False
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_accepted_input_is_logged_verbatim(tmp_path):
     """The log is the only record of what was actually typed."""
     db_path = await _make_db(tmp_path, name="wizard_log")
@@ -619,6 +646,7 @@ async def test_the_accepted_input_is_logged_verbatim(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_rejected_paste_is_answered_and_the_session_asked_again(tmp_path):
     """The manager fixes the paste rather than losing the session."""
     db_path = await _make_db(tmp_path, name="wizard_reject")
@@ -633,6 +661,7 @@ async def test_a_rejected_paste_is_answered_and_the_session_asked_again(tmp_path
     assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_rejected_paste_is_logged_with_its_input(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_reject_log")
     bot = _bot(db_path, ["garbage", QUALI_PASTE, RACE_PASTE])
@@ -644,6 +673,7 @@ async def test_a_rejected_paste_is_logged_with_its_input(tmp_path):
     assert "garbage" in logged
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_driver_outside_the_division_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_outsider")
     outsider = "1, <@999>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
@@ -655,6 +685,7 @@ async def test_a_driver_outside_the_division_is_refused(tmp_path):
     assert bot.wait_for.await_count == 3
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path):
     """It would award the bonus to somebody who did not race."""
     db_path = await _make_db(tmp_path, name="wizard_fl_bad")
@@ -666,6 +697,7 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path)
     assert bot.wait_for.await_count == 3
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_valid_fastest_lap_override_is_saved(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_fl_ok")
 
@@ -683,6 +715,7 @@ async def test_a_valid_fastest_lap_override_is_saved(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_session_can_be_cancelled(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_cancel_one")
     bot = _bot(db_path, ["cancelled", RACE_PASTE])
@@ -694,6 +727,7 @@ async def test_a_session_can_be_cancelled(tmp_path):
     assert len(stubs["opened"]) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(tmp_path):
     """There is nothing for stewards to review."""
     db_path = await _make_db(tmp_path, name="wizard_cancel_all")
@@ -710,6 +744,7 @@ async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(t
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_single_configuration_is_chosen_without_asking(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_cfg_one")
 
@@ -718,6 +753,7 @@ async def test_a_single_configuration_is_chosen_without_asking(tmp_path):
     assert "Auto-selected config **Standard**" in _said(stubs["sub"])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_several_configurations_are_offered_to_choose_from(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_cfg_many")
 
@@ -729,6 +765,7 @@ async def test_several_configurations_are_offered_to_choose_from(tmp_path):
     assert {s[2] for s in await _sessions(db_path)} == {"Half"}
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_no_configuration_saves_without_one_and_warns(tmp_path):
     """Refusing a round whose drivers have just raced would be the worse outcome."""
     db_path = await _make_db(tmp_path, name="wizard_cfg_none")
@@ -800,6 +837,7 @@ def _pastes_ending_the_amendment(db_path, pastes, *, before: int, seen: list):
     return AsyncMock(side_effect=wait_for)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="held_paste")
     await _open_amendment(db_path)
@@ -822,6 +860,7 @@ async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path):
     assert _logged(bot).count("RESULT_SUBMISSION_ACCEPTED") == 2
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_cancelling_a_session_is_refused_while_another_round_is_amended(tmp_path):
     """`CANCELLED` is entered too: it records the session, and tells the results channel."""
     db_path = await _make_db(tmp_path, name="held_cancel")
@@ -840,6 +879,7 @@ async def test_cancelling_a_session_is_refused_while_another_round_is_amended(tm
     assert (await _sessions(db_path))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_an_amendment_opened_while_the_configuration_is_chosen_still_holds(tmp_path):
     """The hold is read when the session is written, not when the paste arrives.
 
@@ -867,6 +907,7 @@ async def test_an_amendment_opened_while_the_configuration_is_chosen_still_holds
     assert len(await _sessions(db_path)) == 2
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_an_amendment_in_another_division_holds_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="held_elsewhere")
     await _open_amendment(db_path, division_id=12)
@@ -920,6 +961,7 @@ def _closing_before_the_first_paste(db_path, pastes, round_status: str):
     return AsyncMock(side_effect=wait_for)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 @pytest.mark.parametrize("closed_by", sorted(_CLOSED_BY))
 @pytest.mark.parametrize("pastes", [
     pytest.param((QUALI_PASTE, RACE_PASTE), id="results"),
@@ -1007,6 +1049,7 @@ class _Gateway:
         return heard
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 @pytest.mark.parametrize("round_status", [
     pytest.param("CANCELLED", id="the round cancelled"),
     pytest.param("AWAITING_RESULTS", id="closed by /season cancel before its cascade"),
@@ -1043,6 +1086,7 @@ async def test_a_wizard_waiting_on_a_submission_a_cancellation_closes_stops_wait
     assert stubs["opened"] == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_a_paste_sent_while_the_wizard_rereads_its_submission_is_still_heard(
     tmp_path, monkeypatch,
 ):

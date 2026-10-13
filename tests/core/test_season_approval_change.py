@@ -65,6 +65,10 @@ from tests.support.season_league import (
 )
 from tests.support.undecorate import undecorate
 
+NO_QUEUE_HANDED = (
+    "#439: the round's submission job looks the change queue up on the bot rather than being handed it"
+)
+
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
@@ -747,6 +751,7 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
     }
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
     tmp_path, monkeypatch,
 ):
@@ -763,7 +768,9 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     with patch.object(result_submission_service, "create_submission_channel",
                       AsyncMock()) as create:
         for each in fired:
-            await result_submission_service.run_result_submission_job(each, league.bot)
+            await result_submission_service.run_result_submission_job(
+                each, league.bot, queue=league.bot.change_queue
+            )
 
     rounds = await league.rows("SELECT status FROM rounds")
     assert {row["status"] for row in rounds} == {"FINAL"}

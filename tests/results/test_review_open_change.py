@@ -620,7 +620,17 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "route", ["reports-approve", "reports-approve-bare", "paste", "recovery", "appeals-recovery"],
+    "route",
+    [
+        "reports-approve",
+        "reports-approve-bare",
+        pytest.param("paste", marks=pytest.mark.xfail(strict=True, reason=(
+            "#439: the review's opening is asked of the queue on the bot rather than the one "
+            "the paste's flow is handed"
+        ))),
+        "recovery",
+        "appeals-recovery",
+    ],
 )
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
     """What a review's change is doing names round 3 (Pro) wherever its payload carries the
@@ -674,6 +684,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
             await ask_review_open(
                 league.bot, league.channel(SUBMISSION_CHANNEL), ROUND_ID, 3,
                 {"label": "Provisional Results", "publish": False}, actor=alex,
+                queue=league.bot.change_queue,
             )
         assert any(
             "Opening the penalty review of round 3 (Pro) has already been asked for"
