@@ -154,55 +154,22 @@ async def forecast_deletes(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _discord_delete(
-    bot: "LeagueBot", channel_id: int, message_id: int, *, raising: bool = False
-) -> bool:
-    """Attempt to delete a Discord message.  Returns True on success.
+async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) -> None:
+    """Delete the message *message_id* in the channel *channel_id*, raising where it cannot.
 
-    Under *raising* it raises what Discord said, rather than logging it and returning False, and
-    a channel that is not a text channel raises `StepFailedOnDiscord`.
+    What Discord says, in fetching the channel or deleting the message, is raised as it is for the
+    delete job to judge, a message already gone included; a channel that is not a text channel
+    raises `StepFailedOnDiscord`, keeping the channel and the message in its result.
     """
-    try:
-        channel = bot.get_channel(channel_id)
-        if channel is None:
-            channel = await bot.fetch_channel(channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            if raising:
-                raise StepFailedOnDiscord(
-                    f"channel {channel_id} is not a text channel the forecast can be deleted"
-                    " from",
-                    result={"channel_id": channel_id, "message_id": message_id},
-                )
-            log.error(
-                "_discord_delete: channel id=%s is not a TextChannel", channel_id
-            )
-            return False
-        await channel.get_partial_message(message_id).delete()
-        return True
-    except discord.HTTPException as exc:
-        if raising:
-            raise  # Discord's word, for the caller to turn into a stop (`from` it).
-        _log_refusal(exc, channel_id, message_id)
-        return False
-
-
-def _log_refusal(exc: discord.HTTPException, channel_id: int, message_id: int) -> None:
-    """Log a refused delete on the host, as the quiet form does."""
-    if isinstance(exc, discord.NotFound):
-        log.debug(
-            "_discord_delete: message %s in channel %s already deleted or not found",
-            message_id, channel_id,
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        channel = await bot.fetch_channel(channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        raise StepFailedOnDiscord(
+            f"channel {channel_id} is not a text channel the forecast can be deleted from",
+            result={"channel_id": channel_id, "message_id": message_id},
         )
-    elif isinstance(exc, discord.Forbidden):
-        log.error(
-            "_discord_delete: missing permissions to delete message %s in channel %s: %s",
-            message_id, channel_id, exc,
-        )
-    else:
-        log.error(
-            "_discord_delete: HTTP error deleting message %s in channel %s: %s",
-            message_id, channel_id, exc,
-        )
+    await channel.get_partial_message(message_id).delete()
 
 
 # ---------------------------------------------------------------------------

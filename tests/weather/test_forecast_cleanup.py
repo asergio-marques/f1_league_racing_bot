@@ -389,8 +389,7 @@ class TestTheForecastGraphicIsDiscarded:
 # ---------------------------------------------------------------------------
 # _discord_delete: the channel fetched where it is not cached, and what a refusal does
 #
-# The delete job calls it *raising*, and turns what Discord says into a stop; the quiet form logs
-# the refusal on the host and gives False.
+# It raises where it cannot delete, for the delete job to judge.
 # ---------------------------------------------------------------------------
 
 def _refusal(cls: type[discord.HTTPException], status: int, text: str) -> discord.HTTPException:
@@ -408,41 +407,26 @@ class TestDiscordDelete:
         bot.get_channel.return_value = None
         bot.fetch_channel = AsyncMock(return_value=channel)
 
-        assert await _discord_delete(bot, 999, 4242) is True
+        await _discord_delete(bot, 999, 4242)
 
         bot.fetch_channel.assert_awaited_once_with(999)
         channel.get_partial_message.assert_called_once_with(4242)
         channel.get_partial_message.return_value.delete.assert_awaited_once()
 
-    async def test_a_channel_that_is_not_a_text_channel_raises_naming_it_when_raising(
-        self, tmp_path,
-    ):
-        """Raising, a channel that is no text channel stops the job, keeping the channel and
-        the message in its result; nothing is deleted."""
+    async def test_a_channel_that_is_not_a_text_channel_raises_naming_it(self, tmp_path):
+        """A channel that is no text channel stops the job, keeping the channel and the message in
+        its result; nothing is deleted."""
         from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
 
         bot = _make_bot(await _make_db(str(tmp_path)))
         bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
 
         with pytest.raises(StepFailedOnDiscord, match="channel 999 is not a text channel") as err:
-            await _discord_delete(bot, 999, 4242, raising=True)
+            await _discord_delete(bot, 999, 4242)
 
         assert err.value.result == {"channel_id": 999, "message_id": 4242}
 
-    async def test_a_channel_that_is_not_a_text_channel_is_logged_and_false_when_quiet(
-        self, tmp_path, caplog,
-    ):
-        from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
-
-        bot = _make_bot(await _make_db(str(tmp_path)))
-        bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
-
-        with caplog.at_level("ERROR"):
-            assert await _discord_delete(bot, 999, 4242) is False
-
-        assert "channel id=999 is not a TextChannel" in caplog.text
-
-    async def test_discord_s_refusal_is_raised_as_it_is_when_raising(self, tmp_path):
+    async def test_discord_s_refusal_is_raised_as_it_is(self, tmp_path):
         from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
 
         bot = _make_bot(await _make_db(str(tmp_path)))
@@ -450,36 +434,9 @@ class TestDiscordDelete:
         bot.get_channel.return_value.get_partial_message.return_value.delete.side_effect = refusal
 
         with pytest.raises(discord.Forbidden) as err:
-            await _discord_delete(bot, 999, 4242, raising=True)
+            await _discord_delete(bot, 999, 4242)
 
         assert err.value is refusal
-
-    @pytest.mark.parametrize("cls, status, level, said", [
-        pytest.param(discord.NotFound, 404, "DEBUG", "message 4242 in channel 999 already "
-                     "deleted or not found", id="already gone"),
-        pytest.param(discord.Forbidden, 403, "ERROR", "missing permissions to delete message "
-                     "4242 in channel 999", id="forbidden"),
-        pytest.param(discord.HTTPException, 500, "ERROR", "HTTP error deleting message 4242 in "
-                     "channel 999", id="server error"),
-    ])
-    async def test_discord_s_refusal_is_logged_by_its_kind_and_false_when_quiet(
-        self, tmp_path, caplog, cls, status, level, said,
-    ):
-        """Quiet, a message already gone is logged at debug, a refusal for want of permission
-        and any other failure as errors; each gives False."""
-        from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
-
-        bot = _make_bot(await _make_db(str(tmp_path)))
-        bot.get_channel.return_value.get_partial_message.return_value.delete.side_effect = (
-            _refusal(cls, status, "refused")
-        )
-
-        with caplog.at_level("DEBUG", logger="leaguebot.weather.services.forecast_cleanup_service"):
-            assert await _discord_delete(bot, 999, 4242) is False
-
-        [record] = [r for r in caplog.records if "_discord_delete" in r.getMessage()]
-        assert record.levelname == level
-        assert said in record.getMessage()
 
 
 async def test_a_text_forecast_with_no_channel_to_post_to_raises(tmp_path):

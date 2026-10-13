@@ -300,9 +300,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
         try:
-            await forecast_cleanup_service._discord_delete(
-                ctx.bot, int(channel_id), message_id, raising=True
-            )
+            await forecast_cleanup_service._discord_delete(ctx.bot, int(channel_id), message_id)
         except discord.NotFound:
             raise
         except discord.HTTPException as exc:
