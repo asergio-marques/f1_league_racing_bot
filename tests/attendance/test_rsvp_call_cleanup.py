@@ -26,6 +26,9 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
+from tests.support.change_queue import attach_queue, run_queue, stopped_job
+from tests.support.review_league import channel
+from tests.support.season_league import CALL_MESSAGES, DIVISIONS, PRO, ongoing_league, round_id
 
 #: The moment every round is placed relative to.
 NOW = datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc)
@@ -404,3 +407,150 @@ async def test_another_division_s_call_is_never_current(tmp_path):
 
     assert await _current_round(db_path) is None
     assert await _current_round(db_path, OTHER_DIVISION_ID) == 20
+
+
+# ---------------------------------------------------------------------------
+# Each message taken down from the channel it was posted in (#439, slice 6b, fault 9)
+# ---------------------------------------------------------------------------
+#
+# The last notice and the reserve announcement go to the division's check-in channel as it is
+# when they are posted (attendance specification, decision 13 of #439's slice 6b), so after
+# `/attendance channel rsvp` they stand in a channel the call does not. Each is recorded with the
+# channel it was posted in, and the clean-up a day after the round deletes it from there.
+#
+# These use `ongoing_league` with attendance on: Pro's round 3 call stands in Pro's check-in
+# channel (603) as message 7001, its last notice 7002 and its announcement 7003; Pro's check-in
+# channel is then moved to 608. Each step is asked of the change queue as its timer asks it,
+# through attendance's own ask functions, and the queue run.
+
+#: The channel Pro's check-in moves to after its round 3 call was posted.
+MOVED = 608
+CHECK_IN = DIVISIONS[PRO][3].checkin
+ROUND_3 = round_id(PRO, 3)
+CALL, LAST_NOTICE, ANNOUNCEMENT = CALL_MESSAGES
+
+NO_OWN_CHANNEL = (
+    "#439: a check-in message is not yet recorded with the channel it was posted in, nor "
+    "posted and taken down by the check-in's own jobs on the change queue"
+)
+
+
+async def _moved_league(tmp_path) -> object:
+    """The league above, with Pro's check-in channel moved to `MOVED`, and the queue rebuilt
+    on a real `AttendanceService` so the check-in's change types read the database."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    moved = league._recording(channel(MOVED, league.events))
+    moved.guild = league.guild
+    league.channels[MOVED] = moved
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = ? WHERE division_id = ?",
+        str(MOVED), PRO,
+    )
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    return league
+
+
+async def _ask(league, step: str) -> None:
+    """Ask the queue for round 3's *step* (`last_notice`, `deadline` or `clean_up`), as its
+    timer does, and run the queue to its end."""
+    from leaguebot.attendance.services import check_in_changes
+    from leaguebot.core.models.change import ChangeOrigin
+
+    ask = getattr(check_in_changes, f"ask_check_in_{step}")
+    await ask(league.bot.change_queue, league.db_path, ROUND_3, origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+
+
+async def _round_3_raced_a_day_ago(league) -> None:
+    when = league.clock.now - timedelta(hours=25)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+
+
+def _moved_into(league, message_id: int, content: str) -> None:
+    """*message_id* stands in `MOVED` rather than in Pro's check-in channel."""
+    del league.channel(CHECK_IN).messages[message_id]
+    league.channel(MOVED).seed(message_id, content)
+
+
+def _deletes(league) -> set[tuple[int, int]]:
+    return {(cid, mid) for kind, cid, mid in league.events if kind == "delete"}
+
+
+async def _call_row(league) -> list[dict]:
+    return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", ROUND_3)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_OWN_CHANNEL)
+async def test_a_last_notice_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    """The issue's fault (b): the last notice went to the new channel, the clean-up looked for
+    it in the call's, and it stood for good."""
+    league = await _moved_league(tmp_path)
+    _moved_into(league, LAST_NOTICE, "Round 3 last notice")
+    await league.write(
+        "UPDATE rsvp_embed_messages SET last_notice_channel_id = ?, distribution_channel_id = ? "
+        "WHERE round_id = ?", str(MOVED), str(CHECK_IN), ROUND_3,
+    )
+    await _round_3_raced_a_day_ago(league)
+
+    await _ask(league, "clean_up")
+
+    assert await stopped_job(league.db_path) is None
+    assert _deletes(league) == {(CHECK_IN, CALL), (MOVED, LAST_NOTICE), (CHECK_IN, ANNOUNCEMENT)}
+    assert LAST_NOTICE not in league.channel(MOVED).messages
+    assert await _call_row(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_OWN_CHANNEL)
+async def test_a_reserve_announcement_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    league = await _moved_league(tmp_path)
+    _moved_into(league, ANNOUNCEMENT, "Round 3 reserves")
+    await league.write(
+        "UPDATE rsvp_embed_messages SET last_notice_channel_id = ?, distribution_channel_id = ? "
+        "WHERE round_id = ?", str(CHECK_IN), str(MOVED), ROUND_3,
+    )
+    await _round_3_raced_a_day_ago(league)
+
+    await _ask(league, "clean_up")
+
+    assert await stopped_job(league.db_path) is None
+    assert _deletes(league) == {(CHECK_IN, CALL), (CHECK_IN, LAST_NOTICE), (MOVED, ANNOUNCEMENT)}
+    assert ANNOUNCEMENT not in league.channel(MOVED).messages
+    assert await _call_row(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_OWN_CHANNEL)
+async def test_each_check_in_message_s_channel_is_saved_with_it(tmp_path):
+    """Round 3 is three hours off, its call standing in 603 with no last notice or announcement
+    yet. The last notice, late but before the two-hour deadline, and then the deadline's
+    announcement once it has passed, each go to 608 and are recorded with it; the call keeps
+    its own channel."""
+    league = await _moved_league(tmp_path)
+    for message_id in (LAST_NOTICE, ANNOUNCEMENT):
+        del league.channel(CHECK_IN).messages[message_id]
+    await league.write(
+        "UPDATE rsvp_embed_messages SET last_notice_msg_id = NULL, distribution_msg_id = NULL "
+        "WHERE round_id = ?", ROUND_3,
+    )
+    when = league.clock.now + timedelta(hours=3)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+
+    await _ask(league, "last_notice")
+    league.clock.advance(hours=2)
+    await _ask(league, "deadline")
+
+    assert await stopped_job(league.db_path) is None
+    sent = [mid for kind, cid, mid in league.events if kind == "send" and cid == MOVED]
+    assert len(sent) == 2
+    assert not [mid for kind, cid, mid in league.events if kind == "send" and cid == CHECK_IN]
+    [row] = await _call_row(league)
+    assert (row["message_id"], row["channel_id"]) == (str(CALL), str(CHECK_IN))
+    assert (row["last_notice_msg_id"], row["last_notice_channel_id"]) == (str(sent[0]), str(MOVED))
+    assert (row["distribution_msg_id"], row["distribution_channel_id"]) == (
+        str(sent[1]), str(MOVED))
