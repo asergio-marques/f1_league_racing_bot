@@ -601,3 +601,128 @@ async def test_a_press_on_one_lane_s_notice_goes_through_while_another_lane_runs
     assert any(text.startswith("🔁") for text in _told(retried))
     assert (league_gate.ran, turn_gate.ran) == (["long"], ["post7"])
     assert await _states(env) == ["DONE", "DONE"]
+
+
+# ---------------------------------------------------------------------------
+# L6: one write lock around the queue's saves, and no Discord call under it
+# ---------------------------------------------------------------------------
+
+
+def _write_lock_held(env) -> bool | None:
+    """Whether the queue's write lock is held now; None where the queue has none."""
+    lock = getattr(env.bot.change_queue, "_writing", None)
+    return None if lock is None else lock.locked()
+
+
+def _held_save(gate: SimpleNamespace) -> Any:
+    """A `SAVE` job held in the middle of its save until `gate.release` is set."""
+    api = _api()
+
+    async def _run(_db, _ctx):
+        gate.entered.set()
+        await gate.release.wait()
+        return api.StepResult()
+
+    return api.Step("save", api.StepKind.SAVE, _run)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_WRITE_LOCK)
+async def test_two_lanes_saves_never_overlap(env):
+    """A turn in channel 7 is in the middle of a save, which holds the queue's write lock. A league
+    change asked meanwhile waits for that save to end before saving the request, and is saved,
+    on the league lane, once it has."""
+    gate = _gate(fail=False)
+    _queue(env, _type("turn", steps=[_held_save(gate)], lane=_in_channel),
+           _type("dummy", steps=[_act("d")]))
+    await _ask(env, "turn", {"channel": 7})
+    running = asyncio.create_task(run_queue(env.bot))
+    asking = None
+    try:
+        await asyncio.wait_for(gate.entered.wait(), 5)
+        assert _write_lock_held(env) is True
+        asking = asyncio.create_task(_ask(env, "dummy"))
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+        assert not asking.done()
+        assert [row["kind"] for row in await change_rows(env.db_path)] == ["turn"]
+    finally:
+        gate.release.set()
+        await asyncio.wait_for(running, 5)
+        if asking is not None:
+            await asyncio.wait_for(asking, 5)
+
+    assert await _lanes(env) == [("turn", TURNS_7), ("dummy", "league")]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_WRITE_LOCK)
+async def test_no_discord_call_is_made_under_the_write_lock(env):
+    """A member asks for a turn in channel 7 of a save and a post, and a second turn there stops at
+    a post Discord refuses. The save holds the queue's write lock; the member's acknowledgement
+    and its update, the post, the log lines and the stop notice are each made with it free."""
+    api = _api()
+    in_save: list[bool | None] = []
+    in_discord: list[bool | None] = []
+
+    async def _save(_db, _ctx):
+        in_save.append(_write_lock_held(env))
+        return api.StepResult()
+
+    async def _post(_ctx):
+        in_discord.append(_write_lock_held(env))
+        return api.StepResult()
+
+    def _watched(mock: Any) -> None:
+        original = mock.side_effect
+
+        async def _call(*args, **kwargs):
+            in_discord.append(_write_lock_held(env))
+            return None if original is None else await original(*args, **kwargs)
+
+        mock.side_effect = _call
+
+    _queue(env, _type("turn", steps=[api.Step("save", api.StepKind.SAVE, _save),
+                                     api.Step("post", api.StepKind.ACT, _post)],
+                      lane=_in_channel),
+           _type("stuck", steps=[_failing("refused")], lane=_in_channel))
+    interaction = member_interaction(env.bot)
+    for mock in (interaction.response.send_message, interaction.edit_original_response,
+                 interaction.followup.send, env.bot.log_channel.send):
+        _watched(mock)
+
+    await _ask(env, "turn", {"channel": 7}, interaction=interaction)
+    await _ask(env, "stuck", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert in_save == [True]
+    assert interaction.response.send_message.await_count == 1
+    assert interaction.edit_original_response.await_count >= 1
+    assert (await stopped_job(env.db_path))["notice_message_id"] is not None
+    assert len(in_discord) >= 4
+    assert all(held is False for held in in_discord)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_WRITE_LOCK)
+async def test_a_turn_s_save_waits_for_a_long_league_save_rather_than_failing(env, monkeypatch):
+    """SQLite's wait for a lock is cut to a fifth of a second. A league change's save is held three
+    times as long; a turn in channel 7 asked meanwhile waits for it rather than failing on a
+    locked database, and is saved on its lane once the league's save has ended."""
+    from leaguebot.core.db import database
+
+    monkeypatch.setattr(database, "_BUSY_TIMEOUT_SECONDS", 0.2)
+    gate = _gate(fail=False)
+    _queue(env, _type("dummy", steps=[_held_save(gate)]),
+           _type("turn", steps=[_act("t")], lane=_in_channel))
+    await _ask(env, "dummy")
+    running = asyncio.create_task(run_queue(env.bot))
+    asking = None
+    try:
+        await asyncio.wait_for(gate.entered.wait(), 5)
+        asking = asyncio.create_task(_ask(env, "turn", {"channel": 7}))
+        await asyncio.sleep(0.6)
+    finally:
+        gate.release.set()
+        await asyncio.wait_for(running, 5)
+    assert asking is not None
+    await asyncio.wait_for(asking, 5)
+
+    assert await _lanes(env) == [("dummy", "league"), ("turn", TURNS_7)]
