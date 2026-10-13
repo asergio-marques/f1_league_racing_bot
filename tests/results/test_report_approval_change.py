@@ -1195,7 +1195,7 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
     once, by the review's own job, not by the move as well (core spec: "posted once")."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import LineupPosted, PlacementService
     from tests.support.change_queue import attach_queue
     from tests.support.review_league import NOW
 
@@ -1206,7 +1206,10 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     placement = PlacementService(league.db_path, league.bot)
     placement._grant_roles = AsyncMock()
     placement._revoke_roles = AsyncMock()
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
+    placement._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
+        message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
+    ))
     league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
     attach_queue(league.bot, league.db_path, now=NOW)
 

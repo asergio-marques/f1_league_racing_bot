@@ -58,6 +58,7 @@ from tests.support.review_league import (
     SUBMISSION_CHANNEL,
     VERDICTS_CHANNEL,
     ReviewLeague,
+    channel,
     one,
     penalty,
     review_league,
@@ -70,6 +71,10 @@ APPEALS_PROMPT = 8902
 NO_SHEET_CHANNEL_STOP = (
     "#439: a review's or an amendment's attendance sheet with no attendance channel completes "
     "posting nothing, rather than stopping the queue naming /attendance channel attendance"
+)
+NO_LINEUP_CHANNEL_STOP = (
+    "#439: a review's lineup with no lineup channel completes posting nothing, rather than "
+    "stopping the queue naming /division lineup-channel"
 )
 
 
@@ -642,3 +647,69 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
 
     assert await stopped_at(league) == "attendance_sheet"
     assert "/attendance channel attendance" in _sheet_stop(league)
+
+
+#: Pro's attendance channel, where the lineup test has one, so that its sheet is posted.
+ATTENDANCE_CHANNEL = 707
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LINEUP_CHANNEL_STOP)
+async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
+    """Attendance is on, with its real hook and the real placement service (roles granted and
+    revoked by doubles), and division 11 (Pro) has an attendance channel but was never given a
+    lineup channel. Pro sets an
+    autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, raced
+    round 4 without an RSVP, is on the threshold. Alex approves round 3's reports: Lewis is moved
+    to the Reserve team, and the queue stops at the lineup the sanction owes, its stop line
+    naming the command that sets the channel, rather than the lineup completing having posted
+    nothing."""
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    league = await review_league(tmp_path, attendance=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
+        seat = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3001, 1, ?)",
+            (LEWIS_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, 1, ?, ?)",
+            (LEWIS_PROFILE, DIVISION_ID, seat.lastrowid),
+        )
+        reserve = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Reserve', 'Reserve', 2, 1)",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+            (reserve.lastrowid,),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status, attended) VALUES (?, ?, ?, 'NO_RSVP', 1)",
+            (LATER_ROUND_ID, DIVISION_ID, LEWIS_PROFILE),
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
+        )
+        await db.commit()
+    league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
+    league.bot.user = MagicMock(id=9000)
+    league.bot.user.__str__.return_value = "LeagueBot"
+    placement = PlacementService(league.db_path, league.bot)
+    placement._grant_roles = AsyncMock()
+    placement._revoke_roles = AsyncMock()
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "refresh_lineup"
+    assert "/division lineup-channel" in _sheet_stop(league)
