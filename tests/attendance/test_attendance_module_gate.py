@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -204,31 +204,65 @@ async def _counts(db_path: str) -> tuple[int, int, int]:
 
 
 # ---------------------------------------------------------------------------
-# run_rsvp_notice — the check-in call
+# The check-in call and deadline, asked of the change queue (#439, slice 6b, C26, C30)
 # ---------------------------------------------------------------------------
+#
+# Each is a change on the queue: its timer asks it as the bot, and the change's check drops it
+# as no longer due while attendance is off, or for a cancelled round, so nothing is computed,
+# recorded or posted and the queue does not stop. The round's deadline passed an hour ago where
+# a test asks it (the round an hour off, the deadline two hours before it).
+
+NO_CHECK_IN_CHANGE = (
+    "#439: the check-in call and deadline are run at once by `run_rsvp_notice` and "
+    "`run_rsvp_deadline`, and a restart runs a missed deadline itself, rather than each being "
+    "asked of the change queue"
+)
 
 
+def _an_hour_off() -> datetime:
+    """The round's start an hour from now: its two-hour deadline passed an hour ago."""
+    return datetime.now(timezone.utc) + timedelta(hours=1)
+
+
+async def _ask(bot: MagicMock, step: str) -> list[int]:
+    """Ask the queue for the round's check-in *step* (``call``, ``deadline``) as its timer does,
+    as the bot; run the queue; return the ids posted in the check-in channel."""
+    import importlib
+
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.change_queue import run_queue
+
+    check_in_changes = importlib.import_module("leaguebot.attendance.services.check_in_changes")
+    ask = getattr(check_in_changes, f"ask_check_in_{step}")
+    await ask(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
+    await run_queue(bot)
+    return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_no_check_in_call_is_posted_while_attendance_is_disabled(tmp_path):
+    """Attendance is off and the round's call is due: the call asked of the queue is dropped,
+    nothing posted and no attendance row or call recorded, and the queue does not stop."""
+    from tests.support.change_queue import stopped_job
+
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    bot = _make_bot(db_path, attendance_enabled=False)
+    bot = _queue_bot(db_path, attendance_enabled=False)
 
-    await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
-
-    bot.get_channel.assert_not_called()
+    assert await _ask(bot, "call") == []
     attendance_rows, embed_rows, _ = await _counts(db_path)
     assert attendance_rows == 0, "a disabled module recorded the round's attendance rows"
     assert embed_rows == 0, "a disabled module recorded a posted check-in call"
+    assert await stopped_job(db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_check_in_call_is_posted_while_attendance_is_enabled(tmp_path):
+    """Attendance is on: the queue posts the call in the check-in channel, recording it and an
+    attendance row for each of the two drivers."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    bot = _make_bot(db_path, attendance_enabled=True)
-    channel = bot.get_channel.return_value
+    bot = _queue_bot(db_path, attendance_enabled=True)
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
-
-    channel.send.assert_awaited()
+    assert len(await _ask(bot, "call")) == 1
     attendance_rows, embed_rows, _ = await _counts(db_path)
     assert attendance_rows == 2
     assert embed_rows == 1
@@ -310,26 +344,33 @@ async def test_the_reminder_is_posted_while_attendance_is_enabled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_deadline_distributes_nobody_while_attendance_is_disabled(tmp_path):
-    db_path = await _make_db(tmp_path, attendance_enabled=False)
+    """Attendance is off, the call stands with the reserve's acceptance, and the deadline has
+    passed: the deadline asked of the queue is dropped, no reserve placed and nothing posted,
+    and the queue does not stop."""
+    from tests.support.change_queue import stopped_job
+
+    db_path = await _make_db(tmp_path, attendance_enabled=False, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _make_bot(db_path, attendance_enabled=False)
+    bot = _queue_bot(db_path, attendance_enabled=False)
 
-    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
-
-    bot.get_channel.assert_not_called()
+    assert await _ask(bot, "deadline") == []
     _, _, distributed = await _counts(db_path)
     assert distributed == 0, "a disabled module moved a reserve driver into a seat"
+    assert await stopped_job(db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_deadline_distributes_reserves_while_attendance_is_enabled(tmp_path):
-    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    """Attendance is on: the queue places the reserve who accepted into the vacant seat."""
+    db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _make_bot(db_path, attendance_enabled=True)
+    bot = _queue_bot(db_path, attendance_enabled=True)
 
-    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+    await _ask(bot, "deadline")
 
     _, _, distributed = await _counts(db_path)
     assert distributed == 1
@@ -369,40 +410,46 @@ async def test_distribution_writes_seats_while_attendance_is_enabled(tmp_path):
 
 
 async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_path):
+    """Attendance is off and the round's deadline passed while the bot was down: the restart
+    re-arms no button and asks nothing of the queue, and once the queue runs no reserve is
+    placed."""
     from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from tests.support.change_queue import change_rows, run_queue
 
     # A deadline already in the past, so the catch-up would fire were it not gated.
-    db_path = await _make_db(
-        tmp_path,
-        attendance_enabled=False,
-        scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1),
-    )
+    db_path = await _make_db(tmp_path, attendance_enabled=False, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _make_bot(db_path, attendance_enabled=False)
+    bot = _queue_bot(db_path, attendance_enabled=False)
 
     await _recover_rsvp_views_and_deadlines(bot)
+    assert await change_rows(db_path) == [], "a restart asked the queue for a disabled module"
+    await run_queue(bot)
 
     bot.add_view.assert_not_called()
     _, _, distributed = await _counts(db_path)
     assert distributed == 0, "a restart ran a missed deadline for a disabled module"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_path):
+    """Attendance is on and the round's deadline passed while the bot was down: the restart
+    re-arms the call's buttons and asks the queue for the deadline, placing no reserve itself;
+    once the queue runs, the reserve who accepted is placed."""
     from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from tests.support.change_queue import run_queue
 
-    db_path = await _make_db(
-        tmp_path,
-        attendance_enabled=True,
-        scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1),
-    )
+    db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _make_bot(db_path, attendance_enabled=True)
+    bot = _queue_bot(db_path, attendance_enabled=True)
 
     await _recover_rsvp_views_and_deadlines(bot)
 
     bot.add_view.assert_called()
+    _, _, distributed = await _counts(db_path)
+    assert distributed == 0, "the restart ran the missed deadline itself"
+    await run_queue(bot)
     _, _, distributed = await _counts(db_path)
     assert distributed == 1, "the missed deadline did not run for an enabled module"
 
@@ -501,14 +548,15 @@ async def _cancel_the_round(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_no_check_in_call_is_posted_for_a_cancelled_round(tmp_path):
+    """The round is cancelled: the call asked of the queue is dropped, nothing posted or
+    recorded."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     await _cancel_the_round(db_path)
-    bot = _make_bot(db_path, attendance_enabled=True)
+    bot = _queue_bot(db_path, attendance_enabled=True)
 
-    await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
-
-    bot.get_channel.assert_not_called()
+    assert await _ask(bot, "call") == []
     attendance_rows, embed_rows, _ = await _counts(db_path)
     assert attendance_rows == 0
     assert embed_rows == 0, "a cancelled round recorded a check-in call as standing"
@@ -528,15 +576,16 @@ async def test_no_reminder_is_posted_for_a_cancelled_round(tmp_path):
     assert await stopped_job(db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_deadline_distributes_nobody_for_a_cancelled_round(tmp_path):
-    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    """The round is cancelled after its call: the deadline asked of the queue is dropped, no
+    reserve placed and nothing posted."""
+    db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
     await _cancel_the_round(db_path)
-    bot = _make_bot(db_path, attendance_enabled=True)
+    bot = _queue_bot(db_path, attendance_enabled=True)
 
-    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
-
-    bot.get_channel.assert_not_called()
+    assert await _ask(bot, "deadline") == []
     _, _, distributed = await _counts(db_path)
     assert distributed == 0, "a cancelled round moved a reserve driver into a seat"
