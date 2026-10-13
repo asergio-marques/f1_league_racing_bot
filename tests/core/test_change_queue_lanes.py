@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -21,6 +22,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
+    ADMIN_ROLE_ID,
     Clock,
     acknowledgement,
     attach_queue,
@@ -60,6 +62,10 @@ NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again insi
 NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
 NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
 NO_LANE_WORKERS = "#439: one worker runs the whole queue, one change at a time"
+NO_LANE_NOTICE = (
+    "#439: the stop notice and the queue's lines name no conversation's channel, and the notice "
+    "mentions nobody"
+)
 
 
 def _api() -> SimpleNamespace:
@@ -1335,3 +1341,211 @@ async def test_stop_ends_every_lane_task(env):
     assert all(task.done() for task in started)
     assert await _states(env) == ["RUNNING", "RUNNING"]
     assert all(row["done_at"] is None for row in await step_rows(env.db_path))
+
+
+# ---------------------------------------------------------------------------
+# L11: a stop notice per lane, naming its channel, and the league admins pinged
+# ---------------------------------------------------------------------------
+
+#: The league admins' role, as a message mentions it.
+ADMINS = f"<@&{ADMIN_ROLE_ID}>"
+
+
+def _notice_of(env, job: dict[str, Any]) -> Any:
+    """The stop notice of *job*, as it landed in the log channel."""
+    [notice] = [m for m in env.bot.log_channel.posted if m.id == job["notice_message_id"]]
+    return notice
+
+
+def _sends(env) -> list[Any]:
+    """Every message the log channel was sent, in order, as the bot sent it."""
+    return list(env.bot.log_channel.send.await_args_list)
+
+
+def _notices(env) -> list[Any]:
+    """Every stop notice the log channel was sent, in order: the messages carrying buttons."""
+    return [call for call in _sends(env) if call.kwargs.get("view") is not None]
+
+
+def _pings_the_admins(call: Any) -> bool:
+    """Whether the message sent notifies the league admins: their role mentioned bare, not wrapped
+    in code, and allowed to notify."""
+    content = str(call.args[0] if call.args else call.kwargs.get("content", ""))
+    roles = getattr(call.kwargs.get("allowed_mentions"), "roles", False)
+    allowed = roles is True or (
+        isinstance(roles, list) and ADMIN_ROLE_ID in {getattr(role, "id", role) for role in roles}
+    )
+    return allowed and ADMINS in content.replace(f"`{ADMINS}`", "")
+
+
+def _stubborn(name: str, holder: dict[str, Any], key: str) -> Any:
+    """An `ACT` job Discord refuses while `holder[key]` is set, and due while `holder["due"]`."""
+    api = _api()
+
+    async def _run(_ctx):
+        if holder[key]:
+            raise api.StepFailedOnDiscord("Missing Access")
+        return api.StepResult()
+
+    async def _due(_ctx):
+        return holder["due"]
+
+    return api.Step(name, api.StepKind.ACT, _run, still_due=_due)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
+async def test_a_conversation_s_stop_notice_names_its_channel(env):
+    """A turn in channel 7 stops at a job Discord refuses. Its stop notice in the log channel says
+    the turns in channel 7 are stopped at that job, never that the queue is, and carries Retry and
+    Discard as every stop notice does."""
+    _queue(env, _type("turn", steps=[_failing()], lane=_in_channel))
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None
+    notice = _notice_of(env, job)
+    assert "the turns in <#7>" in notice.content.lower()
+    assert f"job #{job['id']}" in notice.content
+    assert "the queue" not in notice.content.lower()
+    assert {child.custom_id for child in notice.view.children} == {"queue:retry", "queue:discard"}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
+async def test_a_league_stop_notice_mentions_the_league_admin_role(env):
+    """A turn in channel 7 stops first, its notice standing. A league change then stops at a job
+    Discord refuses: its stop notice mentions the league admins' role, so that they are notified,
+    though a conversation's notice already stands. Once it is discarded, a second league change
+    stops, and its notice mentions the role too: a league stop always pings."""
+    _queue(env, _type("turn", steps=[_failing()], lane=_in_channel),
+           _type("dummy", steps=[_failing("league_post")]))
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    await _ask(env, "dummy", {"n": 1})
+    await run_queue(env.bot)
+    await _press_on(env, await _job(env, "league_post"), "discard")
+    await run_queue(env.bot)
+    await _ask(env, "dummy", {"n": 2})
+    await run_queue(env.bot)
+
+    notices = _notices(env)
+    assert len(notices) == 3
+    assert [_pings_the_admins(call) for call in notices[1:]] == [True, True]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
+async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_conversation_notice_stands(env):
+    """A league change stops first, its notice standing. A turn in channel 7 then stops: its notice
+    mentions the league admins' role, as no other conversation's stop notice stands (the league's
+    does not count). A turn in channel 8 stops while channel 7's stop stands: its notice mentions
+    nobody. Both are discarded, so no conversation's stop stands; a turn in channel 9 then stops,
+    and its notice mentions the role again."""
+    _queue(env, _type("turn", steps=[_failing()], lane=_in_channel),
+           _type("dummy", steps=[_failing("league_post")]))
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+    for channel in (7, 8):
+        await _ask(env, "turn", {"channel": channel})
+        await run_queue(env.bot)
+    for job in [row for row in await step_rows(env.db_path) if row["name"] == "post"]:
+        await _press_on(env, job, "discard")
+    await run_queue(env.bot)
+    await _ask(env, "turn", {"channel": 9})
+    await run_queue(env.bot)
+
+    assert [_pings_the_admins(call) for call in _notices(env)] == [True, True, False, True]
+
+
+async def test_a_re_posted_notice_a_restart_line_and_an_hour_line_mention_nobody(env):
+    """The league admins are pinged only when a stop's notice is first posted (decision 28, as
+    taken: re-posts, restart lines and hour lines ping nobody). A league change stops while the log
+    channel refuses every post, so its stop notice does not land. The log channel takes posts
+    again, and a minute on the bot posts the notice again: that re-posted notice mentions nobody.
+    The job still fails an hour on, and the hour line mentions nobody; the bot restarts, and the
+    line saying the queue is still stopped mentions nobody."""
+    _queue(env, _type("dummy", steps=[_failing("league_post")]))
+    env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["notice_message_id"] is None
+
+    env.bot.log_channel.fails = None
+    env.clock.now = NOW + timedelta(minutes=1)
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["notice_message_id"] is not None
+    env.clock.now = NOW + timedelta(minutes=60)
+    await run_queue(env.bot)
+    await restart_queue(env.bot)
+    await maybe_await(env.bot.change_queue.stop())
+
+    sent = [str(call.args[0] if call.args else call.kwargs.get("content", ""))
+            for call in _sends(env)]
+    assert len([m for m in env.bot.log_channel.posted if m.view is not None]) == 1
+    assert any("after an hour" in line for line in sent)
+    assert any("after the restart" in line.lower() for line in sent)
+    assert not any(_pings_the_admins(call) for call in _sends(env))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
+async def test_a_conversation_s_lines_say_the_turns_in_its_channel_and_the_league_s_say_the_queue(env):
+    """A turn in channel 7 and a league change, each of two jobs, both stop at their first job.
+    A member then asks a second turn in channel 7, and a second league change: the first is told
+    the turns in channel 7 are stopped at that turn's job, the second that the queue is stopped at
+    the league's. Retry fails on each; Retry then carries each first job through, and each second
+    job stops; the bot restarts; and Retry finds each second job no longer due. Every line the log
+    channel is given of the turn's jobs (its stops, the failed Retry, the job gone through, the
+    line after the restart, the job cleared) says "the turns in" channel 7 and never "the queue";
+    every one of the league's says "the queue", as today."""
+    turn = {"first": True, "second": True, "due": True}
+    league = {"first": True, "second": True, "due": True}
+    _queue(env,
+           _type("turn", steps=[_stubborn("t1", turn, "first"), _stubborn("t2", turn, "second")],
+                 lane=_in_channel),
+           _type("dummy", steps=[_stubborn("l1", league, "first"),
+                                 _stubborn("l2", league, "second")]),
+           _type("answer", steps=[_act("a")], lane=_in_channel),
+           _type("other", steps=[_act("o")]))
+    await _ask(env, "turn", {"channel": 7})
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+    t1, l1 = await _job(env, "t1"), await _job(env, "l1")
+    answer, other = member_interaction(env.bot), member_interaction(env.bot)
+    await _ask(env, "answer", {"channel": 7}, interaction=answer)
+    await _ask(env, "other", interaction=other)
+
+    for job in (t1, l1):
+        await _press_on(env, job, "retry")
+    await run_queue(env.bot)
+    turn["first"] = league["first"] = False
+    for job in (t1, l1):
+        await _press_on(env, job, "retry")
+    await run_queue(env.bot)
+    t2, l2 = await _job(env, "t2"), await _job(env, "l2")
+    assert t2["failing_since"] is not None and l2["failing_since"] is not None
+    await restart_queue(env.bot)
+    try:
+        turn["due"] = league["due"] = False
+        for job in (t2, l2):
+            await _press_on(env, job, "retry")
+        await run_queue(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    told = acknowledgement(answer)
+    assert "the turns in <#7>" in told.lower() and f"job #{t1['id']}" in told
+    assert "the queue" not in told.lower()
+    assert f"the queue is stopped at job #{l1['id']}" in acknowledgement(other).lower()
+
+    lines = [line for line in env.bot.log_channel.sent if line[:1] in ("❌", "✅", "ℹ")]
+
+    def _of(*jobs: dict[str, Any]) -> list[str]:
+        return [line for line in lines
+                if any(re.search(rf"job #{job['id']}\b", line, re.IGNORECASE) for job in jobs)]
+
+    conversation, league_lines = _of(t1, t2), _of(l1, l2)
+    assert len(conversation) >= 6 and len(league_lines) >= 6
+    assert all("the turns in <#7>" in line.lower() and "the queue" not in line.lower()
+               for line in conversation)
+    assert all("the queue" in line.lower() and "the turns in" not in line.lower()
+               for line in league_lines)
