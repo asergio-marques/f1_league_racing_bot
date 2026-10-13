@@ -26,6 +26,16 @@ standing and is not, which is the whole of its purpose.
 
 Every test that turns on a moment builds the round's `scheduled_at` from a fixed `now` it also
 controls, so none of them can pass today and fail next month.
+
+**On the change queue (#439, slice 6b, C27).** The command asks the queue for the round's call
+(`attendance.check_in.call`, the change the timer asks) with the interaction, rather than posting
+it at once. It still answers its refusals before it asks, as `/results rounds sync` does, and the
+change's check holds them again when it runs, so the second standing-call check the command made
+against a scheduled call racing it falls away: the queue runs one change at a time. The
+manager's reply is the queue's acknowledgement, updated with the outcome. The refusal tests run
+the command against a stand-in queue and assert nothing was asked and nothing posted; the tests of
+the call it asks run it against `ongoing_league`'s real queue, where Pro's round 4 is three days
+off, its call due and no call posted for it.
 """
 from __future__ import annotations
 
@@ -36,11 +46,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import discord
+
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
-from tests.support.undecorate import undecorate
 from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
+from tests.support.change_queue import (
+    attach_queue,
+    change_rows,
+    http_error,
+    member_interaction,
+    retry_job,
+    run_queue,
+    stopped_job,
+)
+from tests.support.review_league import block_queue
+from tests.support.season_league import DIVISIONS, PRO, SeasonLeague, ongoing_league, round_id
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
 SEASON_ID = 1
@@ -53,6 +77,17 @@ NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 
 NOTICE_DAYS = 5
 DEADLINE_HOURS = 2
+
+#: The change the command asks of the queue: the one the check-in timer asks.
+KIND = "attendance.check_in.call"
+#: Pro's check-in channel and round 4, in `ongoing_league`.
+CHECK_IN = DIVISIONS[PRO][3].checkin
+ROUND_4 = round_id(PRO, 4)
+
+NO_CALL_CHANGE = (
+    "#439: /attendance post-check-in posts the call at once through `run_rsvp_notice`, off the "
+    "change queue"
+)
 
 
 async def _make_db(tmp_path, *, scheduled_at: datetime, status: str = "NOT_RUN") -> str:
@@ -107,6 +142,7 @@ def _cog(db_path: str, *, stage=SeasonStage.ONGOING) -> AttendanceCog:
         )
     )
     bot.output_router.post_log = AsyncMock()
+    bot.change_queue.ask = AsyncMock(return_value=1)
     return AttendanceCog(bot)
 
 
@@ -138,11 +174,35 @@ async def _record_call(db_path: str) -> None:
         await db.commit()
 
 
-async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW, posts=False):
-    """Run the command with the clock pinned, standing in for `run_rsvp_notice`.
+class _Posts:
+    """What the command did to post a call: *asked* is the queue's `ask`, *notice* the stand-in
+    for `run_rsvp_notice`, which it called before 6b."""
 
-    *posts* says whether the stand-in should record a call, which is how the command decides
-    between reporting a success and a failure.
+    def __init__(self, asked: AsyncMock, notice: AsyncMock) -> None:
+        self.asked = asked
+        self.notice = notice
+
+    def assert_nothing(self) -> None:
+        """Nothing was asked of the queue and nothing posted."""
+        self.asked.assert_not_awaited()
+        self.notice.assert_not_awaited()
+
+    def assert_asked_once(self, interaction) -> None:
+        """The round's call was asked of the queue once, with the manager's interaction, and
+        nothing posted at once."""
+        self.notice.assert_not_awaited()
+        self.asked.assert_awaited_once()
+        assert self.asked.await_args.args[0] == KIND
+        assert ROUND_ID in self.asked.await_args.args[1].values()
+        assert self.asked.await_args.kwargs["interaction"] is interaction
+
+
+async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW,
+                  posts=False) -> _Posts:
+    """Run the command with the clock pinned, against the stand-in queue of `_cog`.
+
+    `run_rsvp_notice`, which the command called before it asked the queue, is stood in for too,
+    created where it is gone; *posts* says whether the stand-in records a call.
     """
     db_path = cog.bot.db_path
     interaction.command = AttendanceCog.post_check_in
@@ -155,10 +215,69 @@ async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW, 
     clock = MagicMock(wraps=datetime)
     clock.now = MagicMock(return_value=now)
     with patch("leaguebot.attendance.cogs.attendance_cog.datetime", clock), patch(
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock(side_effect=_fake_notice)
+        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice",
+        new=AsyncMock(side_effect=_fake_notice), create=True,
     ) as notice:
         await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
-    return notice
+    return _Posts(cog.bot.change_queue.ask, notice)
+
+
+async def _queue_league(tmp_path) -> SeasonLeague:
+    """`ongoing_league` with attendance on and a real `AttendanceService`, its queue rebuilt on
+    it: Pro's round 4 three days off, its call due and none posted."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    await _round_4_in(league, timedelta(days=3))
+    return league
+
+
+async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
+    when = league.clock.now + delta
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+
+
+async def _post_check_in(league: SeasonLeague, *, round: int = 4):
+    """Run `/attendance post-check-in` for Pro's *round* as manager 77; the queue is not run.
+    Gives the interaction, its acknowledgement's message able to be edited."""
+    cog = AttendanceCog.__new__(AttendanceCog)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name="attendance post-check-in")
+    interaction.followup.send.return_value = MagicMock(edit=AsyncMock())
+    await undecorate(AttendanceCog.post_check_in)(cog, interaction, "Pro", round)
+    return interaction
+
+
+def _content(call) -> str:
+    return str(call.args[0]) if call.args else str(call.kwargs.get("content", ""))
+
+
+def _acknowledged(interaction) -> str:
+    """What the deferred command was first answered with: its first follow-up."""
+    calls = interaction.followup.send.await_args_list
+    return _content(calls[0]) if calls else ""
+
+
+def _outcome(interaction) -> str:
+    """What the acknowledgement was last updated to say."""
+    edits = interaction.followup.send.return_value.edit.await_args_list
+    return _content(edits[-1]) if edits else ""
+
+
+def _sent(league: SeasonLeague) -> list[int]:
+    """The ids of the messages posted in Pro's check-in channel, in order."""
+    return [mid for kind, cid, mid in league.events if kind == "send" and cid == CHECK_IN]
+
+
+async def _call_record(league: SeasonLeague) -> list[dict]:
+    return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", ROUND_4)
+
+
+async def _call_states(league: SeasonLeague) -> list[str]:
+    return [row["state"] for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
 def _replied(interaction) -> str:
@@ -198,9 +317,9 @@ async def test_it_is_refused_while_the_module_is_off(tmp_path):
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "not enabled" in str(interaction.response.send_message.await_args.args[0])
 
 
@@ -212,9 +331,9 @@ async def test_it_is_refused_outside_the_ongoing_stages(tmp_path, stage):
     cog = _cog(db_path, stage=stage)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "only while the season is ongoing" in _replied(interaction)
 
 
@@ -223,9 +342,9 @@ async def test_an_unknown_division_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction, division="Division 9")
+    posts = await _invoke(cog, interaction, division="Division 9")
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "not found" in _replied(interaction)
 
 
@@ -234,9 +353,9 @@ async def test_an_unknown_round_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction, round=7)
+    posts = await _invoke(cog, interaction, round=7)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "no round 7" in _replied(interaction)
 
 
@@ -248,9 +367,9 @@ async def test_a_cancelled_round_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "cancelled" in _replied(interaction)
 
 
@@ -265,9 +384,9 @@ async def test_a_round_whose_check_in_is_over_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     replies = [str(c.args[0]) for c in interaction.followup.send.await_args_list]
     assert len(replies) == 1
     assert replies[0].startswith("⛔") and "check-in is over" in replies[0]
@@ -286,9 +405,9 @@ async def test_a_call_already_standing_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     reply = _replied(interaction)
     assert "already standing" in reply
     assert "Amend the round" in reply
@@ -304,22 +423,24 @@ async def test_a_call_not_yet_due_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "not due" in _replied(interaction)
     assert await _rows(db_path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_exactly_due_is_posted(tmp_path):
-    """The boundary belongs to the window: at the due moment the call is late, not early."""
+    """The boundary belongs to the window: at the due moment the call is late, not early, and
+    is asked of the queue."""
     db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=NOTICE_DAYS))
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction, posts=True)
+    posts = await _invoke(cog, interaction, posts=True)
 
-    notice.assert_awaited_once()
+    posts.assert_asked_once(interaction)
 
 
 async def test_a_round_past_its_deadline_is_refused(tmp_path):
@@ -330,9 +451,9 @@ async def test_a_round_past_its_deadline_is_refused(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "closed at" in _replied(interaction)
     assert await _rows(db_path) == 0
 
@@ -360,9 +481,9 @@ async def test_a_disabled_deadline_still_stops_at_the_race_itself(tmp_path, offs
     )
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited(), what
+    posts.assert_nothing()
     assert "started at" in _replied(interaction)
     assert await _rows(db_path) == 0
 
@@ -372,48 +493,52 @@ async def test_a_disabled_deadline_still_stops_at_the_race_itself(tmp_path, offs
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_it_posts_the_call_for_the_named_round(tmp_path):
-    """The defect itself: a league can now reach `run_rsvp_notice`, which opens the rows."""
+    """The defect itself: a league can reach the round's call, asked of the queue with the
+    manager's interaction rather than posted at once."""
     db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
     cog = _cog(db_path)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction, posts=True)
+    posts = await _invoke(cog, interaction, posts=True)
 
-    notice.assert_awaited_once()
-    assert notice.await_args.args[0] == ROUND_ID
-    assert "posted for round 1" in _replied(interaction)
+    posts.assert_asked_once(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_that_fails_to_post_is_reported_as_failed(tmp_path):
-    """`run_rsvp_notice` swallows its own faults, so success is judged by what stands after.
+    """Discord refuses the call: the queue stops at it, and the manager's acknowledgement is
+    updated to say so, never with a tick. A failed post is not reported as a success, which is
+    the silent wrong record the whole issue is about."""
+    league = await _queue_league(tmp_path)
+    league.channel(CHECK_IN).send_fails = http_error(discord.Forbidden, status=403,
+                                                     text="Missing Permissions")
 
-    Without this the command would answer a failed post with a tick, which is exactly the kind
-    of silent wrong record the whole issue is about.
-    """
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    interaction = _interaction()
+    interaction = await _post_check_in(league)
+    await run_queue(league.bot)
 
-    await _invoke(cog, interaction, posts=False)
-
-    reply = _replied(interaction)
-    assert "could not be posted" in reply
-    assert "✅" not in reply
-    assert "| Failed" in _logged(cog)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None
+    outcome = _outcome(interaction)
+    assert outcome.startswith("❌") and f"stopped at job #{stopped['id']}" in outcome
+    assert "✅" not in outcome
+    assert await _call_record(league) == []
 
 
 async def test_the_run_is_written_to_the_log_channel(tmp_path):
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    interaction = _interaction()
+    """Once the queue has posted the call, the log channel has one success line for the command,
+    naming the division and the round."""
+    league = await _queue_league(tmp_path)
 
-    await _invoke(cog, interaction, posts=True)
+    await _post_check_in(league)
+    await run_queue(league.bot)
 
-    logged = _logged(cog)
-    assert "/attendance post-check-in | Success" in logged
-    assert "Division 1" in logged
-    assert "round: 1" in logged
+    [line] = [line for line in league.bot.log_channel.sent
+              if "| /attendance post-check-in |" in line]
+    assert "| /attendance post-check-in | Success" in line
+    assert "division: Pro" in line
+    assert "round: 4" in line
 
 
 async def test_a_missing_attendance_configuration_is_refused(tmp_path):
@@ -428,47 +553,13 @@ async def test_a_missing_attendance_configuration_is_refused(tmp_path):
     cog.bot.attendance_service.get_config = AsyncMock(return_value=None)
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction)
+    posts = await _invoke(cog, interaction)
 
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     assert "No attendance configuration" in _replied(interaction)
 
 
-async def test_the_scheduled_call_winning_the_race_stops_this_one(tmp_path):
-    """A call that appears between the manager's check and the post is not posted over.
-
-    The scheduled call falls due at exactly the moment this command's window opens, so the two
-    genuinely race. `run_rsvp_notice` has no guard of its own — it skips the current round when
-    clearing a division's old calls — and `insert_embed_message` upserts, so a second post
-    would overwrite the first's message id and leave a live, answerable call in the channel
-    that nothing tracks and the deadline never locks.
-
-    Here the call appears after the command's first check has passed, which is why the second
-    check exists. Deleting it would leave this test as the only thing that noticed.
-    """
-    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
-    cog = _cog(db_path)
-    interaction = _interaction()
-
-    from leaguebot.attendance.cogs import attendance_cog
-
-    calls = {"n": 0}
-
-    async def _stands(bot, round_id, division_id):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return False  # nothing standing when the manager is answered
-        await _record_call(db_path)  # the scheduled call lands right here
-        return True
-
-    with patch.object(attendance_cog, "_call_stands", _stands):
-        notice = await _invoke(cog, interaction)
-
-    notice.assert_not_awaited()
-    assert "posted while this ran" in _replied(interaction)
-    assert calls["n"] == 2, "the second check is what catches the race"
-
-
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
     """The boundary is the race, not some margin before it — a minute out is still answerable."""
     db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(minutes=1))
@@ -478,9 +569,74 @@ async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
     )
     interaction = _interaction()
 
-    notice = await _invoke(cog, interaction, posts=True)
+    posts = await _invoke(cog, interaction, posts=True)
 
-    notice.assert_awaited_once()
+    posts.assert_asked_once(interaction)
+
+
+# ---------------------------------------------------------------------------
+# On the change queue (#439, slice 6b, C27)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_post_check_in_is_acknowledged_and_updated_with_the_call(tmp_path):
+    """The manager is answered that the call is under way and nothing is posted yet; once the
+    queue has run, one call stands in Pro's check-in channel, recorded, and the acknowledgement
+    is updated to say it was posted."""
+    league = await _queue_league(tmp_path)
+
+    interaction = await _post_check_in(league)
+    acknowledged = _acknowledged(interaction)
+    assert _sent(league) == []
+    await run_queue(league.bot)
+
+    assert acknowledged.startswith("⏳")
+    assert _outcome(interaction) == "✅ Check-in call posted for round 4 of **Pro**."
+    [posted] = _sent(league)
+    [row] = await _call_record(league)
+    assert row["message_id"] == str(posted)
+    assert await _call_states(league) == ["DONE"]
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_post_check_in_whose_deadline_passed_while_queued_is_refused_when_it_runs(tmp_path):
+    """Round 4 starts in 2 hours 10 minutes, so its check-in closes in ten. The queue is stopped
+    ahead of the command, which is acknowledged; eleven minutes on the stop is cleared and the
+    call is refused in the command's own words, as its deadline has passed. Nothing is posted
+    or recorded."""
+    league = await _queue_league(tmp_path)
+    await _round_4_in(league, timedelta(hours=2, minutes=10))
+    holder = await block_queue(league)
+
+    interaction = await _post_check_in(league)
+    league.clock.advance(minutes=11)
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert "could not be answered" in _outcome(interaction)
+    assert _sent(league) == []
+    assert await _call_record(league) == []
+    assert await _call_states(league) == ["REFUSED"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_post_check_in_while_the_queue_is_stopped_says_so(tmp_path):
+    """The queue is stopped at another job: the manager's acknowledgement says the queue is
+    stopped at that job and the call runs once it is cleared, and nothing is posted meanwhile."""
+    league = await _queue_league(tmp_path)
+    await block_queue(league)
+    blocker = await stopped_job(league.db_path)
+    assert blocker is not None
+
+    interaction = await _post_check_in(league)
+    await run_queue(league.bot)
+
+    assert f"The queue is stopped at job #{blocker['id']}" in _acknowledged(interaction)
+    assert _sent(league) == []
+    assert await _call_record(league) == []
+    assert await _call_states(league) == ["QUEUED"]
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +677,6 @@ async def _arrange(tmp_path, case):
         ("no-configuration", "No attendance configuration found."),
         ("not-due", "is not due until"),
         ("past-deadline", "so a call posted now could not be answered"),
-        ("race-lost", "posted while this ran"),
     ],
 )
 async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, reason):
@@ -530,21 +685,9 @@ async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, r
     cog, kwargs = await _arrange(tmp_path, case)
     interaction = _interaction()
 
-    if case == "race-lost":
-        from leaguebot.attendance.cogs import attendance_cog
+    posts = await _invoke(cog, interaction, **kwargs)
 
-        calls = {"n": 0}
-
-        async def _stands(bot, round_id, division_id):
-            calls["n"] += 1
-            return calls["n"] > 1
-
-        with patch.object(attendance_cog, "_call_stands", _stands):
-            notice = await _invoke(cog, interaction, **kwargs)
-    else:
-        notice = await _invoke(cog, interaction, **kwargs)
-
-    notice.assert_not_awaited()
+    posts.assert_nothing()
     replies = (
         interaction.response.send_message.await_args_list
         + interaction.followup.send.await_args_list
