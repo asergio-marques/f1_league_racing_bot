@@ -947,11 +947,14 @@ async def test_a_conversation_s_waiting_change_is_dropped_once_the_league_has_en
 @pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_notice(env):
     """A turn in channel 7 stops at a post Discord refuses. The league then ends that conversation,
-    and the bot carries on past the job's next scheduled try. The turn's job stays stopped: it is
-    not cleared or dropped, and its stop notice keeps its Retry and Discard buttons, until an admin
-    presses one of them."""
+    and Discord would now take the post. The bot carries on past the job's scheduled tries, an
+    hour and more. No scheduled try is made: the post is never made and the job's count of tries
+    does not rise. The turn's job stays stopped: it is not cleared or dropped, and its stop notice
+    keeps its Retry and Discard buttons, until an admin presses one of them."""
     await _conversations(env)
-    _queue(env, _ender(), _turn("turn", [_failing()]))
+    holder = {"fail": True}
+    ran: list[str] = []
+    _queue(env, _ender(), _turn("turn", [_flaky("post", holder, ran)]))
     await _ask(env, "turn", {"channel": 7})
     await run_queue(env.bot)
     job = await stopped_job(env.db_path)
@@ -959,9 +962,14 @@ async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_not
 
     await _ask(env, "end", {"channel": 7})
     await run_queue(env.bot)
-    env.clock.advance(minutes=5)
-    await run_queue(env.bot)
+    tries = (await _job(env, "post"))["tries"]
+    holder["fail"] = False
+    for minutes in (1, 4, 5, 5, 15, 30, 61):
+        env.clock.advance(minutes=minutes)
+        await run_queue(env.bot)
 
+    assert ran == []
+    assert (await _job(env, "post"))["tries"] == tries
     still = await stopped_job(env.db_path)
     assert still is not None and still["id"] == job["id"] and still["done_at"] is None
     assert _notice_buttons(env, job)
