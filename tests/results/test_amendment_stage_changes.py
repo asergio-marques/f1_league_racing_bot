@@ -51,6 +51,7 @@ from tests.support.change_queue import (
     retry_job,
     run_queue,
     step_rows,
+    stopped_job,
     tier_member,
     updated_reply,
 )
@@ -340,6 +341,38 @@ async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_pat
     assert "/results rounds amend" in reply
     assert _amend_appeals_prompts(league) == []
 
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: the amendment's report stage posts its appeals prompt itself on the league lane, not "
+    "through the amendment's lane"
+))
+async def test_a_stage_prompt_is_posted_on_the_amendment_s_lane(tmp_path):
+    """Round 3 is under an amendment in channel 705, its report stage awaiting approval, and
+    Discord refuses the amendment's appeals prompt. Alex approves the report stage: the approval
+    finishes on the league lane, its stage recorded; the amendment's lane, not the league's, stops
+    at the appeals prompt's post. Retry on the amendment's lane posts it."""
+    lane = f"channel:{AMEND_CHANNEL}"
+    league = await _amend_league(tmp_path)
+    league.channel(AMEND_CHANNEL).fail_when = is_appeals_prompt
+
+    await _approve_reports(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path, "league") is None
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None
+    [approval] = await changes_of(league.db_path, REPORTS)
+    assert approval["state"] == "DONE"
+    assert stopped["change_id"] != approval["id"]
+    assert (await _amend_row(league))["reports_approved_at"] is not None
+    assert _amend_appeals_prompts(league) == []
+
+    league.channel(AMEND_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_amend_appeals_prompts(league)) == 1
 
 async def test_the_amendment_checks_read_the_handed_clock(tmp_path):
     league = await _amend_league(tmp_path, deadline="2099-01-01T00:00:00+00:00")
