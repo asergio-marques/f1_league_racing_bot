@@ -2335,7 +2335,7 @@ The choice names above are exactly the names `/images config view` and `/season 
 
 > **All nine aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
 >
-> **A picture Discord refuses is handled by what it is.** A refused lineup, session results or standings picture is replaced by its text in the same try, and nothing stops. A refused calendar, attendance sheet or forecast picture stops the change queue, and its next try posts the text. Either way the new message is posted before the old one is deleted, and that deletion is a job of its own on the change queue. The pictures that bracket a season, below, stop the queue whatever they are.
+> **A picture Discord refuses is handled by what it is.** A refused lineup, session results or standings picture — the opening and final classifications included — is replaced by its text in the same try, and nothing stops. A refused calendar, attendance sheet or forecast picture stops the change queue, and its next try posts the text. Either way the new message is posted before the old one is deleted, and that deletion is a job of its own on the change queue.
 >
 > **`standings` posts two messages where the text posts one** — the driver standings first, the
 > constructor standings after, each carrying its heading and lifecycle label as message text and its
