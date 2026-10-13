@@ -56,7 +56,8 @@ HANDLERS = "#441"
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
 CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 #: The slices of #439, each moving a set of flows onto the change queue.
-SLICE = {n: f"#439 slice {n}" for n in range(2, 8)}
+SLICE: dict[int | str, str] = {n: f"#439 slice {n}" for n in range(2, 8)}
+SLICE["6b"] = "#439 slice 6b"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -548,10 +549,95 @@ def _is_private(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
 
-def _private_names_across_modules() -> Counter[tuple[str, str]]:
-    files = _files_by_module_name()
+#: The file declaring the bot's attributes, read for the class each one holds.
+LEAGUE_BOT = "core/utils/league_bot.py"
+
+
+def _imported_names(tree: ast.Module, files: dict[str, str]) -> dict[str, str]:
+    """Each name *tree* imports from a file of the package, to that file's dotted module: a
+    class, a function or a constant named in a ``from … import …``, under the name it is bound
+    to. Imports made only for the type check count, as an annotation names them."""
+    names: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module in files:
+            for alias in node.names:
+                names[alias.asname or alias.name] = node.module
+    return names
+
+
+def _annotated_class(annotation: ast.expr | None, imported: dict[str, str]) -> tuple[str, str] | None:
+    """The ``(module, class)`` an annotation names, where it names one class the file imports
+    from the package: ``Thing``, ``"Thing"``, ``Thing | None`` or ``"Thing | None"``. Anything
+    else is left unresolved."""
+    if annotation is None:
+        return None
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            annotation = ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return None
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        sides = [side for side in (annotation.left, annotation.right)
+                 if not (isinstance(side, ast.Constant) and side.value is None)]
+        if len(sides) != 1:
+            return None
+        annotation = sides[0]
+    if isinstance(annotation, ast.Name) and annotation.id in imported:
+        return imported[annotation.id], annotation.id
+    return None
+
+
+def _bot_attributes(sources, files: dict[str, str]) -> dict[str, tuple[str, str]]:
+    """Each attribute `LeagueBot` declares, to the ``(module, class)`` it holds."""
+    for path, tree in sources:
+        if path != LEAGUE_BOT:
+            continue
+        imported = _imported_names(tree, files)
+        return {
+            node.target.id: found
+            for cls in ast.walk(tree)
+            if isinstance(cls, ast.ClassDef) and cls.name == "LeagueBot"
+            for node in cls.body
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+            for found in (_annotated_class(node.annotation, imported),)
+            if found is not None
+        }
+    return {}
+
+
+def _is_the_bot(node: ast.expr) -> bool:
+    """Whether *node* is the bot as the code reaches it: ``bot``, ``….bot`` (``self.bot``,
+    ``ctx.bot``) or ``bot_of(…)``."""
+    return (
+        (isinstance(node, ast.Name) and node.id == "bot")
+        or (isinstance(node, ast.Attribute) and node.attr == "bot")
+        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "bot_of")
+    )
+
+
+def _service_on_the_bot(node: ast.expr, bot: dict[str, tuple[str, str]]) -> tuple[str, str] | None:
+    """The ``(module, class)`` of the bot's attribute *node* reads: ``bot.X``, ``self.bot.X``,
+    ``ctx.bot.X``, ``bot_of(…).X`` or ``getattr(bot, "X"[, default])``."""
+    if isinstance(node, ast.Attribute) and _is_the_bot(node.value):
+        return bot.get(node.attr)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"
+            and len(node.args) >= 2 and _is_the_bot(node.args[0])
+            and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+        return bot.get(node.args[1].value)
+    return None
+
+
+def _private_names_among(sources, files: dict[str, str]) -> Counter[tuple[str, str]]:
+    """The private names each file of *sources* uses from another module, counted by file and
+    name. A name is reached through a module the file imports (``module._name``, or ``from
+    module import _name``), or through an object whose class the code states (#439 slice 6b):
+    the bot's attribute, read as `_service_on_the_bot` reads it, and a parameter or local
+    annotated with a class the file imports, or bound from either, each keyed as
+    ``module.Class._name``. A receiver whose class the code does not state is left alone."""
+    bot = _bot_attributes(sources, files)
     found: Counter[tuple[str, str]] = Counter()
-    for path, tree in _sources():
+    for path, tree in sources:
         here = classify(f"src/leaguebot/{path}")
         aliases: dict[str, str] = {}
         uses: list[tuple[str, str]] = []
@@ -571,10 +657,62 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
             if (isinstance(node, ast.Attribute) and _is_private(node.attr)
                     and isinstance(node.value, ast.Name) and node.value.id in aliases):
                 uses.append((aliases[node.value.id], node.attr))
+        imported = _imported_names(tree, files)
+
+        def visit(scope: ast.AST, known: dict[str, tuple[str, str]]) -> None:
+            """Count the private names read through a stated class in *scope*, which sees the
+            names its enclosing functions bound as well as its own."""
+            known = dict(known)
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                arguments = scope.args
+                for arg in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]:
+                    stated = _annotated_class(arg.annotation, imported)
+                    if stated is not None:
+                        known[arg.arg] = stated
+            body: list[ast.AST] = []
+            nested: list[ast.AST] = []
+            pending = list(ast.iter_child_nodes(scope))
+            while pending:
+                node = pending.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    nested.append(node)
+                    continue
+                body.append(node)
+                pending.extend(ast.iter_child_nodes(node))
+            for node in body:
+                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    stated = _annotated_class(node.annotation, imported)
+                    if stated is not None:
+                        known[node.target.id] = stated
+                elif isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                        and isinstance(node.targets[0], ast.Name):
+                    stated = _service_on_the_bot(node.value, bot)
+                    if stated is None and isinstance(node.value, ast.Name):
+                        stated = known.get(node.value.id)
+                    if stated is not None:
+                        known[node.targets[0].id] = stated
+            for node in body:
+                if not (isinstance(node, ast.Attribute) and _is_private(node.attr)):
+                    continue
+                receiver = node.value
+                stated = _service_on_the_bot(receiver, bot)
+                if stated is None and isinstance(receiver, ast.Name):
+                    stated = known.get(receiver.id)
+                if stated is not None:
+                    module, cls = stated
+                    uses.append((module, f"{cls}.{node.attr}"))
+            for node in nested:
+                visit(node, known)
+
+        visit(tree, {})
         for module, name in uses:
             if classify(f"src/leaguebot/{files[module]}") != here:
                 found[(path, f"{module}.{name}")] += 1
     return found
+
+
+def _private_names_across_modules() -> Counter[tuple[str, str]]:
+    return _private_names_among(_sources(), _files_by_module_name())
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
@@ -593,6 +731,7 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_classification_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("core/services/season_classification_service.py", "leaguebot.results.services.results_post_service._get_show_reserves"): (2, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("core/services/in_memory_state.py", "leaguebot.signup.services.wizard_service.WizardService._correction_tasks"): (2, SLICE["6b"]),
 }
 
 
@@ -607,6 +746,80 @@ def test_no_private_name_crosses_a_module():
         _private_names_across_modules(),
         KNOWN_PRIVATE_NAMES_ACROSS_MODULES,
     )
+
+
+def _private_names_in(sample: str, path: str) -> Counter[tuple[str, str]]:
+    """The private names *sample*, read as the package file *path*, uses from another module,
+    with the package's files and the bot's declared attributes as they stand."""
+    sources = [(p, tree) for p, tree in _sources() if p == LEAGUE_BOT] + [(path, ast.parse(sample))]
+    found = _private_names_among(sources, _files_by_module_name())
+    return Counter({key: count for key, count in found.items() if key[0] == path})
+
+
+def test_the_private_names_check_sees_a_private_method_through_the_bot_s_service():
+    """A service reached through the bot is an object of the class `LeagueBot` declares for it,
+    so its private names are counted like a module's (#439, fold-in 7): here signup reaching
+    core's scheduler service, through each way the code reaches the bot."""
+    sample = (
+        "async def handler(self, ctx, bot, interaction):\n"
+        "    bot.scheduler_service._scheduler.get_job('x')\n"
+        "    self.bot.scheduler_service._scheduler.get_job('x')\n"
+        "    ctx.bot.scheduler_service._scheduler.get_job('x')\n"
+        "    bot_of(interaction).scheduler_service._scheduler.get_job('x')\n"
+        "    scheduler = getattr(bot, 'scheduler_service', None)\n"
+        "    scheduler._scheduler.get_job('x')\n"
+    )
+
+    assert _private_names_in(sample, "signup/services/sample_service.py") == Counter({
+        ("signup/services/sample_service.py",
+         "leaguebot.core.services.scheduler_service.SchedulerService._scheduler"): 5,
+    })
+
+
+def test_the_private_names_check_sees_a_private_method_on_an_annotated_parameter():
+    """A parameter or a local annotated with a class the file imports is an object of that class:
+    results calling core's placement service's private method through one is counted, and so is
+    a local bound from it."""
+    sample = (
+        "from leaguebot.core.services.placement_service import PlacementService\n"
+        "async def handler(placement: PlacementService):\n"
+        "    await placement._refresh_lineup_post()\n"
+        "    other: 'PlacementService | None' = None\n"
+        "    other._refresh_lineup_post()\n"
+        "    same = placement\n"
+        "    same._refresh_lineup_post()\n"
+    )
+
+    assert _private_names_in(sample, "results/services/sample_service.py") == Counter({
+        ("results/services/sample_service.py",
+         "leaguebot.core.services.placement_service.PlacementService._refresh_lineup_post"): 3,
+    })
+
+
+def test_the_private_names_check_leaves_an_unresolvable_receiver_alone():
+    """Where the code does not state a receiver's class, the check does not guess it."""
+    sample = (
+        "async def handler(thing, other: object):\n"
+        "    thing._x()\n"
+        "    other._y()\n"
+        "    self_made = make()\n"
+        "    self_made._z()\n"
+    )
+
+    assert _private_names_in(sample, "results/services/sample_service.py") == Counter()
+
+
+def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
+    """A private name used inside its own module is the module's business: core reaching core's
+    scheduler service's private attribute, through the bot or an annotation, is not counted."""
+    sample = (
+        "from leaguebot.core.services.scheduler_service import SchedulerService\n"
+        "async def handler(bot, scheduler: SchedulerService):\n"
+        "    bot.scheduler_service._scheduler.get_job('x')\n"
+        "    scheduler._scheduler.get_job('x')\n"
+    )
+
+    assert _private_names_in(sample, "core/services/sample_service.py") == Counter()
 
 
 # ── 9. Only the router writes the log channel ───────────────────────────────────────────────
