@@ -617,13 +617,16 @@ async def _standings_as_two_tables(league: _League) -> None:
 def _each_championship_as_text() -> Any:
     """The picture applies to the standings and draws neither championship, so each is posted
     as a text table of its own."""
-    from leaguebot.results.services.results_post_service import (
-        STANDINGS_CONSTRUCTORS,
-        STANDINGS_DRIVERS,
+    from leaguebot.image.services.image_standings_post import (
+        FELL_BACK,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
     )
 
-    outcome = MagicMock(rejects=False, applicable=True,
-                        fallback_championships=[STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS])
+    outcome = StandingsPostOutcome(
+        drivers=ChampionshipOutcome(action=FELL_BACK),
+        constructors=ChampionshipOutcome(action=FELL_BACK),
+    )
     return patch("leaguebot.image.services.image_standings_post.try_post",
                  new=AsyncMock(return_value=outcome))
 

@@ -1121,6 +1121,33 @@ async def test_the_image_path_raising_never_costs_the_league_its_standings(tmp_p
     assert "Team Standings" in captured[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
+async def test_each_picture_is_reported_as_a_table_with_the_message_it_replaces(tmp_path):
+    """Round 3's standings are drawn as two pictures, the drivers' as message 7701 replacing
+    4321, the constructors' as 7702 replacing 4322. `produce_standings` posts no text and
+    reports each picture as a table of its own, drawn, with the message it replaces, so that
+    the change queue saves the new id with its mark and deletes the old by a job of its own."""
+    from leaguebot.results.services.results_post_service import PostedTable
+
+    db_path, division_id, round_id = await _seed(tmp_path)
+    captured: list[str] = []
+    outcome = _outcome(fallbacks=())
+    outcome.drivers.replaces = [4321]
+    outcome.constructors.replaces = [4322]
+
+    with patch(
+        "leaguebot.image.services.image_standings_post.try_post",
+        AsyncMock(return_value=outcome),
+    ):
+        tables = await _post(db_path, division_id, round_id, captured, bot=MagicMock())
+
+    assert captured == []
+    assert tables == [
+        PostedTable([7701], [4321], drawn=True, championship="drivers"),
+        PostedTable([7702], [4322], drawn=True, championship="constructors"),
+    ]
+
+
 async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_nothing(
     tmp_path,
 ):

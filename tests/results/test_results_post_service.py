@@ -1076,10 +1076,23 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
         "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
     ):
         assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
+    # The standings drawn as pictures save and delete nothing either; what they report is
+    # pinned in `test_image_standings_post.py`.
+    from leaguebot.image.services.image_standings_post import (
+        POSTED,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
+    )
+
+    pictures = StandingsPostOutcome(
+        drivers=ChampionshipOutcome(action=POSTED, message_id=9991),
+        constructors=ChampionshipOutcome(action=POSTED, message_id=9992),
+    )
     with patch(
-        "leaguebot.image.services.image_standings_post.try_post", new=AsyncMock(return_value=drew)
+        "leaguebot.image.services.image_standings_post.try_post",
+        new=AsyncMock(return_value=pictures),
     ):
-        assert await _standings(bot=bot) == []
+        await _standings(bot=bot)
 
     assert not [event for event in events if event[0] == "delete"]
     assert await _stored() == stored
