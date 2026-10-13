@@ -38,6 +38,7 @@ import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -946,6 +947,56 @@ async def test_a_cancelled_resubmission_whose_prompt_was_discarded_is_recorded_o
     assert f"cancelled by Alex (`<@{MEMBER_ID}>`)" in cancel.split("\n", 1)[0]
     assert "The earlier results stand." in cancel
     assert submission.messages[CANCEL_MESSAGE].view is None
+    assert (await _channel_row(league.db_path))["resubmitting"] == 0
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: a refused take-down of the resubmission's Cancel button is swallowed, not a stop"
+))
+async def test_a_cancel_button_whose_take_down_is_refused_stops_the_queue(tmp_path):
+    """A cancel puts round 3's review back, and Discord refuses the edit that takes the Cancel
+    button off the resubmission's announcement. The queue stops at that job, with the button
+    still standing and the cancel's line not yet posted; Retry takes the button off and the line
+    follows."""
+    league = await _league(tmp_path, name="open_cancel_refused", in_review=True,
+                           results_posted=True, resubmitting=True,
+                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+    submission = league.channel(SUBMISSION_CHANNEL)
+    submission.seed(CANCEL_MESSAGE, "🔄 Resubmission under way")
+    announcement = submission.messages[CANCEL_MESSAGE]
+    announcement.view = MagicMock()
+    edit = announcement.edit
+    announcement.edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await _open(league, publish=False, returning="cancelled", cancel_message_id=CANCEL_MESSAGE)
+
+    assert await stopped_at(league) == "take_down_cancel"
+    assert announcement.view is not None
+    assert not any("Resubmission cancelled" in text for text in _contents(league, SUBMISSION_CHANNEL))
+
+    announcement.edit = edit
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert announcement.view is None
+    assert any("Resubmission cancelled" in text for text in _contents(league, SUBMISSION_CHANNEL))
+
+
+async def test_a_cancel_button_already_gone_completes_its_take_down(tmp_path):
+    """A cancel puts round 3's review back, but the resubmission's announcement carrying the
+    Cancel button was deleted by hand. Taking the button down finds nothing to edit, completes,
+    and the cancel's line is posted: the queue does not stop."""
+    league = await _league(tmp_path, name="open_cancel_gone", in_review=True,
+                           results_posted=True, resubmitting=True,
+                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+
+    await _open(league, publish=False, returning="cancelled", cancel_message_id=CANCEL_MESSAGE)
+
+    assert await stopped_at(league) is None
+    assert any("Resubmission cancelled" in text
+               for text in _contents(league, SUBMISSION_CHANNEL))
     assert (await _channel_row(league.db_path))["resubmitting"] == 0
 
 
