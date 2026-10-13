@@ -671,3 +671,313 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expec
     if phase is not None:
         assert payload["phase"] == phase
     assert all(not job["done_at"] for job in await step_rows(league.db_path))
+
+
+# ---------------------------------------------------------------------------
+# What is no longer due, and how a stopped job is named
+# ---------------------------------------------------------------------------
+
+
+async def _remove_round(league: Any, round_: int = ROUND) -> None:
+    """Round *round_* is no longer in the database, its sessions with it."""
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(league.db_path) as db:
+        await db.execute("PRAGMA foreign_keys = OFF")
+        await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_,))
+        await db.execute("DELETE FROM rounds WHERE id = ?", (round_,))
+        await db.commit()
+
+
+async def _states(league: Any, kind: str) -> list[str]:
+    """The state of every change of *kind*, in the order asked."""
+    return [row["state"] for row in await change_rows(league.db_path) if row["kind"] == kind]
+
+
+#: What makes a round no longer due before its forecast or its clean-up runs.
+_GONE_OR_CANCELLED = [
+    pytest.param("DELETE", id="round gone"),
+    pytest.param("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", id="round cancelled"),
+    pytest.param("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", id="division cancelled"),
+]
+
+
+@pytest.mark.parametrize("undone", _GONE_OR_CANCELLED)
+async def test_a_phase_whose_round_is_gone_or_cancelled_before_its_turn_is_dropped(
+    tmp_path, undone,
+):
+    """Phase 1 of round 3 asked, and before its turn the round is gone from the database, or it
+    or Pro is cancelled: the change is dropped at its check, nothing drawn or posted and the
+    queue not stopped."""
+    league = await _league(tmp_path)
+    await _ask(league, 1)
+    if undone == "DELETE":
+        await _remove_round(league)
+    else:
+        await league.write(undone, PRO if "divisions" in undone else ROUND)
+
+    await run_queue(league.bot)
+
+    assert await _states(league, KIND) == ["DROPPED"]
+    assert await league.rows("SELECT * FROM phase_results WHERE round_id = ?", ROUND) == []
+    assert _events(league) == []
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.parametrize("undone", ["phase undone", "draw withdrawn"])
+async def test_a_forecast_whose_draw_no_longer_stands_while_its_post_stood_stopped_is_dropped(
+    tmp_path, undone,
+):
+    """Phase 1 is drawn and Discord refuses its forecast; while the post stands stopped the
+    round's Phase 1 is marked undone, or its draw withdrawn. Retry, Discord accepting: nothing is
+    posted, the post job is done as dropped, and the queue goes on."""
+    league = await _league(tmp_path)
+    _refusing(league)
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+
+    if undone == "phase undone":
+        await league.write("UPDATE rounds SET phase1_done = 0 WHERE id = ?", ROUND)
+    else:
+        await league.write("UPDATE phase_results SET status = 'INVALIDATED' WHERE round_id = ?",
+                           ROUND)
+    _accepting(league)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _events(league) == []
+    assert await _forecasts(league) == {}
+    [post] = [job for job in await _jobs(league) if job["name"] == "post_forecast"]
+    assert post["done_at"]
+
+
+@pytest.mark.parametrize("mystery, named", [
+    pytest.param(False, "drawing the Phase 1 forecast of round 3 in **Pro**", id="phase 1"),
+    pytest.param(True, "recording the mystery round notice of round 3 in **Pro**",
+                 id="mystery notice"),
+])
+async def test_a_draw_that_fails_stops_the_queue_naming_what_it_was_drawing(
+    tmp_path, mystery, named,
+):
+    """The save of round 3's Phase 1 draw, or of its mystery notice's record, fails: the queue
+    stops at the draw, and the stop line in the log channel names the job by what it draws and
+    where."""
+    league = await _league(tmp_path, mystery=mystery)
+    if mystery:
+        await league.write(
+            "CREATE TRIGGER refuse_notice BEFORE UPDATE OF phase1_done ON rounds "
+            "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
+        )
+    else:
+        await league.write(
+            "CREATE TRIGGER refuse_draw BEFORE INSERT ON phase_results "
+            "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
+        )
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "draw_forecast"
+    assert f": {named} for " in await _said(league)
+    assert _events(league) == []
+
+
+async def test_a_mystery_notice_whose_round_is_amended_away_while_its_record_stood_stopped_is_dropped(
+    tmp_path,
+):
+    """Round 3 is a mystery round, and its notice's record fails, stopping the queue. Meanwhile
+    the round is amended to a normal one. Retry: the notice records nothing and posts nothing,
+    Phase 1 is left undone, and the queue goes on."""
+    league = await _league(tmp_path, mystery=True)
+    await league.write(
+        "CREATE TRIGGER refuse_notice BEFORE UPDATE OF phase1_done ON rounds "
+        "BEGIN SELECT RAISE(ABORT, 'the disk is full'); END"
+    )
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "draw_forecast"
+
+    await league.write("DROP TRIGGER refuse_notice")
+    await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", ROUND)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _done(league, 1) == 0
+    assert _events(league) == []
+    assert [job["name"] for job in await _jobs(league)] == ["draw_forecast"]
+
+
+async def test_a_clean_up_whose_planning_fails_stops_the_queue_naming_it(tmp_path, monkeypatch):
+    """The clean-up of round 3 cannot read the forecasts it is to delete: the queue stops at its
+    first job, which the stop line names as "finding the forecasts to delete", and nothing is
+    deleted."""
+    from leaguebot.weather.services import forecast_cleanup_service
+
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    monkeypatch.setattr(forecast_cleanup_service, "forecast_deletes",
+                        AsyncMock(side_effect=RuntimeError("the database is locked")))
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "plan_forecast_deletes"
+    assert ": finding the forecasts to delete for " in await _said(league)
+    assert 9303 in league.channel(FORECAST).messages
+
+
+@pytest.mark.parametrize("undone", [
+    *_GONE_OR_CANCELLED,
+    pytest.param("weather off", id="weather off"),
+])
+async def test_a_clean_up_no_longer_due_when_its_turn_comes_is_dropped(tmp_path, undone):
+    """Round 3's clean-up is asked with its Phase 3 forecast (9303) standing, and before its turn
+    the round is gone, it or Pro is cancelled, or the weather module is switched off: the change
+    is dropped at its check, and nothing is deleted."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    await _clean_up(league)
+    if undone == "DELETE":
+        await _remove_round(league)
+    elif undone == "weather off":
+        await league.switch("weather", False)
+    else:
+        await league.write(undone, PRO if "divisions" in undone else ROUND)
+
+    await run_queue(league.bot)
+
+    assert await _states(league, CLEAN_UP_KIND) == ["DROPPED"]
+    assert await _deletes_of(league, CLEAN_UP_KIND) == []
+    assert ("delete", 9303) not in _events(league)
+    assert 9303 in league.channel(FORECAST).messages
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_a_clean_up_for_a_round_that_is_not_there_asks_nothing(tmp_path):
+    """The clean-up's timer fires for a round no longer in the database: nothing is asked of the
+    queue."""
+    league = await _league(tmp_path)
+
+    await _clean_up(league, 999)
+
+    assert await _states(league, CLEAN_UP_KIND) == []
+
+
+async def test_a_forecast_whose_channel_was_unset_is_forgotten_by_its_clean_up_without_a_delete(
+    tmp_path,
+):
+    """Pro's Phase 3 forecast of round 3 (9303) is recorded, and Pro's forecast channel has since
+    been unset: the clean-up's delete asks nothing of Discord, completes, and drops the record."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [job] = await _deletes_of(league, CLEAN_UP_KIND)
+    assert job["done_at"]
+    assert ("delete", 9303) not in _events(league)
+    assert await _forecasts(league) == {}
+
+
+# ---------------------------------------------------------------------------
+# The jobs run alone: a payload that names no division, a round gone under a post
+# ---------------------------------------------------------------------------
+
+
+def _step_context(league: Any, payload: dict[str, Any]) -> Any:
+    """What a forecast job reads of its context: the change's *payload*, none of its own."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(bot=league.bot, db_path=league.db_path, payload=payload,
+                           step_payload={}, kept=None, tries=0, steps=())
+
+
+def _steps(league: Any) -> dict[str, Any]:
+    from leaguebot.weather.services.forecast_changes import forecast_steps
+
+    return forecast_steps(now=lambda: league.clock.now)
+
+
+async def test_a_post_whose_round_is_gone_raises_naming_the_round(tmp_path):
+    """The post job of round 999's Phase 1, a round not in the database, raises a LookupError
+    naming it, and posts nothing."""
+    league = await _league(tmp_path)
+
+    with pytest.raises(LookupError, match="round 999 is no longer there"):
+        await _steps(league)["post_forecast"].run(
+            _step_context(league, {"round_id": 999, "phase": 1}))
+
+    assert _events(league) == []
+
+
+async def test_a_delete_naming_no_division_finds_the_round_s_and_its_record_forgets_the_forecast(
+    tmp_path,
+):
+    """A delete job of round 3's Phase 3 forecast (9303) that names no division nor message: it
+    finds Pro by the round, deletes the forecast, and its record drops Pro's row."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.weather.services.forecast_changes import DELETE_FORECAST
+
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    step = _steps(league)[DELETE_FORECAST]
+    ctx = _step_context(league, {"round_id": ROUND, "phase": 3})
+
+    result = await step.run(ctx)
+    async with get_connection(league.db_path) as db:
+        await step.record(db, ctx, result)
+        await db.commit()
+
+    assert result.result == {"phase": 3, "message_id": 9303, "channel_id": FORECAST}
+    assert ("delete", 9303) in _events(league)
+    assert await _forecasts(league) == {}
+
+
+async def test_a_delete_naming_no_division_for_a_round_that_is_gone_deletes_and_forgets_nothing(
+    tmp_path,
+):
+    """The same delete job for round 999, not in the database: it finds nothing to delete, and its
+    record, finding no division, forgets nothing; round 3's forecast stands."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.weather.services.forecast_changes import DELETE_FORECAST
+
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    step = _steps(league)[DELETE_FORECAST]
+    ctx = _step_context(league, {"round_id": 999, "phase": 3})
+
+    result = await step.run(ctx)
+    async with get_connection(league.db_path) as db:
+        await step.record(db, ctx, result)
+        await db.commit()
+
+    assert result.result == {"none": True}
+    assert _events(league) == []
+    assert await _forecasts(league) == {3: 9303}
+
+
+@pytest.mark.parametrize("result, where", [
+    pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302, "guild_id": 1},
+                 "https://discord.com/channels/1/605/9302", id="server known"),
+    pytest.param({"phase": 2, "channel_id": 605, "message_id": 9302},
+                 "message 9302 in <#605>", id="server unknown"),
+])
+async def test_a_discarded_forecast_delete_names_the_forecast_to_delete_by_hand(result, where):
+    """A league admin discards the deletion of a Phase 2 forecast (9302 in channel 605) that
+    Discord refused: what is not done names the forecast channel, and says to delete the forecast
+    by hand, by its link where the server was known when it failed and by its message and channel
+    otherwise."""
+    from leaguebot.core.services.change_queue import StepView
+    from leaguebot.weather.services.forecast_changes import DELETE_FORECAST, forecast_failure
+
+    view = StepView(name=DELETE_FORECAST, payload={"phase": 2}, result=result, done=False)
+
+    assert forecast_failure(view) == (
+        "forecast channel",
+        "the Phase 2 forecast could not be deleted, and a league admin discarded it; delete it "
+        f"by hand ({where})",
+    )
