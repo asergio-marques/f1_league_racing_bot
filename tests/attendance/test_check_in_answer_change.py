@@ -15,6 +15,9 @@ pressed, not when its turn comes (Q10; Constitution XIII). A burst of answers to
 one redraw; a refused redraw stops the queue with the answer saved (Q4); a call gone completes
 its redraw.
 
+`/attendance test rsvp`'s form asks one such change carrying every entry (C36): its jobs save
+them all (`save_answers`) and redraw the call once.
+
 Everything of the change is imported inside a test, so this file collects while it is unbuilt.
 """
 from __future__ import annotations
@@ -238,3 +241,47 @@ async def test_an_answer_is_acknowledged_privately_and_updated_and_kept_while_th
     assert await _answer(league, MAX) == "ACCEPTED"
     assert _redraws(league) == [CALL]
     assert "Accepted" in updated_reply(interaction)
+
+
+NO_TEST_RSVP_CHANGE = (
+    "#439: /attendance test rsvp saves its entries and redraws the call at once, off the change "
+    "queue"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_TEST_RSVP_CHANGE)
+async def test_test_rsvp_s_entries_are_saved_and_the_call_redrawn_once(tmp_path):
+    """Test mode is on. A maintainer (77) submits `/attendance test rsvp`'s form for Pro's round 3
+    with two entries: Lewis declines and Max accepts. Nothing is saved or redrawn as the form is
+    submitted; the queue then saves both answers in one change and redraws the call (7001) once,
+    and the maintainer's reply says both entries were applied and the call is redrawn on the
+    queue."""
+    from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
+
+    league = await _league(tmp_path)
+    await league.set_test_mode(True)
+    interaction = member_interaction(league.bot, user=member(77, "Maintainer"),
+                                     created_at=league.clock.now)
+    modal = _RsvpBulkSetModal(
+        division_name="Pro", division_id=PRO, round_id=ROUND_3,
+        embed_channel_id=CHECK_IN, embed_message_id=CALL, bot=league.bot,
+    )
+    modal.entries._value = f"{LEWIS}, decline\n{MAX}, accept"  # type: ignore[attr-defined]
+
+    await modal.on_submit(interaction)
+    assert await _answer(league, LEWIS) == "ACCEPTED"
+    assert await _answer(league, MAX) == "NO_RSVP"
+    assert _redraws(league) == []
+    await run_queue(league.bot)
+
+    assert await _answer(league, LEWIS) == "DECLINED"
+    assert await _answer(league, MAX) == "ACCEPTED"
+    assert _redraws(league) == [CALL]
+    [change] = await _answer_changes(league)
+    assert [step["name"] for step in await step_rows(league.db_path, change["id"])] == [
+        "save_answers", "redraw",
+    ]
+    replied = acknowledgement(interaction) + "\n" + updated_reply(interaction)
+    assert "Applied 2 update(s)" in replied
+    assert "queue" in replied
+    assert await stopped_job(league.db_path) is None
