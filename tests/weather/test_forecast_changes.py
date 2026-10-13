@@ -564,6 +564,97 @@ def test_a_forecast_with_no_division_role_writes_no_mention(phase, payload):
 
 
 # ---------------------------------------------------------------------------
+# A forecast too long for one message (#439, slice 6b, folded fault 4)
+#
+# Every part a forecast is posted in is recorded with it, so a forecast superseded is deleted
+# whole, and a part sent before a later part was refused is removed before the next try.
+# ---------------------------------------------------------------------------
+
+NO_PARTS_RECORDED = "#439: a forecast in more than one message records only its last"
+#: A track name long enough that Phase 2's forecast takes two messages.
+LONG_TRACK = TRACK + " " + "x" * 1850
+
+
+async def _two_part_phase_2(league: Any) -> None:
+    """Phase 1 posted, then round 3's track renamed so long that Phase 2's forecast, which names
+    it, takes two messages."""
+    await _posted(league, 1)
+    await league.write("UPDATE rounds SET track_name = ? WHERE id = ?", LONG_TRACK, ROUND)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PARTS_RECORDED)
+async def test_a_forecast_in_two_parts_records_both(tmp_path):
+    """Round 3's track has a name of some 1,870 characters, and Phase 2 is asked after Phase 1:
+    the Phase 2 forecast is posted in two messages, and its record keeps both, in order."""
+    league = await _league(tmp_path)
+    await _two_part_phase_2(league)
+    before = len(_events(league))
+
+    await _posted(league, 2)
+
+    parts = [mid for kind, mid in _events(league)[before:] if kind == "send"]
+    assert len(parts) == 2
+    [row] = await league.rows(
+        "SELECT message_ids FROM forecast_messages WHERE round_id = ? AND phase_number = 2", ROUND)
+    assert json.loads(row["message_ids"]) == parts
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PARTS_RECORDED)
+async def test_a_superseded_forecast_in_two_parts_is_deleted_whole(tmp_path):
+    """Round 3's Phase 2 forecast was posted in two messages; Phase 3 is then asked. Once Phase 3
+    is posted, both messages of Phase 2 are deleted from Pro's forecast channel, and no record of
+    Phase 2 is left."""
+    league = await _league(tmp_path)
+    await _two_part_phase_2(league)
+    before = len(_events(league))
+    await _posted(league, 2)
+    parts = [mid for kind, mid in _events(league)[before:] if kind == "send"]
+    assert len(parts) == 2
+
+    await _posted(league, 3)
+
+    for part in parts:
+        assert ("delete", part) in _events(league)
+        assert part not in league.channel(FORECAST).messages
+    assert 2 not in await _forecasts(league)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PARTS_RECORDED)
+async def test_a_forecast_failing_after_its_first_part_removes_it_before_its_next_try(tmp_path):
+    """Round 3's Phase 2 forecast takes two messages; Discord accepts the first and refuses the
+    second, so the queue stops at the post with the first part standing in Pro's forecast channel.
+    Discord accepting again, Retry deletes that first part before posting the forecast afresh,
+    and the record holds only the messages of the new post."""
+    league = await _league(tmp_path)
+    await _two_part_phase_2(league)
+    before = len(_events(league))
+    league.channel(FORECAST).fail_when = (
+        lambda content, _kwargs: not str(content).startswith(f"<@&{PRO_ROLE}>")
+    )
+
+    await _ask(league, 2)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+    [stray] = [mid for kind, mid in _events(league)[before:] if kind == "send"]
+    assert stray in league.channel(FORECAST).messages
+
+    league.channel(FORECAST).fail_when = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    after = _events(league)[before:]
+    assert ("delete", stray) in after
+    removed = after.index(("delete", stray))
+    reposted = [mid for kind, mid in after if kind == "send" and mid != stray]
+    assert reposted and after.index(("send", reposted[0])) > removed
+    assert stray not in league.channel(FORECAST).messages
+    [row] = await league.rows(
+        "SELECT message_ids FROM forecast_messages WHERE round_id = ? AND phase_number = 2", ROUND)
+    assert json.loads(row["message_ids"]) == reposted
+
+
+# ---------------------------------------------------------------------------
 # The deletion of forecasts a day after the round, and their clearing, as jobs
 # ---------------------------------------------------------------------------
 
