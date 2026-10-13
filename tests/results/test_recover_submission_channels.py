@@ -467,6 +467,37 @@ async def test_a_round_with_no_recorded_prompt_fetches_nothing(tmp_path):
     channel.fetch_message.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: the review's recovery looks the change queue up on the bot rather than being handed it"
+))
+async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
+    """A service is handed the change queue rather than looking it up on the bot (#439 slice 6b,
+    fold-in 6). A round left in its penalty review at a restart is put back by asking the queue
+    the recovery was handed, and nothing is asked of the bot's own."""
+    from leaguebot.results.services.review_recovery import recover_review
+
+    db_path = await _make_db(tmp_path, name="recover_handed", in_penalty_review=1)
+    stub = _bot(db_path, channel=_channel())
+    handed = MagicMock()
+    handed.ask = AsyncMock(return_value=1)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review, rsc.results_posted, "
+            "rsc.prompt_message_id, rsc.appeals_prompt_message_id, rsc.resubmitting, "
+            "rsc.resubmit_prompt_message_id, rsc.resubmit_started_by, r.division_id, r.status, "
+            "r.round_number, d.name AS division_name FROM round_submission_channels rsc "
+            "JOIN rounds r ON r.id = rsc.round_id JOIN divisions d ON d.id = r.division_id"
+        )
+        row = await cursor.fetchone()
+
+    assert await recover_review(stub, row, stub._guild, AsyncMock(), queue=handed) is True
+
+    handed.ask.assert_awaited_once()
+    assert handed.ask.await_args.args[0] == "results.review.open"
+    assert handed.ask.await_args.args[1]["round_id"] == ROUND_ID
+    stub.change_queue.ask.assert_not_awaited()
+
+
 async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path):
     """Nothing can be posted without the guild, and clearing the row would lose the round's
     place in the review — so it is left for the next restart to find."""
