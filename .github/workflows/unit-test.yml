@@ -107,10 +107,10 @@ jobs:
     runs-on: windows-latest
     # Without a bound this job runs to GitHub's six-hour default, and Windows minutes bill
     # at twice Linux's. Windows runs the tests that touch a database about two and a half
-    # times slower than Linux (`tools/compare_test_timings.py`), and the change queue's tests
-    # are the slowest of them: the suite needed about twenty-four minutes here when the bound
-    # was twenty. Thirty-five leaves room for the suite to grow; a run that nears it is slower
-    # than it should be, not a bound to raise again.
+    # times slower than Linux (`tools/compare_test_timings.py`), and its runners vary widely in
+    # speed: the same suite has finished in twelve minutes on one run and been cut off at
+    # twenty on another. Thirty-five leaves room for a slow runner and for the suite to grow;
+    # a run that nears it is slower than it should be, not a bound to raise again.
     timeout-minutes: 35
 
     defaults:
