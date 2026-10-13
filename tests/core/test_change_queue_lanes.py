@@ -145,6 +145,52 @@ async def _states(env) -> list[str]:
     return [row["state"] for row in await change_rows(env.db_path)]
 
 
+def _gate(*, fail: bool) -> SimpleNamespace:
+    """What a `_held` job does: `hold` it at its next try until `release` is set, then fail where
+    `fail` is set. `entered` is set once the held try has begun."""
+    return SimpleNamespace(hold=False, fail=fail, entered=asyncio.Event(),
+                           release=asyncio.Event(), ran=[])
+
+
+def _held(name: str, gate: SimpleNamespace) -> Any:
+    """An `ACT` job a test can hold in the middle of a try, through *gate*."""
+    api = _api()
+
+    async def _run(_ctx):
+        if gate.hold:
+            gate.hold = False
+            gate.entered.set()
+            await gate.release.wait()
+        if gate.fail:
+            raise api.StepFailedOnDiscord("Missing Access")
+        gate.ran.append(name)
+        return api.StepResult()
+
+    return api.Step(name, api.StepKind.ACT, _run)
+
+
+async def _press_on(env, job: dict[str, Any], action: str) -> Any:
+    """Press *action*, Retry by a league manager or Discard by a league admin, on *job*'s stop
+    notice, without running the queue. Gives the presser's interaction."""
+    user = tier_member("manager" if action == "retry" else "admin")
+    interaction = member_interaction(env.bot, user=user)
+    interaction.message.id = job["notice_message_id"]
+    await maybe_await(getattr(env.bot.change_queue, action)(job["notice_message_id"], interaction))
+    return interaction
+
+
+def _told(interaction: Any) -> list[str]:
+    """What the presser was told."""
+    calls = (interaction.response.send_message.await_args_list
+             + interaction.followup.send.await_args_list)
+    return [str(call.args[0] if call.args else call.kwargs.get("content", "")) for call in calls]
+
+
+def _refused_as_tried(interaction: Any) -> bool:
+    return any(text.startswith("⛔") and "is being tried now" in text
+               for text in _told(interaction))
+
+
 @pytest.fixture
 async def env(tmp_path):
     db_path = str(tmp_path / "queue.db")
@@ -472,3 +518,86 @@ async def test_a_lane_s_retry_falls_due_on_its_own_schedule(env):
     assert [turn["tries"], league["tries"]] == [2, 2]
     assert datetime.fromisoformat(turn["next_try_at"]) == NOW + timedelta(minutes=5)
     assert datetime.fromisoformat(league["next_try_at"]) == NOW + timedelta(minutes=5, seconds=30)
+
+
+# ---------------------------------------------------------------------------
+# L5: Retry and Discard are refused only while their own lane tries the job
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_TRYING)
+async def test_retry_and_discard_are_refused_only_while_their_own_lane_tries_the_job(env):
+    """A turn in channel 7 and a league change each stop at a job Discord refuses. While the turn's
+    job is being tried again, Retry and Discard on its notice are each refused as being tried now.
+    While the league's job is being tried, Discard on the league's notice is refused the same way,
+    but Retry and then Discard on the turn's notice go through: the turn's job is dropped."""
+    turn_gate, league_gate = _gate(fail=True), _gate(fail=True)
+    _queue(env, _type("turn", steps=[_held("post7", turn_gate)], lane=_in_channel),
+           _type("dummy", steps=[_held("postL", league_gate)]))
+    await _ask(env, "turn", {"channel": 7})
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+    turn_job, league_job = await _job(env, "post7"), await _job(env, "postL")
+    assert turn_job["failing_since"] is not None and league_job["failing_since"] is not None
+
+    turn_gate.hold = True
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(turn_gate.entered.wait(), 5)
+        retried = await _press_on(env, turn_job, "retry")
+        discarded = await _press_on(env, turn_job, "discard")
+    finally:
+        turn_gate.release.set()
+        await asyncio.wait_for(trying, 5)
+    assert _refused_as_tried(retried) and _refused_as_tried(discarded)
+
+    league_gate.hold = True
+    env.clock.advance(minutes=4)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(league_gate.entered.wait(), 5)
+        league_discarded = await _press_on(env, league_job, "discard")
+        retried = await _press_on(env, await _job(env, "post7"), "retry")
+        discarded = await _press_on(env, await _job(env, "post7"), "discard")
+    finally:
+        league_gate.release.set()
+        await asyncio.wait_for(trying, 5)
+
+    assert _refused_as_tried(league_discarded)
+    assert not _refused_as_tried(retried) and not _refused_as_tried(discarded)
+    assert any(text.startswith("🔁") for text in _told(retried))
+    assert "discarded" in (await _job(env, "post7"))["result"]
+    assert await _states(env) == ["DONE", "RUNNING"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_TRYING)
+async def test_a_press_on_one_lane_s_notice_goes_through_while_another_lane_runs(env):
+    """A turn in channel 7 is stopped at a job Discord refuses. While a league change is in the
+    middle of a long job, Retry on the turn's notice is taken at once and the presser told it is
+    being tried again; once the league's job ends, the turn's job is tried and goes through."""
+    turn_gate, league_gate = _gate(fail=True), _gate(fail=False)
+    _queue(env, _type("turn", steps=[_held("post7", turn_gate)], lane=_in_channel),
+           _type("dummy", steps=[_held("long", league_gate)]))
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    turn_job = await stopped_job(env.db_path)
+    assert turn_job is not None
+
+    await _ask(env, "dummy")
+    league_gate.hold = True
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(league_gate.entered.wait(), 5)
+        turn_gate.fail = False
+        retried = await _press_on(env, turn_job, "retry")
+        assert turn_gate.ran == []
+    finally:
+        league_gate.release.set()
+        await asyncio.wait_for(trying, 5)
+    await run_queue(env.bot)
+
+    assert not _refused_as_tried(retried)
+    assert any(text.startswith("🔁") for text in _told(retried))
+    assert (league_gate.ran, turn_gate.ran) == (["long"], ["post7"])
+    assert await _states(env) == ["DONE", "DONE"]
