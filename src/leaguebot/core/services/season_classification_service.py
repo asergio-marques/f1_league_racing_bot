@@ -16,10 +16,11 @@ alternative beside the text, never an exception to it).
 
 **The opening is posted one division at a time, by the season's approval, each posting a job
 of the change queue** that raises where it cannot post (:func:`post_opening_standings`,
-:func:`post_opening_sheet`). **The final one** catches every problem, collects and returns it for
-the caller to report to the logging channel, never to a channel a driver reads (XIV.4), and one
-division never stops another: season completion is far too consequential to be failed by a
-picture.
+:func:`post_opening_sheet`). **The final one** is posted the same way by the season's
+completion, one division at a time, each posting a job that raises where it cannot post
+(:func:`post_final_standings`, :func:`post_final_sheet`), so the queue stops there and a league admin
+retries or discards it; a picture Discord refuses is posted as text in the same try, never failing
+the completion on its own.
 """
 
 from __future__ import annotations
