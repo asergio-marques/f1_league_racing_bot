@@ -716,9 +716,10 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
     """No call stands for round 1 and none is kept. Its post fails on the connection rather than
     on Discord: as a refusal does, it stops the queue, no call recorded, the stop notice saying
     no attendance rows are open and the round will count nothing against anyone until the call
-    is posted. A send that timed out may have reached Discord all the same,
-    and the notice says to check the channel, naming the fault's kind rather than nothing
-    (owner, 2026-10-09: "Fold it in")."""
+    is posted. A send that timed out may have reached Discord all the same: since the queue posts
+    the call again on its next try, the notice says so and that any second copy is to be deleted
+    by hand, naming the fault's kind rather than nothing (attendance spec :120; owner, 2026-10-09:
+    "Fold it in", 2026-10-11)."""
     db_path = await _make_db(tmp_path)
     bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
     bot.channels[RSVP_CHANNEL_ID].send_fails = fault
@@ -731,7 +732,9 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
     assert NOTHING_LEFT in notice
     assert COUNTS_NOTHING in notice
     timed_out = isinstance(fault, TimeoutError)
-    assert ("may have reached Discord all the same; check the channel" in notice) == timed_out
+    assert ("the bot posts it again on its next try" in notice) == timed_out
+    assert ("any second copy is to be deleted by hand" in notice) == timed_out
+    assert "check the channel" not in notice
     if timed_out:
         assert "TimeoutError" in notice
 
