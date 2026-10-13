@@ -420,3 +420,45 @@ async def test_a_server_with_no_standing_calls_recovers_nothing(tmp_path):
 
     assert await _recover(bot) == []
     bot.add_view.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The deadline's own mark (#439, slice 6b)
+# ---------------------------------------------------------------------------
+
+NO_DEADLINE_MARK = (
+    "#439: the restart does not yet read the deadline's own mark, nor ask the queue for the "
+    "deadline"
+)
+
+
+async def _asked(bot) -> list[int]:
+    """Run the recovery, returning the rounds whose deadline it asked of the queue."""
+    asked: list[int] = []
+
+    async def _ask(_queue, _db_path, round_id, **_kwargs):
+        asked.append(round_id)
+
+    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
+               new=AsyncMock(side_effect=_ask)):
+        await _recover_rsvp_views_and_deadlines(bot)
+    return asked
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
+@pytest.mark.parametrize(("marked", "asked"), [(True, []), (False, [ROUND_ID])],
+                         ids=["marked-run", "not-marked"])
+async def test_a_restart_reads_the_deadline_s_own_mark(tmp_path, marked, asked):
+    """The deadline passed while the bot was down, and no announcement is recorded on the
+    call: one whose announcement was discarded, or one that never ran. Only the mark tells
+    them apart, and only the deadline that never ran is asked for again."""
+    db_path = await _make_db(tmp_path, hours_until_round=-1)
+    if marked:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET deadline_run_at = ? WHERE round_id = ?",
+                (datetime.now(timezone.utc).isoformat(), ROUND_ID),
+            )
+            await db.commit()
+
+    assert await _asked(_bot(db_path)) == asked

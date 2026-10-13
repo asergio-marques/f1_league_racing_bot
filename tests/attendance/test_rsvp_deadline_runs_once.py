@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
@@ -147,36 +148,116 @@ async def test_two_deadline_runs_at_once_post_one_announcement(tmp_path):
     assert await _recorded(db_path) == str(POSTED_MSG_ID)
 
 
-async def test_a_deadline_whose_message_is_recorded_does_nothing(tmp_path):
-    """It has run. The call is not redrawn and nothing is posted."""
-    db_path = await _make_db(tmp_path, distribution_msg_id=str(POSTED_MSG_ID))
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+# A deadline that has run is marked so on its call (`deadline_run_at`), apart from the message it
+# posts (#439, slice 6b): a discarded announcement leaves the placements made and the deadline
+# run, and it must not be run again, at a restart or otherwise. These use `ongoing_league` with
+# attendance on, its queue rebuilt on a real `AttendanceService`: Pro's round 3 is an hour off,
+# its two-hour deadline passed, its call standing in Pro's check-in channel (603) as message 7001
+# with its last notice 7002. The deadline is asked of the queue as its timer asks it, and the
+# queue run.
 
-    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+NO_DEADLINE_MARK = (
+    "#439: the deadline has no mark of its own yet, and is not yet a change on the queue"
+)
 
-    channel.fetch_message.assert_not_awaited()
-    channel.send.assert_not_awaited()
+
+async def _league_past_its_deadline(tmp_path, *, marked: bool, announced: bool):
+    from tests.support.change_queue import attach_queue
+    from tests.support.season_league import CALL_MESSAGES, DIVISIONS, PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, attendance=True)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    now = league.clock.now
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       (now + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                       round_id(PRO, 3))
+    if not announced:
+        del league.channel(DIVISIONS[PRO][3].checkin).messages[CALL_MESSAGES[2]]
+        await league.write("UPDATE rsvp_embed_messages SET distribution_msg_id = NULL "
+                           "WHERE round_id = ?", round_id(PRO, 3))
+    if marked:
+        await league.write("UPDATE rsvp_embed_messages SET deadline_run_at = ? WHERE round_id = ?",
+                           (now - timedelta(minutes=30)).isoformat(), round_id(PRO, 3))
+    return league
 
 
+async def _ask_deadline(league) -> None:
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import PRO, round_id
+
+    await ask_check_in_deadline(league.bot.change_queue, league.db_path, round_id(PRO, 3),
+                                origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+
+
+def _check_in_events(league) -> list[tuple[str, int]]:
+    from tests.support.season_league import DIVISIONS, PRO
+
+    return [(kind, mid) for kind, cid, mid in league.events
+            if cid == DIVISIONS[PRO][3].checkin]
+
+
+async def _call(league) -> dict:
+    from tests.support.season_league import PRO, round_id
+
+    [row] = await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?",
+                              round_id(PRO, 3))
+    return row
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
+async def test_a_deadline_whose_mark_is_set_does_nothing(tmp_path):
+    """It has run, and its announcement stands. The call is not locked again and nothing is
+    posted."""
+    from tests.support.change_queue import stopped_job
+
+    league = await _league_past_its_deadline(tmp_path, marked=True, announced=True)
+
+    await _ask_deadline(league)
+
+    assert _check_in_events(league) == []
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
+async def test_a_deadline_marked_run_is_not_run_again_whatever_became_of_its_announcement(
+    tmp_path,
+):
+    """Its announcement was discarded, so no message is recorded on the call; the mark still
+    says the deadline ran, and the placements it made stand without a second announcement."""
+    from tests.support.change_queue import stopped_job
+
+    league = await _league_past_its_deadline(tmp_path, marked=True, announced=False)
+
+    await _ask_deadline(league)
+
+    assert _check_in_events(league) == []
+    assert await stopped_job(league.db_path) is None
+    assert (await _call(league))["distribution_msg_id"] is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 async def test_a_deadline_whose_message_never_posted_is_run_again(tmp_path):
-    """A failed announcement records nothing, so the deadline has not run: the next run posts
-    it. The lock must not turn a retry into a refusal."""
-    db_path = await _make_db(tmp_path)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-    posted = channel.send.return_value
-    channel.send = AsyncMock(
-        side_effect=[discord.HTTPException(MagicMock(status=500), "Discord failing"), posted]
-    )
+    """No mark and no message: the deadline has not run, so it locks the call, posts its
+    announcement, and records both the message and the mark."""
+    from tests.support.change_queue import stopped_job
+    from tests.support.season_league import CALL_MESSAGES
 
-    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
-    assert await _recorded(db_path) is None
+    league = await _league_past_its_deadline(tmp_path, marked=False, announced=False)
 
-    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+    await _ask_deadline(league)
 
-    assert channel.send.await_count == 2
-    assert await _recorded(db_path) == str(POSTED_MSG_ID)
+    assert await stopped_job(league.db_path) is None
+    events = _check_in_events(league)
+    assert ("edit", CALL_MESSAGES[0]) in events
+    sent = [mid for kind, mid in events if kind == "send"]
+    assert len(sent) == 1
+    call = await _call(league)
+    assert call["distribution_msg_id"] == str(sent[0])
+    assert call["deadline_run_at"] is not None
 
 
 async def test_a_deadline_with_no_call_standing_posts_nothing(tmp_path):
