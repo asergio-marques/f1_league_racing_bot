@@ -1438,6 +1438,166 @@ def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_
         )
 
 
+# ── 10c. No service looks another service up on the bot ─────────────────────────────────────
+
+#: How the name of a service the bot holds ends (`core/utils/league_bot.py`).
+_SERVICE_SUFFIX = "_service"
+
+
+def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
+    """The services among *nodes* that a service or a helper looks up on the bot, ``bot.X_service``
+    or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it, counted by
+    file and function. The change queue is the queue check's, and not counted here."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if not _is_a_service_or_helper(path):
+            continue
+        name = _attribute_read_on_the_bot(node)
+        if name is not None and name.endswith(_SERVICE_SUFFIX):
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
+    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_attendance_enabled_for_division"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_check_in_runs_for_round"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (2, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (2, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "repost_rsvp_call"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_deadline"): (2, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_last_notice"): (2, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_notice"): (5, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "withdraw_rsvp_call"): (1, PASS["attendance"]),
+    ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
+    ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
+    ("core/services/backup_service.py", "jobstore_path_of"): (1, PASS["core"]),
+    ("core/services/calendar_post_service.py", "image_calendar_wanted"): (2, PASS["core"]),
+    ("core/services/calendar_post_service.py", "render_calendar_image"): (2, PASS["core"]),
+    ("core/services/hub_service.py", "_hub_channel"): (1, PASS["core"]),
+    ("core/services/hub_service.py", "apply_hub_permissions"): (1, PASS["core"]),
+    ("core/services/hub_service.py", "refresh_panel"): (1, PASS["core"]),
+    ("core/services/in_memory_state.py", "clear_in_memory_state"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, PASS["core"]),
+    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (1, PASS["core"]),
+    ("core/utils/autocomplete.py", "team_autocomplete"): (1, PASS["core"]),
+    ("core/utils/channel_guard.py", "_tier_guard.decorate.wrapper"): (1, PASS["core"]),
+    ("core/utils/channel_guard.py", "bot_setup_only.wrapper"): (1, PASS["core"]),
+    ("core/utils/channel_guard.py", "server_owner_only.wrapper"): (1, PASS["core"]),
+    ("core/utils/league_server.py", "is_foreign_guild"): (1, PASS["core"]),
+    ("core/utils/league_server.py", "league_guild"): (1, PASS["core"]),
+    ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "refresh_before_render"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "run_daily_refresh"): (1, PASS["image"]),
+    ("image/services/image_attendance_post.py", "attendance_enabled"): (3, PASS["image"]),
+    ("image/services/image_attendance_post.py", "render_sheet"): (2, PASS["image"]),
+    ("image/services/image_lineup_post.py", "lineup_enabled"): (3, PASS["image"]),
+    ("image/services/image_lineup_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_calendar_preview"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_results_preview"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
+    ("image/services/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
+    ("image/services/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
+    ("image/services/image_results_post.py", "build_drawing"): (1, PASS["image"]),
+    ("image/services/image_results_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_results_post.py", "results_enabled"): (3, PASS["image"]),
+    ("image/services/image_rsvp_post.py", "rsvp_enabled"): (3, PASS["image"]),
+    ("image/services/image_rsvp_post.py", "try_attach"): (2, PASS["image"]),
+    ("image/services/image_standings_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
+    ("image/services/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "banner_enabled"): (3, PASS["image"]),
+    ("image/services/image_verdict_banner_post.py", "render_banner"): (2, PASS["image"]),
+    ("image/services/image_verdict_post.py", "render_verdict"): (2, PASS["image"]),
+    ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
+    ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
+    ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
+    ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "_resubmit_collection_task"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "run_result_submission_job"): (2, PASS["results"]),
+    ("signup/services/wizard_service.py", "WizardService._driver_service"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._handle_preferred_teams"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._module_svc"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, PASS["signup"]),
+}
+
+
+def test_no_service_looks_another_service_up_on_the_bot():
+    """A service or a helper is handed the services it needs by whoever builds it, and never looks
+    one up on the bot (architecture.md, "How modules and core fit together": "Services stay
+    attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
+    may look a service up there. Today's lookups are listed under the pass of the module whose
+    file makes them; a lookup a slice of #439 removes deletes its line in that commit."""
+    _check(
+        "no service looks another service up on the bot",
+        _service_lookups_among(_nodes()),
+        KNOWN_SERVICE_LOOKUPS,
+    )
+
+
+#: A sample making a lookup through each way the code reaches the bot.
+_LOOKUP_SAMPLE = (
+    "async def handler(self, ctx, bot, interaction):\n"
+    "    bot.season_service.get()\n"
+    "    self.bot.driver_service.get()\n"
+    "    self._bot.module_service.get()\n"
+    "    ctx.bot.season_service.get()\n"
+    "    bot_of(interaction).placement_service.get()\n"
+    "    getattr(bot, 'scheduler_service', None)\n"
+    "    bot.change_queue.ask('kind', {})\n"
+    "    bot.db_path\n"
+)
+
+
+def test_the_lookup_check_finds_a_lookup_in_a_services_file():
+    """In a services file, each of the six ways of looking a service up on the bot is counted;
+    the change queue, held by the queue check, and an attribute that is not a service are not."""
+    path = "signup/services/sample_service.py"
+
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+
+
+def test_the_lookup_check_does_not_count_a_cog_s_lookup():
+    """A cog looks the services up on the bot, as commands do: nothing is counted."""
+    path = "signup/cogs/sample_cog.py"
+
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter()
+
+
+def test_the_lookup_check_finds_a_lookup_in_a_utils_file():
+    """A helper is held to the rule as a service is."""
+    path = "core/utils/sample_helper.py"
+
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+
+
+def test_a_listed_lookup_that_is_gone_fails_the_lookup_check():
+    """A lookup listed but no longer made fails the rule, so its line is deleted with it."""
+    path = "core/services/sample_service.py"
+    nodes = _sample("async def handler(season_service):\n    season_service.get()\n", path)
+
+    with pytest.raises(AssertionError, match="Breaches fixed but still listed"):
+        _check(
+            "no service looks another service up on the bot",
+            _service_lookups_among(nodes),
+            {(path, "handler"): (1, PASS["core"])},
+        )
+
+
+def test_the_lookup_rule_cites_the_architecture_s_rule():
+    """The rule names the architecture's rule it holds, so a reader finds why."""
+    assert "Services stay attached to the bot, and are built in one place" in " ".join(
+        (test_no_service_looks_another_service_up_on_the_bot.__doc__ or "").split()
+    )
+
+
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
 
 #: The schema, whose tables the rule is about.
