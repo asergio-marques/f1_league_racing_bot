@@ -58,6 +58,7 @@ NO_LANE_TRYING = "#439: the job being tried is the whole queue's, not each lane'
 NO_WRITE_LOCK = "#439: the queue's saves take no write lock of their own"
 NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again inside it"
 NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
+NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
 
 
 def _api() -> SimpleNamespace:
@@ -1077,3 +1078,79 @@ async def test_a_job_failing_because_its_channel_was_deleted_under_it_stops_its_
     assert tries == [1]
     assert await stopped_job(env.db_path) is None
     assert await _open_changes(env) == []
+
+
+# ---------------------------------------------------------------------------
+# L9: a conversation lane's saves write only its conversation's own tables
+# ---------------------------------------------------------------------------
+
+
+def _writing(name: str, *tables: str, lines: tuple[str, ...] = ()) -> Any:
+    """A `SAVE` job writing one row into each of *tables*, in order, with an audit record and
+    *lines*."""
+    api = _api()
+
+    async def _run(db, ctx):
+        for table in tables:
+            column = "channel, v" if table == "answers" else "v"
+            values = "?, ?" if table == "answers" else "?"
+            params = (ctx.payload.get("channel"), name) if table == "answers" else (name,)
+            await db.execute(f"INSERT INTO {table} ({column}) VALUES ({values})", params)
+        return api.StepResult(
+            audits=(api.AuditRecord("DUMMY_CHANGED", {"value": 1}, {"value": 2}),), lines=lines,
+        )
+
+    return api.Step(name, api.StepKind.SAVE, _run)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_WRITES)
+async def test_a_conversation_lane_s_save_may_not_write_another_table(env):
+    """A turn in channel 7 declares that it writes `answers` alone. Its save writes an answer, then
+    a row into `league_rows`, a table its conversation does not own. The write is refused: the
+    turn's lane stops at the save, nothing it wrote is saved, and the stop itself, written in the
+    queue's own tables, is recorded with its notice. A league change asked then is carried out."""
+    await _conversations(env)
+    ran: list[str] = []
+    _queue(env,
+           dataclasses.replace(_turn("turn", [_writing("save", "answers", "league_rows")]),
+                               writes=("answers",)),
+           _type("dummy", steps=[_act("d", ran)]))
+
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "save"
+    assert job["done_at"] is None and job["notice_message_id"] is not None
+    assert await _answers(env) == [] and await _league_rows(env) == []
+    assert ran == ["d"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_WRITES)
+async def test_a_conversation_save_s_mark_and_lines_pass_and_a_league_save_is_not_restricted(env):
+    """A turn in channel 7 declares that it writes `answers` alone; its save writes an answer, an
+    audit record and a log line, and asks nothing else. A league change declaring nothing saves a
+    row into both `answers` and `league_rows`. Both are carried out: each save lands with its mark,
+    the audit records are kept and the turn's line reaches the log channel."""
+    await _conversations(env)
+    line = "📝 An answer was saved in channel 7."
+    _queue(env,
+           dataclasses.replace(_turn("turn", [_writing("turn_save", "answers", lines=(line,))]),
+                               writes=("answers",)),
+           _type("dummy", steps=[_writing("league_save", "answers", "league_rows")]))
+
+    await _ask(env, "turn", {"channel": 7})
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+
+    assert await stopped_job(env.db_path) is None
+    assert await _answers(env) == ["turn_save", "league_save"]
+    assert await _league_rows(env) == ["league_save"]
+    assert all(row["done_at"] is not None for row in await step_rows(env.db_path))
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM audit_entries")
+        assert (await cursor.fetchone())["n"] == 2
+    assert any(line in sent for sent in env.bot.log_channel.sent)
+    assert await _states(env) == ["DONE", "DONE"]
