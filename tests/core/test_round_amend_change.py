@@ -11,9 +11,10 @@ at once, each a job of its own, and `close`, which reads the round list for the 
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned. Pro's round 3 (id 213) is NOT_RUN 90 days out, its check-in
-call standing; round 4 (id 214) 120 days out. The weather phases and the call's repost are
-recorded rather than run (`phases`, `reposts`), patched before the league is built so that the
-builder's hooks reach the recorders however they bind them. The change type is unbuilt until the
+call standing; round 4 (id 214) 120 days out. The weather phases are recorded rather than run
+(`phases`), patched before the league is built so that the builder's
+hooks reach the recorder however they bind it; the call is posted as attendance posts it, and read
+from what its check-in channel was sent (`reposts`). The change type is unbuilt until the
 build, so each test is marked to fail until then: today Confirm amends on the spot.
 """
 from __future__ import annotations
@@ -21,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import sqlite3
 import sys
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
@@ -81,7 +83,7 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
-#: The message a check-in call posted by the `reposts` recorder stands as.
+#: The message of a check-in call recorded as posted late at a restart.
 LATE_CALL = 7101
 #: What each stop notice adds where an amendment's call is refused, by what is left of the round.
 EARLIER_STANDS = "the earlier call still stands, and the answers given to it count"
@@ -113,63 +115,59 @@ def phases(monkeypatch):
     return recorded_draws(monkeypatch)
 
 
+class _Reposts:
+    """What the `reposts` fixture saw of the league it wrapped: the check-in calls posted, and
+    the fault their sends are refused with."""
+
+    def __init__(self) -> None:
+        self.league: Any = None
+
+    @property
+    def posted(self) -> list[tuple[int, int]]:
+        """`(round id, division id)` of each check-in call sent since the league was built: a
+        send to a check-in channel whose message stands recorded as a round's call."""
+        if self.league is None:
+            return []
+        checkins = {DIVISIONS[division][3].checkin for division in DIVISIONS}
+        sent = [(cid, mid) for kind, cid, mid in self.league.events
+                if kind == "send" and cid in checkins]
+        with sqlite3.connect(self.league.db_path) as db:
+            calls = {(int(channel), int(message)): (rid, division)
+                     for rid, division, message, channel in db.execute(
+                         "SELECT round_id, division_id, message_id, channel_id "
+                         "FROM rsvp_embed_messages")}
+        return [calls[each] for each in sent if each in calls]
+
+    @property
+    def fault(self) -> BaseException | None:
+        return self.league.channel(PRO_CH.checkin).send_fails
+
+    @fault.setter
+    def fault(self, fault: BaseException | None) -> None:
+        """Every send to Pro's check-in channel raises *fault* in its place."""
+        self.league.channel(PRO_CH.checkin).send_fails = fault
+
+
 @pytest.fixture
 def reposts(monkeypatch):
-    """Attendance's posts of a check-in call, recording `(round id, division id)` in `posted`,
-    raising `fault` instead where it is set: its repost (`repost_rsvp_call`), which, as the real
-    one does, records the call it posts in place of any standing; and its first post
-    (`run_rsvp_notice`), which, as the real one does, posts nothing where a call stands for the
-    round and records the call it posts as standing."""
-    from leaguebot.attendance.services import rsvp_service
+    """The check-in call posted as attendance posts it, by whichever of the bot's code posts it
+    (#439, slice 6b, C28: today `run_rsvp_notice` and `repost_rsvp_call` whole, then the call's
+    own job), and recorded from what Discord was sent, so that no test leans on either.
 
-    record = SimpleNamespace(posted=[], fault=None)
+    It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
+    service, its writers included (`_attendance_as_it_is`), and the fixture keeps it. `posted`
+    is `(round id, division id)` of each call sent to a check-in channel and recorded as the
+    round's call; setting `fault` refuses every send to Pro's check-in channel with it."""
+    record = _Reposts()
+    built = ongoing_league
 
-    async def _repost(rid: int, division_id: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
-        if record.fault is not None:
-            raise record.fault
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, "
-                "channel_id, posted_at) SELECT ?, ?, ?, rsvp_channel_id, ? "
-                "FROM attendance_division_config WHERE division_id = ? "
-                "ON CONFLICT(round_id, division_id) DO UPDATE SET "
-                "message_id = excluded.message_id, channel_id = excluded.channel_id, "
-                "posted_at = excluded.posted_at, last_notice_msg_id = NULL, "
-                "distribution_msg_id = NULL",
-                (rid, division_id, str(LATE_CALL), "2026-01-01T00:00:00", division_id),
-            )
-            await db.commit()
-        record.posted.append((rid, division_id))
+    async def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        league = await built(*args, **kwargs)
+        _attendance_as_it_is(league, monkeypatch)
+        record.league = league
+        return league
 
-    async def _post(rid: int, bot: Any, *_args: Any, **_kwargs: Any) -> None:
-        async with get_connection(bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT r.division_id, c.rsvp_channel_id FROM rounds r "
-                "JOIN attendance_division_config c ON c.division_id = r.division_id "
-                "WHERE r.id = ?",
-                (rid,),
-            )
-            found = await cursor.fetchone()
-            cursor = await db.execute(
-                "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ?", (rid,)
-            )
-            standing = await cursor.fetchone() is not None
-        if standing:
-            return
-        if record.fault is not None:
-            raise record.fault
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, "
-                "channel_id, posted_at) VALUES (?, ?, ?, ?, ?)",
-                (rid, found["division_id"], str(LATE_CALL), str(found["rsvp_channel_id"]),
-                 "2026-01-01T00:00:00"),
-            )
-            await db.commit()
-        record.posted.append((rid, found["division_id"]))
-
-    monkeypatch.setattr(rsvp_service, "repost_rsvp_call", _repost)
-    monkeypatch.setattr(rsvp_service, "run_rsvp_notice", _post)
+    monkeypatch.setattr(sys.modules[__name__], "ongoing_league", _wrapped)
     return record
 
 
@@ -311,6 +309,18 @@ def _real_call(league: Any, monkeypatch: Any) -> None:
     league.bot.attendance_service.get_division_config = attendance.get_division_config
     for name in dir(AttendanceService):
         if name.endswith("_on") and not name.startswith("_"):
+            setattr(league.bot.attendance_service, name, getattr(attendance, name))
+
+
+def _attendance_as_it_is(league: Any, monkeypatch: Any) -> None:
+    """`_real_call`, the attendance service's committing writers made real as well, so that the
+    call's record is written whichever of them the code that posts it uses."""
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    _real_call(league, monkeypatch)
+    attendance = AttendanceService(league.db_path)
+    for name in dir(AttendanceService):
+        if not name.startswith("_") and callable(getattr(AttendanceService, name)):
             setattr(league.bot.attendance_service, name, getattr(attendance, name))
 
 
