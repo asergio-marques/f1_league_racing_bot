@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
+import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -25,6 +26,7 @@ from tests.support.change_queue import (
     attach_queue,
     change_rows,
     discard_job,
+    http_error,
     league_double,
     maybe_await,
     member_interaction,
@@ -54,6 +56,8 @@ NO_LANE_CHOICE = (
 )
 NO_LANE_TRYING = "#439: the job being tried is the whole queue's, not each lane's"
 NO_WRITE_LOCK = "#439: the queue's saves take no write lock of their own"
+NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again inside it"
+NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
 
 
 def _api() -> SimpleNamespace:
@@ -726,3 +730,141 @@ async def test_a_turn_s_save_waits_for_a_long_league_save_rather_than_failing(en
     await asyncio.wait_for(asking, 5)
 
     assert await _lanes(env) == [("dummy", "league"), ("turn", TURNS_7)]
+
+
+# ---------------------------------------------------------------------------
+# The conversations the tests of L7–L9 end: the test's own tables
+# ---------------------------------------------------------------------------
+
+
+async def _conversations(env) -> None:
+    """The test's own tables: `conversations`, one row per conversation's channel (7 and 8, both
+    open, both channels standing); `answers`, what a conversation's turn saves; and
+    `league_rows`, a table no conversation may write."""
+    async with get_connection(env.db_path) as db:
+        await db.execute(
+            "CREATE TABLE conversations (channel INTEGER PRIMARY KEY, "
+            "open INTEGER NOT NULL DEFAULT 1, channel_stands INTEGER NOT NULL DEFAULT 1)"
+        )
+        await db.execute("CREATE TABLE answers (channel INTEGER, v TEXT)")
+        await db.execute("CREATE TABLE league_rows (v TEXT)")
+        await db.executemany("INSERT INTO conversations (channel) VALUES (?)", [(7,), (8,)])
+        await db.commit()
+
+
+async def _end_now(env, channel: int, *, delete_channel: bool = False) -> None:
+    """A league save landing now: the conversation in *channel* ended, and its channel deleted
+    where *delete_channel* is set."""
+    async with get_connection(env.db_path) as db:
+        await db.execute(
+            "UPDATE conversations SET open = 0, channel_stands = ? WHERE channel = ?",
+            (0 if delete_channel else 1, channel),
+        )
+        await db.commit()
+
+
+async def _is_open(env, channel: int) -> bool:
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT open FROM conversations WHERE channel = ?", (channel,))
+        row = await cursor.fetchone()
+    return bool(row and row["open"])
+
+
+async def _answers(env) -> list[str]:
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT v FROM answers ORDER BY rowid")
+        return [row["v"] for row in await cursor.fetchall()]
+
+
+async def _league_rows(env) -> list[str]:
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT v FROM league_rows ORDER BY rowid")
+        return [row["v"] for row in await cursor.fetchall()]
+
+
+def _saving(name: str, value: str, *, still_due=None) -> Any:
+    """A `SAVE` job writing *value* into `answers` for its conversation's channel."""
+    api = _api()
+
+    async def _run(db, ctx):
+        await db.execute("INSERT INTO answers (channel, v) VALUES (?, ?)",
+                         (ctx.payload.get("channel"), value))
+        return api.StepResult()
+
+    return api.Step(name, api.StepKind.SAVE, _run, still_due=still_due)
+
+
+# ---------------------------------------------------------------------------
+# L7: a job is checked again inside its save
+# ---------------------------------------------------------------------------
+
+
+def _due_until_ended_after_the_first_check(env, asked: list[bool | None]) -> Any:
+    """A job's `still_due`: due while channel 7's conversation is open. Each time it is asked it
+    notes whether the write lock is held; the first time, once it has answered, a league save
+    lands ending the conversation, as one may between a job's check and its save."""
+    async def _due(ctx):
+        asked.append(_write_lock_held(env))
+        due = await _is_open(env, ctx.payload["channel"])
+        if len(asked) == 1:
+            await _end_now(env, ctx.payload["channel"])
+        return due
+
+    return _due
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SAVE_RECHECK)
+async def test_a_save_finds_its_job_no_longer_due_where_a_league_save_landed_after_its_check(env):
+    """A change saves an answer for the conversation in channel 7, due only while that
+    conversation is open. The job is found due, and then, before its save opens, a league save
+    ends the conversation. Asked again inside the save, with the write lock held, the job is found
+    no longer due: the answer is not written and the job is marked done as dropped. (The change is
+    left on the league lane, the default: every save is checked again, on any lane.)"""
+    await _conversations(env)
+    asked: list[bool | None] = []
+    _queue(env, _type("turn", steps=[
+        _saving("answer", "Max", still_due=_due_until_ended_after_the_first_check(env, asked)),
+    ]))
+
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert await _answers(env) == []
+    job = await _job(env, "answer")
+    assert job["done_at"] is not None and job["result"] == {"dropped": True}
+    assert len(asked) == 2 and asked[1] is True
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SAVE_RECHECK)
+async def test_a_record_is_checked_again_inside_its_save(env):
+    """A change posts a message whose record saves it into `answers` for the conversation in
+    channel 7, due only while that conversation is open. The job is found due and posts, and a league save then ends the
+    conversation. Asked again inside the save that would run the record, with the write lock held,
+    the job is found no longer due: the record writes nothing and the job is marked done as
+    dropped."""
+    api = _api()
+    await _conversations(env)
+    asked: list[bool | None] = []
+    recorded: list[str] = []
+
+    async def _post(_ctx):
+        return api.StepResult(result={"id": 1})
+
+    async def _record(db, ctx, _result):
+        recorded.append("record")
+        await db.execute("INSERT INTO answers (channel, v) VALUES (?, 'posted')",
+                         (ctx.payload["channel"],))
+
+    _queue(env, _type("turn", steps=[
+        api.Step("post", api.StepKind.ACT, _post,
+                 still_due=_due_until_ended_after_the_first_check(env, asked), record=_record),
+    ]))
+
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert recorded == []
+    assert await _answers(env) == []
+    job = await _job(env, "post")
+    assert job["done_at"] is not None and job["result"].get("dropped") is True
+    assert len(asked) == 2 and asked[1] is True
