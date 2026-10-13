@@ -469,8 +469,9 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
 
 
 async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it(env):
-    """Whatever became of the change asked for in between: here it has already finished, ahead of
-    changes held behind a stopped job, and the held one may still be asked for again."""
+    """Whatever became of the change asked for in between, on the same lane (here the league's):
+    here it has already finished, ahead of changes held behind a stopped job, and the held one may
+    still be asked for again."""
     api = _api()
     held = {"fail": api.StepFailedOnDiscord("Missing Access")}
 

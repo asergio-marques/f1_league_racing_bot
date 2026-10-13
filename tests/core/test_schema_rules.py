@@ -366,13 +366,37 @@ async def test_a_change_s_origins_match_the_enum(db_path):
 
 
 async def test_the_queue_holds_one_running_change(db_path):
-    """One change runs at a time: an identity rule, so the schema holds it, not the worker."""
+    """One change runs at a time on a lane: an identity rule, so the schema holds it, not the
+    worker. Here every change is on the league lane, which a change naming no lane is on."""
     db = _connect(db_path)
     _queue_change(db, "RUNNING")
     _queue_change(db, "DONE")
     _queue_change(db, "QUEUED")
     with pytest.raises(sqlite3.IntegrityError):
         _queue_change(db, "RUNNING")
+    db.close()
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#439: one change runs at a time across every lane, not per lane"
+)
+async def test_the_queue_holds_one_running_change_per_lane(db_path):
+    """Each lane runs one change at a time: a second RUNNING change on channel 7's lane is
+    refused, while one RUNNING on the league lane and one on channel 8's stand beside it."""
+    db = _connect(db_path)
+
+    def _running(lane: str) -> None:
+        db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, origin, state, what, lane) "
+            "VALUES ('dummy', ?, 'MEMBER', 'RUNNING', '`/dummy`', ?)",
+            (lane, lane),
+        )
+
+    _running("league")
+    _running("channel:7")
+    _running("channel:8")
+    with pytest.raises(sqlite3.IntegrityError):
+        _running("channel:7")
     db.close()
 
 
