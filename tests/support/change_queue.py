@@ -17,6 +17,9 @@ A job that fails stops the queue until it is cleared (owner, 2026-10-02): `stopp
 job the queue is stopped at, and `retry_job` and `discard_job` press Retry and Discard on its stop
 notice, as a member holding the tier `tier_member` gives them.
 
+A function that posts refuses to run outside a job (`posts_in_a_job`). A unit test calling one
+directly, with no queue, wraps the call in `in_a_job()`, which runs it as a job would.
+
 A queue `restart_queue` starts has a worker running in the background, and is stopped before the
 test ends: `tests/conftest.py` calls `stop_started_queues` once the test has run, while its event
 loop is still open, and it waits there for any database thread a stopped worker left running.
@@ -27,7 +30,8 @@ import asyncio
 import json
 import threading
 import time
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -472,3 +476,24 @@ async def discard_job(bot: Any, *, user: Any = None, run: bool = True,
     Gives the presser's interaction.
     """
     return await _press(bot, "discard", user or tier_member("admin"), run, lane)
+
+
+#: The job number `in_a_job` runs a unit test's call as.
+TEST_JOB = 1
+
+
+@contextmanager
+def in_a_job(job_id: int = TEST_JOB) -> Iterator[None]:
+    """Run the body as job *job_id* runs, for a unit test calling a function that posts directly,
+    with no queue to run it in a job. Where the bot keeps no running job's number yet
+    (`leaguebot.core.utils.in_a_job`, #439 6b), no function refuses a post outside a job, and the
+    body runs as it is."""
+    try:
+        from leaguebot.core.utils.in_a_job import running_job
+    except ModuleNotFoundError as missing:
+        if missing.name != "leaguebot.core.utils.in_a_job":
+            raise
+        yield
+        return
+    with running_job(job_id):
+        yield

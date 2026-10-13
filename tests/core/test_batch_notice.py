@@ -13,6 +13,7 @@ import discord
 import pytest
 
 from leaguebot.core.utils.batch_notice import batch_notice
+from tests.support.change_queue import in_a_job
 
 
 def _channel():
@@ -33,9 +34,10 @@ async def test_the_notice_is_posted_before_the_body_runs():
     channel, _ = _channel()
     seen: list[str] = []
 
-    async with batch_notice(channel, "drawing"):
-        seen.append("body")
-        channel.send.assert_awaited_once_with("drawing")
+    with in_a_job():
+        async with batch_notice(channel, "drawing"):
+            seen.append("body")
+            channel.send.assert_awaited_once_with("drawing")
 
     assert seen == ["body"]
 
@@ -43,8 +45,9 @@ async def test_the_notice_is_posted_before_the_body_runs():
 async def test_the_notice_is_deleted_when_the_body_finishes():
     channel, message = _channel()
 
-    async with batch_notice(channel, "drawing"):
-        message.delete.assert_not_awaited()
+    with in_a_job():
+        async with batch_notice(channel, "drawing"):
+            message.delete.assert_not_awaited()
 
     message.delete.assert_awaited_once()
 
@@ -55,8 +58,9 @@ async def test_the_notice_is_deleted_when_the_body_raises():
     channel, message = _channel()
 
     with pytest.raises(ValueError):
-        async with batch_notice(channel, "drawing"):
-            raise ValueError("render blew up")
+        with in_a_job():
+            async with batch_notice(channel, "drawing"):
+                raise ValueError("render blew up")
 
     message.delete.assert_awaited_once()
 
@@ -66,8 +70,9 @@ async def test_the_body_still_runs_when_the_notice_cannot_be_posted():
     channel.send = AsyncMock(side_effect=_http_error())
     ran = False
 
-    async with batch_notice(channel, "drawing"):
-        ran = True
+    with in_a_job():
+        async with batch_notice(channel, "drawing"):
+            ran = True
 
     assert ran, "a failed courtesy message stopped the batch"
 
@@ -76,8 +81,9 @@ async def test_nothing_is_deleted_when_nothing_was_posted():
     channel, message = _channel()
     channel.send = AsyncMock(side_effect=_http_error())
 
-    async with batch_notice(channel, "drawing"):
-        pass
+    with in_a_job():
+        async with batch_notice(channel, "drawing"):
+            pass
 
     message.delete.assert_not_awaited()
 
@@ -88,8 +94,9 @@ async def test_a_notice_already_gone_is_not_an_error():
     channel, message = _channel()
     message.delete = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
 
-    async with batch_notice(channel, "drawing"):
-        pass
+    with in_a_job():
+        async with batch_notice(channel, "drawing"):
+            pass
 
     message.delete.assert_awaited_once()
 
@@ -98,8 +105,9 @@ async def test_a_refused_delete_does_not_reach_the_caller():
     channel, message = _channel()
     message.delete = AsyncMock(side_effect=_http_error())
 
-    async with batch_notice(channel, "drawing"):
-        pass
+    with in_a_job():
+        async with batch_notice(channel, "drawing"):
+            pass
 
 
 async def test_a_failed_delete_does_not_mask_the_body_s_exception():
@@ -108,15 +116,17 @@ async def test_a_failed_delete_does_not_mask_the_body_s_exception():
     message.delete = AsyncMock(side_effect=_http_error())
 
     with pytest.raises(ValueError, match="render blew up"):
-        async with batch_notice(channel, "drawing"):
-            raise ValueError("render blew up")
+        with in_a_job():
+            async with batch_notice(channel, "drawing"):
+                raise ValueError("render blew up")
 
 
 async def test_no_channel_is_allowed_and_posts_nothing():
     """Saves every caller a branch of its own where a guild or channel is unresolved."""
     ran = False
 
-    async with batch_notice(None, "drawing"):
-        ran = True
+    with in_a_job():
+        async with batch_notice(None, "drawing"):
+            ran = True
 
     assert ran

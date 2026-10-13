@@ -28,6 +28,7 @@ import pytest
 from tests.support.change_queue import (
     change_rows,
     http_error,
+    in_a_job,
     retry_job,
     run_queue,
     step_rows,
@@ -927,7 +928,8 @@ async def test_a_delete_naming_no_division_finds_the_round_s_and_its_record_forg
     step = _steps(league)[DELETE_FORECAST]
     ctx = _step_context(league, {"round_id": ROUND, "phase": 3})
 
-    result = await step.run(ctx)
+    with in_a_job():
+        result = await step.run(ctx)
     async with get_connection(league.db_path) as db:
         await step.record(db, ctx, result)
         await db.commit()

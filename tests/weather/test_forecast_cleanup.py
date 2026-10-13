@@ -17,6 +17,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
+from tests.support.change_queue import in_a_job
 
 
 # ---------------------------------------------------------------------------
@@ -304,11 +305,12 @@ class TestTheForecastGraphicIsDiscarded:
         bot = _make_bot(db_path)
         bot.get_channel.return_value.send = AsyncMock(return_value=_make_mock_message(222))
 
-        await post_phase_message(
-            bot, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-            attachment=self._attachment(png), attachment_text="<@&1>",
-        )
+        with in_a_job():
+            await post_phase_message(
+                bot, division_id=1, channel_id=99,
+                phase_number=2, text="phase 2 forecast",
+                attachment=self._attachment(png), attachment_text="<@&1>",
+            )
 
         assert not png.exists()
 
@@ -330,11 +332,12 @@ class TestTheForecastGraphicIsDiscarded:
         )
 
         with pytest.raises(StepFailedOnDiscord):
-            await post_phase_message(
-                bot, division_id=1, channel_id=99,
-                phase_number=2, text="phase 2 forecast",
-                attachment=self._attachment(png), attachment_text="<@&1>",
-            )
+            with in_a_job():
+                await post_phase_message(
+                    bot, division_id=1, channel_id=99,
+                    phase_number=2, text="phase 2 forecast",
+                    attachment=self._attachment(png), attachment_text="<@&1>",
+                )
 
         assert not png.exists()
 
@@ -356,11 +359,12 @@ class TestTheForecastGraphicIsDiscarded:
         )
 
         with pytest.raises(StepFailedOnDiscord):
-            await post_phase_message(
-                bot, division_id=1, channel_id=99,
-                phase_number=2, text="phase 2 forecast",
-                attachment=self._attachment(png), attachment_text="<@&1>",
-            )
+            with in_a_job():
+                await post_phase_message(
+                    bot, division_id=1, channel_id=99,
+                    phase_number=2, text="phase 2 forecast",
+                    attachment=self._attachment(png), attachment_text="<@&1>",
+                )
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
 
@@ -377,11 +381,12 @@ class TestTheForecastGraphicIsDiscarded:
         bot.get_channel.return_value = MagicMock()  # not specced as a TextChannel
 
         with pytest.raises(StepFailedOnDiscord):
-            await post_phase_message(
-                bot, division_id=1, channel_id=99,
-                phase_number=2, text="phase 2 forecast",
-                attachment=self._attachment(png), attachment_text="<@&1>",
-            )
+            with in_a_job():
+                await post_phase_message(
+                    bot, division_id=1, channel_id=99,
+                    phase_number=2, text="phase 2 forecast",
+                    attachment=self._attachment(png), attachment_text="<@&1>",
+                )
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
 
@@ -407,7 +412,8 @@ class TestDiscordDelete:
         bot.get_channel.return_value = None
         bot.fetch_channel = AsyncMock(return_value=channel)
 
-        await _discord_delete(bot, 999, 4242)
+        with in_a_job():
+            await _discord_delete(bot, 999, 4242)
 
         bot.fetch_channel.assert_awaited_once_with(999)
         channel.get_partial_message.assert_called_once_with(4242)
@@ -422,7 +428,8 @@ class TestDiscordDelete:
         bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
 
         with pytest.raises(StepFailedOnDiscord, match="channel 999 is not a text channel") as err:
-            await _discord_delete(bot, 999, 4242)
+            with in_a_job():
+                await _discord_delete(bot, 999, 4242)
 
         assert err.value.result == {"channel_id": 999, "message_id": 4242}
 
@@ -434,7 +441,8 @@ class TestDiscordDelete:
         bot.get_channel.return_value.get_partial_message.return_value.delete.side_effect = refusal
 
         with pytest.raises(discord.Forbidden) as err:
-            await _discord_delete(bot, 999, 4242)
+            with in_a_job():
+                await _discord_delete(bot, 999, 4242)
 
         assert err.value is refusal
 
@@ -449,5 +457,6 @@ async def test_a_text_forecast_with_no_channel_to_post_to_raises(tmp_path):
 
     with pytest.raises(StepFailedOnDiscord, match="the Phase 2 forecast has no channel to be "
                                                   "posted to"):
-        await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
-                                 text="phase 2 forecast")
+        with in_a_job():
+            await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
+                                     text="phase 2 forecast")

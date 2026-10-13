@@ -20,6 +20,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import cancellation_notice_service as cns
+from tests.support.change_queue import in_a_job
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -325,10 +326,11 @@ AUDIT_OF_ROUND_3 = (
 
 
 async def _post_notice(bot, guild, module, scope=cns.SCOPE_ROUND):
-    return await cns.post_module_notice(
-        bot, guild, _division(), module, scope=scope, round_number=3,
-        track_name="Monza",
-    )
+    with in_a_job():
+        return await cns.post_module_notice(
+            bot, guild, _division(), module, scope=scope, round_number=3,
+            track_name="Monza",
+        )
 
 
 async def test_a_raising_notice_raises_where_its_channel_is_gone(tmp_path):

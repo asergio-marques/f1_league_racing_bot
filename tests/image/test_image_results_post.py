@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.support.change_queue import in_a_job
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -244,18 +246,19 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
         "render_png",
         AsyncMock(return_value=_decision(png=png)),
     ):
-        posted = await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=channel,
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            posted = await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=channel,
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert posted.new == [4242]
     assert [int(i) for i in posted.old] == [111]
@@ -342,18 +345,19 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
             return_value=_decision(posts=False, problem=MagicMock(detail="no such field"))
         ),
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=bot,
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=bot,
+            )
 
     bot.output_router.post_log.assert_awaited()
     reported = bot.output_router.post_log.await_args.args[0]
@@ -378,22 +382,23 @@ async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
         "render_png",
         AsyncMock(return_value=_decision(posts=False, rejects=True)),
     ):
-        outcome = await image_results_post.try_post(
-            _bot(db_path),
-            _guild(),
-            _channel(sent),
-            heading="**Main Round 5**",
-            label="Final Results",
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            round_number=5,
-            race_name="Monaco",
-            is_sprint=False,
-            result_status="FINAL",
-            division_name="Main",
-            origin=PostingOrigin.COMMANDED,
-        )
+        with in_a_job():
+            outcome = await image_results_post.try_post(
+                _bot(db_path),
+                _guild(),
+                _channel(sent),
+                heading="**Main Round 5**",
+                label="Final Results",
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                round_number=5,
+                race_name="Monaco",
+                is_sprint=False,
+                result_status="FINAL",
+                division_name="Main",
+                origin=PostingOrigin.COMMANDED,
+            )
 
     assert outcome.action == image_results_post.REJECTED
     assert outcome.message
@@ -420,18 +425,19 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     ), patch.object(
         image_results_post, "report_notices", AsyncMock()
     ) as reporter:
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=bot,
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=bot,
+            )
 
     reporter.assert_awaited()
 
@@ -498,18 +504,19 @@ async def test_the_rounds_stage_reaches_the_drawing(
     with patch.object(image_results_post, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Provisional Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Provisional Results",
+                bot=_bot(db_path),
+            )
 
     assert captured["result_status"] == status
 
@@ -536,18 +543,19 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     with patch.object(image_results_post, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert captured["division_name"] == "Main"
     assert captured["division_tier"] == 1
@@ -591,18 +599,19 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=channel,
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=channel,
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert attempts == ["image", "text"]
     assert len(sent) == 1 and "Final Results" in sent[0][0]
@@ -652,18 +661,19 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
         "build_drawing",
         AsyncMock(side_effect=RuntimeError("no name could be resolved")),
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=bot,
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=bot,
+            )
 
     bot.output_router.post_log.assert_awaited()
     assert len(sent) == 1 and "file" not in sent[0][1]
@@ -696,18 +706,19 @@ async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel([]),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel([]),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert not png.exists()
     assert not png.parent.exists()
@@ -739,18 +750,19 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=channel,
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=channel,
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert not png.exists(), "a failed upload must not strand the picture"
     assert sent, "the textual table still posts"
@@ -789,18 +801,19 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        posted = await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=channel,
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            posted = await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=channel,
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert posted.drawn is True and posted.new == [4242]
     assert [int(i) for i in posted.old] == [111, 112, 113]

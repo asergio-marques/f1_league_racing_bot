@@ -24,6 +24,7 @@ from leaguebot.image.services.image_lineup_post import (
     LineupPostOutcome,
     lineup_enabled,
 )
+from tests.support.change_queue import in_a_job
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -55,7 +56,8 @@ def test_a_missing_guild_is_never_applicable():
 async def _try_post_without_guild():
     from leaguebot.image.services.image_lineup_post import try_post
 
-    return await try_post(object(), None, 1)
+    with in_a_job():
+        return await try_post(object(), None, 1)
 
 
 # ── The enablement gate ───────────────────────────────────────────────────

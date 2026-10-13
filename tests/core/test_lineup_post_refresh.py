@@ -45,6 +45,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.placement_service import PlacementService
+from tests.support.change_queue import in_a_job
 
 SERVER_ID = 12308
 SEASON_ID = 1
@@ -160,14 +161,16 @@ async def _refresh(db_path, guild, *, image_applicable: bool = False, image_erro
         "leaguebot.image.services.image_lineup_post.try_post",
         new=AsyncMock(return_value=outcome, side_effect=image_error),
     ) as try_post:
-        await service._refresh_lineup_post(guild, DIVISION_ID)
+        with in_a_job():
+            await service._refresh_lineup_post(guild, DIVISION_ID)
     return try_post
 
 
 async def _post(db_path, guild):
     """The text lineup posted with no bot, so no image path: gives what
     `_refresh_lineup_post` returns."""
-    return await PlacementService(db_path)._refresh_lineup_post(guild, DIVISION_ID)
+    with in_a_job():
+        return await PlacementService(db_path)._refresh_lineup_post(guild, DIVISION_ID)
 
 
 def _embed(channel):
