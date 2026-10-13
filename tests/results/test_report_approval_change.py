@@ -39,6 +39,7 @@ from tests.support.change_queue import (
     retry_job,
     run_queue,
     step_rows,
+    stopped_job,
     tier_member,
     updated_reply,
 )
@@ -1481,3 +1482,43 @@ async def test_the_save_awaits_nothing_but_its_connection(tmp_path):
 
     assert await stopped_at(league) is None
     assert len(await penalty_records(league.db_path)) == 2
+
+
+# ---------------------------------------------------------------------------
+# The appeals prompt through the round's lane (#439, slice 6b, C44b)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: the reports approval posts the appeals prompt itself on the league lane, not through "
+    "the round's lane"
+))
+async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
+    """Round 3's reports are approved by Alex while Discord refuses the appeals prompt. The
+    approval finishes on the league lane, the round moved on to its appeals; round 3's lane, not
+    the league's, stops at the appeals prompt's post. Retry on the round's lane posts it and saves
+    its id."""
+    lane = f"channel:{SUBMISSION_CHANNEL}"
+    league = await review_league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
+
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path, "league") is None
+    stopped = await stopped_job(league.db_path, lane)
+    assert stopped is not None
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] == "DONE"
+    assert stopped["change_id"] != approval["id"]
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert appeals_prompts(league) == []
+
+    league.channel(SUBMISSION_CHANNEL).fail_when = None
+    await retry_job(league.bot, lane=lane)
+
+    assert await stopped_job(league.db_path) is None
+    [prompt] = appeals_prompts(league)
+    assert await one(
+        league.db_path, "SELECT appeals_prompt_message_id FROM round_submission_channels"
+    ) == prompt
