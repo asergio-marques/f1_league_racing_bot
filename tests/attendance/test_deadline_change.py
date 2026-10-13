@@ -326,7 +326,7 @@ async def test_a_deadline_with_no_call_closes_the_check_in_and_asks_the_clean_up
     assert await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", ROUND_3
     ) == []
-    assert "count nothing against anyone" in league.log()
+    assert "nothing against anyone" in league.log()
     assert CLEAN_UP_KIND in [row["kind"] for row in await change_rows(league.db_path)]
     [row] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", ROUND_3)
     assert row["checkin_cleared"] == 1

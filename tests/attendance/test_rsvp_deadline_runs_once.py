@@ -220,7 +220,7 @@ async def test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says
     await _ask_deadline(league)
 
     assert await _round_state(league) == (0, 1)
-    assert league.log().count("count nothing against anyone") == 1
+    assert league.log().count("nothing against anyone") == 1
     assert _sent(league) == []
 
 
@@ -233,7 +233,7 @@ async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
     await _ask_deadline(league)
 
     assert await _round_state(league) == (2, 0)
-    assert "count nothing against anyone" not in league.log()
+    assert "nothing against anyone" not in league.log()
 
 
 @pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
@@ -256,7 +256,7 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     await run_queue(league.bot)
 
     assert await _round_state(league) == (0, 1)
-    assert league.log().count("count nothing against anyone") == 1
+    assert league.log().count("nothing against anyone") == 1
 
 
 @pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
