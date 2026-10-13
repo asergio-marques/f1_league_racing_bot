@@ -389,6 +389,9 @@ EARLIER_CHANNEL_ID = 770078
 
 #: What the stop notice says is left where no call stands and no answers are kept.
 NOTHING_LEFT = "no attendance rows are open for this round until this call is posted"
+#: What the stop notice says the round comes to where no call stands and no answers are kept
+#: (attendance spec :120: "the round will count nothing against anyone until the call is posted").
+COUNTS_NOTHING = "will count nothing against anyone"
 
 
 def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
@@ -585,6 +588,7 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     notice = _logged(bot)
     assert "no attendance rows were opened" not in notice
     assert NOTHING_LEFT not in notice
+    assert COUNTS_NOTHING not in notice
     if fault == "the channel is gone":
         assert stored is None
         assert "no call for this round can be seen" in notice
@@ -711,7 +715,8 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
 ):
     """No call stands for round 1 and none is kept. Its post fails on the connection rather than
     on Discord: as a refusal does, it stops the queue, no call recorded, the stop notice saying
-    no attendance rows are open. A send that timed out may have reached Discord all the same,
+    no attendance rows are open and the round will count nothing against anyone until the call
+    is posted. A send that timed out may have reached Discord all the same,
     and the notice says to check the channel, naming the fault's kind rather than nothing
     (owner, 2026-10-09: "Fold it in")."""
     db_path = await _make_db(tmp_path)
@@ -724,6 +729,7 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
     assert await _embed_rows(db_path) == 0
     notice = _logged(bot)
     assert NOTHING_LEFT in notice
+    assert COUNTS_NOTHING in notice
     timed_out = isinstance(fault, TimeoutError)
     assert ("may have reached Discord all the same; check the channel" in notice) == timed_out
     if timed_out:
@@ -784,6 +790,7 @@ async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(t
     assert await stopped_job(db_path) is not None
     notice = _logged(bot)
     assert NOTHING_LEFT in notice
+    assert COUNTS_NOTHING in notice
 
     await discard_job(bot)
 

@@ -59,6 +59,10 @@ ROUND_4 = round_id(PRO, 4)
 NOTHING_LEFT = (
     "no call stands, and no attendance rows are open for this round until this call is posted"
 )
+#: What the stop notice says the round comes to meanwhile (attendance spec :120).
+COUNTS_NOTHING = "will count nothing against anyone"
+#: What the log channel is told of a round whose call is given up (attendance spec :121).
+COUNTS_NOTHING_GIVEN_UP = "the round counts nothing against anyone"
 
 NO_CALL_CHANGE = (
     "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, and "
@@ -178,6 +182,7 @@ async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
     stopped = await stopped_job(league.db_path)
     assert stopped is not None and stopped["name"] == "post_call"
     assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
     assert await _call_record(league) == []
     assert await _answers(league) == {}
 
@@ -296,7 +301,7 @@ async def test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_afte
 async def test_a_call_asked_past_its_deadline_gives_up_and_clears_the_answers(tmp_path):
     """Round 4 is an hour off, inside its two-hour deadline, and Lewis's answer to an earlier call
     is kept. The call is not posted: a job gives it up, closing the round's check-in, clearing
-    the answers and telling the log channel."""
+    the answers and telling the log channel that the round counts nothing against anyone."""
     league = await _call_league(tmp_path)
     await _round_4_in(league, timedelta(hours=1))
     await league.write(
@@ -314,6 +319,7 @@ async def test_a_call_asked_past_its_deadline_gives_up_and_clears_the_answers(tm
     assert await _answers(league) == {}
     assert ("the round's check-in deadline passed before its call could be posted"
             in league.log())
+    assert COUNTS_NOTHING_GIVEN_UP in league.log()
     [change] = await _call_changes(league)
     assert [step["name"] for step in await step_rows(league.db_path, change["id"])] == ["give_up"]
 

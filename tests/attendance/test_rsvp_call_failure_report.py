@@ -39,6 +39,9 @@ ROUND_4 = round_id(PRO, 4)
 
 #: What the stop notice says is left where no call stands and no answers are kept.
 NOTHING_LEFT = "no attendance rows are open for this round until this call is posted"
+#: What the stop notice says the round comes to meanwhile (attendance spec :120: "the round will
+#: count nothing against anyone until the call is posted").
+COUNTS_NOTHING = "will count nothing against anyone"
 
 NO_CALL_STOP = (
     "#439: a check-in call that does not post is reported to the log channel and stops no "
@@ -111,6 +114,7 @@ async def test_the_report_says_the_round_opened_no_attendance_rows(tmp_path):
 
     assert await stopped_job(league.db_path) is not None
     assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
     assert await _nothing_opened(league)
 
 
@@ -140,6 +144,7 @@ async def test_both_failure_paths_of_the_notice_report_the_call(tmp_path):
 
     assert await stopped_job(league.db_path) is not None
     assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
     assert await _nothing_opened(league)
 
 
@@ -169,6 +174,7 @@ async def test_the_report_consults_no_image_module_and_no_toggle(tmp_path):
 
     assert await stopped_job(league.db_path) is not None
     assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
 
 
 @pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
@@ -191,6 +197,7 @@ async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tm
 
     assert await stopped_job(league.db_path) is not None
     assert NOTHING_LEFT in league.log()
+    assert COUNTS_NOTHING in league.log()
 
 
 @pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)

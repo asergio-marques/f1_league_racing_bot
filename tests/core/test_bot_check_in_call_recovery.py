@@ -311,6 +311,8 @@ def test_missed_calls_are_posted_before_the_deadlines_are_caught_up():
 
 
 _GIVEN_UP = "the round's check-in deadline passed before its call could be posted"
+#: What the log channel is told the given-up round comes to (attendance spec :121).
+_COUNTS_NOTHING = "the round counts nothing against anyone"
 
 
 async def _checkin_cleared(db_path: str) -> bool:
@@ -323,7 +325,7 @@ async def _checkin_cleared(db_path: str) -> bool:
 async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tmp_path):
     """Decided 2026-09-24. A call nobody could answer would record every driver as not having
     answered, so none is posted: the restart asks for the call, and the call's change gives it
-    up, the log channel saying the round has no check-in."""
+    up, the log channel saying the round has no check-in and counts nothing against anyone."""
     db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
     bot = _make_bot(db_path)
 
@@ -332,6 +334,7 @@ async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tm
     assert await _asked(db_path) == 1
     assert bot.check_in_channel.sent == []
     assert _logged(bot).count(_GIVEN_UP) == 1
+    assert _logged(bot).count(_COUNTS_NOTHING) == 1
     assert await _checkin_cleared(db_path), "a call given up is still owed"
 
 
@@ -347,6 +350,7 @@ async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
 
     assert await _asked(db_path) == 1
     assert _logged(bot).count(_GIVEN_UP) == 1
+    assert _logged(bot).count(_COUNTS_NOTHING) == 1
 
 
 @pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
@@ -392,6 +396,7 @@ async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
 
     assert await _asked(db_path) == 1
     assert _logged(bot).count(_GIVEN_UP) == 1
+    assert _logged(bot).count(_COUNTS_NOTHING) == 1
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT * FROM driver_round_attendance WHERE round_id = ?", (ROUND_ID,)
