@@ -1,6 +1,6 @@
 """A round's check-in call comes down 24 hours after the round, and at no other routine moment.
 
-Issue #425. When `run_rsvp_notice` posted a division's call it deleted the call, the last
+Issue #425. When the bot posted a division's check-in call it deleted the call, the last
 notice and the distribution message of **every** other round of that division, without asking
 whether that round's check-in had closed. Two rounds closer together than the notice — a
 Saturday and Sunday double-header on the default five days — meant Sunday's call went out while
@@ -20,12 +20,11 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import attach_queue, league_double, run_queue, stopped_job
 from tests.support.review_league import channel
@@ -171,43 +170,45 @@ async def _standing_rounds(db_path: str) -> set[int]:
         return {row["round_id"] for row in await cursor.fetchall()}
 
 
-def _make_channel() -> MagicMock:
-    """A check-in channel recording every message deleted from it."""
-    channel = MagicMock()
-    channel.id = RSVP_CHANNEL_ID
-    channel.deleted = []
-
-    async def _fetch(message_id: int) -> MagicMock:
-        message = MagicMock()
-        message.delete = AsyncMock(side_effect=lambda: channel.deleted.append(str(message_id)))
-        return message
-
-    channel.fetch_message = AsyncMock(side_effect=_fetch)
-    posted = MagicMock()
-    posted.id = 990099
-    posted.channel.id = RSVP_CHANNEL_ID
-    channel.send = AsyncMock(return_value=posted)
-    return channel
 
 
-def _make_bot(db_path: str, channel: MagicMock, *, attendance_enabled: bool = True) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
+async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNamespace:
+    """Ask the queue for *round_id*'s call as its timer does (#439, slice 6b), and run the queue;
+    hand back what it deleted from the check-in channel (`.deleted`, the ids as text).
+
+    The check-in channel stands on the server holding every message `_msg_ids` names for both
+    rounds; the call is posted there once, and nothing stops the queue."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.module_service import ModuleService
+
+    bot = league_double(db_path)
     bot.attendance_service = AttendanceService(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.get_channel = MagicMock(return_value=channel)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
+    bot.module_service = ModuleService(db_path)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    events: list = []
+    checkin = channel(RSVP_CHANNEL_ID, events)
+    for rid in (POSTED_ROUND, EARLIER_ROUND):
+        for message_id in _msg_ids(rid):
+            checkin.seed(int(message_id), "a check-in message")
+    known = {RSVP_CHANNEL_ID: checkin, bot.log_channel.id: bot.log_channel,
+             bot.interaction_channel.id: bot.interaction_channel}
+    bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
+    attach_queue(bot, db_path, now=NOW)
+
+    await ask_check_in_call(bot.change_queue, db_path, round_id, origin=ChangeOrigin.BOT)
+    await run_queue(bot)
+
+    assert await stopped_job(db_path) is None
+    assert len([e for e in events if e[0] == "send" and e[1] == RSVP_CHANNEL_ID]) == 1
+    return SimpleNamespace(deleted=[str(mid) for kind, cid, mid in events
+                                    if kind == "delete" and cid == RSVP_CHANNEL_ID])
 
 
-async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> MagicMock:
-    """Post *round_id*'s call, and hand back the channel it was posted to."""
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await rsvp_service.run_rsvp_notice(round_id, bot)
-    channel.send.assert_awaited_once()
-    return channel
+NO_CALL_CHANGE = (
+    "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, "
+    "rather than by its own change"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +216,7 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> MagicMock
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize(
     ("scheduled_at", "division_id"),
     [

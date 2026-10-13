@@ -1,37 +1,30 @@
 """Taking a check-in call down, putting it back, and the notices posted beside it.
 
-Issue #208. `withdraw_rsvp_call`, `repost_rsvp_call`, `_post_no_reserve_notice` and
-`_post_distribution_announcement` were unexecuted by any test. Between them they carry the
-whole amendment path for attendance: what a league sees when a round moves after its
-check-in call has already gone out.
+Issue #208. Posting a call again in an earlier one's place, the notice that no reserves were
+placed and the distribution announcement were unexecuted by any test. Between them they carry the
+whole amendment path for attendance: what a league sees when a round moves after its check-in
+call has already gone out.
 
 The rule that matters most, and the one with no cover at all before this file, is that
-**a repost carries the answers over**. `repost_rsvp_call`'s docstring is explicit —
-
-    The recorded answers are **not** touched. They are what a repost carries over — a driver
-    who said they were racing has not unsaid it because the round moved, and asking the
-    division to answer again from nothing is how an amendment comes to look like nobody
-    replied.
-
-— and `test_a_repost_keeps_every_answer_already_given` is what holds it. A later reader
-clearing `driver_round_attendance` alongside `rsvp_embed_messages` would look tidy, pass every
-other test in the suite, and quietly wipe a division's answers every time a round was amended.
+**a repost carries the answers over**: a driver who said they were racing has not unsaid it
+because the round moved, and asking the division to answer again from nothing is how an
+amendment comes to look like nobody replied. `test_a_repost_keeps_every_answer_already_given` is
+what holds it. A later reader clearing `driver_round_attendance` alongside `rsvp_embed_messages`
+would look tidy, pass every other test in the suite, and quietly wipe a division's answers every
+time a round was amended.
 
 Its counterpart is `test_a_repost_discards_an_answer_from_a_driver_who_has_left`: the delete
 is deliberately *not* "delete nothing", it is "delete the ones no longer of the division", and
 the two tests sit either side of that distinction.
 
-`withdraw_rsvp_call` removes three messages — the call, its last notice and its distribution
-announcement — and must survive any of them being gone already, because Discord is where they
-live and a league can delete one by hand. The row goes either way; a call that failed to
-delete but kept its row is a round that can never be reposted.
-
 Since #439 (slice 6b) the call is posted, and posted again in an earlier call's place, by its own
 change on the queue (`ask_check_in_call`, with `replacing` for a repost), so the call's tests here
 ask the queue and run it: a call that does not post stops the queue, and the stop notice says what
-is left for the round. The deadline's announcement, or its notice that no reserves were placed, is
-posted by the deadline's own job on the queue too (`ask_check_in_deadline`), on the answers as
-they stood at the deadline.
+is left for the round. The earlier call's messages come down as delete jobs after it, and a day
+after the round the clean-up's own delete jobs take a call down (`test_check_in_clean_up_change.py`),
+so the taking-down function these tests once called directly is gone. The deadline's announcement,
+or its notice that no reserves were placed, is posted by the deadline's own job on the queue too
+(`ask_check_in_deadline`), on the answers as they stood at the deadline.
 """
 from __future__ import annotations
 
@@ -47,7 +40,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
 from tests.support.change_queue import (
     attach_queue,
     discard_job,
@@ -208,164 +200,6 @@ async def _embed_rows(db_path: str) -> int:
         return (await cursor.fetchone())["n"]
 
 
-def _make_channel() -> MagicMock:
-    """A channel whose `fetch_message` hands back a deletable message."""
-    channel = MagicMock()
-    channel.deleted: list[int] = []
-
-    async def _fetch(message_id: int) -> MagicMock:
-        message = MagicMock()
-        message.id = message_id
-        message.delete = AsyncMock(
-            side_effect=lambda: channel.deleted.append(message_id)
-        )
-        return message
-
-    channel.fetch_message = AsyncMock(side_effect=_fetch)
-    sent = MagicMock()
-    sent.id = 990099
-    channel.send = AsyncMock(return_value=sent)
-    return channel
-
-
-def _make_bot(db_path: str, channel: MagicMock | None = None) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.attendance_service = AttendanceService(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
-    bot.get_channel = MagicMock(return_value=channel)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
-# ---------------------------------------------------------------------------
-# withdraw_rsvp_call
-# ---------------------------------------------------------------------------
-
-
-async def test_withdrawing_a_call_that_was_never_posted_reports_nothing_to_do(tmp_path):
-    """The return value is what tells an amendment whether a repost is needed at all."""
-    db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path, _make_channel())
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is False
-
-
-async def test_withdrawing_a_call_deletes_it_and_forgets_the_row(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is True
-
-    assert channel.deleted == [int(CALL_MSG_ID)]
-    assert await _embed_rows(db_path) == 0
-
-
-async def test_withdrawing_takes_the_last_notice_and_the_announcement_with_it(tmp_path):
-    """All three are posted for one round. Leaving either behind gives the division a
-    last-notice ping for a call that is no longer standing."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(
-        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
-    )
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-
-    await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot)
-
-    assert sorted(channel.deleted) == sorted(
-        int(m) for m in (CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID)
-    )
-
-
-async def test_a_message_already_deleted_by_hand_does_not_stop_the_withdrawal(tmp_path):
-    """Discord is where these live and a league can delete one itself. The row must go
-    either way, or the round can never be reposted."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    channel = _make_channel()
-    channel.fetch_message = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(), "unknown message")
-    )
-    bot = _make_bot(db_path, channel)
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is True
-    assert await _embed_rows(db_path) == 0
-
-
-async def test_a_channel_the_bot_can_no_longer_see_still_clears_the_row(tmp_path):
-    """The channel may have been deleted outright. Same reasoning: the row goes."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    bot = _make_bot(db_path, channel=None)
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is True
-    assert await _embed_rows(db_path) == 0
-
-
-async def test_a_message_discord_refuses_to_delete_is_reported(tmp_path):
-    """A cancellation must be able to tell the admin a call is still standing (#175). The row
-    goes all the same, as it always has."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    channel = _make_channel()
-    channel.fetch_message = AsyncMock(
-        side_effect=discord.Forbidden(MagicMock(status=403), "missing permissions")
-    )
-    bot = _make_bot(db_path, channel)
-    undeleted: list[str] = []
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, undeleted=undeleted) is True
-
-    assert undeleted == [str(CALL_MSG_ID)]
-    assert await _embed_rows(db_path) == 0
-
-
-async def test_a_message_already_gone_is_not_reported(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    channel = _make_channel()
-    channel.fetch_message = AsyncMock(
-        side_effect=discord.NotFound(MagicMock(status=404), "unknown message")
-    )
-    bot = _make_bot(db_path, channel)
-    undeleted: list[str] = []
-
-    await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, undeleted=undeleted)
-
-    assert undeleted == []
-
-
-async def test_a_channel_gone_reports_every_message_in_it(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(
-        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
-    )
-    bot = _make_bot(db_path, channel=None)
-    undeleted: list[str] = []
-
-    await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, undeleted=undeleted)
-
-    assert sorted(undeleted) == sorted(
-        str(m) for m in (CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID)
-    )
-
-
-async def test_withdrawing_leaves_every_recorded_answer_untouched(tmp_path):
-    """Withdrawal is half of a repost, and the answers are what the repost carries over."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    bot = _make_bot(db_path, _make_channel())
-
-    await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot)
-
-    assert await _answers(db_path) == {
-        FULL_TIME_PROFILE: "ACCEPTED",
-        RESERVE_PROFILE: "DECLINED",
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +522,13 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
     sending = chan.send.side_effect
 
     async def _send(*args: Any, **kwargs: Any) -> Any:
-        await bot.attendance_service.update_embed_last_notice_msg(ROUND_ID, DIVISION_ID, "900005")
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE rsvp_embed_messages SET last_notice_msg_id = '900005' "
+                "WHERE round_id = ? AND division_id = ?",
+                (ROUND_ID, DIVISION_ID),
+            )
+            await db.commit()
         return await sending(*args, **kwargs)
 
     chan.send = AsyncMock(side_effect=_send)
@@ -1052,94 +892,6 @@ async def test_a_refused_announcement_stops_the_queue_recording_nothing(tmp_path
 
 
 # ---------------------------------------------------------------------------
-# withdraw_rsvp_call, raising (#439, slice 4b)
-#
-# A round's or a division's cancellation takes each call down as a job of the change queue, which
-# stops on a failure until it is retried. So the raising form keeps the row where any message is
-# left standing, for the next try to read, where the quiet form drops it.
-# ---------------------------------------------------------------------------
-
-def _channel_failing_on(failures: dict[str, Exception]) -> MagicMock:
-    """A channel deleting every message but those in *failures*, which raise their exception."""
-    channel = _make_channel()
-
-    async def _fetch(message_id: int) -> MagicMock:
-        message = MagicMock()
-        failure = failures.get(str(message_id))
-
-        async def _delete() -> None:
-            if failure is not None:
-                raise failure
-            channel.deleted.append(message_id)
-
-        message.delete = _delete
-        return message
-
-    channel.fetch_message = AsyncMock(side_effect=_fetch)
-    return channel
-
-
-async def test_a_raising_withdrawal_keeps_the_record_and_names_the_messages_left(tmp_path):
-    """The call (900001), its last notice (900002) and its distribution (900003) stand, and
-    Discord refuses to delete the last notice. Withdrawing in the raising form deletes the other
-    two, then raises StepFailedOnDiscord naming 900002 alone, and keeps the call's row."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(
-        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
-    )
-    channel = _channel_failing_on(
-        {LAST_NOTICE_MSG_ID: discord.Forbidden(MagicMock(status=403), "missing permissions")}
-    )
-    bot = _make_bot(db_path, channel)
-
-    with pytest.raises(StepFailedOnDiscord) as caught:
-        await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
-
-    assert caught.value.result == {"undeleted": [LAST_NOTICE_MSG_ID]}
-    assert sorted(str(m) for m in channel.deleted) == [CALL_MSG_ID, DISTRIBUTION_MSG_ID]
-    assert await _embed_rows(db_path) == 1
-
-
-async def test_a_raising_withdrawal_counts_a_message_already_gone_as_gone(tmp_path):
-    """The call (900001) was deleted by hand; its last notice and distribution stand. Withdrawing
-    in the raising form raises nothing, answers True and drops the call's row."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(
-        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
-    )
-    channel = _channel_failing_on(
-        {CALL_MSG_ID: discord.NotFound(MagicMock(status=404), "unknown message")}
-    )
-    bot = _make_bot(db_path, channel)
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True) is True
-    assert await _embed_rows(db_path) == 0
-
-
-async def test_a_raising_withdrawal_whose_channel_is_gone_keeps_the_record(tmp_path):
-    """The check-in channel holding the call, its last notice and its distribution has been
-    deleted. Withdrawing in the raising form raises StepFailedOnDiscord naming all three, and
-    keeps the call's row for the next try."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(
-        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
-    )
-    bot = _make_bot(db_path, channel=None)
-
-    with pytest.raises(StepFailedOnDiscord) as caught:
-        await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
-
-    assert sorted(caught.value.result["undeleted"]) == sorted(
-        [CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID]
-    )
-    assert await _embed_rows(db_path) == 1
-
-
-# ---------------------------------------------------------------------------
 # reopen_check_in_on (#439, slice 4b, amendment A)
 #
 # `/round amend` on the change queue writes everything an amendment changes in one save. Where it
@@ -1237,29 +989,3 @@ async def test_clearing_a_round_s_answers_on_the_connection_handed_commits_nothi
             RESERVE_PROFILE: ("ACCEPTED", 10, 0),
             STANDBY_PROFILE: ("ACCEPTED", None, 1),
         }
-
-
-async def test_a_quiet_withdrawal_names_in_the_log_the_messages_discord_refused_to_delete(
-    tmp_path,
-):
-    """The call (900001) and its last notice (900002) stand, and Discord refuses to delete the
-    last notice. Taken down in the quiet form, as a repost and the clean-up a day after the round
-    take it down, the call's record goes and the call is deleted, and the log channel names the
-    last notice left standing, for a league admin to delete by hand (owner, 2026-10-09: "Fold it
-    in")."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
-    channel = _channel_failing_on({
-        LAST_NOTICE_MSG_ID: discord.Forbidden(MagicMock(status=403), "missing permissions"),
-    })
-    bot = _make_bot(db_path, channel)
-
-    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot) is True
-
-    assert await _embed_rows(db_path) == 0
-    assert channel.deleted == [int(CALL_MSG_ID)]
-    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
-    assert "NOT DELETED" in line
-    assert "division: Division 1" in line and "round: 1" in line
-    assert LAST_NOTICE_MSG_ID in line and CALL_MSG_ID not in line
-    assert "delete" in line and "by hand" in line
