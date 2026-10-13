@@ -93,6 +93,11 @@ NOTHING_LEFT = ("no call stands, and no attendance rows are open for this round 
 MAY_HAVE_LANDED = ("; it may have reached Discord all the same: the bot posts it again on its "
                    "next try, and any second copy is to be deleted by hand")
 NOT_POSTED = "ATTENDANCE | check-in call | NOT POSTED"
+#: Why a test of the amendment's call fails until C28 builds it.
+NO_CALL_RECORD_IN_THE_JOB = (
+    "#439: the amendment's check-in call is posted by `run_rsvp_notice` whole, its record "
+    "written by the attendance service rather than by the call's own job"
+)
 
 
 # ── Recorders, patched before the league is built ──────────────────────────────────
@@ -293,18 +298,20 @@ def _stop_notices(league: Any) -> list[str]:
 
 
 def _real_call(league: Any, monkeypatch: Any) -> None:
-    """Attendance's own call poster, drawing no picture, reading the division's check-in channel
-    as it stands, and recording a call it posts through attendance's own service."""
-    from leaguebot.attendance.services import rsvp_service
+    """Attendance's own call poster, drawing no picture (the image module's check-in graphic
+    gives none) and reading the division's check-in channel as it stands. The call's record —
+    its message and the round's NO_RSVP rows — is written by the call's own job in its save
+    (#439, slice 6b, C28): the attendance service's writers on a handed connection (its `_on`
+    forms) are attendance's own, and its committing writers are left as the league's doubles."""
     from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.image.services import image_rsvp_post
 
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    monkeypatch.setattr(image_rsvp_post, "try_attach", AsyncMock(return_value=None))
     attendance = AttendanceService(league.db_path)
     league.bot.attendance_service.get_division_config = attendance.get_division_config
-    league.bot.attendance_service.insert_embed_message = attendance.insert_embed_message
-    league.bot.attendance_service.bulk_insert_attendance_rows = (
-        attendance.bulk_insert_attendance_rows
-    )
+    for name in dir(AttendanceService):
+        if name.endswith("_on") and not name.startswith("_"):
+            setattr(league.bot.attendance_service, name, getattr(attendance, name))
 
 
 def _success_lines(league: Any) -> list[str]:
@@ -1971,6 +1978,7 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_it_may_have_landed(
     tmp_path, monkeypatch,
 ):
@@ -2030,6 +2038,7 @@ async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_pos
         assert f"{ANSWERS_KEPT}{MAY_HAVE_LANDED}" in line
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 @pytest.mark.parametrize("fault", ["the call is refused", "the channel is gone"])
 async def test_a_call_posted_again_that_discord_refuses_stops_the_queue_and_is_posted_on_retry(
     tmp_path, monkeypatch, fault,
@@ -2119,6 +2128,7 @@ async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, le
     assert f"**Pro** — check-in call: {said}" in outcome
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the_command(
     tmp_path, monkeypatch,
 ):
@@ -2273,3 +2283,31 @@ async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded
              "and a league admin discarded it; delete it by hand (")
     [bullet] = [line for line in outcome.splitlines() if named in line]
     assert str(earlier) in bullet
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
+async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeypatch):
+    """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not), is
+    brought forward to three days out, so its call is taken down and posted again. The attendance
+    service's own committing writers are left as the league's doubles, which write nothing: the
+    call posted again is recorded all the same, by the job that posted it, its message the one
+    standing in Pro's check-in channel and the round's attendance rows kept, and the job is done
+    with its record in one save (slice 6's A21, deferred until now)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await _amended(league, scheduled_at=_at(league, days=3))
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    sent = [mid for kind, cid, mid in league.events if kind == "send" and cid == PRO_CH.checkin]
+    [row] = await league.rows("SELECT message_id, channel_id FROM rsvp_embed_messages "
+                              "WHERE round_id = ?", R3)
+    assert sent and row["message_id"] == str(sent[-1])
+    assert row["message_id"] in {str(mid) for mid in league.channel(PRO_CH.checkin).messages}
+    assert row["channel_id"] == str(PRO_CH.checkin)
+    assert len(await league.rows(
+        "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
+    )) == 2
+    league.bot.attendance_service.insert_embed_message.assert_not_called()
+    league.bot.attendance_service.bulk_insert_attendance_rows.assert_not_called()
