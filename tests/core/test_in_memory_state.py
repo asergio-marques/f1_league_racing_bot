@@ -113,16 +113,27 @@ def test_the_register_names_no_store_that_does_not_exist():
     assert sorted((CLEARED | EXEMPT) - _stores()) == []
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the clear reaches the wizard service's private correction timeouts itself",
+)
 async def test_the_clear_empties_every_store():
     """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
-    so none fires after a pack or a factory reset (#482)."""
+    so none fires after a pack or a factory reset (#482). The wizards' correction timeouts are
+    cleared through the wizard service's own `cancel_corrections` (#439, 6b), never by reaching
+    its private store."""
     import asyncio
 
     season_cog = MagicMock()
     task = asyncio.get_running_loop().create_future()
+
+    def _cancel_corrections() -> None:
+        task.cancel()
+
+    wizard_service = SimpleNamespace(cancel_corrections=MagicMock(side_effect=_cancel_corrections))
     bot = SimpleNamespace(
         get_cog=lambda name: season_cog if name == "SeasonCog" else None,
-        wizard_service=SimpleNamespace(_correction_tasks={"7": task}),
+        wizard_service=wizard_service,
     )
     lapse = asyncio.get_running_loop().create_future()
     admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x", "lapse": lapse}
@@ -131,7 +142,7 @@ async def test_the_clear_empties_every_store():
 
     season_cog.clear_pending.assert_called_once_with()
     assert admin_review_cog._PENDING_REASONS == {}
-    assert bot.wizard_service._correction_tasks == {}
+    wizard_service.cancel_corrections.assert_called_once_with()
     assert task.cancelled()
     assert lapse.cancelled()
 

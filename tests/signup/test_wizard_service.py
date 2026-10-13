@@ -122,3 +122,30 @@ class TestNormaliseLapTimeRoundTrip:
 
     def test_fewer_than_three_digits_is_refused(self):
         assert _normalise("1:23.5") is None
+
+
+# ---------------------------------------------------------------------------
+# The correction-parameter timeouts, cleared through a public method (#439, 6b)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the wizard service has no public method to clear its correction timeouts",
+)
+async def test_cancel_corrections_cancels_every_pending_correction_task():
+    """Two drivers each wait on a correction's five minutes; `cancel_corrections` cancels both
+    timeouts and forgets them, so code outside signup need not reach the private store."""
+    import asyncio
+
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    service = WizardService.__new__(WizardService)
+    loop = asyncio.get_running_loop()
+    first, second = loop.create_future(), loop.create_future()
+    service._correction_tasks = {"7": first, "8": second}
+
+    service.cancel_corrections()
+
+    assert first.cancelled() and second.cancelled()
+    assert service._correction_tasks == {}
