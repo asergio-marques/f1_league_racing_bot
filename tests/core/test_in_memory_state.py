@@ -115,7 +115,10 @@ def test_the_register_names_no_store_that_does_not_exist():
 
 @pytest.mark.xfail(
     strict=True,
-    reason="#439: the clear reaches the wizard service's private correction timeouts itself",
+    reason=(
+        "#439: the clear reaches the wizard service's private correction timeouts itself, and "
+        "looks the change queue up on the bot"
+    ),
 )
 async def test_the_clear_empties_every_store():
     """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
@@ -138,7 +141,7 @@ async def test_the_clear_empties_every_store():
     lapse = asyncio.get_running_loop().create_future()
     admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x", "lapse": lapse}
 
-    clear_in_memory_state(bot)
+    clear_in_memory_state(bot, queue=MagicMock())
 
     season_cog.clear_pending.assert_called_once_with()
     assert admin_review_cog._PENDING_REASONS == {}
@@ -147,6 +150,7 @@ async def test_the_clear_empties_every_store():
     assert lapse.cancelled()
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the clearing of what the bot holds in memory looks the change queue up on the bot")
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
     """A factory reset deletes the changes the queue holds replies for (#439), so the clear makes
     the queue forget them: a change finishing afterwards updates no member's reply.
@@ -200,7 +204,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
                                refusal_what="`/dummy`")
     assert acknowledgement(interaction).startswith("⏳ Doing the dummy thing.")
 
-    clear_in_memory_state(bot)
+    clear_in_memory_state(bot, queue=bot.change_queue)
     await run_queue(bot)
 
     assert ran == ["a"]

@@ -567,6 +567,7 @@ async def test_a_lapse_whose_entry_was_replaced_does_nothing(monkeypatch):
     assert not any(text.startswith("⌛") for text in _sent(interaction))
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the clearing of what the bot holds in memory looks the change queue up on the bot")
 async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(monkeypatch):
     """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
     reason goes, and its lapse with it, so no lapse fires into a league that has changed."""
@@ -579,7 +580,7 @@ async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(monkeypa
     requesting = await _press(bot, "request_changes_button", user_id=MANAGER_ID + 1)
     lapses = [entry["lapse"] for entry in _PENDING_REASONS.values()]
 
-    clear_in_memory_state(bot)
+    clear_in_memory_state(bot, queue=bot.change_queue)
     await asyncio.gather(*lapses, return_exceptions=True)
 
     assert len(lapses) == 2 and all(lapse.cancelled() for lapse in lapses)
