@@ -25,6 +25,11 @@ the two tests sit either side of that distinction.
 announcement — and must survive any of them being gone already, because Discord is where they
 live and a league can delete one by hand. The row goes either way; a call that failed to
 delete but kept its row is a round that can never be reposted.
+
+Since #439 (slice 6b) the call is posted, and posted again in an earlier call's place, by its own
+change on the queue (`ask_check_in_call`, with `replacing` for a repost), so the call's tests here
+ask the queue and run it: a call that does not post stops the queue, and the stop notice says what
+is left for the round.
 """
 from __future__ import annotations
 
@@ -32,20 +37,25 @@ import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.attendance.services.rsvp_service import (
     _post_distribution_announcement,
     _post_no_reserve_notice,
-    repost_rsvp_call,
     withdraw_rsvp_call,
+)
+from tests.support.change_queue import (
+    attach_queue,
+    discard_job,
+    league_double,
+    run_queue,
+    stopped_job,
 )
 
 SERVER_ID = 8408
@@ -360,35 +370,90 @@ async def test_withdrawing_leaves_every_recorded_answer_untouched(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# repost_rsvp_call
+# The call, and the call posted again in an earlier one's place, on the change queue (#439, 6b)
 # ---------------------------------------------------------------------------
+#
+# A call is asked of the change queue as its timer asks it (`ask_check_in_call`), and posted in
+# an earlier call's place where asked with `replacing`, as an amendment asks it. Each test runs
+# the queue; a call that does not post stops it, and the stop notice in the log channel says
+# what is left for the round.
+
+NO_CALL_CHANGE = (
+    "#439: the check-in call is posted, and posted again in an earlier call's place, by "
+    "`run_rsvp_notice` and `repost_rsvp_call` at once, off the change queue, its failure "
+    "reported rather than stopping the queue"
+)
+
+#: A channel the earlier call stands in, other than the one the division is set to now.
+EARLIER_CHANNEL_ID = 770078
+
+#: What the stop notice says is left where no call stands and no answers are kept.
+NOTHING_LEFT = "no attendance rows are open for this round until this call is posted"
 
 
-@pytest.fixture
-def notice():
-    """Stub the call poster — `run_rsvp_notice` has its own cover."""
-    with patch.object(rsvp_service, "run_rsvp_notice", new=AsyncMock(return_value=None)) as m:
-        yield m
+def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
+    """The league's bot double with its change queue, attendance on and images off, the server
+    holding *channel_ids*, each recording its sends and deletes in `bot.events`; the earlier
+    call's messages (900001, 900002) stand in each."""
+    from tests.support.review_league import channel as recording_channel
+
+    bot = league_double(db_path)
+    bot.attendance_service = AttendanceService(db_path)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    bot.events = []
+    bot.channels = {cid: recording_channel(cid, bot.events) for cid in channel_ids}
+    for chan in bot.channels.values():
+        chan.seed(int(CALL_MSG_ID), "the earlier call")
+        chan.seed(int(LAST_NOTICE_MSG_ID), "the earlier last notice")
+    known = {bot.log_channel.id: bot.log_channel,
+             bot.interaction_channel.id: bot.interaction_channel}
+    bot.get_channel = MagicMock(
+        side_effect=lambda cid: bot.channels.get(int(cid)) or known.get(int(cid)))
+    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    return bot
 
 
-async def test_a_repost_keeps_every_answer_already_given(tmp_path, notice):
+async def _ask(bot: MagicMock, *, replacing: bool = False) -> None:
+    """Ask the queue for round 1's call, as its timer does or, *replacing*, as an amendment
+    posts it again; then run the queue."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await ask_check_in_call(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT,
+                            replacing=replacing)
+    await run_queue(bot)
+
+
+def _sent(bot: MagicMock) -> list[int]:
+    return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]
+
+
+def _logged(bot: MagicMock) -> str:
+    return "\n".join(bot.log_channel.sent)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_a_repost_keeps_every_answer_already_given(tmp_path):
     """The rule this file exists for. A driver who said they were racing has not unsaid it
     because the round moved; clearing the answers here would make every amendment look to
-    the league like nobody had replied."""
+    the league like nobody had replied. The call posted in the earlier one's place keeps both."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    bot = _make_bot(db_path, _make_channel())
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
+    assert len(_sent(bot)) == 1
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
 
 
-async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path, notice):
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path):
     """The counterpart. The delete is "the ones no longer of the division", not "none" —
     a departed driver's name must not appear on the new call."""
     db_path = await _make_db(tmp_path)
@@ -398,67 +463,57 @@ async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path, 
         # The reserve gives up their seat, so they are no longer of the division.
         await db.execute("UPDATE team_seats SET driver_profile_id = NULL WHERE id = 21")
         await db.commit()
-    bot = _make_bot(db_path, _make_channel())
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
     assert await _answers(db_path) == {FULL_TIME_PROFILE: "ACCEPTED"}
 
 
-async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path, notice):
-    """The `NOT IN ()` branch: an empty roster cannot be expressed as a placeholder list,
-    so it takes a separate delete. Without it the SQL would be malformed."""
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path):
+    """Nobody is seated in the division any more: every answer kept for the round goes."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "ACCEPTED"})
     async with get_connection(db_path) as db:
         await db.execute("UPDATE team_seats SET driver_profile_id = NULL")
         await db.commit()
-    bot = _make_bot(db_path, _make_channel())
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
     assert await _answers(db_path) == {}
 
 
-async def test_a_repost_posts_the_call_again(tmp_path, notice):
-    """Round 1's call stands. Posting it again hands the call poster the call it replaces, and,
-    asked by no change, does not ask it to raise: a call its timer, a restart or
-    `/attendance post-check-in` posts keeps today's report (owner, 2026-10-10, decision 3)."""
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_a_repost_posts_the_call_again(tmp_path):
+    """Round 1's call stands. Asked again in its place, the queue posts a new call, records it in
+    the earlier one's place and does not stop."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    bot = _make_bot(db_path, _make_channel())
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
-    notice.assert_awaited_once_with(
-        ROUND_ID, bot,
-        replacing=await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID),
-        raise_on_failure=False,
-    )
+    [posted] = _sent(bot)
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == str(posted)
+    assert await stopped_job(db_path) is None
 
 
-async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_path, notice):
-    """`/season amend` reaches here without knowing whether the call went out."""
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_path):
+    """`/season amend` reaches here without knowing whether the call went out: asked in an
+    earlier call's place where none stands, the call is posted all the same."""
     db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path, _make_channel())
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
-    notice.assert_awaited_once()
-
-
-def _refusing_channel() -> MagicMock:
-    """A channel whose messages delete, and which refuses every new post."""
-    channel = _make_channel()
-    channel.send = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(status=403), "Missing Permissions")
-    )
-    return channel
-
-
-#: A channel the earlier call stands in, other than the one the division is set to now.
-EARLIER_CHANNEL_ID = 770078
+    [posted] = _sent(bot)
+    stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
+    assert stored is not None and stored.message_id == str(posted)
 
 
 #: What the earlier call's message answers when it is looked up after a refused post: an error
@@ -479,6 +534,7 @@ PROBE_FAULTS = {
 TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", [
     "Discord refuses the post",
     "the channel is gone",
@@ -488,136 +544,124 @@ TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
 ])
 async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. Posting
-    it again fails. (Discord refuses the post; the channel set is gone, the earlier call's
-    stands, the division's channel having been changed since) The earlier call stands, its
-    record and messages untouched, its answers kept, and the log channel says the earlier call
-    still stands and its answers count, never that no attendance rows were opened (owner,
-    2026-10-09: "Fold it in"). (the channel is gone, the earlier call's with it) No call can be
-    seen: its record is dropped, its answers kept, and the log channel says no call can be seen
-    and to post it by hand once the channel is set (owner, 2026-10-09: "Drop the record, say
-    so"). (the call's lookup forbidden, or failing) Discord does not say the earlier call is gone,
-    so it is taken to stand, as when the post alone is refused."""
+    it again in its place fails, and the queue stops at it. (Discord refuses the post; the
+    channel set is gone, the earlier call's stands, the division's channel having been changed
+    since) The earlier call stands, its record and messages untouched, its answers kept, and the
+    stop notice says the earlier call still stands and its answers count, never that no
+    attendance rows are open (owner, 2026-10-09: "Fold it in"). (the channel is gone, the earlier
+    call's with it) No call can be seen: its record is dropped, its answers kept, and the stop
+    notice says no call for the round can be seen (owner, 2026-10-09: "Drop the record, say
+    so"). (the call's lookup forbidden, or failing) Discord does not say the earlier call is
+    gone, so it is taken to stand, as when the post alone is refused."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    channel = _refusing_channel() if fault.startswith("Discord refuses the post") else None
-    if fault in PROBE_FAULTS and channel is not None:
-        channel.fetch_message = AsyncMock(side_effect=PROBE_FAULTS[fault])
-    bot = _make_bot(db_path, channel)
-    if fault == "the channel set is gone, the earlier call's stands":
+    if fault == "the channel is gone":
+        bot = _queue_bot(db_path)
+    elif fault == "the channel set is gone, the earlier call's stands":
         async with get_connection(db_path) as db:
             await db.execute(
                 "UPDATE rsvp_embed_messages SET channel_id = ? WHERE round_id = ?",
                 (str(EARLIER_CHANNEL_ID), ROUND_ID),
             )
             await db.commit()
-        channel = _make_channel()
-        bot.get_channel = MagicMock(
-            side_effect=lambda cid: channel if int(cid) == EARLIER_CHANNEL_ID else None
-        )
+        bot = _queue_bot(db_path, EARLIER_CHANNEL_ID)
+    else:
+        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
+            MagicMock(status=403), "Missing Permissions")
+        if fault in PROBE_FAULTS:
+            bot.channels[RSVP_CHANNEL_ID].fetch_message = AsyncMock(
+                side_effect=PROBE_FAULTS[fault])
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
+    assert await stopped_job(db_path) is not None
     stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
-    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
-    assert "NOT POSTED" in line
-    assert "no attendance rows were opened" not in line
+    notice = _logged(bot)
+    assert "no attendance rows were opened" not in notice
+    assert NOTHING_LEFT not in notice
     if fault == "the channel is gone":
         assert stored is None
-        assert "no call for this round can be seen" in line
-        assert "Once the cause is cleared (or the check-in channel is set)" in line
-        assert "the answers given to it are kept, and count" in line
-        assert "`/attendance post-check-in division: Division 1 round: 1`" in line
-        assert "the earlier call still stands" not in line
+        assert "no call for this round can be seen" in notice
+        assert "the earlier call still stands" not in notice
         return
     assert stored is not None and stored.message_id == CALL_MSG_ID
     assert stored.last_notice_msg_id == LAST_NOTICE_MSG_ID
-    if channel is not None:
-        assert channel.deleted == []
-    assert "the earlier call still stands, and the answers given to it count" in line
+    assert [event for event in bot.events if event[0] == "delete"] == []
+    assert "the earlier call still stands, and the answers given to it count" in notice
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_raising_repost_raises_with_what_it_left_and_reports_nothing(tmp_path, fault):
-    """Round 1's call stands (900001, its last notice 900002), answered by both drivers, and an
-    amendment's job posts it again, asking it to raise. (Discord refuses the post) It raises for
-    the queue, keeping that the earlier call stands, with a notice saying so and that its answers
-    count; the earlier call and its record stand. (the channel is gone, the earlier call's with
-    it) It raises keeping that the call vanished, its record dropped, with a notice saying no call
-    for the round can be seen. Either way the answers are kept and the log channel is told
-    nothing: the stop notice is the report (owner, 2026-10-11: "Notice says what's left")."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
+    """Round 1's call stands (900001, its last notice 900002), answered by both drivers, and is
+    asked again in its place. Its failure stops the queue, and the stop notice is the only
+    report: no separate NOT POSTED line reaches the log channel, the answers are kept, and the
+    notice says what is left (owner, 2026-10-11: "Notice says what's left")."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    channel = _refusing_channel() if fault == "Discord refuses the post" else None
-    bot = _make_bot(db_path, channel)
+    if fault == "the channel is gone":
+        bot = _queue_bot(db_path)
+    else:
+        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
+            MagicMock(status=403), "Missing Permissions")
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        with pytest.raises(StepFailedOnDiscord) as raised:
-            await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot, raise_on_failure=True)
+    await _ask(bot, replacing=True)
 
-    bot.output_router.post_log.assert_not_awaited()
+    assert await stopped_job(db_path) is not None
+    assert "NOT POSTED" not in _logged(bot)
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
-    result = raised.value.result or {}
-    notice = str(getattr(raised.value, "notice", "") or "")
     stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
     if fault == "the channel is gone":
-        assert result.get("vanished") is True and not result.get("earlier_left")
         assert stored is None
-        assert notice.startswith("no call for this round can be seen")
+        assert "no call for this round can be seen" in _logged(bot)
         return
-    assert result.get("earlier_left") is True and not result.get("vanished")
     assert stored is not None and stored.message_id == CALL_MSG_ID
-    assert notice.startswith("the earlier call still stands, and the answers given to it count")
+    assert "the earlier call still stands, and the answers given to it count" in _logged(bot)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. The call
-    is posted again and lands, as message 990099: only then does the earlier call come down, its
+    is posted again in its place and lands: only then does the earlier call come down, its
     messages deleted and its record replaced by the new call's, the answers carried over. The new
     call is recorded before the first of the earlier call's messages is deleted, so that a press
     on the new call meanwhile finds it, and a stop between them cannot leave it untracked."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path, last_notice=LAST_NOTICE_MSG_ID)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    channel = _make_channel()
-    channel.send.return_value.channel.id = RSVP_CHANNEL_ID
-    bot = _make_bot(db_path, channel)
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
     recorded_at_delete: list[str | None] = []
-    fetch = channel.fetch_message.side_effect
-
-    async def _fetch(message_id: int) -> MagicMock:
-        message = await fetch(message_id)
+    for message_id in (int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)):
+        message = bot.channels[RSVP_CHANNEL_ID].messages[message_id]
         deleting = message.delete.side_effect
 
-        async def _delete() -> None:
+        async def _delete(*args: Any, _deleting: Any = deleting, **kwargs: Any) -> None:
             stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
             recorded_at_delete.append(stored.message_id if stored else None)
-            deleting()
+            await _deleting(*args, **kwargs)
 
         message.delete = AsyncMock(side_effect=_delete)
-        return message
 
-    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    await _ask(bot, replacing=True)
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
-
-    channel.send.assert_awaited_once()
-    assert sorted(channel.deleted) == [int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)]
-    assert recorded_at_delete == ["990099", "990099"]
+    [posted] = _sent(bot)
+    sent_at = bot.events.index(("send", RSVP_CHANNEL_ID, posted))
+    for message_id in (int(CALL_MSG_ID), int(LAST_NOTICE_MSG_ID)):
+        assert bot.events.index(("delete", RSVP_CHANNEL_ID, message_id)) > sent_at
+    assert recorded_at_delete == [str(posted), str(posted)]
     stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
-    assert stored is not None and stored.message_id == "990099"
+    assert stored is not None and stored.message_id == str(posted)
     assert stored.last_notice_msg_id is None
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
@@ -625,35 +669,38 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
     }
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the_earlier_call(
     tmp_path,
 ):
     """Round 1's call stands (900001) with no last notice yet. While its repost is being sent,
-    the last notice's timer, which takes no lock, posts and records its message (900005) on the
-    earlier call. Once the repost lands, that last notice comes down with the earlier call, read
-    as it stands just before the new call takes its record."""
+    the last notice's timer posts and records its message (900005) on the earlier call. Once the
+    repost lands, that last notice comes down with the earlier call, read as it stands just
+    before the new call takes its record."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    channel = _make_channel()
-    sent = channel.send.return_value
-    sent.channel.id = RSVP_CHANNEL_ID
-    bot = _make_bot(db_path, channel)
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    chan = bot.channels[RSVP_CHANNEL_ID]
+    chan.seed(900005, "the last notice")
+    sending = chan.send.side_effect
 
-    async def _send(*_args: Any, **_kwargs: Any) -> MagicMock:
+    async def _send(*args: Any, **kwargs: Any) -> Any:
         await bot.attendance_service.update_embed_last_notice_msg(ROUND_ID, DIVISION_ID, "900005")
-        return sent
+        return await sending(*args, **kwargs)
 
-    channel.send = AsyncMock(side_effect=_send)
+    chan.send = AsyncMock(side_effect=_send)
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await repost_rsvp_call(ROUND_ID, DIVISION_ID, bot)
+    await _ask(bot, replacing=True)
 
-    assert sorted(channel.deleted) == [int(CALL_MSG_ID), 900005]
+    deleted = sorted(mid for kind, _cid, mid in bot.events if kind == "delete")
+    assert deleted == [int(CALL_MSG_ID), 900005]
+    [posted] = _sent(bot)
     stored = await bot.attendance_service.get_embed_message(ROUND_ID, DIVISION_ID)
-    assert stored is not None and stored.message_id == "990099"
+    assert stored is not None and stored.message_id == str(posted)
     assert stored.last_notice_msg_id is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", [
     pytest.param(OSError("network unreachable"), id="the network failing"),
     pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),
@@ -662,72 +709,85 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
 async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_posted(
     tmp_path, fault,
 ):
-    """No call stands for round 1 and none is kept. Its timer's post fails on the connection
-    rather than on Discord: as a refusal is, it is reported in one NOT POSTED line and nothing is
-    raised, no call recorded. A send that timed out may have reached Discord all the same, and
-    the line says to check the channel (owner, 2026-10-09: "Fold it in")."""
+    """No call stands for round 1 and none is kept. Its post fails on the connection rather than
+    on Discord: as a refusal does, it stops the queue, no call recorded, the stop notice saying
+    no attendance rows are open. A send that timed out may have reached Discord all the same,
+    and the notice says to check the channel, naming the fault's kind rather than nothing
+    (owner, 2026-10-09: "Fold it in")."""
     db_path = await _make_db(tmp_path)
-    channel = _make_channel()
-    channel.send = AsyncMock(side_effect=fault)
-    bot = _make_bot(db_path, channel)
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot.channels[RSVP_CHANNEL_ID].send_fails = fault
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+    await _ask(bot)
 
+    assert await stopped_job(db_path) is not None
     assert await _embed_rows(db_path) == 0
-    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
-    assert line.startswith("ATTENDANCE | check-in call | NOT POSTED")
-    assert "no attendance rows were opened for this round" in line
+    notice = _logged(bot)
+    assert NOTHING_LEFT in notice
     timed_out = isinstance(fault, TimeoutError)
-    assert ("may have reached Discord all the same; check the channel" in line) == timed_out
-    # A bare timeout carries no message: the reason names the fault's kind rather than nothing.
-    assert "could not be posted: ;" not in line
+    assert ("may have reached Discord all the same; check the channel" in notice) == timed_out
     if timed_out:
-        assert "could not be posted: TimeoutError" in line
-        assert "if it is there, delete it before posting the call again" in line
+        assert "TimeoutError" in notice
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, fault):
     """No call stands for round 1, but answers to an earlier call are kept for it (both drivers
-    answered it before it was taken down). Its timer's post fails, Discord refusing it or the
-    check-in channel gone: the log channel says the answers are kept and count, and names
-    `/attendance post-check-in` to post the call by hand, never that no attendance rows were
-    opened (owner, 2026-10-09: "Make the line tell the truth")."""
+    answered it before it was taken down). Its post fails, Discord refusing it or the check-in
+    channel gone: the queue stops, its notice saying the answers are kept and count, never that
+    no attendance rows are open (owner, 2026-10-09: "Make the line tell the truth"); a Discard
+    names `/attendance post-check-in` to post the call by hand."""
     db_path = await _make_db(tmp_path)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
-    channel = _refusing_channel() if fault == "Discord refuses the post" else None
-    bot = _make_bot(db_path, channel)
+    if fault == "the channel is gone":
+        bot = _queue_bot(db_path)
+    else:
+        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
+            MagicMock(status=403), "Missing Permissions")
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+    await _ask(bot)
 
+    assert await stopped_job(db_path) is not None
     assert await _embed_rows(db_path) == 0
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
-    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
-    assert "answers given to an earlier call of this round are kept, and count" in line
-    assert "`/attendance post-check-in division: Division 1 round: 1`" in line
-    assert "no attendance rows were opened" not in line
+    notice = _logged(bot)
+    assert "answers given to an earlier call of this round are kept, and count" in notice
+    assert NOTHING_LEFT not in notice
+    assert "no attendance rows were opened" not in notice
+
+    await discard_job(bot)
+
+    assert "/attendance post-check-in" in _logged(bot)[len(notice):]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(tmp_path, fault):
-    """No call and no answers for round 1: a post that fails says, as it always has, that no
-    attendance rows were opened and the round will count nothing against anyone until the call
-    is posted with `/attendance post-check-in`."""
+    """No call and no answers for round 1: a post that fails stops the queue, its notice saying,
+    as it always has, that no attendance rows are open and the round counts nothing against
+    anyone until the call is posted; a Discard names `/attendance post-check-in`."""
     db_path = await _make_db(tmp_path)
-    channel = _refusing_channel() if fault == "Discord refuses the post" else None
-    bot = _make_bot(db_path, channel)
+    if fault == "the channel is gone":
+        bot = _queue_bot(db_path)
+    else:
+        bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+        bot.channels[RSVP_CHANNEL_ID].send_fails = discord.HTTPException(
+            MagicMock(status=403), "Missing Permissions")
 
-    with patch.object(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None)):
-        await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+    await _ask(bot)
 
-    [line] = [c.args[0] for c in bot.output_router.post_log.await_args_list]
-    assert "no attendance rows were opened for this round" in line
-    assert "`/attendance post-check-in division: Division 1 round: 1`" in line
+    assert await stopped_job(db_path) is not None
+    notice = _logged(bot)
+    assert NOTHING_LEFT in notice
+
+    await discard_job(bot)
+
+    assert "/attendance post-check-in" in _logged(bot)[len(notice):]
 
 
 # ---------------------------------------------------------------------------
