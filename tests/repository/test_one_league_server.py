@@ -454,13 +454,21 @@ async def test_a_member_leaving_another_server_is_nothing_to_the_league():
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
+NO_RESULTS_LOCK_LISTENER = (
+    "#439: the penalty review's lock listens in the season cog, not the results cog"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RESULTS_LOCK_LISTENER)
 async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    """The lock is results' listener (#439, slice 6b, C39): a message typed in another server
+    is never looked up, nor deleted."""
+    from leaguebot.results.cogs.results_cog import ResultsCog
     from leaguebot.results.services import result_submission_service
 
     asked = AsyncMock(return_value=True)
     monkeypatch.setattr(result_submission_service, "is_channel_in_penalty_review", asked)
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = ResultsCog.__new__(ResultsCog)
     cog.bot = _listener_bot()
     message = _message_elsewhere()
 
