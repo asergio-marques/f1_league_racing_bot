@@ -215,7 +215,7 @@ def _lineups_asked(bot) -> list[int]:
             if call.args[0] == "lineup.post"]
 
 
-async def _run(bot, db_path: str, *, head=None):
+async def _run(bot, db_path: str):
     """Call the function under test with the sheet re-post and announcer stubbed out.
 
     Both are covered by their own files; what is under test here is *whether* and *with what*
@@ -228,7 +228,6 @@ async def _run(bot, db_path: str, *, head=None):
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         season_id=SEASON_ID,
-        head=head,
         queue=bot.change_queue,
     )
 
