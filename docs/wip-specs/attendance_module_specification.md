@@ -191,7 +191,7 @@
     - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is.
     - It shall be refused, with nothing changed, while a round of the division has an amendment of its results open, naming the round being amended and its channel. The recalculation would otherwise read that amendment's corrections before they are approved, and its sheet and sanctions would stand were the amendment then abandoned. Decided 2026-09-21.
     - It shall recalculate the attendance of every round of the division from the one given onwards whose penalties have been approved, from their results, as one change that lands whole or not at all. Rounds before the one given shall be left alone.
-    - It shall then ask the change queue to post the sheet of the latest of those rounds, and enforce the sanctions against that round, each lineup and sheet a sanction touches asked of the queue likewise; a sheet or lineup Discord refuses stops the queue, the reply saying what the command did. Decided 2026-10-10.
+    - It shall then ask the change queue to post the sheet of the latest of those rounds, and enforce the sanctions against that round, each lineup and sheet a sanction touches asked of the queue likewise; a sheet Discord refuses, or a lineup whose text it refuses, stops the queue, the reply saying what the command did. Decided 2026-10-10.
     - It shall be safe to run again: a driver already sacked or already in the reserve team shall not be sanctioned a second time, so a second run applies only what the first did not.
     - The reply shall list the sanctions applied and any still not applied, and the run shall be written to the log channel.
 

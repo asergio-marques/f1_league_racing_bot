@@ -302,7 +302,7 @@ Running it twice does no harm: a driver already sacked or already in the Reserve
 
 > **A lineup or sheet that could not be redrawn is a job too.** The lineup after a sanction, and the sheet for this division and for each other division a sacked driver sat in, stop the queue like any job. Discarded, a lineup is posted with the next change to that division's drivers, and a sheet is named with the `/attendance sync` that posts it again.
 >
-> `/attendance sync` itself replies as soon as it has made its own change; the latest sheet, and each lineup and sheet a sanction touches, follow on the change queue, the new message posted before the old one is deleted by a job of its own. A sheet or lineup Discord refuses, or whose channel is unset, stops the queue until you set the channel and press Retry. A sheet whose old message could not be deleted leaves two sheets in the channel: delete the old one by hand once a league admin has discarded it.
+> `/attendance sync` itself replies as soon as it has made its own change; the latest sheet, and each lineup and sheet a sanction touches, follow on the change queue, the new message posted before the old one is deleted by a job of its own. A sheet Discord refuses, or a lineup whose text it refuses, or whose channel is unset, stops the queue until you set the channel and press Retry. A sheet whose old message could not be deleted leaves two sheets in the channel: delete the old one by hand once a league admin has discarded it.
 
 ## When the attendance itself was not recorded
 

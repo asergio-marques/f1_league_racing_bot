@@ -326,7 +326,7 @@ it only to place it; the rules governing it belong to its own specification.
     - Every driver whose placement is committed by it shall be granted their division's role and their team's role.
     - The lineup of each division holding such a driver shall be posted once.
     - The season shall move to Ongoing.
-    - Each lineup shall be posted by the change queue once the placements are confirmed; one Discord refuses stops the queue until it is retried or discarded, never undoing the confirmation. Decided 2026-10-10. Where the lineups cannot be put on the queue at all, the confirmation shall stand all the same, and its reply and log line shall say so among what was not done, each lineup being posted with the next change to its division's drivers. Decided 2026-10-12.
+    - Each lineup shall be posted by the change queue once the placements are confirmed; one whose text Discord refuses stops the queue until it is retried or discarded, never undoing the confirmation. Decided 2026-10-10. Where the lineups cannot be put on the queue at all, the confirmation shall stand all the same, and its reply and log line shall say so among what was not done, each lineup being posted with the next change to its division's drivers. Decided 2026-10-12.
 - The member who confirmed shall be told privately that the placements are confirmed. Where that cannot be delivered to them, the channel the review was read in shall be told instead, naming the member, that the placements are confirmed, and that the log channel carries what they would have been told; the log channel shall carry it. Decided 2026-09-22.
 
 ### The ongoing states
