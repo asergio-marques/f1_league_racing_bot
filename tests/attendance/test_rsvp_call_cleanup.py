@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,7 +27,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from tests.support.change_queue import attach_queue, run_queue, stopped_job
+from tests.support.change_queue import attach_queue, league_double, run_queue, stopped_job
 from tests.support.review_league import channel
 from tests.support.season_league import CALL_MESSAGES, DIVISIONS, PRO, ongoing_league, round_id
 
@@ -250,15 +251,46 @@ async def test_posting_a_call_takes_down_no_other_call(tmp_path, scheduled_at, d
 # ---------------------------------------------------------------------------
 
 
+NO_CLEAN_UP_CHANGE = (
+    "#439: the check-in clean-up is run by `run_rsvp_cleanup` at once, off the change queue"
+)
+
+
 async def _clean_up(
     db_path: str, round_id: int = EARLIER_ROUND, *, attendance_enabled: bool = True
-) -> MagicMock:
-    """Run *round_id*'s cleanup, and hand back the channel it deleted from."""
-    channel = _make_channel()
-    await rsvp_service.run_rsvp_cleanup(
-        round_id, _make_bot(db_path, channel, attendance_enabled=attendance_enabled)
-    )
-    return channel
+) -> SimpleNamespace:
+    """Ask the queue for *round_id*'s cleanup as its timer does (#439, slice 6b), and run the
+    queue; hand back what it deleted from the check-in channel (`.deleted`, the ids as text).
+
+    The check-in channel stands on the server holding every message `_msg_ids` names for both
+    rounds; with *attendance_enabled* false the module is off, in its configuration and to the
+    module service alike."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.core.models.change import ChangeOrigin
+
+    if not attendance_enabled:
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE attendance_config SET module_enabled = 0")
+            await db.commit()
+    bot = league_double(db_path)
+    bot.attendance_service = AttendanceService(db_path)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    events: list = []
+    checkin = channel(RSVP_CHANNEL_ID, events)
+    for rid in (POSTED_ROUND, EARLIER_ROUND):
+        for message_id in _msg_ids(rid):
+            checkin.seed(int(message_id), "a check-in message")
+    known = {RSVP_CHANNEL_ID: checkin, bot.log_channel.id: bot.log_channel,
+             bot.interaction_channel.id: bot.interaction_channel}
+    bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
+    attach_queue(bot, db_path, now=NOW)
+
+    await ask_check_in_clean_up(bot.change_queue, db_path, round_id, origin=ChangeOrigin.BOT)
+    await run_queue(bot)
+
+    assert await stopped_job(db_path) is None
+    return SimpleNamespace(deleted=[str(mid) for kind, cid, mid in events
+                                    if kind == "delete" and cid == RSVP_CHANNEL_ID])
 
 
 async def _cleared(db_path: str, round_id: int = EARLIER_ROUND) -> bool:
@@ -267,6 +299,7 @@ async def _cleared(db_path: str, round_id: int = EARLIER_ROUND) -> bool:
         return bool((await cursor.fetchone())["checkin_cleared"])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_takes_down_the_call_and_its_notices(tmp_path):
     """The call, its last notice and its distribution message, and the row recording them."""
     db_path = await _make_db(tmp_path)
@@ -278,6 +311,7 @@ async def test_the_cleanup_takes_down_the_call_and_its_notices(tmp_path):
     assert await _standing_rounds(db_path) == set()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_keeps_the_answers(tmp_path):
     """The messages go; what the drivers answered is the attendance record and stays."""
     db_path = await _make_db(tmp_path)
@@ -301,6 +335,7 @@ async def test_the_cleanup_keeps_the_answers(tmp_path):
     assert [row["rsvp_status"] for row in rows] == ["ACCEPTED"]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 @pytest.mark.parametrize("call_standing", [True, False], ids=["call-standing", "no-call"])
 async def test_the_cleanup_marks_the_round_cleared(tmp_path, call_standing):
     """Test mode reads a round with no call recorded as one whose call is still to be posted.
@@ -317,6 +352,7 @@ async def test_the_cleanup_marks_the_round_cleared(tmp_path, call_standing):
     assert await _cleared(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_does_nothing_while_attendance_is_disabled(tmp_path):
     """A call already posted when the module is switched off stays where it is (attendance
     specification), so the cleanup leaves it, and does not mark the round either."""
@@ -330,6 +366,7 @@ async def test_the_cleanup_does_nothing_while_attendance_is_disabled(tmp_path):
     assert not await _cleared(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_leaves_a_cancelled_round_alone(tmp_path):
     """A cancelled round's call came down with the cancellation; a cleanup job that survived it
     has nothing to do."""
@@ -345,6 +382,7 @@ async def test_the_cleanup_leaves_a_cancelled_round_alone(tmp_path):
     assert not await _cleared(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_leaves_the_other_round_of_a_double_header_standing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))

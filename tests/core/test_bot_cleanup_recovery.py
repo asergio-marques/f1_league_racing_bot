@@ -14,12 +14,14 @@ has its job armed, which will run at its own moment.
 weather module keeps the forecasts of a round called off. **A completed season is not**: the
 live jobs fire after a season completes, and the catch-up does what they would have.
 
-**Each module's gate applies.** Weather's is asked here; attendance's is inside
-`run_rsvp_cleanup`, which this hands every due round to.
+**Each module's gate applies.** Weather's is asked here; attendance's is the check-in
+clean-up change's own, which this asks of the queue for every due round.
 
 The two cleanups themselves are tested elsewhere; here they are stubbed, and what is pinned is
-which rounds reach them. The forecast's is asked of the change queue, through weather's
-`ask_forecast_clean_up` (#439), which these record, patched in `forecast_changes`.
+which rounds reach them. Both are asked of the change queue (#439): the forecast's through
+weather's `ask_forecast_clean_up`, patched in `forecast_changes`, and the check-in's through
+attendance's `ask_check_in_clean_up` (slice 6b), patched in `check_in_changes`; these record
+each ask.
 """
 from __future__ import annotations
 
@@ -36,6 +38,11 @@ from leaguebot.core.db.database import get_connection, run_migrations
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
+
+NO_CLEAN_UP_ASK = (
+    "#439: the restart runs `run_rsvp_cleanup` for each round's check-in at once, rather than "
+    "asking the check-in clean-up of the change queue"
+)
 
 
 async def _make_db(
@@ -102,8 +109,8 @@ def _bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
 async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
-    """Run the recovery, returning the rounds whose forecast clean-up it asked the queue for and
-    whose check-in it cleaned; *forecast_error* makes the clean-up's ask raise."""
+    """Run the recovery, returning the rounds whose forecast clean-up and whose check-in
+    clean-up it asked the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
     forecasts: list[int] = []
     check_ins: list[int] = []
 
@@ -112,13 +119,16 @@ async def _recover(
             raise forecast_error
         forecasts.append(round_id)
 
-    async def _check_in(round_id, _bot):
+    async def _check_in(_queue, _db_path, round_id, **_kwargs):
         check_ins.append(round_id)
 
     with patch(
         "leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
         new=AsyncMock(side_effect=_forecast),
-    ), patch("leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup", new=AsyncMock(side_effect=_check_in)):
+    ), patch(
+        "leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
+        new=AsyncMock(side_effect=_check_in),
+    ):
         await bot_module._recover_missed_cleanups(bot)
     return forecasts, check_ins
 
@@ -128,12 +138,14 @@ async def _recover(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_round_a_day_past_has_both_its_cleanups_run(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=25)
 
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_round_exactly_a_day_past_is_due(tmp_path):
     """The live jobs fire at the round's start plus a day, so that moment is already due."""
     db_path = await _make_db(tmp_path, hours_since_start=24)
@@ -141,12 +153,14 @@ async def test_a_round_exactly_a_day_past_is_due(tmp_path):
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=23)
 
     assert await _recover(_bot(db_path)) == ([], [])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_completed_season_is_still_cleaned_up(tmp_path):
     """The live jobs outlive the season's completion, and the catch-up does as they would."""
     db_path = await _make_db(tmp_path, season_status="COMPLETED")
@@ -154,12 +168,14 @@ async def test_a_completed_season_is_still_cleaned_up(tmp_path):
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_only_what_is_standing_is_cleaned(tmp_path):
     db_path = await _make_db(tmp_path, forecast=False)
 
     assert await _recover(_bot(db_path)) == ([], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 @pytest.mark.parametrize(
     "phases",
     [(2,), (1,), (1, 2)],
@@ -176,6 +192,7 @@ async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecas
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 @pytest.mark.parametrize(
     "phases, named",
     [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
@@ -196,6 +213,7 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
     assert f"_recover_missed_cleanups: deleting {named} of round_id={ROUND_ID}" in lines, lines
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
     """A mystery round's notice (phase 0) is not a forecast the clean-up deletes: with nothing
     else recorded, the catch-up asks no clean-up of it."""
@@ -209,6 +227,7 @@ async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 @pytest.mark.parametrize(
     "kwargs",
     [{"round_status": "CANCELLED"}, {"division_status": "CANCELLED"}],
@@ -221,14 +240,16 @@ async def test_a_cancelled_round_is_left_alone(tmp_path, kwargs):
     assert await _recover(_bot(db_path)) == ([], [])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_weather_switched_off_keeps_its_forecasts(tmp_path):
     """Disabling weather cancels its cleanup jobs; the catch-up must not run them anyway. The
-    check-in's gate is attendance's own, inside `run_rsvp_cleanup`."""
+    check-in's gate is attendance's own, in its clean-up change's check."""
     db_path = await _make_db(tmp_path)
 
     assert await _recover(_bot(db_path, weather_enabled=False)) == ([], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
     db_path = await _make_db(tmp_path)
 
@@ -238,6 +259,7 @@ async def test_a_failing_cleanup_does_not_stop_the_rest(tmp_path, caplog):
     assert "forecast cleanup failed" in caplog.text
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_ASK)
 async def test_a_database_it_cannot_read_stops_the_recovery_quietly(tmp_path, caplog):
     bot = _bot(os.path.join(str(tmp_path), "missing", "nowhere.db"))
 
