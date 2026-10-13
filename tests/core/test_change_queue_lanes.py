@@ -9,9 +9,10 @@ Everything of the queue is imported inside a test, so this file collects while l
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,10 +26,15 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     league_double,
+    maybe_await,
     member_interaction,
+    restart_queue,
+    retry_job,
     run_queue,
     seed_server,
+    step_rows,
     stopped_job,
+    tier_member,
 )
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -43,6 +49,11 @@ NO_TYPE_LANE = "#439: a change type does not say its lane yet"
 NO_FOLLOW_ON_LANE = "#439: a follow-on does not take its own kind's lane yet"
 NO_LANE_REPEAT = "#439: changes carry no lane, so a repeat is compared across the whole queue"
 NO_LANE_ACK = "#439: changes carry no lane, so an acknowledgement names a stop anywhere"
+NO_LANE_CHOICE = (
+    "#439: the queue chooses one change for the whole bot, so a stop on one lane holds every lane"
+)
+NO_LANE_TRYING = "#439: the job being tried is the whole queue's, not each lane's"
+NO_WRITE_LOCK = "#439: the queue's saves take no write lock of their own"
 
 
 def _api() -> SimpleNamespace:
@@ -108,6 +119,30 @@ def _failing(name: str = "post") -> Any:
 def _in_channel(payload: dict[str, Any]) -> str:
     """A conversation kind's lane: its channel's."""
     return f"channel:{payload['channel']}"
+
+
+def _flaky(name: str, holder: dict[str, Any], ran: list | None = None) -> Any:
+    """An `ACT` job Discord refuses while `holder["fail"]` is set, and that goes through after."""
+    api = _api()
+
+    async def _run(_ctx):
+        if holder.get("fail"):
+            raise api.StepFailedOnDiscord("Missing Access")
+        if ran is not None:
+            ran.append(name)
+        return api.StepResult()
+
+    return api.Step(name, api.StepKind.ACT, _run)
+
+
+async def _job(env, name: str) -> dict[str, Any]:
+    """The one job named *name*."""
+    [job] = [row for row in await step_rows(env.db_path) if row["name"] == name]
+    return job
+
+
+async def _states(env) -> list[str]:
+    return [row["state"] for row in await change_rows(env.db_path)]
 
 
 @pytest.fixture
@@ -298,3 +333,142 @@ async def test_an_acknowledgement_names_the_stop_on_its_own_lane_only(env):
     assert f"stopped at job #{job['id']}" in acknowledgement(turn)
     assert (await env.bot.change_queue.job_numbers(league_id))[1] is None
     assert (await env.bot.change_queue.job_numbers(turn_id))[1] == job["id"]
+
+
+# ---------------------------------------------------------------------------
+# L4: each lane's next change is chosen apart; the tests' runner stays serial
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
+async def test_a_stop_on_one_lane_leaves_another_running(env):
+    """A turn in channel 7 stops at a job Discord refuses. A league change and a turn in channel 8,
+    asked after it, are carried out all the same; the turn in channel 7 stays stopped."""
+    ran: list[str] = []
+    _queue(env, _type("stuck", steps=[_failing()], lane=_in_channel),
+           _type("turn", steps=[_act("t", ran)], lane=_in_channel),
+           _type("dummy", steps=[_act("d", ran)]))
+
+    await _ask(env, "stuck", {"channel": 7})
+    await _ask(env, "dummy")
+    await _ask(env, "turn", {"channel": 8})
+    await run_queue(env.bot)
+
+    assert ran == ["d", "t"]
+    assert await _states(env) == ["RUNNING", "DONE", "DONE"]
+    assert (await stopped_job(env.db_path))["name"] == "post"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
+async def test_changes_run_in_the_order_asked_within_a_lane(env):
+    """In channel 7 a first turn stops at its second job, and a second turn is asked behind it,
+    with a league change asked between the two. The league change runs; the second turn waits and
+    does not overtake the first. Once the stopped job goes through on Retry, the first turn
+    finishes, and only then does the second run."""
+    ran: list[str] = []
+    holder = {"fail": True}
+    _queue(env,
+           _type("first", steps=[_act("a1", ran), _flaky("a2", holder, ran)], lane=_in_channel),
+           _type("second", steps=[_act("b", ran)], lane=_in_channel),
+           _type("dummy", steps=[_act("d", ran)]))
+
+    await _ask(env, "first", {"channel": 7})
+    await _ask(env, "dummy")
+    await _ask(env, "second", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert ran == ["a1", "d"]
+    assert await _states(env) == ["RUNNING", "DONE", "QUEUED"]
+
+    holder["fail"] = False
+    await retry_job(env.bot)
+
+    assert ran == ["a1", "d", "a2", "b"]
+    assert await _states(env) == ["DONE", "DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
+async def test_each_lane_resumes_its_running_change_after_a_restart(env):
+    """A turn in channel 7 is stopped at its second job, and a league change of two jobs is cut
+    off by a restart after its first. After the restart the league change carries on from its
+    second job while the turn stays stopped; Retry then carries the turn on from its stopped job.
+    No job done before the restart runs again."""
+    ran: list[str] = []
+    holder = {"fail": True}
+    _queue(env,
+           _type("turn", steps=[_act("a1", ran), _flaky("a2", holder, ran)], lane=_in_channel),
+           _type("dummy", steps=[_act("l1", ran), _act("l2", ran)]))
+
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    await _ask(env, "dummy")
+    await run_queue(env.bot, steps=1)
+    assert ran == ["a1", "l1"]
+    assert await _states(env) == ["RUNNING", "RUNNING"]
+
+    await restart_queue(env.bot)
+    try:
+        await run_queue(env.bot)
+        assert ran == ["a1", "l1", "l2"]
+        assert (await stopped_job(env.db_path))["name"] == "a2"
+
+        holder["fail"] = False
+        await retry_job(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert ran == ["a1", "l1", "l2", "a2"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
+async def test_the_serial_runner_takes_the_lowest_runnable_change_first(env):
+    """A turn in channel 9 is stopped. Then, in this order: a turn of two jobs in channel 7, a
+    league change, a turn in channel 8 and a second turn in channel 7. The tests' runner carries
+    out one change at a time, the runnable change asked first first: the first turn in channel 7
+    whole, then the league change, the turn in channel 8 and the second turn in channel 7."""
+    ran: list[str] = []
+    _queue(env, _type("stuck", steps=[_failing()], lane=_in_channel),
+           _type("first", steps=[_act("a1", ran), _act("a2", ran)], lane=_in_channel),
+           _type("dummy", steps=[_act("d", ran)]),
+           _type("turn", steps=[_act("c", ran)], lane=_in_channel),
+           _type("second", steps=[_act("b", ran)], lane=_in_channel))
+    await _ask(env, "stuck", {"channel": 9})
+    await run_queue(env.bot)
+
+    await _ask(env, "first", {"channel": 7})
+    await _ask(env, "dummy")
+    await _ask(env, "turn", {"channel": 8})
+    await _ask(env, "second", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert ran == ["a1", "a2", "d", "c", "b"]
+    assert await _states(env) == ["RUNNING", "DONE", "DONE", "DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
+async def test_a_lane_s_retry_falls_due_on_its_own_schedule(env):
+    """A turn in channel 7 stops at noon, and a league change stops thirty seconds later. Each job
+    is tried again on its own schedule, counted from its own first failure: at 12:01 only the
+    turn's, at 12:01:30 only the league's; the turn's next try then falls at 12:05 and the
+    league's at 12:05:30."""
+    _queue(env, _type("turn", steps=[_flaky("post7", {"fail": True})], lane=_in_channel),
+           _type("dummy", steps=[_flaky("postL", {"fail": True})]))
+
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+    env.clock.advance(seconds=30)
+    await _ask(env, "dummy")
+    await run_queue(env.bot)
+    assert [(await _job(env, n))["tries"] for n in ("post7", "postL")] == [1, 1]
+
+    env.clock.advance(seconds=30)
+    await run_queue(env.bot)
+    assert [(await _job(env, n))["tries"] for n in ("post7", "postL")] == [2, 1]
+
+    env.clock.advance(seconds=30)
+    await run_queue(env.bot)
+    turn, league = await _job(env, "post7"), await _job(env, "postL")
+    assert [turn["tries"], league["tries"]] == [2, 2]
+    assert datetime.fromisoformat(turn["next_try_at"]) == NOW + timedelta(minutes=5)
+    assert datetime.fromisoformat(league["next_try_at"]) == NOW + timedelta(minutes=5, seconds=30)
