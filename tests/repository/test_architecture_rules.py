@@ -1361,12 +1361,25 @@ KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/in_memory_state.py", "clear_in_memory_state"): (1, SLICE["6b"]),
     ("results/services/penalty_wizard.py", "_ask_appeals_approved"): (2, SLICE["6b"]),
     ("results/services/penalty_wizard.py", "_ask_reports_approved"): (2, SLICE["6b"]),
+    ("results/services/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "ask_review_open"): (2, SLICE["6b"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, SLICE["6b"]),
     ("results/services/review_recovery.py", "_put_back"): (3, SLICE["6b"]),
 }
 
 
+#: Why the queue check fails until the penalty review's approvals are handed the queue.
+NO_VIEW_HANDS_THE_QUEUE = (
+    "#439: the penalty review's approve buttons do not yet read the queue themselves and hand "
+    "it to the approvals"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_VIEW_HANDS_THE_QUEUE)
 def test_no_service_reaches_the_change_queue_through_the_bot():
     """A service or a helper is handed the change queue by whoever builds or calls it, and never
     looks it up on the bot (architecture.md, "How modules and core fit together": "Services stay
@@ -1416,10 +1429,6 @@ def _view_and_form_classes(path: str) -> set[str]:
     }
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: the penalty review's views and forms do not yet read the queue themselves and hand "
-    "it to the approvals"
-))
 def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_pass():
     """The penalty review's buttons and forms, and the configuration picker, sit in results'
     services files and reach the queue through the bot until results' pass moves them (#439
