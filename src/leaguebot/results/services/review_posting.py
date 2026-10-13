@@ -27,9 +27,9 @@ refused midway, which the bot could not take down itself, travel on the failure;
 removes them first, so a retry leaves no second copy.
 
 **A retry posts as text** (Constitution XIV, rule 8): the picture is attempted on the first try
-alone. The picture is posted through image's own function, which saves its ids and deletes what it
-replaces itself, so a drawn table has nothing for the job to record or delete (image's results
-poster and the attendance sheet save their own ids until their passes move them, #288).
+alone. A results table's picture is posted through image's own function, which saves and deletes
+nothing, so a drawn table is recorded and its old messages deleted as a text table's are; a
+standings picture still deletes the message it replaces as it posts.
 
 **A standings job covers a round's both championships**, since the text flow posts one message
 carrying both and only the graphics are posted one each.
@@ -260,7 +260,8 @@ def _standings_job(
 
 
 async def plan_division_posts(
-    db: aiosqlite.Connection, division_id: int, *, division_name: str | None = None
+    db: aiosqlite.Connection, division_id: int, *, division_name: str | None = None,
+    results_only: bool = False,
 ) -> list[PlannedStep]:
     """The jobs that rebuild everything a division's results and standings channels show, read on
     *db*: every round's results in round order, then every round's standings in round order, each
@@ -273,6 +274,9 @@ async def plan_division_posts(
     With *division_name*, every job carries it as `"division"` and `not_done` names it ("Round 2's
     Feature Race results in Pro were not posted"): a change that reposts several divisions says
     which. Planned with none, as the amendment's rebuild plans them, the lines name no division.
+
+    With *results_only*, the standings jobs are left out: `/results rounds sync` reposts the
+    results, and the standings are `/results standings sync`'s.
     """
     config = await (
         await db.execute(
@@ -316,7 +320,7 @@ async def plan_division_posts(
                     "session": f"{_session_name(session['session_type'])} results",
                     "remedy": _AMEND if pending else _RESULTS_SYNC,
                 }))
-        if config["standings_channel_id"]:
+        if config["standings_channel_id"] and not results_only:
             standings.append(
                 _standings_job(int(rnd["id"]), rnd["round_number"], label, pending, fresh=True)
             )
@@ -606,7 +610,7 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
             ) from error
         raise
     result = {
-        "new": [] if posted.drawn else posted.new, "old": posted.old,
+        "new": posted.new, "old": posted.old,
         "drawn": posted.drawn, "channel_id": channel_id,
     }
     what = f"round {rnd['round_number']}'s {_session_name(row['session_type'])} results"
@@ -624,7 +628,7 @@ async def _round_format(db_path: str, round_id: int) -> str:
 async def _record_session_post(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult
 ) -> None:
-    """Save the new ids on the session, with the job's mark. A picture saved its own."""
+    """Save the new ids on the session, with the job's mark, a picture's as a text table's."""
     new = result.result.get("new") or []
     if not new:
         return

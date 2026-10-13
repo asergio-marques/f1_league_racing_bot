@@ -631,7 +631,7 @@ Two of the nine *add* a picture rather than replacing anything, so switching the
 > standings pair and an opening attendance sheet for every division; completing it draws a final
 > pair and a final sheet. These two are unlike every other picture the module draws in one respect:
 > **they carry no message text at all**, because the phrase naming the occasion is on the picture
-> itself. Each is a job on the change queue (the opening ones when the season is approved, the final ones when it is completed): a drawing Discord will not take stops the queue until it is retried, and once a league admin discards it the confirmation or the completion names it. They also post with the module switched off, as the ordinary text tables headed by that
+> itself. Each is a job on the change queue (the opening ones when the season is approved, the final ones when it is completed): a standings drawing Discord will not take is posted as its text at once, as every standings picture is, while a sheet Discord will not take stops the queue until it is retried, as every sheet does; once a league admin discards one, the confirmation or the completion names it. They also post with the module switched off, as the ordinary text tables headed by that
 > same phrase — they belong to the results and attendance modules, and the pictures are only how
 > they are dressed.
 >
@@ -639,6 +639,8 @@ Two of the nine *add* a picture rather than replacing anything, so switching the
 > On the attendance side the opening sheet replaces the previous one as usual, but the **final sheet
 > is posted beside the last round's and both stay** — the one place the module leaves two sheets in
 > a channel on purpose.
+
+> **A picture Discord refuses is handled by what it is.** A refused calendar, attendance sheet or forecast picture stops the change queue, and the next try posts its text. A refused lineup, results table or standings picture, the opening and final classifications included, is replaced by its text in the same try, and nothing stops. In every case the new message is posted before the old one is deleted. For a calendar, a lineup, an attendance sheet, a results table or a forecast, that deletion is a job of its own on the change queue; a standings picture deletes the message it replaces as it posts.
 
 > **Both pictures carry the whole season as a grid** — every round the division holds, run or not, with a result cell per session and, on the constructors picture, a car per driver who drove. The classification beside the grid — positions, points, gaps — resolves the same way it always has, and the race cells are coloured for podiums, points finishes and fastest laps as described under Step 5. `/images test standings` shows you exactly this, with a different classification invented for each round so you can judge the colours across a whole grid rather than down one row.
 

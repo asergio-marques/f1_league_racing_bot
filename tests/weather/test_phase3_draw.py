@@ -35,13 +35,12 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.session import MAX_SLOTS, SessionType
-from leaguebot.weather.services.phase3_service import run_phase3
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -120,14 +119,6 @@ async def _seed(
         await db.commit()
 
 
-def _make_bot(db_path: str) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 def _highest(weights: dict[str, float]) -> str:
     """The highest-weighted label, ties broken by name.
 
@@ -178,37 +169,30 @@ async def _payload(db_path: str) -> dict:
     return json.loads(row["payload"])
 
 
-def _run(db_path: str, *, pick: str = "max"):
-    """Run Phase 3 deterministically.
+async def _draw(db_path: str, *, pick: str = "max"):
+    """Draw Phase 3 on a save this opens and commits, deterministically as `_run` does.
 
-    *pick* chooses which end of the permitted slot-count range `randint` returns, so a test
-    can drive either bound. Returns the bot, the posting double, and an invoker that yields
-    the `randint` double and the list of weight maps `draw_weighted` was handed.
+    Returns the `Drawn`, the `randint` double and the list of weight maps `draw_weighted` was
+    handed. The draw writes on the connection it is handed and posts nothing.
     """
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
+    from leaguebot.weather.services.phase3_service import draw_phase3_on
+
     seen_weights: list[dict[str, float]] = []
 
-    def _draw(weights):
+    def _weighted(weights):
         seen_weights.append(dict(weights))
         return _highest(weights)
 
-    async def _invoke():
-        with patch(
-            "leaguebot.weather.services.phase3_service.random.randint",
-            side_effect=lambda lo, hi: hi if pick == "max" else lo,
-        ) as randint, patch(
-            "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_draw
-        ), patch(
-            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
-        ), patch(
-            "leaguebot.image.services.image_weather_post.attach_forecast",
-            new=AsyncMock(return_value=None),
-        ):
-            await run_phase3(ROUND_ID, bot)
-        return randint, seen_weights
-
-    return bot, posted, _invoke
+    with patch(
+        "leaguebot.weather.services.phase3_service.random.randint",
+        side_effect=lambda lo, hi: hi if pick == "max" else lo,
+    ) as randint, patch(
+        "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_weighted
+    ):
+        async with get_connection(db_path) as db:
+            result = await draw_phase3_on(db, ROUND_ID, now=datetime.now(timezone.utc))
+            await db.commit()
+    return result, randint, seen_weights
 
 
 # ---------------------------------------------------------------------------
@@ -234,9 +218,7 @@ async def test_slot_count_bounds(session_type, slot_type, expected_bounds, tmp_p
     """The minimum is 1, or 2 for a mixed session; the maximum is the session type's cap."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[(session_type, slot_type)])
-    _, _, invoke = _run(db_path)
-
-    randint, _ = await invoke()
+    _, randint, _ = await _draw(db_path)
 
     assert randint.call_args.args == expected_bounds
     # The cap is the one the model declares, not a number repeated in the test.
@@ -253,9 +235,7 @@ async def test_a_mixed_session_capped_at_one_slot_takes_one(tmp_path):
     assert MAX_SLOTS[SessionType.LONG_SPRINT_RACE] == 1  # the premise of this test
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("LONG_SPRINT_RACE", "mixed")])
-    _, _, invoke = _run(db_path)
-
-    randint, _ = await invoke()
+    _, randint, _ = await _draw(db_path)
 
     assert randint.call_args.args == (1, 1)
     # Exactly one slot is recorded — which label it holds is the weighting's business.
@@ -268,9 +248,7 @@ async def test_an_unknown_session_type_falls_back_to_four_slots(tmp_path):
     """A session type outside the enum must not take the phase down."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("NOT_A_SESSION_TYPE", "sunny")])
-    _, _, invoke = _run(db_path)
-
-    randint, _ = await invoke()
+    _, randint, _ = await _draw(db_path)
 
     assert randint.call_args.args == (1, 4)
 
@@ -279,9 +257,7 @@ async def test_an_unknown_session_type_falls_back_to_four_slots(tmp_path):
 async def test_the_drawn_count_is_the_number_of_slots_persisted(pick, tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")])
-    _, _, invoke = _run(db_path, pick=pick)
-
-    await invoke()
+    await _draw(db_path, pick=pick)
 
     expected = 2 if pick == "min" else 4
     assert [len(slots) for _, slots in await _persisted_slots(db_path)] == [expected]
@@ -296,9 +272,7 @@ async def test_a_rain_session_draws_only_wet_weather(tmp_path):
     """The rain weight map is zero for every dry label, so none can be drawn."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "rain")])
-    _, _, invoke = _run(db_path)
-
-    _, weights = await invoke()
+    _, _, weights = await _draw(db_path)
 
     assert weights, "draw_weighted was never reached"
     for weight_map in weights:
@@ -312,9 +286,7 @@ async def test_a_rain_session_draws_only_wet_weather(tmp_path):
 async def test_a_sunny_session_draws_only_dry_weather(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "sunny")])
-    _, _, invoke = _run(db_path)
-
-    _, weights = await invoke()
+    _, _, weights = await _draw(db_path)
 
     assert weights, "draw_weighted was never reached"
     for weight_map in weights:
@@ -328,9 +300,7 @@ async def test_a_mixed_session_may_draw_either_end(tmp_path):
     """Mixed is the only slot type whose map offers both wet and dry outcomes."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")], rpc=0.5)
-    _, _, invoke = _run(db_path)
-
-    _, weights = await invoke()
+    _, _, weights = await _draw(db_path)
 
     assert weights, "draw_weighted was never reached"
     for weight_map in weights:
@@ -342,9 +312,7 @@ async def test_a_session_without_a_phase_2_slot_type_is_treated_as_sunny(tmp_pat
     """"A session whose type was not determined in Phase 2 shall be treated as sunny." """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", None)])
-    _, _, invoke = _run(db_path)
-
-    randint, weights = await invoke()
+    _, randint, weights = await _draw(db_path)
 
     # Sunny, so the mixed minimum of 2 does not apply...
     assert randint.call_args.args == (1, 4)
@@ -366,8 +334,7 @@ async def test_the_weights_follow_the_rain_probability(tmp_path):
     async def _weights_for(directory, rpc):
         db_path = await _make_db(directory)
         await _seed(db_path, sessions=[("FULL_RACE", "mixed")], rpc=rpc)
-        _, _, invoke = _run(db_path)
-        _, weights = await invoke()
+        _, _, weights = await _draw(db_path)
         return weights[0]
 
     dry = await _weights_for(tmp_path / "dry", 0.1)
@@ -386,9 +353,7 @@ async def test_every_session_is_drawn_for_and_recorded(tmp_path):
     sessions = [("FULL_QUALIFYING", "sunny"), ("FULL_RACE", "rain")]
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=sessions)
-    _, _, invoke = _run(db_path)
-
-    await invoke()
+    await _draw(db_path)
 
     persisted = await _persisted_slots(db_path)
     assert [session_type for session_type, _ in persisted] == [t for t, _ in sessions]
@@ -402,20 +367,26 @@ async def test_every_session_is_drawn_for_and_recorded(tmp_path):
         assert draw["slots_display"]
 
 
-async def test_the_phase_3_post_supersedes_the_phase_2_post(tmp_path):
+async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
+    """The draw, the slots and the flag are written on the save handed, committed by none of
+    its own, so a save rolled back leaves the round's Phase 3 undrawn (#439)."""
+    from leaguebot.weather.services.phase3_service import draw_phase3_on
+
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")])
-    bot, posted, invoke = _run(db_path)
 
-    await invoke()
+    async with get_connection(db_path) as db:
+        with patch(
+            "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_highest
+        ):
+            result = await draw_phase3_on(db, ROUND_ID, now=datetime.now(timezone.utc))
+        cursor = await db.execute("SELECT phase3_done FROM rounds WHERE id = ?", (ROUND_ID,))
+        assert (await cursor.fetchone())["phase3_done"] == 1
+        await db.rollback()
 
-    posted.assert_awaited_once()
-    kwargs = posted.await_args.kwargs
-    assert kwargs["supersedes"] == 2
-    assert kwargs["phase_number"] == 3
-    assert kwargs["channel_id"] == 999
-    bot.output_router.post_log.assert_awaited_once()
-    assert await _phase3_state(db_path) == (1, 1)
+    assert result.payload is not None and result.line
+    assert await _phase3_state(db_path) == (0, 0)
+    assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
 # ---------------------------------------------------------------------------
@@ -424,41 +395,37 @@ async def test_the_phase_3_post_supersedes_the_phase_2_post(tmp_path):
 
 
 async def test_phase_2_is_performed_first_when_it_has_not_been(tmp_path):
-    """Phase 3 runs Phase 2 first rather than drawing against no slot type at all."""
+    """Phase 3 has Phase 2 drawn first rather than drawing against no slot type at all.
+
+    The draw does not perform it itself: it writes nothing and says Phase 2 is to be drawn
+    first, and its job plans that draw, its post and then this one again (#439).
+    """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", None)], phase2_done=0)
-    bot = _make_bot(db_path)
 
-    with patch("leaguebot.weather.services.phase2_service.random.choice", return_value="rain"), patch(
-        "leaguebot.weather.services.phase3_service.random.randint", side_effect=lambda lo, hi: hi
-    ), patch(
-        "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_highest
-    ), patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ), patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
-    ):
-        await run_phase3(ROUND_ID, bot)
+    result, randint, weights = await _draw(db_path)
 
+    assert result.earlier == 2
+    assert result.payload is None
+    randint.assert_not_called()
+    assert weights == []
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT phase2_done, phase3_done FROM rounds WHERE id = ?", (ROUND_ID,)
         )
         row = await cursor.fetchone()
-    assert (row["phase2_done"], row["phase3_done"]) == (1, 1)
-    # Phase 3 read the slot type Phase 2 had just drawn, not the "sunny" fallback.
-    assert (await _payload(db_path))["session_draws"][0]["slot_type"] == "rain"
+    assert (row["phase2_done"], row["phase3_done"]) == (0, 0)
+    assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
 async def test_missing_phase_1_result_stops_phase_3(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")], seed_phase_1=False)
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
+    result, _, _ = await _draw(db_path)
 
     assert await _phase3_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
+    assert result.payload is None
     assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
@@ -466,23 +433,22 @@ async def test_a_phase_already_performed_is_skipped(tmp_path):
     """"Each phase shall be performed at most once per round." """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")], phase3_done=1)
-    bot, posted, invoke = _run(db_path)
 
-    await invoke()
+    result, _, _ = await _draw(db_path)
 
     assert await _phase3_state(db_path) == (1, 0)
-    posted.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
+    assert result.payload is None
+    assert result.line is None
     assert [slots for _, slots in await _persisted_slots(db_path)] == [None]
 
 
 async def test_running_twice_records_one_result(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, sessions=[("FULL_RACE", "mixed")])
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
-    await invoke()
+    first, _, _ = await _draw(db_path)
+    second, _, _ = await _draw(db_path)
 
     assert await _phase3_state(db_path) == (1, 1)
-    posted.assert_awaited_once()
+    assert first.payload is not None
+    assert second.payload is None and second.line is None

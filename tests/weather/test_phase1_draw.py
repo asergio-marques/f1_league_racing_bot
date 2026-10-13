@@ -34,13 +34,13 @@ from __future__ import annotations
 import json
 import math
 import os
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services.phase1_service import run_phase1
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -114,14 +114,6 @@ async def _add_infeasible_track(db_path: str) -> None:
         await db.commit()
 
 
-def _make_bot(db_path: str) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 async def _phase1_state(db_path: str) -> tuple[int, int]:
     """Return ``(phase1_done, phase_results_row_count)``."""
     async with get_connection(db_path) as db:
@@ -148,21 +140,20 @@ async def _payload(db_path: str) -> dict:
     return json.loads(row["payload"])
 
 
-def _run(db_path: str, *, raw_draw: float = 0.05):
-    """Run Phase 1 with the Beta draw pinned, returning the `post_phase_message` double."""
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
+async def _draw(db_path: str, *, raw_draw: float | None = 0.05, round_id: int = ROUND_ID):
+    """Draw Phase 1 on a save this opens and commits, returning the `Drawn`.
 
-    async def _invoke():
-        with patch("random.betavariate", return_value=raw_draw), patch(
-            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
-        ), patch(
-            "leaguebot.image.services.image_weather_post.attach_forecast",
-            new=AsyncMock(return_value=None),
-        ):
-            await run_phase1(ROUND_ID, bot)
+    The Beta draw is pinned to *raw_draw*, or left to run for real where it is None. The draw
+    writes on the connection it is handed and posts nothing: its forecast is a job after it.
+    """
+    from leaguebot.weather.services.phase1_service import draw_phase1_on
 
-    return bot, posted, _invoke
+    pinned = nullcontext() if raw_draw is None else patch("random.betavariate", return_value=raw_draw)
+    async with get_connection(db_path) as db:
+        with pinned:
+            drawn = await draw_phase1_on(db, round_id, now=datetime.now(timezone.utc))
+        await db.commit()
+    return drawn
 
 
 # ---------------------------------------------------------------------------
@@ -170,22 +161,27 @@ def _run(db_path: str, *, raw_draw: float = 0.05):
 # ---------------------------------------------------------------------------
 
 
-async def test_successful_draw_records_posts_and_logs(tmp_path):
+async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
+    """The draw and its flag are written on the save handed and committed by none of its own.
+
+    So they stand or fall with the job that made them, its calculation line beside them: a
+    save rolled back leaves no draw, and the phase is drawn again on the next try (#439).
+    """
+    from leaguebot.weather.services.phase1_service import draw_phase1_on
+
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    bot, posted, invoke = _run(db_path, raw_draw=0.3456)
 
-    await invoke()
+    async with get_connection(db_path) as db:
+        with patch("random.betavariate", return_value=0.3456):
+            drawn = await draw_phase1_on(db, ROUND_ID, now=datetime.now(timezone.utc))
+        cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = ?", (ROUND_ID,))
+        assert (await cursor.fetchone())["phase1_done"] == 1
+        await db.rollback()
 
-    assert await _phase1_state(db_path) == (1, 1)
-    posted.assert_awaited_once()
-    bot.output_router.post_log.assert_awaited_once()
-
-    # The forecast went to the division's own channel, for the round it was drawn for.
-    kwargs = posted.await_args.kwargs
-    assert kwargs["round_id"] == ROUND_ID
-    assert kwargs["channel_id"] == 999
-    assert kwargs["phase_number"] == 1
+    assert drawn.payload is not None and drawn.line
+    assert not drawn.blocked
+    assert await _phase1_state(db_path) == (0, 0)
 
 
 async def test_payload_records_the_distribution_it_drew_from(tmp_path):
@@ -196,9 +192,7 @@ async def test_payload_records_the_distribution_it_drew_from(tmp_path):
     """
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, _, invoke = _run(db_path, raw_draw=0.3456)
-
-    await invoke()
+    await _draw(db_path, raw_draw=0.3456)
 
     payload = await _payload(db_path)
     nu = SEEDED_MU * (1.0 - SEEDED_MU) / SEEDED_SIGMA ** 2 - 1.0
@@ -218,15 +212,10 @@ async def test_the_draw_uses_the_circuit_parameters(tmp_path):
     """`betavariate` is called with the α and β derived from the round's own circuit."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    bot = _make_bot(db_path)
     nu = SEEDED_MU * (1.0 - SEEDED_MU) / SEEDED_SIGMA ** 2 - 1.0
 
-    with patch("random.betavariate", return_value=0.05) as betavariate, patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ), patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
-    ):
-        await run_phase1(ROUND_ID, bot)
+    with patch("random.betavariate", return_value=0.05) as betavariate:
+        await _draw(db_path, raw_draw=None)
 
     alpha, beta_param = betavariate.call_args.args
     assert alpha == pytest.approx(SEEDED_MU * nu)
@@ -249,9 +238,7 @@ async def test_the_draw_uses_the_circuit_parameters(tmp_path):
 async def test_rpc_is_rounded_to_two_decimal_places(raw_draw, expected_rpc, tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, _, invoke = _run(db_path, raw_draw=raw_draw)
-
-    await invoke()
+    await _draw(db_path, raw_draw=raw_draw)
 
     assert (await _payload(db_path))["rpc"] == expected_rpc
 
@@ -269,9 +256,7 @@ async def test_rpc_is_clamped_to_the_unit_interval(raw_draw, expected_rpc, tmp_p
     """
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, _, invoke = _run(db_path, raw_draw=raw_draw)
-
-    await invoke()
+    await _draw(db_path, raw_draw=raw_draw)
 
     payload = await _payload(db_path)
     assert payload["rpc"] == expected_rpc
@@ -284,19 +269,20 @@ async def test_rpc_is_clamped_to_the_unit_interval(raw_draw, expected_rpc, tmp_p
 
 
 async def test_unresolvable_circuit_blocks_the_phase(tmp_path):
-    """"Where the round's circuit cannot be resolved, Phase 1 shall ... be blocked."""
+    """"Where the round's circuit cannot be resolved, Phase 1 shall ... be blocked."
+
+    The reason is the draw's line, which its job writes to the league's log channel rather
+    than only the bot's own log; nothing is drawn, so nothing is posted.
+    """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, track_name="Nürburgring Nordschleife")  # not a seeded circuit
-    bot, posted, invoke = _run(db_path)
 
-    await invoke()
+    drawn = await _draw(db_path)
 
     assert await _phase1_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
-    # The reason reaches the league's log channel rather than only the bot's own log.
-    bot.output_router.post_log.assert_awaited_once()
-    (text,) = bot.output_router.post_log.await_args.args
-    assert "BLOCKED" in text
+    assert drawn.blocked
+    assert drawn.payload is None
+    assert "BLOCKED" in drawn.line
 
 
 async def test_infeasible_sigma_blocks_the_phase(tmp_path):
@@ -308,19 +294,13 @@ async def test_infeasible_sigma_blocks_the_phase(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_infeasible_track(db_path)
     await _seed(db_path, track_name=INFEASIBLE_TRACK)
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
 
-    with patch("leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted), patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
-    ):
-        await run_phase1(ROUND_ID, bot)
+    drawn = await _draw(db_path, raw_draw=None)
 
     assert await _phase1_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
-    bot.output_router.post_log.assert_awaited_once()
-    (text,) = bot.output_router.post_log.await_args.args
-    assert "BLOCKED" in text
+    assert drawn.blocked
+    assert drawn.payload is None
+    assert "BLOCKED" in drawn.line
     # σ = 0.9 against a limit of √(0.5 × 0.5) = 0.5.
     assert 0.9 >= math.sqrt(0.5 * 0.5)
 
@@ -328,25 +308,22 @@ async def test_infeasible_sigma_blocks_the_phase(tmp_path):
 async def test_round_without_a_circuit_blocks_the_phase(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, track_name=None)
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
+    drawn = await _draw(db_path)
 
     assert await _phase1_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
+    assert drawn.payload is None
 
 
 async def test_unknown_round_produces_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    bot, posted, _ = _run(db_path)
 
-    with patch("leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted):
-        await run_phase1(999, bot)
+    drawn = await _draw(db_path, round_id=999)
 
     assert await _phase1_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
+    assert drawn.payload is None
+    assert drawn.line is None
 
 
 # ---------------------------------------------------------------------------
@@ -358,24 +335,23 @@ async def test_a_phase_already_performed_is_skipped(tmp_path):
     """"Each phase shall be performed at most once per round." """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, phase1_done=1)
-    bot, posted, invoke = _run(db_path)
 
-    await invoke()
+    drawn = await _draw(db_path)
 
-    # Still marked done, and no result recorded by this run.
+    # Still marked done, and no result recorded by this draw, nor any line.
     assert await _phase1_state(db_path) == (1, 0)
-    posted.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
+    assert drawn.payload is None
+    assert drawn.line is None
 
 
 async def test_running_twice_records_one_result(tmp_path):
-    """The guard holds on the second call, not merely on a round seeded as done."""
+    """The guard holds on the second draw, not merely on a round seeded as done."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
-    await invoke()
+    first = await _draw(db_path)
+    second = await _draw(db_path)
 
     assert await _phase1_state(db_path) == (1, 1)
-    posted.assert_awaited_once()
+    assert first.payload is not None
+    assert second.payload is None and second.line is None

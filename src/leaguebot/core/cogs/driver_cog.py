@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
+from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import parse_user_id
@@ -318,6 +319,9 @@ class DriverCog(commands.Cog):
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
+        # The change is made; the lineups it touched follow on the change queue (#439).
+        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
+
         verb = "Assigned"
         await interaction.followup.send(
             f"✅ {verb} **{user.display_name}** to **{result['team_name']}** "
@@ -418,6 +422,9 @@ class DriverCog(commands.Cog):
         except ValueError as exc:
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
+
+        # The change is made; the lineups it touched follow on the change queue (#439).
+        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
 
         team_part = f"from **{result['team_name']}** " if result.get("team_name") else ""
         await interaction.followup.send(
@@ -536,6 +543,9 @@ class DriverCog(commands.Cog):
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
+        # The change is made; the lineups it touched follow on the change queue (#439).
+        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
+
         await interaction.followup.send(
             f"✅ Moved **{user.display_name}** from **{result['from_team']}** in "
             f"**{result['from_division']}** to **{result['to_team']}** in "
@@ -617,6 +627,9 @@ class DriverCog(commands.Cog):
         except ValueError as exc:
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
+
+        # The change is made; the lineups it touched follow on the change queue (#439).
+        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
 
         await interaction.followup.send(
             f"✅ Released **{user.display_name}** from **{result['division_name']}**.",
@@ -750,7 +763,7 @@ class DriverCog(commands.Cog):
             return
 
         try:
-            await self.bot.placement_service.sack_driver(
+            lineups = await self.bot.placement_service.sack_driver(
                 driver_profile_id=profile.id,
                 season_id=season.id,
                 acting_user_id=actor_id,
@@ -761,6 +774,9 @@ class DriverCog(commands.Cog):
         except ValueError as exc:
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
+
+        # The change is made; the lineups it touched follow on the change queue (#439).
+        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, lineups)
 
         await interaction.followup.send(
             f"✅ **{user.display_name}** has been sacked. All roles and season assignments removed.",

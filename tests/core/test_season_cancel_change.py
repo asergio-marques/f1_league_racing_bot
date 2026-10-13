@@ -340,20 +340,28 @@ def _failing(name: str) -> ExitStack:
 
 
 def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
-    """Weather's flush of the forecasts posted under test mode raises while *failing* says so;
-    patched before the league is built, so the builder's hook reaches it however it binds it."""
-    from leaguebot.weather.services import forecast_cleanup_service
+    """Weather's reading of the forecasts posted under test mode (`forecast_deletes`, which
+    plans a delete job for each), which the season end's `flush_forecasts` job makes, raises
+    while *failing* says so; patched before the league is built, in every module that holds
+    it, so the builder's hook reaches it however it binds it."""
+    from leaguebot.weather.services import forecast_changes, forecast_cleanup_service
 
-    flushing = forecast_cleanup_service.flush_pending_deletions
+    reading = forecast_cleanup_service.forecast_deletes
+    raising = _raising_while(failing, reading)
+    for module in [*_modules(), forecast_changes]:
+        if getattr(module, "forecast_deletes", None) is reading:
+            monkeypatch.setattr(module, "forecast_deletes", raising)
 
-    async def _flush(bot: Any) -> None:
+
+def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
+    """*reading*, raising as a fault of the database would while *failing* says so."""
+
+    async def _read(*args: Any, **kwargs: Any) -> Any:
         if failing["now"]:
             raise RuntimeError("the forecasts could not be read")
-        await flushing(bot)
+        return await reading(*args, **kwargs)
 
-    for module in _modules():
-        if hasattr(module, "flush_pending_deletions"):
-            monkeypatch.setattr(module, "flush_pending_deletions", _flush)
+    return _read
 
 
 def _unarming_fails(league: Any) -> None:
@@ -460,10 +468,13 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
+@pytest.mark.parametrize("where", [
+    "the flush", "the test drivers' deletion",
+])
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
-    _flush_failing(monkeypatch, failing)
+    if where == "the flush":
+        _flush_failing(monkeypatch, failing)
     league = await ongoing_league(tmp_path, test_mode=True)
     await _asked(league)
 
@@ -873,15 +884,15 @@ async def test_the_jobs_run_in_order(tmp_path):
     names = [name for name, _key in await _names(league)]
     jobs = [pair for pair in await _names(league) if pair[0] != "close_window"]
     assert [name for name, _key in jobs[:3]] == ["unarm", "apply", "delete_channel"]
-    assert jobs[3:12] == [
+    assert jobs[3:14] == [
         ("notify_checkin", PRO), ("take_down_call", PRO), ("notify_forecast", PRO),
-        ("notify_results", PRO), ("post_calendar", PRO),
+        ("notify_results", PRO), ("post_calendar", PRO), ("delete_replaced", None),
         ("notify_checkin", AM), ("notify_forecast", AM), ("notify_results", AM),
-        ("post_calendar", AM),
+        ("post_calendar", AM), ("delete_replaced", None),
     ]
-    assert jobs[12:15] == [("revoke_roles", LEWIS), ("revoke_roles", MAX),
+    assert jobs[14:17] == [("revoke_roles", LEWIS), ("revoke_roles", MAX),
                            ("revoke_roles", CHARLES)]
-    assert jobs[15:17] == [("flush_forecasts", None), ("end", None)]
+    assert jobs[17:19] == [("flush_forecasts", None), ("end", None)]
     assert names[-2:] == ["discard_portraits", "close"]
     between = names[names.index("end") + 1:names.index("discard_portraits")]
     assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}

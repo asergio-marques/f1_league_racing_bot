@@ -166,12 +166,13 @@ async def _amend(
     sessions=None,
 ):
     """Stage one of an amendment, with the points, the cascade and the posting of a round's
-    results stubbed: "repost" is `post_round_results`, which stage one must not reach."""
+    results stubbed: "repost" is `produce_session_results`, the one funnel every posting of a
+    session's results reaches, which stage one must not reach."""
     bot = bot or _bot()
     with patch(
         "leaguebot.results.services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "leaguebot.results.services.results_post_service.post_round_results",
+        "leaguebot.results.services.results_post_service.produce_session_results",
         new=AsyncMock(),
     ) as repost, patch(
         "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()

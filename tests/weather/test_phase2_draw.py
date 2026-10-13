@@ -29,12 +29,11 @@ import json
 import math
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services.phase2_service import run_phase2
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -111,14 +110,6 @@ async def _seed(
         await db.commit()
 
 
-def _make_bot(db_path: str) -> MagicMock:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    return bot
-
-
 async def _phase2_state(db_path: str) -> tuple[int, int]:
     """Return ``(phase2_done, phase_2_result_row_count)``."""
     async with get_connection(db_path) as db:
@@ -165,24 +156,21 @@ def _expected_pool(rpc: float) -> tuple[int, int, int]:
     return ir, im, 1000 - im - ir
 
 
-def _run(db_path: str, *, drawn: str = "mixed"):
-    """Run Phase 2 with the slot draw pinned, returning the doubles the test inspects."""
-    bot = _make_bot(db_path)
-    posted = AsyncMock()
+async def _draw(db_path: str, *, drawn: str = "mixed"):
+    """Draw Phase 2 on a save this opens and commits, the slot draw pinned to *drawn*.
 
-    async def _invoke():
-        with patch(
-            "leaguebot.weather.services.phase2_service.random.choice", return_value=drawn
-        ) as choice, patch(
-            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
-        ), patch(
-            "leaguebot.image.services.image_weather_post.attach_forecast",
-            new=AsyncMock(return_value=None),
-        ):
-            await run_phase2(ROUND_ID, bot)
-        return choice
+    Returns the `Drawn` and the pinned `random.choice`, which a test inspects for the pool it
+    was handed. The draw writes on the connection it is handed and posts nothing.
+    """
+    from leaguebot.weather.services.phase2_service import draw_phase2_on
 
-    return bot, posted, _invoke
+    with patch(
+        "leaguebot.weather.services.phase2_service.random.choice", return_value=drawn
+    ) as choice:
+        async with get_connection(db_path) as db:
+            result = await draw_phase2_on(db, ROUND_ID, now=datetime.now(timezone.utc))
+            await db.commit()
+    return result, choice
 
 
 # ---------------------------------------------------------------------------
@@ -197,9 +185,7 @@ async def test_pool_composition_follows_the_formulas(rpc, tmp_path):
     """Ir, Im and Is are recorded as the specification derives them."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, rpc=rpc)
-    _, _, invoke = _run(db_path)
-
-    await invoke()
+    await _draw(db_path)
 
     payload = await _payload(db_path)
     ir, im, is_ = _expected_pool(rpc)
@@ -218,9 +204,7 @@ async def test_the_pool_drawn_from_holds_exactly_one_thousand_slots(rpc, tmp_pat
     """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, rpc=rpc)
-    _, _, invoke = _run(db_path)
-
-    choice = await invoke()
+    _, choice = await _draw(db_path)
 
     ir, im, is_ = _expected_pool(rpc)
     for call in choice.call_args_list:
@@ -235,9 +219,7 @@ async def test_a_certainty_of_rain_leaves_no_sunny_slots(tmp_path):
     """Rpc = 1.0 gives 800 rain and 200 mixed, and no sunny slot to draw."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, rpc=1.0)
-    _, _, invoke = _run(db_path, drawn="rain")
-
-    choice = await invoke()
+    _, choice = await _draw(db_path, drawn="rain")
 
     pool = choice.call_args_list[0].args[0]
     assert pool.count("sunny") == 0
@@ -247,9 +229,7 @@ async def test_a_certainty_of_rain_leaves_no_sunny_slots(tmp_path):
 async def test_no_chance_of_rain_leaves_only_sunny_slots(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path, rpc=0.0)
-    _, _, invoke = _run(db_path, drawn="sunny")
-
-    choice = await invoke()
+    _, choice = await _draw(db_path, drawn="sunny")
 
     pool = choice.call_args_list[0].args[0]
     assert pool.count("sunny") == 1000
@@ -264,9 +244,7 @@ async def test_one_slot_is_drawn_for_each_session(tmp_path):
     """"1 shall be taken at random for each of the sessions configured to take place." """
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, _, invoke = _run(db_path, drawn="rain")
-
-    choice = await invoke()
+    _, choice = await _draw(db_path, drawn="rain")
 
     assert choice.call_count == len(SESSION_TYPES)
     assert await _slot_types(db_path) == [(t, "rain") for t in SESSION_TYPES]
@@ -276,9 +254,7 @@ async def test_the_draw_is_remembered_for_phase_3(tmp_path):
     """The drawn slot is persisted on the session, which is what Phase 3 reads."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, _, invoke = _run(db_path, drawn="mixed")
-
-    await invoke()
+    await _draw(db_path, drawn="mixed")
 
     assert [slot for _, slot in await _slot_types(db_path)] == ["mixed", "mixed"]
     payload = await _payload(db_path)
@@ -296,33 +272,30 @@ async def test_a_round_with_more_sessions_draws_for_every_one(tmp_path):
     ]
     db_path = await _make_db(tmp_path)
     await _seed(db_path, session_types=sessions)
-    _, _, invoke = _run(db_path, drawn="sunny")
-
-    choice = await invoke()
+    _, choice = await _draw(db_path, drawn="sunny")
 
     assert choice.call_count == len(sessions)
     assert await _slot_types(db_path) == [(t, "sunny") for t in sessions]
 
 
-# ---------------------------------------------------------------------------
-# Posting and supersession
-# ---------------------------------------------------------------------------
+async def test_the_draw_writes_only_on_the_connection_it_is_handed(tmp_path):
+    """The draw, the slots and the flag are written on the save handed, committed by none of
+    its own, so a save rolled back leaves the round's Phase 2 undrawn (#439)."""
+    from leaguebot.weather.services.phase2_service import draw_phase2_on
 
-
-async def test_the_phase_2_post_supersedes_the_phase_1_post(tmp_path):
-    """Phase 2 replaces the Phase 1 forecast rather than standing beside it."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    bot, posted, invoke = _run(db_path)
 
-    await invoke()
+    async with get_connection(db_path) as db:
+        with patch("leaguebot.weather.services.phase2_service.random.choice", return_value="rain"):
+            result = await draw_phase2_on(db, ROUND_ID, now=datetime.now(timezone.utc))
+        cursor = await db.execute("SELECT phase2_done FROM rounds WHERE id = ?", (ROUND_ID,))
+        assert (await cursor.fetchone())["phase2_done"] == 1
+        await db.rollback()
 
-    posted.assert_awaited_once()
-    kwargs = posted.await_args.kwargs
-    assert kwargs["supersedes"] == 1
-    assert kwargs["phase_number"] == 2
-    assert kwargs["channel_id"] == 999
-    bot.output_router.post_log.assert_awaited_once()
+    assert result.payload is not None and result.line
+    assert await _phase2_state(db_path) == (0, 0)
+    assert [slot for _, slot in await _slot_types(db_path)] == [None, None]
 
 
 # ---------------------------------------------------------------------------
@@ -330,41 +303,41 @@ async def test_the_phase_2_post_supersedes_the_phase_1_post(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_phase_1_is_performed_first_when_it_has_not_been(tmp_path):
-    """"Where Phase 1 has not been performed for the round, it shall be performed first." """
+async def test_a_phase_2_with_no_phase_1_asks_for_phase_1_first(tmp_path):
+    """"Where Phase 1 has not been performed for the round, it shall be performed first."
+
+    The draw does not perform it itself: it writes nothing and says Phase 1 is to be drawn
+    first, and its job plans that draw, its post and then this one again (#439).
+    """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, phase1_done=0, rpc=None)
-    bot = _make_bot(db_path)
 
-    with patch("random.betavariate", return_value=0.2), patch(
-        "leaguebot.weather.services.phase2_service.random.choice", return_value="mixed"
-    ), patch(
-        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
-    ), patch(
-        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
-    ):
-        await run_phase2(ROUND_ID, bot)
+    result, choice = await _draw(db_path)
 
+    assert result.earlier == 1
+    assert result.payload is None
+    choice.assert_not_called()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT phase1_done, phase2_done FROM rounds WHERE id = ?", (ROUND_ID,)
         )
         row = await cursor.fetchone()
-    assert (row["phase1_done"], row["phase2_done"]) == (1, 1)
-    # Phase 2 used the Rpc Phase 1 had just drawn.
-    assert (await _payload(db_path))["rpc"] == 0.2
+        counter = await db.execute(
+            "SELECT COUNT(*) AS n FROM phase_results WHERE round_id = ?", (ROUND_ID,)
+        )
+        count = await counter.fetchone()
+    assert (row["phase1_done"], row["phase2_done"], count["n"]) == (0, 0, 0)
 
 
 async def test_missing_phase_1_result_stops_phase_2(tmp_path):
     """A round marked as done but holding no ACTIVE result must not be guessed at."""
     db_path = await _make_db(tmp_path)
     await _seed(db_path, phase1_done=1, rpc=None)
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
+    result, _ = await _draw(db_path)
 
     assert await _phase2_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
+    assert result.payload is None
     assert [slot for _, slot in await _slot_types(db_path)] == [None, None]
 
 
@@ -384,12 +357,11 @@ async def test_an_invalidated_phase_1_result_is_not_read(tmp_path):
             ),
         )
         await db.commit()
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
+    result, _ = await _draw(db_path)
 
     assert await _phase2_state(db_path) == (0, 0)
-    posted.assert_not_awaited()
+    assert result.payload is None
 
 
 # ---------------------------------------------------------------------------
@@ -401,23 +373,22 @@ async def test_a_phase_already_performed_is_skipped(tmp_path):
     """"Each phase shall be performed at most once per round." """
     db_path = await _make_db(tmp_path)
     await _seed(db_path, phase2_done=1)
-    bot, posted, invoke = _run(db_path)
 
-    await invoke()
+    result, _ = await _draw(db_path)
 
     assert await _phase2_state(db_path) == (1, 0)
-    posted.assert_not_awaited()
-    bot.output_router.post_log.assert_not_awaited()
+    assert result.payload is None
+    assert result.line is None
     assert [slot for _, slot in await _slot_types(db_path)] == [None, None]
 
 
 async def test_running_twice_records_one_result(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed(db_path)
-    _, posted, invoke = _run(db_path)
 
-    await invoke()
-    await invoke()
+    first, _ = await _draw(db_path)
+    second, _ = await _draw(db_path)
 
     assert await _phase2_state(db_path) == (1, 1)
-    posted.assert_awaited_once()
+    assert first.payload is not None
+    assert second.payload is None and second.line is None

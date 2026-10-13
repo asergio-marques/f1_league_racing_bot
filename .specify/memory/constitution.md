@@ -1,6 +1,41 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-12 — v14.12.2 → v14.12.3: PATCH — Principle XIV rule 8 says how a post that fails is tried again on the change queue (issue #439)]
+  Version change    : 14.12.2 → 14.12.3
+  Bump rationale    : PATCH: the rule is restated for the change queue's tries without changing
+                      what it requires. A post that fails is still sent again as text, never as a
+                      picture, and the text is still composed when it is finally sent; what changes
+                      is the mechanism named. The old retry queue, which the rule described, now
+                      carries log lines alone, and a standing post's later try is the change
+                      queue's (owner, 2026-10-11, "Keep today's mix": a refused lineup,
+                      results-table or standings picture is replaced by its text in the same try;
+                      a refused calendar, sheet or forecast picture stops the queue and its text
+                      follows on the next try).
+
+  Modified sections :
+    - Principle XIV, rule 8, "An attachment cannot be introduced into a message already posted" —
+      the second window ends "for as long as that deletion stands stopped on the change queue"
+      where it read "waits on a retry".
+    - Principle XIV, rule 8, "A transport failure retries as text" — "what is enqueued for retry
+      is the text form … A generated image MUST NOT be enqueued. A retry queue is durable …"
+      becomes "the text form is posted in its place, in the same try or the next … where it is
+      the next, the job stops the change queue until then. A generated image MUST NOT be kept for
+      a later try …".
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-standing-posts-on-the-queue (slice 6 of #439).
+
+  Templates / docs  : docs/wip-specs/image_module_specification.md was brought in step on the same
+                      branch: the transport-failure rule (:360, "posted as text in the same try or
+                      the next") and the calendar, results table, standings, attendance sheet,
+                      check-in call and forecast sections. docs/design/architecture.md, "Posting
+                      to Discord", already says the old retry queue is kept for log lines only.
+                      No template in .specify/templates names the retry queue.
+
 [2026-10-10 — v14.12.1 → v14.12.2: PATCH — the SeasonAssignment entity no longer lists a driver's final standing (issue #439)]
   Version change    : 14.12.1 → 14.12.2
   Bump rationale    : PATCH, on the precedent of v14.6.2 and v14.12.1: a statement of fact is
@@ -7220,7 +7255,8 @@ most one such message stands at any moment — a property of the text flow the i
 MUST NOT relax, save in two windows the change queue accepts. Where the bot stops after the new
 message is sent but before its id is recorded, the post is made again when it starts and the first
 copy is left standing; and the old and new messages stand together between the post and the deletion
-after it, until the change is finished at start-up or for as long as that deletion waits on a retry.
+after it, until the change is finished at start-up or for as long as that deletion stands stopped on the
+change queue.
 Where the graphic need not change, Rule 17 governs and the message is edited in place beneath it.
 
 **The replacement is produced before the original is destroyed.** The previous message MUST NOT be
@@ -7246,12 +7282,13 @@ postings for the remainder of its round, and the failure of a single graphic wou
 Rule 4 allows it to.
 
 **A transport failure retries as text.** Where the **posting** fails for a reason of the service
-rather than of the generation, what is enqueued for retry is the **text form** — the textual
-calendar, lineup, table, standings, sheet, forecast or announcement, or the message carrying no
-attachment where the graphic displaced nothing. A generated image MUST NOT be enqueued. A retry queue
-is durable and outlives the state that filled it; a picture drawn an hour ago and posted now is a
-picture of a season that has moved on, where the text is composed at the moment it is finally sent.
-The render is repeatable from the data at the next occasion that calls for it.
+rather than of the generation, the **text form** is posted in its place, in the same try or the
+next — the textual calendar, lineup, table, standings, sheet, forecast or announcement, or the
+message carrying no attachment where the graphic displaced nothing; where it is the next, the job
+stops the change queue until then. A generated image MUST NOT be kept for a later try. A try may
+come an hour or a restart later; a picture drawn then for a season that has moved on would
+mislead, where the text is composed at the moment it is finally sent. The render is repeatable
+from the data at the next occasion that calls for it.
 
 **9. Template validity is a layered, extensible contract.**
 
@@ -8875,4 +8912,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.12.2 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-10
+**Version**: 14.12.3 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-12

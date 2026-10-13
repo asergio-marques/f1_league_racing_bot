@@ -15,6 +15,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions
+from tests.attendance.test_attendance_sanctions import _asking_for_sheets
 
 SERVER_ID = 22170
 PRO, AM = 1, 2
@@ -158,55 +159,46 @@ async def _seat_driver_two_in_pro_past_the_threshold(db_path, *, am_scored: bool
         await db.commit()
 
 
-async def _enforce(db_path, *, sack=None, post=None):
+async def _enforce(db_path, *, sack=None):
+    """Enforce Pro's sanctions at round 102; gives each sheet asked of the change queue, as
+    (division, round, the drivers it marks)."""
     bot = MagicMock()
     bot.user.id = 1
     bot.output_router.post_log = AsyncMock()
-    bot.placement_service.sack_driver = sack or AsyncMock()
+    # The sack of driver 2 names the lineups it owes (#439): both divisions they sat in.
+    bot.placement_service.sack_driver = sack or AsyncMock(return_value=[PRO, AM])
     bot.placement_service._refresh_lineup_post = AsyncMock()
+    bot.change_queue.ask = AsyncMock()
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
-               new=post or AsyncMock()) as posted, \
+               new=AsyncMock()), _asking_for_sheets() as asked, \
             patch("leaguebot.results.services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
                   # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
                   # than extending it, which leaves SanctionOutcome.complete false
                   # for every run in this file. It must return a list (#237).
                   new=AsyncMock(return_value=[])):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
-    return posted
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
+                                           queue=bot.change_queue)
+    return asked
 
 
 async def test_a_division_that_has_posted_no_sheet_is_not_reposted(db_path):
     """There is no sheet in it to correct."""
     await _seat_driver_two_in_pro_past_the_threshold(db_path, am_scored=False)
 
-    posted = await _enforce(db_path)
+    asked = await _enforce(db_path)
 
-    assert [call.args[4] for call in posted.await_args_list] == [PRO]
+    assert [division for division, _round, _marked in asked] == [PRO]
 
 
 async def test_a_sack_that_fails_reposts_no_other_division(db_path):
     """Only a driver actually sacked has been taken out of the other divisions."""
     await _seat_driver_two_in_pro_past_the_threshold(db_path)
 
-    posted = await _enforce(db_path, sack=AsyncMock(side_effect=ValueError("already gone")))
+    asked = await _enforce(db_path, sack=AsyncMock(side_effect=ValueError("already gone")))
 
-    assert posted.await_count == 0
-
-
-async def test_an_other_division_whose_sheet_fails_does_not_stop_the_run(db_path):
-    await _seat_driver_two_in_pro_past_the_threshold(db_path)
-    calls = []
-
-    async def post(bot, guild, db_path, round_id, division_id, **kwargs):
-        calls.append(division_id)
-        if division_id == AM:
-            raise RuntimeError("channel gone")
-
-    await _enforce(db_path, post=post)
-
-    assert calls == [PRO, AM]
+    assert asked == []
 
 
 async def test_autosack_reposts_every_division(db_path):
@@ -228,23 +220,7 @@ async def test_autosack_reposts_every_division(db_path):
         )
         await db.commit()
 
-    bot = MagicMock()
-    bot.user.id = 1
-    bot.output_router.post_log = AsyncMock()
-    bot.placement_service.sack_driver = AsyncMock()
-    bot.placement_service._refresh_lineup_post = AsyncMock()
+    asked = await _enforce(db_path)
 
-    with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet", new=AsyncMock()) as posted, \
-            patch("leaguebot.results.services.verdict_announcement_service.banner_for_round", return_value=None), \
-            patch("leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
-                  # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
-                  # than extending it, which leaves SanctionOutcome.complete false
-                  # for every run in this file. It must return a list (#237).
-                  new=AsyncMock(return_value=[])):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
-
-    posted_divisions = sorted(call.args[4] for call in posted.await_args_list)
-    assert posted_divisions == [PRO, AM]
-    am_call = next(c for c in posted.await_args_list if c.args[4] == AM)
-    assert am_call.args[3] == 201
-    assert am_call.kwargs["sanctioned_profile_ids"] == {2}
+    assert sorted(division for division, _round, _marked in asked) == [PRO, AM]
+    assert (AM, 201, {2}) in asked

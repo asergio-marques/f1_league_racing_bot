@@ -255,8 +255,9 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
 
 
 async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
-    """Discord refuses Div A's opening attendance sheet: the sheet is asked for with
-    `raise_on_failure`, and what it raises reaches the job, for the queue to stop on."""
+    """Discord refuses Div A's opening attendance sheet: what the sheet's posting raises (it
+    always raises, so it is asked for no `raise_on_failure`) reaches the job, for the queue to
+    stop on."""
     from leaguebot.core.models.change import StepFailedOnDiscord
 
     _season_id, division_ids = await _seed(db_path)
@@ -268,7 +269,7 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
             _bot(db_path), _guild(), db_path, division_ids[0], as_text=False
         )
 
-    assert attendance.await_args.kwargs["raise_on_failure"] is True
+    assert "raise_on_failure" not in attendance.await_args.kwargs
     assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_OPENING
 
 
@@ -523,7 +524,7 @@ async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
 
 async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_path):
     """Div A's final attendance sheet, drawn against its round 2 and retried as text: attendance's
-    posting is asked to raise, as the final classification, and as text."""
+    posting, which always raises, is asked for it as the final classification, and as text."""
     _season_id, division_ids = await _seed(db_path)
     division_id = division_ids[0]
     round_id = await _second_round_with_results(db_path, division_id)
@@ -539,6 +540,6 @@ async def test_the_final_sheet_is_asked_to_raise_and_posted_as_the_final_one(db_
     attendance.assert_awaited_once()
     assert attendance.await_args.args[3] == round_id
     assert attendance.await_args.args[4] == division_id
-    assert attendance.await_args.kwargs["raise_on_failure"] is True
+    assert "raise_on_failure" not in attendance.await_args.kwargs
     assert attendance.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_FINAL
     assert attendance.await_args.kwargs["as_text"] is True

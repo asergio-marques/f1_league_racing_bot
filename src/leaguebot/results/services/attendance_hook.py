@@ -13,6 +13,7 @@ attendance lands with the penalties and points or not at all. **The posting meth
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -56,9 +57,20 @@ class AttendanceAfterReview(Protocol):
 
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
-    ) -> None:
+    ) -> dict[str, Any] | None:
         """Post the division's attendance sheet as at *round_id*, annotating *sanctioned*
-        profiles. Raises where it could not post; *as_text* leaves the graphic out."""
+        profiles. Raises where it could not post; *as_text* leaves the graphic out.
+
+        Saves and deletes nothing (#439). Gives the sheet posted and the one it replaces (`new`,
+        `old`, `channel_id`, `takes_slot`) for the job to save and to plan the old one's
+        deletion, or `{"unset": True}` where nothing was posted; None while attendance is off."""
+
+    async def record_sheet_on(
+        self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
+    ) -> None:
+        """Save the sheet's id as the division's live sheet, on the save handed, committing
+        nothing; it reads attendance's switch on *db* and writes nothing while attendance is
+        off."""
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
         """Each driver still owed a sanction at *round_id*: a dict of ``driver_profile_id``,
@@ -84,8 +96,15 @@ class AttendanceAfterReview(Protocol):
         *round_id*, which is the round whose verdicts it follows. Raises where it could not
         post."""
 
-    async def refresh_lineup(self, division_id: int) -> None:
-        """Post the division's lineup afresh. Raises where it could not post."""
+    async def refresh_lineup(
+        self, division_id: int, *, as_text: bool
+    ) -> dict[str, Any] | None:
+        """Post the division's lineup afresh, as text where *as_text* (a job tried again, #439).
+        Raises where it could not post.
+
+        Gives the message posted and the one it replaces (`new`, `old`, `channel_id`,
+        `division_name`, `form`), for the job to save and to plan the old one's deletion; None
+        while attendance is off."""
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         """The line telling a manager how to finish sanctions that did not all apply."""

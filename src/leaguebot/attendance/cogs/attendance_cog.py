@@ -660,7 +660,8 @@ class AttendanceCog(commands.Cog):
             return
 
         outcome = await sync_attendance(
-            self.bot, guild_of(interaction), db_path, div.id, round_row["id"], season.id
+            self.bot, guild_of(interaction), db_path, div.id, round_row["id"], season.id,
+            queue=self.bot.change_queue,
         )
 
         lines = [f"\u2705 Attendance of **{div.name}** recalculated from round {round} on."]

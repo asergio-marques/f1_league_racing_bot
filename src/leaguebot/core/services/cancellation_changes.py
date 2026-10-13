@@ -96,7 +96,8 @@ from leaguebot.core.models.division import Division
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services import cancellation_notice_service as notices
-from leaguebot.core.services.calendar_post_service import post_division_calendar, tracks_by_name
+from leaguebot.core.services import standing_posts
+from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -362,7 +363,6 @@ NOTIFY_CHECKIN = "notify_checkin"
 TAKE_DOWN_CALL = "take_down_call"
 NOTIFY_FORECAST = "notify_forecast"
 NOTIFY_RESULTS = "notify_results"
-POST_CALENDAR = "post_calendar"
 CLOSE = "close"
 DELETE_CHANNEL = "delete_channel"
 
@@ -471,6 +471,13 @@ def not_notified(ctx: OutcomeContext) -> list[notices.NoticeFailure]:
                 f"{len(ids)} message(s) could not be deleted and must be removed by hand "
                 f"(ids {', '.join(ids)})",
             ))
+        elif view.name == standing_posts.DELETE_REPLACED:
+            if _discarded(view):
+                link = result.get("link") or f"in <#{view.payload['channel_id']}>"
+                failures.append(notices.NoticeFailure(
+                    name, "calendar",
+                    f"the earlier calendar could not be deleted ({link}); delete it by hand",
+                ))
         elif view.name == POST_CALENDAR:
             if _discarded(view):
                 failures.append(notices.NoticeFailure(name, "calendar", _DISCARDED_CALENDAR))
@@ -591,47 +598,6 @@ def _follow_steps(
             result=await notices.take_down_call(ctx.bot, division, _round_id(ctx))
         )
 
-    async def calendar_posted(ctx: StepContext) -> bool:
-        """The calendar is posted again only where it was ever posted."""
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
-        )
-        return division is not None and bool(division.calendar_message_id)
-
-    async def post_calendar(ctx: StepContext) -> StepResult:
-        """Post the division's calendar again, its division and rounds read as the job runs, the
-        rounds called off drawn as cancelled."""
-        guild = await _guild(ctx.bot)
-        division = await division_of(
-            int(ctx.step_payload["season_id"]), int(ctx.step_payload["division_id"])
-        )
-        if division is None:
-            raise LookupError(f"division {ctx.step_payload['division_id']} is no longer there")
-        called_off = {int(each) for each in ctx.step_payload["round_ids"]}
-        rounds = [
-            dataclasses.replace(each, status=RoundStatus.CANCELLED.value)
-            if each.id in called_off
-            else each
-            for each in await seasons.get_division_rounds(division.id)
-        ]
-        posting = await post_division_calendar(
-            ctx.bot,
-            guild,
-            division,
-            rounds,
-            await tracks_by_name(ctx.db_path),
-            season_number=ctx.payload["season_number"],
-            raise_on_failure=True,
-            as_text=ctx.tries > 0,
-        )
-        return StepResult(
-            result={
-                "division": division.name,
-                "problem": posting.problem,
-                "fell_back": posting.fell_back,
-            }
-        )
-
     return {
         NOTIFY_CHECKIN: Step(
             NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
@@ -649,10 +615,7 @@ def _follow_steps(
             NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
             describe=_named("posting the results note for **{name}**"),
         ),
-        POST_CALENDAR: Step(
-            POST_CALENDAR, StepKind.ACT, post_calendar, still_due=calendar_posted,
-            describe=_named("posting the calendar of **{name}**"),
-        ),
+        **calendar_steps(seasons),
     }
 
 
@@ -827,7 +790,7 @@ def round_cancel_change(
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
-            PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id]}),
+            PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
         ]
         return StepResult(
             result={
@@ -1104,7 +1067,7 @@ def division_cancel_change(
         planned += [
             PlannedStep(NOTIFY_FORECAST, target),
             PlannedStep(NOTIFY_RESULTS, target),
-            PlannedStep(POST_CALENDAR, {**target, "round_ids": called_off}),
+            PlannedStep(POST_CALENDAR, {**target, "round_ids": called_off, "only_if_posted": True}),
         ]
         return StepResult(
             result={"called_off": called_off},
@@ -1367,7 +1330,7 @@ def season_cancel_change(
             planned += [
                 PlannedStep(NOTIFY_FORECAST, target),
                 PlannedStep(NOTIFY_RESULTS, target),
-                PlannedStep(POST_CALENDAR, {**target, "round_ids": rounds}),
+                PlannedStep(POST_CALENDAR, {**target, "round_ids": rounds, "only_if_posted": True}),
             ]
         # The roles are taken after the notices: the check-in notice mentions the division role.
         for target_driver in await season_role_targets_on(db, season_id):

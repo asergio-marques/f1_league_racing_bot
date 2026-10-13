@@ -46,8 +46,9 @@ log = logging.getLogger(__name__)
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
-#: Phase 3 forecast, and the attendance module's check-in call with its last notice and its
-#: distribution message (#425). One figure for both, so a round's channels clear together.
+#: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
+#: with its last notice and its distribution message (#425). One figure for both, so a round's
+#: channels clear together.
 POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
 
 

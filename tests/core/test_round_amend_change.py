@@ -83,6 +83,16 @@ NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to
 NOT_DONE = "⚠️ **Not done**"
 #: The message a check-in call posted by the `reposts` recorder stands as.
 LATE_CALL = 7101
+#: What each stop notice adds where an amendment's call is refused, by what is left of the round.
+EARLIER_STANDS = "the earlier call still stands, and the answers given to it count"
+ANSWERS_KEPT = ("no call stands; the answers given to the earlier call are kept, and count if "
+                "this call is posted before the check-in deadline")
+NONE_SEEN = "no call for this round can be seen, its message or its channel gone"
+NOTHING_LEFT = ("no call stands, and no attendance rows are open for this round until this call "
+                "is posted")
+MAY_HAVE_LANDED = ("; it may have reached Discord all the same: the bot posts it again on its "
+                   "next try, and any second copy is to be deleted by hand")
+NOT_POSTED = "ATTENDANCE | check-in call | NOT POSTED"
 
 
 # ── Recorders, patched before the league is built ──────────────────────────────────
@@ -90,19 +100,12 @@ LATE_CALL = 7101
 
 @pytest.fixture
 def phases(monkeypatch):
-    """Weather's three phase runners, recording `(phase, round id)` in `ran`; a phase in
-    `failing` raises its fault instead, as a fault of the bot's own."""
-    record = SimpleNamespace(ran=[], failing={})
-    for number in (1, 2, 3):
-        module = importlib.import_module(f"leaguebot.weather.services.phase{number}_service")
+    """Weather's draw of each phase, recording `(phase, round id)` in `ran` as the amendment's
+    `draw_forecast` job makes it, then drawn as weather draws it; a phase in `failing` raises its
+    fault instead, as a fault of the bot's own (`tests/support/weather_draws.py`)."""
+    from tests.support.weather_draws import recorded_draws
 
-        async def _run(rid: int, *_args: Any, _number: int = number, **_kwargs: Any) -> None:
-            if _number in record.failing:
-                raise record.failing[_number]
-            record.ran.append((_number, rid))
-
-        monkeypatch.setattr(module, f"run_phase{number}", _run)
-    return record
+    return recorded_draws(monkeypatch)
 
 
 @pytest.fixture
@@ -281,6 +284,27 @@ def _said_to(interaction: Any) -> list[str]:
 
 def _log_lines(league: Any) -> list[str]:
     return list(league.bot.log_channel.sent)
+
+
+def _stop_notices(league: Any) -> list[str]:
+    """The log channel's notices that the queue stopped, and its lines of a Retry that failed."""
+    return [line for line in _log_lines(league)
+            if "The queue is stopped at job #" in line or line.startswith("❌ Retry of job #")]
+
+
+def _real_call(league: Any, monkeypatch: Any) -> None:
+    """Attendance's own call poster, drawing no picture, reading the division's check-in channel
+    as it stands, and recording a call it posts through attendance's own service."""
+    from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    attendance = AttendanceService(league.db_path)
+    league.bot.attendance_service.get_division_config = attendance.get_division_config
+    league.bot.attendance_service.insert_embed_message = attendance.insert_embed_message
+    league.bot.attendance_service.bulk_insert_attendance_rows = (
+        attendance.bulk_insert_attendance_rows
+    )
 
 
 def _success_lines(league: Any) -> list[str]:
@@ -742,16 +766,21 @@ async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("weather, attendance", [
-    (True, True), (True, False), (False, True), (False, False),
+    pytest.param(True, True),
+    pytest.param(True, False),
+    pytest.param(False, True),
+    pytest.param(False, False),
 ], ids=["weather and attendance on", "weather on", "attendance on", "both off"])
 async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather, attendance):
     """Round 3's call stands, and its phase 2 forecast (message 8002) was posted though phase 1
     never ran. The round is brought forward to three days out: phase 1 is now due and was never
     drawn, phase 2 is ahead again and withdrawn, and the call's window has passed, so the call is
-    posted again. The jobs run in today's order; a module off drops its own (the forecast's
+    posted again. The jobs run in today's order, phase 1 drawn and its forecast posted by jobs of
+    the amendment's own after its `rerun_phase`; a module off drops its own (the forecast's
     deletion runs whatever weather's state)."""
     league = await ongoing_league(tmp_path, weather=weather, attendance=attendance,
                                   horizons=HORIZONS)
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit' WHERE id = ?", R3)
     await posted_forecast(league, R3, 2, 8002)
     await _amended(league, scheduled_at=_at(league, days=3))
 
@@ -762,7 +791,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
         expected += ["take_down_call", "post_call"]
     expected += ["delete_forecast"]
     if weather:
-        expected += ["notify_invalidation", "rerun_phase"]
+        expected += ["notify_invalidation", "rerun_phase", "draw_forecast", "post_forecast"]
     expected += ["close"]
     assert await _ran(league) == expected
     assert league.armed == [("weather" if weather else "results", [R3])] + (
@@ -919,7 +948,7 @@ async def test_a_discarded_phase_run_says_it_is_drawn_when_the_bot_next_starts(t
     phases.failing[1] = RuntimeError("forecast could not be drawn")
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "rerun_phase"
+    assert await _stopped_at(league) == "draw_forecast"
 
     await discard_job(league.bot)
 
@@ -1264,6 +1293,128 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     assert row["checkin_cleared"] == 1
 
 
+@pytest.mark.parametrize("standing", [
+    pytest.param("phase 2", id="phase 3 never posted"),
+    pytest.param("mystery notice", id="a mystery round's notice"),
+])
+async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
+    """Weather on. Pro's round 3 is thirty minutes out with one forecast recorded: (phase 3 never
+    posted) its Phase 2 forecast (message 8002), or (a mystery round's notice) round 3 a mystery
+    round with its notice (message 8000). It is moved to a day from now; the save stops, and a
+    day and forty minutes on, past the clean-up due a day after the old moment, a league admin
+    discards it. The round stands at its old moment, and its clean-up deletes whichever of Phases
+    1 to 3 is still recorded (owner, 2026-10-12): Phase 2 goes, its record with it. A mystery
+    round's notice is no such forecast, and stands with its record."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _place_r3(league, minutes=30)
+    forecast = league.channel(PRO_CH.forecast)
+    if standing == "phase 2":
+        message, phase = 8002, 2
+        await posted_forecast(league, R3, 2, message)
+    else:
+        message, phase = 8000, 0
+        await league.write("UPDATE rounds SET format = 'MYSTERY', phase1_done = 1 WHERE id = ?",
+                           R3)
+        await league.write(
+            "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+            "posted_at) VALUES (?, ?, 0, ?, ?)", R3, PRO, message, league.clock.now.isoformat())
+        forecast.seed(message, "Mystery Round notice")
+    await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(days=1, minutes=40)
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    recorded = await league.rows(
+        "SELECT * FROM forecast_messages WHERE round_id = ? AND phase_number = ?", R3, phase)
+    if standing == "phase 2":
+        assert message not in forecast.messages
+        assert recorded == []
+    else:
+        assert message in forecast.messages
+        assert len(recorded) == 1
+
+
+async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_names_it(tmp_path):
+    """Weather on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
+    results not yet in and its Phase 3 forecast (message 8003) standing. It is moved to a day
+    from now; the save stops, and ten minutes on, past the clean-up due a day after the old
+    moment, a league admin discards it. The round stands at its old moment, so its Phase 3 forecast is
+    to be deleted, as its clean-up deletes it; Discord refuses, and the queue stops, its notice
+    naming the job "deleting the Phase 3 forecast of round 3 in **Pro** a day after it". A league
+    admin discards that too: the reply, still within Discord's fourteen minutes, names it as the
+    Phase 3 forecast that could not be deleted a day after the round, with its link to delete it
+    by hand. Neither calls it withdrawn: it is the race's own forecast."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _place_r3(league, hours=-23, minutes=-55)
+    await posted_forecast(league, R3, 3, 8003)
+    league.undeletable.add(8003)
+    press = await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "delete_forecast"
+
+    notices = _stop_notices(league)
+    assert any("deleting the Phase 3 forecast of round 3 in **Pro** a day after it" in line
+               for line in notices), notices
+    assert not any("withdrawn" in line for line in notices), notices
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert NOT_DONE in outcome, outcome
+    named = ("**Pro** — forecast channel: the Phase 3 forecast could not be deleted a day after "
+             "the round, and a league admin discarded it; delete it by hand (")
+    bullets = [line for line in outcome.splitlines() if named in line]
+    assert len(bullets) == 1, outcome
+    assert "8003" in bullets[0]
+    assert "withdrawn" not in outcome
+    assert 8003 in league.channel(PRO_CH.forecast).messages
+
+
+async def test_a_late_clean_up_is_named_by_the_phase_still_standing(tmp_path, monkeypatch):
+    """Weather on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
+    Phase 3 never posted, so its Phase 2 forecast (message 8002) stands. It is moved to a day
+    from now; the save stops, and ten minutes on, past the clean-up due a day after the old
+    moment, a league admin discards it. The round stands at its old moment, so its clean-up is
+    due; finding the forecasts to delete fails, and the queue stops, its notice naming the job
+    "deleting the Phase 2 forecast of round 3 in **Pro** a day after it". A league admin discards
+    that too: the reply names the Phase 2 forecast as not deleted a day after the round. Neither
+    names a phase that is not standing."""
+    import leaguebot.weather.services.forecast_cleanup_service as cleanup
+
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await _place_r3(league, hours=-23, minutes=-55)
+    await posted_forecast(league, R3, 2, 8002)
+    press = await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        monkeypatch.setattr(cleanup, "forecast_deletes",
+                            AsyncMock(side_effect=RuntimeError("unreadable")))
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "clean_up_forecast"
+
+    notices = _stop_notices(league)
+    assert any("deleting the Phase 2 forecast of round 3 in **Pro** a day after it" in line
+               for line in notices), notices
+    assert not any("Phase 3" in line for line in notices), notices
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert ("**Pro** — forecast channel: the Phase 2 forecast was not deleted a day after the "
+            "round, and a league admin discarded it; it is deleted when the bot next starts"
+            ) in outcome, outcome
+    assert 8002 in league.channel(PRO_CH.forecast).messages
+
+
 @pytest.mark.parametrize("ending", ["discarded", "refused"])
 async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     tmp_path, phases, ending,
@@ -1273,7 +1424,8 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     out and the save stops. Twelve minutes on, past the old Phase 2 horizon, (discarded) a league
     admin discards the save, or (refused) Retry is pressed and the save refuses it, its new moment
     having passed. The round is armed again at its old moment and its Phase 2, due meanwhile, is
-    drawn at once; drawing it fails and a league admin discards it. The reply names it under
+    drawn at once; drawing it fails, stopping the queue at its `draw_forecast` job, and a league admin
+    discards it. The reply names it under
     "Not done" beneath what became of the save, and the log channel names the job discarded."""
     league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS,
                                   phases_done={R3: (1,)})
@@ -1288,7 +1440,7 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
             await discard_job(league.bot)
     if ending == "refused":
         await retry_job(league.bot)
-    assert await _stopped_at(league) == "rerun_phase"
+    assert await _stopped_at(league) == "draw_forecast"
 
     await discard_job(league.bot)
 
@@ -1303,7 +1455,7 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
     assert ("**Pro** — Phase 2 forecast: not drawn, and a league admin discarded it; it is drawn "
             "when the bot next starts, while the round is still to be run") in outcome
     assert any("| Discard job #" in line
-               and "not done: drawing a forecast of round 3 in **Pro** now" in line
+               and "not done: drawing the Phase 2 forecast of round 3 in **Pro** now" in line
                for line in _log_lines(league))
 
 
@@ -1701,20 +1853,15 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
 ):
     """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not),
     is brought forward to three days out, so its call is taken down, which goes through, and
-    posted again. Posting it fails, Discord refusing the message or the check-in channel gone,
-    as a call's own timer fails, and the queue goes on. The answers to the earlier call are kept,
-    and the log channel says so, and that they count, naming `/attendance post-check-in` to post
-    the call by hand, never that no attendance rows were opened (owner, 2026-10-09: "Make the
-    line tell the truth")."""
-    from leaguebot.attendance.services import rsvp_service
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    posted again. Posting it fails, Discord refusing the message or the check-in channel gone:
+    the queue stops at `post_call`, and its stop notice says no call stands and that the answers
+    to the earlier call are kept and count if this call is posted before the deadline (owner,
+    2026-10-11: "Notice says what's left"); the log channel says nothing of a call not posted.
+    The answers are kept. A league admin discards the job: the reply names the check-in call and
+    `/attendance post-check-in`."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
-    await _amended(league, scheduled_at=_at(league, days=3))
+    _real_call(league, monkeypatch)
+    press = await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
     if fault == "Discord refuses the post":
         league.channel(PRO_CH.checkin).send_fails = http_error(
@@ -1725,16 +1872,21 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
 
     await run_queue(league.bot)
 
-    assert await stopped_job(league.db_path) is None
-    assert (await _change(league))["state"] == "DONE"
+    assert await _stopped_at(league) == "post_call"
+    assert (await _change(league))["state"] != "DONE"
     assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
     assert len(await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
     )) == 2
-    [line] = _given_up_lines(league)
-    assert "answers given to an earlier call of this round are kept, and count" in line
-    assert "`/attendance post-check-in division: Pro round: 3`" in line
-    assert "no attendance rows were opened" not in line
+    assert any(ANSWERS_KEPT in line for line in _stop_notices(league))
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert NOT_DONE in outcome
+    assert "**Pro** — check-in call:" in outcome and "`/attendance post-check-in`" in outcome
+    assert "no attendance rows were opened" not in outcome
 
 
 @pytest.mark.parametrize("refused", [
@@ -1746,20 +1898,16 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
 ):
     """Attendance on; round 3's call stands (7001 to 7003) and the round is brought forward to
     three days out, so its call is to be posted again. Discord refuses to delete one of its
-    messages, and a league admin discards the take-down; posting the call again is refused too.
-    (the call itself refused) The earlier call is kept, standing with its answers: the reply
-    names the check-in call as not taken down, but never bids the manager remove by hand a call
-    that is the round's only one. (the last notice refused) The call itself was deleted, so no
-    call can be seen: its record is dropped, the reply never says it was kept but that none can
-    be seen and to post it by hand, and the log channel says so (owner, 2026-10-09: "Make it")."""
-    from leaguebot.attendance.services import rsvp_service
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    messages, and a league admin discards the take-down; posting the call again is refused too,
+    which stops the queue at `post_call`, and a league admin discards that as well.
+    (the call itself refused) The earlier call is kept, standing with its answers: the stop
+    notice says so, and the reply names the check-in call as not taken down, but never bids the
+    manager remove by hand a call that is the round's only one. (the last notice refused) The
+    call itself was deleted, so no call can be seen: its record is dropped, the stop notice says
+    none can be seen, and the reply never says it was kept but that none can be seen and to post
+    it by hand (owner, 2026-10-09: "Make it"; 2026-10-11: "Notice says what's left")."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
+    _real_call(league, monkeypatch)
     league.undeletable.add(refused)
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
@@ -1770,6 +1918,11 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
 
     await discard_job(league.bot)
 
+    assert await _stopped_at(league) == "post_call"
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+    notices = _stop_notices(league)
+    await discard_job(league.bot)
+
     assert await stopped_job(league.db_path) is None
     rows = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
     outcome = _outcome(press)
@@ -1777,17 +1930,16 @@ async def test_a_discarded_take_down_whose_repost_fails_does_not_bid_the_live_ca
     assert "**Pro** — check-in call:" in outcome
     assert "removed by hand" not in outcome
     if refused == CALL_MESSAGES[0]:
+        assert any(EARLIER_STANDS in line for line in notices)
         assert [row["message_id"] for row in rows] == [str(CALL_MESSAGES[0])]
         assert "the earlier call was kept" in outcome
         return
+    assert any(NONE_SEEN in line for line in notices)
     assert rows == []
-    assert (await _job(league, "post_call"))["result"] == {"posted": False, "vanished": True}
+    assert ((await _job(league, "post_call"))["result"] or {}).get("vanished") is True
     assert "kept" not in outcome
     assert "none can be seen" in outcome and "`/attendance post-check-in`" in outcome
     assert "once the cause is cleared (or the check-in channel is set)" in outcome
-    [line] = [line for line in _log_lines(league)
-              if line.startswith("ATTENDANCE | check-in call | NOT POSTED")]
-    assert "no call for this round can be seen" in line
 
 
 async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
@@ -1819,29 +1971,305 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
 
 
-async def test_a_call_posted_again_whose_send_times_out_lets_the_amendment_go_on(
+async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_it_may_have_landed(
     tmp_path, monkeypatch,
 ):
     """Attendance on. Pro's round 3, its call standing, is brought forward to three days out;
-    its call is taken down and posted again, and the send times out. As a call that fails on its
-    own timer, it does not stop the queue: the amendment goes through, and the log channel says
-    the call was not posted, that it may have reached Discord all the same, and to check the
-    channel (owner, 2026-10-08: slice 6; 2026-10-09: "Fold it in")."""
-    from leaguebot.attendance.services import rsvp_service
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-
-    monkeypatch.setattr(rsvp_service, "_checkin_attachment", AsyncMock(return_value=None))
+    its call is taken down and posted again, and the send times out. The queue stops at
+    `post_call`, the amendment not finished, its stop notice saying the call may have reached
+    Discord all the same; the log channel says nothing of a call not posted (owner, 2026-10-10,
+    decision 3; 2026-10-11, "Notice says what's left"). Once the send goes through, Retry posts
+    the call, once, and the amendment finishes."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service.get_division_config = AttendanceService(
-        league.db_path
-    ).get_division_config
+    _real_call(league, monkeypatch)
     await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
     league.channel(PRO_CH.checkin).send_fails = asyncio.TimeoutError()
 
     await run_queue(league.bot)
 
+    assert await _stopped_at(league) == "post_call"
+    assert (await _change(league))["state"] != "DONE"
+    assert any("it may have reached Discord all the same" in line
+               for line in _stop_notices(league))
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+
+    league.channel(PRO_CH.checkin).send_fails = None
+    await retry_job(league.bot)
+
     assert await stopped_job(league.db_path) is None
     assert (await _change(league))["state"] == "DONE"
-    [line] = _given_up_lines(league)
-    assert "may have reached Discord all the same; check the channel" in line
+    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    assert int(row["message_id"]) in league.channel(PRO_CH.checkin).messages
+
+
+async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_posted_again(
+    tmp_path, monkeypatch,
+):
+    """Attendance on. Pro's round 3, its call standing and answered, is brought forward to three
+    days out; its call is taken down and posted again, and the send times out, and times out
+    again on Retry. The stop notice, and the line of the Retry that failed, each say that no call
+    stands and the answers are kept, and end that the call may have reached Discord all the same:
+    the bot posts it again on its next try, and any second copy is to be deleted by hand (owner,
+    2026-10-11: "Notice says what's left")."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await _amended(league, scheduled_at=_at(league, days=3))
+    await _run_through(league, "take_down_call")
+    league.channel(PRO_CH.checkin).send_fails = asyncio.TimeoutError()
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_call"
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    [stop] = [line for line in _stop_notices(league) if "The queue is stopped at job #" in line]
+    retried = [line for line in _stop_notices(league) if line.startswith("❌ Retry of job #")]
+    assert retried
+    for line in (stop, retried[-1]):
+        assert f"{ANSWERS_KEPT}{MAY_HAVE_LANDED}" in line
+
+
+@pytest.mark.parametrize("fault", ["the call is refused", "the channel is gone"])
+async def test_a_call_posted_again_that_discord_refuses_stops_the_queue_and_is_posted_on_retry(
+    tmp_path, monkeypatch, fault,
+):
+    """Attendance on, its call five days before the round. Pro's round 3 has no call standing
+    and no answers; an amendment's save stops and is discarded past the call's moment, so the
+    amendment is to post the call at once (`_call_to_post_at_once`). Posting it fails, Discord
+    refusing it or the check-in channel gone: the queue stops at `post_call`, its stop notice
+    saying no call stands and no attendance rows are open until this one is posted; the log
+    channel says nothing of a call not posted. Once the cause is cleared, Retry posts the call
+    once and the amendment finishes (owner, 2026-10-10, decision 3: "Stop the queue")."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await league.write("DELETE FROM driver_round_attendance WHERE round_id = ?", R3)
+    await _call_to_post_at_once(league)
+    checkin = league.channel(PRO_CH.checkin)
+    if fault == "the call is refused":
+        checkin.send_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    else:
+        league.remove_channel(PRO_CH.checkin)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    assert any(NOTHING_LEFT in line for line in _stop_notices(league))
+    assert not [line for line in _log_lines(league) if line.startswith(NOT_POSTED)]
+    assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+
+    if fault == "the call is refused":
+        checkin.send_fails = None
+    else:
+        league.restore_channel(PRO_CH.checkin)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    assert int(row["message_id"]) in checkin.messages
+
+
+@pytest.mark.parametrize("left", ["earlier call kept", "no call can be seen", "nothing"])
+async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, left):
+    """Attendance on; Pro's round 3, its call standing (7001 to 7003) and answered, is brought
+    forward to three days out, so its call is taken down and posted again. (earlier call kept)
+    Discord refuses to delete the call itself and a league admin discards the take-down; (no
+    call can be seen) it refuses to delete the last notice, the call itself deleted, and the
+    take-down is discarded; (nothing) the take-down goes through. Posting the call again is then
+    refused, stopping the queue, and a league admin discards it: the reply's entry for the
+    check-in call says what is left — the earlier call kept with its answers counting; none to
+    be seen, to post by hand once the cause is cleared; or that the call was not posted again,
+    to post with `/attendance post-check-in`."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    if left == "earlier call kept":
+        league.undeletable.add(CALL_MESSAGES[0])
+    elif left == "no call can be seen":
+        league.undeletable.add(CALL_MESSAGES[1])
+    press = await _amended(league, scheduled_at=_at(league, days=3))
+    if left == "nothing":
+        await _run_through(league, "take_down_call")
+    else:
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "take_down_call"
+    league.channel(PRO_CH.checkin).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+    if left == "nothing":
+        await run_queue(league.bot)
+    else:
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "post_call"
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    outcome = _outcome(press)
+    assert NOT_DONE in outcome
+    said = {
+        "earlier call kept": "it could not be posted again, so the earlier call was kept and its "
+                             "answers count; see the log channel",
+        "no call can be seen": "it could not be posted again and none can be seen; post it by "
+                               "hand with `/attendance post-check-in` once the cause is cleared "
+                               "(or the check-in channel is set), and see the log channel",
+        "nothing": "the call could not be posted again, and a league admin discarded it; post it "
+                   "with `/attendance post-check-in`",
+    }[left]
+    assert f"**Pro** — check-in call: {said}" in outcome
+
+
+async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the_command(
+    tmp_path, monkeypatch,
+):
+    """Attendance on. Pro's round 3, its call standing, is brought forward to three days out;
+    its call is taken down, and then Pro's check-in channel is unset before the call is posted
+    again. The queue stops at `post_call`, its stop notice naming the command that sets the
+    channel; nothing is skipped quietly. Once the channel is set again, Retry posts the call and
+    the amendment finishes."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    _real_call(league, monkeypatch)
+    await _amended(league, scheduled_at=_at(league, days=3))
+    await _run_through(league, "take_down_call")
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = NULL WHERE division_id = ?", PRO
+    )
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "post_call"
+    assert ("**Pro** has no check-in channel set: set one with `/attendance channel rsvp`, then "
+            "press Retry. No call stands") in league.log()
+    assert "Retry.; " not in league.log()
+    assert "run_rsvp_notice | SKIP" not in league.log()
+
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = ? WHERE division_id = ?",
+        str(PRO_CH.checkin), PRO,
+    )
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _change(league))["state"] == "DONE"
+    [row] = await league.rows("SELECT message_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    assert int(row["message_id"]) in league.channel(PRO_CH.checkin).messages
+
+
+# ── The forecasts an amendment draws at once, as jobs of its own (slice 6) ─────────────
+
+
+async def _drawn_at_once(tmp_path: Any, *, days: float) -> Any:
+    """Weather on, horizons 5 days, 2 days, 2 hours; Pro's round 3 at Silverstone Circuit, with
+    a short qualifying and a long race, nothing drawn. It is brought forward to *days* out: at
+    three days phase 1 falls due at once, at one day phases 1 and 2. Gives the league and the
+    press; the queue is not run."""
+    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit' WHERE id = ?", R3)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           R3, session)
+    press = await _amended(league, scheduled_at=_at(league, days=days))
+    return league, press
+
+
+def _forecast_events(league: Any) -> list[tuple[str, int]]:
+    """What Pro's forecast channel saw, in order: each send and delete, with its message."""
+    return [(kind, mid) for kind, cid, mid in league.events if cid == PRO_CH.forecast]
+
+
+async def _forecasts(league: Any) -> dict[int, int]:
+    """Round 3's forecasts recorded: each phase's message id."""
+    return {row["phase_number"]: int(row["message_id"]) for row in await league.rows(
+        "SELECT phase_number, message_id FROM forecast_messages WHERE round_id = ?", R3)}
+
+
+async def test_a_phase_drawn_at_once_whose_forecast_discord_refuses_stops_the_queue(tmp_path):
+    """Round 3 brought forward to three days out, so its phase 1 is drawn at once, and Discord
+    refuses its forecast: the queue stops at the amendment's `post_forecast` job, the draw
+    recorded and nothing put on the old retry queue. Discord accepting, Retry posts it and
+    records its id."""
+    league, _press = await _drawn_at_once(tmp_path, days=3)
+    league.channel(PRO_CH.forecast).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == "post_forecast"
+    [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", R3)
+    assert row["phase1_done"] == 1
+    assert _forecast_events(league) == []
+    assert await league.rows(
+        "SELECT * FROM pending_messages WHERE channel_id = ?", PRO_CH.forecast
+    ) == []
+
+    league.channel(PRO_CH.forecast).send_fails = None
+    await retry_job(league.bot)
+
+    assert await _stopped_at(league) is None
+    [(kind, new)] = _forecast_events(league)
+    assert kind == "send"
+    assert await _forecasts(league) == {1: new}
+
+
+async def test_a_phase_drawn_at_once_supersedes_the_earlier_forecast_by_a_delete_job(tmp_path):
+    """Round 3 brought forward to one day out, so phases 1 and 2 are drawn at once: phase 1's
+    forecast is posted, then phase 2's, and phase 1's is deleted by a `delete_forecast` job after
+    it. Only phase 2's forecast is left recorded."""
+    league, _press = await _drawn_at_once(tmp_path, days=1)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    first, second, deleted = _forecast_events(league)
+    assert (first[0], second[0], deleted[0]) == ("send", "send", "delete")
+    assert deleted[1] == first[1]
+    assert await _forecasts(league) == {2: second[1]}
+    weather_jobs = [name for name in await _ran(league)
+                    if name in ("rerun_phase", "draw_forecast", "post_forecast", "delete_forecast")]
+    assert weather_jobs[-4:] == ["rerun_phase", "draw_forecast", "post_forecast",
+                                 "delete_forecast"]
+
+
+async def test_a_discarded_forecast_post_of_an_amendment_is_named_in_its_reply(tmp_path):
+    """Round 3 brought forward to three days out; Discord refuses phase 1's forecast and a
+    league admin discards the post: the reply names it under "Not done", the draw standing."""
+    league, press = await _drawn_at_once(tmp_path, days=3)
+    league.channel(PRO_CH.forecast).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access"
+    )
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "post_forecast"
+
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    assert ("**Pro** — Phase 1 forecast: drawn but not posted, and a league admin discarded it; "
+            "the draw stands in the log channel, and nothing posts it again") in outcome
+
+
+async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded_once_discarded(
+    tmp_path,
+):
+    """Round 3 brought forward to one day out; phase 1's forecast is posted, and Discord refuses
+    to delete it when phase 2's supersedes it: the queue stops at `delete_forecast`. A league
+    admin discards it: the reply names the superseded forecast, with its link, to delete by
+    hand."""
+    league, press = await _drawn_at_once(tmp_path, days=1)
+    await _run_through(league, "post_forecast")
+    [(_, earlier)] = _forecast_events(league)
+    league.channel(PRO_CH.forecast).messages[earlier].delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "delete_forecast"
+    await discard_job(league.bot)
+
+    outcome = _outcome(press)
+    assert outcome.startswith(AMENDED) and NOT_DONE in outcome
+    named = ("**Pro** — forecast channel: the superseded Phase 1 forecast could not be deleted, "
+             "and a league admin discarded it; delete it by hand (")
+    [bullet] = [line for line in outcome.splitlines() if named in line]
+    assert str(earlier) in bullet

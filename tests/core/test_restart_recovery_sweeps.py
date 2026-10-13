@@ -13,9 +13,9 @@ shorter one published days early. The config is resolved once per server rather 
 round, and only *after* the module gate, so a server with weather switched off is never queried
 for it.
 
-**A mystery round is never caught up.** Its track is not known, so there is nothing to forecast,
-and the query excludes it rather than the loop skipping it — worth a test either way, because
-the exclusion is invisible in the loop where a reader would look for it.
+**A missed phase is asked of the change queue** (#439), through weather's `ask_forecast`, by
+number, a mystery round's alike: the mystery rule is weather's, which asks a mystery round's
+phase 1 as its notice and nothing for its phases 2 and 3, so the sweep names no format.
 
 **Every standing review prompt is expired by definition.** The approve button's five minutes are
 a `discord.ui.View` timeout held in memory; the bot was down, so they cannot have been served,
@@ -143,14 +143,18 @@ def _config(phase_1_days=PHASE_1_DAYS, phase_2_days=PHASE_2_DAYS, phase_3_hours=
 
 
 async def _phases(stub, *, config=None):
+    """Run the phase sweep; one recorder per phase holds the rounds it asked the queue for."""
     get_config = AsyncMock(return_value=config or _config())
+    p1, p2, p3 = AsyncMock(), AsyncMock(), AsyncMock()
+
+    async def _ask(_queue, _db_path, round_id, phase):
+        await {1: p1, 2: p2, 3: p3}[phase](round_id)
+
     with patch(
         "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config", new=get_config
-    ), patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()) as p1, patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
-    ) as p2, patch(
-        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
-    ) as p3:
+    ), patch(
+        "leaguebot.weather.services.forecast_changes.ask_forecast", new=AsyncMock(side_effect=_ask)
+    ):
         await bot_module._recover_missed_phases(stub)
     return p1, p2, p3, get_config
 
@@ -256,15 +260,15 @@ async def test_the_horizons_are_read_once(tmp_path):
     assert get_config.await_count == 1
 
 
-async def test_a_mystery_round_is_never_caught_up(tmp_path):
-    """There is nothing to forecast for a track nobody knows. Excluded by the query rather
-    than skipped in the loop, which is why it is worth a test of its own."""
+async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
+    """A mystery round past every horizon has each phase asked by number; weather, not the
+    sweep, turns phase 1 into its notice and asks nothing for phases 2 and 3."""
     db_path = await _base_db(tmp_path, "phases_mystery")
     await _seed_round(db_path, days_away=0.1, fmt="MYSTERY")
 
     p1, p2, p3, _ = await _phases(_stub_bot(db_path))
 
-    assert _fired(p1) == _fired(p2) == _fired(p3) == []
+    assert _fired(p1) == _fired(p2) == _fired(p3) == [ROUND_ID]
 
 
 async def test_a_season_that_is_not_active_is_not_caught_up(tmp_path):

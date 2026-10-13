@@ -48,6 +48,10 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 5
 
+#: The kinds of a forecast's change and of the clean-up a day after the round.
+FORECAST = "weather.forecast"
+FORECAST_CLEAN_UP = "weather.forecast.clean_up"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -105,6 +109,8 @@ def _make_cog(db_path: str, *, test_mode: bool = True) -> _Cog:
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.change_queue = MagicMock()
+    bot.change_queue.ask = AsyncMock(return_value=1)
 
     cog = _Cog.__new__(_Cog)
     cog.bot = bot
@@ -162,18 +168,22 @@ def _replied(interaction) -> str:
     )
 
 
+def _asked(cog) -> list[tuple[str, dict]]:
+    """Each change advance asked of the change queue: its kind and its payload."""
+    return [
+        (call.args[0], call.args[1] if len(call.args) > 1 else call.kwargs["payload"])
+        for call in cog.bot.change_queue.ask.await_args_list
+    ]
+
+
 async def _advance(cog, interaction, entry, **patches):
-    """Run advance with the queue answering *entry* and every phase service stubbed."""
+    """Run advance with the queue answering *entry* and every phase service stubbed. A weather
+    step has no runner to stub: advance asks the change queue for it (#439)."""
     defaults = {
-        "leaguebot.weather.services.mystery_notice_service.run_mystery_notice": AsyncMock(return_value=None),
-        "leaguebot.weather.services.phase1_service.run_phase1": AsyncMock(return_value=None),
-        "leaguebot.weather.services.phase2_service.run_phase2": AsyncMock(return_value=None),
-        "leaguebot.weather.services.phase3_service.run_phase3": AsyncMock(return_value=None),
         "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(return_value=None),
         "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice": AsyncMock(return_value=None),
         "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline": AsyncMock(return_value=None),
         "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup": AsyncMock(return_value=None),
-        "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup": AsyncMock(return_value=None),
         "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
             return_value=False
         ),
@@ -248,28 +258,19 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 
 
 async def test_a_mystery_notice_is_posted(tmp_path):
+    """Round 3 of Division 1 is a mystery round whose notice is next. Advance asks the change
+    queue for its notice (a `weather.forecast` of phase 0 for the round) and says it is on the
+    queue; the cog itself posts nothing."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(0))
+    await _advance(cog, interaction, _entry(0))
 
-    mocks["run_mystery_notice"].assert_awaited_once()
-    assert "Mystery Round notice" in _replied(interaction)
-
-
-async def test_a_posted_mystery_notice_is_marked_done(tmp_path):
-    """So the round is excluded from every later advance — without it the same notice
-    would be posted on every press."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _advance(cog, _interaction(), _entry(0))
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT phase1_done FROM rounds WHERE id = ?", (ROUND_ID,)
-        )
-        assert (await cursor.fetchone())["phase1_done"] == 1
+    [(kind, payload)] = _asked(cog)
+    assert kind == FORECAST
+    assert (payload["round_id"], payload["phase"]) == (ROUND_ID, 0)
+    assert ("🔮 The **Mystery Round notice** for **Division 1** — **Round 3** is on the change "
+            "queue") in _replied(interaction)
 
 
 @pytest.mark.parametrize("job_id", ["weather_p1_s1_d1_r3_id5", None], ids=["queued", "found-in-db"])
@@ -327,7 +328,7 @@ async def test_a_phase_with_no_job_cancels_nothing(tmp_path):
 
 
 async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
-    """The maintainer is stepping through a season and needs to know which round failed: the
+    """The change queue cannot save the notice's ask. The maintainer is stepping through a season and needs to know which round failed: the
     standard failure reply and one failure line name the notice, the division and the round
     (#482)."""
     db_path = await _make_db(tmp_path)
@@ -335,36 +336,23 @@ async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
     interaction = _interaction()
     interaction.client = cog.bot
 
-    await _advance(
-        cog,
-        interaction,
-        _entry(0),
-        **{
-            "leaguebot.weather.services.mystery_notice_service.run_mystery_notice": AsyncMock(
-                side_effect=RuntimeError("API down")
-            )
-        },
-    )
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("API down"))
+
+    await _advance(cog, interaction, _entry(0))
 
     _assert_failure_recorded(cog, interaction, "Mystery Round notice")
 
 
 async def test_a_failing_notice_is_not_marked_done(tmp_path):
-    """It did not happen, and marking it would skip the round on the next advance."""
+    """The change queue cannot save the notice's ask: it did not happen, and marking it would
+    skip the round on the next advance. The cog marks nothing; the notice's draw does."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("API down"))
 
-    await _advance(
-        cog,
-        _interaction(),
-        _entry(0),
-        **{
-            "leaguebot.weather.services.mystery_notice_service.run_mystery_notice": AsyncMock(
-                side_effect=RuntimeError("API down")
-            )
-        },
-    )
+    await _advance(cog, _interaction(), _entry(0))
 
+    cog.bot.change_queue.ask.assert_awaited_once()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT phase1_done FROM rounds WHERE id = ?", (ROUND_ID,)
@@ -671,16 +659,33 @@ CLEANUPS = [
 ]
 
 
-@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+#: The cleanups, the forecast's asked of the change queue once the build makes it a job.
+CLEANUPS_ASKED = [
+    pytest.param(*CLEANUPS[0]),
+    CLEANUPS[1],
+]
+
+
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
 async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, label, prefix):
+    """The forecast cleanup (8) is asked of the change queue as a `weather.forecast.clean_up`
+    of the round, replying '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on
+    the change queue: …'; the check-in cleanup (9) runs its own runner, as today, and asks
+    nothing."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
     mocks = await _advance(cog, interaction, _entry(phase))
 
-    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
-    other = {"run_post_race_cleanup", "run_rsvp_cleanup"} - {runner}
-    mocks[other.pop()].assert_not_awaited()
+    if phase == 8:
+        [(kind, payload)] = _asked(cog)
+        assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
+        mocks["run_rsvp_cleanup"].assert_not_awaited()
+        assert ("🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
+                "queue") in _replied(interaction)
+    else:
+        mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
+        assert _asked(cog) == []
     assert label in _replied(interaction)
 
 
@@ -703,18 +708,19 @@ async def test_a_fired_cleanup_cancels_its_job_by_kind(
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
     """The standard failure reply and one failure line name the cleanup, the division and the
-    round (#482)."""
+    round (#482): the forecast cleanup where the change queue cannot save its ask, the check-in
+    cleanup where its runner raises."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
-    target = {
-        "run_post_race_cleanup": "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup",
-        "run_rsvp_cleanup": "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup",
-    }[runner]
+    patches = {}
+    if phase == 8:
+        cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
+    else:
+        target = "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup"
+        patches[target] = AsyncMock(side_effect=RuntimeError("x"))
 
-    await _advance(
-        cog, interaction, _entry(phase), **{target: AsyncMock(side_effect=RuntimeError("x"))}
-    )
+    await _advance(cog, interaction, _entry(phase), **patches)
 
     _assert_failure_recorded(cog, interaction, label)
 
@@ -733,49 +739,46 @@ async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("phase,runner", [(1, "run_phase1"), (2, "run_phase2"), (3, "run_phase3")])
-async def test_each_weather_phase_reaches_its_own_runner(tmp_path, phase, runner):
+@pytest.mark.parametrize("phase", [1, 2, 3])
+async def test_each_weather_phase_asks_the_queue_for_its_phase(tmp_path, phase):
+    """Phase *phase* of round 3 of Division 1 (Silverstone Circuit) is next. Advance asks the
+    change queue for that phase (a `weather.forecast` of the round and phase) and replies
+    '⏩ **Phase n** for **Division 1** — **Silverstone Circuit** is on the change queue: …'."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(phase))
+    await _advance(cog, interaction, _entry(phase))
 
-    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
-    for other in {"run_phase1", "run_phase2", "run_phase3"} - {runner}:
-        mocks[other].assert_not_awaited()
-    assert f"Advanced **Phase {phase}**" in _replied(interaction)
+    [(kind, payload)] = _asked(cog)
+    assert kind == FORECAST
+    assert (payload["round_id"], payload["phase"]) == (ROUND_ID, phase)
+    assert (f"⏩ **Phase {phase}** for **Division 1** — **Silverstone Circuit** is on the "
+            "change queue") in _replied(interaction)
 
 
-async def test_a_weather_phase_cancels_its_job_before_running(tmp_path):
-    """Before, not after: a runner that raised would otherwise leave the real job queued to
-    fire the same phase again."""
+async def test_a_weather_phase_cancels_its_job_before_asking(tmp_path):
+    """Before, not after: an ask that raised would otherwise leave the real job queued to fire
+    the same phase again."""
     cog = _make_cog(await _make_db(tmp_path))
     order: list[str] = []
     cog.bot.scheduler_service.cancel_job = MagicMock(side_effect=lambda _j: order.append("cancel"))
+    cog.bot.change_queue.ask = AsyncMock(side_effect=lambda *_a, **_k: order.append("ask"))
 
-    await _advance(
-        cog,
-        _interaction(),
-        _entry(2),
-        **{"leaguebot.weather.services.phase2_service.run_phase2": AsyncMock(side_effect=lambda *_: order.append("run"))},
-    )
+    await _advance(cog, _interaction(), _entry(2))
 
-    assert order == ["cancel", "run"]
+    assert order == ["cancel", "ask"]
 
 
 async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
-    """The standard failure reply names the phase, the division, the round and the track, and
-    one failure line the phase, the division and the round (#482)."""
+    """The change queue cannot save Phase 1's ask. The standard failure reply names the phase,
+    the division, the round and the track, and one failure line the phase, the division and
+    the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("boom"))
 
-    await _advance(
-        cog,
-        interaction,
-        _entry(1),
-        **{"leaguebot.weather.services.phase1_service.run_phase1": AsyncMock(side_effect=RuntimeError("boom"))},
-    )
+    await _advance(cog, interaction, _entry(1))
 
     _assert_failure_recorded(cog, interaction, "Phase 1")
     assert "Silverstone Circuit" in _replied(interaction)
@@ -789,3 +792,344 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
     logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "phase: 3" in logged
     assert "track: Silverstone Circuit" in logged
+
+
+# ---------------------------------------------------------------------------
+# A weather step advanced, then run by the change queue
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("phase", [
+    pytest.param(0, id="mystery notice"),
+    pytest.param(1, id="phase 1"),
+])
+async def test_an_advanced_phase_is_drawn_and_posted_by_the_queue(tmp_path, phase):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 (Silverstone
+    Circuit, a mystery round for the notice) has its notice, or Phase 1, next. The maintainer
+    advances: nothing is posted and the round is not marked done until the change queue runs.
+    Once it has, the notice, or the Phase 1 forecast, stands in Pro's forecast channel and the
+    round's Phase 1 is marked done by the draw's save (for Phase 1, one draw recorded)."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = DIVISIONS[PRO][3].forecast
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit' WHERE id = ?",
+                       round_)
+    if phase == 0:
+        await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", round_)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           round_, session)
+    # The notice takes its timer's job down by round and kind; the league's double records a
+    # round's jobs taken down by round alone.
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    entry = {"phase_number": phase, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone Circuit", "job_id": None}
+
+    async def _phase1_done() -> int:
+        [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_)
+        return row["phase1_done"]
+
+    def _sent() -> list[int]:
+        return [mid for kind, cid, mid in league.events if cid == forecast and kind == "send"]
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, _interaction())
+
+    assert _sent() == []
+    assert await _phase1_done() == 0
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(_sent()) == 1
+    assert await _phase1_done() == 1
+    if phase == 1:
+        [row] = await league.rows(
+            "SELECT COUNT(*) AS n FROM phase_results WHERE round_id = ? AND phase_number = 1 "
+            "AND status = 'ACTIVE'", round_)
+        assert row["n"] == 1
+
+
+async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 (Silverstone
+    Circuit) was raced an hour ago with its Phase 1 not done (weather switched on after it).
+    The maintainer advances its Phase 1: the change queue drops it as not due (A25), so the reply
+    says it was not due and why, and not that it is on the change queue; nothing is asked of the
+    queue, nothing posted, and the phase stays undone."""
+    from tests.support.change_queue import change_rows, run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = DIVISIONS[PRO][3].forecast
+    raced = (league.clock.now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit', scheduled_at = ? "
+                       "WHERE id = ?", raced, round_)
+    for session in ("SHORT_QUALIFYING", "LONG_RACE"):
+        await league.write("INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
+                           round_, session)
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 1, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone Circuit", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+    await run_queue(league.bot)
+
+    replied = _replied(interaction)
+    assert "is on the change queue" not in replied
+    assert ("⏩ **Phase 1** for **Pro** — **Round 3** was not due: its race has been run."
+            in replied)
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST] == []
+    assert await stopped_job(league.db_path) is None
+    assert [mid for kind, cid, mid in league.events if cid == forecast] == []
+    [row] = await league.rows("SELECT phase1_done FROM rounds WHERE id = ?", round_)
+    assert row["phase1_done"] == 0
+
+
+async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_standing(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
+    an hour ago, and its Phase 3 never posted, so its Phase 2 forecast (message 8002) stands.
+    The maintainer advances its forecast cleanup (8). The clean-up deletes whichever of Phases 1
+    to 3 is still recorded (owner, 2026-10-12): once the change queue has run, the Phase 2
+    forecast is gone from Pro's forecast channel, its record with it."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import (
+        DIVISIONS, PRO, ongoing_league, posted_forecast, round_id,
+    )
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = league.channel(DIVISIONS[PRO][3].forecast)
+    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
+    await posted_forecast(league, round_, 2, 8002)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    entry = {"phase_number": 8, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, _interaction())
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert 8002 not in forecast.messages
+    assert await league.rows("SELECT * FROM forecast_messages WHERE round_id = ?", round_) == []
+
+
+async def test_an_advanced_forecast_cleanup_names_the_phase_it_deletes(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
+    an hour ago, and its Phase 3 never posted, so its Phase 2 forecast (message 8002) stands.
+    The maintainer advances its forecast cleanup (8): the reply names the forecast it deletes,
+    "🧹 The **forecast cleanup** for **Pro** — **Round 3** is on the change queue: it deletes the
+    Phase 2 forecast as soon as the queue reaches it.", and so does the change asked of the
+    queue, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it"."""
+    from tests.support.change_queue import change_rows
+    from tests.support.season_league import PRO, ongoing_league, posted_forecast, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
+    await posted_forecast(league, round_, 2, 8002)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 8, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+
+    assert ("🧹 The **forecast cleanup** for **Pro** — **Round 3** is on the change queue: it "
+            "deletes the Phase 2 forecast as soon as the queue reaches it.") in _replied(interaction)
+    [row] = [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST_CLEAN_UP]
+    assert row["what"] == "deleting the Phase 2 forecast of round 3 in **Pro** a day after it"
+
+
+async def test_an_advanced_mystery_notice_of_a_raced_round_says_it_was_not_due(tmp_path):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 is a mystery round
+    raced an hour ago whose notice never went out. The maintainer advances its notice (0): the
+    change queue drops it as not due (A25), so the reply says it was not due and why, and not
+    that it is on the change queue; nothing is asked of the queue, and nothing posted."""
+    from tests.support.change_queue import change_rows, run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    forecast = DIVISIONS[PRO][3].forecast
+    raced = (league.clock.now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET format = 'MYSTERY', scheduled_at = ? WHERE id = ?",
+                       raced, round_)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 0, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Mystery", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+    await run_queue(league.bot)
+
+    replied = _replied(interaction)
+    assert "is on the change queue" not in replied
+    assert ("🔮 The **Mystery Round notice** for **Pro** — **Round 3** was not due: its race "
+            "has been run.") in replied
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == FORECAST] == []
+    assert await stopped_job(league.db_path) is None
+    assert [mid for kind, cid, mid in league.events if cid == forecast] == []
+
+
+async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_was_not_due(
+    tmp_path,
+):
+    """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and
+    an hour ago and no forecast of it is recorded. The maintainer advances its forecast cleanup
+    (8): the change queue drops it as not due, so the reply says it was not due as no forecast
+    stands, and not that it is on the change queue; nothing is asked of the queue."""
+    from tests.support.change_queue import change_rows, stopped_job
+    from tests.support.season_league import PRO, ongoing_league, round_id
+
+    league = await ongoing_league(tmp_path, weather=True)
+    await league.set_test_mode(True)
+    round_ = round_id(PRO, 3)
+    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
+    await league.write("DELETE FROM forecast_messages WHERE round_id = ?", round_)
+    league.bot.scheduler_service.cancel_round = MagicMock()
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    interaction = _interaction()
+    entry = {"phase_number": 8, "round_id": round_, "round_number": 3,
+             "division_name": "Pro", "track_name": "Silverstone", "job_id": None}
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
+               new=AsyncMock(return_value=entry)):
+        await undecorate(_Cog.advance)(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "is on the change queue" not in replied
+    assert ("🧹 The **forecast cleanup** for **Pro** — **Round 3** was not due: no forecast "
+            "stands.") in replied
+    assert [row for row in await change_rows(league.db_path)
+            if row["kind"] == FORECAST_CLEAN_UP] == []
+    assert await stopped_job(league.db_path) is None
+
+
+# ---------------------------------------------------------------------------
+# The weather steps advance passed over, named in its reply (#439)
+# ---------------------------------------------------------------------------
+
+
+def _passed_over(phase_number: int, round_number: int) -> dict:
+    """A raced round's weather step advance passes over, as `get_passed_over_steps` gives it."""
+    return {"phase_number": phase_number, "round_id": 100 + round_number,
+            "round_number": round_number, "division_name": "Division 1",
+            "track_name": "Bahrain", "job_id": None}
+
+
+PHASE_2_PASSED = ("⏭️ **Phase 2** for **Division 1** — **Round 2** was not due: its race has "
+                  "been run.")
+NOTICE_PASSED = ("⏭️ The **Mystery Round notice** for **Division 1** — **Round 1** was not due: "
+                 "its race has been run.")
+ADVANCED = "⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue"
+
+
+@pytest.mark.parametrize("passed, named", [
+    pytest.param([], [], id="none passed over"),
+    pytest.param([(2, 2)], [PHASE_2_PASSED], id="one passed over"),
+    pytest.param([(0, 1), (2, 2)], [NOTICE_PASSED, PHASE_2_PASSED], id="two passed over"),
+])
+async def test_advance_names_the_raced_steps_it_passed_over_before_the_step_it_advanced(
+    tmp_path, passed, named,
+):
+    """Advance passes over the weather steps of a round whose race has been run (owner,
+    2026-10-12, "Advance names what it skipped"). Advancing round 3's Phase 1, the reply first
+    names each step passed over, "⏭️ **Phase 2** for **Division 1** — **Round 2** was not due:
+    its race has been run.", a mystery round's notice as advance names it, in order, then the
+    step advanced. With nothing passed over the reply is as before, naming nothing."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+    steps = [_passed_over(phase, number) for phase, number in passed]
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps",
+               new=AsyncMock(return_value=steps)):
+        await _advance(cog, interaction, _entry(1, job_id=None))
+
+    replied = _replied(interaction)
+    assert ADVANCED in replied
+    places = [replied.index(line) for line in named]
+    assert places == sorted(places)
+    assert all(place < replied.index(ADVANCED) for place in places)
+    assert replied.count("⏭️") == len(named)
+    [(kind, payload)] = _asked(cog)
+    assert (kind, payload["phase"]) == (FORECAST, 1)
+
+
+async def test_advance_with_only_raced_steps_left_names_them_and_says_nothing_else_is_due(
+    tmp_path,
+):
+    """Nothing is pending but round 2's Phase 2, whose race has been run: advance names it as
+    passed over and says nothing else is due, as it says when nothing is pending; nothing is
+    asked of the change queue. The log channel's refusal line stands on its own, naming no step
+    "above", since nothing sits above it there."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+    interaction.client = cog.bot
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps",
+               new=AsyncMock(return_value=[_passed_over(2, 2)])):
+        await _advance(cog, interaction, None)
+
+    replied = _replied(interaction)
+    assert PHASE_2_PASSED in replied
+    assert "There is nothing left to advance." in replied
+    assert replied.index(PHASE_2_PASSED) < replied.index("There is nothing left to advance.")
+    assert _asked(cog) == []
+    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    refusals = [line for line in logged if "refused" in line]
+    assert len(refusals) == 1, logged
+    assert ("Nothing is due but the weather steps of rounds whose races have been run, which "
+            "were passed over. There is nothing left to advance.") in refusals[0]
+    assert "above" not in refusals[0]
+
+
+async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_passes_over(
+    tmp_path,
+):
+    """The step advance offers and the steps it names as passed over are judged at one moment,
+    so that a race time falling between two readings of the clock cannot leave a step both
+    offered and named as passed over, or neither."""
+    cog = _make_cog(await _make_db(tmp_path))
+    offered = AsyncMock(return_value=None)
+    passed = AsyncMock(return_value=[])
+
+    with patch("leaguebot.core.cogs.test_mode_cog.get_next_pending_phase", new=offered), \
+            patch("leaguebot.core.cogs.test_mode_cog.get_passed_over_steps", new=passed):
+        await undecorate(_Cog.advance)(cog, _interaction())
+
+    moment = offered.await_args.kwargs["now"]
+    assert moment is not None
+    assert passed.await_args.kwargs["now"] == moment
+

@@ -1289,3 +1289,31 @@ async def seed_season_end(db_path: str, kind: str, *, season_id: int = SEASON_ID
         await db.commit()
     assert job is not None and job != change_id
     return job
+
+
+def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
+    """Have every standings picture draw, both championships, without a rasteriser: the image
+    module's drawings and its render are stood in for, a PNG handed back for each, so that the
+    posting reaches Discord with the picture. Returns the render, to count its calls."""
+    from leaguebot.image.services import image_standings_post
+
+    monkeypatch.setattr(image_standings_post, "standings_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(image_standings_post, "build_drawings", AsyncMock(
+        return_value=(MagicMock(template_key="drivers"), MagicMock(template_key="constructors"))
+    ))
+    made = iter(range(1, 1000))
+
+    async def _render(*_args: Any, **_kwargs: Any) -> Any:
+        png = tmp_path / f"standings_{next(made)}.png"
+        png.write_bytes(b"\x89PNG")
+        return SimpleNamespace(posts_image=True, rejects=False, png_paths=[png], notices=[],
+                               problem=None)
+
+    render = AsyncMock(side_effect=_render)
+    monkeypatch.setattr(image_standings_post, "render_png", render)
+    return render
+
+
+def refuses_pictures(content: Any, kwargs: dict[str, Any]) -> bool:
+    """A channel's `fail_when` refusing every send that carries a picture, and no text."""
+    return bool(kwargs.get("file") or kwargs.get("files"))

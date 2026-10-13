@@ -79,6 +79,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.season_end_service import (
     CLOSE_WINDOW,
     DISCARD_BACKUP,
+    DELETE_FORECAST,
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
     FORGET_SETUP,
@@ -205,6 +206,22 @@ RETURNED_NOT_TOLD = (
     "{who} was returned to Not Signed Up when signups closed, but was not told and their "
     "channel was not closed: tell them and delete it by hand."
 )
+
+
+def _forecast_kept(view: StepView) -> str:
+    """The line for a forecast whose deletion a league admin discarded, with its link where the
+    job kept one: it stands in its channel, to be deleted by hand."""
+    result = view.result or {}
+    message = result.get("message_id", view.payload.get("message_id"))
+    if "guild_id" in result and message is not None:
+        where = f"https://discord.com/channels/{result['guild_id']}/{result['channel_id']}/{message}"
+    else:
+        where = f"message {message} in <#{result.get('channel_id')}>"
+    return (
+        f"The Phase {view.payload.get('phase', result.get('phase'))} forecast of round "
+        f"{view.payload.get('round_number', '?')} could not be deleted: delete it by hand "
+        f"({where})."
+    )
 
 
 def completion_in_hand_refusal(season_number: Any, job: int) -> str:
@@ -380,6 +397,8 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
             lines.append(WINDOW_KEPT)
         elif view.name == FLUSH_FORECASTS:
             lines.append(FORECASTS_KEPT)
+        elif view.name == DELETE_FORECAST:
+            lines.append(_forecast_kept(view))
         elif view.name == SIGNUP_NOTICE:
             if str(each["user_id"]) in closed:
                 lines.append(
@@ -614,11 +633,13 @@ def season_complete_change(
     async def final_sheet(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
-        await season_classification_service.post_final_sheet(
+        result = await season_classification_service.post_final_sheet(
             ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
             as_text=ctx.tries > 0,
         )
-        return StepResult()
+        # The final sheet stands beside the last round's: nothing is saved for it and nothing
+        # deleted, so it plans no deletion and carries no record.
+        return StepResult(result=result)
 
     async def sheet_due(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()

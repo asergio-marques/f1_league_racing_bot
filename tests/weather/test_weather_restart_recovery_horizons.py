@@ -20,12 +20,19 @@ to recover for a switched-off module.
 
 Every moment here is computed from the real clock rather than pinned to a date, so the tests cannot
 rot into passing.
+
+The recovery asks the change queue for each overdue phase through weather's `ask_forecast` (#439).
+The horizon tests record those asks, patched in `forecast_changes`; the mystery round's test runs
+the real `ask_forecast` on a queue, as weather alone decides that a mystery round's phase 1 is its
+notice and its phases 2 and 3 nothing.
 """
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
@@ -107,7 +114,7 @@ def _make_bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
 
 
 class _Phases:
-    """The three phase runners, stubbed, with the rounds each was asked to draw for."""
+    """One recorder per phase, with the rounds the recovery asked the queue to draw it for."""
 
     def __init__(self) -> None:
         self.one = AsyncMock(return_value=None)
@@ -117,17 +124,17 @@ class _Phases:
     def rounds(self, runner: AsyncMock) -> list[int]:
         return [call.args[0] for call in runner.await_args_list]
 
+    async def ask(self, _queue, _db_path, round_id: int, phase: int) -> None:
+        await {1: self.one, 2: self.two, 3: self.three}[phase](round_id)
+
 
 async def _recover(bot: MagicMock) -> _Phases:
-    """Run the restart recovery with the three phase runners stubbed out."""
+    """Run the restart recovery with weather's `ask_forecast` recorded."""
     from leaguebot.__main__ import _recover_missed_phases
 
     phases = _Phases()
-    with (
-        patch("leaguebot.weather.services.phase1_service.run_phase1", phases.one),
-        patch("leaguebot.weather.services.phase2_service.run_phase2", phases.two),
-        patch("leaguebot.weather.services.phase3_service.run_phase3", phases.three),
-    ):
+    with patch("leaguebot.weather.services.forecast_changes.ask_forecast",
+               AsyncMock(side_effect=phases.ask)):
         await _recover_missed_phases(bot)
     return phases
 
@@ -211,18 +218,26 @@ async def test_a_restart_recovers_nothing_for_a_server_with_weather_disabled(tmp
 
 
 async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
-    """A mystery round's forecast is never drawn, so nothing is recovered for it."""
+    """A mystery round past every horizon of the league's: its notice is put on the change
+    queue, as weather's real `ask_forecast` asks it, and no phase is."""
+    import json
+
+    from leaguebot.__main__ import _recover_missed_phases
+    from tests.support.change_queue import attach_queue, change_rows, league_double
+
     db_path = await _make_db(tmp_path)
     await _seed_server(
         db_path, days_until_round=0.25, horizons=(7, 3, 12), round_format="MYSTERY"
     )
-    bot = _make_bot(db_path)
+    bot = league_double(db_path)
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
 
-    phases = await _recover(bot)
+    await _recover_missed_phases(bot)
 
-    phases.one.assert_not_awaited()
-    phases.two.assert_not_awaited()
-    phases.three.assert_not_awaited()
+    asked = [(row["kind"], json.loads(row["payload"])["phase"])
+             for row in await change_rows(db_path)]
+    assert asked == [("weather.forecast", 0)]
 
 
 async def test_a_restart_recovers_no_phase_for_a_season_that_is_not_active(tmp_path):

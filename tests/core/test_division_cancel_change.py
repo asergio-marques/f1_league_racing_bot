@@ -510,7 +510,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path):
 
     assert [job["name"] for job in await _jobs(league)] == [
         "unarm", "apply", "notify_checkin", "take_down_call", "take_down_call",
-        "notify_forecast", "notify_results", "post_calendar", "close",
+        "notify_forecast", "notify_results", "post_calendar", "delete_replaced", "close",
     ]
     deleted = [mid for kind, cid, mid in league.events
                if kind == "delete" and cid == PRO_CH.checkin]

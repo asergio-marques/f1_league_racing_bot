@@ -381,6 +381,56 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
+async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
+    """Attendance is on, with its real hook (the placement service a double: no sanction is
+    owed). Pro's attendance channel 707 holds its sheet 8805, recorded as the live one. Alex
+    approves round 3's reports: the `attendance_sheet` job posts the new sheet and its save
+    records it, the old one still standing; then a `delete_message` job of the review deletes
+    the old sheet."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from tests.support.change_queue import attach_queue
+    from tests.support.review_league import NOW, channel
+
+    sheet_channel, old_sheet = 707, 8805
+    league = await review_league(tmp_path, attendance=True)
+    league.channels[sheet_channel] = channel(sheet_channel, league.events)
+    league.channels[sheet_channel].guild = league.guild
+    league.channel(sheet_channel).seed(old_sheet, "Pro's attendance sheet")
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id, "
+            "attendance_message_id) VALUES (?, ?, ?)",
+            (DIVISION_ID, str(sheet_channel), str(old_sheet)),
+        )
+        await db.commit()
+    placement = MagicMock()
+    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+        setattr(placement, name, AsyncMock(return_value=None))
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve(league, staged=[penalty(LEWIS)])
+    await run_until_done(league, "attendance_sheet")
+
+    [new] = league.sent_to(sheet_channel)
+    assert old_sheet in league.channel(sheet_channel).messages, "the old sheet went too soon"
+    assert await one(
+        league.db_path,
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?",
+        DIVISION_ID,
+    ) == str(new)
+
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert [(kind, mid) for kind, cid, mid in league.events if cid == sheet_channel] == [
+        ("send", new), ("delete", old_sheet),
+    ]
+    deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
+               and str(old_sheet) in (row["payload"] or "")]
+    assert len(deletes) == 1
+
+
 # ---------------------------------------------------------------------------
 # Defect 11: a repost Discord refuses
 # ---------------------------------------------------------------------------
@@ -1087,6 +1137,124 @@ async def test_a_discarded_lineup_refresh_says_it_is_posted_with_the_next_change
     assert "lineup" in reply.lower()
     assert "next change" in reply.lower()
     assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+
+
+async def test_a_lineup_refused_after_a_sanction_is_retried_as_text(tmp_path):
+    """Max is owed an autoreserve; Discord refuses Pro's lineup once. The queue stops at
+    `refresh_lineup`, and Retry asks for the lineup as text, as any job tried again does
+    (Constitution XIV, rule 8)."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.lineup_fails = [StepFailedOnDiscord("Missing Access")]
+    await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "refresh_lineup"
+
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.attendance.lineup_as_text == [False, True]
+
+
+async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
+    """Division 11 sets an autoreserve threshold of one point and has a Reserve team with a free
+    seat. Lewis, in the seat of team 3001, raced round 4, the last final round and so where the
+    division's totals stand, without an RSVP, which puts him on the threshold."""
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
+        seat = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3001, 1, ?)",
+            (LEWIS_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, 1, ?, ?)",
+            (LEWIS_PROFILE, DIVISION_ID, seat.lastrowid),
+        )
+        reserve = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Reserve', 'Reserve', 2, 1)",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+            (reserve.lastrowid,),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status, attended) VALUES (?, ?, ?, 'NO_RSVP', 1)",
+            (LATER_ROUND_ID, DIVISION_ID, LEWIS_PROFILE),
+        )
+        await db.commit()
+
+
+async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
+    """Attendance is on, with its real hook and the real placement service (roles not the
+    subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex
+    approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
+    once, by the review's own job, not by the move as well (core spec: "posted once")."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.core.services.placement_service import PlacementService
+    from tests.support.change_queue import attach_queue
+    from tests.support.review_league import NOW
+
+    league = await review_league(tmp_path, attendance=True)
+    await _lewis_owed_an_autoreserve(league)
+    league.bot.user = MagicMock(id=9000)
+    league.bot.user.__str__.return_value = "LeagueBot"
+    placement = PlacementService(league.db_path, league.bot)
+    placement._grant_roles = AsyncMock()
+    placement._revoke_roles = AsyncMock()
+    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve(league, staged=[penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert await one(
+        league.db_path,
+        "SELECT ti.is_reserve FROM driver_season_assignments dsa "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", LEWIS_PROFILE,
+    ) == 1, "Lewis was not moved to the Reserve team"
+    posted = [call.args[1] for call in placement._refresh_lineup_post.await_args_list]
+    assert posted == [DIVISION_ID]
+
+
+@pytest.mark.parametrize("case", [
+    "applied",
+    "discarded",
+])
+async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_path, case):
+    """Max, over the autosack threshold, also sat in division 12 (Am). Once his sack applies, the
+    review posts the lineup of Pro and of Am, each as a job of its own, since the sack itself no
+    longer posts them. Where his sack is discarded, nothing changed in either division, and
+    neither lineup is posted."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [
+        candidate(MAX_PROFILE, MAX, "AUTOSACK", other_divisions=(OTHER_DIVISION_ID,)),
+    ]
+    if case == "discarded":
+        league.attendance.apply_fails = {MAX_PROFILE: ValueError("Discord refused the sack")}
+    await _approve(league)
+    await run_queue(league.bot)
+    if case == "discarded":
+        assert await stopped_at(league) == "apply_sanction"
+        await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    lineups = [row for row in await step_rows(league.db_path) if row["name"] == "refresh_lineup"]
+    if case == "applied":
+        assert league.attendance._calls("refresh_lineup") == [
+            ("refresh_lineup", DIVISION_ID), ("refresh_lineup", OTHER_DIVISION_ID),
+        ]
+        assert len(lineups) == 2
+    else:
+        assert league.attendance._calls("refresh_lineup") == []
 
 
 # ---------------------------------------------------------------------------

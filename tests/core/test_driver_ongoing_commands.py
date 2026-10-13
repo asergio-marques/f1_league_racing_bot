@@ -56,11 +56,14 @@ def _cog(
             "to_division": "Academy",
             "from_team": "Alpha",
             "to_team": "Reserve",
+            "lineups": [],
         }
     )
     cog.bot.placement_service.release_driver = AsyncMock(
-        return_value={"division_name": "Academy"}
+        return_value={"division_name": "Academy", "lineups": []}
     )
+    # No lineup is owed, so none is asked of the change queue (#439).
+    cog.bot.change_queue.ask = AsyncMock()
     cog.bot.driver_service.get_profile = AsyncMock(return_value=profile)
     cog.bot.output_router.post_log = AsyncMock()
     return cog

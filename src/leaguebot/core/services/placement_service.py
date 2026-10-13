@@ -40,12 +40,30 @@ class PlacementsCommitted:
 
     *placements* is every placement committed, as ``uncommitted_placements`` read them.
     *ungranted* is the Discord id of each driver among them whose roles could not be granted,
-    and *unposted_lineups* the name of each division whose lineup could not be posted.
+    and *lineups* the id of each division holding a placement it committed, whose lineup the
+    caller asks the change queue to post (#439).
     """
 
     placements: list[dict] = field(default_factory=list)
     ungranted: list[str] = field(default_factory=list)
-    unposted_lineups: list[str] = field(default_factory=list)
+    lineups: list[int] = field(default_factory=list)
+
+
+@dataclass
+class LineupPosted:
+    """A lineup posted: the message sent and the one it replaces, for the jobs after the post.
+
+    *previous* is the division's recorded lineup message as it stood when the post was made, and
+    *form* is "image" for a picture and "text" for the embed. Nothing is saved: the post job's
+    `record` saves *message_id* (`lineup_posting.record_lineup_on`) and the job after it deletes
+    *previous*.
+    """
+
+    message_id: int
+    channel_id: int
+    previous: int | None
+    division_name: str
+    form: str
 
 
 @dataclass
@@ -535,19 +553,19 @@ class PlacementService:
     async def commit_mid_season_placements(
         self, season_id: int, guild: discord.Guild | None
     ) -> PlacementsCommitted:
-        """Commit the season's uncommitted placements, granting their roles and posting lineups.
+        """Commit the season's uncommitted placements, granting their roles.
 
-        Each driver committed is granted their division's role and their team's role; the
-        lineup of each division holding such a driver is posted once, however many of them
-        it holds.
+        Each driver committed is granted their division's role and their team's role. The
+        lineup of each division holding such a driver is not posted here: the divisions are
+        returned in ``lineups``, once each however many drivers they hold, for the caller to
+        ask the change queue to post (#439).
 
         **Nothing after the commit raises** (issue #387). The placements are committed by
-        then, and a raise would leave every driver and lineup not yet reached undone for
-        good: confirming again finds nothing left to commit. So each driver and each lineup
-        is guarded on its own, and what failed is returned for the manager to be told: a
-        driver whose roles could not be granted in ``ungranted``, a division whose lineup
-        could not be posted in ``unposted_lineups``. A driver no longer in the server is
-        passed over, there being nobody to give a role to.
+        then, and a raise would leave every driver not yet reached undone for good:
+        confirming again finds nothing left to commit. So each driver is guarded on its own,
+        and a driver whose roles could not be granted is returned in ``ungranted`` for the
+        manager to be told. A driver no longer in the server is passed over, there being
+        nobody to give a role to.
         """
         placements = await self.uncommitted_placements(season_id)
         if not placements:
@@ -561,7 +579,6 @@ class PlacementService:
             await db.commit()
 
         ungranted: list[str] = []
-        unposted: list[str] = []
         if guild is not None:
             for placement in placements:
                 if placement["is_test_driver"]:
@@ -587,18 +604,10 @@ class PlacementService:
                         placement["discord_user_id"],
                     )
                     ungranted.append(str(placement["discord_user_id"]))
-            names = {p["division_id"]: p["division_name"] for p in placements}
-            for division_id in names:
-                try:
-                    await self._refresh_lineup_post(guild, division_id)
-                except Exception:  # noqa: BLE001 — the placements are committed
-                    log.exception(
-                        "commit_mid_season_placements: lineup post failed for division %s",
-                        division_id,
-                    )
-                    unposted.append(names[division_id])
         return PlacementsCommitted(
-            placements=placements, ungranted=ungranted, unposted_lineups=unposted
+            placements=placements,
+            ungranted=ungranted,
+            lineups=list(dict.fromkeys(p["division_id"] for p in placements)),
         )
 
     # ------------------------------------------------------------------
@@ -1347,15 +1356,13 @@ class PlacementService:
                     grant.append(new_cfg.role_id)
                 await self._grant_roles(member, *grant)
 
-        if guild is not None:
-            for division_id in dict.fromkeys((from_division_id, to_division_id)):
-                await self._refresh_lineup_post(guild, division_id)
-
         return {
             "from_division": divisions[from_division_id]["name"],
             "to_division": divisions[to_division_id]["name"],
             "from_team": source["team_full_name"] or source["team_name"],
             "to_team": to_team_full_name,
+            # The lineups the move touched, for the caller to ask the change queue for (#439).
+            "lineups": list(dict.fromkeys((from_division_id, to_division_id))),
         }
 
     async def assign_driver(
@@ -1526,13 +1533,14 @@ class PlacementService:
                 role_ids_to_grant.append(team_cfg.role_id)
             await self._grant_roles(member, *role_ids_to_grant)
 
-        if guild is not None and is_committed:
-            await self._refresh_lineup_post(guild, division_id)
         return {
             "was_unassigned": was_unassigned,
             "team_name": team_full_name,
             "division_name": div_name,
             "committed": is_committed,
+            # The lineup to post, for the caller to ask the change queue for (#439): none while
+            # the placement is uncommitted.
+            "lineups": [division_id] if is_committed else [],
         }
 
     # ------------------------------------------------------------------
@@ -1760,13 +1768,14 @@ class PlacementService:
                 roles_to_revoke.append(team_role_id_to_revoke)
             await self._revoke_roles(member, *roles_to_revoke)
 
-        if guild is not None and was_committed:
-            await self._refresh_lineup_post(guild, division_id)
         return {
             "division_name": div_name,
             "has_remaining_assignments": has_remaining,
             # The name a reply shows is the full one; the shorthand stays a key (#381).
             "team_name": team_full_name,
+            # The lineup to post, for the caller to ask the change queue for (#439): none while
+            # the placement was uncommitted.
+            "lineups": [division_id] if was_committed else [],
         }
 
     # ------------------------------------------------------------------
@@ -1934,8 +1943,11 @@ class PlacementService:
         acting_user_name: str,
         guild: discord.Guild,
         discord_user_id: str,
-    ) -> None:
+    ) -> list[int]:
         """Sack a committed driver: revoke every role, free every seat, return to Not Signed Up.
+
+        Returns the divisions the driver left, whose lineups the caller asks the change queue
+        to post (#439); the sack posts none.
 
         Issue #220. Sacking is for a driver whose placement is confirmed — an uncommitted one
         is unassigned or rejected instead — and is available only while the season is
@@ -2034,9 +2046,7 @@ class PlacementService:
             )
             await db.commit()
 
-        if guild is not None:
-            for _div_id in division_ids:
-                await self._refresh_lineup_post(guild, _div_id)
+        return list(division_ids)
 
     # ------------------------------------------------------------------
     # Division resolution helper (used by cogs)
@@ -2044,56 +2054,40 @@ class PlacementService:
 
     async def refresh_lineup(
         self, guild: discord.Guild, division_id: int, *, as_text: bool = False
-    ) -> None:
+    ) -> LineupPosted | None:
         """Post the division's lineup afresh, **raising** where it could not be posted.
 
-        What a job on the change queue calls (#439): a lineup channel the division was given and
-        the guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, for
-        the queue to stop on and try again, where `_refresh_lineup_post` logs and returns. A
-        division never given a lineup channel posts nothing and raises nothing.
+        What the post job of a change on the change queue calls (#439): a lineup channel the
+        division was given and the guild no longer holds, or a send Discord refuses, raises
+        `StepFailedOnDiscord`, for the queue to stop on and try again. A division never given a
+        lineup channel posts nothing and gives None. The post is all it does: the job's `record`
+        saves the new id and a job after it deletes the message replaced.
 
         *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
         (Constitution XIV, rule 8).
         """
-        await self._refresh_lineup_post(
-            guild, division_id, raise_on_failure=True, as_text=as_text
-        )
+        return await self._refresh_lineup_post(guild, division_id, as_text=as_text)
 
     async def _refresh_lineup_post(
         self,
         guild: discord.Guild,
         division_id: int,
         *,
-        bot: LeagueBot | None = None,
-        raise_on_failure: bool = False,
         as_text: bool = False,
-    ) -> None:
+    ) -> LineupPosted | None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
 
         *as_text* leaves the image path out altogether, whatever is configured.
 
-        **The image path is a guard clause in front of an untouched body.** Where the
-        images module is enabled, the `lineup` aspect is on and a valid template is
-        configured, ``image_lineup_post.try_post`` produces the PNG *before* deleting the
-        message it replaces (FR-025) and this method returns.
+        **The image path is a guard clause in front of the textual body.** Where the images
+        module is enabled, the `lineup` aspect is on and a valid template is configured,
+        ``image_lineup_post.try_post`` produces the PNG and posts it, and this method returns.
 
-        Where it is not — the module off, the aspect off, no template — everything below
-        runs exactly as it did before 038, **delete-then-build order included**
-        (FR-025a, SC-007). That order was specified in specs/028-season-signup-flow/ and
-        is deliberately not reopened by this feature: the lineup image is an alternative
-        output beside the text, not a reform of it.
+        Either way the lineup is posted before the message it replaces is deleted, by a job after
+        it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves
+        nothing, and a refusal raises `StepFailedOnDiscord` for the queue to stop on. A picture
+        Discord refuses stands aside, so the text is posted in the same try.
         """
-        owner = None if as_text else (bot if bot is not None else getattr(self, "_bot", None))
-        if owner is not None:
-            try:
-                from leaguebot.image.services.image_lineup_post import try_post
-
-                outcome = await try_post(owner, guild, division_id)
-                if outcome.applicable:
-                    return
-            except Exception as exc:  # noqa: BLE001 — never block a placement on this
-                log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
-
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 "SELECT d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
@@ -2103,37 +2097,45 @@ class PlacementService:
             div_row = await cur.fetchone()
 
         if div_row is None or div_row["lineup_channel_id"] is None:
-            return
+            return None
 
         lineup_channel_id: int = div_row["lineup_channel_id"]
         lineup_message_id: int | None = div_row["lineup_message_id"]
         div_name: str = div_row["div_name"] or str(division_id)
+
+        owner = None if as_text else getattr(self, "_bot", None)
+        if owner is not None:
+            try:
+                from leaguebot.image.services.image_lineup_post import try_post
+
+                outcome = await try_post(owner, guild, division_id)
+                if outcome.applicable:
+                    if outcome.message_id is None:
+                        return None
+                    return LineupPosted(
+                        outcome.message_id, lineup_channel_id, lineup_message_id, div_name,
+                        "image",
+                    )
+            except Exception as exc:  # noqa: BLE001 — never block a placement on this
+                log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
 
         # Resolve the channel
         channel = as_text_channel(guild.get_channel(lineup_channel_id))
         if channel is None:
             try:
                 channel = as_text_channel(await guild.fetch_channel(lineup_channel_id))
-            except (discord.NotFound, discord.HTTPException):
+            except (discord.NotFound, discord.HTTPException) as exc:
                 log.error(
                     "_refresh_lineup_post: lineup channel %s not found for division %s",
                     lineup_channel_id, division_id,
                 )
-                if raise_on_failure:
-                    raise StepFailedOnDiscord(
-                        f"the lineup channel (id {lineup_channel_id}) is not in the server"
-                    )
-                return
+                raise StepFailedOnDiscord(
+                    f"the lineup channel (id {lineup_channel_id}) is not in the server"
+                ) from exc
         if not isinstance(channel, discord.TextChannel):
-            return
-
-        # Delete old message if present
-        if lineup_message_id is not None:
-            try:
-                old_msg = await channel.fetch_message(lineup_message_id)
-                await old_msg.delete()
-            except (discord.NotFound, discord.Forbidden):
-                pass  # Already gone or no permission — safe to continue
+            raise StepFailedOnDiscord(
+                f"the lineup channel (id {lineup_channel_id}) is not a text channel"
+            )
 
         # Fetch teams with assigned drivers for this division
         async with get_connection(self._db_path) as db:
@@ -2185,29 +2187,14 @@ class PlacementService:
             color=discord.Color.blurple(),
         )
 
-        # Post and persist new message ID
+        # Post: the id is saved by the job's record, the old message deleted by the job after it
         try:
             new_msg = await channel.send(embed=embed)
         except discord.HTTPException as exc:
             log.error("_refresh_lineup_post: failed to post embed: %s", exc)
-            if raise_on_failure:
-                raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
-            return
+            raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
 
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE divisions SET lineup_message_id = ? WHERE id = ?",
-                (new_msg.id, division_id),
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
-                (0, "system", division_id,
-                 json.dumps({"channel_id": lineup_channel_id, "division": div_name}), now),
-            )
-            await db.commit()
+        return LineupPosted(new_msg.id, lineup_channel_id, lineup_message_id, div_name, "text")
 
     async def resolve_division(
         self, season_id: int, division_input: str

@@ -1975,3 +1975,81 @@ async def test_a_discard_of_the_approval_stopped_at_its_check_after_a_restart_is
 
     assert (await _approval(league))["state"] == "DISCARDED"
     assert _told(league, CHANNEL_NOT_APPROVED) == 1
+
+
+async def test_an_opening_sheet_replaces_a_sheet_already_standing_by_a_job(tmp_path, monkeypatch):
+    """Attendance is on, and Pro's attendance channel already holds a sheet, 6200, recorded as
+    its live one. Once the season is approved, Pro's opening sheet is posted and recorded as the
+    live sheet with the old one still standing; then a job of its own deletes the old sheet."""
+    old_sheet = 6200
+    league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+        str(old_sheet), PRO,
+    )
+    league.channel(PRO_CH.attendance).seed(old_sheet, "Pro's attendance sheet")
+    await _pressed(league)
+
+    def _sheet_events() -> list[tuple[str, int]]:
+        return [(kind, mid) for kind, cid, mid in league.events if cid == PRO_CH.attendance]
+
+    for _ in range(100):
+        if _sheet_events():
+            break
+        await run_queue(league.bot, steps=1)
+    (sent, new), *_ = _sheet_events()
+    assert sent == "send"
+    assert old_sheet in league.channel(PRO_CH.attendance).messages, "the old sheet went too soon"
+    [row] = await league.rows(
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert str(row["attendance_message_id"]) == str(new)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert _sheet_events() == [("send", new), ("delete", old_sheet)]
+    assert [job["name"] for job in await _jobs(league)].count("delete_replaced") == 1
+
+
+# ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
+
+
+@pytest.mark.parametrize("refused", ["the picture", "everything"])
+async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same_try(
+    tmp_path, monkeypatch, refused,
+):
+    """Images and results on, the standings aspect on, and both championships drawn. Pro's
+    standings channel refuses (the picture) every send carrying a picture: the opening
+    standings go out as text in the same try, and the job is done without stopping the queue,
+    as a refused round's standings, lineup or results table picture is ("No, same try
+    everywhere"); nothing is recorded of them, as before. Where it refuses (everything) the
+    text too, the queue stops at the job, as a refused post does."""
+    from tests.support.season_league import draw_standings_pictures, refuses_pictures
+
+    league = await _league_for(tmp_path, monkeypatch, images=True, results=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    render = draw_standings_pictures(monkeypatch, tmp_path)
+    standings = league.channel(PRO_CH.standings)
+    if refused == "the picture":
+        standings.fail_when = refuses_pictures
+    else:
+        _refused(league, PRO_CH.standings)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert render.await_count >= 1, "the picture was never drawn"
+    assert any(call.kwargs.get("file") for call in standings.send.await_args_list), \
+        "no picture was sent to be refused"
+    if refused == "everything":
+        assert await _stopped_at(league) == "opening_standings"
+        return
+    assert await _stopped_at(league) is None
+    texts = league.texts(PRO_CH.standings)
+    assert any("**Driver Standings**" in text for text in texts), texts
+    assert any("**Team Standings**" in text for text in texts), texts
+    assert all(not files for files in standings.files), "a picture was posted"
+    jobs = [job for job in await _jobs(league) if job["name"] == "opening_standings"]
+    assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
+

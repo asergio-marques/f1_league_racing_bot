@@ -103,6 +103,7 @@ def _make_cog(
     )
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.change_queue.ask = AsyncMock(return_value=1)
 
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
@@ -162,12 +163,15 @@ async def _standings_sync(cog, interaction, *, division="Pro", status="ok"):
 
 
 async def _rounds_sync(cog, interaction, *, division="Pro", status="ok"):
+    """The rounds sync reads the division's channel and rounds through `division_repost_status`,
+    given *status* here, and on "ok" asks the change queue for the sync (#439), whose `ask` is
+    recorded rather than run. Gives the `ask`."""
     with patch(
-        "leaguebot.results.services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.division_repost_status",
         new=AsyncMock(return_value=status),
-    ) as repost:
+    ):
         await undecorate(ResultsCog.rounds_sync)(cog, interaction, division)
-    return repost
+    return cog.bot.change_queue.ask
 
 
 async def _toggle(cog, interaction, *, division="Pro"):
@@ -184,7 +188,25 @@ async def _reserves(db_path) -> int | None:
         return row["reserves_in_standings"] if row else None
 
 
-SYNCS = [("standings", _standings_sync), ("rounds", _rounds_sync)]
+#: The rounds sync reads its division's channel and rounds through
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches.
+SYNCS = [
+    ("standings", _standings_sync),
+    ("rounds", _rounds_sync),
+]
+
+#: The rounds sync's cases that hold once it is asked of the change queue (#439).
+SYNCS_ON_THE_QUEUE = [
+    ("standings", _standings_sync),
+    ("rounds", _rounds_sync),
+]
+
+
+def _division_synced(repost) -> int:
+    """The division a sync reposted: the standings service's argument, or the division of the
+    rounds sync asked of the queue."""
+    asked = repost.await_args.args[1]
+    return asked["division_id"] if isinstance(asked, dict) else asked
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +214,7 @@ SYNCS = [("standings", _standings_sync), ("rounds", _rounds_sync)]
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("label,run", SYNCS)
+@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_a_sync_reposts_the_division(tmp_path, label, run):
     db_path = await _make_db(tmp_path, name=f"sync_{label}")
     cog = _make_cog(db_path)
@@ -200,22 +222,29 @@ async def test_a_sync_reposts_the_division(tmp_path, label, run):
     repost = await run(cog, _interaction())
 
     repost.assert_awaited_once()
-    assert repost.await_args.args[1] == DIVISION_ID
+    assert _division_synced(repost) == DIVISION_ID
 
 
-@pytest.mark.parametrize("label,run", SYNCS)
+@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_a_successful_sync_says_so(tmp_path, label, run):
+    """The rounds sync is asked of the change queue with the interaction, whose acknowledgement
+    the queue updates with "synced" once it has run (`test_rounds_sync_change.py`)."""
     db_path = await _make_db(tmp_path, name=f"sync_ok_{label}")
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await run(cog, interaction, status="ok")
+    repost = await run(cog, interaction, status="ok")
 
+    if label == "rounds":
+        repost.assert_awaited_once()
+        assert repost.await_args.args[0] == "results.rounds.sync"
+        assert repost.await_args.kwargs["interaction"] is interaction
+        return
     assert "synced" in _replied(interaction)
     assert "Pro" in _replied(interaction)
 
 
-@pytest.mark.parametrize("label,run", SYNCS)
+@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_a_division_with_no_completed_rounds_is_told_so(tmp_path, label, run):
     """Distinct from an unconfigured channel: there is nothing to post rather than nowhere
     to post it, and the manager's next step differs."""
@@ -245,7 +274,7 @@ async def test_a_division_with_no_channel_configured_is_told_so(tmp_path, label,
     assert "synced" not in replied
 
 
-@pytest.mark.parametrize("label,run", SYNCS)
+@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_a_sync_with_nothing_to_post_records_that_nothing_changed(tmp_path, label, run):
     """A sync that found no completed round to post changed nothing a league can see: the
     log records one line saying nothing changed, naming the division, and never a success."""
@@ -288,7 +317,7 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, label, run):
     repost.assert_not_awaited()
 
 
-@pytest.mark.parametrize("label,run", SYNCS)
+@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_the_division_is_matched_regardless_of_case(tmp_path, label, run):
     db_path = await _make_db(tmp_path, name=f"sync_case_{label}")
     cog = _make_cog(db_path)
@@ -363,7 +392,7 @@ async def test_a_sync_waits_while_a_round_of_the_division_is_amended(tmp_path, l
     )
 
 
-@pytest.mark.parametrize("label,run", SYNCS)
+@pytest.mark.parametrize("label,run", SYNCS_ON_THE_QUEUE)
 async def test_an_ended_amendment_does_not_hold_a_sync(tmp_path, label, run):
     """One that ended but could not delete its channel keeps its row; it is not open. The
     `RESULT_AMENDED | Incomplete` entry sends a manager to exactly these commands."""
@@ -431,14 +460,11 @@ async def test_the_two_syncs_call_different_services(tmp_path):
     with patch(
         "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(return_value="ok"),
-    ) as standings, patch(
-        "leaguebot.results.services.results_post_service.repost_results_for_division",
-        new=AsyncMock(return_value="ok"),
-    ) as rounds:
+    ) as standings:
         await undecorate(ResultsCog.standings_sync)(cog, _interaction(), "Pro")
 
     standings.assert_awaited_once()
-    rounds.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

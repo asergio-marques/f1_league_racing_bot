@@ -71,6 +71,7 @@ from tests.support.season_league import (
     complete_season,
     driver_state,
     pending_completion_league,
+    posted_forecast,
     reply,
     round_id,
     season_end_changes,
@@ -284,20 +285,28 @@ def _failing(name: str) -> ExitStack:
 
 
 def _flush_failing(monkeypatch: Any, failing: dict[str, bool]) -> None:
-    """Weather's flush of the forecasts posted under test mode raises while *failing* says so;
-    patched before the league is built, so the builder's hook reaches it however it binds it."""
-    from leaguebot.weather.services import forecast_cleanup_service
+    """Weather's reading of the forecasts posted under test mode (`forecast_deletes`, which
+    plans a delete job for each), which the season end's `flush_forecasts` job makes, raises
+    while *failing* says so; patched before the league is built, in every module that holds
+    it, so the builder's hook reaches it however it binds it."""
+    from leaguebot.weather.services import forecast_changes, forecast_cleanup_service
 
-    flushing = forecast_cleanup_service.flush_pending_deletions
+    reading = forecast_cleanup_service.forecast_deletes
+    raising = _raising_while(failing, reading)
+    for module in [*_modules(), forecast_changes]:
+        if getattr(module, "forecast_deletes", None) is reading:
+            monkeypatch.setattr(module, "forecast_deletes", raising)
 
-    async def _flush(bot: Any) -> None:
+
+def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
+    """*reading*, raising as a fault of the database would while *failing* says so."""
+
+    async def _read(*args: Any, **kwargs: Any) -> Any:
         if failing["now"]:
             raise RuntimeError("the forecasts could not be read")
-        await flushing(bot)
+        return await reading(*args, **kwargs)
 
-    for module in _modules():
-        if hasattr(module, "flush_pending_deletions"):
-            monkeypatch.setattr(module, "flush_pending_deletions", _flush)
+    return _read
 
 
 def _backup_undeletable(monkeypatch: Any, league: Any, refusing: dict[str, bool]) -> None:
@@ -473,10 +482,13 @@ async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.parametrize("where", ["the flush", "the test drivers' deletion"])
+@pytest.mark.parametrize("where", [
+    "the flush", "the test drivers' deletion",
+])
 async def test_test_mode_that_cannot_be_switched_off_stops_the_queue(tmp_path, monkeypatch, where):
     failing = {"now": where == "the flush"}
-    _flush_failing(monkeypatch, failing)
+    if where == "the flush":
+        _flush_failing(monkeypatch, failing)
     league = await pending_completion_league(tmp_path, test_mode=True)
     await _asked(league)
 
@@ -1035,11 +1047,7 @@ async def test_a_history_entry_is_written_for_every_division_each_driver_took_pa
     assert (await _change(league))["state"] == "DONE"
 
 
-async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archived(
-    tmp_path, monkeypatch,
-):
-    failing = {"now": False}
-    _flush_failing(monkeypatch, failing)
+async def test_test_mode_is_switched_off_in_the_save_before_the_season_is_archived(tmp_path):
     league = await pending_completion_league(tmp_path, test_mode=True)
     await _asked(league)
 
@@ -1783,3 +1791,155 @@ async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
     rows = await change_rows(league.db_path)
     assert [row["kind"] for row in rows][-2:] == [kind, SEASON_COMPLETE_KIND]
     assert rows[-1]["state"] == "QUEUED"
+
+
+async def test_the_final_sheet_replaces_nothing_and_saves_no_id(tmp_path):
+    """Attendance is on, and Pro's attendance channel holds its last round's sheet, 6200,
+    recorded as its live one. Completing the season posts Pro's final sheet beside it: once the
+    final sheet is posted, 6200 is still the live sheet recorded; once the season is complete,
+    6200 still stands, nothing was deleted from the channel, and no job deleted a sheet."""
+    old_sheet = 6200
+    league = await pending_completion_league(tmp_path, attendance=True)
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
+        str(old_sheet), PRO,
+    )
+    league.channel(PRO_CH.attendance).seed(old_sheet, "Pro's last round's sheet")
+    await _asked(league)
+
+    def _sheet_events() -> list[tuple[str, int]]:
+        return [(kind, mid) for kind, cid, mid in league.events if cid == PRO_CH.attendance]
+
+    for _ in range(100):
+        if _sheet_events():
+            break
+        await run_queue(league.bot, steps=1)
+    [(sent, _final)] = _sheet_events()
+    assert sent == "send"
+    [row] = await league.rows(
+        "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert str(row["attendance_message_id"]) == str(old_sheet)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert await _status(league) == "COMPLETED"
+    assert old_sheet in league.channel(PRO_CH.attendance).messages
+    assert [kind for kind, _ in _sheet_events()] == ["send"]
+    names = [job["name"] for job in await _jobs(league)]
+    assert "delete_replaced" not in names
+
+
+# ── The forecasts posted under test mode, each deleted by a job of its own ──────────
+
+#: The forecasts standing as the season is completed: Pro's Phase 1 and 2 of round 4 and Am's
+#: Phase 1 of round 4, each with the channel it stands in.
+TEST_FORECASTS = {9401: (PRO, 1, PRO_CH.forecast), 9402: (PRO, 2, PRO_CH.forecast),
+                  9501: (AM, 1, AM_CH.forecast)}
+
+
+async def _test_forecasts_posted(tmp_path: Any) -> Any:
+    """A season pending completion under test mode, with `TEST_FORECASTS` standing."""
+    league = await pending_completion_league(tmp_path, test_mode=True)
+    for message_id, (division, phase, _channel) in TEST_FORECASTS.items():
+        await posted_forecast(league, round_id(division, 4), phase, message_id)
+    return league
+
+
+async def test_each_forecast_posted_under_test_mode_is_deleted_by_a_job_of_its_own(tmp_path):
+    """Season 3 is pending completion under test mode, and three forecasts posted under it
+    stand: Pro's Phase 1 and 2 of round 4 and Am's Phase 1 of round 4. Admin 77 completes the
+    season and the queue runs. After `flush_forecasts`, each forecast is deleted from its forecast
+    channel by a `delete_forecast` job of its own; no forecast record is left, and the season is
+    completed."""
+    league = await _test_forecasts_posted(tmp_path)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert await _status(league) == "COMPLETED"
+    names = [name for name, _key in await _names(league)]
+    deletes = [i for i, name in enumerate(names) if name == "delete_forecast"]
+    assert len(deletes) == 3
+    assert names.index("flush_forecasts") < min(deletes)
+    deleted = {(cid, mid) for kind, cid, mid in league.events if kind == "delete"}
+    assert {(c, m) for m, (_d, _p, c) in TEST_FORECASTS.items()} <= deleted
+    for message_id, (_division, _phase, channel) in TEST_FORECASTS.items():
+        assert message_id not in league.channel(channel).messages
+    assert await league.rows("SELECT * FROM forecast_messages") == []
+
+
+async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_discarded_is_named_with_its_link(
+    tmp_path,
+):
+    """As above, but Discord refuses to delete Pro's Phase 1 forecast of round 4 (9401): the
+    queue stops at its `delete_forecast` job, the forecast and its record kept. A league admin
+    discards it: the season is completed, the other two forecasts are deleted, and the reply and
+    the closing line (Incomplete) name 'The Phase 1 forecast of round 4 could not be deleted:
+    delete it by hand (…)' with the message's link."""
+    league = await _test_forecasts_posted(tmp_path)
+    league.undeletable.add(9401)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == ("delete_forecast", PRO)
+    assert 9401 in league.channel(PRO_CH.forecast).messages
+    kept = await league.rows("SELECT message_id FROM forecast_messages")
+    assert 9401 in [int(row["message_id"]) for row in kept]
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    assert 9402 not in league.channel(PRO_CH.forecast).messages
+    assert 9501 not in league.channel(AM_CH.forecast).messages
+    named = "The Phase 1 forecast of round 4 could not be deleted: delete it by hand ("
+    [entry] = [line for line in _not_done(reply(interaction)) if named in line]
+    assert "9401" in entry
+    [line] = _closing_lines(league)
+    assert INCOMPLETE in line and named in line and "9401" in line
+
+
+# ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
+
+
+@pytest.mark.parametrize("refused", ["the picture", "everything"])
+async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_try(
+    tmp_path, monkeypatch, refused,
+):
+    """Images on, both championships drawn. Pro's standings channel refuses (the picture) every
+    send carrying a picture: the final standings go out as text in the same try, the job is
+    done without stopping the queue and the season is completed, as a refused round's
+    standings picture is ("No, same try everywhere"); nothing is recorded of them, as before.
+    Where it refuses (everything) the text too, the queue stops at the job and the season is
+    not completed."""
+    from tests.support.season_league import draw_standings_pictures, refuses_pictures
+
+    league = await pending_completion_league(tmp_path, images=True)
+    render = draw_standings_pictures(monkeypatch, tmp_path)
+    standings = league.channel(PRO_CH.standings)
+    if refused == "the picture":
+        standings.fail_when = refuses_pictures
+    else:
+        standings.send_fails = _forbidden()
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert render.await_count >= 1, "the picture was never drawn"
+    assert any(call.kwargs.get("file") for call in standings.send.await_args_list), \
+        "no picture was sent to be refused"
+    if refused == "everything":
+        assert await _stopped_at(league) == ("final_standings", PRO)
+        assert await _status(league) != "COMPLETED"
+        return
+    assert await _stopped_at(league) is None
+    texts = league.texts(PRO_CH.standings)
+    assert any("**Driver Standings**" in text for text in texts), texts
+    assert any("**Team Standings**" in text for text in texts), texts
+    assert all(not files for files in standings.files), "a picture was posted"
+    assert await _status(league) == "COMPLETED"
+

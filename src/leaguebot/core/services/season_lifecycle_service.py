@@ -319,7 +319,9 @@ class SeasonEndHooks:
     - *cancel_signup_timeout*: removes one driver's inactivity timeout.
     - *discard_portraits*: removes the portraits obtained for the accounts of drivers deleted.
     - *amendment_open*: an amendment open in any division of a season, or None.
-    - *flush_forecasts*: deletes the forecasts posted under test mode.
+    - *plan_forecast_flush*: the jobs that delete each forecast posted under test mode, one for
+      each, which the season end's `flush_forecasts` plans; *forecast_steps* are weather's jobs
+      (among them the deletion of a forecast, which those jobs name).
     - *discard_backup*: deletes the saved test-mode state, raising where it cannot.
     - *forget_setup*: lets go of the setup the season cog holds in memory.
     - *owed_closing_notices*: the accounts the window's close returned and owes their closing
@@ -351,7 +353,8 @@ class SeasonEndHooks:
     cancel_signup_timeout: Callable[[str], None]
     discard_portraits: Callable[[Sequence[str]], Awaitable[object]]
     amendment_open: Callable[[str, int], Awaitable[object]]
-    flush_forecasts: Callable[[], Awaitable[None]]
+    plan_forecast_flush: Callable[[], Awaitable[tuple[PlannedStep, ...]]]
+    forecast_steps: Mapping[str, Step]
     discard_backup: Callable[[], object]
     forget_setup: Callable[[], None]
     owed_closing_notices: Callable[[], Awaitable[list[str]]]

@@ -31,9 +31,13 @@ a round leaves *not run* only by a scheduled job, and one that fell due while th
 has been thrown away. The tests that mean "every phase is overdue" therefore seed ``RACE_SOON``,
 not a past date, which the recovery now skips outright.
 
-**Mystery rounds are excluded at the query.** They have no phases to recover — their one notice
-is posted by a different path — so including them would fire a forecast for a round whose whole
-point is that there isn't one.
+**Every overdue phase is asked of the change queue, a mystery round's alike** (#439). The
+recovery asks weather's `ask_forecast` for each phase by number and names no format: the mystery
+rule is weather's, which asks a mystery round's phase 1 as its notice and nothing for its phases 2
+and 3. `test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts` runs the real
+`ask_forecast` on a league with the queue, so a notice missed while the bot was down is posted
+once it starts, while the race is still ahead. The other tests record the asks, patched in
+`forecast_changes`, which the recovery reaches through that module as it runs.
 """
 from __future__ import annotations
 
@@ -46,6 +50,8 @@ import pytest
 
 from leaguebot.__main__ import _recover_missed_phases
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.change_queue import change_rows
+from tests.support.season_league import PRO, ongoing_league, round_id
 
 SERVER_ID = 12008
 SEASON_ID = 1
@@ -140,23 +146,21 @@ def _config(*, phase_1_days: int = 5, phase_2_days: int = 2, phase_3_hours: int 
 
 
 async def _recover(bot, *, config=None, reads: list | None = None):
-    """Run the recovery, recording which phases fired and which configs were read."""
+    """Run the recovery, recording which phases it asked the queue for (as ``(phase, round)``)
+    and which configs were read."""
     fired: list[tuple[int, int]] = []
 
-    async def _phase(number):
-        async def _run(round_id, _bot):
-            fired.append((number, round_id))
-
-        return _run
+    async def _ask(_queue, _db_path, round_id, phase):
+        fired.append((phase, round_id))
 
     async def _get_config(db_path):
         if reads is not None:
             reads.append(db_path)
         return config or _config()
 
-    with patch("leaguebot.weather.services.phase1_service.run_phase1", new=await _phase(1)), patch(
-        "leaguebot.weather.services.phase2_service.run_phase2", new=await _phase(2)
-    ), patch("leaguebot.weather.services.phase3_service.run_phase3", new=await _phase(3)), patch(
+    with patch(
+        "leaguebot.weather.services.forecast_changes.ask_forecast", new=AsyncMock(side_effect=_ask)
+    ), patch(
         "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(side_effect=_get_config),
     ):
@@ -288,13 +292,15 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tm
     assert reads == []
 
 
-async def test_a_mystery_round_is_excluded_at_the_query(tmp_path):
-    """It has no phases to recover — its one notice is posted by a different path — so
-    firing one would publish a forecast for a round whose whole point is that there is
-    not one."""
+async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
+    """A mystery round past every horizon has each of its overdue phases asked by number: the
+    recovery names no format, and weather turns phase 1 into the round's notice and asks nothing
+    for phases 2 and 3."""
     db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "MYSTERY"),))
 
-    assert await _recover(_bot(db_path)) == []
+    fired = await _recover(_bot(db_path))
+
+    assert sorted(fired) == [(1, 1), (2, 1), (3, 1)]
 
 
 async def test_a_season_not_running_recovers_nothing(tmp_path):
@@ -373,3 +379,62 @@ async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     fired = await _recover(_bot(db_path))
 
     assert sorted(p for p, _ in fired) == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# A mystery round's notice, recovered through weather's ask (#439)
+# ---------------------------------------------------------------------------
+
+
+async def _mystery_league(tmp_path, *, hours_until_race: float, notice_posted: bool = False):
+    """`ongoing_league`'s, weather on, Pro's round 3 a mystery round *hours_until_race* hours
+    from now, its notice posted already where *notice_posted*."""
+    league = await ongoing_league(tmp_path, weather=True)
+    race = datetime.now(timezone.utc) + timedelta(hours=hours_until_race)
+    await league.write(
+        "UPDATE rounds SET format = 'MYSTERY', scheduled_at = ?, phase1_done = ? WHERE id = ?",
+        race.isoformat(), int(notice_posted), round_id(PRO, 3),
+    )
+    return league
+
+
+async def _forecasts_asked(league) -> list[tuple[int, int]]:
+    """Each weather forecast change on the queue, as ``(round, phase)``."""
+    import json
+
+    return [(payload["round_id"], payload["phase"])
+            for payload in (json.loads(row["payload"]) for row in await change_rows(league.db_path)
+                            if row["kind"] == "weather.forecast")]
+
+
+@pytest.mark.parametrize(
+    "hours_until_race, notice_posted, expected",
+    [
+        pytest.param(0.5, False, [(round_id(PRO, 3), 0)], id="its notice owed"),
+        pytest.param(0.5, True, [], id="its notice already posted"),
+        pytest.param(-1, False, [], id="its race already run"),
+    ],
+)
+async def test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts(
+    tmp_path, hours_until_race, notice_posted, expected,
+):
+    """Pro's round 3 is a mystery round whose Phase 1 horizon passed while the bot was stopped.
+    The bot starts: with the notice not yet posted and the race still ahead, one forecast change
+    is on the queue, of the notice (phase 0), and none of phases 2 or 3; with the notice posted
+    already, or the race run, none (folded defect 5; weather spec :158 as amended)."""
+    league = await _mystery_league(tmp_path, hours_until_race=hours_until_race,
+                                   notice_posted=notice_posted)
+
+    await _recover_missed_phases(league.bot)
+
+    assert await _forecasts_asked(league) == expected
+
+
+async def test_a_mystery_round_not_yet_at_its_first_horizon_is_not_asked(tmp_path):
+    """Pro's round 3 is a mystery round thirty days out, before its Phase 1 horizon: the bot
+    starts and asks the queue for nothing; its notice is left to its own timer."""
+    league = await _mystery_league(tmp_path, hours_until_race=30 * 24)
+
+    await _recover_missed_phases(league.bot)
+
+    assert await _forecasts_asked(league) == []

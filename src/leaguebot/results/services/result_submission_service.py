@@ -1104,6 +1104,31 @@ async def _clear_round_verdict_records_on(
 AMENDMENT_STAGE_TIMEOUT_SECONDS: int = 1800
 
 
+async def sync_held_by_amendment(db_path: str, division_id: int) -> str | None:
+    """The refusal a sync of *division_id* meets while an amendment of one of its rounds is open
+    (#345, decided 2026-09-21), or None where none is.
+
+    An amendment's first stage writes its corrections and recalculates the division, publishing
+    nothing until its last stage is approved; a sync reposts the division from the same database,
+    so it would publish them unapproved. It waits, as a submission of another of the division's
+    rounds does. Read by the command at the press and by the sync's change when it runs.
+    """
+    row = await open_amendment_in_division(db_path, division_id)
+    if row is None:
+        return None
+    async with get_connection(db_path) as db:
+        division = await (await db.execute(
+            "SELECT name FROM divisions WHERE id = ?", (division_id,)
+        )).fetchone()
+    name = division["name"] if division is not None else "the division"
+    return (
+        f"\u23f8\ufe0f Round {row['round_number']} of **{name}** is being amended in "
+        f"<#{row['channel_id']}>, and its corrections are not approved yet, so the "
+        f"division cannot be synced until that ends — {amendment_wait_text()}. "
+        "Run this again then."
+    )
+
+
 def amendment_wait_text() -> str:
     """How an open amendment ends, as the refusals it causes tell a league.
 

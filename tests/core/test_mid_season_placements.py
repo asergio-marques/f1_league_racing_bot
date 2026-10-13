@@ -51,7 +51,7 @@ async def test_the_uncommitted_placements_are_listed(db_path):
     assert placements[0]["team_name"] == "Alpha"
 
 
-async def test_confirming_commits_grants_roles_and_posts_each_lineup_once(db_path):
+async def test_confirming_commits_grants_roles_and_names_each_lineup_once(db_path):
     service = _service(db_path)
 
     committed = await service.commit_mid_season_placements(1, _guild())
@@ -60,16 +60,18 @@ async def test_confirming_commits_grants_roles_and_posts_each_lineup_once(db_pat
     assert await service.uncommitted_placements(1) == []
     role_ids = service._grant_roles.await_args.args[1:]
     assert role_ids == (1, 777)
-    service._refresh_lineup_post.assert_awaited_once()
-    assert service._refresh_lineup_post.await_args.args[1] == DIVISION_ID
+    service._refresh_lineup_post.assert_not_awaited()
+    assert committed.lineups == [DIVISION_ID]
 
 
 async def test_confirming_with_nothing_uncommitted_does_nothing(db_path):
     service = _service(db_path)
     await service.commit_mid_season_placements(1, _guild())
-    service._refresh_lineup_post.reset_mock()
 
-    assert (await service.commit_mid_season_placements(1, _guild())).placements == []
+    again = await service.commit_mid_season_placements(1, _guild())
+
+    assert again.placements == []
+    assert again.lineups == []
     service._refresh_lineup_post.assert_not_awaited()
 
 
@@ -88,18 +90,8 @@ async def test_a_driver_whose_team_role_cannot_be_read_is_left_ungranted_and_nam
 
     assert committed.ungranted == ["1002"]
     assert await service.uncommitted_placements(1) == []
-    service._refresh_lineup_post.assert_awaited_once()
-
-
-async def test_a_lineup_that_raises_does_not_escape_the_commit(db_path):
-    service = _service(db_path)
-    service._refresh_lineup_post = AsyncMock(side_effect=RuntimeError("Discord is down"))
-
-    committed = await service.commit_mid_season_placements(1, _guild())
-
-    assert [p["discord_user_id"] for p in committed.placements] == ["1002"]
-    assert committed.ungranted == []
-    assert committed.unposted_lineups == [committed.placements[0]["division_name"]]
+    service._refresh_lineup_post.assert_not_awaited()
+    assert committed.lineups == [DIVISION_ID]
 
 
 # ── The command ────────────────────────────────────────────────────────────────────
@@ -117,6 +109,7 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
         return_value=PlacementsCommitted(placements=[{}])
     )
     cog.bot.output_router.post_log = AsyncMock()
+    cog.bot.change_queue.ask = AsyncMock()
     # No module on: the season's lineup and calendar channels are the only ones it posts to.
     cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
@@ -712,20 +705,93 @@ async def test_ungranted_drivers_are_named_in_the_reply_and_the_log(db_path):
     assert "not done: <@1002>, <@1003>" in _logged(cog)
 
 
-async def test_a_lineup_the_confirmation_could_not_post_is_named(db_path):
-    """No command posts a lineup again, so the line says when it will be."""
+async def test_confirming_asks_the_queue_for_each_division_s_lineup(db_path):
+    """The placements are committed by the confirmation; each lineup they touch is asked of the
+    change queue as the bot's, and the reply says nothing of a lineup."""
+    from leaguebot.core.models.change import ChangeOrigin
+
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     cog.bot.placement_service.commit_mid_season_placements = AsyncMock(
-        return_value=PlacementsCommitted(placements=[{}], unposted_lineups=["Pro"])
+        return_value=PlacementsCommitted(placements=[{}], lineups=[DIVISION_ID])
     )
     interaction = _interaction()
 
     await cog._do_confirm_mid_season_placements(interaction)
 
-    assert "**Pro** — its lineup could not be posted" in _replied(interaction)
-    assert "the next change to its drivers" in _replied(interaction)
-    assert "not done: **Pro** — its lineup could not be posted" in _logged(cog)
+    asked = [(call.args[0], call.args[1]["division_id"], call.kwargs.get("origin"))
+             for call in cog.bot.change_queue.ask.await_args_list]
+    assert asked == [("lineup.post", DIVISION_ID, ChangeOrigin.BOT)]
+    assert "could not be posted" not in _replied(interaction)
+    assert "Not everything could be done" not in _replied(interaction)
+    assert "not done" not in _logged(cog)
+
+
+async def test_lineups_that_cannot_be_put_on_the_queue_are_named_and_the_confirmation_stands(
+    db_path,
+):
+    """The placements are committed by the confirmation, and asking the change queue for Pro's
+    lineup then fails (the database locked). Nothing after the commit refuses it: the season
+    moves to Ongoing, and the reply and the log line say, under what was not done, "The lineups
+    of the confirmed placements could not be put on the change queue: each is posted with the
+    next change to its division's drivers."
+    """
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    cog.bot.placement_service.commit_mid_season_placements = AsyncMock(
+        return_value=PlacementsCommitted(placements=[{}], lineups=[DIVISION_ID])
+    )
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("database is locked"))
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    said = ("The lineups of the confirmed placements could not be put on the change queue: each "
+            "is posted with the next change to its division's drivers.")
+    assert said in _replied(interaction)
+    assert said in _logged(cog)
+    cog.bot.season_service.set_stage.assert_awaited_once_with(1, SeasonStage.ONGOING)
+
+
+async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and_the_placements_stand(
+    tmp_path,
+):
+    """On `ongoing_league` moved back to Ongoing, placements, Charles's placement in Am not yet
+    committed: Am's lineup channel refuses, so the queue stops at the lineup's post, with the
+    placement committed and the season ongoing again; Retry posts it."""
+    import discord
+
+    from tests.support.change_queue import http_error, member_interaction, retry_job, run_queue, \
+        stopped_job, tier_member
+    from tests.support.season_league import AM, CHARLES, DIVISIONS, SEASON_ID, ongoing_league, \
+        profile_id
+
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
+    await league.write("UPDATE driver_season_assignments SET committed = 0 "
+                       "WHERE driver_profile_id = ?", profile_id(CHARLES))
+    league.cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    league.cog._mid_season_configuration_faults = AsyncMock(return_value=[])
+    lineup = league.channel(DIVISIONS[AM][3].lineup)
+    own = lineup.send
+    lineup.send = AsyncMock(side_effect=http_error(discord.Forbidden, status=403))
+    before = len(league.texts(DIVISIONS[AM][3].lineup))
+    interaction = member_interaction(league.bot, user=tier_member("manager"))
+
+    await league.cog._do_confirm_mid_season_placements(interaction)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "post_lineup"
+    [row] = await league.rows("SELECT committed FROM driver_season_assignments "
+                              "WHERE driver_profile_id = ?", profile_id(CHARLES))
+    assert row["committed"] == 1
+    assert (await league.season())["stage"] == "ONGOING"
+
+    lineup.send = own
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(league.texts(DIVISIONS[AM][3].lineup)) == before + 1
 
 
 async def test_a_clean_confirmation_reports_nothing_undone(db_path):
@@ -934,7 +1000,8 @@ async def test_a_test_driver_is_committed_without_roles(db_path):
 
     assert len(committed.placements) == 1
     service._grant_roles.assert_not_awaited()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert committed.lineups == [DIVISION_ID]
 
 
 async def test_a_member_not_cached_is_fetched_for_their_roles(db_path):
@@ -949,7 +1016,7 @@ async def test_a_member_not_cached_is_fetched_for_their_roles(db_path):
     assert service._grant_roles.await_args.args[0] is member
 
 
-async def test_a_member_who_left_is_committed_and_the_lineup_still_posted(db_path):
+async def test_a_member_who_left_is_committed_and_the_lineup_still_named(db_path):
     import discord
 
     service = _service(db_path)
@@ -964,7 +1031,8 @@ async def test_a_member_who_left_is_committed_and_the_lineup_still_posted(db_pat
     assert len(committed.placements) == 1
     assert await service.uncommitted_placements(1) == []
     service._grant_roles.assert_not_awaited()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert committed.lineups == [DIVISION_ID]
 
 
 # ── What the log channel holds for the mid-season review (#482) ────────────────────

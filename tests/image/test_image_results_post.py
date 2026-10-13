@@ -121,12 +121,12 @@ def _drawing():
 
 
 async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -144,12 +144,12 @@ async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
 
 
 async def test_the_module_being_disabled_leaves_the_text(tmp_path):
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -166,12 +166,12 @@ async def test_the_module_being_disabled_leaves_the_text(tmp_path):
 
 
 async def test_the_aspect_being_off_leaves_the_text(tmp_path):
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -189,12 +189,12 @@ async def test_the_aspect_being_off_leaves_the_text(tmp_path):
 
 async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
     """An uncommanded posting whose render fails leaves the league its results."""
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=[],
@@ -214,11 +214,13 @@ async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
 # ── The image path, when it does run ──────────────────────────────────────
 
 
-async def test_a_posted_graphic_replaces_the_message_and_persists_the_new_id(tmp_path):
-    """The replacement is produced first; the old message is deleted only after it exists."""
+async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_path):
+    """The picture is posted and handed back with the message it replaces, 111, which it leaves
+    standing and the stored id unchanged: the caller's job saves the new id and deletes the old
+    message after it."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     sent: list = []
@@ -242,7 +244,7 @@ async def test_a_posted_graphic_replaces_the_message_and_persists_the_new_id(tmp
         "render_png",
         AsyncMock(return_value=_decision(png=png)),
     ):
-        message_id = await post_session_results(
+        posted = await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -255,8 +257,10 @@ async def test_a_posted_graphic_replaces_the_message_and_persists_the_new_id(tmp
             bot=_bot(db_path),
         )
 
-    assert message_id == 4242
-    assert order == ["posted", "deleted"]
+    assert posted.new == [4242]
+    assert [int(i) for i in posted.old] == [111]
+    assert posted.drawn is True
+    assert order == ["posted"]
 
     content, kwargs = sent[0]
     # The heading and the lifecycle label stay message text; the table does not.
@@ -271,14 +275,14 @@ async def test_a_posted_graphic_replaces_the_message_and_persists_the_new_id(tmp
                 (session_result.id,),
             )
         ).fetchone()
-    assert row["results_message_id"] == 4242
+    assert row["results_message_id"] == 111
 
 
 async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     """The league keeps the results it had rather than losing them to a failed rebuild."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     sent: list = []
@@ -290,7 +294,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
         "render_png",
         AsyncMock(return_value=_decision(posts=False, problem=MagicMock(detail="boom"))),
     ):
-        await post_session_results(
+        posted = await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -303,8 +307,11 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
             bot=_bot(db_path),
         )
 
-    # The textual table went out in its place, and the stored id moved to it.
+    # The textual table went out in its place, handed back with the message it replaces, 111,
+    # which still stands and is still the stored id: the caller's job saves the new one.
     assert len(sent) == 1 and "file" not in sent[0][1]
+    assert posted.new == [4242]
+    assert [int(i) for i in posted.old] == [111]
     async with get_connection(db_path) as db:
         row = await (
             await db.execute(
@@ -312,7 +319,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
                 (session_result.id,),
             )
         ).fetchone()
-    assert row["results_message_id"] == 4242
+    assert row["results_message_id"] == 111
 
 
 # ── Reporting and the commanded/uncommanded split (T041, T042) ────────────
@@ -320,7 +327,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
 
 async def test_a_problem_is_reported_naming_the_session(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -335,7 +342,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
             return_value=_decision(posts=False, problem=MagicMock(detail="no such field"))
         ),
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -395,7 +402,7 @@ async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
 
 async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -413,7 +420,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     ), patch.object(
         image_results_post, "report_notices", AsyncMock()
     ) as reporter:
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -475,7 +482,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 ):
     """The stage is read from the round, so the label drawn and the phase rule agree."""
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, result_status=status)
     sent: list = []
@@ -491,7 +498,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
     with patch.object(image_results_post, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -514,7 +521,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
 async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -529,7 +536,7 @@ async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     with patch.object(image_results_post, "build_drawing", capture), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -557,7 +564,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     import discord
 
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = tmp_path / "results.png"
@@ -584,7 +591,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -604,7 +611,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
 async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tmp_path):
     """The unit of failure is one graphic (XIV.4): the league still gets its results."""
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -614,7 +621,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
         "try_post",
         AsyncMock(side_effect=RuntimeError("something unforeseen")),
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -634,7 +641,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
 
 async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -645,7 +652,7 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
         "build_drawing",
         AsyncMock(side_effect=RuntimeError("no name could be resolved")),
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -679,7 +686,7 @@ def _render_artifact(tmp_path, name="results_race_template.png"):
 
 async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
@@ -689,7 +696,7 @@ async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -711,7 +718,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     import discord
 
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
@@ -732,7 +739,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -754,64 +761,14 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_cleared_stored_id_means_the_graphic_replaces_nothing(tmp_path):
-    """**The database is what says whether there is a posting to replace.**
-
-    A caller doing produce-then-destroy — the amendment's division-wide rebuild — clears the
-    stored id before it reposts, precisely so that nothing is taken down until every round is
-    back up. Reading the id off the in-memory `session_result` instead, which still carries the
-    one it was loaded with, destroyed the originals during the produce pass: a failure part-way
-    then left the earlier rounds missing from the channel with nothing to put back.
-    """
+async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
+    """A session's results stand as a text table of three messages, 111, 112 and 113. Posted
+    again as a picture, none of the three is fetched or deleted and nothing is written: the
+    picture is handed back naming all three as the posting it replaces, for the caller's jobs to
+    delete."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
-
-    db_path, session_result = await _seeded(tmp_path, message_id=111)
-    # As the rebuild does: the id leaves the database, and the object keeps its stale copy.
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE session_results SET results_message_id = NULL, results_message_ids = NULL "
-            "WHERE id = ?",
-            (session_result.id,),
-        )
-        await db.commit()
-
-    png = tmp_path / "results.png"
-    png.write_bytes(b"\x89PNG")
-    deleted: list = []
-    previous = AsyncMock()
-    previous.delete = AsyncMock(side_effect=lambda: deleted.append(111))
-    channel = _channel([], previous=previous)
-
-    with patch.object(
-        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
-    ), patch.object(
-        image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
-    ):
-        await post_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=channel,
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
-
-    assert deleted == [], "the posting the caller meant to keep was destroyed"
-
-
-async def test_a_superseded_textual_posting_is_taken_down_whole(tmp_path):
-    """A table past Discord's limit occupies several messages, and a graphic replacing it must
-    remove all of them — with the adjacency walk retired, its continuations could not be reached
-    again (#345)."""
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     async with get_connection(db_path) as db:
@@ -823,22 +780,16 @@ async def test_a_superseded_textual_posting_is_taken_down_whole(tmp_path):
 
     png = tmp_path / "results.png"
     png.write_bytes(b"\x89PNG")
-    deleted: list = []
-
-    async def _fetch(message_id):
-        message = AsyncMock()
-        message.delete = AsyncMock(side_effect=lambda mid=message_id: deleted.append(mid))
-        return message
-
     channel = _channel([])
-    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    channel.fetch_message = AsyncMock(side_effect=AssertionError("a message was fetched"))
+    channel.get_partial_message = MagicMock(side_effect=AssertionError("a message was reached"))
 
     with patch.object(
         image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
     ), patch.object(
         image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
     ):
-        await post_session_results(
+        posted = await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -851,4 +802,14 @@ async def test_a_superseded_textual_posting_is_taken_down_whole(tmp_path):
             bot=_bot(db_path),
         )
 
-    assert deleted == [111, 112, 113]
+    assert posted.drawn is True and posted.new == [4242]
+    assert [int(i) for i in posted.old] == [111, 112, 113]
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results "
+                "WHERE id = ?",
+                (session_result.id,),
+            )
+        ).fetchone()
+    assert (row["results_message_id"], row["results_message_ids"]) == (111, "[111, 112, 113]")

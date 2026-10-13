@@ -178,7 +178,10 @@ async def _team_reserve_role(bot, interaction):
 
 
 async def _calendar_sync(bot, interaction):
+    """The sync is asked of the change queue once its gates pass (#439), so the queue's `ask`
+    is recorded rather than run."""
     cog = _cog(SeasonCog, bot)
+    bot.change_queue.ask = AsyncMock(return_value=1)
     with patch("leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
             patch(
                 "leaguebot.core.services.calendar_post_service.post_division_calendar",
@@ -202,8 +205,11 @@ async def _standings_sync(bot, interaction):
 
 
 async def _rounds_sync(bot, interaction):
+    """The sync is asked of the change queue once its gates pass (#439), so the queue's `ask`
+    is recorded rather than run."""
+    bot.change_queue.ask = AsyncMock(return_value=1)
     with patch(
-        "leaguebot.results.services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.division_repost_status",
         new=AsyncMock(return_value="ok"),
     ):
         await undecorate(ResultsCog.rounds_sync)(_cog(ResultsCog, bot), interaction, "Pro")
@@ -247,12 +253,16 @@ REFUSED = {
 
 _NAMES = sorted(REFUSED)
 
+#: `/results rounds sync` reads its division's channel and rounds through
+#: `results_post_service.division_repost_status` (#439), which `_rounds_sync` patches.
+_REFUSED_PARAMS = list(_NAMES)
+
 
 # ---------------------------------------------------------------------------
 # Refused once every division is done
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _REFUSED_PARAMS)
 async def test_every_closed_command_is_refused_in_pending_completion(tmp_path, name):
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
@@ -287,7 +297,7 @@ async def test_the_reserves_setting_is_not_written_in_pending_completion(tmp_pat
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("stage", [SeasonStage.COMPLETED, SeasonStage.CANCELLED])
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _REFUSED_PARAMS)
 async def test_every_closed_command_is_refused_on_an_archived_season(tmp_path, name, stage):
     """A completed or cancelled season is never changed — core specification, *The archive*."""
     db_path = await _db(tmp_path, stage)
@@ -304,7 +314,7 @@ async def test_every_closed_command_is_refused_on_an_archived_season(tmp_path, n
     assert _said(interaction), f"{name} said nothing on a {stage.value} season"
 
 
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _REFUSED_PARAMS)
 async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
     """The lookup itself is the fix: reading the live season is what makes the archive
     unreachable. A command still on `get_season_for_server` would pass the test above by
@@ -322,16 +332,28 @@ async def test_no_closed_command_reads_the_most_recent_season(tmp_path, name):
 # Still open while the season is being raced
 # ---------------------------------------------------------------------------
 
+#: The commands that run on the change queue (#439), each with the kind it asks for: while the
+#: season is raced each is asked of the queue.
+_ASKED_OF_THE_QUEUE = {
+    "/division calendar-sync": "calendar.sync",
+    "/results rounds sync": "results.rounds.sync",
+}
+
+
 @pytest.mark.parametrize("name", _NAMES)
 async def test_every_closed_command_still_runs_while_the_season_is_ongoing(tmp_path, name):
     db_path = await _db(tmp_path, SeasonStage.ONGOING)
     interaction = _interaction()
+    bot = _bot(db_path, SeasonStage.ONGOING)
 
-    await REFUSED[name](_bot(db_path, SeasonStage.ONGOING), interaction)
+    await REFUSED[name](bot, interaction)
 
     said = _said(interaction)
     assert "Every division of this season is done" not in said
     assert "no longer has anything to act on" not in said
+    if name in _ASKED_OF_THE_QUEUE:
+        bot.change_queue.ask.assert_awaited_once()
+        assert bot.change_queue.ask.await_args.args[0] == _ASKED_OF_THE_QUEUE[name]
 
 
 async def test_the_bulk_amend_modal_is_shown_while_the_season_is_ongoing(tmp_path):

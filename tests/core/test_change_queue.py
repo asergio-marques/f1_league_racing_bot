@@ -2696,3 +2696,71 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
     assert any(
         "the hook broke" in str(record.exc_info[1]) for record in _host_errors(caplog)
     )
+
+
+# ---------------------------------------------------------------------------
+# A failure's notice: what a job's failure leaves, on its stop notice (#439, slice 6)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "notice, fault",
+    [
+        pytest.param("the old one stands", "Forbidden; the old one stands", id="with a notice"),
+        pytest.param(None, "Forbidden", id="with none"),
+    ],
+)
+async def test_a_failure_s_notice_is_carried_on_the_stop_notice_and_a_failed_retry_s_line(
+    env, notice, fault,
+):
+    """A job Discord refuses (Forbidden) raises its failure with a notice saying what it leaves,
+    "the old one stands": the stop notice in the log channel reads "failed (Forbidden; the old one
+    stands)", and so does the line of a Retry that fails again. Raised with no notice, both read
+    "(Forbidden)", as before."""
+    api = _api()
+    refused = http_error(discord.Forbidden, status=403, text="Missing Access")
+
+    async def _post(_ctx):
+        extra = {} if notice is None else {"notice": notice}
+        raise api.StepFailedOnDiscord("x", **extra) from refused
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    stop = STOPPED_AT.format(id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault=fault)
+    assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+
+    await retry_job(env.bot)
+
+    assert await stopped_job(env.db_path) is not None
+    retried = [m.content for m in env.bot.log_channel.posted
+               if m.content.startswith(f"❌ Retry of job #{job['id']} ")]
+    assert retried and f"failed ({fault}). The queue stays stopped." in retried[-1]
+
+
+async def test_a_notice_after_a_reason_that_is_a_sentence_follows_it_as_a_sentence(env):
+    """A job fails with a reason of its own that is a whole sentence, "**Pro** has no channel set:
+    set one, then press Retry.", and a notice saying what it leaves, "the old one stands". The
+    stop notice reads "failed (**Pro** has no channel set: set one, then press Retry. The old one
+    stands.)": the notice a sentence of its own, never "Retry.; the old one stands"."""
+    api = _api()
+    reason = "**Pro** has no channel set: set one, then press Retry."
+
+    async def _post(_ctx):
+        raise api.StepFailedOnDiscord(reason, notice="the old one stands")
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    fault = f"{reason} The old one stands."
+    stop = STOPPED_AT.format(id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault=fault)
+    posted = [m.content for m in env.bot.log_channel.posted]
+    assert [m for m in posted if m.startswith(stop)], posted
+    assert not [m for m in posted if "Retry.; " in m], posted

@@ -340,10 +340,11 @@ async def _report_call_failure(
     toggle is on. The fault is in the call, not in the picture, and a league that never draws a
     graphic must still learn its calls are failing.
 
-    The call is deliberately **not** enqueued for retry. The retry queue carries text alone —
+    A call is never posted as text alone. The retry queue carries log lines, text alone —
     ``retry_service.enqueue`` takes a ``content: str`` and re-posts it in chunks — so a call
     replayed through it would arrive with no embed, no roster and no buttons: a message the
-    division cannot answer. Staff re-post it instead.
+    division cannot answer. Staff re-post it instead; the call an amendment posts again is a job
+    of the change queue, which tries it whole (`run_rsvp_notice`'s *raise_on_failure*).
 
     **The note names the command that does it** (#123). It used to say only "post the call
     again", which no command could do; `/attendance post-check-in` is that command, and naming
@@ -457,6 +458,48 @@ VANISHED_CALL = (
 )
 
 
+#: What a send that timed out adds to the stop notice: it may have landed.
+MAY_HAVE_LANDED = (
+    "; it may have reached Discord all the same: the bot posts it again on its next try, and any "
+    "second copy is to be deleted by hand"
+)
+
+
+def left_for_the_queue(
+    earlier: bool, answers_kept: bool, vanished: bool, timed_out: bool = False
+) -> str:
+    """What a call that could not be posted leaves for the round, as the stop notice of the change
+    queue says it (owner, 2026-10-11: "Notice says what's left"), read as `failure_note` is for
+    the log channel's report.
+
+    *earlier*: the earlier call still stands, with its answers. *vanished*: it was dropped as
+    nobody could see it. *answers_kept*: no call stands but answers to an earlier one are kept.
+    None of them: no call stands and no attendance rows are open. *timed_out* adds that the send
+    may have landed all the same, so that the bot's next try may post a second copy."""
+    if vanished:
+        left = (
+            "no call for this round can be seen, its message or its channel gone, so its record "
+            "was dropped; the answers given to it are kept, and count if this call is posted "
+            "before the check-in deadline"
+        )
+    elif earlier:
+        left = (
+            "the earlier call still stands, and the answers given to it count, those of drivers "
+            "no longer of the division excepted"
+        )
+    elif answers_kept:
+        left = (
+            "no call stands; the answers given to the earlier call are kept, and count if this "
+            "call is posted before the check-in deadline"
+        )
+    else:
+        left = (
+            "no call stands, and no attendance rows are open for this round until this call "
+            "is posted"
+        )
+    return left + MAY_HAVE_LANDED if timed_out else left
+
+
 async def _call_vanished(bot: LeagueBot, call: RsvpEmbedMessage) -> bool:
     """Whether nobody can see *call* any more: its channel gone, or its own message deleted, as
     a take-down that deleted the call but not its last notice leaves it. Discord failing to say,
@@ -494,7 +537,11 @@ async def _answers_kept(db_path: str, round_id: int) -> bool:
 
 
 async def run_rsvp_notice(
-    round_id: int, bot: LeagueBot, *, replacing: RsvpEmbedMessage | None = None
+    round_id: int,
+    bot: LeagueBot,
+    *,
+    replacing: RsvpEmbedMessage | None = None,
+    raise_on_failure: bool = False,
 ) -> None:
     """Post the RSVP embed for *round_id* to all configured RSVP channels.
 
@@ -534,6 +581,15 @@ async def run_rsvp_notice(
     its call down, a failure's report says they are kept and count (`ANSWERS_KEPT`). A call
     standing that is not *replacing* was posted since, and is left as any standing call is.
     `test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so` pins it.
+
+    With *raise_on_failure*, which an amendment's job asks for (owner, 2026-10-10, decision 3:
+    "Stop the queue"), a call that cannot be posted, its check-in channel unset or unreachable or
+    the send failing, raises `StepFailedOnDiscord` in place of the report: the stop notice of the
+    change queue is the report, saying what is left for the round (`left_for_the_queue`; owner,
+    2026-10-11), and the exception's *result* keeps whether the earlier call stands
+    (``earlier_left``) or was dropped as vanished (``vanished``) for a Discard to name. The call
+    its timer, a restart and `/attendance post-check-in` post pass nothing and keep the report
+    (decision 3).
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
@@ -618,14 +674,23 @@ async def run_rsvp_notice(
         # the truth"): the earlier call standing; or, with none, answers to an earlier call kept
         # for the round, which count; or nothing at all, the report's own words.
         failure_note: str | None = None
+        answers_kept = False
         if earlier is not None:
             failure_note = EARLIER_CALL_STANDS
         elif await _answers_kept(bot.db_path, round_id):
+            answers_kept = True
             failure_note = ANSWERS_KEPT.format(division=division_name, round=round_number)
 
         # Get division RSVP channel
         att_div_cfg = await bot.attendance_service.get_division_config(division_id)
         if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+            if raise_on_failure:
+                raise StepFailedOnDiscord(
+                    f"**{division_name}** has no check-in channel set: set one with "
+                    f"`/attendance channel rsvp`, then press Retry.",
+                    result={"earlier_left": earlier is not None, "vanished": False},
+                    notice=left_for_the_queue(earlier is not None, answers_kept, False),
+                )
             log.warning(
                 "run_rsvp_notice: no RSVP channel for division %d (%s) — skipping (FR-008)",
                 division_id, division_name,
@@ -645,12 +710,23 @@ async def run_rsvp_notice(
                 "run_rsvp_notice: RSVP channel %s not found for division %d",
                 channel_id_str, division_id,
             )
+            dropped = False
             if earlier is not None and await _call_vanished(bot, earlier):
                 # The earlier call cannot be seen either: a record left would say one stands,
                 # refusing `/attendance post-check-in` (owner, 2026-10-09: "Drop the record, say
                 # so"). Its answers are kept; what is left of it is deleted or named.
                 await withdraw_rsvp_call(round_id, division_id, bot)
                 failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
+                dropped = True
+            if raise_on_failure:
+                reached = f"the configured RSVP channel ({channel_id_str}) could not be reached"
+                raise StepFailedOnDiscord(
+                    reached,
+                    result={"earlier_left": earlier is not None and not dropped,
+                            "vanished": dropped},
+                    notice=left_for_the_queue(earlier is not None, answers_kept, dropped),
+                )
+
             await _report_call_failure(
                 bot,
                 division_id=division_id,
@@ -752,11 +828,24 @@ async def run_rsvp_notice(
                     "; it may have reached Discord all the same; check the channel, and if it is"
                     " there, delete it before posting the call again"
                 )
+            dropped = False
             if earlier is not None and await _call_vanished(bot, earlier):
                 # As above: a take-down that deleted the call but not its last notice leaves a
                 # record of a call nobody can see (owner, 2026-10-09: "Make it").
                 await withdraw_rsvp_call(round_id, division_id, bot)
                 failure_note = VANISHED_CALL.format(division=division_name, round=round_number)
+                dropped = True
+            if raise_on_failure:
+                raise StepFailedOnDiscord(
+                    f"the call could not be posted: {str(exc) or type(exc).__name__}",
+                    result={"earlier_left": earlier is not None and not dropped,
+                            "vanished": dropped},
+                    notice=left_for_the_queue(
+                        earlier is not None, answers_kept, dropped,
+                        timed_out=isinstance(exc, TimeoutError),
+                    ),
+                ) from exc
+
             await _report_call_failure(
                 bot,
                 division_id=division_id,
@@ -980,7 +1069,9 @@ async def _report_messages_left(
         log.exception("withdraw_rsvp_call: failed to report the messages left standing")
 
 
-async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> None:
+async def repost_rsvp_call(
+    round_id: int, division_id: int, bot: LeagueBot, *, raise_on_failure: bool = False
+) -> None:
     """Post a round's check-in call again, carrying over every answer already given.
 
     Used when a round is amended and its call has already gone out: the call names the circuit,
@@ -996,8 +1087,10 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
     *replacing*; owner, 2026-10-09: "Fold it in"). A repost that fails, Discord refusing it or
     the channel gone, leaves the earlier call and its record standing, so its answers stand with
     a call and the report says so; it fails as a call does when its timer fires, and stops no
-    queue. Withdrawn first, as it once was, a failed repost left answers with no call while the
-    report said no attendance rows were opened.
+    queue, unless *raise_on_failure* (`run_rsvp_notice`) is given, which an amendment's job gives:
+    the failure then raises for the change queue to stop on, saying what is left. Withdrawn first,
+    as it once was, a failed repost left answers with no call while the report said no attendance
+    rows were opened.
     """
     standing = await bot.attendance_service.get_embed_message(round_id, division_id)
 
@@ -1018,7 +1111,9 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
             )
         await db.commit()
 
-    await run_rsvp_notice(round_id, bot, replacing=standing)
+    await run_rsvp_notice(
+        round_id, bot, replacing=standing, raise_on_failure=raise_on_failure
+    )
 
 
 # ── run_rsvp_cleanup ──────────────────────────────────────────────────────────

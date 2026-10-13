@@ -217,6 +217,7 @@ def cog(db_path):
             config_service=ConfigService(db_path),
             signup_module_service=SignupModuleService(db_path),
             output_router=SimpleNamespace(post_log=AsyncMock()),
+            change_queue=SimpleNamespace(ask=AsyncMock(return_value=1)),
         )
     )
 
@@ -341,3 +342,31 @@ async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, 
     interaction = await _toggle(cog)  # off
 
     assert "backup" not in interaction.reply.lower()
+
+
+# ── The forecasts posted under test mode are cleared by the change queue ───────
+
+
+async def test_switching_test_mode_off_asks_the_queue_to_clear_the_forecasts(cog, db_path):
+    """The season is in Configuration. Switching test mode on asks the change queue for
+    nothing; switching it off asks it once, as the bot's, for the clearing of every forecast
+    posted under test mode (`weather.forecast.flush`), once the flag reads off."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    flag_when_asked: list[bool] = []
+
+    async def _ask(*_args, **_kwargs):
+        flag_when_asked.append(await _flag(db_path))
+        return 1
+
+    cog.bot.change_queue.ask = AsyncMock(side_effect=_ask)
+
+    await _toggle(cog)  # on
+    assert cog.bot.change_queue.ask.await_count == 0
+
+    await _toggle(cog)  # off
+
+    [call] = cog.bot.change_queue.ask.await_args_list
+    assert call.args[0] == "weather.forecast.flush"
+    assert call.kwargs.get("origin") == ChangeOrigin.BOT
+    assert flag_when_asked == [False]

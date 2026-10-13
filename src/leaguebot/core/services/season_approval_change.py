@@ -58,7 +58,8 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services import approval_checks, season_classification_service
-from leaguebot.core.services.calendar_post_service import post_division_calendar, tracks_by_name
+from leaguebot.core.services import lineup_posting, standing_posts
+from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -120,7 +121,6 @@ ARM = "arm"
 GRANT_ROLES = "grant_roles"
 POST_BATCH_NOTICE = "post_batch_notice"
 REFRESH_LINEUP = "refresh_lineup"
-POST_CALENDAR = "post_calendar"
 OPENING_STANDINGS = "opening_standings"
 OPENING_SHEET = "opening_sheet"
 DELETE_BATCH_NOTICE = "delete_batch_notice"
@@ -518,47 +518,6 @@ def season_approval_change(
         """The notice is deleted only where it was posted: a discarded post leaves none."""
         return posted_notice(ctx) is not None
 
-    async def refresh_lineup(ctx: StepContext) -> StepResult:
-        guild = await _guild(ctx.bot)
-        await placement.refresh_lineup(
-            guild, int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
-        )
-        return StepResult()
-
-    async def post_calendar(ctx: StepContext) -> StepResult:
-        """Post one division's calendar, its division and rounds read as the job runs."""
-        guild = await _guild(ctx.bot)
-        season_number = ctx.payload["season_number"]
-        if not season_number:
-            log.warning(
-                "season approval: season %s carries no number; its calendars will draw "
-                "'SEASON 0'",
-                ctx.payload["season_id"],
-            )
-        division_id = int(ctx.step_payload["division_id"])
-        division = next(
-            each
-            for each in await seasons.get_divisions(int(ctx.payload["season_id"]))
-            if each.id == division_id
-        )
-        posting = await post_division_calendar(
-            ctx.bot,
-            guild,
-            division,
-            await seasons.get_division_rounds(division_id),
-            await tracks_by_name(ctx.db_path),
-            season_number=season_number,
-            raise_on_failure=True,
-            as_text=ctx.tries > 0,
-        )
-        return StepResult(
-            result={
-                "division": division.name,
-                "problem": posting.problem,
-                "notices": list(posting.notices),
-            }
-        )
-
     async def opening_standings(ctx: StepContext) -> StepResult:
         guild = await _guild(ctx.bot)
         await season_classification_service.post_opening_standings(
@@ -571,12 +530,27 @@ def season_approval_change(
         return await modules.is_results_enabled()
 
     async def opening_sheet(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
         guild = await _guild(ctx.bot)
-        await season_classification_service.post_opening_sheet(
+        result = await season_classification_service.post_opening_sheet(
             ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
             as_text=ctx.tries > 0,
         )
-        return StepResult()
+        then: tuple[PlannedStep, ...] = ()
+        if result.get("takes_slot"):
+            then = standing_posts.replaced(
+                result.get("channel_id"), result.get("old"), result.get("new"),
+                what="attendance sheet",
+                division_name=str(ctx.step_payload.get("division_name", "the division")),
+            )
+        return StepResult(result=result, then=then)
+
+    async def record_opening_sheet(
+        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+    ) -> None:
+        await season_classification_service.record_sheet_on(
+            db, int(ctx.step_payload["division_id"]), result.result
+        )
 
     async def sheet_due(_ctx: StepContext) -> bool:
         return await modules.is_attendance_enabled()
@@ -767,14 +741,8 @@ def season_approval_change(
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),
-        REFRESH_LINEUP: Step(
-            REFRESH_LINEUP, StepKind.ACT, refresh_lineup,
-            describe=describing("posting the lineup of **{name}**"),
-        ),
-        POST_CALENDAR: Step(
-            POST_CALENDAR, StepKind.ACT, post_calendar,
-            describe=describing("posting the calendar of **{name}**"),
-        ),
+        REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP),
+        **calendar_steps(seasons),
         OPENING_STANDINGS: Step(
             OPENING_STANDINGS, StepKind.ACT, opening_standings, still_due=standings_due,
             describe=describing("posting the opening standings of **{name}**"),
@@ -782,6 +750,7 @@ def season_approval_change(
         OPENING_SHEET: Step(
             OPENING_SHEET, StepKind.ACT, opening_sheet, still_due=sheet_due,
             describe=describing("posting the opening attendance sheet of **{name}**"),
+            record=record_opening_sheet,
         ),
         DELETE_BATCH_NOTICE: Step(
             DELETE_BATCH_NOTICE, StepKind.DELETE, delete_batch_notice, still_due=notice_posted,
@@ -901,6 +870,8 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
                 f"**{each['division_name']}** — its calendar could not be posted. Run "
                 f"`/division calendar-sync`."
             )
+        elif view.name == standing_posts.DELETE_REPLACED:
+            lines.append(standing_posts.not_deleted(view) or "")
         elif view.name == OPENING_STANDINGS:
             lines.append(
                 f"**{each['division_name']}** — its opening standings could not be posted. No "

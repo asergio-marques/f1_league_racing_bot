@@ -138,20 +138,22 @@ async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
     service._revoke_roles.assert_awaited_once()
     assert service._revoke_roles.await_args.args[1:] == (ROLES["Alpha"],)
     assert service._grant_roles.await_args.args[1:] == (1001, ROLES["Reserve"])
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [PRO]
 
 
 async def test_a_driver_is_promoted_to_another_division(db_path):
     await _seat(db_path, AM, "Bravo")
     service = _service(db_path)
 
-    await _move(service, PRO, "Bravo", from_division=AM)
+    result = await _move(service, PRO, "Bravo", from_division=AM)
 
     assert await _where(db_path) == [(PRO, "Bravo")]
     # The division role swaps; the team role is kept, the driver sitting in Bravo still.
     assert service._revoke_roles.await_args.args[1:] == (1002,)
     assert service._grant_roles.await_args.args[1:] == (1001, ROLES["Bravo"])
-    assert [c.args[1] for c in service._refresh_lineup_post.await_args_list] == [AM, PRO]
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [AM, PRO]
 
 
 async def test_the_seat_left_is_freed(db_path):
@@ -284,7 +286,7 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
         side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
     )
 
-    await service.move_driver(
+    result = await service.move_driver(
         driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
         from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
         acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
@@ -293,7 +295,8 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     assert await _where(db_path) == [(PRO, "Reserve")]
     service._grant_roles.assert_not_awaited()
     service._revoke_roles.assert_not_awaited()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [PRO]
 
 
 # ── A team's role repointed: its seated drivers follow ────────────────────────────

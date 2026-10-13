@@ -4,28 +4,27 @@ Covers Constitution XIV.8 (produce before destroy) and XIV.7 (one derivation, li
 data), and FR-045 / FR-026–FR-027 of
 ``specs/041-attendance-image-generation/spec.md``.
 
-The ordering test is the one that matters most here. ``post_attendance_sheet`` used to delete
-the previously posted sheet at the top of the function and send its successor some ninety lines
-later, so a transient failure to post left the division with **no** sheet at all. The image path
-falls back to this same function, which is why the ordering had to be corrected here rather than
-beside it.
+``post_attendance_sheet`` used to delete the previously posted sheet at the top of the function
+and send its successor some ninety lines later, so a transient failure to post left the division
+with **no** sheet at all. It now posts alone: it names the sheet it replaces, and the change
+queue's job saves the new one's id and deletes the old one by a job after it (#439, slice 6), so
+the ordering is pinned by the queued tests in ``tests/attendance/test_sheet_posting.py``.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
 
 import aiosqlite
 import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.attendance.services import attendance_service
 from leaguebot.attendance.services.attendance_service import (
     derive_checkin_deadline,
     post_attendance_sheet,
 )
-
 
 # ── The deadline derivation (T010/T011) ───────────────────────────────────
 
@@ -204,23 +203,9 @@ async def _stored_message_id(db_path) -> str | None:
 
 
 @pytest.mark.asyncio
-async def test_the_replacement_is_posted_before_the_previous_sheet_is_deleted(sheet_db):
-    """XIV.8: at no instant is the channel without a sheet."""
-    await _config(sheet_db, prior="4242")
-    journal: list[str] = []
-    channel = _FakeChannel(journal)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    sends = [i for i, e in enumerate(journal) if e.startswith("send:")]
-    deletes = [i for i, e in enumerate(journal) if e.startswith("delete:")]
-    assert sends and deletes, journal
-    assert max(sends) < min(deletes), f"deleted before sending: {journal}"
-
-
-@pytest.mark.asyncio
-async def test_exactly_one_send_site_and_one_delete_site_are_exercised(sheet_db):
+async def test_exactly_one_send_site_is_exercised_and_nothing_is_deleted(sheet_db):
+    """The sheet is sent once; the one it replaces is deleted by the job after the post
+    (`standing_posts`), never by the posting itself, and the posting saves no id."""
     await _config(sheet_db, prior="4242")
     journal: list[str] = []
     channel = _FakeChannel(journal)
@@ -229,33 +214,41 @@ async def test_exactly_one_send_site_and_one_delete_site_are_exercised(sheet_db)
     await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert len([e for e in journal if e.startswith("send:")]) == 1
-    assert len([e for e in journal if e.startswith("delete:")]) == 1
+    assert not [e for e in journal if e.startswith("delete:")], journal
+    assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.asyncio
 async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
-    """The whole point of the ordering: a failure costs the league nothing it had."""
+    """The whole point of the ordering: a failure costs the league nothing it had. The refused
+    send raises, for the queue to stop on."""
     await _config(sheet_db, prior="4242")
     journal: list[str] = []
     channel = _FakeChannel(journal, send_fails=True)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with pytest.raises(StepFailedOnDiscord):
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not any(e.startswith("delete:") for e in journal), journal
     assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.asyncio
-async def test_the_replacements_id_is_persisted(sheet_db):
+async def test_the_replacements_id_is_returned(sheet_db):
+    """The new sheet's id, its channel and the sheet it replaces are given back for the job to
+    save; the posting writes nothing."""
     await _config(sheet_db, prior="4242")
     journal: list[str] = []
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
-    assert await _stored_message_id(sheet_db) == "5001"
+    assert int(posted.message_id) == 5001
+    assert int(posted.channel_id) == 900
+    assert posted.previous == "4242"
+    assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.asyncio
@@ -265,37 +258,11 @@ async def test_a_first_posting_deletes_nothing(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not any(e.startswith("delete:") for e in journal)
-    assert await _stored_message_id(sheet_db) == "5001"
-
-
-class _ChannelWhosePriorSheetIsGone(_FakeChannel):
-    """Someone deleted the previous sheet by hand, so Discord no longer has it."""
-
-    async def fetch_message(self, message_id: int):
-        self.journal.append(f"fetch:{message_id}")
-        response = MagicMock(status=404, reason="Not Found")
-        raise discord.NotFound(response, "Unknown Message")
-
-
-@pytest.mark.asyncio
-async def test_a_previous_sheet_already_gone_is_passed_over_silently(sheet_db, caplog):
-    """FR-020: the replacement stands and is recorded, and nothing is logged — the sheet it
-    replaces is gone, which is what deleting it was for. A failed deletion of a sheet that
-    is still there is a different matter, and is logged."""
-    await _config(sheet_db, prior="4242")
-    journal: list[str] = []
-    channel = _ChannelWhosePriorSheetIsGone(journal)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-
-    with caplog.at_level("WARNING", logger="leaguebot.attendance.services.attendance_service"):
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    assert journal == ["send:5001", "fetch:4242"]
-    assert await _stored_message_id(sheet_db) == "5001"
-    assert caplog.records == []
+    assert posted.previous is None
+    assert await _stored_message_id(sheet_db) is None
 
 
 # ── The text is unchanged by the reorder (T014) ───────────────────────────
@@ -369,59 +336,6 @@ async def test_without_a_graphic_the_message_carries_the_whole_textual_sheet(she
     assert channel.sent_file is None
     assert "<@111>" in channel.sent_content
     assert "attendance point" in channel.sent_content
-
-
-@pytest.mark.asyncio
-async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monkeypatch):
-    """FR-060 / XIV.8: a **service** failure retries as text, never as a rendered image.
-
-    A retry queue is durable and outlives the state that filled it, so a picture retried an
-    hour later is a picture of a division that has moved on. The text is composed at the moment
-    it is finally sent.
-    """
-    from leaguebot.core.services import retry_service
-
-    enqueued: list[dict] = []
-
-    async def _fake_enqueue(db_path, channel_id, content, failure_reason):
-        enqueued.append(
-            {"channel_id": channel_id, "content": content, "reason": failure_reason}
-        )
-
-    monkeypatch.setattr(retry_service, "enqueue", _fake_enqueue)
-
-    await _config(sheet_db, prior="4242")
-    channel = _FakeChannel([], send_fails=True)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-    guild.id = 1
-
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-
-    assert len(enqueued) == 1
-    assert enqueued[0]["channel_id"] == 900
-    assert "Attendance Standings" in enqueued[0]["content"]
-    assert "attendance sheet for division 7" in enqueued[0]["reason"]
-
-
-@pytest.mark.asyncio
-async def test_a_queue_failure_never_masks_the_original_posting_failure(
-    sheet_db, monkeypatch
-):
-    from leaguebot.core.services import retry_service
-
-    async def _boom(*args, **kwargs):
-        raise RuntimeError("queue is down")
-
-    monkeypatch.setattr(retry_service, "enqueue", _boom)
-
-    await _config(sheet_db, prior="4242")
-    channel = _FakeChannel([], send_fails=True)
-    guild = _FakeGuild(channel, {111: "Ayrton"})
-    guild.id = 1
-
-    # Must not raise, and must still leave the prior sheet standing.
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
-    assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.asyncio
@@ -593,14 +507,16 @@ async def test_the_sheet_graphic_is_gone_once_it_has_posted(
 async def test_the_sheet_graphic_is_gone_when_the_send_fails(
     sheet_db, monkeypatch, tmp_path
 ):
-    """The textual sheet is enqueued for retry; the picture never is (XIV.8, FR-060)."""
+    """The refused send raises, and the job's next try posts the text; the picture is never
+    kept for it (XIV.8, FR-060)."""
     png = _sheet_artifact(tmp_path)
     monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
     await _config(sheet_db, prior="4242")
     channel = _FakeChannel([], send_fails=True)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    with pytest.raises(StepFailedOnDiscord):
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert not png.exists(), "a failed upload must not strand the sheet"
 
@@ -620,19 +536,22 @@ def _occasion(name):
 
 @pytest.mark.asyncio
 async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
-    """Round one then replaces it, so the division never holds two sheets."""
+    """Round one then replaces it, so the division never holds two sheets. The posting says
+    the sheet takes the slot and names the one it replaces; the job saves and deletes."""
     await _config(sheet_db, prior="4242")
     journal: list[str] = []
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(
+    posted = await post_attendance_sheet(
         None, guild, sheet_db, round_id=3, division_id=7,
         occasion=_occasion("SEASON_OPENING"),
     )
 
-    assert await _stored_message_id(sheet_db) == "5001"
-    assert "delete:4242" in journal
+    assert posted.takes_slot is True
+    assert posted.previous == "4242"
+    assert not [entry for entry in journal if entry.startswith("delete:")]
+    assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.asyncio
@@ -661,10 +580,12 @@ async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
     channel = _FakeChannel(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    posted = await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
-    assert await _stored_message_id(sheet_db) == "5001"
-    assert "delete:4242" in journal
+    assert posted.takes_slot is True
+    assert posted.previous == "4242"
+    assert not [entry for entry in journal if entry.startswith("delete:")]
+    assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.asyncio

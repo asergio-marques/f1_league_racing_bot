@@ -95,7 +95,7 @@ SAVE_DISCARDED = (
     "`/round cancel` again."
 )
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
-            "notify_results", "post_calendar", "close"]
+            "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
@@ -892,7 +892,9 @@ _MODULES = {
 }
 
 
-@pytest.mark.parametrize("modules", sorted(_MODULES))
+@pytest.mark.parametrize("modules", [
+    pytest.param(name) for name in sorted(_MODULES)
+])
 async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of_its_own(
     tmp_path, modules,
 ):

@@ -1,10 +1,10 @@
 """A round's cleanups that fell due while the bot was stopped are run when it starts again.
 
-Issue #425. A round's Phase 3 forecast, and its check-in call with its last notice and its
-distribution message, come down 24 hours after the round's start, by the ``cleanup`` and
-``rsvp_cleanup`` jobs. A job that falls due while the bot is down is discarded by the
-scheduler's five-minute misfire grace rather than run late, so without this a restart at the
-wrong moment left those messages standing for good. The league decided both modules catch up
+Issue #425. A round's forecast (whichever of Phases 1 to 3 still stands), and its check-in call
+with its last notice and its distribution message, come down 24 hours after the round's start, by
+the ``cleanup`` and ``rsvp_cleanup`` jobs. A job that falls due while the bot is down is discarded
+by the scheduler's five-minute misfire grace rather than run late, so without this a restart at
+the wrong moment left those messages standing for good. The league decided both modules catch up
 (2026-09-24).
 
 **Only what is at least a day past is taken down.** A round that started under a day ago still
@@ -18,7 +18,8 @@ live jobs fire after a season completes, and the catch-up does what they would h
 `run_rsvp_cleanup`, which this hands every due round to.
 
 The two cleanups themselves are tested elsewhere; here they are stubbed, and what is pinned is
-which rounds reach them.
+which rounds reach them. The forecast's is asked of the change queue, through weather's
+`ask_forecast_clean_up` (#439), which these record, patched in `forecast_changes`.
 """
 from __future__ import annotations
 
@@ -46,8 +47,11 @@ async def _make_db(
     season_status: str = "ACTIVE",
     forecast: bool = True,
     check_in: bool = True,
+    phases: tuple[int, ...] = (3,),
+    round_format: str = "NORMAL",
 ) -> str:
-    """A round *hours_since_start* past its start, with a Phase 3 forecast and a call standing.
+    """A round *hours_since_start* past its start, with a forecast of each of *phases* (Phase 3
+    alone unless given; 0 a mystery round's notice) and a call standing.
 
     Placed against the clock rather than pinned, because the recovery reads the clock itself.
     """
@@ -67,15 +71,15 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-            "scheduled_at, status) VALUES (?, ?, 1, 'NORMAL', 'Silverstone Circuit', ?, ?)",
-            (ROUND_ID, DIVISION_ID, started.isoformat(), round_status),
+            "scheduled_at, status) VALUES (?, ?, 1, ?, 'Silverstone Circuit', ?, ?)",
+            (ROUND_ID, DIVISION_ID, round_format, started.isoformat(), round_status),
         )
-        if forecast:
+        for phase in phases if forecast else ():
             await db.execute(
                 "INSERT INTO forecast_messages "
                 "(round_id, division_id, phase_number, message_id, posted_at) "
-                "VALUES (?, ?, 3, 800, ?)",
-                (ROUND_ID, DIVISION_ID, started.isoformat()),
+                "VALUES (?, ?, ?, ?, ?)",
+                (ROUND_ID, DIVISION_ID, phase, 797 + phase, started.isoformat()),
             )
         if check_in:
             await db.execute(
@@ -98,11 +102,12 @@ def _bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
 async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
-    """Run the recovery, returning the rounds whose forecast and whose check-in it cleaned."""
+    """Run the recovery, returning the rounds whose forecast clean-up it asked the queue for and
+    whose check-in it cleaned; *forecast_error* makes the clean-up's ask raise."""
     forecasts: list[int] = []
     check_ins: list[int] = []
 
-    async def _forecast(round_id, _bot):
+    async def _forecast(_queue, _db_path, round_id):
         if forecast_error is not None:
             raise forecast_error
         forecasts.append(round_id)
@@ -111,7 +116,7 @@ async def _recover(
         check_ins.append(round_id)
 
     with patch(
-        "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup",
+        "leaguebot.weather.services.forecast_changes.ask_forecast_clean_up",
         new=AsyncMock(side_effect=_forecast),
     ), patch("leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup", new=AsyncMock(side_effect=_check_in)):
         await bot_module._recover_missed_cleanups(bot)
@@ -151,6 +156,50 @@ async def test_a_completed_season_is_still_cleaned_up(tmp_path):
 
 async def test_only_what_is_standing_is_cleaned(tmp_path):
     db_path = await _make_db(tmp_path, forecast=False)
+
+    assert await _recover(_bot(db_path)) == ([], [ROUND_ID])
+
+
+@pytest.mark.parametrize(
+    "phases",
+    [(2,), (1,), (1, 2)],
+    ids=["phase-3-never-posted", "phase-2-never-posted", "phases-1-and-2-standing"],
+)
+async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecast_cleanup_run(
+    tmp_path, phases
+):
+    """A day after the race the clean-up deletes whichever of Phases 1 to 3 is still recorded
+    (owner, 2026-10-12): Phase 2 where Phase 3 never posted, Phase 1 where Phase 2 never did
+    either, or both where Phase 1's supersession was never carried out. The catch-up asks it."""
+    db_path = await _make_db(tmp_path, phases=phases)
+
+    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
+
+
+@pytest.mark.parametrize(
+    "phases, named",
+    [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
+     ((1, 2), "the Phase 1 and 2 forecasts")],
+    ids=["phase-3-posted", "phase-3-never-posted", "phases-1-and-2-standing"],
+)
+async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
+    tmp_path, caplog, phases, named
+):
+    """The host's log line for a forecast clean-up the catch-up asks names the forecast still
+    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not."""
+    db_path = await _make_db(tmp_path, phases=phases)
+
+    with caplog.at_level("INFO", logger=bot_module.__name__):
+        await _recover(_bot(db_path))
+
+    lines = [record.getMessage() for record in caplog.records]
+    assert f"_recover_missed_cleanups: deleting {named} of round_id={ROUND_ID}" in lines, lines
+
+
+async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
+    """A mystery round's notice (phase 0) is not a forecast the clean-up deletes: with nothing
+    else recorded, the catch-up asks no clean-up of it."""
+    db_path = await _make_db(tmp_path, phases=(0,), round_format="MYSTERY")
 
     assert await _recover(_bot(db_path)) == ([], [ROUND_ID])
 

@@ -2,7 +2,7 @@
 
 Covers:
 - _label_from_status: all three status values and fallback
-- post_session_results: heading + label appear in the sent message
+- produce_session_results: heading + label appear in the sent message
 - post_standings: heading + label appear in the sent message
 """
 from __future__ import annotations
@@ -44,14 +44,14 @@ class TestLabelFromStatus:
 
 
 # ---------------------------------------------------------------------------
-# post_session_results — heading and label in message content
+# produce_session_results — heading and label in message content
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_post_session_results_includes_heading_and_label(tmp_path):
-    """post_session_results must prepend 'heading\\nlabel\\n' to the table."""
+async def test_session_results_include_heading_and_label(tmp_path):
+    """produce_session_results must prepend 'heading\\nlabel\\n' to the table."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
     from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
     db_path = str(tmp_path / "test.db")
@@ -112,7 +112,7 @@ async def test_post_session_results_includes_heading_and_label(tmp_path):
     mock_guild.get_member.return_value = None
     mock_guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
 
-    await post_session_results(
+    await produce_session_results(
         db_path=db_path,
         session_result=session_result,
         driver_rows=driver_rows,
@@ -139,10 +139,10 @@ async def test_post_session_results_includes_heading_and_label(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_post_session_results_label_appears_for_all_status_values(tmp_path):
+async def test_session_results_label_appears_for_all_status_values(tmp_path):
     """Each of the three lifecycle label values must appear in the post content."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import post_session_results
+    from leaguebot.results.services.results_post_service import produce_session_results
     from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
     db_path = str(tmp_path / "test.db")
@@ -204,7 +204,7 @@ async def test_post_session_results_label_appears_for_all_status_values(tmp_path
             return msg
         mock_channel.send = fake_send
 
-        await post_session_results(
+        await produce_session_results(
             db_path=db_path,
             session_result=session_result,
             driver_rows=[],
@@ -1068,13 +1068,14 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     tables = await _standings()
     assert len(tables) == 1 and tables[0].old == [] and tables[0].edited is False
 
-    # The picture saves and replaces for itself, leaving the caller nothing to do.
+    # A session's results drawn as a picture: handed back with the posting it replaces, as a
+    # text table is, for the caller's jobs to save and delete.
     drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
     bot = MagicMock()
     with patch(
         "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
     ):
-        assert await _results(bot=bot) == PostedTable([9990], [], drawn=True)
+        assert await _results(bot=bot) == PostedTable([9990], [OLD_RESULTS], drawn=True)
     with patch(
         "leaguebot.image.services.image_standings_post.try_post", new=AsyncMock(return_value=drew)
     ):

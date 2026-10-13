@@ -41,7 +41,8 @@ async def delete_notice(message) -> None:
     (``discord.NotFound``) included.
 
     The delete half of :func:`batch_notice`, for a caller that decides for itself what a notice
-    already gone, or one that cannot be deleted, means.
+    already gone, or one that cannot be deleted, means; also the delete of a standing post's
+    replaced message (`standing_posts`), which decides for itself what a refusal means.
     """
     await message.delete()
 

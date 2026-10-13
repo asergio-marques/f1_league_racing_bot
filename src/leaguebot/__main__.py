@@ -168,6 +168,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     that core imports none of them. Each is looked up as it is called, so that nothing is bound
     before it is needed."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import backup_service
     from leaguebot.core.services.season_lifecycle_service import (
         WINDOW_CLOSED_NOTICE,
@@ -177,6 +178,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
     from leaguebot.weather.services import forecast_cleanup_service
+    from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
         return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
@@ -204,8 +206,8 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     async def amendment_open(db_path: str, season_id: int):
         return await result_submission_service.open_amendment_in_season(db_path, season_id)
 
-    async def flush_forecasts() -> None:
-        await forecast_cleanup_service.flush_pending_deletions(bot)
+    async def plan_forecast_flush() -> "tuple[PlannedStep, ...]":
+        return await forecast_cleanup_service.forecast_deletes(bot.db_path)
 
     def discard_backup() -> object:
         return backup_service.discard(
@@ -249,7 +251,8 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         cancel_signup_timeout=cancel_signup_timeout,
         discard_portraits=discard_portraits,
         amendment_open=amendment_open,
-        flush_forecasts=flush_forecasts,
+        plan_forecast_flush=plan_forecast_flush,
+        forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
         discard_backup=discard_backup,
         forget_setup=lambda: _forget_setup(bot),
         owed_closing_notices=owed_closing_notices,
@@ -283,33 +286,29 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
     needed."""
     from leaguebot.attendance.services import rsvp_service
+    from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services.round_amend_change import AmendHooks
-    from leaguebot.weather.services import forecast_cleanup_service, phase_withdrawal
+    from leaguebot.weather.services import phase_withdrawal
+    from leaguebot.weather.services.forecast_changes import (
+        DRAW_FORECAST,
+        forecast_failure,
+        forecast_steps,
+    )
     from leaguebot.weather.utils.message_builder import format_round_list, invalidation_message
 
     async def windows() -> "tuple[AttendanceWindows | None, WeatherWindows]":
         return await bot.amendment_windows()
 
-    async def delete_forecast(bot_: Any, round_id: int, division_id: int, phase: int) -> None:
-        await forecast_cleanup_service.delete_forecast_message(
-            round_id, division_id, phase, bot_, raise_on_failure=True
-        )
-
-    async def run_phase(phase: int, round_id: int, bot_: Any) -> None:
-        from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
-
-        runner = {
-            1: phase1_service.run_phase1,
-            2: phase2_service.run_phase2,
-            3: phase3_service.run_phase3,
-        }[phase]
-        await runner(round_id, bot_)
+    def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
+        return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
     async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
-        await rsvp_service.repost_rsvp_call(round_id, division_id, bot_)
+        await rsvp_service.repost_rsvp_call(
+            round_id, division_id, bot_, raise_on_failure=True
+        )
 
     async def post_call(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_notice(round_id, bot_)
+        await rsvp_service.run_rsvp_notice(round_id, bot_, raise_on_failure=True)
 
     async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> bool:
         return await _give_up_missed_check_in_call(bot_, row)
@@ -317,24 +316,21 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     async def run_deadline(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_deadline(round_id, bot_)
 
-    async def clean_up_forecast(round_id: int, bot_: Any) -> None:
-        await forecast_cleanup_service.run_post_race_cleanup(round_id, bot_)
-
     async def clean_up_check_in(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_cleanup(round_id, bot_)
 
     return AmendHooks(
         windows=windows,
         withdraw_phases_on=phase_withdrawal.withdraw_phases_on,
-        delete_forecast=delete_forecast,
+        forecast_steps=forecast_steps(now=lambda: bot.change_queue.now()),
+        plan_phase=plan_phase,
+        forecast_failure=forecast_failure,
         invalidation_text=invalidation_message,
-        run_phase=run_phase,
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
         repost_call=repost_call,
         post_call=post_call,
         give_up_call=give_up_call,
         run_deadline=run_deadline,
-        clean_up_forecast=clean_up_forecast,
         clean_up_check_in=clean_up_check_in,
         round_list=format_round_list,
     )
@@ -347,12 +343,15 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.attendance.services.sheet_posting import sheet_post_change
+    from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
         division_cancel_change,
         round_cancel_change,
         season_cancel_change,
     )
     from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.lineup_posting import lineup_post_change
     from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
     from leaguebot.core.services.season_approval_change import (
         season_approval_change,
@@ -365,11 +364,17 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.weather.services.forecast_changes import (
+        forecast_change,
+        forecast_clean_up_change,
+        forecast_flush_change,
+    )
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.points_amendment_change import points_amendment_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
+    from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.review_open_change import (
         appeals_open_change,
         close_stale_change,
@@ -404,6 +409,13 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(hub_refresh_change())
+    bot.change_queue.register(calendar_sync_change(bot.season_service))
+    bot.change_queue.register(lineup_post_change(bot.placement_service))
+    bot.change_queue.register(sheet_post_change())
+    bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
+    bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
     bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
     bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))
@@ -602,37 +614,15 @@ async def main() -> None:
         # Start the persistent APScheduler
         bot.scheduler_service.start()
 
-        # Wire phase service callbacks into scheduler
-        from leaguebot.weather.services.phase1_service import run_phase1
-        from leaguebot.weather.services.phase2_service import run_phase2
-        from leaguebot.weather.services.phase3_service import run_phase3
+        # Wire weather's callbacks into the scheduler: each asks the change queue
+        from leaguebot.weather.services.forecast_changes import timer_callbacks
 
-        async def _p1(round_id: int) -> None:
-            await run_phase1(round_id, bot)
-
-        async def _p2(round_id: int) -> None:
-            await run_phase2(round_id, bot)
-
-        async def _p3(round_id: int) -> None:
-            await run_phase3(round_id, bot)
-
-        bot.scheduler_service.register_callbacks(_p1, _p2, _p3)
-
-        # Register mystery round notice callback
-        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
-
-        async def _mystery_notice_cb(round_id: int) -> None:
-            await run_mystery_notice(round_id, bot)
-
-        bot.scheduler_service.register_mystery_notice_callback(_mystery_notice_cb)
-
-        # Register post-race forecast cleanup callback
-        from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
-
-        async def _forecast_cleanup_cb(round_id: int) -> None:
-            await run_post_race_cleanup(round_id, bot)
-
-        bot.scheduler_service.register_forecast_cleanup_callback(_forecast_cleanup_cb)
+        callbacks = timer_callbacks(bot.change_queue, bot.db_path)
+        bot.scheduler_service.register_callbacks(
+            callbacks.phases[1], callbacks.phases[2], callbacks.phases[3]
+        )
+        bot.scheduler_service.register_mystery_notice_callback(callbacks.mystery_notice)
+        bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
 
         # Register result submission callback
         from leaguebot.results.services.result_submission_service import run_result_submission_job
@@ -902,7 +892,13 @@ async def main() -> None:
 
 
 async def _recover_missed_phases(bot: LeagueBot) -> None:
-    """Re-fire any weather phases whose horizon has passed but were not executed.
+    """Ask the change queue for any weather phases whose horizon has passed but were not executed.
+
+    Every round is asked for alike, a mystery round included: the mystery rule is weather's
+    (`forecast_changes.ask_forecast`), which turns a mystery round's phase 1 into its notice and
+    asks nothing for its phases 2 and 3. A notice missed while the bot was down is therefore posted
+    on starting, while the round's race is still ahead. A request no longer due is dropped by its
+    change's check.
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
     5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
@@ -922,9 +918,7 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
     was discarded by the scheduler's misfire grace rather than run.
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.weather.services.phase1_service import run_phase1
-    from leaguebot.weather.services.phase2_service import run_phase2
-    from leaguebot.weather.services.phase3_service import run_phase3
+    from leaguebot.weather.services.forecast_changes import ask_forecast
     from leaguebot.weather.models.weather_config import WeatherPipelineConfig
     from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
     from datetime import datetime, timedelta, timezone
@@ -942,7 +936,6 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
             WHERE s.status = 'ACTIVE'
-              AND r.format != 'MYSTERY'
               AND r.status != 'CANCELLED'
               AND d.status != 'CANCELLED'
             """
@@ -972,13 +965,13 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 
         if not p1 and now >= phase1_horizon:
             log.info("Recovery: firing Phase 1 for round %s", round_id)
-            await run_phase1(round_id, bot)
+            await ask_forecast(bot.change_queue, bot.db_path, round_id, 1)
         if not p2 and now >= phase2_horizon:
             log.info("Recovery: firing Phase 2 for round %s", round_id)
-            await run_phase2(round_id, bot)
+            await ask_forecast(bot.change_queue, bot.db_path, round_id, 2)
         if not p3 and now >= phase3_horizon:
             log.info("Recovery: firing Phase 3 for round %s", round_id)
-            await run_phase3(round_id, bot)
+            await ask_forecast(bot.change_queue, bot.db_path, round_id, 3)
 
 
 async def _recover_missed_check_in_calls(
@@ -1364,9 +1357,10 @@ async def _abandon_interrupted_resubmission(
 async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     """Take down what a round's cleanups would have, their moment passing while the bot was down.
 
-    A round's Phase 3 forecast, and its check-in call with its last notice and its distribution
-    message, come down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and
-    ``rsvp_cleanup`` jobs (#425). A job falling due while the bot is stopped is discarded by the
+    A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names),
+    and its check-in call with its last notice and its distribution message, come down
+    `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and ``rsvp_cleanup``
+    jobs (#425). A job falling due while the bot is stopped is discarded by the
     scheduler's misfire grace rather than run late, and nothing else would take those messages
     down: a forecast whose cleanup was missed used to stay for good.
 
@@ -1381,7 +1375,8 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     from datetime import datetime, timezone
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
+    from leaguebot.core.models.change import forecasts_named
+    from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
     from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
     from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 
@@ -1400,17 +1395,21 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT DISTINCT fm.round_id, r.scheduled_at
+                SELECT fm.round_id, r.scheduled_at, fm.phase_number
                   FROM forecast_messages fm
                   JOIN rounds r ON r.id = fm.round_id
                   JOIN divisions d ON d.id = r.division_id
-                 WHERE fm.phase_number = 3
+                 WHERE fm.phase_number IN (1, 2, 3)
                    AND r.status != 'CANCELLED'
                    AND d.status != 'CANCELLED'
-                 ORDER BY r.scheduled_at, fm.round_id
+                 ORDER BY r.scheduled_at, fm.round_id, fm.phase_number
                 """
             )
-            forecasts = [r["round_id"] for r in await cursor.fetchall() if _due(r["scheduled_at"])]
+            # Each round due, in order, with the phases of its forecast still standing.
+            forecasts: dict[int, list[int]] = {}
+            for r in await cursor.fetchall():
+                if _due(r["scheduled_at"]):
+                    forecasts.setdefault(r["round_id"], []).append(r["phase_number"])
             cursor = await db.execute(
                 """
                 SELECT DISTINCT rem.round_id, r.scheduled_at
@@ -1428,12 +1427,15 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
         return
 
     if forecasts and not await bot.module_service.is_weather_enabled():
-        forecasts = []
+        forecasts = {}
 
-    for round_id in forecasts:
-        log.info("_recover_missed_cleanups: deleting round %d's Phase 3 forecast", round_id)
+    for round_id, phases in forecasts.items():
+        log.info(
+            "_recover_missed_cleanups: deleting %s of round_id=%d", forecasts_named(phases),
+            round_id,
+        )
         try:
-            await run_post_race_cleanup(round_id, bot)
+            await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
         except Exception:
             log.exception(
                 "_recover_missed_cleanups: forecast cleanup failed for round %d", round_id

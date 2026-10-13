@@ -1,7 +1,7 @@
 """Post one session's results as a graphic, or stand aside (039).
 
 **One decision in one place**, as 038's lineup posting is. Every occasion that reposts a
-session's textual table reaches ``results_post_service.post_session_results``, so hooking
+session's textual table reaches ``results_post_service.produce_session_results``, so hooking
 there covers all six of them — first provisional posting, penalty phase closed, appeal
 phase closed, resynchronised by command, amendment approved, and a points-configuration
 change causing recalculation — with one branch and no reachability argument.
@@ -20,7 +20,6 @@ alternative output beside the text, never a replacement for it (Constitution XIV
 """
 from __future__ import annotations
 
-import json as _json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -372,10 +371,13 @@ async def try_post(
 ) -> ResultsPostOutcome:
     """Post this session's classification as a graphic, or stand aside.
 
-    **The replacement ordering.** An attachment cannot be introduced into a message already
-    posted, so the image flow replaces rather than edits: the PNG is produced first, the new
-    message posted, and only then is the previous one deleted. A render that fails therefore
-    leaves the channel holding the message it had, and the caller falls back to text.
+    **This posts and nothing else** (#439). An attachment cannot be introduced into a message
+    already posted, so the image flow replaces rather than edits: the PNG is produced first and
+    the new message posted. It saves no id and deletes no message: the caller returns the message
+    posted with the ones it replaces, and the change queue saves the new id with the job's mark
+    and deletes the old messages by jobs of their own once the new one stands. A render that
+    fails therefore leaves the channel holding the message it had, and the caller falls back to
+    text.
 
     The heading and the lifecycle label stay **message text** — the graphic carries the table
     alone (XIV.16).
@@ -451,49 +453,11 @@ async def try_post(
         message = await channel.send(f"{heading}\n{label}", file=attachment)
     except discord.HTTPException as exc:
         log.error("results: could not post image for session %s: %s", session_result.id, exc)
-        # A Discord failure rather than a generation one: the caller falls through and the
-        # **textual** table is what gets posted and, if need be, enqueued for retry.
+        # A Discord failure rather than a generation one: the caller falls through and posts
+        # the **textual** table in its place, in the same try.
         return ResultsPostOutcome()
     finally:
         discard_attachment(attachment)
-
-    # Only now is the previous message removed. The channel never holds nothing, and a
-    # failed rebuild leaves the league the results it had.
-    #
-    # **Read from the database, and taken down whole** (#345). Two things follow from that.
-    # A superseded *textual* posting may occupy several messages, and deleting its anchor alone
-    # stranded the rest for good once the adjacency walk was retired. And a caller doing
-    # produce-then-destroy — the amendment's division-wide rebuild — clears the stored id
-    # before it reposts, precisely to say "do not delete this yet, I am replacing every round
-    # before I take any of them down". The in-memory `session_result` still carries the id it
-    # was loaded with, so reading that instead destroyed the originals during the produce pass
-    # and left a failure part-way with nothing to put back.
-    from leaguebot.results.services.results_post_service import _delete_posting, _parse_ids
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
-            (session_result.id,),
-        )
-        previous_row = await cursor.fetchone()
-    if previous_row is not None and previous_row["results_message_id"] is not None:
-        await _delete_posting(
-            channel,
-            previous_row["results_message_id"],
-            _parse_ids(previous_row["results_message_ids"]),
-            label="results message",
-        )
-
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            # The chunk list is written with the id, not left behind (#345). A graphic is one
-            # message; a stale list from a previous *textual* posting would otherwise claim this
-            # one occupies messages belonging to a posting already destroyed.
-            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
-            "WHERE id = ?",
-            (message.id, _json.dumps([message.id]), session_result.id),
-        )
-        await db.commit()
 
     if decision.notices:
         await report_notices(

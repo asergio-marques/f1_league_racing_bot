@@ -1,37 +1,22 @@
-"""Unit tests for forecast_cleanup_service — Feature 007.
+"""Unit tests for forecast_cleanup_service — Feature 007, as slice 6 of #439 leaves it.
 
-Covers all four user stories:
-  US1 — Phase N message deleted before Phase N+1 is posted
-  US2 — Phase 3 message deleted 24 h after round start
-  US3 — Message deletion on amendment (delete_forecast_message called per phase)
-  US4 — Test mode: deletions suppressed while active; flushed on disable
-
-Acceptance scenarios checked:
-  SC-001  store then delete a phase message
-  SC-002  delete_forecast_message on missing row is a no-op
-  SC-003  test mode active → deletion skipped, row kept
-  SC-004  test mode disabled after SC-003 → flush removes row and calls Discord
-  SC-005  run_post_race_cleanup → deletes phase 3 across all divisions
-  SC-006  Discord NotFound is silently absorbed; DB row still removed
-  SC-007  Discord Forbidden is logged; DB row still removed
+A forecast's id is saved on the connection a save hands it (`store_forecast_message_on`); the
+forecasts a test-mode flush or a clean-up a day after the race deletes are planned as one
+`delete_forecast` job each (`forecast_deletes`), whose running `tests/weather/
+test_forecast_changes.py` covers; and the forecast graphic does not outlive its posting attempt.
 """
 from __future__ import annotations
 
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.weather.services.forecast_cleanup_service import (
-    store_forecast_message,
-    delete_forecast_message,
-    run_post_race_cleanup,
-    flush_pending_deletions,
-)
+from leaguebot.core.models.change import StepFailedOnDiscord
 
 
 # ---------------------------------------------------------------------------
@@ -111,8 +96,21 @@ async def _get_stored_row(db_path: str, round_id: int, division_id: int, phase_n
 
 
 # ---------------------------------------------------------------------------
-# store_forecast_message (T003 / SC-001)
+# store_forecast_message_on (T003 / SC-001)
 # ---------------------------------------------------------------------------
+
+async def _store(db_path: str, phase: int, message_id: int) -> None:
+    """Record *message_id* as phase *phase*'s forecast of round 1 in Div A, on a save this opens
+    and commits, as the post job's record does."""
+    from datetime import datetime, timezone
+
+    from leaguebot.weather.services.forecast_cleanup_service import store_forecast_message_on
+
+    async with get_connection(db_path) as db:
+        await store_forecast_message_on(db, 1, 1, phase, message_id,
+                                        now=datetime.now(timezone.utc))
+        await db.commit()
+
 
 class TestStoreForecastMessage:
 
@@ -120,8 +118,7 @@ class TestStoreForecastMessage:
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
 
-        msg = _make_mock_message(message_id=111)
-        await store_forecast_message(1, 1, 1, msg, db_path)
+        await _store(db_path, 1, 111)
 
         row = await _get_stored_row(db_path, round_id=1, division_id=1, phase_number=1)
         assert row is not None
@@ -133,8 +130,8 @@ class TestStoreForecastMessage:
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
 
-        await store_forecast_message(1, 1, 1, _make_mock_message(111), db_path)
-        await store_forecast_message(1, 1, 1, _make_mock_message(222), db_path)
+        await _store(db_path, 1, 111)
+        await _store(db_path, 1, 222)
 
         row = await _get_stored_row(db_path, 1, 1, 1)
         assert row["message_id"] == 222  # updated, not duplicated
@@ -143,9 +140,9 @@ class TestStoreForecastMessage:
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
 
-        await store_forecast_message(1, 1, 1, _make_mock_message(100), db_path)
-        await store_forecast_message(1, 1, 2, _make_mock_message(200), db_path)
-        await store_forecast_message(1, 1, 3, _make_mock_message(300), db_path)
+        await _store(db_path, 1, 100)
+        await _store(db_path, 2, 200)
+        await _store(db_path, 3, 300)
 
         for phase, expected_id in ((1, 100), (2, 200), (3, 300)):
             row = await _get_stored_row(db_path, 1, 1, phase)
@@ -153,286 +150,112 @@ class TestStoreForecastMessage:
 
 
 # ---------------------------------------------------------------------------
-# delete_forecast_message — happy path (T004 / SC-001)
+# forecast_deletes: the deletions a flush or a clean-up plans, one job a forecast (T013 / SC-004,
+# T010 / SC-005)
 # ---------------------------------------------------------------------------
 
-class TestDeleteForecastMessage:
 
-    async def test_deletes_discord_message_and_row(self, tmp_path):
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-        await store_forecast_message(1, 1, 1, _make_mock_message(111), db_path)
+async def _planned(db_path: str, **which) -> list[tuple[str, int, int, int]]:
+    """The jobs `forecast_deletes` plans for *which*: each name, division, phase and message."""
+    from leaguebot.weather.services.forecast_cleanup_service import forecast_deletes
 
-        bot = _make_bot(db_path, test_mode_active=False)
-        await delete_forecast_message(round_id=1, division_id=1, phase_number=1, bot=bot)
-
-        # Discord delete called once
-        channel = bot.get_channel.return_value
-        partial = channel.get_partial_message.return_value
-        partial.delete.assert_awaited_once()
-
-        # DB row removed
-        row = await _get_stored_row(db_path, 1, 1, 1)
-        assert row is None
-
-    async def test_missing_row_is_noop(self, tmp_path):
-        """No row in DB → returns without error, no Discord calls."""
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-
-        bot = _make_bot(db_path, test_mode_active=False)
-        # Should not raise
-        await delete_forecast_message(round_id=1, division_id=1, phase_number=1, bot=bot)
-
-        bot.get_channel.assert_not_called()
+    return [
+        (job.name, job.payload["division_id"], job.payload["phase"],
+         int(job.payload["message_id"]))
+        for job in await forecast_deletes(db_path, **which)
+    ]
 
 
-# ---------------------------------------------------------------------------
-# Test-mode guard (T012 / SC-003 and SC-004)
-# ---------------------------------------------------------------------------
-
-class TestDeleteForecastMessageTestModeGuard:
-
-    async def test_test_mode_does_not_suppress_delete(self, tmp_path):
-        """Test mode no longer suppresses deletion — behaves identically to live mode."""
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path, test_mode=1)
-        await store_forecast_message(1, 1, 1, _make_mock_message(999), db_path)
-
-        bot = _make_bot(db_path, test_mode_active=True)
-        await delete_forecast_message(round_id=1, division_id=1, phase_number=1, bot=bot)
-
-        # Discord delete IS called (same as live mode)
-        channel = bot.get_channel.return_value
-        partial = channel.get_partial_message.return_value
-        partial.delete.assert_awaited_once()
-
-        # Row removed
-        row = await _get_stored_row(db_path, 1, 1, 1)
-        assert row is None
-
-    async def test_delete_forecast_message_runs_in_test_mode(self, tmp_path):
-        """Test mode no longer suppresses deletion — _discord_delete is called normally."""
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path, test_mode=1)
-        await store_forecast_message(1, 1, 2, _make_mock_message(42), db_path)
-
-        bot = _make_bot(db_path, test_mode_active=True)
-        with patch(
-            "leaguebot.weather.services.forecast_cleanup_service._discord_delete",
-            new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_discord_delete:
-            await delete_forecast_message(round_id=1, division_id=1, phase_number=2, bot=bot)
-
-        # _discord_delete IS called
-        mock_discord_delete.assert_called_once()
-
-        # DB row removed
-        row = await _get_stored_row(db_path, 1, 1, 2)
-        assert row is None
+async def _record(db_path: str, *rows: tuple[int, int, int]) -> None:
+    """Record round 1's forecasts *rows*, each its division, phase and message id."""
+    async with get_connection(db_path) as db:
+        for division_id, phase, message_id in rows:
+            await db.execute(
+                "INSERT INTO forecast_messages "
+                "(round_id, division_id, phase_number, message_id, posted_at) "
+                "VALUES (1, ?, ?, ?, '2026-06-01T12:00:00')",
+                (division_id, phase, message_id),
+            )
+        await db.commit()
 
 
-# ---------------------------------------------------------------------------
-# flush_pending_deletions (T013 / SC-004)
-# ---------------------------------------------------------------------------
+async def _div_b(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, forecast_channel_id, mention_role_id) "
+            "VALUES (2, 1, 'Div B', 888, 666)"
+        )
+        await db.commit()
+
 
 class TestFlushPendingDeletions:
 
     async def test_flushes_all_stored_messages_for_server(self, tmp_path):
-        """SC-004: all stored messages deleted once test mode is disabled."""
+        """SC-004: Div A's Phase 1, 2 and 3 forecasts of round 1 (1001-1003) recorded when test
+        mode is switched off: the flush plans one delete_forecast job for each, and deletes
+        nothing itself."""
         db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path, test_mode=0)  # test mode now OFF
+        await _seed_base(db_path, test_mode=0)
+        await _record(db_path, (1, 1, 1001), (1, 2, 1002), (1, 3, 1003))
 
-        # Manually insert rows (simulating messages stored while test mode was on)
+        assert sorted(await _planned(db_path)) == [
+            ("delete_forecast", 1, 1, 1001),
+            ("delete_forecast", 1, 2, 1002),
+            ("delete_forecast", 1, 3, 1003),
+        ]
         async with get_connection(db_path) as db:
-            for phase in (1, 2, 3):
-                await db.execute(
-                    "INSERT INTO forecast_messages "
-                    "(round_id, division_id, phase_number, message_id, posted_at) "
-                    "VALUES (1, 1, ?, ?, '2026-06-01T12:00:00')",
-                    (phase, 1000 + phase),
-                )
-            await db.commit()
-
-        bot = _make_bot(db_path, test_mode_active=False)
-        await flush_pending_deletions(bot=bot)
-
-        # All rows gone
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM forecast_messages WHERE round_id = 1")
-            count = (await cursor.fetchone())[0]
-        assert count == 0
-
-        # Discord delete called three times
-        channel = bot.get_channel.return_value
-        partial = channel.get_partial_message.return_value
-        assert partial.delete.await_count == 3
+            cursor = await db.execute("SELECT COUNT(*) FROM forecast_messages")
+            assert (await cursor.fetchone())[0] == 3
 
     async def test_flush_empty_is_noop(self, tmp_path):
-        """No stored messages → completes without error."""
+        """No forecast recorded: the flush plans nothing."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
 
-        bot = _make_bot(db_path, test_mode_active=False)
-        await flush_pending_deletions(bot=bot)  # should not raise
-
-        bot.get_channel.assert_not_called()
+        assert await _planned(db_path) == []
 
     async def test_flush_pending_deletions_clears_accumulated_rows(self, tmp_path):
-        """T014: all rows accumulated across two divisions are deleted and
-        _discord_delete is called exactly once per row."""
+        """T014: Phase 1 and 2 forecasts of round 1 recorded in Div A (1001, 1002) and Div B
+        (2001, 2002): the flush plans four delete_forecast jobs, one for each."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path, test_mode=0)
+        await _div_b(db_path)
+        await _record(db_path, (1, 1, 1001), (1, 2, 1002), (2, 1, 2001), (2, 2, 2002))
 
-        # Add a second division
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO divisions (id, season_id, name, forecast_channel_id, mention_role_id) "
-                "VALUES (2, 1, 'Div B', 888, 666)"
-            )
-            await db.commit()
+        planned = await _planned(db_path)
 
-        # Simulate messages stored while test mode was active — two divisions, two rows each
-        async with get_connection(db_path) as db:
-            for div_id, phase, msg_id in (
-                (1, 1, 1001),
-                (1, 2, 1002),
-                (2, 1, 2001),
-                (2, 2, 2002),
-            ):
-                await db.execute(
-                    "INSERT INTO forecast_messages "
-                    "(round_id, division_id, phase_number, message_id, posted_at) "
-                    "VALUES (1, ?, ?, ?, '2026-06-01T12:00:00')",
-                    (div_id, phase, msg_id),
-                )
-            await db.commit()
+        assert sorted(planned) == [
+            ("delete_forecast", 1, 1, 1001),
+            ("delete_forecast", 1, 2, 1002),
+            ("delete_forecast", 2, 1, 2001),
+            ("delete_forecast", 2, 2, 2002),
+        ]
 
-        bot = _make_bot(db_path, test_mode_active=False)
-        with patch(
-            "leaguebot.weather.services.forecast_cleanup_service._discord_delete",
-            new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_discord_delete:
-            await flush_pending_deletions(bot=bot)
-
-        # _discord_delete called exactly once per accumulated row (4 total)
-        assert mock_discord_delete.call_count == 4
-
-        # All forecast_messages rows removed
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM forecast_messages")
-            count = (await cursor.fetchone())[0]
-        assert count == 0
-
-
-# ---------------------------------------------------------------------------
-# run_post_race_cleanup (T010 / SC-005)
-# ---------------------------------------------------------------------------
 
 class TestRunPostRaceCleanup:
 
     async def test_deletes_phase3_for_all_divisions(self, tmp_path):
-        """SC-005: post-race job deletes Phase 3 messages for all divisions."""
+        """SC-005: round 1's Phase 3 forecasts stand in Div A (301) and Div B (302): the clean-up
+        a day after the race plans the deletion of both."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
+        await _div_b(db_path)
+        await _record(db_path, (1, 3, 301), (2, 3, 302))
 
-        # Add a second division + round mapping to same round_id = 1 via forecast_messages
-        async with get_connection(db_path) as db:
-            # Second division
-            await db.execute(
-                "INSERT INTO divisions (id, season_id, name, forecast_channel_id, mention_role_id) "
-                "VALUES (2, 1, 'Div B', 888, 666)"
-            )
-            # Phase 3 rows for both divisions
-            for div_id, msg_id in ((1, 301), (2, 302)):
-                await db.execute(
-                    "INSERT INTO forecast_messages "
-                    "(round_id, division_id, phase_number, message_id, posted_at) "
-                    "VALUES (1, ?, 3, ?, '2026-06-01T14:00:00')",
-                    (div_id, msg_id),
-                )
-            await db.commit()
+        planned = await _planned(db_path, round_id=1, phases=[3])
 
-        bot = _make_bot(db_path, test_mode_active=False)
-        await run_post_race_cleanup(round_id=1, bot=bot)
+        assert sorted(planned) == [("delete_forecast", 1, 3, 301), ("delete_forecast", 2, 3, 302)]
 
-        # Both Phase 3 rows removed
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM forecast_messages WHERE round_id = 1 AND phase_number = 3"
-            )
-            count = (await cursor.fetchone())[0]
-        assert count == 0
-
-    async def test_does_not_delete_earlier_phases(self, tmp_path):
-        """Cleanup job only targets phase 3; phases 1/2 rows are untouched."""
+    async def test_a_phases_filter_plans_only_the_phases_it_names(self, tmp_path):
+        """Round 1's Phase 1, 2 and 3 forecasts recorded in Div A: asked for Phase 3 alone
+        (`phases=[3]`), `forecast_deletes` plans the deletion of Phase 3's alone. Which phases a
+        clean-up a day after the race asks for is the clean-up's own choice, pinned in
+        `test_forecast_changes.py` (whichever of Phases 1 to 3 is still recorded)."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
+        await _record(db_path, (1, 1, 101), (1, 2, 102), (1, 3, 103))
 
-        async with get_connection(db_path) as db:
-            for phase in (1, 2, 3):
-                await db.execute(
-                    "INSERT INTO forecast_messages "
-                    "(round_id, division_id, phase_number, message_id, posted_at) "
-                    "VALUES (1, 1, ?, ?, '2026-06-01T14:00:00')",
-                    (phase, 100 + phase),
-                )
-            await db.commit()
-
-        bot = _make_bot(db_path, test_mode_active=False)
-        await run_post_race_cleanup(round_id=1, bot=bot)
-
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT phase_number FROM forecast_messages WHERE round_id = 1"
-            )
-            remaining = [r["phase_number"] for r in await cursor.fetchall()]
-        assert sorted(remaining) == [1, 2]
-
-
-# ---------------------------------------------------------------------------
-# Discord error handling (SC-006, SC-007)
-# ---------------------------------------------------------------------------
-
-class TestDiscordErrorHandling:
-
-    async def test_not_found_absorbed_row_removed(self, tmp_path):
-        """SC-006: NotFound is silently swallowed; DB row still removed."""
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-        await store_forecast_message(1, 1, 2, _make_mock_message(777), db_path)
-
-        bot = _make_bot(db_path, test_mode_active=False)
-        channel = bot.get_channel.return_value
-        channel.get_partial_message.return_value.delete = AsyncMock(
-            side_effect=discord.NotFound(MagicMock(status=404), "unknown message")
-        )
-
-        # Should not raise
-        await delete_forecast_message(round_id=1, division_id=1, phase_number=2, bot=bot)
-
-        # DB row still removed despite the 404
-        row = await _get_stored_row(db_path, 1, 1, 2)
-        assert row is None
-
-    async def test_forbidden_logged_row_removed(self, tmp_path):
-        """SC-007: Forbidden is logged; DB row removed so future calls are unblocked."""
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-        await store_forecast_message(1, 1, 3, _make_mock_message(888), db_path)
-
-        bot = _make_bot(db_path, test_mode_active=False)
-        channel = bot.get_channel.return_value
-        channel.get_partial_message.return_value.delete = AsyncMock(
-            side_effect=discord.Forbidden(MagicMock(status=403), "missing access")
-        )
-
-        await delete_forecast_message(round_id=1, division_id=1, phase_number=3, bot=bot)
-
-        row = await _get_stored_row(db_path, 1, 1, 3)
-        assert row is None
+        assert await _planned(db_path, round_id=1, phases=[3]) == [("delete_forecast", 1, 3, 103)]
 
 
 # ---------------------------------------------------------------------------
@@ -444,132 +267,6 @@ class TestDiscordErrorHandling:
 # runs the migrations and seeds divisions and rounds. The chain lives in
 # forecast_cleanup_service, so it is tested against the real table it writes.
 # ---------------------------------------------------------------------------
-
-class TestPostPhaseMessageChain:
-    """Produce before destroy, and a chain indifferent to how a message was drawn."""
-
-    @staticmethod
-    def _bot_posting(db_path, message, *, test_mode=False):
-        """A bot whose **textual** posting succeeds and returns *message*."""
-        bot = _make_bot(db_path, test_mode_active=test_mode)
-        bot.output_router.post_forecast = AsyncMock(return_value=message)
-        return bot
-
-    @staticmethod
-    def _bot_attaching(db_path, message, *, test_mode=False):
-        """A bot whose **graphic** posting succeeds — ``channel.send`` returns *message*.
-
-        The channel `_make_bot` builds is already specced as a ``discord.TextChannel``, which
-        is what ``post_phase_message`` checks before sending, so the same object serves the
-        send and the later delete.
-        """
-        bot = _make_bot(db_path, test_mode_active=test_mode)
-        bot.get_channel.return_value.send = AsyncMock(return_value=message)
-        return bot
-
-    @pytest.mark.asyncio
-    async def test_a_text_message_is_superseded_by_a_graphic(self, tmp_path):
-        """FR-046 — the occasion reads which message stands, never how it was drawn."""
-        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-
-        # Phase 1 posted as **text**.
-        bot = self._bot_posting(db_path, _make_mock_message(111))
-        await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
-            phase_number=1, text="phase 1 forecast",
-        )
-        assert (await _get_stored_row(db_path, 1, 1, 1)) is not None
-
-        # Phase 2 posted as a **graphic**, superseding it.
-        bot2 = self._bot_attaching(db_path, _make_mock_message(222))
-        await post_phase_message(
-            bot2, round_id=1, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-            attachment=MagicMock(), attachment_text="<@&1>", supersedes=1,
-        )
-
-        assert (await _get_stored_row(db_path, 1, 1, 1)) is None, "phase 1 was not superseded"
-        row = await _get_stored_row(db_path, 1, 1, 2)
-        assert row is not None and row["message_id"] == 222
-
-    @pytest.mark.asyncio
-    async def test_a_graphic_is_superseded_by_a_text_fallback(self, tmp_path):
-        """The reverse: a phase that fell back to text supersedes one posted as a picture."""
-        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-
-        bot = self._bot_attaching(db_path, _make_mock_message(333))
-        await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-            attachment=MagicMock(), attachment_text="<@&1>",
-        )
-        assert (await _get_stored_row(db_path, 1, 1, 2)) is not None
-
-        # Phase 3's render failed, so the text is posted — and still supersedes.
-        bot3 = self._bot_posting(db_path, _make_mock_message(444))
-        await post_phase_message(
-            bot3, round_id=1, division_id=1, channel_id=99,
-            phase_number=3, text="phase 3 forecast", supersedes=2,
-        )
-
-        assert (await _get_stored_row(db_path, 1, 1, 2)) is None
-        assert (await _get_stored_row(db_path, 1, 1, 3))["message_id"] == 444
-
-    @pytest.mark.asyncio
-    async def test_a_failed_posting_leaves_the_standing_forecast_alone(self, tmp_path):
-        """Produce before destroy (FR-045). The window this rule exists to close."""
-        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-
-        db_path = await _make_db(str(tmp_path))
-        await _seed_base(db_path)
-
-        bot = self._bot_posting(db_path, _make_mock_message(111))
-        await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-        )
-
-        # Phase 3's posting fails outright.
-        failing = _make_bot(db_path)
-        failing.output_router.post_forecast = AsyncMock(return_value=None)
-        result = await post_phase_message(
-            failing, round_id=1, division_id=1, channel_id=99,
-            phase_number=3, text="phase 3 forecast", supersedes=2,
-        )
-
-        assert result is None
-        assert (await _get_stored_row(db_path, 1, 1, 2)) is not None, (
-            "the standing forecast was destroyed by a posting that never succeeded"
-        )
-        assert (await _get_stored_row(db_path, 1, 1, 3)) is None
-
-    @pytest.mark.asyncio
-    async def test_test_mode_treats_both_manners_alike(self):
-        """FR-047, corrected 2026-08-14.
-
-        The wip-spec said deletions stay suppressed while test mode is active, "as they are
-        for the textual flow". They are **not**: suppression was removed from
-        ``delete_forecast_message`` at some earlier increment, and the two tests above this
-        class say so in their own docstrings. The obligation that survives is the one that
-        was always the point — the image flow does whatever the textual flow does — so that
-        is what is asserted here.
-        """
-        import inspect
-
-        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
-
-        source = inspect.getsource(post_phase_message)
-        # One delete call, reached identically whether or not an attachment was posted.
-        assert source.count("delete_forecast_message(") == 1
-        assert "test_mode" not in source, (
-            "the image flow must not grow a test-mode rule the textual flow does not have"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -608,7 +305,7 @@ class TestTheForecastGraphicIsDiscarded:
         bot.get_channel.return_value.send = AsyncMock(return_value=_make_mock_message(222))
 
         await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
+            bot, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=self._attachment(png), attachment_text="<@&1>",
         )
@@ -617,7 +314,8 @@ class TestTheForecastGraphicIsDiscarded:
 
     @pytest.mark.asyncio
     async def test_it_is_gone_when_the_send_fails(self, tmp_path):
-        """The textual forecast goes to the retry queue; the picture goes nowhere."""
+        """The post raises for the change queue, whose next try posts the text; the picture goes
+        nowhere."""
         import discord
 
         from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
@@ -631,11 +329,12 @@ class TestTheForecastGraphicIsDiscarded:
             side_effect=discord.HTTPException(MagicMock(status=500), "upload failed")
         )
 
-        await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-            attachment=self._attachment(png), attachment_text="<@&1>",
-        )
+        with pytest.raises(StepFailedOnDiscord):
+            await post_phase_message(
+                bot, division_id=1, channel_id=99,
+                phase_number=2, text="phase 2 forecast",
+                attachment=self._attachment(png), attachment_text="<@&1>",
+            )
 
         assert not png.exists()
 
@@ -656,13 +355,13 @@ class TestTheForecastGraphicIsDiscarded:
             side_effect=discord.NotFound(MagicMock(status=404), "no such channel")
         )
 
-        result = await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-            attachment=self._attachment(png), attachment_text="<@&1>",
-        )
+        with pytest.raises(StepFailedOnDiscord):
+            await post_phase_message(
+                bot, division_id=1, channel_id=99,
+                phase_number=2, text="phase 2 forecast",
+                attachment=self._attachment(png), attachment_text="<@&1>",
+            )
 
-        assert result is None
         assert not png.exists(), "a picture abandoned before its send must still be removed"
 
     @pytest.mark.asyncio
@@ -677,59 +376,78 @@ class TestTheForecastGraphicIsDiscarded:
         bot = _make_bot(db_path)
         bot.get_channel.return_value = MagicMock()  # not specced as a TextChannel
 
-        result = await post_phase_message(
-            bot, round_id=1, division_id=1, channel_id=99,
-            phase_number=2, text="phase 2 forecast",
-            attachment=self._attachment(png), attachment_text="<@&1>",
-        )
+        with pytest.raises(StepFailedOnDiscord):
+            await post_phase_message(
+                bot, division_id=1, channel_id=99,
+                phase_number=2, text="phase 2 forecast",
+                attachment=self._attachment(png), attachment_text="<@&1>",
+            )
 
-        assert result is None
         assert not png.exists(), "a picture abandoned before its send must still be removed"
 
 
 # ---------------------------------------------------------------------------
-# delete_forecast_message, raising (#439, slice 4b, amendment A)
+# _discord_delete: the channel fetched where it is not cached, and what a refusal does
 #
-# `/round amend` on the change queue deletes each withdrawn forecast as a job of its own, which
-# stops the queue on a failure until it is retried. So the raising form keeps the row where the
-# message is left standing, for the next try to read, where the quiet form drops it.
+# It raises where it cannot delete, for the delete job to judge.
 # ---------------------------------------------------------------------------
 
-
-async def test_a_raising_forecast_delete_keeps_its_record_and_raises(tmp_path):
-    """Round 1's Phase 2 forecast (message 777) stands in Div A's forecast channel (999), and
-    Discord refuses to delete it. Deleting it in the raising form raises StepFailedOnDiscord from
-    Discord's refusal, keeping the channel and the message on its result, and keeps the row."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    db_path = await _make_db(str(tmp_path))
-    await _seed_base(db_path)
-    await store_forecast_message(1, 1, 2, _make_mock_message(777), db_path)
-    bot = _make_bot(db_path)
-    refusal = discord.Forbidden(MagicMock(status=403), "missing access")
-    bot.get_channel.return_value.get_partial_message.return_value.delete = AsyncMock(
-        side_effect=refusal
-    )
-
-    with pytest.raises(StepFailedOnDiscord) as caught:
-        await delete_forecast_message(1, 1, 2, bot, raise_on_failure=True)
-
-    assert caught.value.result == {"channel_id": 999, "message_id": 777}
-    assert caught.value.__cause__ is refusal
-    assert await _get_stored_row(db_path, 1, 1, 2) is not None
+def _refusal(cls: type[discord.HTTPException], status: int, text: str) -> discord.HTTPException:
+    response = MagicMock(status=status, reason=text)
+    return cls(response, text)
 
 
-async def test_a_raising_forecast_delete_counts_a_message_already_gone_as_gone(tmp_path):
-    """Round 1's Phase 2 forecast (message 777) was deleted by hand. Deleting it in the raising
-    form raises nothing and drops the row."""
-    db_path = await _make_db(str(tmp_path))
-    await _seed_base(db_path)
-    await store_forecast_message(1, 1, 2, _make_mock_message(777), db_path)
-    bot = _make_bot(db_path)
-    bot.get_channel.return_value.get_partial_message.return_value.delete = AsyncMock(
-        side_effect=discord.NotFound(MagicMock(status=404), "unknown message")
-    )
+class TestDiscordDelete:
 
-    await delete_forecast_message(1, 1, 2, bot, raise_on_failure=True)
+    async def test_a_channel_not_cached_is_fetched_and_the_message_deleted(self, tmp_path):
+        from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
 
-    assert await _get_stored_row(db_path, 1, 1, 2) is None
+        bot = _make_bot(await _make_db(str(tmp_path)))
+        channel = bot.get_channel.return_value
+        bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(return_value=channel)
+
+        await _discord_delete(bot, 999, 4242)
+
+        bot.fetch_channel.assert_awaited_once_with(999)
+        channel.get_partial_message.assert_called_once_with(4242)
+        channel.get_partial_message.return_value.delete.assert_awaited_once()
+
+    async def test_a_channel_that_is_not_a_text_channel_raises_naming_it(self, tmp_path):
+        """A channel that is no text channel stops the job, keeping the channel and the message in
+        its result; nothing is deleted."""
+        from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
+
+        bot = _make_bot(await _make_db(str(tmp_path)))
+        bot.get_channel.return_value = MagicMock(spec=discord.VoiceChannel)
+
+        with pytest.raises(StepFailedOnDiscord, match="channel 999 is not a text channel") as err:
+            await _discord_delete(bot, 999, 4242)
+
+        assert err.value.result == {"channel_id": 999, "message_id": 4242}
+
+    async def test_discord_s_refusal_is_raised_as_it_is(self, tmp_path):
+        from leaguebot.weather.services.forecast_cleanup_service import _discord_delete
+
+        bot = _make_bot(await _make_db(str(tmp_path)))
+        refusal = _refusal(discord.Forbidden, 403, "Missing Permissions")
+        bot.get_channel.return_value.get_partial_message.return_value.delete.side_effect = refusal
+
+        with pytest.raises(discord.Forbidden) as err:
+            await _discord_delete(bot, 999, 4242)
+
+        assert err.value is refusal
+
+
+async def test_a_text_forecast_with_no_channel_to_post_to_raises(tmp_path):
+    """The router finds no forecast channel to post a forecast's text to: the post raises for the
+    change queue to stop on, naming the phase."""
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+
+    bot = _make_bot(await _make_db(str(tmp_path)))
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+
+    with pytest.raises(StepFailedOnDiscord, match="the Phase 2 forecast has no channel to be "
+                                                  "posted to"):
+        await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
+                                 text="phase 2 forecast")

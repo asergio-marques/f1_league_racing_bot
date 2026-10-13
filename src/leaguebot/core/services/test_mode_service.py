@@ -11,11 +11,13 @@ Provides four async functions consumed by TestModeCog:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import FORECAST, FORECAST_CLEAN_UP
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -151,9 +153,49 @@ async def count_live_real_drivers(db_path: str) -> int:
 # Phase advancement queue
 # ---------------------------------------------------------------------------
 
+def _weather_steps_undone(row: Any, in_hand: set[tuple[int, int]]) -> list[int]:
+    """The weather steps of *row*'s round not done and not already in hand on the change queue
+    (*in_hand*, as (round, phase)), in order: a mystery round's notice (0) until it is posted, or
+    each of Phases 1 to 3 not done.
+
+    The one judgement of a weather step still owed: `get_next_pending_phase` offers from it for a
+    round still to be raced, and `get_passed_over_steps` names from it what advance passes over
+    for a raced one, so that the two lists cannot drift apart.
+    """
+    if str(row["format"]).upper() == "MYSTERY":
+        owed = [] if row["phase1_done"] else [0]
+    else:
+        owed = [n for n in (1, 2, 3) if not row[f"phase{n}_done"]]
+    return [n for n in owed if (row["round_id"], n) not in in_hand]
+
+
+def _weather_entry(row: Any, phase: int) -> PhaseEntry:
+    """*row*'s weather step *phase* as an entry found from database state, with no job."""
+    is_mystery = str(row["format"]).upper() == "MYSTERY"
+    return PhaseEntry(
+        round_id=row["round_id"],
+        round_number=row["round_number"],
+        division_id=row["division_id"],
+        phase_number=phase,
+        track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+        division_name=row["division_name"],
+        job_id=None,
+    )
+
+
+def _race_run(scheduled_at: str, now: datetime) -> bool:
+    """Whether a round scheduled at *scheduled_at* (naive means UTC) has been raced by *now*."""
+    moment = datetime.fromisoformat(scheduled_at)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment <= now
+
+
 async def get_next_pending_phase(
     db_path: str,
     scheduler_service: Any = None,
+    *,
+    now: datetime | None = None,
 ) -> PhaseEntry | None:
     """Return the earliest pending action entry based on the APScheduler job store.
 
@@ -176,8 +218,29 @@ async def get_next_pending_phase(
     the check of earlier rounds made before each scheduler job, and in the fallback once
     the job store is exhausted.
 
+    A weather step of a round whose race has been run by *now* (the present, where not given) is
+    passed over, since the change queue drops a forecast for a race already run as not due
+    (A25). Rehearsing weather in test mode needs rounds dated in the future (owner, 2026-10-12).
+
+    A weather step whose forecast or clean-up is already in hand on the change queue (asked by
+    an earlier advance, and not yet run) is passed over, so a second advance before the queue
+    has run the first offers the next step and not the same one. The scheduler's own job was
+    cancelled by that first advance, so the database would otherwise offer the step again.
+
     If there is no ACTIVE season for this server, returns None.
     """
+    from leaguebot.core.services.change_queue import unfinished
+
+    # (round, phase) of each forecast asked of the queue and not yet run; the round alone for a
+    # clean-up (phase 8).
+    forecasts_in_hand: set[tuple[int, int]] = {
+        (int(p["round_id"]), int(p["phase"]))
+        for p in await unfinished(db_path, (FORECAST,))
+    }
+    clean_ups_in_hand: set[int] = {
+        int(p["round_id"]) for p in await unfinished(db_path, (FORECAST_CLEAN_UP,))
+    }
+
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
@@ -192,6 +255,7 @@ async def get_next_pending_phase(
                 r.phase3_done,
                 r.checkin_cleared,
                 r.status,
+                r.scheduled_at,
                 d.name         AS division_name
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
@@ -208,6 +272,12 @@ async def get_next_pending_phase(
 
         round_ids: set[int] = {r["round_id"] for r in rows}
         round_info = {r["round_id"]: r for r in rows}
+        # Rounds whose race has been run: the change queue drops their forecasts as not due (A25),
+        # so none of their weather steps is offered.
+        moment = now if now is not None else datetime.now(timezone.utc)
+        raced: set[int] = {
+            r["round_id"] for r in rows if _race_run(r["scheduled_at"], moment)
+        }
 
         # Rounds that already have at least one ACTIVE session_result (for mystery fallback)
         results_cursor = await db.execute(
@@ -230,37 +300,14 @@ async def get_next_pending_phase(
     # first incomplete phase (1, 2, or 3) based on the phase flag columns.
     if scheduler_service is None:
         for row in rows:
-            is_mystery = str(row["format"]).upper() == "MYSTERY"
-            if is_mystery:
-                if not row["phase1_done"]:
-                    return PhaseEntry(
-                        round_id=row["round_id"],
-                        round_number=row["round_number"],
-                        division_id=row["division_id"],
-                        phase_number=0,
-                        track_name=row["track_name"] or "Mystery",
-                        division_name=row["division_name"],
-                        job_id=None,
-                    )
-                continue  # noticed mystery → skip
-            # Normal round: find first incomplete phase
-            if not row["phase1_done"]:
-                phase = 1
-            elif not row["phase2_done"]:
-                phase = 2
-            elif not row["phase3_done"]:
-                phase = 3
-            else:
-                continue  # all weather phases done
-            return PhaseEntry(
-                round_id=row["round_id"],
-                round_number=row["round_number"],
-                division_id=row["division_id"],
-                phase_number=phase,
-                track_name=row["track_name"] or "Unknown",
-                division_name=row["division_name"],
-                job_id=None,
-            )
+            if row["round_id"] in raced:
+                continue  # its race has been run: no forecast of it is due
+            # The first weather step still owed and not in hand on the queue: a mystery round's
+            # notice, or the first of Phases 1 to 3.
+            undone = _weather_steps_undone(row, forecasts_in_hand)
+            if not undone:
+                continue  # all weather phases done (a noticed mystery round), or in hand
+            return _weather_entry(row, undone[0])
         return None
 
     # ── Primary: scheduler job store ────────────────────────────────────────
@@ -308,10 +355,10 @@ async def get_next_pending_phase(
         else:
             rsvp_state = {}
 
-        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (8).
+        # Rounds with a Phase 1 to 3 forecast still standing, for the forecast cleanup (8).
         if weather_module_enabled:
             forecast_cursor = await db.execute(
-                "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+                "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)",
             )
             standing_forecasts: set[int] = {
                 r["round_id"] for r in await forecast_cursor.fetchall()
@@ -341,12 +388,12 @@ async def get_next_pending_phase(
         `_first_pending_for_row` offers nothing for one, which would discard its cleanup job as
         stale.
 
-        Pending means there is still something to take down: a Phase 3 forecast (8), or a
+        Pending means there is still something to take down: a forecast of Phase 1 to 3 (8), or a
         check-in call recorded as standing (9). Once taken down there is nothing, and a cleanup
         with nothing to take down is not offered either.
         """
         rid = row["round_id"]
-        if phase in (None, 8) and rid in standing_forecasts:
+        if phase in (None, 8) and rid in standing_forecasts and rid not in clean_ups_in_hand:
             return _make_entry(row, 8)
         if phase in (None, 9) and attendance_module_enabled and rid in rsvp_state:
             return _make_entry(row, 9)
@@ -368,6 +415,13 @@ async def get_next_pending_phase(
         """
         rid = row["round_id"]
         is_mystery = str(row["format"]).upper() == "MYSTERY"
+        # The weather steps still owed, by the rule `get_passed_over_steps` shares: none while
+        # the module is off, nor for a round whose race has been run.
+        weather_due = (
+            set(_weather_steps_undone(row, forecasts_in_hand))
+            if weather_module_enabled and rid not in raced
+            else set()
+        )
 
         # Skip rounds that are fully done or already in results processing.
         # A round that has ended, or whose appeals are being judged, offers no more phases.
@@ -388,7 +442,7 @@ async def get_next_pending_phase(
         # ── Phase 0 / Phase 1: mystery notice or weather P1 ──────────────
         # The notice is a weather posting like Phase 1, and a disabled module produces
         # nothing: a live season arms no job for either while weather is off (#426).
-        if weather_module_enabled and not row["phase1_done"]:
+        if (0 if is_mystery else 1) in weather_due:
             return _make(0 if is_mystery else 1)
 
         # ── Phase 5: RSVP notice ──────────────────────────────────────────
@@ -398,7 +452,7 @@ async def get_next_pending_phase(
             return _make(5)
 
         # ── Phase 2: weather P2 (normal rounds only) ──────────────────────
-        if not is_mystery and weather_module_enabled and not row["phase2_done"]:
+        if 2 in weather_due:
             return _make(2)
 
         # ── Phase 6: RSVP last-notice ─────────────────────────────────────
@@ -409,7 +463,7 @@ async def get_next_pending_phase(
                 return _make(6)
 
         # ── Phase 3: weather P3 (normal rounds only) ──────────────────────
-        if not is_mystery and weather_module_enabled and not row["phase3_done"]:
+        if 3 in weather_due:
             return _make(3)
 
         # ── Phase 7: RSVP deadline ────────────────────────────────────────
@@ -436,12 +490,15 @@ async def get_next_pending_phase(
             # `_weather_phase_job` reads the format as the job fires, and this is where advance
             # reads it, once. `weather_p1` is the notice (0) — and stale once the notice is up,
             # since advancing it would post the notice a second time. The other two do nothing
-            # when they fire, so there is nothing to advance for them. Handed on as phases 1 to 3
-            # they reached `run_phase1` to `run_phase3`, which read no format (#426).
+            # when they fire, so there is nothing to advance for them (#426).
             if phase in (1, 2, 3) and str(rnd["format"]).upper() == "MYSTERY":
                 if phase != 1 or rnd["phase1_done"]:
                     continue
                 phase = 0
+            if (job["round_id"], phase) in forecasts_in_hand:
+                continue  # asked of the change queue by an earlier advance, not yet run
+            if phase in (0, 1, 2, 3) and job["round_id"] in raced:
+                continue  # its race has been run: the change queue would drop the forecast
             is_cleanup = phase in (8, 9)
             # Before returning this scheduler job, check all earlier rounds (by
             # scheduled_at) for any pending work that the scheduler cannot see —
@@ -493,6 +550,69 @@ async def get_next_pending_phase(
     return None
 
 
+async def get_passed_over_steps(
+    db_path: str, *, now: datetime | None = None
+) -> list[PhaseEntry]:
+    """Every weather step `get_next_pending_phase` passes over as *now* stands (the present, where
+    not given): each Phase 1 to 3, or mystery round notice, still owed (`_weather_steps_undone`)
+    for a round whose race has been run, the change queue dropping a forecast for a race already
+    run (A25). All of them, wherever they fall against the step advance offers, ordered by the
+    round's race time, then its division, then the phase. `/test-mode advance` names each in its
+    reply before the step it advances (owner, 2026-10-12, "Advance names what it skipped").
+
+    Only while the weather module is on, as nothing of it is armed while it is off, and never a
+    step already in hand on the change queue. A round that has ended, or whose appeals are being
+    judged, is left out: advance offers nothing more for it, so it passes nothing of it over; so
+    are a cancelled round and a round of a cancelled division. Nothing is recorded of a step
+    named, so advance names it again on each run until the round ends, or the season does where
+    results are off and no round ever ends.
+    """
+    from leaguebot.core.services.change_queue import unfinished
+
+    in_hand: set[tuple[int, int]] = {
+        (int(p["round_id"]), int(p["phase"])) for p in await unfinished(db_path, (FORECAST,))
+    }
+    moment = now if now is not None else datetime.now(timezone.utc)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
+        found = await cursor.fetchone()
+        if found is None or not found[0]:
+            return []
+        cursor = await db.execute(
+            """
+            SELECT r.id AS round_id, r.round_number, r.division_id, r.format, r.track_name,
+                   r.phase1_done, r.phase2_done, r.phase3_done, r.scheduled_at,
+                   d.name AS division_name
+            FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
+            JOIN seasons   s ON s.id = d.season_id
+            WHERE s.status = 'ACTIVE'
+              AND d.status != 'CANCELLED'
+              AND r.status NOT IN ('CANCELLED', 'FINAL', 'AWAITING_APPEAL_VERDICTS')
+            ORDER BY r.scheduled_at ASC, d.id ASC
+            """,
+        )
+        rows = list(await cursor.fetchall())
+    return [
+        _weather_entry(row, phase)
+        for row in rows
+        if _race_run(row["scheduled_at"], moment)
+        for phase in _weather_steps_undone(row, in_hand)
+    ]
+
+
+async def standing_forecast_phases(db_path: str, round_id: int) -> list[int]:
+    """The phases, of 1 to 3, whose forecast of *round_id* is still recorded: what the forecast
+    clean-up deletes, by which `/test-mode advance` names it."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT DISTINCT phase_number FROM forecast_messages "
+            "WHERE round_id = ? AND phase_number IN (1, 2, 3) ORDER BY phase_number",
+            (round_id,),
+        )
+        return [int(row["phase_number"]) for row in await cursor.fetchall()]
+
+
 async def round_result_status(db_path: str, round_id: int) -> str | None:
     """Return a round's lifecycle state, or None if there is no such round.
 
@@ -539,9 +659,15 @@ def _phase_status(
     return "⏳" if event in queued else "⚠️"
 
 
+#: The mark of a raced round's weather step that was never done: advance passes it over.
+PASSED_OVER = "⏭️"
+
+
 async def build_review_summary(
     db_path: str,
     scheduler_service: Any = None,
+    *,
+    now: datetime | None = None,
 ) -> str:
     """Return a formatted multi-line string summarising all rounds and phase status.
 
@@ -555,6 +681,12 @@ async def build_review_summary(
     When *scheduler_service* is supplied, each pending phase is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
       ⚠️  = job is absent (misfired, evicted, or never created — needs /advance)
+
+    A weather step left undone on a round whose race has been run by *now* (the present, where
+    not given) is marked ⏭️ (`PASSED_OVER`), scheduler or not: `get_next_pending_phase` passes it
+    over, the change queue dropping a forecast for a race already run (A25), so neither ⏳ nor
+    "use /test-mode advance" would be true of it. Such a round's clean-up is done once nothing
+    of Phases 1 to 3 stands, whether or not Phase 3 ever ran.
 
     Returns an informative message string if no active season exists.
     """
@@ -632,9 +764,9 @@ async def build_review_summary(
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
 
-        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (#425)
+        # Rounds with a Phase 1 to 3 forecast still standing, for the forecast cleanup (#425)
         forecast_cursor = await db.execute(
-            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)",
         )
         standing_forecasts: set[int] = {r["round_id"] for r in await forecast_cursor.fetchall()}
 
@@ -656,6 +788,8 @@ async def build_review_summary(
 
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
+
+    moment = now if now is not None else datetime.now(timezone.utc)
 
     # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
     round_ids: set[int] = {r["round_id"] for r in rows}
@@ -687,20 +821,28 @@ async def build_review_summary(
             is_mystery = fmt == "MYSTERY"
 
             parts: list[str] = []
+            raced = _race_run(row["scheduled_at"], moment)
+
+            def _weather(done: bool, event: str) -> str:
+                """A weather step's mark: passed over where undone on a raced round."""
+                if raced and not done:
+                    return PASSED_OVER
+                return _phase_status(done, (rid, event), queued)
 
             # ── Weather / mystery notice phases ───────────────────────────
             if weather_module_enabled and is_mystery:
                 # A mystery round's notice is armed as `weather_p1`: `_weather_phase_job` reads
                 # the round's format as it fires.
-                notice = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
+                notice = _weather(bool(row["phase1_done"]), "weather_p1")
                 parts.append(f"Notice: {notice}")
             elif weather_module_enabled:
-                p1 = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
-                p2 = _phase_status(bool(row["phase2_done"]), (rid, "weather_p2"), queued)
-                p3 = _phase_status(bool(row["phase3_done"]), (rid, "weather_p3"), queued)
-                # Done once Phase 3 has run and nothing of it is left standing (#425).
+                p1 = _weather(bool(row["phase1_done"]), "weather_p1")
+                p2 = _weather(bool(row["phase2_done"]), "weather_p2")
+                p3 = _weather(bool(row["phase3_done"]), "weather_p3")
+                # Done once Phase 3 has run, or the race has (Phase 3 passed over), and nothing
+                # of Phases 1 to 3 is left standing (#425).
                 cleanup = _phase_status(
-                    bool(row["phase3_done"]) and rid not in standing_forecasts,
+                    (bool(row["phase3_done"]) or raced) and rid not in standing_forecasts,
                     (rid, "cleanup"),
                     queued,
                 )
@@ -746,6 +888,9 @@ async def build_review_summary(
         lines.append("")  # blank line between divisions
 
     if queued is not None:
-        lines.append("*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode advance)*")
+        lines.append(
+            "*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode "
+            f"advance)  {PASSED_OVER} passed over (its race has been run)*"
+        )
 
     return "\n".join(lines).rstrip()

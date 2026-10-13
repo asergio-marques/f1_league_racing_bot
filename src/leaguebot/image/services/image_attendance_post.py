@@ -1,8 +1,9 @@
 """Post a division's attendance sheet as a graphic (041, US2).
 
 **This module renders and never posts.** ``attendance_service.post_attendance_sheet`` owns the
-posting lifecycle — one send site, one delete site, the replacement produced before the message
-it replaces is destroyed (Constitution XIV.8) — and this hands it a file to attach. That is the
+posting — one send site, the replacement produced and posted before the message it replaces
+is deleted (Constitution XIV.8; the deletion is the change queue's job after the post) — and this
+hands it a file to attach. That is the
 author's ruling of 2026-08-13 made structural: *the image path inherits the ordering* rather
 than carrying a second implementation of it beside the textual one, which would drift, and
 whose fallback half would be the one left deleting first.

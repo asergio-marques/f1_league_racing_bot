@@ -44,7 +44,8 @@ async def test_a_driver_is_released_from_one_division_and_keeps_the_other(db_pat
     assert result["division_name"] == "Am"
     assert await _where(db_path) == [(PRO, "Alpha")]
     service._revoke_roles.assert_awaited_once()
-    service._refresh_lineup_post.assert_awaited_once()
+    service._refresh_lineup_post.assert_not_awaited()
+    assert result["lineups"] == [AM]
 
 
 async def test_a_drivers_only_seat_is_not_released(db_path):

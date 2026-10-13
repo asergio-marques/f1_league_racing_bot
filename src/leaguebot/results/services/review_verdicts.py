@@ -69,6 +69,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
 )
+from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
@@ -79,7 +80,7 @@ from leaguebot.results.services.result_submission_service import (
     send_appeals_prompt,
 )
 from leaguebot.results.services.results_post_service import _delete_posting
-from leaguebot.results.services.review_posting import _channel, _league_guild
+from leaguebot.results.services.review_posting import _channel, _deletes, _league_guild
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +127,11 @@ def verdict_steps(
             int(result.result["message_id"]), result.result["channel_id"],
         )
 
+    async def record_sheet(db: Any, ctx: StepContext, result: StepResult) -> None:
+        await attendance.record_sheet_on(
+            db, int(ctx.step_payload["division_id"]), result.result
+        )
+
     return {
         POST_APPEALS_PROMPT: appeals_prompt_step(),
         ANNOUNCE_HEADING: Step(
@@ -139,7 +145,7 @@ def verdict_steps(
         ),
         ATTENDANCE_SHEET: Step(
             ATTENDANCE_SHEET, StepKind.ACT, bound(_attendance_sheet), still_due=_after_a_sanction,
-            describe=_describe_sheet,
+            describe=_describe_sheet, record=record_sheet,
         ),
         PLAN_SANCTIONS: Step(
             PLAN_SANCTIONS, StepKind.ACT, bound(_plan_sanctions), describe=_describe_plan,
@@ -154,7 +160,7 @@ def verdict_steps(
         ),
         REFRESH_LINEUP: Step(
             REFRESH_LINEUP, StepKind.ACT, bound(_refresh_lineup), still_due=_after_a_sanction,
-            describe=_describe_lineup,
+            describe=_describe_lineup, record=lineup_posting.record_lineup_on,
         ),
     }
 
@@ -516,10 +522,11 @@ async def _after_a_sanction(ctx: StepContext) -> bool:
     if ctx.step_name == ATTENDANCE_SHEET and not ctx.step_payload.get("after_sanctions"):
         return True
     applied = {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
-    if ctx.step_name != ATTENDANCE_SHEET:
+    if ctx.step_name != ATTENDANCE_SHEET and "sanctioned" not in ctx.step_payload:
         return bool(applied)
-    # A sheet is redrawn for the drivers it marks: a sacked driver's other division is redrawn
-    # only where that driver's own sack applied, as `enforce_attendance_sanctions` has it.
+    # A sheet, and the lineup of another division, are redrawn for the drivers they mark: a sacked
+    # driver's other division is redrawn only where that driver's own sack applied, as
+    # `enforce_attendance_sanctions` has it.
     return bool(applied & {int(p) for p in ctx.step_payload.get("sanctioned", [])})
 
 
@@ -533,14 +540,23 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
     if payload.get("after_sanctions"):
         # Only a driver whose sanction applied is marked: one discarded or dropped is not.
         sanctioned &= {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
+    await standing_posts.remove_kept(ctx.bot, ctx.kept)
     try:
-        await hook.post_sheet(
+        result = await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
             sanctioned=sanctioned, as_text=ctx.tries > 0,
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
-    return StepResult()
+    if not result or result.get("new") is None:
+        return StepResult(result=result or {})
+    old = result.get("old")
+    then = (
+        _deletes(int(result["channel_id"]), [int(old)], "attendance sheet")
+        if result.get("takes_slot") and old is not None and int(old) != int(result["new"])
+        else ()
+    )
+    return StepResult(result=result, then=then)
 
 
 async def _division_name(db_path: str, division_id: int) -> str:
@@ -587,11 +603,19 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         planned.append(PlannedStep(APPLY_SANCTION, job))
         planned.append(PlannedStep(ANNOUNCE_SANCTION, job))
     if owed:
-        planned.append(PlannedStep(REFRESH_LINEUP, {"division_id": division_id, "division": division}))
         sheets: dict[int, set[int]] = {division_id: {int(c["driver_profile_id"]) for c in owed}}
         for candidate in owed:
             for other in candidate.get("other_divisions", []):
                 sheets.setdefault(int(other), set()).add(int(candidate["driver_profile_id"]))
+        # Placement posts no lineup, so the review posts the lineup of each division a sanction
+        # reached, once: the division itself and every other one an autosack touched.
+        for lineup_division in [division_id, *sorted(d for d in sheets if d != division_id)]:
+            planned.append(PlannedStep(REFRESH_LINEUP, {
+                "division_id": lineup_division,
+                "division": division if lineup_division == division_id
+                else await _division_name(ctx.db_path, lineup_division),
+                "sanctioned": sorted(sheets[lineup_division]),
+            }))
         for sheet_division in [division_id, *sorted(d for d in sheets if d != division_id)]:
             # Another division's sheet is drawn as at that division's own latest round, not the
             # round the sack was decided at, whose number means nothing there; a division with
@@ -716,8 +740,24 @@ async def _describe_lineup(ctx: StepContext) -> str:
 
 
 async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
-    await hook.refresh_lineup(int(ctx.step_payload["division_id"]))
-    return StepResult()
+    """Post the division's lineup, once, as text on a try again (Constitution XIV, rule 8).
+
+    Placement posts none of its own, so this is the one post a sanction owes. The job returns the
+    message posted and the one it replaces, saves the new id with its mark and plans the
+    review's own `delete_message` for the old one (`review_posting.not_done` names a discard).
+    """
+    await standing_posts.remove_kept(ctx.bot, ctx.kept)
+    result = await hook.refresh_lineup(
+        int(ctx.step_payload["division_id"]), as_text=ctx.tries > 0
+    )
+    if not result or result.get("new") is None:
+        return StepResult(result=result or {})
+    old = result.get("old")
+    then = (
+        _deletes(int(result["channel_id"]), [int(old)], "lineup")
+        if old is not None and int(old) != int(result["new"]) else ()
+    )
+    return StepResult(result=result, then=then)
 
 
 __all__ = [

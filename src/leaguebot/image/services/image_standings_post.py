@@ -539,8 +539,10 @@ async def post_championship(
         message = await channel.send(content, file=attachment)
     except discord.HTTPException as exc:
         # A Discord failure rather than a generation one. The graphic was produced; it is
-        # the delivery that was not, so it is the **textual** standings the caller posts
-        # and, if need be, enqueues for retry (FR-056).
+        # the delivery that was not, so it is the **textual** standings the caller posts in
+        # its place, in the same try, whatever the occasion (Constitution XIV rule 8). A text
+        # Discord refuses in turn is the caller's failure, which stops the change queue where
+        # a job posts it.
         log.error("standings: could not post the %s graphic: %s", championship, exc)
         return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices), None
     finally:

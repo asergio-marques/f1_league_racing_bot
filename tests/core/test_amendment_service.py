@@ -191,22 +191,12 @@ PRO_3 = round_id(PRO, 3)
 
 @pytest.fixture
 def phases(monkeypatch):
-    """Weather's three phase runners, recording `(phase, round id)` in `ran`; a phase in
-    `failing` raises its fault instead, as a fault of the bot's own."""
-    import importlib
-    from types import SimpleNamespace
+    """Weather's draw of each phase, recording `(phase, round id)` in `ran`, then drawn as weather
+    draws it; a phase in `failing` raises its fault instead, as a fault of the bot's own
+    (`tests/support/weather_draws.py`)."""
+    from tests.support.weather_draws import recorded_draws
 
-    record = SimpleNamespace(ran=[], failing={})
-    for number in (1, 2, 3):
-        module = importlib.import_module(f"leaguebot.weather.services.phase{number}_service")
-
-        async def _run(rid, *_args, _number=number, **_kwargs):
-            if _number in record.failing:
-                raise record.failing[_number]
-            record.ran.append((_number, rid))
-
-        monkeypatch.setattr(module, f"run_phase{number}", _run)
-    return record
+    return recorded_draws(monkeypatch)
 
 
 @pytest.fixture
@@ -351,19 +341,25 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
     assert "track:" not in body
 
 
-@pytest.mark.parametrize("fault_in", ["arming the round's jobs", "re-running a phase"])
+@pytest.mark.parametrize("fault_in", [
+    "arming the round's jobs",
+    "re-running a phase",
+])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
-    tmp_path, phases, fault_in
+    tmp_path, request, fault_in
 ):
     """Admin moves Am's round 3, 90 days out with no forecast drawn, from Bahrain International
     Circuit to Silverstone Circuit and brings it forward to an hour from now, so that every phase
     falls due at once, with weather on. The amendment is saved, then fails: the scheduler cannot arm the round's jobs again, or the first overdue forecast cannot
     be drawn. The queue stops at that job; the round stands amended, and its one success line,
     saved with the amendment, has been written, so the record holds what changed."""
+    # Only the draw's case records the draws, before the league is built: the arming case stops
+    # before any draw is made.
+    phases = request.getfixturevalue("phases") if fault_in == "re-running a phase" else None
     league = await ongoing_league(tmp_path, weather=True)
     await _place(league, at=timedelta(days=90))
     fault = RuntimeError("the fault after the save")
-    if fault_in == "arming the round's jobs":
+    if phases is None:
         league.arming_fails = fault
     else:
         phases.failing[1] = fault
@@ -371,7 +367,7 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
     await _amend(league, track=SILVERSTONE, scheduled_at=_at(league, timedelta(hours=1)))
 
     assert await _stopped_at(league) == (
-        "arm" if fault_in == "arming the round's jobs" else "rerun_phase"
+        "arm" if fault_in == "arming the round's jobs" else "draw_forecast"
     )
     assert (await _round(league))["track_name"] == SILVERSTONE
     [line] = _success_lines(league)
@@ -477,7 +473,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path, phases):
+async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     """A league that configured its own forecast horizons keeps them across an amendment.
 
     `schedule_round` falls back to the packaged 5 / 2 / 2 when it is not told otherwise, and the
@@ -574,7 +570,7 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     assert arming.call_args.kwargs["division_meta"] == {AM: (3, 2)}
 
 
-async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path, phases):
+async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
     """With weather on, `schedule_round` has already created it — arming again would duplicate.
     Am's round 3 moved from 90 to 100 days out."""
     league = await ongoing_league(tmp_path, weather=True)

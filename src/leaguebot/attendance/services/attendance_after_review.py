@@ -22,6 +22,7 @@ claimed or it is not in the cache the method raises `GuildUnavailable`.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +32,7 @@ import discord
 from leaguebot.attendance.services import attendance_service as _att
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.services import lineup_posting
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
@@ -99,14 +101,22 @@ class AttendanceAfterReview:
 
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
-    ) -> None:
+    ) -> dict[str, Any] | None:
         if not await self.enabled():
-            return
-        await _att.post_attendance_sheet(
+            return None
+        posted = await _att.post_attendance_sheet(
             self._bot, await self._guild(), self._db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned or None,
-            raise_on_failure=True, as_text=as_text,
+            as_text=as_text,
         )
+        return _att.sheet_result(posted)
+
+    async def record_sheet_on(
+        self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
+    ) -> None:
+        if not await self._enabled_on(db):
+            return
+        await _att.record_sheet_on(db, division_id, posted)
 
     async def sanction_candidates(self, round_id: int, division_id: int) -> list[dict[str, Any]]:
         if not await self.enabled():
@@ -145,10 +155,15 @@ class AttendanceAfterReview:
             as_text=as_text,
         )
 
-    async def refresh_lineup(self, division_id: int) -> None:
+    async def refresh_lineup(
+        self, division_id: int, *, as_text: bool
+    ) -> dict[str, Any] | None:
         if not await self.enabled():
-            return
-        await self._placement.refresh_lineup(await self._guild(), division_id)
+            return None
+        posted = await self._placement.refresh_lineup(
+            await self._guild(), division_id, as_text=as_text
+        )
+        return lineup_posting.posted_result(posted)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         return await _att.sync_hint(self._db_path, division_id, round_id)

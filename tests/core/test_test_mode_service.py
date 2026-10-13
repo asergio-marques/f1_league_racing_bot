@@ -649,8 +649,9 @@ async def test_misfired_fallback_canonical_order() -> None:
 
 async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
     """Earlier round with misfired phases must be advanced before a later
-    round whose scheduler job is still pending."""
-    earlier = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+    round whose scheduler job is still pending. The earlier round is still to be raced: a
+    raced round's weather steps are passed over (#439)."""
+    earlier = (datetime.now(timezone.utc) + timedelta(days=2)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
     later = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
@@ -705,15 +706,17 @@ async def _stand(
     call: bool = False,
     distributed: bool = True,
     status: str | None = None,
+    forecast_phase: int = 3,
 ) -> None:
-    """Record what is standing for *round_id*, and the state it is in."""
+    """Record what is standing for *round_id*, and the state it is in: its forecast is of
+    *forecast_phase*, Phase 3 unless given (0 a mystery round's notice)."""
     async with get_connection(db_path) as db:
         if forecast:
             await db.execute(
                 "INSERT INTO forecast_messages "
                 "(round_id, division_id, phase_number, message_id, posted_at) "
-                "VALUES (?, 1, 3, ?, '2026-01-01T00:00:00')",
-                (round_id, 800 + round_id),
+                "VALUES (?, 1, ?, ?, '2026-01-01T00:00:00')",
+                (round_id, forecast_phase, 800 + round_id),
             )
         if call:
             await db.execute(
@@ -797,7 +800,8 @@ async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
 
 
 async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -> None:
-    """A mystery round, or a Phase 3 that never posted, leaves nothing to take down."""
+    """A round with no forecast recorded leaves nothing to take down, so its cleanup job is
+    stale."""
     db_path = str(tmp_path / "nothing_to_clean.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": "Monaco"}])
@@ -850,6 +854,44 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
+@pytest.mark.parametrize("found", ["job in the store", "database fallback"])
+async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
+    tmp_path, found
+) -> None:
+    """Round 1 is finished, its check-in cleared, and its Phase 3 never posted, so its Phase 2
+    forecast stands. A day after the race the clean-up deletes whichever of Phases 1 to 3 is
+    still recorded (owner, 2026-10-12), so its cleanup (8) is offered: from its job in the store,
+    or from the database once the store is empty."""
+    db_path = str(tmp_path / "phase_2_standing.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}])
+    await _stand(db_path, 1, forecast=True, forecast_phase=2, status="FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+    stub = _StubScheduler([_job(1, 8, days=1)] if found == "job in the store" else [])
+
+    result = await get_next_pending_phase(db_path, stub)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (1, 8)
+
+
+async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
+    """A finished mystery round, its check-in cleared, with its notice (phase 0) standing: the
+    notice is not a forecast the clean-up deletes, so nothing is offered."""
+    db_path = str(tmp_path / "notice_standing.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": None, "format": "MYSTERY"}])
+    await _stand(db_path, 1, forecast=True, forecast_phase=0, status="FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+
+    assert await get_next_pending_phase(db_path, _StubScheduler([_job(1, 8, days=1)])) is None
+    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+
+
 # ---------------------------------------------------------------------------
 # The review reports the cleanups (#425)
 # ---------------------------------------------------------------------------
@@ -873,6 +915,20 @@ async def test_the_review_shows_the_forecast_cleanup(
     await _stand(db_path, 1, forecast=forecast_standing)
 
     assert shown in await build_review_summary(db_path)
+
+
+async def test_the_review_shows_the_forecast_cleanup_to_come_while_an_earlier_phase_stands(
+    tmp_path,
+) -> None:
+    """Round 1's Phase 3 was drawn but never posted, so its Phase 2 forecast stands. The
+    clean-up deletes whichever of Phases 1 to 3 is still recorded (owner, 2026-10-12), so the
+    review shows it still to come."""
+    db_path = str(tmp_path / "review_phase_2_standing.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": 1}])
+    await _stand(db_path, 1, forecast=True, forecast_phase=2)
+
+    assert "Cleanup: ⏳" in await build_review_summary(db_path)
 
 
 async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) -> None:
@@ -1171,3 +1227,249 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
     await _seed(db_path, [{"format": "MYSTERY", "track_name": None}])
 
     assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+
+
+
+# ---------------------------------------------------------------------------
+# A weather step already in hand on the change queue (#439)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path) -> None:
+    """Weather is on and round 1 (Monza) has none of its phases done; its scheduler job was
+    cancelled by the advance that asked the change queue for its Phase 1, which waits there
+    unrun. The next advance does not offer round 1's Phase 1 again. Before that change was
+    asked, it was the step offered."""
+    import json
+
+    db_path = os.path.join(tmp_path, "test.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [{"track_name": "Monza"}])
+    first = await get_next_pending_phase(db_path, _StubScheduler())
+    assert first is not None
+    assert (first["round_id"], first["phase_number"]) == (1, 1)
+
+    payload = {"round_id": 1, "phase": 1, "division_name": "Division A", "round_number": 1}
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('weather.forecast', 'weather.forecast:1:1', ?, 'BOT', 'QUEUED', "
+            "'drawing the Phase 1 forecast of round 1 in **Division A**')",
+            (json.dumps(payload),),
+        )
+        await db.commit()
+
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+    assert result is None or (result["round_id"], result["phase_number"]) != (1, 1)
+
+
+# ---------------------------------------------------------------------------
+# A weather step of a round whose race has been run (#439)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
+async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler) -> None:
+    """Weather is on. Round 1 (Bahrain) was raced an hour ago with none of its phases done (the
+    module was switched on after it), and round 2 (Monza) is a week ahead. The change queue
+    drops a forecast for a race already run (A25), so advance offers round 2's Phase 1, and not
+    round 1's: whether round 1's Phase 1 job is still in the store, the store is empty, or no
+    scheduler is given."""
+    raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    db_path = str(tmp_path / "raced.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Monza"},
+    ])
+    stub = {
+        "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
+        "job store empty": _StubScheduler(),
+        "no scheduler": None,
+    }[scheduler]
+
+    result = await get_next_pending_phase(db_path, stub)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 1)
+
+
+async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
+    """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
+    phases done and no results submitted: advance passes over its weather steps alone, and
+    offers its result submission."""
+    raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    db_path = str(tmp_path / "raced_results.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Monza"},
+    ])
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.commit()
+
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (1, 4)
+
+
+async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp_path) -> None:
+    """Weather is on, and it is noon on 12 October 2026; no job is queued. Round 1 (Bahrain) was
+    raced an hour ago with none of its phases done; round 2 (Monza), raced an hour ago too, had
+    Phases 1 and 2 done, Phase 3 never, and its Phase 2 forecast stands; round 3 is a mystery
+    round raced an hour ago whose notice never went out; round 4 (Spa) is a week ahead. Advance
+    passes over the weather steps of a raced round (the change queue drops them, A25), so the
+    review marks each undone one ⏭️, not ⚠️ ("use /test-mode advance"): round 1's clean-up has
+    nothing standing to delete and is done, round 2's still has its Phase 2 forecast to delete.
+    Round 4's steps are still to be advanced, ⚠️ with no job, and the legend explains ⏭️."""
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    raced = "2026-10-12T11:00:00"
+    db_path = str(tmp_path / "review_raced.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Monza", "scheduled_at": raced, "phase1_done": 1, "phase2_done": 1},
+        {"track_name": "Mystery", "scheduled_at": raced, "format": "MYSTERY"},
+        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00"},
+    ])
+    await _stand(db_path, 2, forecast=True, forecast_phase=2)
+
+    summary = await build_review_summary(db_path, _StubScheduler(), now=now)
+
+    assert "P1: ⏭️  P2: ⏭️  P3: ⏭️  Cleanup: ✅" in _round_row(summary, 1)
+    assert "P1: ✅  P2: ✅  P3: ⏭️  Cleanup: ⚠️" in _round_row(summary, 2)
+    assert "Notice: ⏭️" in _round_row(summary, 3)
+    assert "P1: ⚠️  P2: ⚠️  P3: ⚠️  Cleanup: ⚠️" in _round_row(summary, 4)
+    assert "⏭️ passed over (its race has been run)" in summary
+
+
+@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
+async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 is a mystery round raced an hour
+    ago whose notice never went out, and round 2 (Monza) is a week ahead. The change queue drops
+    a notice for a race already run (A25), so advance offers round 2's Phase 1, and not round
+    1's notice: whether round 1's `weather_p1` job is still in the store, the store is empty, or
+    no scheduler is given."""
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "raced_mystery.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Mystery", "format": "MYSTERY", "scheduled_at": "2026-10-12T11:00:00"},
+        {"track_name": "Monza", "scheduled_at": "2026-10-19T12:00:00"},
+    ])
+    stub = {
+        "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
+        "job store empty": _StubScheduler(),
+        "no scheduler": None,
+    }[scheduler]
+
+    result = await get_next_pending_phase(db_path, stub, now=now)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 1)
+
+
+# ---------------------------------------------------------------------------
+# The weather steps advance passes over, which its reply names (#439)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tmp_path) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
+    with none of its phases done; round 2 is a mystery round raced an hour ago whose notice never
+    went out; round 3 (Monza), raced too, had all three phases done; round 4 (Spa) is a week
+    ahead. Advance passes over the weather steps of a raced round (owner, 2026-10-12, "Advance
+    names what it skipped"), so the steps it names as passed over are round 1's Phases 1, 2 and
+    3 and round 2's notice, in that order, and nothing of rounds 3 or 4."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    raced = "2026-10-12T11:00:00"
+    db_path = str(tmp_path / "passed_over.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": raced},
+        {"track_name": "Mystery", "scheduled_at": raced, "format": "MYSTERY"},
+        {"track_name": "Monza", "scheduled_at": raced,
+         "phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
+        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00"},
+    ])
+
+    steps = await get_passed_over_steps(db_path, now=now)
+
+    assert [(step["round_number"], step["phase_number"]) for step in steps] == [
+        (1, 1), (1, 2), (1, 3), (2, 0),
+    ]
+    assert {step["division_name"] for step in steps} == {"Division A"}
+
+
+async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) -> None:
+    """Weather is off, so nothing of it was armed and advance offers none of it: a raced round's
+    undone phases are not named as passed over."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "passed_over_off.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00"}])
+
+    assert await get_passed_over_steps(db_path, now=now) == []
+
+
+async def _queue_forecast(db_path: str, round_id: int, phase: int) -> None:
+    """A `weather.forecast` change for *phase* of *round_id* asked of the queue and not yet run."""
+    import json
+
+    payload = {"round_id": round_id, "phase": phase, "division_name": "Division A",
+               "round_number": round_id}
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('weather.forecast', ?, ?, 'BOT', 'QUEUED', 'drawing a forecast')",
+            (f"weather.forecast:{round_id}:{phase}", json.dumps(payload)),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("case, left", [
+    pytest.param("FINAL", [], id="round final"),
+    pytest.param("AWAITING_APPEAL_VERDICTS", [], id="round awaiting appeal verdicts"),
+    pytest.param("phase 1 in hand", [2, 3], id="phase 1 in hand on the queue"),
+    pytest.param("division cancelled", [], id="division cancelled"),
+    pytest.param("round cancelled", [], id="round cancelled"),
+])
+async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passed_over(
+    tmp_path, case, left,
+) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
+    with none of its phases done, so Phases 1, 2 and 3 would be named as passed over. But advance
+    offers nothing of a round that has ended (final, or its appeals being judged), of a cancelled
+    round or division, nor a step already in hand on the change queue: so none of those is named
+    either, and with Phase 1 in hand only Phases 2 and 3 are."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "passed_over_limits.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00"},
+    ])
+    if case == "phase 1 in hand":
+        await _queue_forecast(db_path, 1, 1)
+    else:
+        sql = {
+            "FINAL": "UPDATE rounds SET status = 'FINAL' WHERE id = 1",
+            "AWAITING_APPEAL_VERDICTS":
+                "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = 1",
+            "division cancelled": "UPDATE divisions SET status = 'CANCELLED' WHERE id = 1",
+            "round cancelled": "UPDATE rounds SET status = 'CANCELLED' WHERE id = 1",
+        }[case]
+        async with get_connection(db_path) as db:
+            await db.execute(sql)
+            await db.commit()
+
+    steps = await get_passed_over_steps(db_path, now=now)
+
+    assert [step["phase_number"] for step in steps] == left
+
