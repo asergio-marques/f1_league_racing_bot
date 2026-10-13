@@ -29,10 +29,18 @@ from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.image.services import image_rsvp_post
 from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
 from tests.support.change_queue import attach_queue, http_error, run_queue, stopped_job
-from tests.support.season_league import DIVISIONS, PRO, SeasonLeague, ongoing_league, round_id
+from tests.support.season_league import (
+    CALL_MESSAGES,
+    DIVISIONS,
+    PRO,
+    SeasonLeague,
+    ongoing_league,
+    round_id,
+)
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
+ROUND_3 = round_id(PRO, 3)
 
 NO_CALL_CHANGE = (
     "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, "
@@ -42,15 +50,13 @@ NO_CALL_CHANGE = (
 #: Every image module the check-in graphic could be redrawn through.
 _IMAGE_MODULES = ("image_rsvp_post", "image_rsvp_service", "image_render_service")
 
-#: The functions reached when a driver presses a button, when the reserves are distributed, and
-#: when the deadline closes the call. Each edits the embed **in place**; the attachment must
-#: ride through every one of them untouched.
+#: The functions reached when a driver presses a button and when the reserves are distributed.
+#: Each edits the embed **in place**; the attachment must ride through every one of them
+#: untouched. The deadline's own jobs, which lock the call and announce the placements, are held
+#: by `test_the_deadline_s_jobs_never_redraw_the_graphic` below.
 _EDIT_IN_PLACE = (
     "run_reserve_distribution",
-    "run_rsvp_deadline",
     "_rebuild_embed_for_round",
-    "_post_distribution_announcement",
-    "_post_no_reserve_notice",
 )
 
 
@@ -315,14 +321,64 @@ async def test_the_attendance_rows_are_opened_after_the_post_either_way(
     assert await _rows_opened(league) > 0
 
 
-def test_the_notices_that_stay_text_carry_no_graphic(  # FR-053
-):
-    for function_name in (
-        "_post_distribution_announcement",
-        "_post_no_reserve_notice",
-    ):
-        if not hasattr(rsvp_service, function_name):
-            continue
-        source = inspect.getsource(getattr(rsvp_service, function_name))
-        assert "file=" not in source
-        assert "try_attach" not in source
+# ── The deadline's jobs (#439, slice 6b) ───────────────────────────────────
+
+NO_DEADLINE_CHANGE = (
+    "#439: the check-in deadline is run by `run_rsvp_deadline` at once, off the change queue, "
+    "rather than by its own jobs"
+)
+
+
+async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeague, AsyncMock]:
+    """Pro's round 3 an hour off, so its two-hour check-in deadline passed an hour ago, its call
+    (7001) standing in Pro's check-in channel and nothing announced; the check-in graphic stood
+    in for by a double that records each draw."""
+    league = await ongoing_league(tmp_path, attendance=True, images=True)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    when = league.clock.now + timedelta(hours=1)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+    del league.channel(CHECK_IN).messages[CALL_MESSAGES[2]]
+    await league.write("UPDATE rsvp_embed_messages SET distribution_msg_id = NULL "
+                       "WHERE round_id = ?", ROUND_3)
+    return league, _drawing(league, tmp_path, monkeypatch)
+
+
+async def _run_the_deadline(league: SeasonLeague) -> None:
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await ask_check_in_deadline(league.bot.change_queue, league.db_path, ROUND_3,
+                                origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_the_deadline_s_jobs_never_redraw_the_graphic(tmp_path, monkeypatch):
+    """XIV.17: the deadline locks the call by editing it in place. Its jobs draw nothing, and
+    the edit that takes the buttons off carries no picture of its own, so the graphic the call
+    was posted with rides through untouched."""
+    league, drawing = await _deadline_league(tmp_path, monkeypatch)
+
+    await _run_the_deadline(league)
+
+    assert drawing.await_count == 0
+    call = league.channel(CHECK_IN).messages[CALL_MESSAGES[0]]
+    call.edit.assert_awaited()
+    for name in ("file", "files", "attachments"):
+        assert name not in call.edit.await_args.kwargs
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_the_notices_that_stay_text_carry_no_graphic(tmp_path, monkeypatch):  # FR-053
+    """The deadline's announcement, or its notice that no reserves were placed, is text: posted
+    with no file, and nothing drawn for it."""
+    league, drawing = await _deadline_league(tmp_path, monkeypatch)
+
+    await _run_the_deadline(league)
+
+    sent = [mid for kind, cid, mid in league.events if kind == "send" and cid == CHECK_IN]
+    assert len(sent) == 1
+    assert league.channel(CHECK_IN).files[-1] is None
+    assert drawing.await_count == 0

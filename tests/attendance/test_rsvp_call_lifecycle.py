@@ -29,7 +29,9 @@ delete but kept its row is a round that can never be reposted.
 Since #439 (slice 6b) the call is posted, and posted again in an earlier call's place, by its own
 change on the queue (`ask_check_in_call`, with `replacing` for a repost), so the call's tests here
 ask the queue and run it: a call that does not post stops the queue, and the stop notice says what
-is left for the round.
+is left for the round. The deadline's announcement, or its notice that no reserves were placed, is
+posted by the deadline's own job on the queue too (`ask_check_in_deadline`), on the answers as
+they stood at the deadline.
 """
 from __future__ import annotations
 
@@ -45,14 +47,11 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from leaguebot.attendance.services.rsvp_service import (
-    _post_distribution_announcement,
-    _post_no_reserve_notice,
-    withdraw_rsvp_call,
-)
+from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
 from tests.support.change_queue import (
     attach_queue,
     discard_job,
+    http_error,
     league_double,
     run_queue,
     stopped_job,
@@ -801,195 +800,255 @@ async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(t
 
 
 # ---------------------------------------------------------------------------
-# _post_no_reserve_notice
+# The deadline's announcement on the change queue (#439, slice 6b, C30) — FR-025 / FR-026
 # ---------------------------------------------------------------------------
+#
+# The announcement, or the notice that no reserves were placed, is posted by the deadline's own
+# `announce` job once its `distribute` job has placed the reserves on the answers as they stood
+# at the deadline. Each test moves round 1 to an hour off, so its two-hour check-in deadline
+# passed an hour ago, asks the queue for the deadline as its timer does, and runs it.
+
+NO_DEADLINE_CHANGE = (
+    "#439: the check-in deadline is run by `run_rsvp_deadline` at once, off the change queue, "
+    "its announcement skipped or logged rather than stopping the queue"
+)
+
+#: A second reserve, accepting after the deadline.
+LATE_PROFILE = 204
 
 
-async def test_the_no_reserve_notice_is_posted_and_recorded(tmp_path):
-    """Recording the message id is what lets the round's cleanup take it down."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-
-    await _post_no_reserve_notice(ROUND_ID, DIVISION_ID, bot)
-
-    channel.send.assert_awaited_once()
-    assert "No reserves were placed" in channel.send.await_args.args[0]
+async def _past_its_deadline(db_path: str) -> datetime:
+    """Move round 1 to an hour off, so its deadline passed an hour ago; the deadline."""
+    now = datetime.now(timezone.utc)
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())["distribution_msg_id"] == "990099"
+        await db.execute("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                         ((now + timedelta(hours=1)).isoformat(), ROUND_ID))
+        await db.commit()
+    return now - timedelta(hours=1)
 
 
-async def test_the_no_reserve_notice_is_skipped_without_a_configured_channel(
-    tmp_path, caplog
-):
-    db_path = await _make_db(tmp_path, with_division_config=False)
-    bot = _make_bot(db_path, _make_channel())
-
-    with caplog.at_level("WARNING"):
-        await _post_no_reserve_notice(ROUND_ID, DIVISION_ID, bot)
-
-    assert "no attendance config" in caplog.text
-
-
-async def test_the_no_reserve_notice_is_skipped_when_the_channel_is_not_cached(
-    tmp_path, caplog
-):
-    db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path, channel=None)
-
-    with caplog.at_level("WARNING"):
-        await _post_no_reserve_notice(ROUND_ID, DIVISION_ID, bot)
-
-    assert "not in bot cache" in caplog.text
-
-
-async def test_a_failed_no_reserve_notice_records_no_message(tmp_path, caplog):
-    """A send that fails must not leave a message id pointing at nothing, which the round's
-    cleanup would try to delete."""
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    channel = _make_channel()
-    channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(), "forbidden"))
-    bot = _make_bot(db_path, channel)
-
-    with caplog.at_level("ERROR"):
-        await _post_no_reserve_notice(ROUND_ID, DIVISION_ID, bot)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())["distribution_msg_id"] is None
-
-
-# ---------------------------------------------------------------------------
-# _post_distribution_announcement — FR-025 / FR-026
-# ---------------------------------------------------------------------------
-
-
-async def _accept_reserve(db_path: str, *, team_id: int | None, standby: int = 0) -> None:
+async def _accept(db_path: str, profile_id: int, at: datetime) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_round_attendance "
-            "(round_id, division_id, driver_profile_id, rsvp_status, assigned_team_id, "
-            " is_standby) VALUES (?, ?, ?, 'ACCEPTED', ?, ?)",
-            (ROUND_ID, DIVISION_ID, RESERVE_PROFILE, team_id, standby),
+            "(round_id, division_id, driver_profile_id, rsvp_status, accepted_at) "
+            "VALUES (?, ?, ?, 'ACCEPTED', ?)",
+            (ROUND_ID, DIVISION_ID, profile_id, at.isoformat()),
         )
         await db.commit()
 
 
-async def test_no_eligible_reserves_posts_no_announcement(tmp_path):
-    """FR-026. A round nobody stood in for gets no announcement at all."""
+async def _decline(db_path: str, profile_id: int) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, rsvp_status) "
+            "VALUES (?, ?, ?, 'DECLINED')",
+            (ROUND_ID, DIVISION_ID, profile_id),
+        )
+        await db.commit()
+
+
+async def _second_reserve(db_path: str) -> None:
+    """A second reserve, 'Late Comer', seated in the Reserve team."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ACTIVE', 1, 'Late Comer')",
+            (LATE_PROFILE, str(LATE_PROFILE)),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (22, 11, 2, ?)", (LATE_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, ?, 22)",
+            (LATE_PROFILE, SEASON_ID, DIVISION_ID),
+        )
+        await db.commit()
+
+
+async def _ask_deadline(bot: MagicMock) -> None:
+    """Ask the queue for round 1's deadline as its timer does, and run the queue."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_deadline
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await ask_check_in_deadline(bot.change_queue, bot.db_path, ROUND_ID, origin=ChangeOrigin.BOT)
+    await run_queue(bot)
+
+
+def _announced(bot: MagicMock) -> list[str]:
+    """What was posted in the division's check-in channel, in order."""
+    chan = bot.channels[RSVP_CHANNEL_ID]
+    return [chan.messages[mid].content for mid in _sent(bot)]
+
+
+async def _distribution_recorded(db_path: str) -> Any:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        return (await cursor.fetchone())["distribution_msg_id"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_the_no_reserve_notice_is_posted_and_recorded(tmp_path):
+    """Recording the message id is what lets the round's cleanup take it down."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+    deadline = await _past_its_deadline(db_path)
+    await _accept(db_path, FULL_TIME_PROFILE, deadline - timedelta(hours=1))
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
+    await _ask_deadline(bot)
 
-    channel.send.assert_not_awaited()
+    [notice] = _announced(bot)
+    assert "No reserves were placed" in notice
+    [posted] = _sent(bot)
+    assert await _distribution_recorded(db_path) == str(posted)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_a_deadline_with_no_check_in_channel_configured_stops_the_queue_naming_the_command(
+    tmp_path,
+):
+    """A bot change lacking its channel stops the queue, the notice naming the command that
+    sets it, rather than the host's log alone saying so."""
+    db_path = await _make_db(tmp_path, with_division_config=False)
+    await _seed_embed_row(db_path)
+    await _past_its_deadline(db_path)
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+
+    await _ask_deadline(bot)
+
+    assert _sent(bot) == []
+    assert await stopped_job(db_path) is not None
+    assert "/attendance channel rsvp" in _logged(bot)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_a_deadline_whose_check_in_channel_the_bot_cannot_see_stops_the_queue(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    await _past_its_deadline(db_path)
+    bot = _queue_bot(db_path)
+
+    await _ask_deadline(bot)
+
+    assert await stopped_job(db_path) is not None
+    assert "/attendance channel rsvp" in _logged(bot)
+    assert await _distribution_recorded(db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_a_refused_no_reserve_notice_stops_the_queue_recording_nothing(tmp_path):
+    """A message id pointing at nothing would have the round's cleanup delete something else,
+    or nothing: Discord refusing the notice stops the queue with nothing recorded."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    await _past_its_deadline(db_path)
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot.channels[RSVP_CHANNEL_ID].send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access")
+
+    await _ask_deadline(bot)
+
+    assert await stopped_job(db_path) is not None
+    assert await _distribution_recorded(db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_full_time_driver_s_acceptance_is_not_a_distribution(tmp_path):
-    """The query is filtered to `src_ti.is_reserve = 1`. Without that every driver who
-    said yes would be announced as though they had been placed."""
+    """Only reserves are distributed. Were every driver who said yes announced, they would
+    read as though they had been placed: the deadline posts the no-reserve notice, naming
+    nobody."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED"})
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+    deadline = await _past_its_deadline(db_path)
+    await _accept(db_path, FULL_TIME_PROFILE, deadline - timedelta(hours=1))
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
+    await _ask_deadline(bot)
 
-    channel.send.assert_not_awaited()
+    [notice] = _announced(bot)
+    assert "Reserve Distribution Results" not in notice
+    assert "Full Timer" not in notice
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_placed_reserve_is_announced_with_their_team(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    await _accept_reserve(db_path, team_id=10)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
+    deadline = await _past_its_deadline(db_path)
+    await _decline(db_path, FULL_TIME_PROFILE)
+    await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
+    await _ask_deadline(bot)
 
-    body = channel.send.await_args.args[0]
+    [body] = _announced(bot)
     assert "Reserve Distribution Results" in body
     assert "Alpha" in body
     assert "Stand In" in body
 
 
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_standby_reserve_is_announced_as_standby(tmp_path):
     """A reserve beyond the available vacancies. Announcing them as placed would send a
     driver to a race they have no seat in."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
-    await _accept_reserve(db_path, team_id=None, standby=1)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-
-    await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
-
-    assert "Standby" in channel.send.await_args.args[0]
-
-
-async def test_a_reserve_with_neither_seat_nor_standby_is_announced_as_unassigned(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    await _accept_reserve(db_path, team_id=None, standby=0)
-    channel = _make_channel()
-    bot = _make_bot(db_path, channel)
-
-    await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
-
-    assert "no assignment" in channel.send.await_args.args[0]
-
-
-async def test_the_announcement_is_skipped_without_a_configured_channel(tmp_path, caplog):
-    db_path = await _make_db(tmp_path, with_division_config=False)
-    await _accept_reserve(db_path, team_id=10)
-    bot = _make_bot(db_path, _make_channel())
-
-    with caplog.at_level("WARNING"):
-        await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
-
-    assert "no attendance config" in caplog.text
-
-
-async def test_the_announcement_is_skipped_when_the_channel_is_not_cached(tmp_path, caplog):
-    db_path = await _make_db(tmp_path)
-    await _accept_reserve(db_path, team_id=10)
-    bot = _make_bot(db_path, channel=None)
-
-    with caplog.at_level("WARNING"):
-        await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
-
-    assert "not in bot cache" in caplog.text
-
-
-async def test_a_failed_announcement_records_no_message(tmp_path, caplog):
-    db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
-    await _accept_reserve(db_path, team_id=10)
-    channel = _make_channel()
-    channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(), "forbidden"))
-    bot = _make_bot(db_path, channel)
-
-    with caplog.at_level("ERROR"):
-        await _post_distribution_announcement(ROUND_ID, DIVISION_ID, bot)
-
+    deadline = await _past_its_deadline(db_path)
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        assert (await cursor.fetchone())["distribution_msg_id"] is None
+        await db.execute("UPDATE team_instances SET max_seats = 1 WHERE id = 10")
+        await db.commit()
+    await _accept(db_path, FULL_TIME_PROFILE, deadline - timedelta(hours=2))
+    await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+
+    await _ask_deadline(bot)
+
+    [body] = _announced(bot)
+    assert "Standby" in body
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_a_reserve_who_accepted_after_the_deadline_is_announced_as_unassigned(tmp_path):
+    """The reserves are placed on the answers as they stood at the deadline (Q7): a reserve
+    who accepted after it is neither seated nor on standby, and the announcement says so."""
+    db_path = await _make_db(tmp_path)
+    await _second_reserve(db_path)
+    await _seed_embed_row(db_path)
+    deadline = await _past_its_deadline(db_path)
+    await _decline(db_path, FULL_TIME_PROFILE)
+    await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
+    await _accept(db_path, LATE_PROFILE, deadline + timedelta(minutes=30))
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+
+    await _ask_deadline(bot)
+
+    [body] = _announced(bot)
+    [late] = [line for line in body.splitlines() if "Late Comer" in line]
+    assert "no assignment" in late
+
+
+@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
+async def test_a_refused_announcement_stops_the_queue_recording_nothing(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    deadline = await _past_its_deadline(db_path)
+    await _decline(db_path, FULL_TIME_PROFILE)
+    await _accept(db_path, RESERVE_PROFILE, deadline - timedelta(hours=1))
+    bot = _queue_bot(db_path, RSVP_CHANNEL_ID)
+    bot.channels[RSVP_CHANNEL_ID].send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Access")
+
+    await _ask_deadline(bot)
+
+    assert await stopped_job(db_path) is not None
+    assert await _distribution_recorded(db_path) is None
 
 
 # ---------------------------------------------------------------------------
