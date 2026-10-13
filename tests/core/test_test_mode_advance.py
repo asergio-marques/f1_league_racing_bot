@@ -52,6 +52,21 @@ ROUND_ID = 5
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 
+#: The kinds of the four check-in steps, asked of the change queue by name as a forecast's is.
+CHECK_IN_CALL = "attendance.check_in.call"
+CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
+CHECK_IN_DEADLINE = "attendance.check_in.deadline"
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
+
+#: Why a check-in step's test fails until advance asks the change queue for the step.
+CHECK_IN_NOT_ASKED = (
+    "#439: /test-mode advance still runs the check-in step's runner itself rather than asking "
+    "the change queue for it"
+)
+
+#: The check-in runners advance called before #439, stubbed while they exist.
+_CHECK_IN_RUNNERS = ("run_rsvp_notice", "run_rsvp_last_notice", "run_rsvp_deadline", "run_rsvp_cleanup")
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -178,12 +193,18 @@ def _asked(cog) -> list[tuple[str, dict]]:
 
 async def _advance(cog, interaction, entry, **patches):
     """Run advance with the queue answering *entry* and every phase service stubbed. A weather
-    step has no runner to stub: advance asks the change queue for it (#439)."""
+    step has no runner to stub: advance asks the change queue for it (#439). Nor, once the
+    check-in steps are asked of the queue too, has a check-in step: the check-in runners are
+    stubbed only while the attendance module still has them, so that a test asserting an ask
+    fails on the runner's call rather than on a post."""
+    from leaguebot.attendance.services import rsvp_service
+
     defaults = {
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(return_value=None),
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice": AsyncMock(return_value=None),
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline": AsyncMock(return_value=None),
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup": AsyncMock(return_value=None),
+        f"leaguebot.attendance.services.rsvp_service.{name}": AsyncMock(return_value=None)
+        for name in _CHECK_IN_RUNNERS
+        if hasattr(rsvp_service, name)
+    }
+    defaults |= {
         "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
             return_value=False
         ),
@@ -531,33 +552,30 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
 async def test_the_rsvp_notice_is_fired(tmp_path):
+    """Round 3 of Division 1's check-in call is next. Advance asks the change queue for it (an
+    `attendance.check_in.call` of the round), and its reply names the RSVP notice."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(5))
+    await _advance(cog, interaction, _entry(5))
 
-    mocks["run_rsvp_notice"].assert_awaited_once()
+    [(kind, payload)] = _asked(cog)
+    assert (kind, payload["round_id"]) == (CHECK_IN_CALL, ROUND_ID)
     assert "RSVP notice" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
 async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
-    """The standard failure reply and one failure line name the RSVP notice, the division and
-    the round (#482)."""
+    """The change queue cannot save the check-in call's ask. The standard failure reply and one
+    failure line name the RSVP notice, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("no channel"))
 
-    await _advance(
-        cog,
-        interaction,
-        _entry(5),
-        **{
-            "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(
-                side_effect=RuntimeError("no channel")
-            )
-        },
-    )
+    await _advance(cog, interaction, _entry(5))
 
     _assert_failure_recorded(cog, interaction, "RSVP notice")
 
@@ -573,19 +591,28 @@ async def test_a_fired_rsvp_notice_is_logged_to_the_league(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "phase,runner,label",
+    "phase,kind,label",
     [
-        (6, "run_rsvp_last_notice", "RSVP last-notice"),
-        (7, "run_rsvp_deadline", "RSVP deadline"),
+        pytest.param(
+            6, CHECK_IN_LAST_NOTICE, "RSVP last-notice",
+            marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED),
+        ),
+        pytest.param(
+            7, CHECK_IN_DEADLINE, "RSVP deadline",
+            marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED),
+        ),
     ],
 )
-async def test_the_later_check_in_phases_are_fired(tmp_path, phase, runner, label):
+async def test_the_later_check_in_phases_are_fired(tmp_path, phase, kind, label):
+    """Round 3's last notice (6) or deadline (7) is next. Advance asks the change queue for it
+    by its kind, for the round, and its reply names the step."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(phase))
+    await _advance(cog, interaction, _entry(phase))
 
-    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
+    [(asked_kind, payload)] = _asked(cog)
+    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
     assert label in _replied(interaction)
 
 
@@ -609,22 +636,25 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
 
 
 @pytest.mark.parametrize(
-    "phase,runner,phrase",
+    "phase,phrase",
     [
-        (6, "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice", "RSVP last-notice"),
-        (7, "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline", "RSVP deadline"),
+        pytest.param(
+            6, "RSVP last-notice", marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
+        ),
+        pytest.param(
+            7, "RSVP deadline", marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
+        ),
     ],
 )
-async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, runner, phrase):
-    """The standard failure reply and one failure line name the phase, the division and the
-    round (#482)."""
+async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, phrase):
+    """The change queue cannot save the step's ask. The standard failure reply and one failure
+    line name the phase, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
 
-    await _advance(
-        cog, interaction, _entry(phase), **{runner: AsyncMock(side_effect=RuntimeError("x"))}
-    )
+    await _advance(cog, interaction, _entry(phase))
 
     _assert_failure_recorded(cog, interaction, phrase)
 
@@ -638,15 +668,19 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
-async def test_the_deadline_reply_says_reserves_were_distributed(tmp_path):
-    """The deadline is where reserves are called up, which is what a maintainer rehearsing
-    it is looking to see happen."""
+@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
+async def test_the_deadline_reply_does_not_say_reserves_were_distributed(tmp_path):
+    """Round 3's deadline is advanced. Its reserves are distributed only once the change queue
+    reaches it, so the reply says it is on the change queue and does not say the distribution
+    is complete."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
     await _advance(cog, interaction, _entry(7))
 
-    assert "Reserve distribution complete" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "is on the change queue" in replied
+    assert "Reserve distribution complete" not in replied
 
 
 # ---------------------------------------------------------------------------
@@ -659,10 +693,10 @@ CLEANUPS = [
 ]
 
 
-#: The cleanups, the forecast's asked of the change queue once the build makes it a job.
+#: The cleanups, each asked of the change queue: the check-in cleanup's once advance asks it.
 CLEANUPS_ASKED = [
     pytest.param(*CLEANUPS[0]),
-    CLEANUPS[1],
+    pytest.param(*CLEANUPS[1], marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)),
 ]
 
 
@@ -670,22 +704,21 @@ CLEANUPS_ASKED = [
 async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, label, prefix):
     """The forecast cleanup (8) is asked of the change queue as a `weather.forecast.clean_up`
     of the round, replying '🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on
-    the change queue: …'; the check-in cleanup (9) runs its own runner, as today, and asks
-    nothing."""
+    the change queue: …'; the check-in cleanup (9) is asked of it as an
+    `attendance.check_in.clean_up` of the round, its reply saying it is on the change queue."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(phase))
+    await _advance(cog, interaction, _entry(phase))
 
+    [(kind, payload)] = _asked(cog)
     if phase == 8:
-        [(kind, payload)] = _asked(cog)
         assert (kind, payload["round_id"]) == (FORECAST_CLEAN_UP, ROUND_ID)
-        mocks["run_rsvp_cleanup"].assert_not_awaited()
         assert ("🧹 The **forecast cleanup** for **Division 1** — **Round 3** is on the change "
                 "queue") in _replied(interaction)
     else:
-        mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
-        assert _asked(cog) == []
+        assert (kind, payload["round_id"]) == (CHECK_IN_CLEAN_UP, ROUND_ID)
+        assert "is on the change queue" in _replied(interaction)
     assert label in _replied(interaction)
 
 
@@ -705,22 +738,16 @@ async def test_a_fired_cleanup_cancels_its_job_by_kind(
     )
 
 
-@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
-    """The standard failure reply and one failure line name the cleanup, the division and the
-    round (#482): the forecast cleanup where the change queue cannot save its ask, the check-in
-    cleanup where its runner raises."""
+    """The change queue cannot save the cleanup's ask. The standard failure reply and one
+    failure line name the cleanup, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
-    patches = {}
-    if phase == 8:
-        cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
-    else:
-        target = "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup"
-        patches[target] = AsyncMock(side_effect=RuntimeError("x"))
+    cog.bot.change_queue.ask = AsyncMock(side_effect=RuntimeError("x"))
 
-    await _advance(cog, interaction, _entry(phase), **patches)
+    await _advance(cog, interaction, _entry(phase))
 
     _assert_failure_recorded(cog, interaction, label)
 
@@ -732,6 +759,37 @@ async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label,
     await _advance(cog, _interaction(), _entry(phase))
 
     assert f"phase: {prefix}" in str(cog.bot.output_router.post_log.await_args.args[0])
+
+
+#: Each check-in step advance asks of the change queue: its phase and its kind.
+CHECK_IN_STEPS = [
+    pytest.param(5, CHECK_IN_CALL, id="call"),
+    pytest.param(6, CHECK_IN_LAST_NOTICE, id="last notice"),
+    pytest.param(7, CHECK_IN_DEADLINE, id="deadline"),
+    pytest.param(9, CHECK_IN_CLEAN_UP, id="clean-up"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
+@pytest.mark.parametrize("phase,kind", CHECK_IN_STEPS)
+async def test_advancing_a_check_in_step_replies_on_the_change_queue(tmp_path, phase, kind):
+    """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)
+    is next. Advance asks the change queue for that step by its kind, for the round, and replies
+    that it is on the change queue, naming the division and the round, as a weather step's
+    reply does; it runs no check-in runner of its own."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    mocks = await _advance(cog, interaction, _entry(phase))
+
+    [(asked_kind, payload)] = _asked(cog)
+    assert (asked_kind, payload["round_id"]) == (kind, ROUND_ID)
+    replied = _replied(interaction)
+    assert "is on the change queue" in replied
+    assert "**Division 1**" in replied and "Round 3" in replied
+    for name in _CHECK_IN_RUNNERS:
+        if name in mocks:
+            mocks[name].assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
