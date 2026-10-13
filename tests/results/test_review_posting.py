@@ -635,12 +635,7 @@ async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first
     drivers' table and refuses the constructors', once: the queue stops, and the drivers' table
     the failed try sent, recorded nowhere, is deleted before the retry posts. The retry goes out
     as text, one table carrying both championships, so the channel is left with that table alone,
-    its id recorded, and no drivers' table besides it.
-
-    The legacy `post_standings`, which the sync commands call, fails the same way and takes the
-    stray table down with the failure, leaving the tables already recorded as they stood."""
-    from leaguebot.results.services.results_post_service import post_standings
-
+    its id recorded, and no drivers' table besides it."""
     league = await _league(tmp_path)
     await _standings_as_two_tables(league)
     standings = league.channel(STANDINGS_CHANNEL)
@@ -671,22 +666,6 @@ async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first
         )).fetchone()
     assert json.loads(row["standings_message_ids"]) == posted
     assert row["constructor_standings_message_id"] is None
-
-    legacy_path = tmp_path / "legacy"
-    legacy_path.mkdir()
-    legacy = await _league(legacy_path)
-    await _standings_as_two_tables(legacy)
-    legacy_standings = legacy.channel(STANDINGS_CHANNEL)
-    legacy_standings.fail_send_at = 2
-    with _each_championship_as_text(), pytest.raises(discord.HTTPException):
-        await post_standings(
-            legacy.db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", legacy_standings, [], [],
-            legacy.guild, True, LABEL, bot=legacy.bot,
-        )
-
-    [legacy_stray] = legacy.sent_to(STANDINGS_CHANNEL)
-    assert legacy_stray not in legacy_standings.messages
-    assert {OLD_STANDINGS, OLD_CONSTRUCTORS_TABLE} <= set(legacy_standings.messages)
 
 
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):

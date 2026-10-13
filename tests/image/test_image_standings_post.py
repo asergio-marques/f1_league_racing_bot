@@ -898,7 +898,7 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
     assert constructors.team_seat_counts["Vermilion"] == 2
 
 
-# ── The branch inside post_standings ──────────────────────────────────────
+# ── The branch inside produce_standings ───────────────────────────────────
 #
 # The image path is a guard clause in front of an untouched body. Where the flow does not
 # run, everything below it behaves exactly as it did before 040; where it does, the textual
@@ -945,18 +945,37 @@ async def _seed(tmp_path, *, cancelled=False):
 
 
 def _outcome(*, applicable=True, rejects=False, fallbacks=()):
-    from leaguebot.image.services.image_standings_post import StandingsPostOutcome
+    """A real outcome, so that whatever the standings poster reads of it holds: the flow stood
+    aside, a commanded posting refused, or each championship drawn (message 7701 for the
+    drivers, 7702 for the constructors) but those named in *fallbacks*."""
+    from leaguebot.image.services.image_standings_post import (
+        FELL_BACK,
+        POSTED,
+        REJECTED,
+        ChampionshipOutcome,
+        StandingsPostOutcome,
+    )
 
-    outcome = MagicMock(spec=StandingsPostOutcome)
-    outcome.applicable = applicable
-    outcome.rejects = rejects
-    outcome.fallback_championships = list(fallbacks)
-    outcome.message = "❌ broken" if rejects else None
-    return outcome
+    if not applicable:
+        return StandingsPostOutcome()
+    if rejects:
+        return StandingsPostOutcome(
+            drivers=ChampionshipOutcome(action=REJECTED, message="❌ broken"),
+            constructors=ChampionshipOutcome(action=REJECTED, message="❌ broken"),
+        )
+    return StandingsPostOutcome(**{
+        name: (
+            ChampionshipOutcome(action=FELL_BACK) if name in fallbacks
+            else ChampionshipOutcome(action=POSTED, message_id=message_id)
+        )
+        for name, message_id in (("drivers", 7701), ("constructors", 7702))
+    })
 
 
 async def _post(db_path, division_id, round_id, captured, *, bot=None, channel=None):
-    from leaguebot.results.services.results_post_service import post_standings
+    """Round 3's standings put up by `produce_standings` in a channel recording each text it
+    is sent in *captured*, giving the tables it reports."""
+    from leaguebot.results.services.results_post_service import produce_standings
 
     if channel is None:
         channel = AsyncMock()
@@ -974,7 +993,7 @@ async def _post(db_path, division_id, round_id, captured, *, bot=None, channel=N
     guild.get_member.return_value = None
     guild.get_role.return_value = None
 
-    await post_standings(
+    return await produce_standings(
         db_path=db_path,
         division_id=division_id,
         round_id=round_id,
@@ -1102,16 +1121,19 @@ async def test_the_image_path_raising_never_costs_the_league_its_standings(tmp_p
     assert "Team Standings" in captured[0]
 
 
-async def test_a_textual_fallback_is_posted_before_the_message_it_replaces_is_deleted(
+async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_nothing(
     tmp_path,
 ):
-    """FR-048 holds for a textual replacement as much as for a graphic."""
+    """Round 3's drivers' standings stand as message 4321. The drivers' picture falls back to
+    text: the table goes out as message 9999 and is reported with 4321 as the message it
+    replaces, which is left standing and its id left recorded, for the change queue's own jobs
+    to save the new id and delete the old once the new one stands (FR-048)."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.results_post_service import (
-        _get_standings_message_id,
-        _set_standings_message_id,
-        post_standings,
+        PostedTable,
+        produce_standings,
+        set_standings_message_id_on,
     )
 
     db_path, division_id, round_id = await _seed(tmp_path)
@@ -1122,8 +1144,8 @@ async def test_a_textual_fallback_is_posted_before_the_message_it_replaces_is_de
             "first_finish_rounds) VALUES (?, ?, 55, 1, 25, '{}', '{}')",
             (round_id, division_id),
         )
+        await set_standings_message_id_on(db, division_id, round_id, 4321, "drivers")
         await db.commit()
-    await _set_standings_message_id(db_path, division_id, round_id, 4321, "drivers")
 
     order: list[str] = []
     channel = AsyncMock()
@@ -1177,7 +1199,7 @@ async def test_a_textual_fallback_is_posted_before_the_message_it_replaces_is_de
         "leaguebot.image.services.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(fallbacks=("drivers",))),
     ):
-        await post_standings(
+        tables = await produce_standings(
             db_path=db_path,
             division_id=division_id,
             round_id=round_id,
@@ -1192,10 +1214,14 @@ async def test_a_textual_fallback_is_posted_before_the_message_it_replaces_is_de
             bot=MagicMock(),
         )
 
-    assert order == ["posted", "deleted"]
-    assert (
-        await _get_standings_message_id(db_path, division_id, round_id, "drivers") == 9999
-    )
+    assert order == ["posted"]
+    assert PostedTable([9999], [4321], championship="drivers") in tables
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT standings_message_id FROM driver_standings_snapshots WHERE round_id = ?",
+            (round_id,),
+        )).fetchone()
+    assert row["standings_message_id"] == 4321
 
 
 # ── The rendered files do not outlive the posting attempt ─────────────────

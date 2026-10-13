@@ -109,10 +109,13 @@ async def _seed(path, *, server_id=1, divisions=("Div A",)):
 
 def _opening_posts(standings=None, attendance=None):
     """The opening standings, through whichever of results' two posting functions it uses,
-    and the sheet. Both standings doubles are the one mock, so a test reads either."""
+    and the sheet. Both standings doubles are the one mock, so a test reads either; the
+    recording `post_standings` is created where #439 6b has deleted it."""
     standings = standings or AsyncMock(return_value=[])
     return (
-        patch("leaguebot.results.services.results_post_service.post_standings", standings),
+        patch(
+            "leaguebot.results.services.results_post_service.post_standings", standings, create=True,
+        ),
         patch("leaguebot.results.services.results_post_service.produce_standings", standings),
         patch(
             "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
@@ -445,7 +448,9 @@ async def test_the_final_standings_record_no_message_id(db_path):
     inputs = _final_inputs(round_id, division_id)
     with inputs[0], inputs[1], patch(
         "leaguebot.results.services.results_post_service.produce_standings", produce
-    ), patch("leaguebot.results.services.results_post_service.post_standings", recording):
+    ), patch(
+        "leaguebot.results.services.results_post_service.post_standings", recording, create=True,
+    ):
         await service.post_final_standings(
             _bot(db_path), _guild(), db_path, division_id, round_id, as_text=False
         )

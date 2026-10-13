@@ -3,7 +3,7 @@
 Covers:
 - _label_from_status: all three status values and fallback
 - produce_session_results: heading + label appear in the sent message
-- post_standings: heading + label appear in the sent message
+- produce_standings: heading + label appear in the sent message
 """
 from __future__ import annotations
 
@@ -220,14 +220,14 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# post_standings — heading and label in message content
+# produce_standings — heading and label in message content
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_post_standings_includes_heading_and_label(tmp_path):
-    """post_standings must include the heading and label in the posted standings message."""
+async def test_produce_standings_includes_heading_and_label(tmp_path):
+    """produce_standings must include the heading and label in the posted standings message."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import post_standings
+    from leaguebot.results.services.results_post_service import produce_standings
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -273,7 +273,7 @@ async def test_post_standings_includes_heading_and_label(tmp_path):
     mock_guild.get_member.return_value = None
     mock_guild.get_role.return_value = None
 
-    await post_standings(
+    await produce_standings(
         db_path=db_path,
         division_id=division_id,
         round_id=round_id,

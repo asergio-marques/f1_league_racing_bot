@@ -352,39 +352,6 @@ async def test_a_message_it_cannot_fetch_is_returned():
     assert await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "verdict") == [ANCHOR_ID]
 
 
-async def test_clearing_standings_counts_what_went_and_returns_what_stayed(monkeypatch):
-    """Both championships are cleared; the one that went is counted, the one refused is
-    returned, and both ids are forgotten either way as before."""
-    import leaguebot.results.services.results_post_service as rps
-
-    postings = {
-        rps.STANDINGS_DRIVERS: ANCHOR_ID,
-        rps.STANDINGS_CONSTRUCTORS: ANCHOR_ID + 10,
-    }
-    forgotten: list[str] = []
-
-    async def _get_id(db_path, division_id, round_id, championship):
-        return postings[championship]
-
-    async def _get_ids(db_path, division_id, round_id, championship):
-        return [postings[championship]]
-
-    async def _set_id(db_path, division_id, round_id, message_id, championship):
-        forgotten.append(championship)
-
-    monkeypatch.setattr(rps, "_get_standings_message_id", _get_id)
-    monkeypatch.setattr(rps, "_get_standings_message_ids", _get_ids)
-    monkeypatch.setattr(rps, "_set_standings_message_id", _set_id)
-    drivers, constructors = _message(ANCHOR_ID), _message(ANCHOR_ID + 10)
-    channel = _deletable_channel([drivers, constructors])
-    constructors.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms"))
-
-    removed, left = await rps._clear_standings_messages("db", 1, 2, channel)
-
-    assert (removed, left) == (1, [ANCHOR_ID + 10])
-    assert forgotten == [rps.STANDINGS_DRIVERS, rps.STANDINGS_CONSTRUCTORS]
-
-
 # ---------------------------------------------------------------------------
 # Deleting what was recorded (#345)
 # ---------------------------------------------------------------------------
