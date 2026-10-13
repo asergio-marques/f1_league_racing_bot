@@ -26,7 +26,6 @@ import sqlite3
 import sys
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -168,21 +167,6 @@ def reposts(monkeypatch):
         return league
 
     monkeypatch.setattr(sys.modules[__name__], "ongoing_league", _wrapped)
-    return record
-
-
-@pytest.fixture
-def deadlines(monkeypatch):
-    """Attendance's check-in deadline (the reserves' distribution), recording the round ids it
-    was run for in `ran`."""
-    from leaguebot.attendance.services import rsvp_service
-
-    record = SimpleNamespace(ran=[])
-
-    async def _run(rid: int, *_args: Any, **_kwargs: Any) -> None:
-        record.ran.append(rid)
-
-    monkeypatch.setattr(rsvp_service, "run_rsvp_deadline", _run)
     return record
 
 
@@ -1255,17 +1239,44 @@ async def test_a_round_whose_moment_passed_while_its_save_stood_stopped_opens_it
 
 
 async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_run_once_it_is_discarded(
-    tmp_path, reposts, deadlines,
+    tmp_path, reposts,
 ):
     """Attendance on, its deadline two hours before the round. Pro's round 3 is two hours and
-    five minutes out, its call standing and its reserves not yet distributed. It is moved a day
-    later; the save stops, and ten minutes on, past the old deadline, a league admin discards it.
-    The round stands at its old moment, its deadline gone by with its call standing: the deadline
-    is run at once, as a restart runs it, and no call is posted."""
+    five minutes out, its call standing (7001) and its reserves not yet distributed. It is moved
+    a day later; the save stops, and ten minutes on, past the old deadline, a league admin
+    discards it. The round stands at its old moment, its deadline gone by with its call
+    standing: the deadline is run at once, as a restart runs it — the call's buttons taken off
+    and one notice of the placements posted in Pro's check-in channel and recorded — and no
+    call is posted."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    before = await _place_and_discard_past_the_deadline(league)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _moment(league) == before
+    assert ("edit", PRO_CH.checkin, CALL_MESSAGES[0]) in league.events
+    [announced] = _sent_in_check_in(league)
+    assert await _distribution_recorded(league) == str(announced)
+    assert reposts.posted == []
+
+
+#: Why a test of the amendment's deadline fails until C31 builds it (fold-in 12e).
+NO_AMEND_DEADLINE_JOBS = (
+    "#439: the amendment's `run_deadline` job runs `run_rsvp_deadline` whole, which logs a "
+    "refused lock or announcement rather than stopping the queue"
+)
+
+
+async def _deadline_not_yet_run(league: Any) -> None:
+    """Round 3's reserves not yet distributed: no announcement recorded."""
     await league.write(
         "UPDATE rsvp_embed_messages SET distribution_msg_id = NULL WHERE round_id = ?", R3
     )
+
+
+async def _place_and_discard_past_the_deadline(league: Any) -> datetime:
+    """Pro's round 3 two hours and five minutes out is moved a day later; the save stops, and ten
+    minutes on, past the old deadline, a league admin discards it. The round's moment before."""
     await _place_r3(league, hours=2, minutes=5)
     before = await _moment(league)
     await _amended(league, scheduled_at=_at(league, days=1, hours=2))
@@ -1274,11 +1285,51 @@ async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_r
         assert await _stopped_at(league) == "apply"
         league.clock.advance(minutes=10)
         await discard_job(league.bot)
+    return before
 
-    assert await stopped_job(league.db_path) is None
-    assert await _moment(league) == before
-    assert deadlines.ran == [R3]
-    assert reposts.posted == []
+
+def _sent_in_check_in(league: Any) -> list[int]:
+    return [mid for kind, cid, mid in league.events if kind == "send" and cid == PRO_CH.checkin]
+
+
+async def _distribution_recorded(league: Any) -> Any:
+    [row] = await league.rows(
+        "SELECT distribution_msg_id FROM rsvp_embed_messages WHERE round_id = ?", R3)
+    return row["distribution_msg_id"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_DEADLINE_JOBS)
+async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_queue(
+    tmp_path, reposts,
+):
+    """As the deadline run once its save is discarded (Pro's round 3, its old deadline passed),
+    Discord refusing every post in Pro's check-in channel: the announcement of the placements is
+    not posted, so the queue stops with nothing recorded, rather than the refusal being logged
+    on the host alone."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    reposts.fault = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+
+    await _place_and_discard_past_the_deadline(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert await _distribution_recorded(league) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_DEADLINE_JOBS)
+async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp_path, reposts):
+    """As the deadline run once its save is discarded (Pro's round 3, its old deadline passed),
+    Discord refusing the edit that takes the call's buttons off (7001): the queue stops there,
+    nothing yet announced."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _deadline_not_yet_run(league)
+    league.channel(PRO_CH.checkin).messages[CALL_MESSAGES[0]].edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions"))
+
+    await _place_and_discard_past_the_deadline(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert _sent_in_check_in(league) == []
 
 
 async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_once_it_is_discarded(
@@ -1787,17 +1838,19 @@ async def test_a_passed_round_s_results_submission_is_run_at_once_after_it_is_ar
 
 
 async def test_a_check_in_deadline_whose_reserves_were_distributed_is_not_run_again(
-    tmp_path, reposts, deadlines,
+    tmp_path, reposts,
 ):
     """Attendance on, its deadline two hours before the round. Pro's round 3, its call standing,
     has had its reserves distributed (its distribution announced, message 7003). It is moved a
     day later; the save stops, and ten minutes on, past the old deadline, a league admin discards
-    it. The deadline has been run: it is not run again, and no call is posted."""
+    it. The deadline has been run: it is not run again — the call is not edited and nothing is
+    posted in Pro's check-in channel — and no call is posted."""
     league = await ongoing_league(tmp_path, attendance=True)
     await _passed_while_the_save_stood_stopped(league, minutes=10)
 
     assert "run_deadline" not in [job["name"] for job in await _jobs(league)]
-    assert deadlines.ran == []
+    assert ("edit", PRO_CH.checkin, CALL_MESSAGES[0]) not in league.events
+    assert _sent_in_check_in(league) == []
     assert reposts.posted == []
 
 
