@@ -496,9 +496,12 @@ async def stopped_at(league: ReviewLeague) -> str | None:
     return None if job is None else job["name"]
 
 
-async def block_queue(league: ReviewLeague) -> dict[str, Any]:
+async def block_queue(league: ReviewLeague, *, lane: str | None = None) -> dict[str, Any]:
     """Ask for a change of the test's own whose one job fails while `holder["fail"]` is set, and
-    run the queue, so that the queue is stopped at it. Gives the holder."""
+    run the queue, so that the queue is stopped at it. Gives the holder.
+
+    It stops the league lane, or with *lane* a conversation's (`"channel:<id>"`); `"league"` names
+    the league's own."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
 
@@ -512,20 +515,25 @@ async def block_queue(league: ReviewLeague) -> dict[str, Any]:
     async def check(_ctx: Any) -> Any:
         return Verdict.go()
 
+    on_league = lane in (None, "league")
+    kind = "test.blocker" if on_league else f"test.blocker:{lane}"
+    lanes: dict[str, Any] = {} if on_league else {"lane": lambda _payload: lane}
     register(league.bot, ChangeType(
-        kind="test.blocker",
+        kind=kind,
         opening=(PlannedStep("block"),),
         steps={"block": Step("block", StepKind.ACT, act)},
         check=check,
-        key=lambda _payload: "test.blocker",
+        key=lambda _payload: kind,
         doing=lambda _payload: "Blocking the queue",
         outcome=lambda _ctx: "Unblocked.",
+        **lanes,
     ))
     await league.bot.change_queue.ask(
-        "test.blocker", {}, interaction=member_interaction(league.bot), what="the blocker",
+        kind, {}, interaction=member_interaction(league.bot), what="the blocker",
     )
     await run_queue(league.bot)
-    assert await stopped_at(league) == "block"
+    job = await stopped_job(league.db_path, lane)
+    assert job is not None and job["name"] == "block"
     return holder
 
 

@@ -114,7 +114,10 @@ def register(bot: Any, *change_types: Any) -> None:
 
 
 async def run_queue(bot: Any, *, steps: int | None = None) -> None:
-    """Run the bot's queue until nothing can run now, or until *steps* steps are done."""
+    """Run the bot's queue until nothing can run now, or until *steps* steps are done.
+
+    Every lane is run, the league's and each conversation's, one change at a time: the queue's own
+    `run_until_idle` is the tests' serial runner, taking the runnable change asked first."""
     if steps is None:
         await bot.change_queue.run_until_idle()
     else:
@@ -422,13 +425,16 @@ async def step_rows(db_path: str, change_id: int | None = None) -> list[dict[str
 # ---------------------------------------------------------------------------
 
 
-async def stopped_job(db_path: str) -> dict[str, Any] | None:
+async def stopped_job(db_path: str, lane: str | None = None) -> dict[str, Any] | None:
     """The job the queue is stopped at: not done, and failed since `failing_since`; or None.
 
     Only a job of a change still QUEUED or RUNNING counts: a change that has ended (discarded
-    at a job, say) leaves the job it stopped at as it was."""
+    at a job, say) leaves the job it stopped at as it was. With *lane* (`"league"`, or a
+    conversation's `"channel:<id>"`), only a job of a change on that lane; a change saved with no
+    lane is the league's."""
     live = {row["id"] for row in await change_rows(db_path)
-            if row["state"] in ("QUEUED", "RUNNING")}
+            if row["state"] in ("QUEUED", "RUNNING")
+            and (lane is None or row.get("lane", "league") == lane)}
     stopped = [
         row for row in await step_rows(db_path)
         if row["change_id"] in live and row["done_at"] is None
@@ -437,8 +443,8 @@ async def stopped_job(db_path: str) -> dict[str, Any] | None:
     return stopped[0] if stopped else None
 
 
-async def _press(bot: Any, action: str, user: Any, run: bool) -> Any:
-    job = await stopped_job(bot.db_path)
+async def _press(bot: Any, action: str, user: Any, run: bool, lane: str | None = None) -> Any:
+    job = await stopped_job(bot.db_path, lane)
     assert job is not None, f"no job stops the queue for {action} to act on"
     interaction = member_interaction(bot, user=user)
     interaction.message.id = job["notice_message_id"]
@@ -448,17 +454,21 @@ async def _press(bot: Any, action: str, user: Any, run: bool) -> Any:
     return interaction
 
 
-async def retry_job(bot: Any, *, user: Any = None, run: bool = True) -> Any:
+async def retry_job(bot: Any, *, user: Any = None, run: bool = True,
+                    lane: str | None = None) -> Any:
     """Press Retry on the stop notice of the job the queue is stopped at, then run the queue.
 
-    The presser is *user*, or a league manager. Gives the presser's interaction.
+    The presser is *user*, or a league manager. With *lane*, the job that lane is stopped at.
+    Gives the presser's interaction.
     """
-    return await _press(bot, "retry", user or tier_member("manager"), run)
+    return await _press(bot, "retry", user or tier_member("manager"), run, lane)
 
 
-async def discard_job(bot: Any, *, user: Any = None, run: bool = True) -> Any:
+async def discard_job(bot: Any, *, user: Any = None, run: bool = True,
+                      lane: str | None = None) -> Any:
     """Press Discard on the stop notice of the job the queue is stopped at, then run the queue.
 
-    The presser is *user*, or a league admin. Gives the presser's interaction.
+    The presser is *user*, or a league admin. With *lane*, the job that lane is stopped at.
+    Gives the presser's interaction.
     """
-    return await _press(bot, "discard", user or tier_member("admin"), run)
+    return await _press(bot, "discard", user or tier_member("admin"), run, lane)

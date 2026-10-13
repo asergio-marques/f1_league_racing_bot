@@ -48,6 +48,8 @@ CONFIGURED_ROLE = 222
 CONFIGURED_LOG = 333
 CONFIGURED_ADMIN_ROLE = 444
 
+NO_PACK_LANE_NAMED = "#439: a pack's refusal does not say the job is on the queue, the league's lane"
+
 
 def _unwrap(cmd):
     """Strip `bot_setup_only` and return the command body.
@@ -899,10 +901,11 @@ async def _queue_rows(db_path: str) -> list[tuple]:
     return [tuple(r) for r in changes] + [tuple(r) for r in jobs]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(tmp_path):
     """A job still to run would go on changing Discord on a server the bot no longer serves, so
     a pack waits for the queue to empty (#439): refused before anything is cleared, naming the
-    job and telling the admin to let it finish, and the refusal recorded in the log channel."""
+    job and its lane, the queue (the league's), and telling the admin to let it finish, and the refusal recorded in the log channel."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     job = await _seed_pending_job(db_path, stopped=False)
@@ -915,6 +918,7 @@ async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(t
 
     reply = interaction.response.send_message.call_args.args[0]
     assert f"job #{job}" in reply
+    assert "on the queue" in reply
     assert "finish" in reply
     assert await bot.config_service.get_league_server_id() == SERVER_ID
     assert await _queue_rows(db_path) == before
@@ -923,9 +927,10 @@ async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(t
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 async def test_bot_pack_is_refused_while_the_queue_is_stopped_and_names_the_stopped_job(tmp_path):
     """A stopped job holds the queue until a league manager or admin presses Retry, or a league
-    admin Discard, on its notice (#439): the pack is refused naming the stopped job and those two
+    admin Discard, on its notice (#439): the pack is refused naming the stopped job, on the queue (the league's lane), and those two
     ways on, and the refusal recorded in the log channel."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -939,6 +944,7 @@ async def test_bot_pack_is_refused_while_the_queue_is_stopped_and_names_the_stop
 
     reply = interaction.response.send_message.call_args.args[0]
     assert f"job #{job}" in reply
+    assert "on the queue" in reply
     assert "Retry" in reply and "Discard" in reply
     assert await bot.config_service.get_league_server_id() == SERVER_ID
     assert await _queue_rows(db_path) == before
@@ -1005,12 +1011,13 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season(
     tmp_path, monkeypatch
 ):
     """A change asked for after the command's own check has passed is caught by the pack's
     refusal inside its transaction (#439), and the admin is told of the job it would wait on,
-    not of a season the league does not have: the reply names the job and says to let it finish,
+    not of a season the league does not have: the reply names the job, on the queue (the league's lane), and says to let it finish,
     and the log channel records the refusal after the line the pack wrote as it began."""
     from leaguebot.core.services import pack_service
 
@@ -1033,6 +1040,7 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     [job] = jobs
     reply = interaction.followup.send.call_args.args[0]
     assert f"job #{job}" in reply
+    assert "on the queue" in reply
     assert "finish" in reply
     assert "Season" not in reply and "season" not in reply
     assert await bot.config_service.get_league_server_id() == SERVER_ID
