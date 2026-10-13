@@ -12,7 +12,6 @@ that had just drawn it (FR-052, Constitution XIV.4 and XIV.7).
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -119,6 +118,11 @@ def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
 
     Each previous posting is given a chunk list naming itself alone, as every posting written
     since #345 records one — so replacing it deletes exactly that message.
+
+    The id readers are patched under their private names and their public ones alike, and the
+    committing save under its name, each created where it is missing (#439 6b): the poster stops
+    saving and may read the ids through public readers, and the save is deleted once nothing
+    calls it, while *stored* still shows that nothing was written.
     """
     from leaguebot.image.services import image_standings_post as m
 
@@ -139,21 +143,21 @@ def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
         stored[championship] = message_id
         stored_lists[championship] = message_ids
 
+    service = "leaguebot.results.services.results_post_service"
     return [
         patch.object(m, "build_drawings", AsyncMock(return_value=_drawings())),
         patch.object(m, "render_png", render),
-        patch(
-            "leaguebot.results.services.results_post_service._get_standings_message_id",
-            AsyncMock(side_effect=_get),
+        *(
+            patch(f"{service}.{prefix}get_standings_message_id",
+                  AsyncMock(side_effect=_get), create=True)
+            for prefix in ("_", "")
         ),
-        patch(
-            "leaguebot.results.services.results_post_service._get_standings_message_ids",
-            AsyncMock(side_effect=_get_list),
+        *(
+            patch(f"{service}.{prefix}get_standings_message_ids",
+                  AsyncMock(side_effect=_get_list), create=True)
+            for prefix in ("_", "")
         ),
-        patch(
-            "leaguebot.results.services.results_post_service._set_standings_message_id",
-            AsyncMock(side_effect=_set),
-        ),
+        patch(f"{service}._set_standings_message_id", AsyncMock(side_effect=_set), create=True),
     ]
 
 
@@ -384,57 +388,77 @@ async def test_no_bot_no_guild_and_no_channel_each_stand_the_flow_aside():
 # ── Ordering, identity and delivery ───────────────────────────────────────
 
 
+NO_REPLACES = (
+    "#439: the standings picture deletes and saves for itself, reporting nothing it replaces"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tmp_path):
-    """FR-048. A render that fails must leave the league the standings it had."""
+    """FR-048. A render that fails must leave the league the standings it had.
+
+    The poster deletes nothing (#439 6b): it posts each picture and reports the message it
+    replaces, which the change queue deletes by a job of its own once the picture stands."""
     png = tmp_path / "s.png"
     png.write_bytes(b"x")
     sent, order = [], []
 
-    await _try_post(
+    outcome = await _try_post(
         _bot(),
         _channel(sent, order),
         AsyncMock(return_value=_decision(png=png)),
         previous_ids={"drivers": 111, "constructors": 222},
     )
 
-    posts = [i for i, step in enumerate(order) if step.startswith("posted")]
-    deletes = [i for i, step in enumerate(order) if step.startswith("deleted")]
-    assert len(posts) == 2 and len(deletes) == 2
-    assert posts[0] < deletes[0], "the drivers replacement precedes its deletion"
-    assert posts[1] < deletes[1], "and so does the constructors one"
+    assert [step for step in order if step.startswith("posted")] and len(sent) == 2
+    assert not [step for step in order if step.startswith("deleted")], (
+        "the poster deleted the message it replaces"
+    )
+    assert outcome.drivers.replaces == [111]
+    assert outcome.constructors.replaces == [222]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
     """**Without a list, deleting a graphic walked forward over the bot's own messages** (#345).
 
     That fallback cannot tell one posting from the next, and a division rebuild posts every
     replacement before it deletes any original — so the walk from each old graphic ran straight
     into the new ones and deleted them. A graphic is one message; recording that says so.
+
+    The poster saves nothing (#439 6b): each championship's outcome carries the one message its
+    graphic occupies, which the change queue's job records, as a list of that one id, with its
+    done mark.
     """
     png = tmp_path / "s.png"
     png.write_bytes(b"x")
     sent, stored, lists = [], {}, {}
 
-    await _try_post(
+    outcome = await _try_post(
         _bot(), _channel(sent), AsyncMock(return_value=_decision(png=png)),
         stored=stored, stored_lists=lists,
     )
 
-    for championship in ("drivers", "constructors"):
-        assert json.loads(lists[championship]) == [stored[championship]]
+    assert stored == {} and lists == {}, "the poster saved an id itself"
+    assert [outcome.drivers.message_id, outcome.constructors.message_id] == [1001, 1002]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_the_two_message_ids_are_persisted_to_their_own_columns(tmp_path):
+    """Each championship's id is handed back under its own name for the change queue's job to
+    save to its own column (#439 6b); the poster writes neither."""
     png = tmp_path / "s.png"
     png.write_bytes(b"x")
     sent, stored = [], {}
 
-    await _try_post(
+    outcome = await _try_post(
         _bot(), _channel(sent), AsyncMock(return_value=_decision(png=png)), stored=stored
     )
 
-    assert set(stored) == {"drivers", "constructors"}
-    assert stored["drivers"] != stored["constructors"]
+    assert stored == {}
+    assert outcome.drivers.message_id is not None
+    assert outcome.constructors.message_id is not None
+    assert outcome.drivers.message_id != outcome.constructors.message_id
 
 
 async def test_a_discord_failure_falls_back_to_text_rather_than_retrying_the_image(tmp_path):
@@ -1510,7 +1534,10 @@ async def test_a_boundary_posting_neither_reads_nor_writes_the_round_s_slot(
     assert len(sent) == 2, "and must delete nothing it did not post"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_an_ordinary_posting_still_replaces_its_predecessor(tmp_path):
+    """A round's posting reports the predecessor it replaces, for the change queue's job to
+    delete once the new picture stands (#439 6b); it saves nothing itself."""
     stored: dict = {}
     sent: list = []
     render = AsyncMock(
@@ -1519,7 +1546,7 @@ async def test_an_ordinary_posting_still_replaces_its_predecessor(tmp_path):
             _decision(png=_drawn(tmp_path, "constructors")),
         ]
     )
-    await _try_post(
+    outcome = await _try_post(
         _bot(),
         _channel(sent),
         render,
@@ -1527,4 +1554,6 @@ async def test_an_ordinary_posting_still_replaces_its_predecessor(tmp_path):
         stored=stored,
     )
 
-    assert set(stored) == {"drivers", "constructors"}
+    assert stored == {}
+    assert outcome.drivers.replaces == [4242]
+    assert outcome.constructors.replaces == [4343]
