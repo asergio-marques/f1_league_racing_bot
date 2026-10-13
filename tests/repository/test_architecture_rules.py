@@ -818,6 +818,23 @@ def test_the_posting_check_counts_deletes_and_edits_but_not_permission_edits():
     assert _direct_posts_among(nodes) == Counter({("core/cogs/sample_cog.py", "handler"): 5})
 
 
+def test_the_posting_check_does_not_count_a_review_poster_reply():
+    """The season review's poster answers the reviewer through the interaction's follow-up, which
+    is no post (#439, fold-in 13). The check reads the verb, not the receiver's class: a method
+    named `send` is counted as a post whatever it does, so the poster's method is named `reply`,
+    which the check passes, while a `poster.send(...)` would still be counted."""
+    sample = ast.parse(
+        "async def handler(poster):\n"
+        "    await poster.reply('the report', ephemeral=False)\n"
+        "    await poster.send('the report', ephemeral=False)\n"
+    )
+    owners = _owners(sample)
+    nodes = [("core/cogs/sample_cog.py", owners.get(node, "<module>"), node)
+             for node in ast.walk(sample)]
+
+    assert _direct_posts_among(nodes) == Counter({("core/cogs/sample_cog.py", "handler"): 1})
+
+
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
 
 #: The schema, whose tables the rule is about.

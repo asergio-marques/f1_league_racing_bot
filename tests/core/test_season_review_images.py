@@ -26,6 +26,9 @@ from leaguebot.core.cogs.season_cog import _ReviewPoster
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
+#: Why the review poster's tests fail until #439 slice 6b's C1 is built.
+NO_POSTER_REPLY = "#439: the review poster's send is not yet renamed reply"
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -324,6 +327,7 @@ def test_the_roleless_team_warning_survives_the_graphic():
     assert "role_warning" in textual.split("else:")[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 def test_the_calendar_date_faults_survive_the_graphic():
     """#181: the same rule as the roleless-team warning above, for the calendar.
 
@@ -339,7 +343,7 @@ def test_the_calendar_date_faults_survive_the_graphic():
     assert "cal_lines.extend(fault_lines)" in textual, (
         "the text form must carry the faults"
     )
-    assert "poster.send(" in drew, (
+    assert "poster.reply(" in drew, (
         "the drawn form must post them as their own message"
     )
 
@@ -1315,6 +1319,7 @@ async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path):
 # ── Collecting the report, so approving can clear it ──────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_keeps_every_public_message():
     """Every public message a review sends is kept, so that approving it can take them down."""
     interaction = MagicMock()
@@ -1322,12 +1327,13 @@ async def test_the_poster_keeps_every_public_message():
     interaction.followup.send = AsyncMock(side_effect=sent)
     poster = _ReviewPoster(interaction)
 
-    await poster.send("first", ephemeral=False)
-    await poster.send("second", ephemeral=False)
+    await poster.reply("first", ephemeral=False)
+    await poster.reply("second", ephemeral=False)
 
     assert poster.posted == sent
 
 
+@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_asks_for_the_message_back():
     """`followup.send` returns None unless `wait=True`, so without it nothing is kept and the
     report could never be cleared."""
@@ -1335,11 +1341,12 @@ async def test_the_poster_asks_for_the_message_back():
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
 
-    await _ReviewPoster(interaction).send("body", ephemeral=False)
+    await _ReviewPoster(interaction).reply("body", ephemeral=False)
 
     assert original.await_args.kwargs["wait"] is True
 
 
+@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_leaves_ephemeral_messages_alone():
     """An ephemeral followup is the reviewer's alone and cannot be deleted by id; the
     fault reports among them are how a manager knows what to fix."""
@@ -1348,19 +1355,20 @@ async def test_the_poster_leaves_ephemeral_messages_alone():
     interaction.followup.send = original
     poster = _ReviewPoster(interaction)
 
-    assert await poster.send("a fault", ephemeral=True) is None
+    assert await poster.reply("a fault", ephemeral=True) is None
 
     assert poster.posted == []
     assert "wait" not in original.await_args.kwargs
 
 
+@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_passes_a_file_and_a_view_on():
     interaction = MagicMock()
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
     attachment, view = MagicMock(), MagicMock()
 
-    await _ReviewPoster(interaction).send("body", ephemeral=False, file=attachment, view=view)
+    await _ReviewPoster(interaction).reply("body", ephemeral=False, file=attachment, view=view)
 
     assert original.await_args.kwargs["file"] is attachment
     assert original.await_args.kwargs["view"] is view
@@ -1392,6 +1400,7 @@ def test_nothing_in_a_review_sends_around_the_poster():
     assert {name: lines for name, lines in found.items() if lines} == {}
 
 
+@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 def test_the_prompt_is_public_and_says_who_may_answer():
     """Public so a reviewer who cannot approve can put the question to someone who can."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_post_approval_prompt")
@@ -1399,7 +1408,7 @@ def test_the_prompt_is_public_and_says_who_may_answer():
     assert "ephemeral=False" in source
     # A public send through the poster waits for the message and hands it back, so the
     # prompt can be bound and later deleted; `test_the_poster_asks_for_the_message_back`.
-    assert "message = await poster.send(" in source
+    assert "message = await poster.reply(" in source
     assert "administrator" in source
     assert "await view.bind(message)" in source
 
