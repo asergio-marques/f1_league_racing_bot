@@ -1901,3 +1901,44 @@ async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_dis
     assert "9401" in entry
     [line] = _closing_lines(league)
     assert INCOMPLETE in line and named in line and "9401" in line
+
+
+# ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
+
+
+@pytest.mark.parametrize("refused", ["the picture", "everything"])
+async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_try(
+    tmp_path, monkeypatch, refused,
+):
+    """Images on, both championships drawn. Pro's standings channel refuses (the picture) every
+    send carrying a picture: the final standings go out as text in the same try, the job is
+    done without stopping the queue and the season is completed, as a refused round's
+    standings picture is ("No, same try everywhere"); nothing is recorded of them, as before.
+    Where it refuses (everything) the text too, the queue stops at the job and the season is
+    not completed."""
+    from tests.support.season_league import draw_standings_pictures, refuses_pictures
+
+    league = await pending_completion_league(tmp_path, images=True)
+    render = draw_standings_pictures(monkeypatch, tmp_path)
+    standings = league.channel(PRO_CH.standings)
+    if refused == "the picture":
+        standings.fail_when = refuses_pictures
+    else:
+        standings.send_fails = _forbidden()
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert render.await_count >= 1, "the picture was never drawn"
+    assert any(call.kwargs.get("file") for call in standings.send.await_args_list), \
+        "no picture was sent to be refused"
+    if refused == "everything":
+        assert await _stopped_at(league) == ("final_standings", PRO)
+        assert await _status(league) != "COMPLETED"
+        return
+    assert await _stopped_at(league) is None
+    texts = league.texts(PRO_CH.standings)
+    assert any("**Driver Standings**" in text for text in texts), texts
+    assert all(not files for files in standings.files), "a picture was posted"
+    assert await _status(league) == "COMPLETED"
+
