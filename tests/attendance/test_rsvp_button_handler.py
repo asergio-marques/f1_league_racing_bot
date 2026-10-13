@@ -38,8 +38,9 @@ accepted_may_still_step_in_after_the_deadline` is the one that would catch it.
 **Times are taken from the clock, never pinned, where the handler is driven.** The handler
 reads `datetime.now` itself and takes no `now` parameter, so a fixture that seeded a fixed date
 would pass today and fail silently once it went by. Every round it is driven against is
-scheduled relative to the real present. `AttendanceService.answer_rsvp`, which applies the lock
-rules and writes the answer in one transaction (#482), takes `now`, and its tests pin it.
+scheduled relative to the real present. `AttendanceService.answer_rsvp_on`, which applies the
+lock rules and writes the answer in the answer's save (#482, #439), takes `now`, and its tests pin
+it.
 
 **Two presses at once are taken in turn** (#482). Each press asks the change queue for its
 answer (#439, slice 6b), which runs one change at a time, so the second press sees the first's
@@ -53,7 +54,6 @@ made, and its answer is judged against the locks at that moment.
 """
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -84,7 +84,7 @@ STRANGER_PROFILE = 303
 #: The configured deadline, in hours before the round.
 DEADLINE_HOURS = 6
 
-#: The moment `answer_rsvp` is told it is, in the tests that call it directly.
+#: The moment `answer_rsvp_on` is told it is, in the tests that call it directly.
 NOW = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
 
 
@@ -319,54 +319,6 @@ async def _ignore_answers(db_path: str) -> None:
                 "ON driver_round_attendance BEGIN SELECT RAISE(IGNORE); END"
             )
         await db.commit()
-
-
-def _writes_an_answer(sql: str) -> bool:
-    statement = " ".join(sql.split()).upper()
-    return statement.startswith("BEGIN IMMEDIATE") or (
-        statement.startswith(("INSERT", "UPDATE")) and "DRIVER_ROUND_ATTENDANCE" in statement
-    )
-
-
-class _HeldWrite:
-    """Holds the first answer's write open, uncommitted, until a second press reaches its own.
-
-    The first connection to begin writing an answer is the first press's. Its commit waits
-    until another connection begins writing an answer, so the second press runs while the
-    first holds the write lock and has not saved. `after_the_first` starts the second press
-    only once the first holds it.
-    """
-
-    def __init__(self, monkeypatch) -> None:
-        import aiosqlite
-
-        self.first = None
-        self.holding = asyncio.Event()
-        self.second_reached = asyncio.Event()
-        real_execute = aiosqlite.Connection.execute
-        real_commit = aiosqlite.Connection.commit
-        held = self
-
-        def execute(connection, sql, *args, **kwargs):
-            if _writes_an_answer(sql):
-                if held.first is None:
-                    held.first = connection
-                elif connection is not held.first:
-                    held.second_reached.set()
-            return real_execute(connection, sql, *args, **kwargs)
-
-        async def commit(connection):
-            if connection is held.first and not held.holding.is_set():
-                held.holding.set()
-                await asyncio.wait_for(held.second_reached.wait(), timeout=10)
-            return await real_commit(connection)
-
-        monkeypatch.setattr(aiosqlite.Connection, "execute", execute)
-        monkeypatch.setattr(aiosqlite.Connection, "commit", commit)
-
-    async def after_the_first(self, press):
-        await asyncio.wait_for(self.holding.wait(), timeout=10)
-        return await press()
 
 
 # ---------------------------------------------------------------------------
@@ -972,7 +924,7 @@ async def test_a_failed_line_that_cannot_be_posted_does_not_raise(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Two presses at once (#482, F1 and F2)
+# Two presses at once (#482, F1; F2's race is gone, every press taken in turn by the queue)
 # ---------------------------------------------------------------------------
 
 
@@ -998,7 +950,7 @@ async def test_two_quick_presses_of_the_same_button_record_one_answer(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# AttendanceService.answer_rsvp — the lock rules and the answer in one transaction (#482)
+# AttendanceService.answer_rsvp_on — the lock rules and the answer in one save (#482, #439)
 # ---------------------------------------------------------------------------
 
 
@@ -1014,17 +966,28 @@ async def _seed_answer(db_path: str, profile_id: int, status: str, accepted_at=N
 
 
 async def _answer(db_path, profile_id, status, *, starts_in, deadline_hours=DEADLINE_HOURS):
-    """`answer_rsvp` as the handler calls it, at `NOW`, for a round *starts_in* from then."""
-    return await AttendanceService(db_path).answer_rsvp(
-        ROUND_ID,
-        DIVISION_ID,
-        profile_id,
-        status,
-        now=NOW,
-        scheduled_at=NOW + starts_in,
-        deadline_hours=deadline_hours,
-        is_reserve=profile_id == RESERVE_PROFILE,
-    )
+    """`answer_rsvp_on` as the answer's save calls it, at `NOW`, for a round *starts_in* from
+    then, on a connection of the test's own that it then commits, as the job's save does."""
+    async with get_connection(db_path) as db:
+        result = await AttendanceService(db_path).answer_rsvp_on(
+            db,
+            ROUND_ID,
+            DIVISION_ID,
+            profile_id,
+            status,
+            now=NOW,
+            scheduled_at=NOW + starts_in,
+            deadline_hours=deadline_hours,
+            is_reserve=profile_id == RESERVE_PROFILE,
+        )
+        await db.commit()
+    return result
+
+
+NO_ANSWER_ON = (
+    "#439: a check-in answer is written by `answer_rsvp` on its own connection, with no form "
+    "taking the queue's save (`answer_rsvp_on`)"
+)
 
 
 #: Each case: its id, who answers, the answer held, the answer given, when the round starts
@@ -1053,6 +1016,7 @@ ANSWER_CASES = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ANSWER_ON)
 @pytest.mark.parametrize(
     "profile,held,given,starts_in,deadline_hours,outcome",
     [case[1:] for case in ANSWER_CASES],
@@ -1078,6 +1042,7 @@ async def test_answer_rsvp_applies_the_lock_rules(
     assert await _status(db_path, profile) == (given if outcome == "RECORDED" else held)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ANSWER_ON)
 async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
     """An accept is stamped with the `now` it is given, which orders the reserves."""
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
@@ -1091,6 +1056,7 @@ async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
     assert await _accepted_at(db_path, RESERVE_PROFILE) == NOW.isoformat()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ANSWER_ON)
 async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_path):
     """Pressing Accept again changes nothing, and leaves a reserve's place in the queue."""
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
@@ -1106,6 +1072,7 @@ async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_p
     assert await _accepted_at(db_path, RESERVE_PROFILE) == earlier
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ANSWER_ON)
 async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_path):
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
 
@@ -1120,6 +1087,7 @@ async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_pat
     assert await _accepted_at(db_path, RESERVE_PROFILE) is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ANSWER_ON)
 async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_path):
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
 
@@ -1132,6 +1100,7 @@ async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_pa
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ANSWER_ON)
 async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     """A write that changes no row is reported as not recorded, never as recorded."""
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
@@ -1144,29 +1113,3 @@ async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     assert result.outcome is RsvpOutcome.NOT_RECORDED
     assert result.found == "NO_RSVP"
     assert await _status(db_path, FULL_TIME_PROFILE) == "NO_RSVP"
-
-
-async def test_a_reserve_s_accept_then_decline_after_the_deadline_leaves_the_accept(
-    tmp_path, monkeypatch
-):
-    """F2: after the deadline a reserve presses Accept, then Decline before Accept has saved.
-    Decline waits for Accept, sees it, and is refused as locked: an accepted reserve is locked
-    at the deadline whatever presses follow."""
-    from leaguebot.attendance.services.attendance_service import RsvpOutcome
-
-    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    held = _HeldWrite(monkeypatch)
-    after_the_deadline = timedelta(hours=DEADLINE_HOURS - 1)
-
-    accept, decline = await asyncio.gather(
-        _answer(db_path, RESERVE_PROFILE, "ACCEPTED", starts_in=after_the_deadline),
-        held.after_the_first(
-            lambda: _answer(db_path, RESERVE_PROFILE, "DECLINED", starts_in=after_the_deadline)
-        ),
-    )
-
-    assert accept.outcome is RsvpOutcome.RECORDED
-    assert decline.outcome is RsvpOutcome.LOCKED_ACCEPTED
-    assert decline.found == "ACCEPTED"
-    assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
-    assert await _accepted_at(db_path, RESERVE_PROFILE) == NOW.isoformat()
