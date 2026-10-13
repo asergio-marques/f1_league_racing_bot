@@ -8,20 +8,36 @@ says plainly that nothing can detect a stale static graphic: a picture drawn onc
 message edited in place, simply goes quietly wrong and reports nothing. What *can* be asserted
 is that no code path reachable from a button press can redraw it — so a future session adding a
 redraw must add an import to a module that has none, which review will see.
+
+Since #439 (slice 6b) the call is posted by its own job on the change queue
+(`attendance.check_in.call`), so the call's own cases drive it there: Pro's round 4 of
+`ongoing_league`, three days off with no call posted, asked of the queue as its timer asks it,
+the check-in graphic stood in for by a double of `try_attach`.
 """
 from __future__ import annotations
 
-import ast
 import inspect
-from pathlib import Path
+from datetime import timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.image.services import image_rsvp_post
 from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
+from tests.support.change_queue import attach_queue, http_error, run_queue, stopped_job
+from tests.support.season_league import DIVISIONS, PRO, SeasonLeague, ongoing_league, round_id
 
-_SRC = Path(__file__).resolve().parents[2] / "src"
+CHECK_IN = DIVISIONS[PRO][3].checkin
+ROUND_4 = round_id(PRO, 4)
+
+NO_CALL_CHANGE = (
+    "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, "
+    "rather than by its own job"
+)
 
 #: Every image module the check-in graphic could be redrawn through.
 _IMAGE_MODULES = ("image_rsvp_post", "image_rsvp_service", "image_render_service")
@@ -151,50 +167,152 @@ def test_the_button_view_reaches_no_image_module():
         assert image_module not in source
 
 
-def test_the_generation_has_exactly_one_call_site_in_the_whole_module():
-    source = _SRC.joinpath("leaguebot", "attendance", "services", "rsvp_service.py").read_text(encoding="utf-8")
-    assert source.count("try_attach(") == 1
-    assert source.count("_checkin_attachment(") == 2  # its definition and its one call
+# ── The call's own job (#439, slice 6b) ───────────────────────────────────
 
 
-def test_the_one_call_site_is_the_initial_post():
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    assert "_checkin_attachment(" in source
-    # It is reached before the send, and the send is what posts the call.
-    assert source.index("_checkin_attachment(") < source.index("channel.send(")
+async def _call_league(tmp_path: Any, *, images: bool = True) -> SeasonLeague:
+    """Pro's round 4 three days off, its call due and no call posted, the queue attached."""
+    league = await ongoing_league(tmp_path, attendance=True, images=images)
+    league.bot.attendance_service = AttendanceService(league.db_path)
+    attach_queue(league.bot, league.db_path, now=league.clock)
+    when = league.clock.now + timedelta(days=3)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+    return league
 
 
-def test_the_call_is_never_deleted_and_reposted_while_it_stands():
-    """Reposting would orphan the view re-armed against the stored message id."""
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    after_send = source.split("channel.send(", 1)[1]
-    assert "delete()" not in after_send
+def _drawing(league: SeasonLeague, tmp_path: Any, monkeypatch: Any) -> AsyncMock:
+    """Stand in for the check-in graphic: each draw is recorded in the league's events and gives
+    a picture to attach."""
+    picture = tmp_path / "checkin.png"
+
+    async def _attach(*_args: Any, **_kwargs: Any) -> discord.File:
+        league.events.append(("draw", CHECK_IN, 0))
+        picture.write_bytes(b"png")
+        return discord.File(str(picture), filename="checkin.png")
+
+    drawing = AsyncMock(side_effect=_attach)
+    monkeypatch.setattr(image_rsvp_post, "try_attach", drawing)
+    return drawing
 
 
-def test_the_attachment_helper_never_raises():
-    import dis
+async def _post_the_call(league: SeasonLeague) -> list[int]:
+    """Ask the queue for round 4's call as its timer does and run it; the ids sent in Pro's
+    check-in channel."""
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
 
-    opcodes = {
-        instruction.opname
-        for instruction in dis.get_instructions(rsvp_service._checkin_attachment)
-    }
-    assert "RAISE_VARARGS" not in opcodes
+    await ask_check_in_call(league.bot.change_queue, league.db_path, ROUND_4,
+                            origin=ChangeOrigin.BOT)
+    await run_queue(league.bot)
+    return [mid for kind, cid, mid in league.events if kind == "send" and cid == CHECK_IN]
+
+
+async def _rows_opened(league: SeasonLeague) -> int:
+    return len(await league.rows(
+        "SELECT 1 FROM driver_round_attendance WHERE round_id = ?", ROUND_4))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_the_generation_has_exactly_one_call_site_in_the_whole_module(
+    tmp_path, monkeypatch,
+):
+    """The call's job draws the check-in graphic once, and the call it posts carries it."""
+    league = await _call_league(tmp_path)
+    drawing = _drawing(league, tmp_path, monkeypatch)
+
+    [_posted] = await _post_the_call(league)
+
+    assert drawing.await_count == 1
+    assert league.channel(CHECK_IN).files[-1] is not None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_the_one_call_site_is_the_initial_post(tmp_path, monkeypatch):
+    """The graphic is drawn before the call is sent, and the send is what posts the call."""
+    league = await _call_league(tmp_path)
+    _drawing(league, tmp_path, monkeypatch)
+
+    [posted] = await _post_the_call(league)
+
+    assert league.events.index(("draw", CHECK_IN, 0)) < league.events.index(
+        ("send", CHECK_IN, posted))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_the_call_is_never_deleted_and_reposted_while_it_stands(tmp_path, monkeypatch):
+    """Reposting would orphan the view re-armed against the stored message id: once posted, the
+    call stands, nothing deleted in the check-in channel and nothing posted after it."""
+    league = await _call_league(tmp_path)
+    _drawing(league, tmp_path, monkeypatch)
+
+    [posted] = await _post_the_call(league)
+
+    assert posted in league.channel(CHECK_IN).messages
+    assert [event for event in league.events
+            if event[0] == "delete" and event[1] == CHECK_IN] == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_the_attachment_helper_never_raises(tmp_path, monkeypatch):
+    """FR-055: a drawing that raises gates neither the call nor the round's attendance rows: the
+    call is posted without a picture, its rows opened, and the queue does not stop."""
+    league = await _call_league(tmp_path)
+    monkeypatch.setattr(image_rsvp_post, "try_attach",
+                        AsyncMock(side_effect=RuntimeError("boom")))
+
+    [_posted] = await _post_the_call(league)
+
+    assert league.channel(CHECK_IN).files[-1] is None
+    assert await _rows_opened(league) > 0
+    assert await stopped_job(league.db_path) is None
 
 
 # ── The toggle changes nothing else (FR-052) ──────────────────────────────
 
 
-def test_the_embed_and_the_view_are_built_before_and_regardless_of_the_graphic():
-    """With the toggle on or off, the call is composed identically (FR-052)."""
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    assert source.index("build_rsvp_embed(") < source.index("_checkin_attachment(")
-    assert source.index("RsvpView(") < source.index("_checkin_attachment(")
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+async def test_the_embed_and_the_view_are_built_before_and_regardless_of_the_graphic(
+    tmp_path, monkeypatch,
+):
+    """With the graphic drawn or images off, the call is composed identically (FR-052): the same
+    embed, and its buttons, either way."""
+    (tmp_path / "drawn").mkdir()
+    (tmp_path / "plain").mkdir()
+    drawn = await _call_league(tmp_path / "drawn")
+    _drawing(drawn, tmp_path, monkeypatch)
+    await _post_the_call(drawn)
+    plain = await _call_league(tmp_path / "plain", images=False)
+    await _post_the_call(plain)
+
+    sends = [league.channel(CHECK_IN).send.await_args_list[-1].kwargs for league in (drawn, plain)]
+    assert sends[0]["embed"].to_dict() == sends[1]["embed"].to_dict()
+    assert all(sent.get("view") is not None for sent in sends)
+    assert drawn.channel(CHECK_IN).files[-1] is not None
+    assert plain.channel(CHECK_IN).files[-1] is None
 
 
-def test_the_attendance_rows_are_opened_after_the_post_either_way():
-    """FR-055 — the graphic must not extend the existing post-then-open dependency."""
-    source = inspect.getsource(rsvp_service.run_rsvp_notice)
-    assert source.index("channel.send(") < source.index("bulk_insert_attendance_rows")
+@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
+@pytest.mark.parametrize("images", [True, False], ids=["graphic drawn", "images off"])
+async def test_the_attendance_rows_are_opened_after_the_post_either_way(
+    tmp_path, monkeypatch, images,
+):
+    """FR-055: the graphic must not extend the post-then-open dependency. Discord refuses the
+    call: no rows are opened. Once it takes the call, its rows are."""
+    league = await _call_league(tmp_path, images=images)
+    if images:
+        _drawing(league, tmp_path, monkeypatch)
+    league.channel(CHECK_IN).send_fails = http_error(discord.Forbidden, status=403,
+                                                     text="Missing Permissions")
+
+    assert await _post_the_call(league) == []
+    assert await _rows_opened(league) == 0
+
+    league.channel(CHECK_IN).send_fails = None
+    league.clock.advance(minutes=1)
+    await run_queue(league.bot)
+
+    assert await _rows_opened(league) > 0
 
 
 def test_the_notices_that_stay_text_carry_no_graphic(  # FR-053
