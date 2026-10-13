@@ -70,6 +70,10 @@ NO_QUEUE_HANDED = (
 )
 
 
+NO_SHEET_CHANNEL_STOP = (
+    "#439: the opening sheet of a division with no attendance channel completes posting "
+    "nothing, rather than stopping the queue naming /attendance channel attendance"
+)
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
 NOT_EVERYTHING = "⚠️ **Not everything could be done**"
@@ -1296,6 +1300,27 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
 
     assert league.texts(PRO_CH.standings)
     assert league.texts(AM_CH.standings) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
+async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
+    """Attendance is on, and Am's attendance channel was never set. The season is approved: Pro's
+    opening sheet is posted, and the queue stops at Am's, its stop line naming the command that
+    sets the channel, rather than Am's sheet completing having posted nothing."""
+    league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_channel_id = NULL WHERE division_id = ?",
+        AM,
+    )
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "opening_sheet"
+    assert json.loads(job["payload"])["division_id"] == AM
+    assert len(league.texts(PRO_CH.attendance)) == 1
+    assert "/attendance channel attendance" in league.log()
 
 
 async def test_the_batch_notice_brackets_the_posts_in_the_review_s_channel(

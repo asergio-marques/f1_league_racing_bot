@@ -20,6 +20,7 @@ builder, so this file collects while they are unbuilt.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,6 +45,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import (
+    AMEND_CHANNEL,
     DIVISION_ID,
     HEADING,
     LATER_ROUND_ID,
@@ -64,6 +66,11 @@ from tests.support.review_league import (
 )
 
 APPEALS_PROMPT = 8902
+
+NO_SHEET_CHANNEL_STOP = (
+    "#439: a review's or an amendment's attendance sheet with no attendance channel completes "
+    "posting nothing, rather than stopping the queue naming /attendance channel attendance"
+)
 
 
 def _nfa(driver: int) -> StagedPenalty:
@@ -553,3 +560,85 @@ async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job
               if "The queue is stopped at job #" in line]
     assert reason in stop
     assert fault not in stop and "StepFailedOnDiscord" not in stop
+
+
+# ---------------------------------------------------------------------------
+# A sheet with no attendance channel set stops the queue (#439, slice 6b, fault 5)
+# ---------------------------------------------------------------------------
+
+#: The amendment's appeals prompt, in the amendment channel.
+AMEND_APPEALS_PROMPT = 8952
+
+
+def _real_attendance_hook(league: ReviewLeague) -> None:
+    """Hand the change types attendance's real hook, `AttendanceAfterReview`, with a placement
+    service that does nothing, so that the sheet is posted by `post_attendance_sheet` itself."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    placement = MagicMock()
+    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+        setattr(placement, name, AsyncMock(return_value=None))
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+
+def _sheet_stop(league: ReviewLeague) -> str:
+    [stop] = [line for line in league.bot.log_channel.sent
+              if "The queue is stopped at job #" in line]
+    return stop
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
+async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_naming_the_command(
+    tmp_path,
+):
+    """Attendance is on, and division 11 (Pro) was never given an attendance channel. Alex
+    approves round 3's reports: the queue stops at the sheet, its stop line naming the command
+    that sets the channel, rather than the sheet completing having posted nothing."""
+    league = await review_league(tmp_path, attendance=True)
+    _real_attendance_hook(league)
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "attendance_sheet"
+    assert "/attendance channel attendance" in _sheet_stop(league)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
+async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
+    """Round 3 of Pro, final, is under an amendment of its Feature Race whose report stage is
+    approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was
+    never given an attendance channel. Alex approves the amendment's appeals stage with nothing
+    staged: the rebuild stops the queue at the sheet, naming the command that sets the channel."""
+    league = await review_league(tmp_path, attendance=True, round_status="FINAL")
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1, in_penalty_review = 0"
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state, expires_at, started_by, reports_approved_at) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', ?, ?, ?, 77, ?)",
+            (ROUND_ID, AMEND_CHANNEL, NOW.isoformat(),
+             json.dumps({"sessions": [], "profiles_before": []}),
+             (NOW + timedelta(minutes=30)).isoformat(), NOW.isoformat()),
+        )
+        await db.commit()
+    league.channel(AMEND_CHANNEL).seed(AMEND_APPEALS_PROMPT, "the amendment's appeals")
+    _real_attendance_hook(league)
+
+    await league.bot.change_queue.ask(
+        "results.amendment.appeals.approve",
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID,
+            "session_types": ["FEATURE_RACE"], "staged": [], "pardons": [],
+            "appeals_prompt_message_id": AMEND_APPEALS_PROMPT,
+        },
+        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        what="✅ Approve on round 3's amendment appeals",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "attendance_sheet"
+    assert "/attendance channel attendance" in _sheet_stop(league)
