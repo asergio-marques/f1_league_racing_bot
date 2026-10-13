@@ -71,6 +71,7 @@ def _api() -> SimpleNamespace:
         PlannedStep=change.PlannedStep,
         FollowOn=change.FollowOn,
         StepResult=change.StepResult,
+        AuditRecord=change.AuditRecord,
         StepFailedOnDiscord=change.StepFailedOnDiscord,
         ChangeType=change_queue.ChangeType,
         Step=change_queue.Step,
