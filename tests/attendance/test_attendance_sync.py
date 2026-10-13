@@ -458,3 +458,77 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
     assert len(lines) == 1
     assert lines[0].startswith("\u26d4 `/attendance sync` refused for Manager (<@77>) \u2014 ")
     assert reason in lines[0]
+
+
+# ---------------------------------------------------------------------------
+# The sync's announcements follow on the change queue (#439, slice 6b, C37)
+# ---------------------------------------------------------------------------
+
+#: The change the sync asks for the verdicts and banner its sanctions owe.
+ANNOUNCE_KIND = "attendance.sanctions.announce"
+
+NO_SANCTIONS_ANNOUNCE = (
+    "#439: /attendance sync posts the verdicts and banner of its sanctions itself, off the "
+    "change queue"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
+async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
+    """Division 1's full-time driver has 25 attendance points against an autosack threshold of
+    20, and round 1 is final. A manager syncs from round 1: the driver is sacked as today, but
+    no verdict is posted by the sync itself; it asks the change queue, once, for the
+    announcement of the round's sanctions."""
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    await _add_rounds(db_path, {})
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?",
+            (FULL_TIME_PROFILE,),
+        )
+        await db.commit()
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+
+    with patch.object(
+        attendance_service,
+        "record_attendance_from_results_full_recompute",
+        new=AsyncMock(return_value=None),
+    ), patch.object(
+        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
+    ), _asking_for_sheets(), patch(
+        "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
+        new=AsyncMock(return_value=[]),
+    ) as announce, patch(
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
+        new=MagicMock(return_value=None),
+    ):
+        outcome = await _sync(bot, db_path)
+
+    assert [sanction for _, sanction in outcome.applied] == ["autosack"]
+    announce.assert_not_awaited()
+    asked = [call for call in bot.change_queue.ask.await_args_list
+             if call.args[0] == ANNOUNCE_KIND]
+    assert len(asked) == 1
+    assert asked[0].args[1]["round_id"] == ROUND_ID
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
+async def test_the_sync_s_reply_lists_the_sanctions_applied_and_says_the_announcements_follow(
+    tmp_path,
+):
+    """A manager syncs Division 1 from round 1, and the sync sacks <@4> (Four). The reply lists
+    the sanction applied and says its announcement follows on the change queue, with no line
+    saying a sanction was applied but not announced."""
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {})
+    interaction = _interaction()
+    cog = _cog(db_path)
+    outcome = SanctionOutcome(applied=[("<@4> (Four)", "autosack")])
+
+    await _invoke(cog, interaction, outcome=outcome)
+
+    replied = _replied(interaction)
+    assert "• <@4> (Four) — autosack" in replied
+    assert "queue" in replied
+    assert "not announced" not in replied
