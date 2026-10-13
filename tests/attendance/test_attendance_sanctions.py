@@ -243,14 +243,16 @@ def announcer():
     """Patch the verdict announcer and banner, yielding both mocks.
 
     The announcer returns the sanctions it could not announce (#237), so the stub returns an
-    empty list rather than ``None``: the run adds what comes back to its outcome.
+    empty list rather than ``None``: the run adds what comes back to its outcome. Both are
+    patched with ``create=True``: the run asks the change queue to announce its sanctions
+    instead (#439, slice 6b), and the announcer it posted through until then is deleted.
     """
     with patch(
         "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
-        new=AsyncMock(return_value=[]),
+        new=AsyncMock(return_value=[]), create=True,
     ) as announce, patch(
         "leaguebot.results.services.verdict_announcement_service.banner_for_round",
-        new=MagicMock(return_value="BANNER"),
+        new=MagicMock(return_value="BANNER"), create=True,
     ) as banner:
         yield announce, banner
 
@@ -598,23 +600,6 @@ async def test_a_clean_run_posts_no_incomplete_line(tmp_path, announcer, sheet):
     assert "Incomplete" not in _logged(bot)
 
 
-async def test_a_sanction_applied_but_not_announced_is_reported_as_such(
-    tmp_path, announcer, sheet
-):
-    """A re-run will not announce it — the driver is no longer a candidate — so the manager
-    must be told it took effect unannounced rather than that it failed."""
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-    announce, _ = announcer
-    announce.side_effect = RuntimeError("verdicts channel gone")
-
-    outcome = await _run(bot, db_path)
-
-    assert outcome.failed[0][2] == "applied, but not announced (verdicts channel gone)"
-    sheet.assert_awaited_once()
-
-
 # ---------------------------------------------------------------------------
 # Autoreserve
 # ---------------------------------------------------------------------------
@@ -783,87 +768,57 @@ async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
     placement._refresh_lineup_post.assert_not_awaited()
 
 
-async def test_a_caller_s_banner_is_reused_rather_than_raising_a_second(
-    tmp_path, announcer, sheet
-):
-    """Decided 2026-09-09. A penalty approval reaches this down the same call that already
-    posted its penalty verdicts, and passes its spent poster so the sanctions fall under
-    that banner. Building a fresh one here would give the league two banners for one
-    approval."""
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-    announce, banner = announcer
+#: The change the run asks for the verdicts and banner its sanctions owe (#439, slice 6b, C37).
+ANNOUNCE_KIND = "attendance.sanctions.announce"
 
-    await _run(bot, db_path, head="CALLER BANNER")
-
-    banner.assert_not_called()
-    assert announce.await_args.kwargs["head"] == "CALLER BANNER"
+NO_SANCTIONS_ANNOUNCE = (
+    "#439: the attendance sanctions are announced by the run itself, off the change queue"
+)
 
 
-async def test_reached_without_a_banner_it_builds_its_own(tmp_path, announcer, sheet):
-    """The recalculation-after-a-pardon path, which would otherwise post sanctions with
-    nothing above them."""
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-    announce, banner = announcer
-
-    await _run(bot, db_path, head=None)
-
-    banner.assert_called_once()
-    assert announce.await_args.kwargs["head"] == "BANNER"
+def _announcements_asked(bot) -> list[dict]:
+    """The payload of each `attendance.sanctions.announce` asked of the bot's change queue."""
+    return [call.args[1] for call in bot.change_queue.ask.await_args_list
+            if call.args[0] == ANNOUNCE_KIND]
 
 
-async def test_the_announcement_names_the_sanction_and_its_threshold(
-    tmp_path, announcer, sheet
-):
-    """The league reads the threshold off the announcement; passing the wrong one would
-    misreport why a driver lost their seat."""
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
+async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, announcer, sheet):
+    """The full-time driver has 25 attendance points against an autosack threshold of 20, and is
+    sacked. The run is complete, nothing announced by the run itself, and the announcement of
+    the sack is asked of the change queue, once."""
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
     announce, _ = announcer
-
-    await _run(bot, db_path)
-
-    kwargs = announce.await_args.kwargs
-    assert kwargs["sanction_type"] == "AUTOSACK"
-    assert kwargs["threshold"] == 20
-    assert kwargs["driver_discord_id"] == FULL_TIME_PROFILE
-
-
-async def test_an_unannounced_sanction_is_carried_in_the_outcome(tmp_path, announcer, sheet):
-    """The promise `README.md` already makes, now kept (#237).
-
-    A sanction whose announcement never went out is recorded as a posting fault, so
-    `ATTENDANCE_SANCTIONS | Incomplete` can name it. Before this the announcer returned
-    quietly and only a *raised* failure was ever caught, so the line could not be produced —
-    the sanction applied, the driver lost their seat, and nothing said why.
-    """
-    announce, _banner = announcer
-    announce.return_value = [
-        "the autosack of <@99> was applied, but it was not announced"
-    ]
-
-    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-
-    outcome = await _run(bot, db_path)
-
-    assert outcome.applied, "the sanction itself should still have applied"
-    assert any("not announced" in line for line in outcome.failure_lines())
-    assert not outcome.complete
-
-
-async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, announcer, sheet):
-    """The counterpart: an empty list from the announcer must not read as a fault."""
-    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
 
     outcome = await _run(bot, db_path)
 
     assert outcome.applied
     assert outcome.complete
+    announce.assert_not_awaited()
+    assert len(_announcements_asked(bot)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
+async def test_the_announcement_asked_names_each_sanction_applied_and_none_that_failed(
+    tmp_path, announcer, sheet
+):
+    """The full-time driver has 25 points, over the autosack threshold of 20; a second full-timer
+    (103) has 12, over the autoreserve threshold of 10, but his move to reserve fails. One
+    announcement of round 1 of the division is asked of the queue, naming the full-time
+    driver's autosack alone: the card of a sanction that did not apply is owed nobody."""
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
+    second = await _add_second_full_timer(db_path)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25, second: 12})
+    bot = _make_bot(db_path)
+    bot.placement_service.move_driver = AsyncMock(side_effect=RuntimeError("no roles"))
+
+    await _run(bot, db_path)
+
+    [payload] = _announcements_asked(bot)
+    assert payload["round_id"] == ROUND_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert [(int(each["driver_user_id"]), each["sanction"]) for each in payload["sanctions"]] == [
+        (FULL_TIME_PROFILE, "AUTOSACK"),
+    ]

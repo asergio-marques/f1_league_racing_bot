@@ -32,6 +32,15 @@ from tests.attendance.test_attendance_sanctions import (
 from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 
+#: The change the sync asks for the verdicts and banner its sanctions owe.
+ANNOUNCE_KIND = "attendance.sanctions.announce"
+
+NO_SANCTIONS_ANNOUNCE = (
+    "#439: /attendance sync posts the verdicts and banner of its sanctions itself, off the "
+    "change queue"
+)
+
+
 async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:
     """Rounds 2 onwards of the division, by number, beside the fixture's round 1."""
     async with get_connection(db_path) as db:
@@ -126,9 +135,11 @@ async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
     assert await _sync(_make_bot(db_path), db_path) is outcome
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_second_sync_applies_nothing_twice(tmp_path):
     """The recovery is to run it again, so running it again must be harmless: the driver
-    sacked by the first run is not attempted by the second, and nothing is announced."""
+    sacked by the first run is not attempted by the second. The first asks the change queue,
+    once, for the sack's announcement, and the second asks for none."""
     from leaguebot.core.services.placement_service import PlacementService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
@@ -157,18 +168,22 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
         "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
         # Returns the sanctions it could not announce (#237). `None` is not merely
         # inert here: the run does `posting_faults += <return>`, which raises inside
-        # the per-driver try and is recorded as a bogus failed sanction.
-        new=AsyncMock(return_value=[]),
+        # the per-driver try and is recorded as a bogus failed sanction. `create=True`
+        # because the run asks the queue to announce instead, and the announcer is deleted.
+        new=AsyncMock(return_value=[]), create=True,
     ) as announce, patch(
         "leaguebot.results.services.verdict_announcement_service.banner_for_round",
-        new=MagicMock(return_value=None),
+        new=MagicMock(return_value=None), create=True,
     ):
         first = await _sync(bot, db_path)
         second = await _sync(bot, db_path)
 
     assert [sanction for _, sanction in first.applied] == ["autosack"]
     assert second.applied == [] and second.complete
-    announce.assert_awaited_once()
+    announce.assert_not_awaited()
+    asked = [call for call in bot.change_queue.ask.await_args_list
+             if call.args[0] == ANNOUNCE_KIND]
+    assert len(asked) == 1, "the second sync asks for no announcement"
 
 
 async def test_sync_is_one_transaction(tmp_path, monkeypatch):
@@ -463,15 +478,6 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
 # ---------------------------------------------------------------------------
 # The sync's announcements follow on the change queue (#439, slice 6b, C37)
 # ---------------------------------------------------------------------------
-
-#: The change the sync asks for the verdicts and banner its sanctions owe.
-ANNOUNCE_KIND = "attendance.sanctions.announce"
-
-NO_SANCTIONS_ANNOUNCE = (
-    "#439: /attendance sync posts the verdicts and banner of its sanctions itself, off the "
-    "change queue"
-)
-
 
 @pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
