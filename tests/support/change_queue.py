@@ -17,6 +17,10 @@ A job that fails stops the queue until it is cleared (owner, 2026-10-02): `stopp
 job the queue is stopped at, and `retry_job` and `discard_job` press Retry and Discard on its stop
 notice, as a member holding the tier `tier_member` gives them.
 
+A message a member types into a conversation's channel is a turn (#439, 6b): `typed_message` is
+one, recording the marks the bot holds on it, and `ask_turn` does with it what a listener does,
+turning it away where a turn in its channel still waits, else marking it and asking its turn.
+
 A function that posts refuses to run outside a job (`posts_in_a_job`). A unit test calling one
 directly, with no queue, wraps the call in `in_a_job()`, which runs it as a job would.
 
@@ -27,6 +31,7 @@ loop is still open, and it waits there for any database thread a stopped worker 
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import threading
 import time
@@ -230,7 +235,7 @@ def text_channel(channel_id: int) -> Any:
     `sent` holds the content of each message, and `posted` each message as Discord returned it:
     its `id`, `content` and `view`, which an `edit` with `view=` replaces. `fetch_message` and
     `get_partial_message` find a posted message by id; one removed from `posted` is gone, and
-    `NotFound` is raised for it.
+    `NotFound` is raised for it: by an edit, a delete, or a reaction added, removed or cleared.
     """
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
@@ -262,9 +267,10 @@ def text_channel(channel_id: int) -> Any:
 
     def _gone(message_id: int) -> Any:
         gone = MagicMock(id=message_id)
-        gone.edit = AsyncMock(
-            side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
-        )
+        for name in ("edit", "delete", "add_reaction", "remove_reaction", "clear_reaction"):
+            setattr(gone, name, AsyncMock(
+                side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+            ))
         return gone
 
     def _partial(message_id: int) -> Any:
@@ -497,3 +503,103 @@ def in_a_job(job_id: int = TEST_JOB) -> Iterator[None]:
         return
     with running_job(job_id):
         yield
+
+
+# ---------------------------------------------------------------------------
+# A typed message, and a turn asked for it
+# ---------------------------------------------------------------------------
+
+#: Ids for the messages members type, apart from those the bot posts (numbered from 1).
+_TYPED_IDS = itertools.count(5001)
+
+#: The mark the bot adds to a typed message at once, and clears when its turn is done.
+MARK = "\u23f3"
+
+
+def typed_message(channel: Any, author: Any, content: str = "", *,
+                  created_at: datetime) -> Any:
+    """A message *author* typed into *channel* (a `text_channel`) at *created_at*.
+
+    `marks` holds the reactions the bot holds on it: `add_reaction` adds one, and
+    `remove_reaction` or `clear_reaction` takes it off. Set `fails_marks` to an exception to refuse
+    a reaction, and `fails_delete` to refuse its deletion. It is found by the channel's
+    `fetch_message` and `get_partial_message` until it is deleted, by `delete()` or
+    `typed_message_deleted`; once deleted, every reaction and delete raises `NotFound`.
+    """
+    message = MagicMock(spec=discord.Message)
+    message.id = next(_TYPED_IDS)
+    message.channel = channel
+    message.author = author
+    message.content = content
+    message.created_at = created_at
+    message.attachments = []
+    message.marks = set()
+    message.fails_marks = None
+    message.fails_delete = None
+    message.gone = False
+
+    def _check(fails: Any) -> None:
+        if message.gone:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        if fails is not None:
+            raise fails
+
+    async def _add(emoji: Any) -> None:
+        _check(message.fails_marks)
+        message.marks.add(str(emoji))
+
+    async def _remove(emoji: Any, *_member: Any) -> None:
+        _check(message.fails_marks)
+        message.marks.discard(str(emoji))
+
+    async def _delete(*_args: Any, **_kwargs: Any) -> None:
+        _check(message.fails_delete)
+        typed_message_deleted(message)
+
+    message.add_reaction = AsyncMock(side_effect=_add)
+    message.remove_reaction = AsyncMock(side_effect=_remove)
+    message.clear_reaction = AsyncMock(side_effect=_remove)
+    message.delete = AsyncMock(side_effect=_delete)
+    channel.posted.append(message)
+    return message
+
+
+def typed_message_deleted(message: Any) -> None:
+    """*message* is deleted from its channel, by the member or by Discord."""
+    message.gone = True
+    if message in message.channel.posted:
+        message.channel.posted.remove(message)
+
+
+def turn_payload(message: Any) -> dict[str, Any]:
+    """The payload a listener asks a typed message's turn with: its channel, its id, its author,
+    what it says, its attachments' URLs and when it was typed."""
+    return {
+        "channel_id": message.channel.id,
+        "message_id": message.id,
+        "author_id": message.author.id,
+        "content": message.content,
+        "attachments": [attachment.url for attachment in message.attachments],
+        "typed_at": message.created_at.isoformat(),
+    }
+
+
+async def ask_turn(bot: Any, kind: str, message: Any, *, types: Any = None,
+                   what: str = "a typed answer") -> int | None:
+    """Do what a listener does with a typed *message* it would act on, and give the change's id.
+
+    Where a turn in the message's channel is still waiting, the message is turned away at once,
+    off the queue, with the note (`typed_turns.turn_away`), and nothing is asked: None. Otherwise
+    it is marked at once and the turn of *kind* asked for as the member's, with no interaction.
+    *types* are the change types `turn_waiting` reads, by default those the test registered.
+    """
+    from leaguebot.core.services import typed_turns
+
+    chosen = types if types is not None else getattr(bot, _SETUP).types
+    if await typed_turns.turn_waiting(bot.db_path, chosen, message.channel.id):
+        await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
+        return None
+    await typed_turns.mark(message)
+    return await bot.change_queue.ask(
+        kind, turn_payload(message), actor=message.author, what=what,
+    )
