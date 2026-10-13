@@ -470,6 +470,7 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
 
 NO_FORECAST_MENTION = "#439: a forecast posted as text notifies nobody, its role not allowed"
 NO_ROLELESS_FORECAST = "#439: a forecast for a division with no role writes the mention <@&0>"
+NO_RECORDED_CHANNEL = "#439: a forecast is deleted from its division's current channel"
 
 
 def _sends(league: Any) -> list[Any]:
@@ -967,11 +968,13 @@ async def test_a_clean_up_for_a_round_that_is_not_there_asks_nothing(tmp_path):
     assert await _states(league, CLEAN_UP_KIND) == []
 
 
-async def test_a_forecast_whose_channel_was_unset_is_forgotten_by_its_clean_up_without_a_delete(
+@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
+async def test_a_forecast_whose_division_channel_was_unset_is_still_deleted_from_its_own(
     tmp_path,
 ):
-    """Pro's Phase 3 forecast of round 3 (9303) is recorded, and Pro's forecast channel has since
-    been unset: the clean-up's delete asks nothing of Discord, completes, and drops the record."""
+    """Pro's Phase 3 forecast of round 3 (9303) is recorded as posted in Pro's forecast channel,
+    and Pro's forecast channel has since been unset: the clean-up deletes it from the channel it
+    was posted in, completes, and drops the record."""
     league = await _league(tmp_path)
     await posted_forecast(league, ROUND, 3, 9303)
     await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
@@ -982,8 +985,78 @@ async def test_a_forecast_whose_channel_was_unset_is_forgotten_by_its_clean_up_w
     assert await stopped_job(league.db_path) is None
     [job] = await _deletes_of(league, CLEAN_UP_KIND)
     assert job["done_at"]
-    assert ("delete", 9303) not in _events(league)
+    assert ("delete", FORECAST, 9303) in league.events
+    assert 9303 not in league.channel(FORECAST).messages
     assert await _forecasts(league) == {}
+
+
+# ---------------------------------------------------------------------------
+# Each forecast deleted from the channel it was posted in (#439, slice 6b, folded fault 3)
+#
+# `/weather channel` moves a division's forecast channel; a forecast posted before the move is
+# deleted, when superseded or a day after the race, from the channel it was posted in.
+# ---------------------------------------------------------------------------
+
+#: A channel of the league's, standing in for the channel Pro's forecasts are moved to.
+MOVED = DIVISIONS[PRO][3].verdicts
+
+
+async def _move_forecast_channel(league: Any) -> None:
+    """Pro's forecast channel moved to MOVED, as `/weather channel` does."""
+    await league.write("UPDATE divisions SET forecast_channel_id = ? WHERE id = ?", MOVED, PRO)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
+async def test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    """Pro's Phase 1 forecast of round 3 is posted in Pro's forecast channel (605); the forecast
+    channel is then moved to 607, and Phase 2 asked. Phase 2 is posted in 607, and the Phase 1
+    forecast it supersedes is deleted from 605, where it was posted, leaving 607's forecast alone."""
+    league = await _league(tmp_path)
+    await _posted(league, 1)
+    [first] = _ids(_events(league), "send")
+    await _move_forecast_channel(league)
+
+    await _posted(league, 2)
+
+    [second] = [mid for kind, cid, mid in league.events if kind == "send" and cid == MOVED]
+    assert ("delete", FORECAST, first) in league.events
+    assert first not in league.channel(FORECAST).messages
+    assert second in league.channel(MOVED).messages
+    assert await _forecasts(league) == {2: second}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
+async def test_a_forecast_clean_up_after_a_channel_move_deletes_from_the_old_channel(tmp_path):
+    """Pro's Phase 3 forecast of round 3 (9303) is recorded as posted in Pro's forecast channel
+    (605); the forecast channel is then moved to 607. A day after the race the clean-up deletes
+    9303 from 605, completes, and drops the record."""
+    league = await _league(tmp_path)
+    await posted_forecast(league, ROUND, 3, 9303)
+    await _move_forecast_channel(league)
+
+    await _clean_up(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert ("delete", FORECAST, 9303) in league.events
+    assert 9303 not in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
+async def test_a_forecast_s_channel_is_saved_with_its_message(tmp_path):
+    """Pro's Phase 1 forecast of round 3 is asked and posted: its record names the message and
+    the channel it was posted in, Pro's forecast channel (605)."""
+    league = await _league(tmp_path)
+
+    await _posted(league, 1)
+
+    [sent] = _ids(_events(league), "send")
+    [row] = await league.rows(
+        "SELECT message_id, channel_id FROM forecast_messages WHERE round_id = ?", ROUND)
+    assert (int(row["message_id"]), int(row["channel_id"])) == (sent, FORECAST)
 
 
 # ---------------------------------------------------------------------------

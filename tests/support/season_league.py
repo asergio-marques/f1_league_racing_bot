@@ -891,13 +891,25 @@ async def accept_session(league: SeasonLeague, round_: int, *, session: str = "F
 async def posted_forecast(league: SeasonLeague, round_: int, phase: int, message_id: int) -> None:
     """Phase *phase*'s forecast for round *round_* was posted as *message_id* in its division's
     forecast channel, and the phase is marked performed; Discord refuses to delete the message
-    while its id is in `league.undeletable`."""
+    while its id is in `league.undeletable`.
+
+    The record names the channel it was posted in, as every forecast's does once
+    `forecast_messages` carries its channel (#439, slice 6b); until then it is written without."""
     division = round_ // 10
-    await league.write(
-        "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
-        "posted_at) VALUES (?, ?, ?, ?, ?)",
-        round_, division, phase, message_id, league.clock.now.isoformat(),
-    )
+    channel = DIVISIONS[division][3].forecast
+    columns = {row["name"] for row in await league.rows("PRAGMA table_info(forecast_messages)")}
+    if "channel_id" in columns:
+        await league.write(
+            "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+            "channel_id, posted_at) VALUES (?, ?, ?, ?, ?, ?)",
+            round_, division, phase, message_id, channel, league.clock.now.isoformat(),
+        )
+    else:
+        await league.write(
+            "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
+            "posted_at) VALUES (?, ?, ?, ?, ?)",
+            round_, division, phase, message_id, league.clock.now.isoformat(),
+        )
     await league.write(_PHASE_DONE[phase], round_)
     forecast = league.channel(DIVISIONS[division][3].forecast)
     forecast.seed(message_id, f"Phase {phase} forecast")
