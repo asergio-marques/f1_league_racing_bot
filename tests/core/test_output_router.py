@@ -10,16 +10,19 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.services.output_router import OutputRouter
-from tests.support.change_queue import text_channel
+from tests.support.change_queue import in_a_job, text_channel
 
 LOG_CHANNEL_ID = 101
 ADMIN_ROLE_ID = 901
 
 NO_NOTICE_ROLE = "#439: the router's stop notice takes no role to mention"
 NO_FORECAST_GUARD = "#439: the router's forecast post runs outside a job"
+NO_FORECAST_MENTIONS = "#439: the router's forecast post takes no mentions and notifies nobody"
+DIVISION_ROLE_ID = 801
 
 
 def _router() -> tuple[OutputRouter, MagicMock]:
@@ -75,3 +78,26 @@ async def test_the_router_s_forecast_post_is_made_in_a_job():
         await router.post_forecast(MagicMock(forecast_channel_id=701), "☀️ Sunny")
 
     channel.send.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTIONS)
+async def test_a_forecast_s_allowed_mentions_are_passed_to_every_part():
+    """The router is asked, in a job, to post a forecast too long for one message to division
+    channel 701, letting the division's role 801 notify. It is sent in more than one part, and
+    every part is sent with those mentions: role 801 allowed, no member and not everyone."""
+    router, channel = _router()
+    mentions = discord.AllowedMentions(
+        everyone=False, users=False, roles=[discord.Object(DIVISION_ROLE_ID)]
+    )
+    content = "\n".join(f"line {i}" * 40 for i in range(200))
+
+    with in_a_job():
+        await router.post_forecast(MagicMock(forecast_channel_id=701), content, mentions=mentions)
+
+    sends = channel.send.await_args_list
+    assert len(sends) > 1, "this content was meant to be split"
+    for send in sends:
+        allowed = send.kwargs["allowed_mentions"]
+        assert _role_ids(allowed) == {DIVISION_ROLE_ID}
+        assert not getattr(allowed, "users", False)
+        assert not getattr(allowed, "everyone", False)

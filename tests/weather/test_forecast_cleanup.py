@@ -19,6 +19,11 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from tests.support.change_queue import in_a_job
 
+#: Why posting a forecast fails until it is handed the mentions it notifies.
+NO_PHASE_MENTIONS = "#439: a forecast's post takes no mentions to send with"
+#: The mentions a forecast for a division with role 1 is sent with.
+ROLE_1 = discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(1)])
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -295,6 +300,7 @@ class TestTheForecastGraphicIsDiscarded:
         return discord.File(str(png), filename="weather_2.png")
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason=NO_PHASE_MENTIONS)
     async def test_it_is_gone_once_the_forecast_has_posted(self, tmp_path):
         from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
@@ -309,12 +315,13 @@ class TestTheForecastGraphicIsDiscarded:
             await post_phase_message(
                 bot, division_id=1, channel_id=99,
                 phase_number=2, text="phase 2 forecast",
-                attachment=self._attachment(png), attachment_text="<@&1>",
+                attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
             )
 
         assert not png.exists()
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason=NO_PHASE_MENTIONS)
     async def test_it_is_gone_when_the_send_fails(self, tmp_path):
         """The post raises for the change queue, whose next try posts the text; the picture goes
         nowhere."""
@@ -336,12 +343,13 @@ class TestTheForecastGraphicIsDiscarded:
                 await post_phase_message(
                     bot, division_id=1, channel_id=99,
                     phase_number=2, text="phase 2 forecast",
-                    attachment=self._attachment(png), attachment_text="<@&1>",
+                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
                 )
 
         assert not png.exists()
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason=NO_PHASE_MENTIONS)
     async def test_it_is_gone_when_the_channel_cannot_be_fetched(self, tmp_path):
         """An abandonment path: the picture is built, and no send is ever attempted."""
         import discord
@@ -363,12 +371,13 @@ class TestTheForecastGraphicIsDiscarded:
                 await post_phase_message(
                     bot, division_id=1, channel_id=99,
                     phase_number=2, text="phase 2 forecast",
-                    attachment=self._attachment(png), attachment_text="<@&1>",
+                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
                 )
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason=NO_PHASE_MENTIONS)
     async def test_it_is_gone_when_the_channel_is_not_a_text_channel(self, tmp_path):
         """The second abandonment path, and the same requirement."""
         from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
@@ -385,7 +394,7 @@ class TestTheForecastGraphicIsDiscarded:
                 await post_phase_message(
                     bot, division_id=1, channel_id=99,
                     phase_number=2, text="phase 2 forecast",
-                    attachment=self._attachment(png), attachment_text="<@&1>",
+                    attachment=self._attachment(png), attachment_text="<@&1>", mentions=ROLE_1,
                 )
 
         assert not png.exists(), "a picture abandoned before its send must still be removed"
@@ -447,6 +456,7 @@ class TestDiscordDelete:
         assert err.value is refusal
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PHASE_MENTIONS)
 async def test_a_text_forecast_with_no_channel_to_post_to_raises(tmp_path):
     """The router finds no forecast channel to post a forecast's text to: the post raises for the
     change queue to stop on, naming the phase."""
@@ -459,4 +469,4 @@ async def test_a_text_forecast_with_no_channel_to_post_to_raises(tmp_path):
                                                   "posted to"):
         with in_a_job():
             await post_phase_message(bot, division_id=1, channel_id=999, phase_number=2,
-                                     text="phase 2 forecast")
+                                     text="phase 2 forecast", mentions=ROLE_1)

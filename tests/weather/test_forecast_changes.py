@@ -38,6 +38,7 @@ from tests.support.season_league import (
     AM,
     DIVISIONS,
     PRO,
+    PRO_ROLE,
     ongoing_league,
     posted_forecast,
     round_id,
@@ -458,6 +459,107 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
     assert await _draws(league, 2, later) == 0
     assert await _forecasts(league, later) == {}
     assert await stopped_job(league.db_path) is None
+
+
+# ---------------------------------------------------------------------------
+# Whom a forecast notifies (#439, slice 6b, folded fault 2)
+#
+# A forecast names its division's role, and notifies it whether posted as a picture or as text;
+# the mystery round's notice names and notifies nobody.
+# ---------------------------------------------------------------------------
+
+NO_FORECAST_MENTION = "#439: a forecast posted as text notifies nobody, its role not allowed"
+NO_ROLELESS_FORECAST = "#439: a forecast for a division with no role writes the mention <@&0>"
+
+
+def _sends(league: Any) -> list[Any]:
+    """Every send the forecast channel was asked to make, refused ones included, in order."""
+    return list(league.channel(FORECAST).send.await_args_list)
+
+
+def _notified_roles(send: Any) -> set[int]:
+    """The roles a send lets notify: none where it allows no role, every one named in its text
+    where it allows them all."""
+    mentions = send.kwargs.get("allowed_mentions")
+    roles = getattr(mentions, "roles", False)
+    if roles is True:
+        text = str(send.args[0]) if send.args else str(send.kwargs.get("content", ""))
+        return {PRO_ROLE} if f"<@&{PRO_ROLE}>" in text else set()
+    return {getattr(role, "id", role) for role in roles} if isinstance(roles, list) else set()
+
+
+def _notifies_no_member(send: Any) -> bool:
+    mentions = send.kwargs.get("allowed_mentions")
+    return not getattr(mentions, "users", False) and not getattr(mentions, "everyone", False)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTION)
+async def test_a_forecast_posted_as_text_notifies_the_division_s_role(tmp_path):
+    """Images off: Pro's phase 1 forecast for round 3 is asked and the queue run. It is posted as
+    text in Pro's forecast channel, naming Pro's role 801, and is sent letting that role notify,
+    and no member and not everyone."""
+    league = await _league(tmp_path)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    [send] = _sends(league)
+    assert f"<@&{PRO_ROLE}>" in str(send.args[0])
+    assert _notified_roles(send) == {PRO_ROLE}
+    assert _notifies_no_member(send)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTION)
+async def test_a_retried_forecast_notifies_the_role(tmp_path):
+    """Pro's phase 1 forecast is refused by Discord, stopping the queue; Retry posts it again, as
+    text. The forecast that finally stands notifies Pro's role 801 as the first would have."""
+    league = await _league(tmp_path)
+    _refusing(league)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+
+    _accepting(league)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    retried = _sends(league)[-1]
+    assert "file" not in retried.kwargs or retried.kwargs["file"] is None
+    assert _notified_roles(retried) == {PRO_ROLE}
+    assert _notifies_no_member(retried)
+
+
+async def test_the_mystery_notice_notifies_nobody(tmp_path):
+    """Round 3 is a mystery round and its phase 1 asked: the notice posted in Pro's forecast
+    channel names no role and is sent letting no role, no member and not everyone notify."""
+    league = await _league(tmp_path, mystery=True)
+
+    await _ask(league, 1)
+    await run_queue(league.bot)
+
+    [send] = _sends(league)
+    assert "<@&" not in str(send.args[0])
+    assert _notified_roles(send) == set()
+    assert _notifies_no_member(send)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ROLELESS_FORECAST)
+@pytest.mark.parametrize("phase, payload", [
+    (1, {"track": TRACK, "rpc": 40}),
+    (2, {"track": TRACK, "session_draws": [{"session_type": "LONG_RACE", "slot": "rain"}]}),
+    (3, {"track": TRACK, "session_draws": [{"session_type": "LONG_RACE",
+                                            "slots": ["rain", "sunny"]}]}),
+])
+def test_a_forecast_with_no_division_role_writes_no_mention(phase, payload):
+    """A phase's forecast text is composed for a division with no role set: it names the track and
+    mentions no role at all, rather than the role `<@&0>`."""
+    from leaguebot.weather.utils.message_builder import forecast_text
+
+    text = forecast_text(phase, None, payload)
+
+    assert TRACK in text
+    assert "<@&" not in text
 
 
 # ---------------------------------------------------------------------------
