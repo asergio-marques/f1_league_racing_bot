@@ -48,7 +48,7 @@ CONFIGURED_ROLE = 222
 CONFIGURED_LOG = 333
 CONFIGURED_ADMIN_ROLE = 444
 
-NO_PACK_LANE_NAMED = "#439: a pack's refusal does not say the job is on the queue, the league's lane"
+NO_PACK_LANE_NAMED = "#439: a pack's refusal does not name the lane its job is on: the queue, or the turns in a channel"
 
 
 def _unwrap(cmd):
@@ -946,6 +946,72 @@ async def test_bot_pack_is_refused_while_the_queue_is_stopped_and_names_the_stop
     assert f"job #{job}" in reply
     assert "on the queue" in reply
     assert "Retry" in reply and "Discard" in reply
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert await _queue_rows(db_path) == before
+    bot.scheduler_service.cancel_all.assert_not_called()
+    assert await _audit_rows(db_path) == []
+    assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
+
+
+async def _seed_job_on_lane(db_path: str, lane: str, *, stopped: bool) -> int:
+    """A member's `/dummy` on *lane*, and the number of the job a pack would wait on.
+
+    Not *stopped*: it waits its turn, its one job not yet run. *stopped*: its one job failed
+    on Discord more than an hour ago, its stop notice standing in the log channel.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, origin, state, actor_id, actor_name, "
+            "actor_display, what, lane) VALUES ('dummy', 'dummy', 'MEMBER', ?, 8, 'member', "
+            "'Member', '`/dummy`', ?)",
+            ("RUNNING" if stopped else "QUEUED", lane),
+        )
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, tries, failing_since, "
+            "last_failure, notice_message_id, notice_channel_id) VALUES (?, 0, 'a', ?, ?, ?, ?, ?)",
+            (
+                cursor.lastrowid,
+                7 if stopped else 0,
+                "2026-10-01T12:00:00+00:00" if stopped else None,
+                "Forbidden" if stopped else None,
+                9001 if stopped else None,
+                CONFIGURED_LOG if stopped else None,
+            ),
+        )
+        await db.commit()
+        return int(cursor.lastrowid)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
+@pytest.mark.parametrize("stopped", [False, True], ids=["waiting", "stopped"])
+async def test_bot_pack_held_by_a_conversation_s_job_names_the_turns_in_its_channel(
+    tmp_path, stopped
+):
+    """The league's lane is empty, but a turn in channel 7 holds a job on that channel's lane,
+    waiting its turn or stopped at a job Discord refused (#439, decision 32). The pack is
+    refused all the same, before anything is cleared: the reply names the job and where it
+    waits as a league admin reads it, "the turns in <#7>", never "the queue" nor the lane's
+    raw key, says to let it finish or, where stopped, to press Retry or Discard on its notice,
+    and the refusal is recorded in the log channel."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    job = await _seed_job_on_lane(db_path, "channel:7", stopped=stopped)
+    before = await _queue_rows(db_path)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert f"job #{job}" in reply
+    assert "the turns in <#7>" in reply
+    assert "the queue" not in reply
+    assert "channel:7" not in reply
+    if stopped:
+        assert "Retry" in reply and "Discard" in reply
+    else:
+        assert "finish" in reply
     assert await bot.config_service.get_league_server_id() == SERVER_ID
     assert await _queue_rows(db_path) == before
     bot.scheduler_service.cancel_all.assert_not_called()
