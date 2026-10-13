@@ -1939,6 +1939,7 @@ async def test_a_refused_final_standings_picture_is_posted_as_text_in_the_same_t
     assert await _stopped_at(league) is None
     texts = league.texts(PRO_CH.standings)
     assert any("**Driver Standings**" in text for text in texts), texts
+    assert any("**Team Standings**" in text for text in texts), texts
     assert all(not files for files in standings.files), "a picture was posted"
     assert await _status(league) == "COMPLETED"
 
