@@ -24,8 +24,8 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 
-SEASON_ID = 1
-DIVISION_ID = 11
+SEASON_1 = 1
+PRO = 11
 ROUND_ID = 21
 AMEND_ID = 31
 SUBMISSION_CHANNEL = 702
@@ -45,18 +45,18 @@ async def _round(tmp_path, *, done: tuple[tuple[str, str], ...] = ()) -> str:
         await db.execute(
             "INSERT INTO seasons (id, season_number, start_date, status) "
             "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID,),
+            (SEASON_1,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
             "VALUES (?, ?, 'Pro', 1, 555)",
-            (DIVISION_ID, SEASON_ID),
+            (PRO, SEASON_1),
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
             "track_name, status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'SPRINT', "
             "'Silverstone', 'AWAITING_RESULTS')",
-            (ROUND_ID, DIVISION_ID),
+            (ROUND_ID, PRO),
         )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at) "
@@ -67,7 +67,7 @@ async def _round(tmp_path, *, done: tuple[tuple[str, str], ...] = ()) -> str:
             await db.execute(
                 "INSERT INTO session_results (round_id, division_id, session_type, status, "
                 "config_name) VALUES (?, ?, ?, ?, 'Standard')",
-                (ROUND_ID, DIVISION_ID, session_type, status),
+                (ROUND_ID, PRO, session_type, status),
             )
         await db.commit()
     return db_path
@@ -121,7 +121,7 @@ async def test_the_expected_session_of_a_first_submission_is_the_first_without_r
         await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status) "
             "VALUES (?, ?, 'SPRINT_QUALIFYING', 'ACTIVE'), (?, ?, 'SPRINT_RACE', 'CANCELLED')",
-            (ROUND_ID, DIVISION_ID, ROUND_ID, DIVISION_ID),
+            (ROUND_ID, PRO, ROUND_ID, PRO),
         )
         await db.commit()
         assert await expected_session_on(db, ROUND_ID) is SessionType.FEATURE_QUALIFYING
@@ -129,7 +129,7 @@ async def test_the_expected_session_of_a_first_submission_is_the_first_without_r
         await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status) "
             "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE'), (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-            (ROUND_ID, DIVISION_ID, ROUND_ID, DIVISION_ID),
+            (ROUND_ID, PRO, ROUND_ID, PRO),
         )
         await db.commit()
         assert await expected_session_on(db, ROUND_ID) is None
