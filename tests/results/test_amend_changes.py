@@ -660,6 +660,25 @@ async def test_an_amendment_lapses_five_minutes_after_its_prompt_with_nothing_ty
 
 
 @pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_lapsed_amendment_tells_the_manager_who_ran_it_that_it_expired(
+    tmp_path, monkeypatch,
+):
+    """Alex opens the amendment of round 3's Feature Race and types nothing. Its five minutes run
+    out and the lapse runs: Alex, who ran `/results rounds amend`, is told privately that the
+    amendment expired and that the command may be run again (results :460, #135), not only the
+    log channel."""
+    league = await _league(tmp_path, monkeypatch)
+    interaction = await _ask_open(league)
+
+    await _fire(league)
+    await run_queue(league.bot)
+
+    told = updated_reply(interaction)
+    assert "expired" in told.lower()
+    assert "/results rounds amend" in told
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_paste_typed_in_time_holds_the_lapse_though_its_turn_waits(tmp_path, monkeypatch):
     """The amendment's lane is stopped at another job when Alex pastes the Feature Race four
     minutes after the prompt; his turn waits. The five minutes run out and the lapse is asked:
