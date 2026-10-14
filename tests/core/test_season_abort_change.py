@@ -576,6 +576,10 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
+#: The jobs that close the signup window in its channel, wherever the close plans them.
+WINDOW_JOBS = ("delete_button", "post_closed")
+
+
 async def test_the_jobs_run_in_order(tmp_path):
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await signing_up(league)
@@ -583,7 +587,9 @@ async def test_the_jobs_run_in_order(tmp_path):
 
     await run_queue(league.bot)
 
-    names = await _names(league)
+    # The window's own Discord jobs (the Sign Up button's deletion, the closed notice) are
+    # read apart: where they fall beside `close_window` is the close's to say.
+    names = [name for name in await _names(league) if name not in WINDOW_JOBS]
     assert names[:3] == ["close_window", "flush_forecasts", "end"]
     assert names[-3:] == ["discard_portraits", "forget_setup", "close"]
     assert "signup_notice" in names[3:-3]
