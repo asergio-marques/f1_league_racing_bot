@@ -35,6 +35,11 @@ from tests.support.review_league import claim_amendment, revert_amendment, snaps
 from tests.support.teams import seed_team_instances
 
 LAPSE = "results.amend.lapse"
+NO_REVERT_IN_THE_SAVE = (
+    "#439: the revert has no form taking a connection, so it cascades the standings on its own "
+    "connections, resolving their names through a bot, rather than in its save from the names "
+    "it is handed"
+)
 NO_SWEEP_LAPSE = (
     "#439: the half-hour sweep reverts an expired amendment itself, off the change queue, rather "
     "than asking `results.amend.lapse` of it"
@@ -200,56 +205,68 @@ async def test_the_classification_is_put_back(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVERT_IN_THE_SAVE)
 async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
-    """They follow from the driver rows, so a second stored copy would only drift."""
+    """They follow from the driver rows, so a second stored copy would only drift. The lapse's and
+    the cancel's revert recompute them in their own save, through the form of the cascade that
+    takes its connection."""
     db_path = await _db(tmp_path, "revert_cascade")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
 
-    with patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade:
+    with _cascade_in_the_save() as cascade:
         await revert_amendment(db_path, ROUND_ID)
 
     cascade.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVERT_IN_THE_SAVE)
 async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     """As the posting does (decided 2026-09-15). Recomputed by user id instead, the stored order
     disagrees with the posted one, and the next round's movement arrows show a driver moving
-    who did not. The names are resolved through the bot, where the revert is handed one."""
+    who did not. The names are resolved before the revert's save, by a job of their own, and
+    handed in: the save waits on nothing but its own connection (architecture.md, "The
+    database")."""
     db_path = await _db(tmp_path, "revert_names")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     names = {101: "Alice", 102: "Bob"}
 
-    with patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade, patch(
-        "leaguebot.results.services.results_post_service.standings_display_names",
-        new=AsyncMock(return_value=names),
-    ):
-        await revert_amendment(db_path, ROUND_ID, _bot(db_path))
+    with _cascade_in_the_save() as cascade:
+        await revert_amendment(db_path, ROUND_ID, names)
 
-    assert cascade.await_args.args[3] == names
+    assert _names_handed(cascade) == names
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVERT_IN_THE_SAVE)
 async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_running(tmp_path):
-    """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater."""
+    """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater. Where
+    the names could not be had, none are handed, and the cascade runs on ids."""
     db_path = await _db(tmp_path, "revert_names_fail")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
 
-    with patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade, patch(
-        "leaguebot.results.services.results_post_service.standings_display_names",
-        new=AsyncMock(side_effect=RuntimeError("gateway")),
-    ):
-        await revert_amendment(db_path, ROUND_ID, _bot(db_path))
+    with _cascade_in_the_save() as cascade:
+        await revert_amendment(db_path, ROUND_ID)
 
     cascade.assert_awaited_once()
-    assert cascade.await_args.args[3] is None
+    assert _names_handed(cascade) is None
+
+
+def _cascade_in_the_save():
+    """The standings cascade the revert runs inside its save, stood in for."""
+    return patch(
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        new=AsyncMock(),
+    )
+
+
+def _names_handed(cascade):
+    """The display names the revert handed its cascade, however it passed them."""
+    call = cascade.await_args
+    if "display_names" in call.kwargs:
+        return call.kwargs["display_names"]
+    return call.args[3] if len(call.args) > 3 else None
 
 
 async def _pardons(db_path) -> list[tuple]:

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import itertools
 import os
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -567,20 +568,25 @@ async def snapshot_amendment(db_path: str, round_id: int,
         await db.commit()
 
 
-async def revert_amendment(db_path: str, round_id: int, bot: Any = None) -> bool:
+async def revert_amendment(db_path: str, round_id: int,
+                           display_names: Mapping[int, str] | None = None) -> bool:
     """Put a round back from its amendment's snapshot, as the amendment's lapse and cancel do;
     gives whether there was anything to put back.
 
     Through the form that takes a connection (`revert_abandoned_amendment_on`) where the bot has
     it, on a connection opened and committed here: #439 6b's lapse and cancel revert through it,
-    and delete the committing form. Until then, through the committing form."""
+    inside their `revert` save, and delete the committing form. That save waits on nothing but its
+    own connection (architecture.md, "The database"), so the standings names are resolved before
+    it, by a job of their own, and handed in as *display_names*, as the stage approvals hand them
+    to `cascade_recompute_from_round_on`; no bot is handed. Until then, through the committing
+    form, handed no bot, so its cascade runs on ids."""
     from leaguebot.results.services import result_submission_service as service
 
     on_a_connection = getattr(service, "revert_abandoned_amendment_on", None)
     if on_a_connection is None:
-        return bool(await service.revert_abandoned_amendment(db_path, round_id, bot))
+        return bool(await service.revert_abandoned_amendment(db_path, round_id))
     async with get_connection(db_path) as db:
-        reverted = await on_a_connection(db, round_id, bot)
+        reverted = await on_a_connection(db, round_id, display_names)
         await db.commit()
     return bool(reverted)
 
