@@ -1,5 +1,6 @@
-"""A driver's signup channel on the change queue: pressing Sign Up (#439, slice 6b, C75) and
-withdrawing (C76).
+"""A driver's signup channel on the change queue: pressing Sign Up (#439, slice 6b, C75),
+withdrawing (C76), the signup's expiry (C77), a rejection (C78) and the held channel's deletion
+(C79).
 
 Today Sign Up creates the driver's signup channel, saves the wizard, moves the driver to Pending
 Signup Completion and posts the welcome itself, off the queue, and Cancel Signup ends the signup
@@ -11,6 +12,14 @@ where a close waits on the queue (Q28), and where the bot may not manage channel
 has no room, naming the cause (decision 10). Cancel Signup asks `signup.end` on the league lane,
 which changes the driver's status and asks back `signup.closing` on the driver's lane (Q-B), so a
 notice Discord refuses stops that lane alone.
+
+The expiry, asked by the 24-hour timer or the restart, is the league's whole (decision 31): its
+`signup.end` returns the driver, posts the notice, locks the channel and arms its deletion on the
+league lane, and is not due where an answer typed before the 24 hours ran out is queued (Q22). A
+reason typed after Reject asks `signup.end` on the league lane through the press's stored
+interaction, which asks back `signup.closing`, deleting the reason, on the driver's lane. The
+24-hour deletion of a held channel runs on the driver's own lane (R2(d)); `/driver reassign`'s
+deletion of a replaced account's channel is a command's, on the league lane.
 
 The league: `setup_league` at Signups, the signup module on and its window open in the signup
 channel (620), which sits in the category "Signups" (630) with room to spare and the bot allowed
@@ -69,6 +78,21 @@ NO_START_CHANGE = (
     "signup channel, saves the wizard and posts the welcome itself off the queue, with no "
     "signup.start change"
 )
+NO_EXPIRY_CHANGE = (
+    "#439: the inactivity timer and the restart expire a signup themselves off the queue, with no "
+    "signup.end change asked as the bot on the league lane, and no timer callback registered by "
+    "the builder; the wizard service is not handed the change queue when built"
+)
+NO_REJECT_CHANGE = (
+    "#439: a reason typed after Reject is deleted at once and the signup rejected off the queue, "
+    "with no signup.end change on the league lane asking signup.closing, which deletes the "
+    "reason, back of the driver's lane"
+)
+NO_CHANNEL_DELETE_CHANGE = (
+    "#439: a held signup channel is deleted by its timer, or by /driver reassign, off the queue, "
+    "with no signup.channel.delete change: on the driver's lane for the timer, the league's for "
+    "the command"
+)
 NO_END_CHANGE = (
     "#439: the Cancel Signup view is not handed the change queue, and Cancel Signup ends the "
     "signup and posts its closing notice itself off the queue, with no signup.end change on the "
@@ -111,9 +135,11 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
 
 def _held(league: SeasonLeague, cid: int) -> Any:
     """Signup channel *cid* on the server, recording what it is sent, its permission edits and
-    its deletion (in `league.order`)."""
+    its deletion (in `league.order`); a message typed in it (`typed_message`) is kept in
+    `posted` until deleted."""
     made = league._recording(channel(cid, league.events))
     made.guild = league.guild
+    made.posted = []
     made.set_permissions = AsyncMock()
 
     async def _delete(*_args: Any, **_kwargs: Any) -> None:
@@ -466,3 +492,134 @@ async def test_withdraw_changes_the_status_on_the_league_and_the_notice_comes_ba
     assert end["id"] < closing["id"]
     assert (end["state"], closing["state"]) == ("DONE", "DONE")
     assert len(_told(league)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The signup's expiry (C77)
+# ---------------------------------------------------------------------------
+
+#: A second driver signing up alongside Kimi, active an hour ago.
+OTHER = SIGNING_UP + 10
+
+
+async def _idle(league: SeasonLeague, user_id: int, since: Any) -> None:
+    """Driver *user_id* part-way through signing up (Pending Signup Completion, asked their
+    nationality), their signup channel standing, last active at *since*."""
+    await signing_up(league, user_id, state="PENDING_SIGNUP_COMPLETION")
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'COLLECTING_NATIONALITY', "
+        "last_activity_at = ? WHERE discord_user_id = ?",
+        since.isoformat(), str(user_id),
+    )
+    _held(league, SIGNUP_CHANNEL_BASE + user_id)
+
+
+def _timer_callback(league: SeasonLeague, timer: str) -> Any:
+    """The callback the builder registered for *timer*."""
+    [callback] = [call.args[1]
+                  for call in league.bot.scheduler_service.register_timer.call_args_list
+                  if call.args and call.args[0] == timer]
+    return callback
+
+
+def _expired(league: SeasonLeague, user_id: int = SIGNING_UP) -> list[str]:
+    return [text for text in league.channel(SIGNUP_CHANNEL_BASE + user_id).texts
+            if "expired" in text.lower()]
+
+
+def _wizards(league: SeasonLeague) -> Any:
+    """The wizard service as the builder makes it, handed the change queue when built, over the
+    league's real signup module service."""
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    wizards = WizardService(
+        league.db_path, league.bot.scheduler_service, league.bot.output_router,
+        change_queue=league.bot.change_queue,
+    )
+    wizards.set_bot(league.bot)
+    return wizards
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
+async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
+    """Kimi is part-way through signing up, last active 24 hours and a minute ago. His 24-hour
+    timer fires: it asks the queue for `signup.end` as the bot, on the league lane, and nothing
+    is posted yet. When the queue runs he is Not Signed Up, his channel is told his signup
+    expired, his typing there is revoked, the channel's deletion is armed a day after the job
+    ran, and the lapse is recorded in the log channel. No change is asked back of his lane: the
+    expiry is the league's whole."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+
+    [end] = await _changes_of(league, END_KIND)
+    assert (_lane(end), end["origin"]) == ("league", "BOT")
+    assert _expired(league) == []
+
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_expired(league)) == 1
+    assert _locked(league)
+    assert _armed(league, DELETE_TIMER) == [
+        (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
+    ]
+    assert await _changes_of(league, CLOSING_KIND) == []
+    assert "lapsed" in league.log().lower()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
+async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(tmp_path):
+    """Kimi was last active 23 hours and 59 minutes ago. He types his nationality, which waits
+    its turn on his lane; two minutes later, his 24 hours run out and the timer asks for his
+    signup's expiry. When the queue runs, after the 24 hours, the answer counts: he is still
+    Pending Signup Completion, no expiry notice is posted, his channel is not locked and no
+    deletion is armed."""
+    from tests.support.change_queue import ask_turn, typed_message
+
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=23, minutes=59))
+    kimi = league._member(SIGNING_UP)
+    kimi.bot = False
+    answer = typed_message(league.channel(KIMI_CHANNEL), kimi, "British",
+                           created_at=league.clock.now)
+
+    await ask_turn(league.bot, "signup.answer", answer)
+    league.clock.advance(minutes=2)
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert _expired(league) == []
+    assert not _locked(league)
+    assert _armed(league, DELETE_TIMER) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
+async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
+    """The bot starts again. Kimi was last active 25 hours ago, a second driver (115) an hour
+    ago, both part-way through signing up. Recovering the wizards (the wizard service built with
+    the change queue) asks the queue for Kimi's `signup.end` as the bot, on the league lane,
+    before the queue starts, and asks nothing for the second driver. When the queue runs Kimi is
+    Not Signed Up and told his signup expired; the second driver is still signing up."""
+    from datetime import datetime, timezone
+
+    league = await _league(tmp_path)
+    host_now = datetime.now(timezone.utc)
+    await _idle(league, SIGNING_UP, host_now - timedelta(hours=25))
+    await _idle(league, OTHER, host_now - timedelta(hours=1))
+
+    await _wizards(league).recover_wizards()
+
+    [end] = await _changes_of(league, END_KIND)
+    assert (_lane(end), end["origin"]) == ("league", "BOT")
+    assert str(SIGNING_UP) in str(end["payload"])
+    assert str(OTHER) not in str(end["payload"])
+
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_expired(league)) == 1
+    assert await _driver_state(league, OTHER) == "PENDING_SIGNUP_COMPLETION"
+    assert _expired(league, OTHER) == []
