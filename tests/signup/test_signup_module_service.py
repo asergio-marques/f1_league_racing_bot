@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
+
+#: The window is opened and closed only inside a save the caller holds (#439, slice 6b, C66, C68).
+NO_WINDOW_ON = (
+    "#439: the signup window is opened and closed only by committing forms that hold their "
+    "own connection, with no set_window_open_on or set_window_closed_on taking the caller's save"
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -346,15 +353,21 @@ class TestWindowState:
         svc = await self._make_config(db_path)
         assert await svc.get_window_state() is False
 
+    @pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
     async def test_set_open_then_closed(self, db_path):
         svc = await self._make_config(db_path)
-        await svc.set_window_open(button_message_id=999, selected_tracks=["01", "03"])
+        # Opened and closed in saves of the caller's, as the jobs do (#439, slice 6b, C66, C68).
+        async with get_connection(db_path) as db:
+            await svc.set_window_open_on(db, button_message_id=999, selected_tracks=["01", "03"])
+            await db.commit()
         assert await svc.get_window_state() is True
         cfg = await svc.get_config()
         assert cfg.signup_button_message_id == 999
         assert cfg.selected_tracks == ["01", "03"]
 
-        await svc.set_window_closed()
+        async with get_connection(db_path) as db:
+            await svc.set_window_closed_on(db)
+            await db.commit()
         assert await svc.get_window_state() is False
         cfg2 = await svc.get_config()
         assert cfg2.signup_button_message_id is None

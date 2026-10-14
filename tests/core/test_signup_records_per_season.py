@@ -16,6 +16,12 @@ from leaguebot.signup.services.signup_module_service import SignupModuleService
 SERVER_ID = 22050
 USER = "4242"
 
+#: The window is opened and closed only inside a save the caller holds (#439, slice 6b, C66, C68).
+NO_WINDOW_ON = (
+    "#439: the signup window is opened and closed only by committing forms that hold their "
+    "own connection, with no set_window_open_on or set_window_closed_on taking the caller's save"
+)
+
 
 def _record(platform: str = "Steam") -> SignupRecord:
     return SignupRecord(
@@ -70,10 +76,15 @@ async def _archive(db_path, season_id: int):
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
 async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.set_window_open(111, ["3"])
+    # The window is opened in a save of the caller's, as the `/signup open` job's record does it
+    # (#439, slice 6b, C68).
+    async with get_connection(db_path) as db:
+        await svc.set_window_open_on(db, 111, ["3"])
+        await db.commit()
     window_id = (await svc.get_windows(1))[0]["id"]
 
     await svc.save_record(_record())
