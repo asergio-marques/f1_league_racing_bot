@@ -623,3 +623,82 @@ async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
     assert len(_expired(league)) == 1
     assert await _driver_state(league, OTHER) == "PENDING_SIGNUP_COMPLETION"
     assert _expired(league, OTHER) == []
+
+
+# ---------------------------------------------------------------------------
+# A rejection (C78)
+# ---------------------------------------------------------------------------
+
+#: The league manager reviewing Kimi's signup, and the reason they type after Reject.
+MANAGER = 77
+REASON = "Lap time not credible"
+
+
+def _rejected(league: SeasonLeague) -> list[str]:
+    return [text for text in league.channel(KIMI_CHANNEL).texts if "rejected" in text.lower()]
+
+
+def _said_to(press: Any) -> str:
+    """All the manager's stored press was used to tell them: its follow-ups and its edits."""
+    return " ".join(
+        str(call) for call in (press.followup.send.call_args_list
+                               + press.edit_original_response.call_args_list)
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
+async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path):
+    """Kimi's signup awaits approval, his signup channel (6405) standing. Manager 77 has pressed
+    Reject on the review panel, which waits for the reason (the press deferred and parked as the
+    button parks it), and types "Lap time not credible" in Kimi's channel. The reason is not
+    deleted at once. A `signup.end` change is asked on the league lane through the stored press;
+    when the queue runs Kimi is Not Signed Up, and it asks back a `signup.closing` change on his
+    lane, whose `delete_reason` deletes the manager's message before `signup_notice` tells the
+    channel the signup was rejected, giving the reason. His typing is revoked, the channel's
+    deletion armed a day on, and the manager is told the signup was rejected."""
+    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from tests.support.change_queue import typed_message
+
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
+    _held(league, KIMI_CHANNEL)
+    manager = league._member(MANAGER)
+    manager.bot = False
+    press = member_interaction(league.bot, user=manager)
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    await press.response.defer(ephemeral=True)
+    _PENDING_REASONS[(KIMI_CHANNEL, MANAGER)] = {
+        "action": "reject",
+        "discord_user_id": str(SIGNING_UP),
+        "actor": manager,
+        "guild": league.guild,
+        "interaction": press,
+        "followup": press.followup,
+    }
+    reason = typed_message(league.channel(KIMI_CHANNEL), manager, REASON,
+                           created_at=league.clock.now)
+    reason.guild = league.guild
+    try:
+        await AdminReviewCog(league.bot).on_message(reason)
+
+        assert not reason.gone
+        [end] = await _changes_of(league, END_KIND)
+        assert _lane(end) == "league"
+
+        await run_queue(league.bot)
+    finally:
+        _PENDING_REASONS.clear()
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    [closing] = await _changes_of(league, CLOSING_KIND)
+    assert _lane(closing) == KIMI_LANE
+    assert _in_order(await _job_names(league, CLOSING_KIND), ["delete_reason", "signup_notice"])
+    assert reason.gone
+    told = _rejected(league)
+    assert len(told) == 1 and REASON in told[0]
+    assert _locked(league)
+    assert _armed(league, DELETE_TIMER) == [
+        (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
+    ]
+    assert "rejected" in _said_to(press).lower()
