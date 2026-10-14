@@ -1,22 +1,17 @@
 """`/season placements-review` shows a manager what their league will actually see.
 
-The rule this file pins, and it **reverses** 038 FR-027 (decided 2026-08-27): where an
-aspect is switched on, the graphic *replaces* that section's text rather than standing
-beside it. A review that shows text a league will never see is showing the wrong thing.
-
-Three states and not two, which is the part most at risk from a well-meant simplification:
-
-* the aspect is **off** — the league conveys the section as text, nothing is wrong, and
-  the review posts the text exactly as it always did;
-* the graphic **drew** — the text is not posted at all;
-* the graphic was wanted and **could not be drawn** — the fault is reported to the
-  manager, the text still stands in so the review stays a complete picture, and the
-  approve button is withheld.
+The rule this file once pinned in the command's own drawing — and it **reverses** 038 FR-027
+(decided 2026-08-27): where an aspect is switched on, the graphic *replaces* that section's
+text rather than standing beside it — now lives where the drawing went. Since #439 (slice 6b,
+C93, C94) the command asks the queue to post the review, a picture in place of each switched-on
+section's text: `test_season_review_report.py` pins what the command asks, and
+`test_season_review_changes.py` pins the change drawing and posting it, a picture that will
+not draw withholding the button. What is left here is the approval's own gates, the portrait
+settings in the review, the button, and the poster the command's private replies go through.
 """
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -31,38 +26,6 @@ NO_POSTER_REPLY = "#439: the review poster's send is not yet renamed reply"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
-
-
-def _cog(bot=None):
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot if bot is not None else MagicMock()
-    cog.bot.db_path = ":memory:"
-    return cog
-
-
-def _interaction(guild_id: int = 7) -> MagicMock:
-    interaction = MagicMock()
-    interaction.guild_id = guild_id
-    interaction.guild = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _division(division_id: int = 3):
-    division = MagicMock()
-    division.id = division_id
-    division.name = "Elite"
-    division.tier = 1
-    return division
-
-
-def _png(tmp_path: Path) -> Path:
-    """A real file, since `discord.File` opens what it is given."""
-    path = tmp_path / "drawn.png"
-    path.write_bytes(b"\x89PNG\r\n\x1a\n")
-    return path
 
 
 def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
@@ -82,155 +45,6 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
     raise AssertionError(f"{name} not found in {path}")
 
 
-# ── The lineup graphic ────────────────────────────────────────────────────
-
-
-async def test_the_lineup_aspect_being_off_leaves_the_text_to_the_caller(monkeypatch):
-    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_TEXT
-    import leaguebot.image.services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
-    interaction = _interaction()
-
-    state = await _cog()._post_review_lineup_image(_ReviewPoster(interaction), _division())
-
-    assert state == REVIEW_IMAGE_TEXT
-    interaction.followup.send.assert_not_awaited()
-
-
-async def test_a_drawn_lineup_is_posted_and_the_caller_posts_no_text(monkeypatch, tmp_path):
-    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_DREW
-    import leaguebot.image.services.image_lineup_post as lineup_post
-
-    png = _png(tmp_path)
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        lineup_post,
-        "render_for_command",
-        AsyncMock(return_value=MagicMock(png_path=png, message=None, notices=[])),
-    )
-    interaction = _interaction()
-
-    state = await _cog()._post_review_lineup_image(_ReviewPoster(interaction), _division())
-
-    assert state == REVIEW_IMAGE_DREW
-    interaction.followup.send.assert_awaited_once()
-    _args, kwargs = interaction.followup.send.call_args
-    assert kwargs["file"] is not None
-    assert kwargs["ephemeral"] is False
-
-
-async def test_a_lineup_drawn_here_obtains_missing_portraits_first(monkeypatch, tmp_path):
-    """The review is judged on its drawing, so a driver seated since the last daily update
-    is fetched before it is made, whichever trigger the league chose (#407)."""
-    import leaguebot.image.services.image_lineup_post as lineup_post
-
-    render = AsyncMock(return_value=_outcome(_png(tmp_path)))
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(lineup_post, "render_for_command", render)
-
-    await _cog()._post_review_lineup_image(_ReviewPoster(_interaction()), _division())
-
-    assert render.await_args.kwargs["obtain_missing_portraits"] is True
-
-
-async def test_a_lineup_that_would_not_draw_reports_the_fault(monkeypatch):
-    """The manager is told, and the caller is told to fall back to its text."""
-    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_FAULT
-    import leaguebot.image.services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        lineup_post,
-        "render_for_command",
-        AsyncMock(
-            return_value=MagicMock(
-                png_path=None, message="❌ the template declares no `team_1_name`"
-            )
-        ),
-    )
-    interaction = _interaction()
-
-    state = await _cog()._post_review_lineup_image(_ReviewPoster(interaction), _division())
-
-    assert state == REVIEW_IMAGE_FAULT
-    interaction.followup.send.assert_awaited_once()
-    args, kwargs = interaction.followup.send.call_args
-    assert "team_1_name" in args[0]
-    assert kwargs["ephemeral"] is True
-
-
-# ── The calendar graphic ──────────────────────────────────────────────────
-
-
-async def test_the_calendar_aspect_being_off_leaves_the_text_to_the_caller(monkeypatch):
-    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_TEXT
-    import leaguebot.core.services.calendar_post_service as calendar_post
-
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
-    )
-    interaction = _interaction()
-
-    state = await _cog()._post_review_calendar_image(_ReviewPoster(interaction), _division(), [], 3)
-
-    assert state == REVIEW_IMAGE_TEXT
-    interaction.followup.send.assert_not_awaited()
-
-
-async def test_a_drawn_calendar_is_posted_and_the_caller_posts_no_text(
-    monkeypatch, tmp_path
-):
-    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_DREW
-    import leaguebot.core.services.calendar_post_service as calendar_post
-
-    png = _png(tmp_path)
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
-    monkeypatch.setattr(
-        calendar_post,
-        "render_for_command",
-        AsyncMock(return_value=MagicMock(png_path=png, message=None, notices=[])),
-    )
-    interaction = _interaction()
-
-    state = await _cog()._post_review_calendar_image(_ReviewPoster(interaction), _division(), [], 3)
-
-    assert state == REVIEW_IMAGE_DREW
-    interaction.followup.send.assert_awaited_once()
-    _args, kwargs = interaction.followup.send.call_args
-    assert kwargs["file"] is not None
-
-
-async def test_a_calendar_that_would_not_draw_reports_the_fault(monkeypatch):
-    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_FAULT
-    import leaguebot.core.services.calendar_post_service as calendar_post
-
-    monkeypatch.setattr(
-        calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(calendar_post, "tracks_by_name", AsyncMock(return_value={}))
-    monkeypatch.setattr(
-        calendar_post,
-        "render_for_command",
-        AsyncMock(
-            return_value=MagicMock(
-                png_path=None, message="❌ no value for `round_4_race_name`"
-            )
-        ),
-    )
-    interaction = _interaction()
-
-    state = await _cog()._post_review_calendar_image(_ReviewPoster(interaction), _division(), [], 3)
-
-    assert state == REVIEW_IMAGE_FAULT
-    args, kwargs = interaction.followup.send.call_args
-    assert "round_4_race_name" in args[0]
-    assert kwargs["ephemeral"] is True
-
-
 # ── The calendar's command-output renderer ────────────────────────────────
 
 
@@ -247,107 +61,6 @@ def test_calendar_render_for_command_is_not_the_calendar_of_record():
 # ── The review's own structure ────────────────────────────────────────────
 
 
-def test_the_review_posts_a_graphic_instead_of_its_text_never_beside_it():
-    """Reverses 038 FR-027: the section's text is sent only where no graphic was drawn."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-
-    for state_call, text_send in (
-        ("_post_review_calendar_image", "join(cal_lines)"),
-        ("_post_review_lineup_image", "join(lineup_lines)"),
-    ):
-        image_at = source.index(state_call)
-        text_at = source.index(text_send)
-        assert image_at < text_at, f"{state_call} must decide before the text is built"
-
-    assert "if cal_state != REVIEW_IMAGE_DREW:" in source
-    assert "if lineup_state == REVIEW_IMAGE_DREW:" in source
-
-
-def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
-    """A season approved on a broken template would post the fault to the league."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-
-    # A list of reasons rather than a flag: an undrawable graphic and a fault of the image
-    # configuration — the portrait settings among them — both withhold the button, and they
-    # read differently.
-    assert "approval_blockers: list[str] = []" in source
-    assert source.count("approval_blockers.append(") == 2, "both graphics must raise it"
-    # Every fault of the image configuration, through the helper the confirmation refuses
-    # on (#396) — not the portrait settings alone, which left a broken results template
-    # and a missing rasteriser named as blocking and then approved.
-    assert "approval_blockers += await self._image_configuration_faults()" in source
-
-    tail = source[source.index("Server-level unsettled signups"):]
-    assert "if approval_blockers:" in tail
-
-    # Independent causes withhold the button, so the offer is guarded on every one of
-    # them rather than sitting in an `else` belonging to any single one (#121, #122,
-    # #181, #132). Assembled from the causes rather than pinned as a string: a new cause
-    # is meant to be added here, and a test that only accepted the two it was written
-    # with would read as though adding a third were the mistake.
-    #
-    # Matched against the source with its whitespace collapsed, because the condition is
-    # now long enough to wrap and how it is wrapped is not the rule being pinned — a
-    # reformat that changes nothing about which causes guard the button should not fail
-    # this (#132).
-    causes = (
-        "approval_blockers",
-        "calendar_faults_found",
-        "points_faults",
-        "phantom_configs",
-        "no_points_attached",
-        "name_problems",
-        "unsettled",
-        "channel_faults",
-        "no_divisions",
-    )
-    offer = re.compile(
-        r"if\s*\(?\s*"
-        + r"\s+and\s+".join(re.escape(f"not {cause}") for cause in causes)
-        + r"\s*\)?\s*:"
-    )
-    match = offer.search(tail)
-    assert match is not None, (
-        f"the approval prompt is not guarded on all of {', '.join(causes)}"
-    )
-    offer_at = match.start()
-    fault_branch = tail[tail.index("if approval_blockers:"):offer_at]
-    assert "_post_approval_prompt" not in fault_branch, (
-        "the button must not be offered on a fault"
-    )
-    assert "image module is not correctly configured" in fault_branch
-    assert "_post_approval_prompt" in tail[offer_at:]
-
-
-def test_the_roleless_team_warning_survives_the_graphic():
-    """A review finding the picture cannot show must be posted either way."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-    block = source[source.index("_post_review_lineup_image"):]
-    drew, _, textual = block.partition("if lineup_state == REVIEW_IMAGE_DREW:")
-    assert "role_warning" in textual.split("else:")[0]
-
-
-@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
-def test_the_calendar_date_faults_survive_the_graphic():
-    """#181: the same rule as the roleless-team warning above, for the calendar.
-
-    A calendar graphic is drawn from the very rounds that are wrong and says nothing about
-    which of them have gone by, so the finding has to be posted whichever form the calendar
-    took. Posted only where there is one: a healthy division gets no extra message.
-    """
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-    block = source[source.index("_post_review_calendar_image"):]
-
-    assert "fault_lines = self._calendar_fault_lines(" in block
-    textual, _, drew = block.partition("elif fault_lines:")
-    assert "cal_lines.extend(fault_lines)" in textual, (
-        "the text form must carry the faults"
-    )
-    assert "poster.reply(" in drew, (
-        "the drawn form must post them as their own message"
-    )
-
-
 def test_the_approval_windows_are_read_once_for_the_whole_season():
     """Not per division. Eight divisions must not pay eight times for two configs."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
@@ -355,10 +68,6 @@ def test_the_approval_windows_are_read_once_for_the_whole_season():
     assert source.count("await self._approval_windows(") == 1
     setup, _, loop = source.partition("for div in db_divisions:")
     assert "_approval_windows" in setup, "read before the per-division loop, not inside it"
-
-
-def _outcome(png):
-    return MagicMock(png_path=png, message=None, notices=[])
 
 
 # ── Approval trusts the review's render, and proves the season is unchanged ──
@@ -1212,15 +921,14 @@ async def test_the_poster_passes_a_file_and_a_view_on():
 
 def test_nothing_in_a_review_sends_around_the_poster():
     """A message sent past the poster is not kept, and approving the review would leave it
-    standing. Each review, and each helper it posts through, sends through the poster alone."""
+    standing. Each review, and the helper that tells the reviewer its private faults, sends
+    through the poster alone. Since #439 (C93) the pictures and the question are posted by the
+    review's change, not by helpers of the command, so only the reviews and that helper remain."""
     tree = ast.parse((SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8"))
     reviews = {
         "season_review",
         "_review_mid_season_placements",
         "season_config_review",
-        "_post_review_lineup_image",
-        "_post_review_calendar_image",
-        "_post_approval_prompt",
         "_send_channel_faults",
     }
     found = {
@@ -1234,19 +942,6 @@ def test_nothing_in_a_review_sends_around_the_poster():
     }
     assert set(found) == reviews, "a review or helper was renamed — name it here"
     assert {name: lines for name, lines in found.items() if lines} == {}
-
-
-@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
-def test_the_prompt_is_public_and_says_who_may_answer():
-    """Public so a reviewer who cannot approve can put the question to someone who can."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_post_approval_prompt")
-
-    assert "ephemeral=False" in source
-    # A public send through the poster waits for the message and hands it back, so the
-    # prompt can be bound and later deleted; `test_the_poster_asks_for_the_message_back`.
-    assert "message = await poster.reply(" in source
-    assert "administrator" in source
-    assert "await view.bind(message)" in source
 
 
 async def test_the_review_offers_only_the_approve_button():
