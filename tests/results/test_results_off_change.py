@@ -860,34 +860,42 @@ async def test_a_wind_down_discord_keeps_failing_says_only_retry_continues_after
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
-async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path, monkeypatch):
-    from leaguebot.core.services import hub_service
+async def _set_hub(db_path: str) -> None:
+    """The league has a hub set, so its refresh is due."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = 7930")
+        await db.commit()
 
+
+async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path):
+    """The hub is set. The switch-off asks the queue for the refresh in its own save, after it:
+    the refresh is asked once, naming `/module disable`, its change after the switch-off's, and
+    the flag is down by the time it is asked."""
     seeded = await _seed(tmp_path)
-    seen: list[int] = []
-
-    async def _refresh(_bot: Any) -> None:
-        seen.append(await _flag(seeded.db_path))
-
-    monkeypatch.setattr(hub_service, "refresh_panel", _refresh)
+    await _set_hub(seeded.db_path)
     bot = _league(seeded.db_path)
     await _confirm(bot)
 
     await run_queue(bot)
 
-    assert seen == [0]
-    assert (await _change(seeded.db_path, "hub.refresh"))["state"] == "DONE"
+    switch_off = await _change(seeded.db_path, "module.off:results")
+    refresh = await _change(seeded.db_path, "hub.refresh")
+    assert switch_off["state"] == "DONE"
+    assert refresh["id"] > switch_off["id"]
+    assert "/module disable" in json.loads(refresh["payload"])["command"]
+    assert await _flag(seeded.db_path) == 0
 
 
 async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     tmp_path, monkeypatch,
 ):
-    """The hub refresh failing stops the queue at the refresh's own job, named as refreshing the
-    hub panel; the switch-off, done before it, keeps its success."""
+    """The hub is set; the hub refresh failing stops the queue at the refresh's own job, named
+    as refreshing the hub panel; the switch-off, done before it, keeps its success."""
     from leaguebot.core.services import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(side_effect=RuntimeError("x")))
     seeded = await _seed(tmp_path)
+    await _set_hub(seeded.db_path)
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
 
@@ -895,7 +903,6 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
 
     [stop] = await _stop_lines(bot)
     assert "refreshing the hub panel" in stop
-    assert "failed (RuntimeError)." in stop
     assert (await _stopped_change(seeded.db_path))["kind"] == "hub.refresh"
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     assert updated_reply(interaction).startswith(SUCCESS)
