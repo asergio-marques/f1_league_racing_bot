@@ -572,10 +572,26 @@ async def test_an_expired_configuration_review_names_its_own_command(tmp_path):
 
 
 # ── The report ─────────────────────────────────────────────────────────────────────
+#
+# The command computes the report and the evidence it is computed from, and asks the queue to post
+# the review, `season.review.post`, with the manager's interaction (#439, slice 6b: C96): the
+# report's sections and the question are posted by that change's jobs, in order, and the
+# question's view is the builder's to make (C93). These run the command on a cog whose change
+# queue records what it is asked, and read the review from the request.
+
+POST = "season.review.post"
+#: The channel the manager runs the command in, where the review is posted.
+COMMAND_CHANNEL = 111
+NO_REVIEW_POST = (
+    "#439: /season config-review posts its report and question as the command's follow-ups and "
+    "binds the question's view itself, off the change queue"
+)
 
 
 class _RecordedView:
-    """Stands in for the confirm view, recording what the review did with it."""
+    """Stands in for the confirm view, recording any the command builds itself: since #439 the
+    question's view is made by the review's change, so a command that builds one has posted its
+    question itself."""
 
     made: list["_RecordedView"] = []
 
@@ -603,27 +619,61 @@ def _report_bot(**kwargs) -> MagicMock:
     bot.signup_module_service.get_slots = AsyncMock(
         return_value=[SimpleNamespace(display_label="Sunday 20:00")]
     )
+    bot.change_queue.ask = AsyncMock(return_value=1)
     return bot
 
 
-async def _report(cog, interaction, monkeypatch):
+async def _review_asked(cog, interaction, monkeypatch) -> dict:
+    """Run `/season config-review` as the manager in channel 111, the season's evidence the team
+    list "as reported", and return the review it asked the queue to post: one request, of
+    `season.review.post`, carrying the manager's interaction."""
     import leaguebot.core.cogs.season_cog as season_cog
+    from leaguebot.core.services import season_fingerprint_service as sfs
+
+    async def _evidence(*_args, **_kwargs):
+        return sfs.SeasonFingerprint({"the team list": "as reported"})
 
     _RecordedView.made = []
     monkeypatch.setattr(season_cog, "_ConfirmConfigurationView", _RecordedView)
+    monkeypatch.setattr(sfs, "take_fingerprint", _evidence)
+    interaction.client = cog.bot
+    interaction.channel_id = COMMAND_CHANNEL
     interaction.followup.send = AsyncMock(return_value=MagicMock())
-    sent = interaction.followup.send
     await undecorate(SeasonCog.season_config_review)(cog, interaction)
-    return [call.args[0] for call in sent.await_args_list]
+    asked = [call for call in cog.bot.change_queue.ask.await_args_list
+             if (call.kwargs.get("kind") or call.args[0]) == POST]
+    assert len(asked) == 1, cog.bot.change_queue.ask.await_args_list
+    [call] = asked
+    assert call.kwargs.get("interaction") is interaction
+    assert _RecordedView.made == []
+    return call.kwargs.get("payload") or call.args[1]
 
 
+def _texts(review: dict) -> list[str]:
+    """What the review posts, in order: its report's sections, then its question, if any."""
+    return [*review["report"], *([review["question"]] if review.get("question") else [])]
+
+
+async def _report(cog, interaction, monkeypatch) -> list[str]:
+    return _texts(await _review_asked(cog, interaction, monkeypatch))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
+    """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
+    (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
+    command posts nothing itself: it asks the queue to post the review in channel 111, with the
+    manager's interaction, naming season 31, the manager as reviewer and `/season config-review`,
+    and carrying the evidence its report was computed from. The report's first section heads the
+    review and says what is on and off and which role each team has, warning of the reserve
+    team's missing role; the review ends in the question asking to confirm the configuration."""
     bot = _report_bot(signup=True, test_mode=True)
     cog = _cog(bot)
     interaction = _interaction()
 
-    messages = await _report(cog, interaction, monkeypatch)
+    review = await _review_asked(cog, interaction, monkeypatch)
 
+    messages = _texts(review)
     report = messages[0]
     assert "Configuration Review (Season #4 — F1 25)" in report
     assert "Test mode: ✅ On" in report
@@ -633,19 +683,21 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert "Reserve → no role" in report
     assert "Reserve team has no role assigned" in report
     assert "Do you confirm this season's configuration?" in messages[-1]
+    assert (review["channel_id"], review["season_id"]) == (COMMAND_CHANNEL, SEASON_ID)
+    assert (review["reviewer_id"], review["review"]) == (REVIEWER, "/season config-review")
+    assert review["evidence"]
+    interaction.followup.send.assert_not_awaited()
 
-    (view,) = _RecordedView.made
-    view.record_fingerprint.assert_awaited_once_with(SEASON_ID)
-    view.bind.assert_awaited_once()
-    view.carries.assert_called_once()
 
-
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
     """The half of #409 folded in from the configuration review. Test mode attaches Standard
     and Half Points when it is enabled and at no other moment (decided 2026-09-23), and the
     review once promised them "on approval" while refusing in the same report for want of one.
+    A test season with results on and no points configuration attached: the review asked of the
+    queue says none is attached, promises nothing, refuses for want of one, and asks no question.
     """
     from leaguebot.core.db.database import run_migrations
 
@@ -662,13 +714,15 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     assert "**Points Configs:** *(none attached)*" in text
     assert "auto-seeded" not in text
     assert "No points configuration is attached to this season" in text
-    assert _RecordedView.made == []
+    assert "Do you confirm this season's configuration?" not in text
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 @pytest.mark.parametrize("signup", [True, False])
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
-    """The one review that reports them (issue #276). They are the league's, so they are
-    shown whether or not signup is on, and confirming the configuration fixes them."""
+    """The one review that reports them (issue #276). They are the league's, so the review asked
+    of the queue shows them whether or not signup is on, and confirming the configuration fixes
+    them."""
     cog = _cog(_report_bot(signup=signup))
 
     messages = await _report(cog, _interaction(), monkeypatch)
@@ -677,8 +731,11 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
-    """The placements review's subsections, save the divisions, in the same words (#220)."""
+    """The placements review's subsections, save the divisions, in the same words (#220): with
+    signup, results, attendance and weather on, the review asked of the queue carries each
+    module's configuration."""
     import leaguebot.core.cogs.season_cog as season_cog
     from leaguebot.weather.services import weather_config_service
 
@@ -712,7 +769,9 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
+    """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
 
     text = "\n".join(await _report(cog, _interaction(), monkeypatch))
@@ -721,7 +780,9 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
+    """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
     cog = _cog(bot)
     cog._build_image_review_section = AsyncMock(return_value=["**Image outputs**", "  lineup: on"])
@@ -732,7 +793,11 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
+    """Signup is on and the league's base role is unset. The review asked of the queue ends in
+    the faults, naming the base role and `/bot base-role`, and saying to run
+    `/season config-review` again once they are put right; it asks no question to confirm."""
     bot = _report_bot(signup=True, roles=(None, 3))
     cog = _cog(bot)
 
@@ -741,13 +806,15 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert "cannot be confirmed yet" in messages[-1]
     assert "**base role** — `/bot base-role`" in messages[-1]
     assert "/season config-review" in messages[-1]
-    assert _RecordedView.made == []
+    assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
 async def test_the_followup_is_restored_after_the_report(monkeypatch):
-    """The review wraps the followup to collect its report; a later reply must not be caught."""
+    """The review wraps the followup to collect what it says privately; a later reply must not be
+    caught."""
     cog = _cog(_report_bot())
     interaction = _interaction()
+    interaction.client = cog.bot
 
     import leaguebot.core.cogs.season_cog as season_cog
 
@@ -959,20 +1026,22 @@ async def test_every_config_review_refusal_is_recorded(stage, set_up):
     ]
 
 
-async def test_a_posted_config_review_writes_one_line_naming_who_ran_it(monkeypatch):
-    """A review that posts its question writes one line naming who ran it (#482, criterion 6),
-    so a later lapse line reads against it."""
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
+async def test_a_posted_config_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
+    monkeypatch,
+):
+    """Manager runs `/season config-review` on a sound configuration. The command writes no line
+    to the log channel itself, no refusal and no "Review posted": the review is asked of the
+    queue as Manager's, with his interaction, naming him as reviewer and `/season config-review`,
+    and the line naming who ran it is written once its question is posted (#482, criterion 6)."""
     bot = _report_bot(signup=True, test_mode=True)
     cog = _cog(bot)
     interaction = _run_by_the_manager(bot, _interaction())
 
-    await _report(cog, interaction, monkeypatch)
+    review = await _review_asked(cog, interaction, monkeypatch)
 
-    (view,) = _RecordedView.made
-    view.bind.assert_awaited_once()
-    lines = [line for line in _logged(bot) if "/season config-review" in line]
-    assert len(lines) == 1
-    assert lines[0].startswith(f"Manager (<@{REVIEWER}>) | /season config-review")
+    assert (review["reviewer_id"], review["review"]) == (REVIEWER, "/season config-review")
+    assert not [line for line in _logged(bot) if "Review posted" in line]
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 

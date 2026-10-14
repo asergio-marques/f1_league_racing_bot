@@ -497,6 +497,23 @@ async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(
 
 
 @pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
+async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
+    """Alex's `/season placements-review` is asked of the queue and the queue posts it, its
+    question standing in channel 700. The log channel then holds one line naming Alex and
+    `/season placements-review` as the review posted, so a later lapse or refusal reads against
+    it (#482, criterion 6), and no refusal."""
+    _attach(posting)
+    await _review(posting)
+    await run_queue(posting.bot)
+
+    lines = [line.replace("`", "") for line in posting.bot.log_channel.sent]
+    posted = [line for line in lines if PLACEMENTS in line and "Review posted" in line]
+    assert len(posted) == 1, lines
+    assert posted[0].startswith(f"Alex (<@{REVIEWER}>) | {PLACEMENTS}"), posted
+    assert not any(line.startswith("⛔") for line in lines), lines
+
+
+@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     """The queue is stopped at 12:00 when Alex runs his review; it clears at 12:03. The question is
     posted at 12:03, and a job after it arms the review's expiry timer for its question at 12:08,
