@@ -511,3 +511,73 @@ async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel
     assert (after["id"], after["platform_id"]) == (before["id"], "kimi_new")
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
     assert len(_panels(league)) == 1
+
+
+NO_JUDGE_ANSWER = (
+    "#439: a typed signup answer is judged inside the wizard service's handlers, which post their "
+    "refusal at once; there is no pure judge_answer for signup.answer's check to call"
+)
+
+#: For each step, what Kimi types, and the refusal and step name the wizard gives him today.
+_REFUSED = [
+    pytest.param("COLLECTING_NATIONALITY", "Atlantis", "Nationality",
+                 "❌ Invalid nationality. Please enter your full nationality (e.g. `British`) "
+                 "or country name (e.g. `United Kingdom`), or type `other`.",
+                 id="nationality"),
+    pytest.param("COLLECTING_PLATFORM", "Commodore", "Platform",
+                 "❌ Invalid platform. Please choose one of: Steam / EA / Xbox / PlayStation",
+                 id="platform"),
+    pytest.param("COLLECTING_PLATFORM_ID", "   ", "Platform ID",
+                 "❌ Platform ID cannot be empty.", id="platform id"),
+    pytest.param("COLLECTING_AVAILABILITY", "evenings", "Availability",
+                 "❌ Please enter slot IDs as numbers (e.g. `1 3`).", id="availability"),
+    pytest.param("COLLECTING_DRIVER_TYPE", "Part-Time", "Driver Type",
+                 "❌ Please choose one of: Full-Time Driver / Reserve Driver", id="driver type"),
+    pytest.param("COLLECTING_PREFERRED_TEAMS", "Alpha, Beta, Gamma, Delta", "Preferred Teams",
+                 "❌ Please select up to 3 teams.", id="preferred teams"),
+    pytest.param("COLLECTING_LAP_TIME", "quick", "Lap Times",
+                 "❌ Invalid Time Trial time. Use format `M:ss.mmm` (e.g. `1:23.456`).",
+                 id="lap time"),
+    pytest.param("COLLECTING_NOTES", "x" * 51, "Notes",
+                 "❌ Notes must be 50 characters or fewer.", id="notes"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+@pytest.mark.parametrize(("state", "typed", "step", "refusal"), _REFUSED)
+def test_judge_answer_holds_each_step_s_rules(state, typed, step, refusal):
+    """Kimi's wizard is at *state*: Time Trial times, one track to time, no screenshot asked,
+    nationality required, no availability slots. He types *typed*. Judged on its own, without a
+    database or Discord, the answer is refused with today's reply for that step, and the refusal
+    names the step its log line names."""
+    from types import SimpleNamespace
+
+    from leaguebot.signup.models.signup_module import (
+        ConfigSnapshot,
+        SignupWizardRecord,
+        WizardState,
+    )
+    from leaguebot.signup.services.wizard_changes import Refused, judge_answer
+
+    wizard = SignupWizardRecord(
+        id=1,
+        discord_user_id=str(SIGNING_UP),
+        wizard_state=WizardState(state),
+        signup_channel_id=KIMI_CHANNEL,
+        config_snapshot=ConfigSnapshot(
+            nationality_required=True,
+            time_type="TIME_TRIAL",
+            time_image_required=False,
+            selected_track_ids=["01"],
+            slots=[],
+            team_names=["Alpha", "Beta"],
+        ),
+        draft_answers={},
+        current_lap_track_index=0,
+        last_activity_at="2026-10-13T12:00:00+00:00",
+    )
+
+    judged = judge_answer(wizard, SimpleNamespace(content=typed, attachments=[]))
+
+    assert isinstance(judged, Refused)
+    assert (judged.step, judged.reply) == (step, refusal)
