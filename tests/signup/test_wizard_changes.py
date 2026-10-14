@@ -1,6 +1,6 @@
 """A driver's signup channel on the change queue: pressing Sign Up (#439, slice 6b, C75),
-withdrawing (C76), the signup's expiry (C77), a rejection (C78) and the held channel's deletion
-(C79).
+withdrawing (C76), the signup's expiry (C77), a rejection (C78), the held channel's deletion
+(C79) and a member leaving mid-signup (C80).
 
 Today Sign Up creates the driver's signup channel, saves the wizard, moves the driver to Pending
 Signup Completion and posts the welcome itself, off the queue, and Cancel Signup ends the signup
@@ -19,7 +19,10 @@ league lane, and is not due where an answer typed before the 24 hours ran out is
 reason typed after Reject asks `signup.end` on the league lane through the press's stored
 interaction, which asks back `signup.closing`, deleting the reason, on the driver's lane. The
 24-hour deletion of a held channel runs on the driver's own lane (R2(d)); `/driver reassign`'s
-deletion of a replaced account's channel is a command's, on the league lane.
+deletion of a replaced account's channel is a command's, on the league lane. A member leaving
+asks `signup.member_left` on the league lane (an event counts as a command, A27), which returns
+the driver and deletes the channel; a turn of his already stopped on his lane stays stopped
+(decision 24) until Retry finds it no longer due.
 
 The league: `setup_league` at Signups, the signup module on and its window open in the signup
 channel (620), which sits in the category "Signups" (630) with room to spare and the bot allowed
@@ -807,3 +810,173 @@ async def test_driver_reassign_asks_the_held_channel_s_deletion(tmp_path):
     assert await _wizard(league) is None
     theirs = await _wizard(league, NEW_ACCOUNT)
     assert theirs is not None and int(theirs["signup_channel_id"]) == NEW_ACCOUNT_CHANNEL
+
+
+# ---------------------------------------------------------------------------
+# A member leaving mid-signup (C80)
+# ---------------------------------------------------------------------------
+
+MEMBER_LEFT_KIND = "signup.member_left"
+#: A change of the test's own on Kimi's lane, standing for one of his turns.
+KIMI_TURN = "test.kimi_turn"
+
+NO_MEMBER_LEFT_CHANGE = (
+    "#439: a member leaving mid-signup is cleaned up at once off the queue by the wizard "
+    "service, his channel deleted there and then, with no signup.member_left change asked as the "
+    "bot on the league lane"
+)
+NO_MEMBER_LEFT_ENDING = (
+    "#439: a member leaving mid-signup is cleaned up off the queue with no signup.member_left "
+    "change, and a change type cannot yet name its lane or how its conversation is read, so a "
+    "turn stopped on the driver's lane is not left stopped and found no longer due once the "
+    "league has ended his signup"
+)
+
+
+async def _leave(league: SeasonLeague, user_id: int = SIGNING_UP) -> None:
+    """Driver *user_id* leaves the league's server, and the signup cog's listener hears it.
+    Today's wizard clean-up off the queue is a stand-in that does nothing, so that only what the
+    listener asks of the queue shows."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+
+    league.bot.wizard_service.handle_member_remove = AsyncMock(return_value=None)
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await cog.on_member_remove(league._member(user_id))
+
+
+async def _kimi_signing_up(db: Any, _payload: dict[str, Any]) -> bool:
+    """The test turn's `conversation_open`: Kimi's wizard is still running."""
+    cursor = await db.execute(
+        "SELECT 1 FROM signup_wizard_records WHERE discord_user_id = ? "
+        "AND wizard_state != 'UNENGAGED'",
+        (str(SIGNING_UP),),
+    )
+    return await cursor.fetchone() is not None
+
+
+def _stuck_turn(league: SeasonLeague) -> list[str]:
+    """Register `KIMI_TURN`, a change of the test's own on Kimi's lane: one job posting in his
+    channel, which Discord refuses, its conversation read from his wizard's row. Gives the list
+    each try that reaches Discord is noted in."""
+    from leaguebot.core.models.change import (
+        PlannedStep,
+        StepFailedOnDiscord,
+        StepKind,
+        StepResult,
+        Verdict,
+    )
+    from leaguebot.core.services.change_queue import ChangeType, Step
+    from tests.support.change_queue import register
+
+    tries: list[str] = []
+
+    async def act(_ctx: Any) -> StepResult:
+        tries.append("post")
+        raise StepFailedOnDiscord("Missing Access")
+
+    async def check(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    register(league.bot, ChangeType(
+        kind=KIMI_TURN,
+        opening=(PlannedStep("post"),),
+        steps={"post": Step("post", StepKind.ACT, act)},
+        check=check,
+        key=lambda _payload: KIMI_TURN,
+        doing=lambda _payload: "Posting Kimi's next question",
+        outcome=lambda _ctx: "Posted.",
+        lane=lambda _payload: KIMI_LANE,
+        conversation_open=_kimi_signing_up,
+    ))
+    return tries
+
+
+@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
+async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_jobs(tmp_path):
+    """Kimi is part-way through signing up when he leaves the server. Nothing is deleted at once:
+    the listener asks the queue for `signup.member_left` as the bot, on the league lane (a member
+    leaving counts as a command, A27). When the queue runs he is Not Signed Up, his signup channel
+    is deleted and his wizard's row with it, and the log channel records that he left, naming
+    him."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+
+    await _leave(league)
+
+    assert league.order == []
+    [change] = await _changes_of(league, MEMBER_LEFT_KIND)
+    assert (_lane(change), change["origin"]) == ("league", "BOT")
+
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert league.order == [f"delete {KIMI_CHANNEL}"]
+    assert await _wizard(league) is None
+    assert any("left" in line.lower() and f"<@{SIGNING_UP}>" in line
+               for line in league.bot.log_channel.sent)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
+async def test_a_member_leaving_while_the_queue_is_stopped_keeps_their_channel_until_it_clears(
+    tmp_path,
+):
+    """The league lane is stopped at a job Discord refuses when Kimi, part-way through signing
+    up, leaves the server. His leaving waits behind the stop: his signup channel stands, he is
+    still Pending Signup Completion and his wizard's row is kept. Once Retry clears the stop, the
+    queue runs on: his channel is deleted, he is Not Signed Up and his wizard's row is gone."""
+    from tests.support.change_queue import retry_job
+    from tests.support.review_league import block_queue
+
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+    holder = await block_queue(league, lane="league")
+
+    await _leave(league)
+    await run_queue(league.bot)
+
+    assert league.order == []
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert await _wizard(league) is not None
+
+    holder["fail"] = False
+    await retry_job(league.bot, lane="league")
+
+    assert league.order == [f"delete {KIMI_CHANNEL}"]
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert await _wizard(league) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_ENDING)
+async def test_a_member_leaving_ends_the_conversation_its_stopped_turn_left_stopped(tmp_path):
+    """One of Kimi's turns is stopped on his own lane, at a post in his signup channel Discord
+    refuses, when he leaves the server. The league's `signup.member_left` runs regardless: he is
+    Not Signed Up and his channel deleted, and the league lane is not stopped. His stopped turn
+    stays stopped, the same job (decision 24, "Left stopped"). An admin's Retry on his lane then
+    finds it no longer due: nothing more is tried on Discord and his lane is no longer stopped."""
+    from tests.support.change_queue import retry_job
+
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+    tries = _stuck_turn(league)
+    await league.bot.change_queue.ask(
+        KIMI_TURN, {}, interaction=member_interaction(league.bot), what="Kimi's turn",
+    )
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, KIMI_LANE)
+    assert job is not None and job["name"] == "post"
+
+    await _leave(league)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert league.order == [f"delete {KIMI_CHANNEL}"]
+    assert await stopped_job(league.db_path, "league") is None
+    still = await stopped_job(league.db_path, KIMI_LANE)
+    assert still is not None and still["id"] == job["id"]
+
+    tried = len(tries)
+    await retry_job(league.bot, lane=KIMI_LANE)
+
+    assert len(tries) == tried
+    assert await stopped_job(league.db_path, KIMI_LANE) is None
