@@ -1170,7 +1170,7 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
 
     with patch(
         "leaguebot.results.services.result_submission_service.run_result_submission_job",
-        new=AsyncMock(),
+        new=AsyncMock(), create=True,
     ) as wizard:
         await _recover(league)
 
