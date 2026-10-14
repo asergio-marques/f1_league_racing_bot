@@ -702,3 +702,108 @@ async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path)
         (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
     ]
     assert "rejected" in _said_to(press).lower()
+
+
+# ---------------------------------------------------------------------------
+# The held channel's deletion (C79)
+# ---------------------------------------------------------------------------
+
+DELETE_KIND = "signup.channel.delete"
+#: Kimi's new account after a reassign, and the held signup channel it holds of its own.
+NEW_ACCOUNT = SIGNING_UP + 1000
+NEW_ACCOUNT_CHANNEL = 6600
+
+
+async def _held_after_signup(league: SeasonLeague, user_id: int = SIGNING_UP,
+                             cid: int = KIMI_CHANNEL) -> Any:
+    """Driver *user_id*'s signup has ended (Not Signed Up), their signup channel *cid* held,
+    read-only, its wizard's row naming it; gives the channel."""
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, 'NOT_SIGNED_UP', 0)",
+        str(user_id),
+    )
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES (?, 'UNENGAGED', ?)",
+        str(user_id), cid,
+    )
+    return _held(league, cid)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_DELETE_CHANGE)
+async def test_the_24_hour_deletion_is_a_job_and_a_refused_one_stops_the_queue(tmp_path):
+    """Kimi's signup ended a day ago and his signup channel (6405) is held. Its 24-hour timer
+    fires and asks `signup.channel.delete`; Discord refuses to delete the channel. The turns in
+    his channel stop at `delete_channel`, the channel and his wizard's row standing. Once
+    Discord allows it, Retry deletes the channel, and the job's record deletes the row."""
+    from tests.support.change_queue import retry_job
+
+    league = await _league(tmp_path)
+    held = await _held_after_signup(league)
+    refusal = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    held.delete = AsyncMock(side_effect=refusal)
+
+    await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path, KIMI_LANE)
+    assert job is not None and job["name"] == "delete_channel"
+    assert await _wizard(league) is not None
+
+    held.delete = AsyncMock(return_value=None)
+    await retry_job(league.bot, lane=KIMI_LANE)
+
+    held.delete.assert_awaited_once()
+    assert await _wizard(league) is None
+    assert await stopped_job(league.db_path, KIMI_LANE) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_DELETE_CHANGE)
+async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it(
+    tmp_path,
+):
+    """Kimi's signup channel (6405) is held. Its 24-hour timer fires: the `signup.channel.delete`
+    change is asked as the bot on the lane of his channel, not the league's. Discord refuses the
+    deletion: his lane stops, and the league lane does not."""
+    league = await _league(tmp_path)
+    held = await _held_after_signup(league)
+    held.delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await _timer_callback(league, DELETE_TIMER)(str(SIGNING_UP))
+
+    [change] = await _changes_of(league, DELETE_KIND)
+    assert (_lane(change), change["origin"]) == (KIMI_LANE, "BOT")
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path, KIMI_LANE) is not None
+    assert await stopped_job(league.db_path, "league") is None
+    assert league.channel(KIMI_CHANNEL) is held
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_DELETE_CHANGE)
+async def test_driver_reassign_asks_the_held_channel_s_deletion(tmp_path):
+    """Kimi's old account (105) holds his signup channel (6405); his new account (1105) holds a
+    held channel of its own (6600). `/driver reassign` moves him to the new account, so the old
+    account's channel is to go. Nothing is deleted at once: a `signup.channel.delete` change is
+    asked on the league lane, the command's. When the queue runs channel 6405 is deleted and the
+    old account's wizard row with it; the new account keeps channel 6600."""
+    league = await _league(tmp_path)
+    await _held_after_signup(league)
+    await _held_after_signup(league, NEW_ACCOUNT, NEW_ACCOUNT_CHANNEL)
+
+    await _wizards(league).move_held_channel(str(SIGNING_UP), str(NEW_ACCOUNT), league.guild)
+
+    assert league.order == []
+    [change] = await _changes_of(league, DELETE_KIND)
+    assert _lane(change) == "league"
+
+    await run_queue(league.bot)
+
+    assert league.order == [f"delete {KIMI_CHANNEL}"]
+    assert await _wizard(league) is None
+    theirs = await _wizard(league, NEW_ACCOUNT)
+    assert theirs is not None and int(theirs["signup_channel_id"]) == NEW_ACCOUNT_CHANNEL
