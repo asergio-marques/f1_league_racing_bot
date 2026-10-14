@@ -33,6 +33,7 @@ the database has to be right whether or not Discord can be told.
 from __future__ import annotations
 
 import os
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -46,6 +47,7 @@ from leaguebot.results.services.result_submission_service import (
     amend_round_results,
 )
 from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.review_league import revert_amendment
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 12908
@@ -192,6 +194,17 @@ async def _amend(
         "asked": bot.change_queue.ask,
         "cascade": cascade,
     }
+
+
+def _standings_cascade_stubbed():
+    """The revert's standings cascade stood in for, in either form: the committing one today, and
+    the one taking a connection that #439 6b's lapse and cancel run in their save."""
+    stack = ExitStack()
+    for name in ("cascade_recompute_from_round", "cascade_recompute_from_round_on"):
+        stack.enter_context(patch(
+            f"leaguebot.results.services.standings_service.{name}", new=AsyncMock()
+        ))
+    return stack
 
 
 async def _race_drivers(db_path) -> list[tuple[int, int]]:
@@ -397,15 +410,13 @@ async def test_reverting_leaves_the_flag_matching_the_restored_results(tmp_path)
     Stage one no longer marks them, so there is nothing to take back — and the round is put
     back as it was, so the flag still says what its results say: driver 33 raced nothing.
     """
-    from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
-
     db_path = await _make_db(tmp_path, name="amend_former_reverted")
     await _open_amendment_record(db_path)
     await _amend(db_path, [_race_row(103, 1)])
     assert await _former(db_path, 33) == 0
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+    with _standings_cascade_stubbed():
+        await revert_amendment(db_path, ROUND_ID)
 
     assert await _former(db_path, 33) == 0
 
@@ -417,14 +428,12 @@ async def test_reverting_restores_the_flag_of_a_driver_the_amendment_struck_out(
     amendment puts their result back, so they are a former driver again — whatever the flag
     happened to say while the amendment stood open.
     """
-    from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
-
     db_path = await _make_db(tmp_path, name="amend_former_restored")
     await _open_amendment_record(db_path)
     await _amend(db_path, [_race_row(103, 1)])  # driver 101/profile 31 is struck out
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+    with _standings_cascade_stubbed():
+        await revert_amendment(db_path, ROUND_ID)
 
     assert await _former(db_path, 31) == 1
 
@@ -437,8 +446,6 @@ async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
     lives in `test_former_driver_marking.py`. Driver 33 is not in the reverted round's feature
     race, and is a former driver on the sprint alone.
     """
-    from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
-
     db_path = await _make_db(tmp_path, name="amend_former_kept")
     await _open_amendment_record(db_path)
     await _amend(db_path, [_race_row(103, 1)])
@@ -455,8 +462,8 @@ async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
         )
         await db.commit()
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(db_path, ROUND_ID)
+    with _standings_cascade_stubbed():
+        await revert_amendment(db_path, ROUND_ID)
 
     assert await _former(db_path, 33) == 1
 
