@@ -1,43 +1,59 @@
-"""`commit_wizard` — turning a driver's answers into the league's signup record.
+"""Turning a driver's answers into the league's signup record, as the last answer's turn does.
 
 Issue #208. This is the moment the wizard's draft becomes the thing a manager reviews and a
-season is seeded from, and it was unexecuted.
+season is seeded from.
+
+On the change queue (#439, slice 6b, C83) the last answer is a `signup.answer` turn on the lane
+of the driver's signup channel: it saves the complete draft there and hands `signup.submit` to
+the league, which saves the signup record, moves the driver to Pending Admin Approval and clears
+the draft, then asks back `signup.panel` on the driver's lane, posting the review panel. So each
+test here gives the last answer as the driver does and reads what the queue leaves once it has
+run.
 
 **Every answer must survive the crossing, and an unanswered one must arrive as its empty
-form.** The draft is a loose dictionary and the record is a dataclass with a field per
-question, so the mapping between them is written out by hand — twelve lines, each of which
-could name the wrong key without any other test noticing. `test_every_answer_reaches_the_record`
-drives a full draft through and reads all of it back. Its counterpart,
-`test_an_unanswered_question_arrives_as_its_empty_form`, covers a draft missing every optional
-key: the list-valued fields must arrive as `[]` and the dictionary as `{}`, never as `None`,
-because everything downstream iterates them.
+form.** The draft is a loose dictionary and the record has a field per question, so the mapping
+between them is written out by hand. `test_every_answer_reaches_the_record` drives a full draft
+through and reads all of it back. `test_an_unanswered_question_arrives_as_its_empty_form`
+covers a draft missing every optional key: the list-valued fields must arrive as `[]` and the
+dictionary as `{}`, never as `None`, because everything downstream iterates them.
 
 **The draft is cleared and the wizard parked.** Leaving the answers behind would let a later
-advance commit them a second time, and the league would see two signups for one driver.
+answer commit them a second time, and the league would see two signups for one driver.
 
 **The driver loses write permission at this point**, because the channel now holds an admin
-review panel rather than a question. A driver who could still type would be answering nothing.
+review panel rather than a question.
 
-**A correction is distinguished from a first submission only in the log.** The record and the
-transition are identical either way; what differs is what the league reads in its log, which
-is how a manager tells "this driver has just signed up" from "this driver has fixed the thing
-I asked about". The distinction is drawn from the driver's *prior* state, read before anything
-is written — read afterwards it would always say the same thing.
+**A correction is distinguished from a first submission in the record it amends and in the
+log**, drawn from the driver's state before anything is written.
+
+The league: `setup_league` at Signups with the window open. Kimi (105) is part-way through
+signing up (Pending Signup Completion), his signup channel (6405) standing and recording what it
+is sent; his wizard at the step a test names, holding the answers it names.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+import json
+import os
+from typing import Any
+from unittest.mock import AsyncMock
 
-import discord
 import pytest
 
+from tests.support.change_queue import change_rows, member_interaction, run_queue, typed_message
+from tests.support.review_league import channel
+from tests.support.season_league import (
+    SEASON_ID,
+    SIGNING_UP,
+    SIGNUP_CHANNEL_BASE,
+    SeasonLeague,
+    setup_league,
+    signing_up,
+)
 
-SERVER_ID = 1
-DRIVER_ID = "7"
-CHANNEL_ID = 99
+KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
+INACTIVITY_TIMER = "signup_inactivity"
 
-#: A complete set of answers, as the wizard would leave them.
+#: Every answer but the notes, as the wizard leaves them before its last question.
 FULL_DRAFT = {
     "discord_username": "lewis",
     "server_display_name": "Lewis Hamilton",
@@ -49,86 +65,135 @@ FULL_DRAFT = {
     "preferred_teams": ["Alpha", "Beta"],
     "preferred_teammate": "George",
     "lap_times": {"1": "1:23.456"},
-    "notes": "See you there",
 }
 
+NO_SUBMIT_TURN = (
+    "#439: the last signup answer commits the signup and posts the review panel at once off the "
+    "queue, with no signup.answer turn handing signup.submit to the league and no signup.panel "
+    "asked back on the driver's lane"
+)
 
-def _wizard(draft: dict | None = None):
-    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
 
-    return SignupWizardRecord(
-        id=1,
-        discord_user_id=DRIVER_ID,
-        wizard_state=WizardState.COLLECTING_NOTES,
-        signup_channel_id=CHANNEL_ID,
-        config_snapshot=ConfigSnapshot(
-            nationality_required=True,
-            time_type="TIME_TRIAL",
-            time_image_required=False,
-            selected_track_ids=["1"],
-            slots=[],
-        ),
-        draft_answers=dict(FULL_DRAFT if draft is None else draft),
-        current_lap_track_index=1,
-        last_activity_at=None,
+async def _league(tmp_path: Any, *, state: str = "COLLECTING_NOTES",
+                  draft: dict[str, Any] | None = None,
+                  driver_state: str = "PENDING_SIGNUP_COMPLETION") -> SeasonLeague:
+    """`setup_league` at Signups, the window open; Kimi at *driver_state*, his wizard at *state*
+    holding *draft* (`FULL_DRAFT` unless given), one track to time, saved in a save of the
+    test's own; his signup channel standing. Today's wizard handlers off the queue are stand-ins
+    that do nothing, so that only what the answer asks of the queue shows."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.signup.models.signup_module import (
+        ConfigSnapshot,
+        SignupWizardRecord,
+        WizardState,
+    )
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    os.makedirs(str(tmp_path), exist_ok=True)
+    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    await signing_up(league, SIGNING_UP, state=driver_state)
+    signups = SignupModuleService(league.db_path)
+    async with get_connection(league.db_path) as db:
+        await signups.save_wizard_on(db, SignupWizardRecord(
+            id=-1,
+            discord_user_id=str(SIGNING_UP),
+            wizard_state=WizardState(state),
+            signup_channel_id=KIMI_CHANNEL,
+            config_snapshot=ConfigSnapshot(
+                nationality_required=True,
+                time_type="TIME_TRIAL",
+                time_image_required=False,
+                selected_track_ids=["1"],
+                slots=[],
+                team_names=["Alpha", "Beta"],
+            ),
+            draft_answers=dict(FULL_DRAFT if draft is None else draft),
+            current_lap_track_index=1,
+            last_activity_at=league.clock.now.isoformat(),
+        ))
+        await db.commit()
+    made = league._recording(channel(KIMI_CHANNEL, league.events))
+    made.guild = league.guild
+    made.posted = []
+    made.set_permissions = AsyncMock()
+    league.channels[KIMI_CHANNEL] = made
+    wizards = league.bot.wizard_service
+    wizards.get_wizard_by_channel = AsyncMock(side_effect=signups.get_wizard_by_channel)
+    for handler in ("handle_message", "handle_platform_button", "handle_no_notes"):
+        setattr(wizards, handler, AsyncMock(return_value=None))
+    return league
+
+
+async def _correcting(tmp_path: Any, state: str, draft: dict[str, Any]) -> SeasonLeague:
+    """A league manager asked Kimi to correct an answer: he is Pending Driver Correction, his
+    signup already saved (platform Steam, ID kimi7), his wizard at *state* holding *draft*, which
+    marks it as a correction."""
+    league = await _league(tmp_path, state=state, draft=dict(draft, _is_correction=True),
+                           driver_state="PENDING_DRIVER_CORRECTION")
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, nationality, platform, "
+        "platform_id, driver_type, notes, signup_channel_id) "
+        "VALUES (?, ?, 'British', 'Steam', 'kimi7', 'Full-Time Driver', NULL, ?)",
+        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
+    )
+    return league
+
+
+async def _type(league: SeasonLeague, content: str) -> None:
+    """Kimi types *content* in his signup channel, and the signup cog hears it."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+
+    kimi = league._member(SIGNING_UP)
+    kimi.bot = False
+    message = typed_message(league.channel(KIMI_CHANNEL), kimi, content,
+                            created_at=league.clock.now)
+    message.guild = league.guild
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await cog.on_message(message)
+
+
+async def _press(league: SeasonLeague, view_class: str, label: str) -> None:
+    """Kimi presses *label* on the step's buttons in his channel, the view handed his account
+    and the change queue when it is built (A23)."""
+    from leaguebot.signup.cogs import signup_cog
+
+    press = member_interaction(league.bot, user=league._member(SIGNING_UP))
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    view = getattr(signup_cog, view_class)(str(SIGNING_UP), league.bot.change_queue)
+    [button] = [child for child in view.children if getattr(child, "label", None) == label]
+    await button.callback(press)
+
+
+async def _record(league: SeasonLeague) -> Any:
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    return await SignupModuleService(league.db_path).get_record(str(SIGNING_UP))
+
+
+async def _records(league: SeasonLeague) -> list[dict[str, Any]]:
+    return await league.rows(
+        "SELECT id FROM signup_records WHERE discord_user_id = ? ORDER BY id", str(SIGNING_UP)
     )
 
 
-@pytest.fixture
-def committer():
-    from leaguebot.signup.services.wizard_service import WizardService
-
-    svc = WizardService.__new__(WizardService)
-    saved: list = []
-
-    svc._get_track_name_map = AsyncMock(return_value={"1": "Silverstone"})  # type: ignore[method-assign]
-    svc._format_review_panel = MagicMock(return_value="panel")  # type: ignore[method-assign]
-    svc._revoke_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._grant_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
-
-    async def _save_record(record):
-        saved.append(record)
-
-    signup_svc = MagicMock()
-    signup_svc.get_wizard = AsyncMock(return_value=_wizard())
-    signup_svc.save_wizard = AsyncMock(return_value=None)
-    signup_svc.save_record = AsyncMock(side_effect=_save_record)
-    signup_svc.get_record = AsyncMock(return_value=SimpleNamespace(id=9))
-
-    driver_service = MagicMock()
-    driver_service.get_profile = AsyncMock(return_value=None)
-    driver_service.transition = AsyncMock(return_value=None)
-
-    bot = MagicMock()
-    bot.signup_module_service = signup_svc
-    bot.driver_service = driver_service
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    svc._bot = bot
-
-    svc._output_router = MagicMock()
-    svc._output_router.post_log = AsyncMock(return_value=None)
-
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.send = AsyncMock(return_value=None)
-    member = MagicMock()
-    member.display_name = "Lewis Hamilton"
-    guild = MagicMock(spec=discord.Guild)
-    guild.get_channel = MagicMock(return_value=channel)
-    guild.get_member = MagicMock(return_value=member)
-
-    return SimpleNamespace(
-        svc=svc,
-        saved=saved,
-        guild=guild,
-        channel=channel,
-        signup_svc=signup_svc,
-        driver_service=driver_service,
+async def _driver_state(league: SeasonLeague) -> str:
+    [row] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(SIGNING_UP)
     )
+    return str(row["current_state"])
 
 
-async def _commit(ctx):
-    await ctx.svc.commit_wizard(DRIVER_ID, ctx.guild)
+def _panels(league: SeasonLeague) -> list[Any]:
+    """The review panels posted in Kimi's channel."""
+    return [call for call in league.channel(KIMI_CHANNEL).send.call_args_list
+            if type(call.kwargs.get("view")).__name__ == "AdminReviewView"]
+
+
+def _signup_lines(league: SeasonLeague) -> list[str]:
+    return [line for line in league.log().splitlines() if "| Signup |" in line]
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +201,17 @@ async def _commit(ctx):
 # ---------------------------------------------------------------------------
 
 
-async def test_every_answer_reaches_the_record(committer):
-    """Twelve hand-written field assignments, any of which could name the wrong key."""
-    await _commit(committer)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_every_answer_reaches_the_record(tmp_path):
+    """Kimi has answered everything but his notes. He types "See you there"; once the queue runs
+    his signup record holds every answer, his notes and his signup channel."""
+    league = await _league(tmp_path)
 
-    record = committer.saved[0]
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    record = await _record(league)
+    assert record is not None
     assert record.discord_username == "lewis"
     assert record.server_display_name == "Lewis Hamilton"
     assert record.nationality == "British"
@@ -152,18 +223,21 @@ async def test_every_answer_reaches_the_record(committer):
     assert record.preferred_teammate == "George"
     assert record.lap_times == {"1": "1:23.456"}
     assert record.notes == "See you there"
-    assert record.signup_channel_id == CHANNEL_ID
+    assert record.signup_channel_id == KIMI_CHANNEL
 
 
-async def test_an_unanswered_question_arrives_as_its_empty_form(committer):
-    """A league requiring no nationality, no tracks and no teams leaves those keys absent.
-    The collections must arrive empty rather than `None` — everything downstream iterates
-    them, and a `None` would raise where it is read rather than where it was written."""
-    committer.signup_svc.get_wizard = AsyncMock(return_value=_wizard({}))
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_an_unanswered_question_arrives_as_its_empty_form(tmp_path):
+    """Kimi's wizard holds no answer at all when he types "no notes" at the last question. Once
+    the queue runs his record's collections arrive empty rather than `None` — everything
+    downstream iterates them — and his nationality and notes are unset."""
+    league = await _league(tmp_path, draft={})
 
-    await _commit(committer)
+    await _type(league, "no notes")
+    await run_queue(league.bot)
 
-    record = committer.saved[0]
+    record = await _record(league)
+    assert record is not None
     assert record.availability_slot_ids == []
     assert record.preferred_teams == []
     assert record.lap_times == {}
@@ -171,24 +245,32 @@ async def test_an_unanswered_question_arrives_as_its_empty_form(committer):
     assert record.notes is None
 
 
-async def test_a_committed_signup_awaits_admin_approval(committer):
-    from leaguebot.core.models.driver_profile import DriverState
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_committed_signup_awaits_admin_approval(tmp_path):
+    """Kimi types his notes; once the queue runs he is Pending Admin Approval."""
+    league = await _league(tmp_path)
 
-    await _commit(committer)
+    await _type(league, "See you there")
+    await run_queue(league.bot)
 
-    committer.driver_service.transition.assert_awaited_once()
-    assert committer.driver_service.transition.await_args.args[1] == (
-        DriverState.PENDING_ADMIN_APPROVAL
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_driver_with_no_wizard_commits_nothing(tmp_path):
+    """Kimi types his notes, and before the turn comes his wizard is gone. Once the queue runs
+    no signup is saved and he is still Pending Signup Completion: the turn is no longer due."""
+    league = await _league(tmp_path)
+
+    await _type(league, "See you there")
+    await league.write(
+        "DELETE FROM signup_wizard_records WHERE discord_user_id = ?", str(SIGNING_UP)
     )
+    await run_queue(league.bot)
 
-
-async def test_a_driver_with_no_wizard_commits_nothing(committer):
-    committer.signup_svc.get_wizard = AsyncMock(return_value=None)
-
-    await _commit(committer)
-
-    assert committer.saved == []
-    committer.driver_service.transition.assert_not_awaited()
+    assert [row["kind"] for row in await change_rows(league.db_path)] == ["signup.answer"]
+    assert await _records(league) == []
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
 
 
 # ---------------------------------------------------------------------------
@@ -196,41 +278,61 @@ async def test_a_driver_with_no_wizard_commits_nothing(committer):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_wizard_is_parked_and_its_draft_cleared(committer):
-    """Left populated, a later advance would commit the same answers again and the league
-    would see two signups for one driver."""
-    from leaguebot.signup.models.signup_module import WizardState
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_wizard_is_parked_and_its_draft_cleared(tmp_path):
+    """Left populated, a later answer would commit the same answers again and the league would
+    see two signups for one driver. Kimi types his notes; once the queue runs his wizard is
+    Unengaged and holds no answers."""
+    league = await _league(tmp_path)
 
-    wizard = _wizard()
-    committer.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+    await _type(league, "See you there")
+    await run_queue(league.bot)
 
-    await _commit(committer)
-
-    assert wizard.wizard_state == WizardState.UNENGAGED
-    assert wizard.draft_answers == {}
-    committer.signup_svc.save_wizard.assert_awaited_once()
-
-
-async def test_the_record_is_saved_before_the_draft_is_cleared(committer):
-    """The record is built from the draft, so clearing first would save an empty one."""
-    await _commit(committer)
-
-    assert committer.saved[0].platform == "Steam"
+    [wizard] = await league.rows(
+        "SELECT wizard_state, draft_answers_json FROM signup_wizard_records "
+        "WHERE discord_user_id = ?", str(SIGNING_UP)
+    )
+    assert wizard["wizard_state"] == "UNENGAGED"
+    assert json.loads(wizard["draft_answers_json"] or "{}") == {}
 
 
-async def test_the_driver_loses_write_permission(committer):
-    """The channel now holds a review panel rather than a question; a driver who could
-    still type would be answering nothing."""
-    await _commit(committer)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_record_is_saved_before_the_draft_is_cleared(tmp_path):
+    """The record is built from the draft, so clearing first would save an empty one. Once the
+    queue runs Kimi's record holds his platform."""
+    league = await _league(tmp_path)
 
-    committer.svc._revoke_driver_write.assert_awaited_once()
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    record = await _record(league)
+    assert record is not None and record.platform == "Steam"
 
 
-async def test_the_inactivity_timeout_is_cancelled(committer):
-    """The driver is waiting on a manager now, and cannot be timed out for it."""
-    await _commit(committer)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_driver_loses_write_permission(tmp_path):
+    """The channel now holds a review panel rather than a question. Once the queue runs Kimi's
+    typing in his channel is revoked."""
+    league = await _league(tmp_path)
 
-    committer.svc._cancel_inactivity_job.assert_awaited_once()
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert any(call.kwargs.get("send_messages") is False
+               for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_inactivity_timeout_is_cancelled(tmp_path):
+    """Kimi is waiting on a manager now, and cannot be timed out for it. Once the queue runs his
+    24-hour inactivity timer is disarmed."""
+    league = await _league(tmp_path)
+
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert any(call.args[:2] == (INACTIVITY_TIMER, str(SIGNING_UP))
+               for call in league.bot.scheduler_service.disarm.call_args_list)
 
 
 # ---------------------------------------------------------------------------
@@ -238,33 +340,46 @@ async def test_the_inactivity_timeout_is_cancelled(committer):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_review_panel_is_posted_to_the_signup_channel(committer):
-    await _commit(committer)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_review_panel_is_posted_to_the_signup_channel(tmp_path):
+    """Once the queue runs one review panel, with its buttons, is posted in Kimi's channel."""
+    league = await _league(tmp_path)
 
-    committer.channel.send.assert_awaited_once()
-    assert committer.channel.send.await_args.args[0] == "panel"
-    assert committer.channel.send.await_args.kwargs["view"] is not None
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert len(_panels(league)) == 1
 
 
-async def test_the_review_panel_notifies_no_group(committer):
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_review_panel_notifies_no_group(tmp_path):
     """It quotes the driver's own answers, and the bot's permission to mention everybody must
-    not carry a group mention in one of them (#362)."""
-    await _commit(committer)
+    not carry a group mention in one of them (#362). The panel posted allows users alone."""
+    league = await _league(tmp_path)
 
-    allowed = committer.channel.send.await_args.kwargs["allowed_mentions"]
-    assert allowed.everyone is False
-    assert allowed.roles is False
-    assert allowed.users is True
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    [panel] = _panels(league)
+    allowed = panel.kwargs["allowed_mentions"]
+    assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
 
 
-async def test_a_missing_channel_still_commits_the_record(committer):
-    """A channel deleted by hand must not cost the driver their signup."""
-    committer.guild.get_channel = MagicMock(return_value=None)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_missing_channel_still_commits_the_record(tmp_path):
+    """A channel deleted by hand must not cost the driver their signup. Kimi types his notes,
+    and his channel is deleted before the turn's panel is posted. Once the queue runs his
+    signup is saved, and no panel is posted."""
+    league = await _league(tmp_path)
 
-    await _commit(committer)
+    await _type(league, "See you there")
+    gone = league.channels.pop(KIMI_CHANNEL)
+    await run_queue(league.bot)
 
-    assert committer.saved[0].platform == "Steam"
-    committer.channel.send.assert_not_awaited()
+    record = await _record(league)
+    assert record is not None and record.platform == "Steam"
+    assert not any(type(call.kwargs.get("view")).__name__ == "AdminReviewView"
+                   for call in gone.send.call_args_list)
 
 
 # ---------------------------------------------------------------------------
@@ -272,122 +387,122 @@ async def test_a_missing_channel_still_commits_the_record(committer):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_first_submission_is_logged_as_submitted(committer):
-    await _commit(committer)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_first_submission_is_logged_as_submitted(tmp_path):
+    """Kimi types his notes; once the queue runs the log channel holds a "Submitted" line."""
+    league = await _league(tmp_path)
 
-    assert "Submitted" in committer.svc._output_router.post_log.await_args.args[0]
+    await _type(league, "See you there")
+    await run_queue(league.bot)
+
+    assert any(line.endswith("| Signup | Submitted") for line in _signup_lines(league))
 
 
-async def test_a_correction_is_logged_as_a_correction(committer):
-    """How a manager tells "this driver has just signed up" from "this driver has fixed
-    the thing I asked about". Lewis was asked to correct his nationality and typed "German": a
-    correction is committed by `_commit_correction`, never `commit_wizard`, so it writes the
-    one line, naming what was re-collected by its review button's label, as the "Correction
-    requested" line names it (owner, 2026-10-01, Gate 3)."""
-    from leaguebot.signup.models.signup_module import WizardState
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_correction_is_logged_as_a_correction(tmp_path):
+    """How a manager tells "this driver has just signed up" from "this driver has fixed the
+    thing I asked about". Kimi was asked to correct his nationality and types "German". Once the
+    queue runs the signup lines are one, "Correction submitted", naming what was re-collected by
+    its review button's label (owner, 2026-10-01, Gate 3)."""
+    league = await _correcting(tmp_path, "COLLECTING_NATIONALITY", FULL_DRAFT)
 
-    wizard = _wizard({"nationality": "German"})
-    wizard.wizard_state = WizardState.COLLECTING_NATIONALITY
+    await _type(league, "German")
+    await run_queue(league.bot)
 
-    await committer.svc._commit_correction(wizard, committer.guild)
-
-    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    lines = _signup_lines(league)
     assert len(lines) == 1, lines
-    assert lines[0] == (
-        f"Lewis Hamilton (<@{DRIVER_ID}>) | Signup | Correction submitted: Nationality"
-    ), lines[0]
+    assert lines[0].endswith("| Signup | Correction submitted: Nationality"), lines[0]
 
 
-async def test_no_notes_on_the_first_pass_writes_only_submitted(committer):
-    """Lewis reaches the notes step on his first pass and presses No Notes. That ends the
-    wizard, and the "Submitted" line is the press's one line: No Notes writes no step line of
-    its own (one line per action)."""
-    await committer.svc.handle_no_notes(DRIVER_ID, committer.guild)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_no_notes_on_the_first_pass_writes_only_submitted(tmp_path):
+    """Kimi reaches the notes step on his first pass and presses No Notes. That ends the wizard,
+    and the "Submitted" line is the press's one line: No Notes writes no step line of its own."""
+    league = await _league(tmp_path)
 
-    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    await _press(league, "NoNotesButtonView", "No Notes")
+    await run_queue(league.bot)
+
+    lines = _signup_lines(league)
     assert len(lines) == 1, lines
     assert lines[0].endswith("| Signup | Submitted"), lines[0]
 
 
-async def test_a_button_answer_that_ends_a_correction_writes_only_correction_submitted(committer):
-    """Lewis was asked to correct his platform and presses Steam. That press ends the
-    correction: it writes one line, "Correction submitted", and no "Platform: Steam" beside it."""
-    from leaguebot.signup.models.signup_module import WizardState
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_button_answer_that_ends_a_correction_writes_only_correction_submitted(tmp_path):
+    """Kimi was asked to correct his platform and presses EA. That press ends the correction:
+    once the queue runs it has written one line, "Correction submitted", and no "Platform: EA"
+    beside it."""
+    league = await _correcting(tmp_path, "COLLECTING_PLATFORM", FULL_DRAFT)
 
-    wizard = _wizard({"_is_correction": True})
-    wizard.wizard_state = WizardState.COLLECTING_PLATFORM
-    committer.signup_svc.get_wizard = AsyncMock(return_value=wizard)
-    committer.signup_svc.get_record = AsyncMock(return_value=SimpleNamespace(id=9))
+    await _press(league, "PlatformButtonView", "EA")
+    await run_queue(league.bot)
 
-    await committer.svc.handle_platform_button(DRIVER_ID, "Steam", committer.guild)
-
-    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    lines = _signup_lines(league)
     assert len(lines) == 1, lines
     assert "| Signup | Correction submitted" in lines[0], lines[0]
-    assert "Platform: Steam" not in lines[0]
+    assert "Platform: EA" not in lines[0]
 
 
-async def test_a_correction_amends_the_signup_it_was_asked_of(committer):
-    """Issue #220: signups are kept, never overwritten, so a correction must name the record
-    it amends or it would be stored as a second signup."""
-    from leaguebot.core.models.driver_profile import DriverState
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_correction_amends_the_signup_it_was_asked_of(tmp_path):
+    """Issue #220: signups are kept, never overwritten, so a correction must amend the record it
+    was asked of, not be stored as a second signup. Kimi was asked to correct his platform and
+    presses EA; once the queue runs his one signup record holds EA, and the fresh review panel
+    posted allows users alone."""
+    league = await _correcting(tmp_path, "COLLECTING_PLATFORM", FULL_DRAFT)
+    before = await _records(league)
 
-    committer.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
-    )
+    await _press(league, "PlatformButtonView", "EA")
+    await run_queue(league.bot)
 
-    await _commit(committer)
-
-    assert committer.saved[0].id == 9
-
-
-async def test_a_first_submission_is_a_new_signup(committer):
-    await _commit(committer)
-
-    assert committer.saved[0].id == -1
-
-
-async def test_the_prior_state_is_read_before_anything_is_written(committer):
-    """Read after the transition it would always say `PENDING_ADMIN_APPROVAL`, and a
-    correction would be saved as a second signup. The log line no longer turns on it: a
-    correction writes its line from `_commit_correction`
-    (`test_a_correction_is_logged_as_a_correction`)."""
-    from leaguebot.core.models.driver_profile import DriverState
-
-    committer.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
-    )
-
-    await _commit(committer)
-
-    committer.driver_service.get_profile.assert_awaited_once()
-    assert committer.saved[0].id == 9
+    assert await _records(league) == before
+    record = await _record(league)
+    assert record is not None and record.platform == "EA"
+    [panel] = _panels(league)
+    allowed = panel.kwargs["allowed_mentions"]
+    assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
 
 
-async def test_a_driver_who_has_left_is_logged_by_id(committer):
-    """`get_member` gives nothing for someone who has left, and the log must still name
-    somebody: by mention alone, as every line names a member no longer on the server (core
-    specification, "The record of what changed"), never by the raw id beside it."""
-    committer.guild.get_member = MagicMock(return_value=None)
-    committer.svc._bot.get_guild = MagicMock(return_value=committer.guild)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_first_submission_is_a_new_signup(tmp_path):
+    """Kimi has no signup saved yet; once his notes' turn has run he has exactly one."""
+    league = await _league(tmp_path)
+    assert await _records(league) == []
 
-    await _commit(committer)
+    await _type(league, "See you there")
+    await run_queue(league.bot)
 
-    line = committer.svc._output_router.post_log.await_args.args[0]
-    assert line.splitlines()[0] == f"<@{DRIVER_ID}> | Signup | Submitted"
+    assert len(await _records(league)) == 1
 
 
-def test_every_send_of_the_review_panel_restricts_mentions():
-    """Three paths post the panel: the first submission, the correction lapsing and the
-    correction committed. Each quotes the driver's answers, so each withholds a group
-    notification; one that forgot would reopen the ping #362 closed."""
-    import inspect
-    import re
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_the_prior_state_is_read_before_anything_is_written(tmp_path):
+    """Read after the move to Pending Admin Approval, Kimi's state would always look like a first
+    submission, and his correction would be saved as a second signup. Kimi, Pending Driver
+    Correction, types his corrected nationality; once the queue runs he still has one signup,
+    now holding it, and is Pending Admin Approval."""
+    league = await _correcting(tmp_path, "COLLECTING_NATIONALITY", FULL_DRAFT)
 
-    from leaguebot.signup.services import wizard_service
+    await _type(league, "German")
+    await run_queue(league.bot)
 
-    source = inspect.getsource(wizard_service)
-    sends = re.findall(r"view=AdminReviewView\([^)]*\),[^\n]*\n\s*([a-z_]+)=", source)
-    assert len(sends) == 3
-    assert set(sends) == {"allowed_mentions"}
+    assert len(await _records(league)) == 1
+    record = await _record(league)
+    assert record is not None and record.nationality == "German"
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_driver_who_has_left_is_logged_by_id(tmp_path):
+    """The log must still name somebody once a driver has left: by mention alone, as every line
+    names a member no longer on the server (core specification, "The record of what changed"),
+    never by the raw id beside it. Kimi types his notes and leaves the server before the turn
+    runs; once it has, the "Submitted" line names him by mention."""
+    league = await _league(tmp_path)
+
+    await _type(league, "See you there")
+    league.absent.add(SIGNING_UP)
+    await run_queue(league.bot)
+
+    assert f"<@{SIGNING_UP}> | Signup | Submitted" in _signup_lines(league)
