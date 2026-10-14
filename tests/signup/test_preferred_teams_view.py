@@ -81,8 +81,10 @@ NO_WITHDRAW_CHANGE = (
 
 
 async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
-                     state: str = TEAM_STEP) -> SeasonLeague:
-    """`setup_league` at Signups, the window open; Kimi part-way through signing up, his wizard
+                     state: str = TEAM_STEP,
+                     driver_state: str = "PENDING_SIGNUP_COMPLETION") -> SeasonLeague:
+    """`setup_league` at Signups, the window open; Kimi at *driver_state* (part-way through
+    signing up unless a test says otherwise), his wizard
     at *state* (the team step unless a test says otherwise) offering Ferrari, Mercedes and
     McLaren and holding *picks*; his signup channel standing and recording what it is sent.
     Today's wizard handler off the queue is a stand-in that does nothing, so that only what the
@@ -101,7 +103,7 @@ async def _team_step(tmp_path: Any, *, picks: list[str] | None = None,
 
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
-    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await signing_up(league, SIGNING_UP, state=driver_state)
     signups = SignupModuleService(league.db_path)
     wizard = SignupWizardRecord(
         id=-1,

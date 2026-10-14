@@ -30,14 +30,28 @@ building one passes on CI and raises on the Pi.
 The callbacks are reached through the **class** rather than the instance. `@discord.ui.button`
 leaves the plain function on the class and swaps in a `Button` object on the instance, so
 `view.steam` is the button and `type(view).steam` is the code under test.
+
+**On the change queue (#439, slice 6b, C76, C82).** Each view is handed the driver's account and
+the change queue when it is built (A23). A press that passes the guard asks `signup.answer` of the
+queue (Cancel Signup asks `signup.end`), acknowledged privately and the acknowledgement updated
+with its outcome; the answer is saved, and judged (a step already answered, a signup already
+ended), when the queue reaches it. The guard's refusals stay at the press and are tested here on
+doubles; what a press does once it passes is tested through a real queue, on the league of
+`tests/signup/test_preferred_teams_view.py`: Kimi (105) part-way through signing up, his signup
+channel (6405) standing.
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from tests.signup.test_preferred_teams_view import _answered, _changes, _driver_state, _team_step
+from tests.signup.test_wizard_advance import KIMI_LANE, _state
+from tests.support.change_queue import acknowledgement, member_interaction, run_queue
+from tests.support.season_league import SIGNING_UP, SeasonLeague
 
 SERVER_ID = 1
 DRIVER_ID = "7"
@@ -124,27 +138,6 @@ def _assert_refusal_recorded(interaction, button: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "button,platform",
-    [("steam", "Steam"), ("ea", "EA"), ("xbox", "Xbox"), ("playstation", "PlayStation")],
-)
-async def test_each_platform_button_reports_its_own_platform(button, platform):
-    """Four near-identical callbacks; one passing the wrong string would record a driver
-    on a platform they never chose."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
-
-    view = PlatformButtonView(DRIVER_ID, MagicMock())
-    interaction = _interaction()
-
-    await getattr(type(view), button)(view, interaction, MagicMock())
-
-    interaction.client.wizard_service.handle_platform_button.assert_awaited_once()
-    assert (
-        interaction.client.wizard_service.handle_platform_button.await_args.args[1]
-        == platform
-    )
-
-
 async def test_another_member_cannot_answer_a_driver_s_platform_question():
     """The channel is private to its driver, but a league manager can see it."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -157,18 +150,6 @@ async def test_another_member_cannot_answer_a_driver_s_platform_question():
     assert _refused(interaction)
     _assert_refusal_recorded(interaction, "Steam")
     interaction.client.wizard_service.handle_platform_button.assert_not_awaited()
-
-
-async def test_cancelling_from_the_platform_step_withdraws_the_signup():
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
-
-    view = PlatformButtonView(DRIVER_ID, MagicMock())
-    interaction = _interaction()
-
-    await type(view).cancel(view, interaction, MagicMock())
-
-    interaction.client.wizard_service.withdraw.assert_awaited_once()
-    assert "withdrawn" in interaction.followup.send.await_args.args[0]
 
 
 async def test_another_member_cannot_cancel_a_driver_s_signup():
@@ -188,20 +169,6 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
 # ---------------------------------------------------------------------------
 # Restart recovery
 # ---------------------------------------------------------------------------
-
-
-async def test_a_view_rebuilt_after_a_restart_finds_its_driver():
-    """`bot.add_view` rebuilds the view with no stored driver — the process that knew has
-    gone — so the owner is found by looking the wizard up by channel."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
-
-    view = PlatformButtonView()
-    interaction = _interaction()
-
-    await type(view).steam(view, interaction, MagicMock())
-
-    interaction.client.wizard_service.get_wizard_by_channel.assert_awaited_once()
-    interaction.client.wizard_service.handle_platform_button.assert_awaited_once()
 
 
 async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
@@ -237,25 +204,6 @@ async def test_a_rebuilt_view_still_refuses_the_wrong_member():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "button,driver_type",
-    [("full_time", "Full-Time Driver"), ("reserve", "Reserve Driver")],
-)
-async def test_each_driver_type_button_reports_its_own_type(button, driver_type):
-    """The answer that decides whether the driver is asked about teams at all."""
-    from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
-
-    view = DriverTypeButtonView(DRIVER_ID, MagicMock())
-    interaction = _interaction()
-
-    await getattr(type(view), button)(view, interaction, MagicMock())
-
-    assert (
-        interaction.client.wizard_service.handle_driver_type_button.await_args.args[1]
-        == driver_type
-    )
-
-
 async def test_another_member_cannot_choose_a_driver_s_type():
     from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
 
@@ -267,17 +215,6 @@ async def test_another_member_cannot_choose_a_driver_s_type():
     assert _refused(interaction)
     _assert_refusal_recorded(interaction, "Full-Time Driver")
     interaction.client.wizard_service.handle_driver_type_button.assert_not_awaited()
-
-
-async def test_cancelling_from_the_driver_type_step_withdraws_the_signup():
-    from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
-
-    view = DriverTypeButtonView(DRIVER_ID, MagicMock())
-    interaction = _interaction()
-
-    await type(view).cancel(view, interaction, MagicMock())
-
-    interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
 async def test_another_member_cannot_cancel_from_the_driver_type_step():
@@ -335,21 +272,6 @@ async def test_no_preference_is_always_offered():
     assert any("No Preference" in label for label in labels)
 
 
-async def test_no_preference_finishes_the_team_step():
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
-
-    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
-    interaction = _interaction()
-
-    await view._no_preference_callback(interaction)
-
-    interaction.client.wizard_service.handle_preferred_teams_button.assert_awaited_once()
-    assert (
-        interaction.client.wizard_service.handle_preferred_teams_button.await_args.args[1]
-        is None
-    )
-
-
 async def test_another_member_cannot_finish_a_driver_s_team_step():
     from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
 
@@ -361,17 +283,6 @@ async def test_another_member_cannot_finish_a_driver_s_team_step():
     assert _refused(interaction)
     _assert_refusal_recorded(interaction, "No Preference")
     interaction.client.wizard_service.handle_preferred_teams_button.assert_not_awaited()
-
-
-async def test_cancelling_from_the_team_step_withdraws_the_signup():
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
-
-    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
-    interaction = _interaction()
-
-    await view._cancel_callback(interaction)
-
-    interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
 async def test_another_member_cannot_cancel_from_the_team_step():
@@ -392,17 +303,6 @@ async def test_another_member_cannot_cancel_from_the_team_step():
 # ---------------------------------------------------------------------------
 
 
-async def test_no_preference_answers_the_teammate_question():
-    from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
-
-    view = NoPreferenceTeammateView(DRIVER_ID, MagicMock())
-    interaction = _interaction()
-
-    await type(view).no_preference(view, interaction, MagicMock())
-
-    interaction.client.wizard_service.handle_no_preference_teammate.assert_awaited_once()
-
-
 async def test_another_member_cannot_answer_the_teammate_question():
     from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
 
@@ -414,17 +314,6 @@ async def test_another_member_cannot_answer_the_teammate_question():
     assert _refused(interaction)
     _assert_refusal_recorded(interaction, "No Preference")
     interaction.client.wizard_service.handle_no_preference_teammate.assert_not_awaited()
-
-
-async def test_cancelling_from_the_teammate_step_withdraws_the_signup():
-    from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
-
-    view = NoPreferenceTeammateView(DRIVER_ID, MagicMock())
-    interaction = _interaction()
-
-    await type(view).cancel(view, interaction, MagicMock())
-
-    interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
 async def test_another_member_cannot_cancel_from_the_teammate_step():
@@ -473,107 +362,223 @@ async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_a
 
 
 # ---------------------------------------------------------------------------
-# A step already answered
+# What a press does once it passes the guard, on the change queue
 # ---------------------------------------------------------------------------
 
-
-async def _press_step(view_name: str, button: str, interaction) -> None:
-    from leaguebot.signup.cogs import signup_cog
-
-    if view_name == "PreferredTeamsButtonView":
-        view = signup_cog.PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Ferrari"])
-        await getattr(view, button)(interaction)
-        return
-    view = getattr(signup_cog, view_name)(DRIVER_ID, MagicMock())
-    await getattr(type(view), button)(view, interaction, MagicMock())
-
-
-@pytest.mark.parametrize(
-    "view_name, button, handler, label",
-    [
-        ("PlatformButtonView", "steam", "handle_platform_button", "Steam"),
-        ("DriverTypeButtonView", "full_time", "handle_driver_type_button", "Full-Time Driver"),
-        ("PreferredTeamsButtonView", "_no_preference_callback", "handle_preferred_teams_button",
-         "No Preference"),
-        ("NoPreferenceTeammateView", "no_preference", "handle_no_preference_teammate",
-         "No Preference"),
-        ("NoNotesButtonView", "no_notes_button", "handle_no_notes", "No Notes"),
-    ],
+NO_BUTTON_TURN = (
+    "#439: the wizard's buttons are not handed the change queue, and a button answer is saved "
+    "at once off the queue by the wizard service, with no signup.answer change"
 )
-async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
-    view_name, button, handler, label
-):
-    """The driver scrolls up and presses a button from a step they have already answered. The
-    step handler changes nothing and says why; the view tells the driver so, seen by them alone,
-    and records the refusal: one line naming the button, the driver's wizard it sits on, the
-    driver, and the reason. Until now the press was answered with nothing at all."""
-    interaction = _interaction()
-    setattr(interaction.client.wizard_service, handler, AsyncMock(return_value=_ALREADY_ANSWERED))
+NO_CANCEL_CHANGE = (
+    "#439: Cancel Signup withdraws the signup at once off the queue, with no signup.end change"
+)
 
-    await _press_step(view_name, button, interaction)
+#: Every view that offers Cancel Signup, and the button on it.
+CANCELS = [
+    ("WithdrawButtonView", "withdraw_button"),
+    ("NoNotesButtonView", "cancel_button"),
+    ("PlatformButtonView", "cancel"),
+    ("DriverTypeButtonView", "cancel"),
+    ("PreferredTeamsButtonView", "_cancel_callback"),
+    ("NoPreferenceTeammateView", "cancel"),
+]
 
-    getattr(interaction.client.wizard_service, handler).assert_awaited_once()
-    replies = [
-        (str(call.args[0]), call.kwargs.get("ephemeral"))
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    ]
-    assert any(_ALREADY_ANSWERED in text and ephemeral is True for text, ephemeral in replies), (
-        replies
-    )
-    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
-    assert len(lines) == 1, lines
-    line = lines[0]
-    assert line.startswith(f"⛔ the “{label}” button"), line
-    assert "signup wizard" in line
-    assert "refused for Driver (<@7>)" in line
-    assert _ALREADY_ANSWERED in line
-
-
-# ---------------------------------------------------------------------------
-# Cancel Signup after the signup ended
-# ---------------------------------------------------------------------------
-
-#: The reason `withdraw` gives where the signup has already ended (S5-A6).
+#: The reason a press of Cancel Signup is refused where the signup has already ended (S5-A6).
 _ALREADY_ENDED = "This signup has already ended. Nothing was changed."
 
 
+async def _kimi_at(tmp_path: Any, state: str, **kwargs: Any) -> SeasonLeague:
+    """Kimi's wizard at *state*, today's wizard handlers off the queue stand-ins that do
+    nothing, so that only what the press asks of the queue shows."""
+    league = await _team_step(tmp_path, state=state, **kwargs)
+    wizards = league.bot.wizard_service
+    for handler in ("handle_platform_button", "handle_driver_type_button",
+                    "handle_no_preference_teammate", "handle_no_notes"):
+        setattr(wizards, handler, AsyncMock(return_value=None))
+    return league
+
+
+async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
+                    registered: bool = False) -> Any:
+    """Kimi presses *button* on *view_name*, built for him and handed the change queue (A23),
+    or re-registered at start with the queue alone; gives his press."""
+    from leaguebot.signup.cogs import signup_cog
+    from tests.signup.test_preferred_teams_view import KIMI_CHANNEL, TEAMS
+
+    press = member_interaction(league.bot, user=league._member(SIGNING_UP),
+                               created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    account = None if registered else str(SIGNING_UP)
+    if view_name == "PreferredTeamsButtonView":
+        view = signup_cog.PreferredTeamsButtonView(account, league.bot.change_queue, list(TEAMS))
+        await getattr(view, button)(press)
+        return press
+    view = getattr(signup_cog, view_name)(account, league.bot.change_queue)
+    await getattr(type(view), button)(view, press, MagicMock())
+    return press
+
+
+async def _draft(league: SeasonLeague) -> dict[str, Any]:
+    import json
+
+    from tests.signup.test_wizard_advance import _wizard
+
+    wizard = await _wizard(league)
+    assert wizard is not None
+    return dict(json.loads(wizard["draft_answers_json"]))
+
+
+def _one_refusal(league: SeasonLeague, label: str, reason: str) -> None:
+    """One ⛔ line in the log channel, naming *label*'s button on Kimi's signup wizard and
+    giving *reason*."""
+    lines = [line for line in league.log().splitlines() if line.startswith("⛔")]
+    assert len(lines) == 1, league.log()
+    assert lines[0].startswith(f"⛔ the “{label}” button"), lines[0]
+    assert "signup wizard" in lines[0]
+    assert reason in lines[0], lines[0]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 @pytest.mark.parametrize(
-    "view_name, button",
+    "button,platform",
+    [("steam", "Steam"), ("ea", "EA"), ("xbox", "Xbox"), ("playstation", "PlayStation")],
+)
+async def test_each_platform_button_reports_its_own_platform(tmp_path, button, platform):
+    """Four near-identical callbacks; one passing the wrong string would record a driver on a
+    platform they never chose. Kimi, at the platform question, presses each in turn (one
+    league each): he is answered at once that it is under way, and once the queue runs his
+    platform is the one the button names."""
+    league = await _kimi_at(tmp_path, "COLLECTING_PLATFORM")
+
+    press = await _press_on(league, "PlatformButtonView", button)
+
+    assert acknowledgement(press).startswith("⏳")
+    await run_queue(league.bot)
+    assert (await _draft(league))["platform"] == platform
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
+async def test_a_view_rebuilt_after_a_restart_finds_its_driver(tmp_path):
+    """The view is re-registered at start with no stored driver — the process that knew has
+    gone — and only the change queue, so the owner is found by looking the wizard up by
+    channel: Kimi presses Steam on it, the answer is asked of the queue as his, and once it
+    runs Steam is his platform."""
+    league = await _kimi_at(tmp_path, "COLLECTING_PLATFORM")
+
+    await _press_on(league, "PlatformButtonView", "steam", registered=True)
+    await run_queue(league.bot)
+
+    assert (await _draft(league))["platform"] == "Steam"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
+@pytest.mark.parametrize(
+    "button,driver_type",
+    [("full_time", "Full-Time Driver"), ("reserve", "Reserve Driver")],
+)
+async def test_each_driver_type_button_reports_its_own_type(tmp_path, button, driver_type):
+    """The answer that decides whether the driver is asked about teams at all. Kimi, at the
+    driver type question, presses each (one league each); once the queue runs his driver type
+    is the one the button names."""
+    league = await _kimi_at(tmp_path, "COLLECTING_DRIVER_TYPE")
+
+    await _press_on(league, "DriverTypeButtonView", button)
+    await run_queue(league.bot)
+
+    assert (await _draft(league))["driver_type"] == driver_type
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
+async def test_no_preference_finishes_the_team_step(tmp_path):
+    """Kimi, at the team question with no picks, presses No Preference; once the queue runs his
+    wizard has moved on to the teammate question."""
+    league = await _kimi_at(tmp_path, "COLLECTING_PREFERRED_TEAMS")
+
+    await _press_on(league, "PreferredTeamsButtonView", "_no_preference_callback")
+    await run_queue(league.bot)
+
+    assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
+async def test_no_preference_answers_the_teammate_question(tmp_path):
+    """Kimi, at the teammate question, presses No Preference: the press asks signup.answer on
+    the lane of his signup channel, and once the queue runs his wizard has moved past the
+    teammate question with no teammate recorded."""
+    league = await _kimi_at(tmp_path, "COLLECTING_PREFERRED_TEAMMATE")
+
+    await _press_on(league, "NoPreferenceTeammateView", "no_preference")
+
+    [asked] = await _changes(league)
+    assert (asked["kind"], asked.get("lane")) == ("signup.answer", KIMI_LANE)
+    await run_queue(league.bot)
+    assert await _state(league) != "COLLECTING_PREFERRED_TEAMMATE"
+    assert (await _draft(league)).get("preferred_teammate") is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL_CHANGE)
+@pytest.mark.parametrize("view_name, button", CANCELS)
+async def test_cancelling_from_any_step_withdraws_the_signup(tmp_path, view_name, button):
+    """Cancel Signup is the one button that destroys work, and a driver reaching it from the
+    welcome message, the platform, driver type, team, teammate or notes step is treated the
+    same. Kimi presses it (one league each): it asks signup.end of the league lane, and once
+    the queue runs he is Not Signed Up."""
+    league = await _kimi_at(tmp_path, "COLLECTING_PLATFORM")
+
+    await _press_on(league, view_name, button)
+
+    assert [(asked["kind"], asked.get("lane") or "league")
+            for asked in await _changes(league)] == [("signup.end", "league")]
+    await run_queue(league.bot)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
+@pytest.mark.parametrize(
+    "view_name, button, label",
     [
-        ("WithdrawButtonView", "withdraw_button"),
-        ("NoNotesButtonView", "cancel_button"),
-        ("PlatformButtonView", "cancel"),
-        ("DriverTypeButtonView", "cancel"),
-        ("PreferredTeamsButtonView", "_cancel_callback"),
-        ("NoPreferenceTeammateView", "cancel"),
+        ("PlatformButtonView", "steam", "Steam"),
+        ("DriverTypeButtonView", "full_time", "Full-Time Driver"),
+        ("PreferredTeamsButtonView", "_no_preference_callback", "No Preference"),
+        ("NoPreferenceTeammateView", "no_preference", "No Preference"),
+        ("NoNotesButtonView", "no_notes_button", "No Notes"),
     ],
 )
-async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
-    view_name, button
+async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
+    tmp_path, view_name, button, label
 ):
-    """The driver presses a Cancel Signup left in their channel after their signup has ended.
-    `withdraw` says why it did nothing, and the button answers that, not "withdrawn", and
-    records the refusal."""
-    interaction = _interaction()
-    interaction.client.wizard_service.withdraw = AsyncMock(return_value=_ALREADY_ENDED)
+    """Kimi has submitted his signup (awaiting approval, his wizard parked) and scrolls up to
+    press a button from a step he has already answered. The answer is judged when the queue
+    reaches it: nothing changes, Kimi is told privately "That step has already been answered.",
+    and one ⛔ line names the button, his signup wizard and the reason."""
+    league = await _kimi_at(tmp_path, "UNENGAGED", driver_state="PENDING_ADMIN_APPROVAL")
 
-    await _press_step(view_name, button, interaction)
+    press = await _press_on(league, view_name, button)
+    await run_queue(league.bot)
 
-    interaction.client.wizard_service.withdraw.assert_awaited_once()
-    replies = [
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    ]
-    assert f"⛔ {_ALREADY_ENDED}" in replies, replies
-    assert not any("withdrawn" in reply for reply in replies), replies
-    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
-    assert len(lines) == 1, lines
-    line = lines[0]
-    assert line.startswith("⛔ the “Cancel Signup” button"), line
-    assert "signup wizard" in line
-    assert "refused for Driver (<@7>)" in line
-    assert _ALREADY_ENDED.split(".")[0] in line
+    assert _ALREADY_ANSWERED in _answered(press)
+    _one_refusal(league, label, _ALREADY_ANSWERED)
+    assert await _state(league) == "UNENGAGED"
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCEL_CHANGE)
+@pytest.mark.parametrize("view_name, button", CANCELS)
+async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
+    tmp_path, view_name, button
+):
+    """Kimi presses a Cancel Signup left in his channel after his signup ended (Not Signed Up,
+    his wizard parked). The press is judged as the change runs: he is told "⛔ This signup has
+    already ended. Nothing was changed.", never that it was withdrawn, and one ⛔ line names
+    the Cancel Signup button of his signup wizard and the reason."""
+    league = await _kimi_at(tmp_path, "UNENGAGED", driver_state="NOT_SIGNED_UP")
+
+    press = await _press_on(league, view_name, button)
+    await run_queue(league.bot)
+
+    answered = _answered(press)
+    assert f"⛔ {_ALREADY_ENDED}" in answered, answered
+    assert "withdrawn" not in answered, answered
+    _one_refusal(league, "Cancel Signup", _ALREADY_ENDED.split(".")[0])
