@@ -5,120 +5,34 @@ needs a real gateway connection and is out of scope for this suite (`CLAUDE.md`:
 require a live bot). The recovery helpers beneath it are not — they take a bot and a database
 and put the world back the way it should be, and none was executed.
 
-This file takes `_recover_orphaned_amend_channels`, the one whose failure mode is a channel
-left behind on every restart, and `_recover_portrait_refresh_job`, which re-arms the daily
-portrait refresh.
+This file takes `_recover_orphaned_amend_channels` and `_recover_portrait_refresh_job`, which
+re-arms the daily portrait refresh.
 
-**The database row is deleted before the Discord channel is.** That ordering is the point of
-the function: a crash between the two leaves a channel nobody will clean up, which is
-untidy — but the other order leaves a *row* whose channel is already gone, and the next restart
-would try to process it again, and the one after that, indefinitely.
-`test_the_row_is_removed_before_the_channel` is what holds the ordering, and it is invisible
-from reading the code unless somebody already knows why.
+**An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
+asks `results.amend.lapse` for each amendment left open, as the bot, before the queue starts, and
+deletes, reverts and writes nothing itself; the lapse's own jobs do, each amendment's line its own,
+so two abandoned amendments are two commands to re-run and the log says so twice. What the lapse
+does at a restart, and the wording of its line, are pinned in `test_restart_recovery_sweeps.py`;
+a refused deletion on a lapse stopping the queue in `tests/results/test_amend_changes.py`.
 
-**Every Discord failure is swallowed.** The channel may have been deleted by hand, the guild
-may no longer be one the bot is in, and the log channel may be unreachable. None of them may
-stop the sweep, because the sweep runs during startup — an exception here would take the whole
-bot down over a leftover channel.
-
-**The league is told.** An amendment channel vanishing means the command that made it was never
-finished, and the manager has to run it again; without the log line the work would simply be
-missing and nobody would know to redo it.
+An amendment whose stage approval is in hand on the queue is left alone by the sweep, so the
+queue, brought back up, finishes the approval.
 """
 from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-import discord
 import pytest
 
 from leaguebot.__main__ import _recover_orphaned_amend_channels, _recover_portrait_refresh_job
 from leaguebot.core.db.database import get_connection, run_migrations
 
-SERVER_ID = 10108
-SEASON_ID = 1
-DIVISION_ID = 11
-ROUND_ID = 5
-CHANNEL_ID = 770601
-
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
-
-
-async def _make_db(tmp_path, *, channels: int = 1) -> str:
-    db_path = os.path.join(str(tmp_path), "recovery.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID,),
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-            "VALUES (?, ?, 'Division 1', 1, 555)",
-            (DIVISION_ID, SEASON_ID),
-        )
-        # One amendment per round, which is the real shape: the table is unique on the round,
-        # an amendment covering whichever of its sessions were chosen (#345). Several orphans
-        # therefore stand on several rounds.
-        session_lists = (
-            ["FEATURE_RACE"], ["FEATURE_QUALIFYING", "FEATURE_RACE"], ["SPRINT_RACE"],
-        )
-        for index in range(channels):
-            await db.execute(
-                "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-                "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
-                (ROUND_ID + index, DIVISION_ID),
-            )
-            await db.execute(
-                "INSERT INTO round_amend_channels "
-                "(id, round_id, channel_id, session_types, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    index + 1,
-                    ROUND_ID + index,
-                    CHANNEL_ID + index,
-                    json.dumps(session_lists[index]),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-        await db.commit()
-    return db_path
-
-
-def _make_bot(db_path: str, *, channel=..., guild_found: bool = True):
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-
-    resolved = MagicMock() if channel is ... else channel
-    if resolved is not None:
-        resolved.delete = AsyncMock(return_value=None)
-
-    guild = MagicMock()
-    guild.get_channel = MagicMock(return_value=resolved)
-    bot.get_guild = MagicMock(return_value=guild if guild_found else None)
-    bot._channel = resolved
-    return bot
-
-
-async def _rows(db_path: str) -> int:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) AS n FROM round_amend_channels")
-        return (await cursor.fetchone())["n"]
+NO_AMEND_LAPSE_AT_RESTART = (
+    "#439: the restart deletes each abandoned amendment's channel and writes its line itself, off "
+    "the change queue, rather than asking the queue for `results.amend.lapse` as the bot"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -126,141 +40,34 @@ async def _rows(db_path: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-async def test_an_orphaned_channel_is_deleted(tmp_path):
-    db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
-
-    await _recover_orphaned_amend_channels(bot)
-
-    bot._channel.delete.assert_awaited_once()
-
-
-async def test_the_row_is_removed(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    await _recover_orphaned_amend_channels(_make_bot(db_path))
-
-    assert await _rows(db_path) == 0
-
-
-async def test_the_row_is_removed_before_the_channel(tmp_path):
-    """The ordering is the point of the function. A crash between the two leaves a channel
-    nobody cleans up, which is untidy — the other order leaves a *row* whose channel is
-    already gone, and every restart from then on would try to process it again."""
-    db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
-    rows_when_deleted: list[int] = []
-
-    async def _delete(**kwargs):
-        rows_when_deleted.append(await _rows(db_path))
-
-    bot._channel.delete = AsyncMock(side_effect=_delete)
-
-    await _recover_orphaned_amend_channels(bot)
-
-    assert rows_when_deleted == [0]
-
-
-async def test_every_orphan_is_swept_not_only_the_first(tmp_path):
-    """A crash during a busy round can leave several behind at once."""
-    db_path = await _make_db(tmp_path, channels=3)
-
-    await _recover_orphaned_amend_channels(_make_bot(db_path))
-
-    assert await _rows(db_path) == 0
-
-
-async def test_nothing_to_sweep_is_not_an_error(tmp_path):
-    """The ordinary case on almost every start."""
-    db_path = await _make_db(tmp_path, channels=0)
-    bot = _make_bot(db_path)
-
-    await _recover_orphaned_amend_channels(bot)
-
-    bot.output_router.post_log.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# Everything that can go wrong during startup
-# ---------------------------------------------------------------------------
-
-
-async def test_a_guild_the_bot_has_left_still_clears_the_row(tmp_path):
-    """The row is the bot's own bookkeeping and must not outlive the server it names."""
-    db_path = await _make_db(tmp_path)
-
-    await _recover_orphaned_amend_channels(_make_bot(db_path, guild_found=False))
-
-    assert await _rows(db_path) == 0
-
-
-async def test_a_channel_already_deleted_still_clears_the_row(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    await _recover_orphaned_amend_channels(_make_bot(db_path, channel=None))
-
-    assert await _rows(db_path) == 0
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        discord.NotFound(MagicMock(), "gone"),
-        discord.HTTPException(MagicMock(), "boom"),
-    ],
-    ids=["not-found", "http-error"],
-)
-async def test_a_channel_that_refuses_to_delete_does_not_stop_the_sweep(tmp_path, error):
-    """The sweep runs during startup, so an exception here would take the whole bot down
-    over a leftover channel."""
-    db_path = await _make_db(tmp_path, channels=2)
-    bot = _make_bot(db_path)
-    bot._channel.delete = AsyncMock(side_effect=error)
-
-    await _recover_orphaned_amend_channels(bot)
-
-    assert await _rows(db_path) == 0
-
-
-async def test_a_failing_log_does_not_stop_the_sweep(tmp_path):
-    """The log channel may be unreachable on a cold start before the guild is cached."""
-    db_path = await _make_db(tmp_path, channels=2)
-    bot = _make_bot(db_path)
-    bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log channel"))
-
-    await _recover_orphaned_amend_channels(bot)
-
-    assert await _rows(db_path) == 0
-
-
-# ---------------------------------------------------------------------------
-# Telling the league
-# ---------------------------------------------------------------------------
-
-
-async def test_the_league_is_told_the_amendment_never_finished(tmp_path):
-    """An amendment channel vanishing means the command that made it was never finished,
-    and the manager has to run it again — without this the work would simply be missing
-    and nobody would know to redo it."""
-    db_path = await _make_db(tmp_path)
-    bot = _make_bot(db_path)
-
-    await _recover_orphaned_amend_channels(bot)
-
-    bot.output_router.post_log.assert_awaited()
-    logged = str(bot.output_router.post_log.await_args.args[0])
-    assert str(ROUND_ID) in logged or "amend" in logged.lower()
-
-
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_each_orphan_is_reported_separately(tmp_path):
-    """Two abandoned amendments are two commands to re-run, and a single summary would
-    leave a manager guessing which."""
-    db_path = await _make_db(tmp_path, channels=2)
-    bot = _make_bot(db_path)
+    """Two abandoned amendments are two commands to re-run, and a single summary would leave a
+    manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:
+    the restart asks one lapse for each, as the bot, and once the queue has run them each writes
+    its own line in the log channel."""
+    from tests.support import review_league as league_of
+    from tests.support.change_queue import change_rows, run_queue
 
-    await _recover_orphaned_amend_channels(bot)
+    league = await league_of.review_league(tmp_path, round_status="FINAL")
+    async with get_connection(league.db_path) as db:
+        for round_id, channel_id in ((league_of.ROUND_ID, league_of.AMEND_CHANNEL),
+                                     (league_of.LATER_ROUND_ID, league_of.AMEND_CHANNEL + 1)):
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                "created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', ?)",
+                (round_id, channel_id, league_of.NOW.isoformat()),
+            )
+        await db.commit()
 
-    assert bot.output_router.post_log.await_count == 2
+    await _recover_orphaned_amend_channels(league.bot)
+    lapses = [row for row in await change_rows(league.db_path)
+              if row["kind"] == "results.amend.lapse"]
+    await run_queue(league.bot)
+
+    assert [row["origin"] for row in lapses] == ["BOT", "BOT"]
+    lines = [line for line in league.bot.log_channel.sent if "/results rounds amend` of" in line]
+    assert len(lines) == 2
 
 
 # ---------------------------------------------------------------------------
