@@ -65,8 +65,9 @@ from tests.support.season_league import (
 )
 from tests.support.undecorate import undecorate
 
-NO_QUEUE_HANDED = (
-    "#439: the round's submission job looks the change queue up on the bot rather than being handed it"
+NO_SUBMISSION_OPEN_CHANGE = (
+    "#439: a round's submission is opened by `run_result_submission_job` at its start, off the "
+    "change queue, rather than by a `results.submission.open` change"
 )
 
 
@@ -759,12 +760,15 @@ async def test_a_season_with_weather_and_results_off_arms_a_result_submission_fo
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_division_finishes(
     tmp_path, monkeypatch,
 ):
-    """Each armed job fired as the scheduler would fire it at its round's moment."""
-    from leaguebot.results.services import result_submission_service
+    """Each armed job fired as the scheduler would fire it at its round's moment: each asks the
+    change queue to open its round's submission, as the bot, and the queue is run. With results
+    off every round is made FINAL, each division finishes, no channel is created and nothing is
+    posted."""
+    from leaguebot.core.models.change import ChangeOrigin
 
     league = await _league_for(tmp_path, monkeypatch, weather=False, results=False)
     await _pressed(league)
@@ -773,18 +777,18 @@ async def test_the_armed_submission_with_results_off_moves_each_round_on_so_the_
     assert fired == sorted(_all_rounds())
     before = {cid: league.texts(cid) for cid in league.channels}
 
-    with patch.object(result_submission_service, "create_submission_channel",
-                      AsyncMock()) as create:
-        for each in fired:
-            await result_submission_service.run_result_submission_job(
-                each, league.bot, queue=league.bot.change_queue
-            )
+    for each in fired:
+        await league.bot.change_queue.ask(
+            "results.submission.open", {"round_id": each}, what="opening a results submission",
+            origin=ChangeOrigin.BOT,
+        )
+    await run_queue(league.bot)
 
     rounds = await league.rows("SELECT status FROM rounds")
     assert {row["status"] for row in rounds} == {"FINAL"}
     divisions = await league.rows("SELECT status FROM divisions")
     assert {row["status"] for row in divisions} == {"FINISHED"}
-    create.assert_not_awaited()
+    league.guild.create_text_channel.assert_not_awaited()
     assert {cid: league.texts(cid) for cid in league.channels} == before
 
 
