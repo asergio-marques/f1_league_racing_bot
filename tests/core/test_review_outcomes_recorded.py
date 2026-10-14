@@ -28,13 +28,11 @@ from leaguebot.core.cogs.season_cog import (
     _ConfirmConfigurationView,
     _ConfirmMidSeasonPlacementsView,
 )
-from leaguebot.core.models.server_config import ServerConfig
 
 #: Alex, the league manager who ran the review.
 REVIEWER = 4242
 #: Sam, another league manager, who may not answer Alex's review.
 BYSTANDER = 99
-ADMIN_ROLE = 444
 
 #: Each review button: its view, its label without the mark, the review it belongs to, the
 #: helper a press hands on to, and the verb its replies use.
@@ -65,78 +63,12 @@ def _no_approval_in_hand(monkeypatch):
     )
 
 
-def _review(view_class, helper: str):
-    """A review Alex ran, standing in the channel with its question bound, on the league's server.
-
-    The bot finds Alex on the server by id, as a lapse (which has no interaction) names him, and
-    every line it writes to the log channel is kept on `bot.output_router.post_log`.
-    """
-    cog = MagicMock()
-    # A press that reaches the helper goes through: for the approval, asked of the change queue
-    # (#439), which is the one press that takes the review down.
-    setattr(cog, helper, AsyncMock(return_value=True))
-    bot = cog.bot
-    bot.db_path = "/nonexistent/nowhere.db"
-    bot.config_service.get_server_config = AsyncMock(
-        return_value=ServerConfig(
-            server_id=7,
-            interaction_role_id=222,
-            league_admin_role_id=ADMIN_ROLE,
-            interaction_channel_id=111,
-            log_channel_id=333,
-        )
-    )
-    bot.config_service.get_league_server_id = AsyncMock(return_value=7)
-    alex = MagicMock()
-    alex.id = REVIEWER
-    alex.display_name = "Alex"
-    guild = MagicMock()
-    guild.get_member = MagicMock(side_effect=lambda uid: alex if uid == REVIEWER else None)
-    bot.get_guild = MagicMock(return_value=guild)
-    bot.output_router.post_log = AsyncMock()
-
-    view = view_class(cog, REVIEWER)
-    view._server_id = 7
-    view._season_id = 1
-    message = MagicMock()
-    message.delete = AsyncMock()
-    message.channel.send = AsyncMock()
-    view._message = message
-    return view, cog, message
-
-
 def _member(user_id: int, name: str):
     member = MagicMock(spec=discord.Member)
     member.id = user_id
     member.display_name = name
     member.roles = []
     return member
-
-
-def _press(cog, user_id: int = REVIEWER, name: str = "Alex"):
-    """A press of the review's button, reading as Discord's does until it is answered."""
-    interaction = MagicMock()
-    interaction.guild_id = 7
-    interaction.client = cog.bot
-    interaction.user = _member(user_id, name)
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _logged(cog) -> list[str]:
-    return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
-
-
-def _changed_since_the_review(monkeypatch, area: str = "Division Pro's rounds") -> None:
-    """The season as it stands differs from what the review described, in *area*."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
-
-    async def _now(*_args, **_kwargs):
-        return sfs.SeasonFingerprint({area: "after"})
-
-    monkeypatch.setattr(sfs, "take_fingerprint", _now)
 
 
 # ── A review standing on the change queue (#439, slice 6b) ───────────────────
@@ -225,7 +157,83 @@ def _expiry_callback(env):
 
 
 def _queue_lines(env) -> list[str]:
-    return list(env.bot.log_channel.sent)
+    """Every line the log channel was sent, with the log's code marks around mentions taken off."""
+    return [line.replace("`", "") for line in env.bot.log_channel.sent]
+
+
+# ── A press of the review's button (#439, slice 6b) ─────────────────────────
+#
+# The button reads its review from the review's row, not from its view's memory: the question's
+# `posted_at` for its five minutes, and the `evidence` its report was computed from for whether the
+# season has changed (C93, C97a). It deletes and posts nothing itself: a review it ends is taken
+# down by the queue (C92, C97).
+
+NO_PRESS_FROM_THE_ROW = (
+    "#439: a season review's button reads its review from its view's memory (the message it was "
+    "bound to, a fingerprint, a deadline) rather than from the review's row, and deletes the "
+    "review itself, off the change queue"
+)
+#: The area of the season the tests change, as the review's evidence names it.
+AREA = "Division Pro's rounds"
+
+
+def _view_on(env, view_class, helper: str):
+    """Alex's review's button, built as the question's view is, on a cog whose approval (or
+    confirmation), *helper*, is recorded and goes through."""
+    cog = MagicMock()
+    cog.bot = env.bot
+    # A press that reaches the helper goes through: for the approval, asked of the change queue.
+    setattr(cog, helper, AsyncMock(return_value=True))
+    return view_class(cog, REVIEWER), cog
+
+
+def _press_on(env, user_id: int = REVIEWER, name: str = "Alex"):
+    """A press of the button on Alex's question Q, in channel 700, by *name*."""
+    from tests.support.change_queue import member_interaction
+
+    interaction = member_interaction(env.bot, user=_member(user_id, name))
+    interaction.channel_id = REVIEW_CHANNEL
+    interaction.message = env.channel.q
+    return interaction
+
+
+async def _season_since_the_review(env, monkeypatch, now: str = "as reviewed") -> None:
+    """The review's row records the evidence its report was computed from, Pro's rounds "as
+    reviewed"; the season as it stands now has Pro's rounds as *now*."""
+    import json
+
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services import season_fingerprint_service as sfs
+
+    async with get_connection(env.db_path) as db:
+        await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
+                         (json.dumps({AREA: "as reviewed"}), env.channel.q.id))
+        await db.commit()
+
+    async def _now(*_args, **_kwargs):
+        return sfs.SeasonFingerprint({AREA: now})
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _now)
+
+
+async def _take_downs(env) -> list[dict]:
+    import json
+
+    from tests.support.change_queue import change_rows
+
+    return [json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"]
+            for row in await change_rows(env.db_path) if row["kind"] == "season.review.take_down"]
+
+
+def _lines(env, mark: str) -> list[str]:
+    return [line for line in _queue_lines(env) if line.startswith(mark)]
+
+
+def _expiry_timer_touched(env) -> list:
+    """Every arming or disarming of a review's expiry timer."""
+    scheduler = env.bot.scheduler_service
+    return [call for call in scheduler.arm_once.call_args_list + scheduler.disarm.call_args_list
+            if call.args and call.args[0] == "review_expiry"]
 
 
 # ── A press refused ────────────────────────────────────────────────────────
@@ -233,25 +241,31 @@ def _queue_lines(env) -> list[str]:
 
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_by_someone_who_may_not_answer_is_recorded(
-    view_class, label, review, helper, verb
+    tmp_path, view_class, label, review, helper, verb
 ):
-    """Sam, a league manager who is neither the reviewer nor a league admin, presses Alex's button.
+    """Alex's review stands in channel 700, its question Q posted a moment ago. Sam, a league
+    manager who is neither the reviewer nor a league admin, presses Alex's button.
 
-    Sam is answered as today, privately, and the review is left alone; the log channel gets one
-    refusal line naming Sam, the button and the review it belongs to.
+    Sam is answered as today, privately, and the review is left alone: nothing is deleted or
+    posted, and no take-down is asked of the queue. The log channel gets one refusal line naming
+    Sam, the button and the review it belongs to.
     """
-    view, cog, message = _review(view_class, helper)
-    interaction = _press(cog, BYSTANDER, "Sam")
+    env = await _standing(tmp_path, review)
+    view, cog = _view_on(env, view_class, helper)
+    interaction = _press_on(env, BYSTANDER, "Sam")
 
     await view_class.approve(view, interaction, MagicMock())
 
+    from tests.support.change_queue import acknowledgement
+
     getattr(cog, helper).assert_not_awaited()
-    message.delete.assert_not_awaited()
-    reply = interaction.response.send_message.await_args.args[0]
+    assert env.channel.deleted == [] and env.channel.sent == []
+    assert await _take_downs(env) == []
+    reply = acknowledgement(interaction)
     assert reply.startswith("⛔ Only the person who ran this review, or a league admin, can ")
     assert f"**Nothing has been {verb}.**" in reply
     assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
-    lines = _logged(cog)
+    lines = _queue_lines(env)
     assert len(lines) == 1, lines
     line = lines[0]
     assert line.startswith("⛔ "), line
@@ -261,40 +275,51 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     assert reason.startswith("Only the person who ran this review, or a league admin"), line
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_refused_because_the_season_changed_is_recorded_once(
-    monkeypatch, view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex presses his own button, but the season has changed since the review was posted.
+    """Alex's review stands in channel 700 (report R1 and R2, question Q), posted a moment ago;
+    its row records the evidence its report was computed from, Pro's rounds "as reviewed". Pro's
+    rounds have changed since. Alex presses his own button.
 
-    He is refused as today, and the review ends as an expired one does: question deleted and the
-    public notice posted. The log holds exactly one line for it, the refusal, naming the button,
-    the review and what changed; no lapse is recorded beside it.
+    He is refused as today, privately, and nothing is approved (or confirmed). The button deletes
+    and posts nothing itself: it asks the queue to take the review down, ending refused. Once the
+    queue runs, the review ends as an expired one does: Q, R1 and R2 deleted and the public
+    notice pinging Alex posted, once. The log holds exactly one line for the press, the refusal,
+    naming the button, the review and what changed; no lapse is recorded beside it.
     """
-    view, cog, message = _review(view_class, helper)
-    from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
+    from tests.support.change_queue import acknowledgement, run_queue
 
-    view._fingerprint = SeasonFingerprint({"Division Pro's rounds": "before"})
-    _changed_since_the_review(monkeypatch)
-    interaction = _press(cog)
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    await _season_since_the_review(env, monkeypatch, now="changed")
+    view, cog = _view_on(env, view_class, helper)
+    interaction = _press_on(env)
 
     await view_class.approve(view, interaction, MagicMock())
 
     getattr(cog, helper).assert_not_awaited()
-    reply = interaction.response.send_message.await_args.args[0]
+    reply = acknowledgement(interaction)
     assert "has changed since this review" in reply
     assert f"**Nothing has been {verb}.**" in reply
-    message.delete.assert_awaited_once()
-    message.channel.send.assert_awaited_once()
-    lines = _logged(cog)
-    assert len(lines) == 1, lines
-    line = lines[0]
-    assert line.startswith("⛔ "), line
+    assert channel.deleted == [] and channel.sent == []
+    [payload] = await _take_downs(env)
+    assert (payload["ending"], payload["question_id"]) == ("refused", channel.q.id)
+
+    await run_queue(env.bot)
+
+    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
+    [notice] = channel.sent
+    assert "<@4242> your review has expired" in notice
+    [line] = _lines(env, "⛔ ")
     refused, _, reason = line.partition(" refused for Alex (<@4242>) — ")
     assert reason, line
     assert label in refused and review in refused, line
-    assert "Division Pro's rounds" in reason, line
-    assert "lapsed" not in line
+    assert AREA in reason, line
+    assert _lines(env, "⌛ ") == [], _queue_lines(env)
+    assert not any("lapsed" in line for line in _queue_lines(env)), _queue_lines(env)
 
 
 # ── A review left to lapse ─────────────────────────────────────────────────
@@ -341,52 +366,41 @@ async def test_a_review_left_for_its_five_minutes_records_its_lapse(
 async def test_a_review_whose_press_failed_says_so_when_it_lapses(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex presses his button a moment after the question appears, the season as the review
-    described it, and the bot hits a fault part-way (the press raises: 'the database is locked').
+    """Alex presses his button a moment after the question appears, and the bot hits a fault
+    part-way, while reading the season to judge the press against the review's evidence (the
+    press raises: 'the database is locked'), before anything is approved or asked of the queue.
 
     The review stays up and may be pressed again for the rest of its five minutes, as today:
-    nothing is deleted and no take-down is asked. Left to lapse after that, its expiry timer fires
-    and the queue takes it down; its lapse line says an earlier press failed and may have been
-    partly done, to check the failure line before running the review again, and does not claim
-    that nothing was done (core :105, :118, :282)."""
-    import json
-
-    from leaguebot.core.db.database import get_connection
+    nothing is deleted, the approval (or confirmation) is never asked, and no take-down is asked.
+    Left to lapse after that, its expiry timer fires and the queue takes it down; its lapse line
+    says an earlier press failed and may have been partly done, to check the failure line before
+    running the review again, and does not claim that nothing was done (core :105, :118, :282).
+    A fault after the take-down is asked, in the approval's own asking, is not this case: the
+    review is then already coming down, ending confirmed."""
     from leaguebot.core.services import season_fingerprint_service as sfs
-    from tests.support.change_queue import change_rows, member_interaction, run_queue
+    from tests.support.change_queue import run_queue
 
     env = await _standing(tmp_path, review)
     channel = env.channel
-    area = "Division Pro's rounds"
-    async with get_connection(env.db_path) as db:
-        await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
-                         (json.dumps({area: "as reviewed"}), channel.q.id))
-        await db.commit()
+    await _season_since_the_review(env, monkeypatch)
 
-    async def _as_reviewed(*_args, **_kwargs):
-        return sfs.SeasonFingerprint({area: "as reviewed"})
+    async def _locked(*_args, **_kwargs):
+        raise RuntimeError("the database is locked")
 
-    monkeypatch.setattr(sfs, "take_fingerprint", _as_reviewed)
-    cog = MagicMock()
-    cog.bot = env.bot
-    setattr(cog, helper, AsyncMock(side_effect=RuntimeError("the database is locked")))
-    view = view_class(cog, REVIEWER)
-    interaction = member_interaction(env.bot, user=_member(REVIEWER, "Alex"))
-    interaction.channel_id = REVIEW_CHANNEL
-    interaction.message = channel.q
+    monkeypatch.setattr(sfs, "take_fingerprint", _locked)
+    view, cog = _view_on(env, view_class, helper)
 
     with pytest.raises(RuntimeError):
-        await view_class.approve(view, interaction, MagicMock())
+        await view_class.approve(view, _press_on(env), MagicMock())
 
-    getattr(cog, helper).assert_awaited_once()
+    getattr(cog, helper).assert_not_awaited()
     assert channel.deleted == [] and channel.sent == []
-    assert not [row for row in await change_rows(env.db_path)
-                if row["kind"] == "season.review.take_down"]
+    assert await _take_downs(env) == []
 
     await _expiry_callback(env)(channel.q.id)
     await run_queue(env.bot)
 
-    lines = [line for line in _queue_lines(env) if line.startswith("⌛ ")]
+    lines = _lines(env, "⌛ ")
     assert len(lines) == 1, _queue_lines(env)
     head, *beneath = lines[0].splitlines()
     assert head.replace("`", "").endswith(
@@ -400,207 +414,184 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
 # ── Five minutes from posting, whatever is pressed (#482, F10) ─────────────
 #
 # The core specification's "Confirming placements": "The button shall stand for five minutes from
-# the posting of the review that carries it." discord.py restarts a view's timer on every press
-# that reaches a button, a refused one included, so a review pressed now and then would never
-# expire. Here the review's five minutes are scaled down to two seconds, so its timer runs in earnest.
+# the posting of the review that carries it." The five minutes are the review's expiry timer,
+# armed once when its question is posted (C97a): no press, a refused one included, re-arms it, and
+# a press after them is judged by the question's `posted_at`.
 
 
-
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
-    monkeypatch, view_class, label, review, helper, verb
+    tmp_path, view_class, label, review, helper, verb
 ):
-    """Alex's review is posted and its timer starts. Four-fifths of the way through (scaled: 1.6
-    seconds into a two-second window) Sam, who may not answer it, presses its button and is
-    refused.
+    """Alex's review stands in channel 700, posted a moment ago. Sam, who may not answer it,
+    presses its button and is refused.
 
-    The review still expires at its five minutes from posting, not five minutes from Sam's press:
-    the question is deleted, today's notice is posted, and the log holds Sam's refusal and then
-    Alex's lapse line. The window is two seconds rather than one, and the waits leave 0.8 seconds
-    either side of the deadline, so that a host under load cannot fail it.
-    """
-    from leaguebot.core.cogs import season_cog
+    Sam's press neither arms nor disarms the review's expiry timer, and asks no take-down. When
+    the timer fires for Q, at five minutes from the posting, the queue takes the review down: Q,
+    R1 and R2 are deleted and today's notice pinging Alex is posted, and the log holds Sam's
+    refusal and then Alex's lapse line."""
+    from tests.support.change_queue import run_queue
 
-    monkeypatch.setattr(season_cog, "APPROVAL_WINDOW_SECONDS", 2.0)
-    view, cog, message = _review(view_class, helper)
-    loop = asyncio.get_running_loop()
-    posted = loop.time()
-    # What discord.py does when the question is posted with its view: the timer starts.
-    view._start_listening_from_store(MagicMock())
-    try:
-        await asyncio.sleep(1.6)
-        button = next(item for item in view.children if isinstance(item, discord.ui.Button))
-        await view._dispatch_item(button, _press(cog, BYSTANDER, "Sam"))
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    view, cog = _view_on(env, view_class, helper)
 
-        # Due at two seconds from posting; a timer restarted by the press would run to 3.6.
-        while not view.is_finished() and loop.time() < posted + 2.8:
-            await asyncio.sleep(0.02)
-        assert view.is_finished(), "the review outlived its window after a refused press"
-        while not message.channel.send.await_count and loop.time() < posted + 3.6:
-            await asyncio.sleep(0.02)
-    finally:
-        view.stop()
+    await view_class.approve(view, _press_on(env, BYSTANDER, "Sam"), MagicMock())
 
     getattr(cog, helper).assert_not_awaited()
-    message.delete.assert_awaited_once()
-    assert "<@4242> your review has expired" in message.channel.send.await_args.args[0]
-    lines = _logged(cog)
-    assert len(lines) == 2, lines
+    assert _expiry_timer_touched(env) == []
+    assert await _take_downs(env) == []
+
+    await _expiry_callback(env)(channel.q.id)
+    await run_queue(env.bot)
+
+    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
+    [notice] = channel.sent
+    assert "<@4242> your review has expired" in notice
+    lines = [line for line in _queue_lines(env) if line[:2] in ("⛔ ", "⌛ ")]
+    assert len(lines) == 2, _queue_lines(env)
     assert lines[0].startswith("⛔ ") and " refused for Sam (<@99>) — " in lines[0], lines
     head = lines[1].splitlines()[0]
     assert head.startswith("⌛ "), head
-    assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
+    assert head.replace("`", "").endswith(
+        "lapsed unconfirmed (started by Alex (<@4242>))"
+    ), head
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_after_the_five_minutes_confirms_nothing(
-    view_class, label, review, helper, verb
+    tmp_path, view_class, label, review, helper, verb
 ):
-    """Alex's review was posted more than five minutes ago (its window closed a second ago), and
+    """Alex's review stands in channel 700, its row saying the question was posted five minutes
+    and a second ago, by the queue's clock and the host's alike; nothing has yet taken it down.
     Alex presses its button.
 
-    The press is not taken as a confirmation: nothing is approved or confirmed. Alex is answered
-    privately that nothing has been approved (or confirmed), and the log holds exactly one line,
-    the refusal of his press.
+    The press is not taken as a confirmation: nothing is approved or confirmed, and the button
+    deletes and posts nothing in the channel. Alex is answered privately that nothing has been
+    approved (or confirmed), and the log holds exactly one line, the refusal of his press.
     """
-    view, cog, message = _review(view_class, helper)
-    view._deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
-    interaction = _press(cog)
+    from leaguebot.core.db.database import get_connection
+    from tests.support.change_queue import acknowledgement
+
+    env = await _standing(tmp_path, review)
+    posted = min(datetime.now(timezone.utc), NOW) - timedelta(minutes=5, seconds=1)
+    async with get_connection(env.db_path) as db:
+        await db.execute("UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
+                         (posted.isoformat(), env.channel.q.id))
+        await db.commit()
+    view, cog = _view_on(env, view_class, helper)
+    interaction = _press_on(env)
 
     await view_class.approve(view, interaction, MagicMock())
 
     getattr(cog, helper).assert_not_awaited()
-    reply = interaction.response.send_message.await_args
-    assert f"Nothing has been {verb}" in reply.args[0], reply
-    assert reply.kwargs["ephemeral"] is True
-    lines = _logged(cog)
+    assert env.channel.deleted == [] and env.channel.sent == []
+    assert f"Nothing has been {verb}" in acknowledgement(interaction)
+    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+    lines = _queue_lines(env)
     assert len(lines) == 1, lines
     assert lines[0].startswith("⛔ ") and " refused for Alex (<@4242>) — " in lines[0], lines
 
 
 # ── A press under way is not expired under it (#482, F11) ──────────────────
 #
-# While a press is being worked (under test mode the backup question, then the approval), the
-# review's timer may fire. A review whose press is under way does not expire: the press records
-# its own outcome, and the timer deletes nothing, posts no notice and records no lapse.
+# Once a press is accepted, the review's take-down is asked, ending confirmed, before the approval
+# (or confirmation) is worked (C97). The review's expiry timer firing after that posts no expiry
+# notice and records no lapse: the review was answered.
 
 
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_the_press(
-    view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex presses his review's button, and while the approval (or confirmation) is being worked
-    the review's five minutes run out and its timer fires, as discord.py fires it, in a task of
-    its own.
+    """Alex presses his review's button a moment after the question appears, the season as the
+    review described it, and while the approval (or confirmation) is being worked the review's
+    five minutes run out and its expiry timer fires for Q.
 
-    While the press is under way the timer deletes nothing and posts no expiry notice; once it
-    ends, no notice has been posted and no lapse recorded, and the log holds only the press's own
-    line.
-    """
-    view, cog, message = _review(view_class, helper)
-    own_line = f"Alex (<@{REVIEWER}>) | {review} | Success"
+    While the press is under way nothing is deleted or posted. Once the queue runs, the review is
+    gone (Q, R1 and R2 deleted), but no expiry notice has been posted and no lapse recorded."""
+    from tests.support.change_queue import run_queue
+
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    await _season_since_the_review(env, monkeypatch)
+    view, cog = _view_on(env, view_class, helper)
     seen: dict = {}
 
     async def _worked(*_args, **_kwargs):
-        # discord.py's timer: the view is stopped and `on_timeout` is run as a task.
-        view._dispatch_timeout()
-        [timer] = [
-            task for task in asyncio.all_tasks()
-            if task.get_name() == f"discord-ui-view-timeout-{view.id}"
-        ]
-        seen["timer"] = timer
-        # Long enough for the timer to have done whatever it will do while the press is worked.
-        await asyncio.wait({timer}, timeout=0.5)
-        seen["deleted"] = message.delete.await_count
-        seen["notices"] = message.channel.send.await_count
-        seen["lines"] = list(_logged(cog))
-        await cog.bot.output_router.post_log(own_line)
-        # A press that went through: the approval was asked of the change queue (#439).
+        await _expiry_callback(env)(channel.q.id)
+        seen["deleted"], seen["sent"] = list(channel.deleted), list(channel.sent)
+        # A press that went through: the approval was asked of the change queue.
         return True
 
-    getattr(cog, helper).side_effect = _worked
+    setattr(cog, helper, AsyncMock(side_effect=_worked))
 
-    await view_class.approve(view, _press(cog), MagicMock())
-    await asyncio.wait_for(seen["timer"], timeout=2)
+    await view_class.approve(view, _press_on(env), MagicMock())
+    await run_queue(env.bot)
 
-    assert seen["deleted"] == 0, "the review was deleted while its press was under way"
-    assert seen["notices"] == 0, "the expiry notice was posted while the press was under way"
-    assert seen["lines"] == [], seen["lines"]
-    message.channel.send.assert_not_awaited()
-    assert _logged(cog) == [own_line]
+    getattr(cog, helper).assert_awaited_once()
+    assert seen == {"deleted": [], "sent": []}, seen
+    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
+    assert channel.sent == []
+    assert _lines(env, "⌛ ") == [], _queue_lines(env)
+    assert _lines(env, "⛔ ") == [], _queue_lines(env)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_expire_once_it_ends(
-    view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex presses his review's button, through Discord's own dispatch, and while the approval
-    (or confirmation) is being worked the review's five minutes run out and its timer fires, as
-    discord.py fires it, in a task of its own. The press then hits a fault ('the database is
-    locked') and raises.
+    """Alex presses his review's button, through Discord's own dispatch, a moment after the
+    question appears. While the press is reading the season to judge it, the review's five
+    minutes run out and its expiry timer fires for Q; the press then hits a fault ('the database
+    is locked') and raises, before anything is approved or asked of the queue.
 
-    While the press is under way nothing is deleted and no notice posted. Once it has ended, the
-    question and both report messages are deleted and today's public notice pinging Alex is
-    posted, once. The log holds two lines: the press's failure line, and one lapse line naming
-    Alex that says an earlier press failed and may have been partly done.
-    """
-    view, cog, message = _review(view_class, helper)
-    report = [MagicMock(), MagicMock()]
-    for part in report:
-        part.delete = AsyncMock()
-    view.carries(report)
+    While the press is under way nothing is deleted and no notice posted. Once it has ended and
+    the queue runs, Q, R1 and R2 are deleted once each and today's public notice pinging Alex is
+    posted, once. The log holds the press's failure line naming Alex, and one lapse line naming
+    Alex that says an earlier press failed and may have been partly done: the lapse is told as
+    the review stands when the take-down runs, not as it stood when the timer fired."""
+    from leaguebot.core.services import season_fingerprint_service as sfs
+    from tests.support.change_queue import run_queue
+
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    await _season_since_the_review(env, monkeypatch)
+    view, cog = _view_on(env, view_class, helper)
     seen: dict = {}
 
-    def _deleted() -> int:
-        return message.delete.await_count + sum(part.delete.await_count for part in report)
-
-    async def _worked(*_args, **_kwargs):
-        # discord.py's timer: the view is stopped and `on_timeout` is run as a task.
-        view._dispatch_timeout()
-        [timer] = [
-            task for task in asyncio.all_tasks()
-            if task.get_name() == f"discord-ui-view-timeout-{view.id}"
-        ]
-        seen["timer"] = timer
-        # Long enough for the timer to have done whatever it will do while the press is worked.
-        await asyncio.wait({timer}, timeout=0.5)
-        seen["deleted"] = _deleted()
-        seen["notices"] = message.channel.send.await_count
-        seen["lines"] = list(_logged(cog))
+    async def _timer_fires_then_locked(*_args, **_kwargs):
+        await _expiry_callback(env)(channel.q.id)
+        seen["deleted"], seen["sent"] = list(channel.deleted), list(channel.sent)
         raise RuntimeError("the database is locked")
 
-    getattr(cog, helper).side_effect = _worked
+    monkeypatch.setattr(sfs, "take_fingerprint", _timer_fires_then_locked)
     button = next(item for item in view.children if isinstance(item, discord.ui.Button))
 
-    # What discord.py does with a press: the button runs in a task, and a raise reaches
-    # the view's `on_error`, which records the failure.
-    pressed = view._dispatch_item(button, _press(cog))
+    # What discord.py does with a press: the button runs in a task, and a raise reaches the
+    # view's `on_error`, which records the failure.
+    pressed = view._dispatch_item(button, _press_on(env))
     assert pressed is not None
     await asyncio.wait_for(pressed, timeout=2)
-    await asyncio.wait_for(seen["timer"], timeout=2)
-    # Whatever the end of the press sets off is given a moment to run its course.
-    loop = asyncio.get_running_loop()
-    settled_by = loop.time() + 1.0
-    while loop.time() < settled_by and (
-        not message.channel.send.await_count or len(_logged(cog)) < 2
-    ):
-        await asyncio.sleep(0.02)
+    await run_queue(env.bot)
 
-    assert seen["deleted"] == 0, "the review was deleted while its press was under way"
-    assert seen["notices"] == 0, "the expiry notice was posted while the press was under way"
-    assert not any(line.startswith("⌛ ") for line in seen["lines"]), seen["lines"]
-    message.delete.assert_awaited_once()
-    for part in report:
-        part.delete.assert_awaited_once()
-    message.channel.send.assert_awaited_once()
-    assert "<@4242> your review has expired" in message.channel.send.await_args.args[0]
-    lines = _logged(cog)
-    assert len(lines) == 2, lines
-    [failure] = [line for line in lines if line.startswith("❌ ")]
+    getattr(cog, helper).assert_not_awaited()
+    assert seen == {"deleted": [], "sent": []}, seen
+    assert sorted(m.id for m in channel.deleted) == sorted([channel.q.id, channel.r1.id,
+                                                            channel.r2.id])
+    [notice] = channel.sent
+    assert "<@4242> your review has expired" in notice
+    [failure] = _lines(env, "❌ ")
     assert "failed for Alex (<@4242>)" in failure, failure
-    [lapse] = [line for line in lines if line.startswith("⌛ ")]
+    [lapse] = _lines(env, "⌛ ")
     head, *beneath = lapse.splitlines()
-    assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
+    assert head.replace("`", "").endswith(
+        "lapsed unconfirmed (started by Alex (<@4242>))"
+    ), head
     detail = "\n".join(beneath).lower()
     assert "failed" in detail and "partly" in detail, detail
     assert "nothing has been" not in detail, detail
@@ -609,78 +600,79 @@ async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_exp
 # ── Found in review of the hand-built part (#482) ───────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_timer_firing_while_a_finished_press_clears_the_review_records_no_lapse(
-    view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex's press is worked and finishes, and the review's five minutes run out while its report
-    is being cleared away. The review was answered, so the timer posts no expiry notice and
-    records no lapse: the log holds only what the press itself wrote."""
-    view, cog, message = _review(view_class, helper)
-    report = [MagicMock(), MagicMock()]
+    """Alex's press is taken and finishes, the review's take-down asked ending confirmed, and the
+    review's five minutes run out before the queue has cleared it away: its expiry timer fires
+    for Q. The review was answered, so once the queue runs it is gone with no expiry notice
+    posted and no lapse recorded."""
+    from tests.support.change_queue import run_queue
 
-    async def _deleted_as_the_timer_fires():
-        view._dispatch_timeout()
-        # A delete is a request to Discord: the timer's task runs while it is awaited.
-        await asyncio.sleep(0.01)
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    await _season_since_the_review(env, monkeypatch)
+    view, cog = _view_on(env, view_class, helper)
 
-    async def _a_slow_delete():
-        await asyncio.sleep(0.05)
-
-    report[0].delete = AsyncMock(side_effect=_deleted_as_the_timer_fires)
-    report[1].delete = AsyncMock()
-    # The question's own delete takes as long as a request to Discord does.
-    message.delete = AsyncMock(side_effect=_a_slow_delete)
-    view.carries(report)
-
-    await view_class.approve(view, _press(cog), MagicMock())
-    # Whatever the timer set off is given a moment to run its course.
-    await asyncio.sleep(0.2)
+    await view_class.approve(view, _press_on(env), MagicMock())
+    await _expiry_callback(env)(channel.q.id)
+    await run_queue(env.bot)
 
     getattr(cog, helper).assert_awaited_once()
-    message.channel.send.assert_not_awaited()
-    assert not any(line.startswith("⌛ ") for line in _logged(cog)), _logged(cog)
+    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
+    assert channel.sent == []
+    assert _lines(env, "⌛ ") == [], _queue_lines(env)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_five_minutes_run_from_the_posting_of_the_question(
-    view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex's review took longer than five minutes to draw and post: its view was built before
-    the report, and the question went up only afterwards. Alex presses a moment after the
-    question appears. The press is well inside five minutes from the posting, so it is taken:
-    the approval (or confirmation) is worked, and nothing is refused."""
-    view, cog, message = _review(view_class, helper)
-    # Built long enough ago that five minutes from building have already gone by.
-    view._deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+    """Alex's review took a while to draw and post: its view was built by the command, and the
+    question Q went up only afterwards; the review's row says Q was posted a moment ago. Alex
+    presses a moment after Q appears, the season as the review described it. The press is well
+    inside five minutes from the posting, so it is taken: the approval (or confirmation) is
+    worked, and nothing is refused."""
+    env = await _standing(tmp_path, review)
+    await _season_since_the_review(env, monkeypatch)
+    view, cog = _view_on(env, view_class, helper)
 
-    await view.bind(message)
-    await view_class.approve(view, _press(cog), MagicMock())
+    await view_class.approve(view, _press_on(env), MagicMock())
 
     getattr(cog, helper).assert_awaited_once()
-    assert not any(line.startswith("⛔ ") for line in _logged(cog)), _logged(cog)
+    assert _lines(env, "⛔ ") == [], _queue_lines(env)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_second_press_while_one_is_being_worked_is_refused(
-    view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """F13. Alex presses his review's button, and presses it again (a double-click) while the
-    first press is still being worked. The second press is refused, privately, and recorded;
-    only the first is worked, so the season is approved (or confirmed) once."""
-    view, cog, message = _review(view_class, helper)
+    """F13. Alex presses his review's button a moment after Q appears, the season as the review
+    described it, and presses it again (a double-click) while the first press is still being
+    worked. The second press is refused, privately, and recorded; only the first is worked, so
+    the season is approved (or confirmed) once."""
+    from tests.support.change_queue import acknowledgement
+
+    env = await _standing(tmp_path, review)
+    await _season_since_the_review(env, monkeypatch)
+    view, cog = _view_on(env, view_class, helper)
     started = asyncio.Event()
     release = asyncio.Event()
 
     async def _worked(*_args, **_kwargs):
         started.set()
         await release.wait()
+        return True
 
-    getattr(cog, helper).side_effect = _worked
-    first = asyncio.create_task(view_class.approve(view, _press(cog), MagicMock()))
+    setattr(cog, helper, AsyncMock(side_effect=_worked))
+    first = asyncio.create_task(view_class.approve(view, _press_on(env), MagicMock()))
     await asyncio.wait_for(started.wait(), timeout=2)
 
-    second = _press(cog)
+    second = _press_on(env)
     second_press = asyncio.create_task(view_class.approve(view, second, MagicMock()))
     answered, _ = await asyncio.wait({second_press}, timeout=1)
     release.set()
@@ -688,12 +680,12 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
 
     assert answered, "the second press waited on the first instead of being refused"
     getattr(cog, helper).assert_awaited_once()
-    reply = second.response.send_message.await_args
-    assert "already being answered" in reply.args[0], reply
-    assert f"Nothing has been {verb}" in reply.args[0], reply
-    assert reply.kwargs["ephemeral"] is True
-    refusals = [line for line in _logged(cog) if line.startswith("⛔ ")]
-    assert len(refusals) == 1, _logged(cog)
+    reply = acknowledgement(second)
+    assert "already being answered" in reply, reply
+    assert f"Nothing has been {verb}" in reply, reply
+    assert second.response.send_message.await_args.kwargs["ephemeral"] is True
+    refusals = _lines(env, "⛔ ")
+    assert len(refusals) == 1, _queue_lines(env)
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals
 
 
