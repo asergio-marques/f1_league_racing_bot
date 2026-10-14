@@ -633,8 +633,15 @@ async def _resubmitting_flag(db_path) -> int:
         return (await cursor.fetchone())[0]
 
 
+def _plain(line: str) -> str:
+    """A log channel's line as written: the mentions the router wraps in backticks unwrapped,
+    and the rule it closes each entry with dropped."""
+    kept = [part for part in line.splitlines() if part.strip("―")]
+    return "\n".join(kept).replace("`<@", "<@").replace(">`", ">")
+
+
 def _lapse_lines(league) -> list[str]:
-    return [line for line in league.bot.log_channel.sent if line.startswith("⌛")]
+    return [_plain(line) for line in league.bot.log_channel.sent if line.startswith("⌛")]
 
 
 @pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
