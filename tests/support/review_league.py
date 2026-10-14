@@ -538,10 +538,12 @@ async def block_queue(league: ReviewLeague, *, lane: str | None = None) -> dict[
 
 
 async def race_rows(db_path: str) -> dict[int, dict[str, Any]]:
+    """Each driver's row of the round's race results: its finishing position, penalties and
+    points, by driver."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT driver_user_id, postrace_time_penalties_ms, appeal_time_penalties_ms, "
-            "points_awarded FROM race_session_results"
+            "SELECT driver_user_id, finishing_position, postrace_time_penalties_ms, "
+            "appeal_time_penalties_ms, points_awarded FROM race_session_results"
         )
         return {row["driver_user_id"]: dict(row) for row in await cursor.fetchall()}
 
