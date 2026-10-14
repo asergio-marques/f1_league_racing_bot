@@ -594,3 +594,67 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
     assert posting.drawing.asked == ["Pro calendar", "Pro lineup"]
     assert posting.drawing.threads
     assert all(thread is not threading.current_thread() for thread in posting.drawing.threads)
+
+
+# ---------------------------------------------------------------------------
+# The restart (C98)
+# ---------------------------------------------------------------------------
+
+NO_RESTART_TAKE_DOWN = (
+    "#439: a restart takes down each season review left standing itself, off the change queue"
+)
+CONFIG = "/season config-review"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_TAKE_DOWN)
+async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_queue_starts(
+        standing):
+    """Two reviews stand in channel 700 when the bot starts: Alex's placements review (report R1
+    and R2, question Q) and his configuration review (question C). The restart's step deletes and
+    posts nothing itself, and asks two take-downs of the queue. Once the queue runs, every message
+    of both is deleted, each review's notice says it expired while the bot was restarting and pings
+    Alex, and both prompts' rows are gone."""
+    from leaguebot.__main__ import _recover_expired_review_prompts
+
+    channel = standing.channel
+    config_question = post_in(channel, BOT_USER)
+    async with get_connection(standing.db_path) as db:
+        await store_review_prompt(db, season_id=1, channel_id=REVIEW_CHANNEL,
+                                  message_id=config_question.id, reviewer_id=REVIEWER,
+                                  review=CONFIG)
+        await db.commit()
+
+    await _recover_expired_review_prompts(standing.bot)
+
+    assert channel.deleted == [] and channel.sent == []
+    assert len(await _changes(standing, TAKE_DOWN)) == 2
+
+    await run_queue(standing.bot)
+
+    assert channel.messages == []
+    notices = [content for content, _ in channel.sent]
+    assert len(notices) == 2
+    assert all("restarting" in notice and f"<@{REVIEWER}>" in notice for notice in notices)
+    assert any(PLACEMENTS in notice for notice in notices)
+    assert any(CONFIG in notice for notice in notices)
+    assert await _prompts(standing.db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_TAKE_DOWN)
+async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_second_start(standing):
+    """Discord refuses to delete Alex's report message R1. The bot starts and asks the review's
+    take-down, which stops at R1's delete. The bot starts again with it still stopped: the
+    restart's step asks no second take-down, and the review's row still stands."""
+    from leaguebot.__main__ import _recover_expired_review_prompts
+
+    standing.channel.r1.fails = http_error(discord.Forbidden, status=403,
+                                           text="Missing Permissions")
+
+    await _recover_expired_review_prompts(standing.bot)
+    await run_queue(standing.bot)
+    assert (await stopped_job(standing.db_path))["name"] == "delete_message"
+
+    await _recover_expired_review_prompts(standing.bot)
+
+    assert len(await _changes(standing, TAKE_DOWN)) == 1
+    assert len(await _prompts(standing.db_path)) == 1
