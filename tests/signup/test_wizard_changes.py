@@ -406,6 +406,195 @@ async def test_sign_up_posts_its_welcome_on_the_league_lane(tmp_path):
     assert league.channel(NEW_CHANNEL).texts != []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+async def test_sign_up_s_channel_is_seen_only_by_the_driver_and_both_staff_tiers(tmp_path):
+    """Kimi presses Sign Up and the queue runs. His channel is named for him, ending
+    "-signup", and is created hidden from everyone but Kimi, the league's interaction role and
+    its league admin role, so a league admin without the interaction role still sees the signup
+    they are entitled to approve (#116)."""
+    league = await _league(tmp_path)
+    [roles] = await league.rows(
+        "SELECT interaction_role_id, league_admin_role_id FROM server_configs"
+    )
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    created = league.guild.create_text_channel.await_args
+    assert str(created.args[0] if created.args else created.kwargs["name"]).endswith("-signup")
+    overwrites = created.kwargs["overwrites"]
+    assert overwrites[league.guild.default_role].view_channel is False
+    kimi = [key for key in overwrites if getattr(key, "id", None) == SIGNING_UP]
+    assert kimi and overwrites[kimi[0]].view_channel is True
+    staff = {roles["interaction_role_id"], roles["league_admin_role_id"]} - {None}
+    assert staff and staff <= {getattr(key, "id", None) for key in overwrites}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+async def test_the_wizard_is_saved_with_the_configuration_as_it_stood_and_no_reserve_team(
+    tmp_path,
+):
+    """Kimi presses Sign Up and the queue runs. His wizard's row holds the signup configuration
+    frozen as it stood when his channel was created, its team buttons the league's full-time
+    teams with no reserve team, and his draft already holding his username and server name.
+    A manager changing the configuration afterwards leaves the saved snapshot as it was."""
+    import json
+
+    league = await _league(tmp_path)
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    wizard = await _wizard(league)
+    assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL
+    snapshot = json.loads(wizard["config_snapshot_json"])
+    teams = snapshot.get("team_names") or []
+    assert teams and not any("reserve" in str(team).lower() for team in teams)
+    draft = json.loads(wizard["draft_answers_json"] or "{}")
+    assert "discord_username" in draft and draft.get("server_display_name") == "Kimi"
+
+    await league.write("UPDATE signup_module_settings SET nationality_required = 0")
+    assert (await _wizard(league) or {}).get("config_snapshot_json") == wizard[
+        "config_snapshot_json"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("nationality", "first"),
+    [
+        pytest.param(True, "Step 1 — Nationality", id="nationality required",
+                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+        pytest.param(False, "Platform", id="nationality not required",
+                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+    ],
+)
+async def test_the_first_question_is_nationality_only_where_required_and_a_button_step_locks_typing(
+    tmp_path, nationality, first
+):
+    """The league requires each driver's nationality, or does not. Kimi presses Sign Up and the
+    queue runs. His welcome, posted in his new channel, asks nationality first where it is
+    required, his wizard at Collecting Nationality and his typing left open; otherwise it asks
+    his platform first, his wizard at Collecting Platform, and his typing in the channel is
+    taken away, so a stray message cannot be read as an answer to a button-only step."""
+    league = await _league(tmp_path)
+    for table in ("signup_module_settings", "season_signup_config"):
+        await league.write(f"UPDATE {table} SET nationality_required = ?", int(nationality))
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    welcome = "\n".join(league.channel(NEW_CHANNEL).texts)
+    assert first in welcome
+    wizard = await _wizard(league)
+    wanted = "COLLECTING_NATIONALITY" if nationality else "COLLECTING_PLATFORM"
+    assert wizard is not None and wizard["wizard_state"] == wanted
+    locked = [call for call in league.channel(NEW_CHANNEL).set_permissions.await_args_list
+              if getattr(call.args[0], "id", None) == SIGNING_UP
+              and call.kwargs.get("send_messages") is False]
+    assert bool(locked) is (not nationality)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+async def test_sign_up_welcomes_the_driver_by_name_and_writes_its_started_line(tmp_path):
+    """Kimi presses Sign Up and the queue runs. His welcome says "Welcome to the signup wizard,
+    <@105>!", and the log channel carries the signup's "Signup | Started" line naming him."""
+    league = await _league(tmp_path)
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    assert f"Welcome to the signup wizard, <@{SIGNING_UP}>!" in "\n".join(
+        league.channel(NEW_CHANNEL).texts
+    )
+    started = [line for line in league.log().splitlines() if "Signup | Started" in line]
+    assert len(started) == 1 and f"<@{SIGNING_UP}>" in started[0]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("signups closed", id="signups closed",
+                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+        pytest.param("module disabled", id="module disabled",
+                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+    ],
+)
+async def test_a_leftover_sign_up_button_is_refused_once_signups_are_closed(tmp_path, case):
+    """A Sign Up button the close could not delete still stands. Signups are now closed, or the
+    signup module is off, and Kimi presses it: he is told "⛔ Signups are closed.", one refusal
+    line naming him is written, no `signup.start` change is asked, and when the queue runs no
+    channel is created and he is not signing up."""
+    league = await _league(tmp_path)
+    if case == "signups closed":
+        await league.write("UPDATE signup_module_config SET signups_open = 0")
+    else:
+        await league.write("UPDATE server_configs SET signup_module_enabled = 0")
+
+    press = await _press_sign_up(league)
+
+    assert "⛔ Signups are closed." in _answered(press)
+    refusals = [line for line in league.log().splitlines() if line.startswith("⛔")]
+    assert len(refusals) == 1 and f"<@{SIGNING_UP}>" in refusals[0]
+    assert await _changes_of(league, START_KIND) == []
+    await run_queue(league.bot)
+    assert league.created == []
+    assert await _driver_state(league) in (None, "NOT_SIGNED_UP")
+
+
+@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+async def test_signing_up_again_disarms_the_abandoned_wizard_s_timers(tmp_path):
+    """Kimi abandoned an earlier signup: he is Not Signed Up, his old channel (6405) standing
+    and named by his wizard's row. He presses Sign Up and the queue runs: the old wizard's 24
+    hours of inactivity and its channel's deletion are disarmed, so neither fires into the
+    signup he has just begun, and fresh 24 hours are armed for it."""
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, 'NOT_SIGNED_UP', 0)",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES (?, 'UNENGAGED', ?)",
+        str(SIGNING_UP), OLD_CHANNEL,
+    )
+    _held(league, OLD_CHANNEL)
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    disarmed = {call.args[:2] for call in league.bot.scheduler_service.disarm.call_args_list}
+    assert {(INACTIVITY_TIMER, str(SIGNING_UP)), (DELETE_TIMER, str(SIGNING_UP))} <= disarmed
+    assert _armed(league, INACTIVITY_TIMER)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+async def test_an_abandoned_channel_already_gone_does_not_stop_sign_up(tmp_path):
+    """Kimi abandoned an earlier signup whose channel (6405) was since deleted by hand, though
+    his wizard's row still names it. He presses Sign Up and the queue runs: `delete_old_channel`
+    completes, finding the channel gone, his new channel (6500) is created and the change is
+    done, the league lane not stopped."""
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, 'NOT_SIGNED_UP', 0)",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES (?, 'UNENGAGED', ?)",
+        str(SIGNING_UP), OLD_CHANNEL,
+    )
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    assert league.created == [NEW_CHANNEL]
+    [change] = await _changes_of(league, START_KIND)
+    assert change["state"] == "DONE"
+    assert await stopped_job(league.db_path, "league") is None
+
+
 # ---------------------------------------------------------------------------
 # Cancel Signup (C76)
 # ---------------------------------------------------------------------------

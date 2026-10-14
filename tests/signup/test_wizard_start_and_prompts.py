@@ -1,49 +1,31 @@
-"""Starting a signup, the questions it asks, and the lock on its channel.
+"""The questions a signup asks.
 
-Issue #208. The signup wizard's step handlers, approval and recovery were already tested; what
-a driver meets first was not. `start_wizard` (pressing Sign Up), `_prompt_for_state` (the text
-of every question) and the channel's lock were all almost entirely untested.
-
-**Pressing Sign Up again starts cleanly.** A driver who abandoned a wizard and presses the button
-again gets a fresh channel: the old one is deleted, and its inactivity job, channel-delete job
-and any pending correction window are cancelled. Left behind, they would fire into the new
-signup — the old timeout ending a wizard the driver is halfway through.
-
-**The configuration is frozen when the signup starts.** The snapshot taken at the start is what
-the driver is asked against, so a manager editing the tracks or slots mid-signup does not change
-the questions under a driver already answering them. The team buttons come from the league's
-full-time teams only; a reserve team is not a team a driver asks to join.
-
-**Nationality is skipped unless the league requires it.** The wizard starts at nationality or
-at platform accordingly, and a button-only first step locks the driver's typing until they
-press a button, so a stray message cannot be read as an answer.
+Issue #208. `_prompt_for_state` (the text of every question) and `_build_step_view` (the buttons
+under each) were almost entirely untested; the jobs that post the next question use both.
 
 **Every question says what step it is and how to answer.** The prompt text is what a driver
 reads, so each state is tested for its step number and its instruction; a lap-time question
 names the track by name rather than id, counts through the tracks, and asks for a screenshot
 where the league wants one.
 
-A correction's commit is pinned in `tests/signup/test_wizard_commit.py`, and a closing notice,
-the lock and the channel's deletion a day on in `tests/signup/test_closing_steps.py` and
-`tests/signup/test_wizard_changes.py`: each is a job on the change queue (#439 slice 6b).
-
-**The channel is locked.** Locking a signup channel revokes the driver's write access and arms
-its deletion 24 hours on, so the driver can read what happened.
+Pressing Sign Up is `signup.start` on the change queue (#439 slice 6b), pinned in
+`tests/signup/test_wizard_changes.py`: the channel and who sees it, the configuration frozen
+with no reserve team, the first question and the typing lock, the welcome, the started line,
+and an abandoned signup's channel and timers. A correction's commit is pinned in
+`tests/signup/test_wizard_commit.py`, and a closing notice, the lock and the channel's deletion
+a day on in `tests/signup/test_closing_steps.py`: each is a job on the change queue.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import discord
 import pytest
 
-from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
-    SignupRecord,
     SignupWizardRecord,
     WizardState,
 )
@@ -51,7 +33,6 @@ from leaguebot.signup.services.wizard_service import WizardService
 
 SERVER_ID = 14208
 DRIVER = "4242"
-NEW_CHANNEL = 7200
 OLD_CHANNEL = 7199
 
 
@@ -87,16 +68,6 @@ def _wizard(state=WizardState.COLLECTING_PLATFORM, *, channel=OLD_CHANNEL, draft
         draft_answers=dict(draft or {}),
         current_lap_track_index=index,
         last_activity_at=datetime.now(timezone.utc).isoformat(),
-    )
-
-
-def _record():
-    return SignupRecord(
-        id=1, discord_user_id=DRIVER, discord_username="racer",
-        server_display_name="Racer", nationality="British", platform="Steam",
-        platform_id="racer_steam", availability_slot_ids=["Mon_19_00"], driver_type="FULL_TIME",
-        preferred_teams=["Red"], preferred_teammate=None, lap_times={"27": "1:23.456"},
-        notes=None, signup_channel_id=OLD_CHANNEL,
     )
 
 
@@ -159,291 +130,6 @@ def _service(
     svc._bot = bot
     svc._get_track_name_map = AsyncMock(return_value={"27": "Silverstone"})
     return svc
-
-
-def _guild(*, old_channel=None, new_channel=None):
-    guild = MagicMock()
-    guild.default_role = MagicMock()
-    guild.me = MagicMock()
-    guild.get_channel = MagicMock(
-        side_effect=lambda cid: old_channel if cid == OLD_CHANNEL else (new_channel if cid == NEW_CHANNEL else None)
-    )
-    roles = {rid: MagicMock(id=rid) for rid in (900, 901)}
-    guild.get_role = MagicMock(side_effect=lambda rid: roles.get(rid))
-    created = new_channel or _channel(NEW_CHANNEL)
-    guild.create_text_channel = AsyncMock(return_value=created)
-    guild._created = created
-    return guild
-
-
-def _channel(cid):
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.id = cid
-    channel.send = AsyncMock()
-    channel.delete = AsyncMock()
-    channel.set_permissions = AsyncMock()
-    return channel
-
-
-def _interaction(guild):
-    member = MagicMock(spec=discord.Member)
-    member.id = int(DRIVER)
-    member.name = "Racer.One"
-    member.display_name = "Racer"
-    member.mention = f"<@{DRIVER}>"
-    interaction = MagicMock()
-    interaction.guild = guild
-    interaction.user = member
-    return interaction
-
-
-def _saved_wizard(svc) -> SignupWizardRecord:
-    return svc._bot.signup_module_service.save_wizard.await_args.args[0]
-
-
-# ---------------------------------------------------------------------------
-# Pressing Sign Up
-# ---------------------------------------------------------------------------
-
-
-async def test_a_private_channel_is_created_for_the_driver(tmp_path):
-    svc = _service()
-    guild = _guild()
-
-    channel = await svc.start_wizard(_interaction(guild))
-
-    assert channel is guild._created
-    name = guild.create_text_channel.await_args.args[0]
-    assert name == "racer-one-signup"
-
-
-async def test_pressing_sign_up_saves_the_wizard_as_a_signup_started(tmp_path):
-    """Pressing Sign Up saves the new wizard as the start of a signup (`starting=True`), the one
-    save that clears any closing notice a past close still owed the driver."""
-    svc = _service()
-
-    await svc.start_wizard(_interaction(_guild()))
-
-    saved = svc._bot.signup_module_service.save_wizard.await_args
-    assert saved.kwargs.get("starting") is True
-
-
-async def test_the_channel_is_visible_to_the_driver_and_both_staff_tiers(tmp_path):
-    """#116: a league admin without the interaction role must still see the signup they are
-    entitled to approve."""
-    svc = _service()
-    guild = _guild()
-    interaction = _interaction(guild)
-
-    await svc.start_wizard(interaction)
-
-    overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
-    assert overwrites[guild.default_role].view_channel is False
-    assert overwrites[interaction.user].view_channel is True
-    roles = {getattr(k, "id", None) for k in overwrites}
-    assert {900, 901} <= roles
-
-
-async def test_an_unconfigured_module_starts_nothing(tmp_path):
-    svc = _service(signup_cfg=False)
-    guild = _guild()
-
-    assert await svc.start_wizard(_interaction(guild)) is None
-
-    guild.create_text_channel.assert_not_awaited()
-    svc._bot.driver_service.transition.assert_not_awaited()
-
-
-async def _press_sign_up(svc, guild) -> tuple[list[str], list[str]]:
-    """Press the Sign Up button, as a driver with no profile, on a bot whose wizard service is
-    *svc*. Returns what the driver was told and what the log channel was given."""
-    from leaguebot.signup.cogs.signup_cog import SignupButtonView
-
-    bot = svc._bot
-    bot.wizard_service = svc
-    bot.driver_service.current_account = AsyncMock(return_value=DRIVER)
-    bot.driver_service.get_profile = AsyncMock(return_value=None)
-    bot.output_router.post_log = AsyncMock()
-
-    interaction = _interaction(guild)
-    interaction.client = bot
-    state = {"done": False}
-
-    async def _answer(*_args, **_kwargs):
-        state["done"] = True
-
-    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
-    interaction.response.defer = AsyncMock(side_effect=_answer)
-    interaction.response.send_message = AsyncMock(side_effect=_answer)
-    interaction.followup.send = AsyncMock()
-
-    await SignupButtonView().signup_button.callback(interaction)
-
-    replies = [
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-    ]
-    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
-    return replies, lines
-
-
-@pytest.mark.parametrize(
-    "module_enabled, signups_open",
-    [
-        pytest.param(True, False, id="signups closed"),
-        pytest.param(False, False, id="module disabled"),
-    ],
-)
-async def test_a_leftover_sign_up_button_starts_nothing_once_signups_are_closed(
-    tmp_path, module_enabled, signups_open
-):
-    """F1: a Sign Up button the close could not delete stays in the channel. Pressed once
-    signups are closed, or once the module is off, it is refused and recorded: no channel is
-    made, no wizard saved, and the driver is not moved to Pending Signup Completion."""
-    svc = _service(module_enabled=module_enabled, signups_open=signups_open)
-    guild = _guild()
-
-    replies, lines = await _press_sign_up(svc, guild)
-
-    assert replies == ["⛔ Signups are closed."]
-    assert len(lines) == 1, lines
-    assert lines[0].startswith(f"⛔ the “Sign Up” button refused for Racer (<@{DRIVER}>)")
-    assert "Signups are closed." in lines[0]
-    guild.create_text_channel.assert_not_awaited()
-    svc._bot.signup_module_service.save_wizard.assert_not_awaited()
-    svc._bot.driver_service.transition.assert_not_awaited()
-
-
-async def test_a_sign_up_press_while_signups_are_open_still_starts_the_wizard(tmp_path):
-    """The check F1 adds does not stop a press while the module is on and signups are open."""
-    svc = _service()
-    guild = _guild()
-
-    replies, _lines = await _press_sign_up(svc, guild)
-
-    guild.create_text_channel.assert_awaited_once()
-    assert replies == [f"✅ Your signup channel has been created: {guild._created.mention}"]
-
-
-async def test_the_driver_becomes_pending_signup_completion(tmp_path):
-    svc = _service()
-
-    await svc.start_wizard(_interaction(_guild()))
-
-    svc._bot.driver_service.transition.assert_awaited_once_with(
-        DRIVER, DriverState.PENDING_SIGNUP_COMPLETION
-    )
-
-
-async def test_the_wizard_is_saved_with_the_frozen_configuration(tmp_path):
-    """The questions are asked against the configuration as it stood at the start."""
-    snapshot = _snapshot(tracks=["27"])
-    svc = _service(snapshot=snapshot)
-
-    await svc.start_wizard(_interaction(_guild()))
-
-    wizard = _saved_wizard(svc)
-    assert wizard.config_snapshot is snapshot
-    assert wizard.signup_channel_id == NEW_CHANNEL
-    assert wizard.draft_answers == {"discord_username": "Racer.One", "server_display_name": "Racer"}
-
-
-async def test_the_team_buttons_leave_the_reserve_team_out(tmp_path):
-    """A reserve team is not a team a driver asks to join."""
-    svc = _service()
-
-    await svc.start_wizard(_interaction(_guild()))
-
-    assert _saved_wizard(svc).config_snapshot.team_names == ["Red Racing"]
-
-
-async def test_nationality_is_asked_first_where_the_league_requires_it(tmp_path):
-    svc = _service(snapshot=_snapshot(nationality=True))
-    guild = _guild()
-
-    await svc.start_wizard(_interaction(guild))
-
-    assert _saved_wizard(svc).wizard_state == WizardState.COLLECTING_NATIONALITY
-    assert "Step 1 — Nationality" in str(guild._created.send.await_args.args[0])
-    guild._created.set_permissions.assert_not_awaited()
-
-
-async def test_platform_is_asked_first_otherwise_and_typing_is_locked(tmp_path):
-    """A button-only first step: a stray message must not be read as an answer."""
-    svc = _service(snapshot=_snapshot(nationality=False))
-    guild = _guild()
-    interaction = _interaction(guild)
-
-    await svc.start_wizard(interaction)
-
-    assert _saved_wizard(svc).wizard_state == WizardState.COLLECTING_PLATFORM
-    permissions = guild._created.set_permissions.await_args
-    assert permissions.args[0] is interaction.user
-    assert permissions.kwargs["send_messages"] is False
-
-
-async def test_the_driver_is_welcomed_by_name(tmp_path):
-    svc = _service()
-    guild = _guild()
-
-    await svc.start_wizard(_interaction(guild))
-
-    assert f"Welcome to the signup wizard, <@{DRIVER}>!" in str(guild._created.send.await_args.args[0])
-
-
-async def test_the_inactivity_timeout_is_armed_for_24_hours(tmp_path):
-    svc = _service()
-    before = datetime.now(timezone.utc)
-
-    await svc.start_wizard(_interaction(_guild()))
-
-    job = svc._scheduler._scheduler.add_job.call_args
-    assert job.kwargs["id"] == f"wizard_inactivity_{DRIVER}"
-    fire_at = job.kwargs["trigger"].run_date
-    assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
-
-
-async def test_starting_is_logged(tmp_path):
-    svc = _service()
-
-    await svc.start_wizard(_interaction(_guild()))
-
-    assert "Signup | Started" in str(svc._output_router.post_log.await_args.args[0])
-
-
-async def test_starting_again_deletes_the_abandoned_channel(tmp_path):
-    old = _channel(OLD_CHANNEL)
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=old)
-
-    await svc.start_wizard(_interaction(guild))
-
-    old.delete.assert_awaited_once()
-
-
-async def test_starting_again_cancels_the_abandoned_wizards_jobs(tmp_path):
-    """Left behind, the old timeout would end the wizard the driver is halfway through. Each
-    goes through the scheduler service's `cancel_job`."""
-    svc = _service(existing=_wizard())
-    task = MagicMock()
-    svc._correction_tasks[DRIVER] = task
-
-    await svc.start_wizard(_interaction(_guild(old_channel=_channel(OLD_CHANNEL))))
-
-    removed = {c.args[0] for c in svc._scheduler.cancel_job.call_args_list}
-    assert f"wizard_inactivity_{DRIVER}" in removed
-    assert f"wizard_channel_delete_{DRIVER}" in removed
-    task.cancel.assert_called_once()
-
-
-async def test_an_abandoned_channel_already_gone_does_not_stop_the_start(tmp_path):
-    old = _channel(OLD_CHANNEL)
-    old.delete = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=404), "gone"))
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=old)
-
-    assert await svc.start_wizard(_interaction(guild)) is guild._created
 
 
 # ---------------------------------------------------------------------------
@@ -552,36 +238,3 @@ async def test_each_question_gets_its_own_buttons(state, view_name):
     view = _service()._build_step_view(state, DRIVER, ["Red"])
 
     assert type(view).__name__ == view_name
-
-
-# ---------------------------------------------------------------------------
-# The channel's lock
-# ---------------------------------------------------------------------------
-
-
-def _refused():
-    return discord.Forbidden(MagicMock(status=403), "Missing Permissions")
-
-
-async def test_locking_a_signup_channel_revokes_writing_and_arms_its_deletion(tmp_path):
-    """Locking a signup channel takes away the driver's typing and arms its deletion 24 hours on,
-    posting nothing; a permission write Discord refuses raises from its fault."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    channel = _channel(OLD_CHANNEL)
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=channel)
-    guild.get_member = MagicMock(return_value=MagicMock())
-
-    await svc.lock_signup_channel(DRIVER, guild)
-
-    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
-    channel.send.assert_not_awaited()
-    job = svc._scheduler._scheduler.add_job.call_args
-    assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
-
-    refusal = _refused()
-    channel.set_permissions = AsyncMock(side_effect=refusal)
-    with pytest.raises(StepFailedOnDiscord) as raised:
-        await svc.lock_signup_channel(DRIVER, guild)
-    assert raised.value.__cause__ is refusal
