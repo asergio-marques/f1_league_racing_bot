@@ -616,6 +616,47 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
     assert all(thread is not threading.current_thread() for thread in posting.drawing.threads)
 
 
+NO_BUILDER_DRAWING = (
+    "#439: the builder hands season.review.post no drawing; a review's lineup is drawn by the "
+    "command itself"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_BUILDER_DRAWING)
+async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portraits(
+        posting, monkeypatch):
+    """The real change types are registered, as the builder registers them, and the drawing it
+    hands `season.review.post` is kept. Asked, off the event loop, to draw Pro's lineup for
+    Alex's review, it has the image module draw the lineup obtaining each seated driver's
+    missing portrait (#407), so the review is not judged on a placeholder the league will not
+    see (image specification, "The drawing of placements under review")."""
+    import asyncio
+
+    from leaguebot.core.services import season_review_changes
+    from leaguebot.image.services import image_lineup_post
+
+    handed: dict[str, Any] = {}
+    built = season_review_changes.season_review_post_change
+
+    def _capture(**kwargs: Any) -> Any:
+        handed.update(kwargs)
+        return built(**kwargs)
+
+    monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
+    drawn = posting.drawing.folder / "lineup-11.png"
+    drawn.write_bytes(b"\x89PNG\r\n\x1a\n")
+    render = AsyncMock(return_value=SimpleNamespace(posts_image=True, png_paths=[drawn],
+                                                    notices=[]))
+    monkeypatch.setattr(image_lineup_post, "render_png", render)
+    monkeypatch.setattr(image_lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+
+    await asyncio.to_thread(handed["drawing"], PICTURES[1])
+
+    assert render.await_count == 1
+    assert render.await_args.kwargs["obtain_missing_portraits"] is True
+
+
 # ---------------------------------------------------------------------------
 # The restart (C98)
 # ---------------------------------------------------------------------------
