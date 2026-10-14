@@ -266,15 +266,18 @@ async def _make_db(
     return db_path
 
 
-def _posting_type(*, later_rounds: bool = False, notice: bool = False) -> Any:
-    """A change whose one opening job plans the round's republication through the module."""
+def _posting_type(
+    *, later_rounds: bool = False, notice: bool = False, label: str = LABEL
+) -> Any:
+    """A change whose one opening job plans the round's republication through the module, under
+    *label*."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
     from leaguebot.results.services import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:
         planned = await review_posting.plan_posts(
-            db, ctx.payload["round_id"], label=LABEL, later_rounds=later_rounds, notice=notice,
+            db, ctx.payload["round_id"], label=label, later_rounds=later_rounds, notice=notice,
         )
         return StepResult(then=tuple(planned))
 
@@ -792,6 +795,29 @@ async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_ar
     assert OLD_CANCELLED_LINE in league.deleted_in(RESULTS_CHANNEL)
     assert league.events.index(("send", RESULTS_CHANNEL, line)) < league.events.index(
         ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
+async def test_a_resubmission_s_cancelled_session_is_posted_with_the_amended_provisional_results(
+    tmp_path,
+):
+    """A resubmission of round 3 entered its Feature Qualifying as cancelled and its Feature Race
+    again, so the qualifying's row is cancelled with no message recorded. When the round's tables
+    are posted as "Provisional Results (amended)", the results channel gets the qualifying's line,
+    "This session was cancelled.", in the qualifying's place, before the race's table, and the
+    line is recorded as the qualifying's results message."""
+    league = await _league(tmp_path)
+    label = await _cancel_round_3_s_qualifying(league)
+
+    await _ask(league, label="Provisional Results (amended)")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    line, table = league.sent_to(RESULTS_CHANNEL)
+    content = league.channel(RESULTS_CHANNEL).messages[line].content
+    assert "This session was cancelled" in content and label in content
+    assert "This session was cancelled" not in league.channel(RESULTS_CHANNEL).messages[table].content
+    assert await _qualifying_ids(league.db_path) == (line, [line])
 
 
 async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
