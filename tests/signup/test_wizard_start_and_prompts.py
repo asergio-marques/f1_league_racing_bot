@@ -1,9 +1,8 @@
-"""Starting a signup, the questions it asks, a correction being committed, and the channel's end.
+"""Starting a signup, the questions it asks, and the lock on its channel.
 
 Issue #208. The signup wizard's step handlers, approval and recovery were already tested; what
 a driver meets first was not. `start_wizard` (pressing Sign Up), `_prompt_for_state` (the text
-of every question), `_commit_correction` (answering a manager's request for changes) and the two
-channel-ending helpers were all almost entirely untested.
+of every question) and the channel's lock were all almost entirely untested.
 
 **Pressing Sign Up again starts cleanly.** A driver who abandoned a wizard and presses the button
 again gets a fresh channel: the old one is deleted, and its inactivity job, channel-delete job
@@ -24,14 +23,12 @@ reads, so each state is tested for its step number and its instruction; a lap-ti
 names the track by name rather than id, counts through the tracks, and asks for a screenshot
 where the league wants one.
 
-**A correction changes only what was corrected, and hands the signup straight back.** The
-driver's other answers stand, the driver returns to waiting for approval, the wizard is parked,
-and a fresh review panel is posted — the manager who asked for the change is the one waiting
-to see it.
+A correction's commit is pinned in `tests/signup/test_wizard_commit.py`, and a closing notice,
+the lock and the channel's deletion a day on in `tests/signup/test_closing_steps.py` and
+`tests/signup/test_wizard_changes.py`: each is a job on the change queue (#439 slice 6b).
 
-**The channel is held, then deleted.** Ending a signup revokes the driver's write access, posts
-why, and schedules deletion in 24 hours, so the driver can read what happened; the scheduled
-deletion removes the channel and the wizard record together.
+**The channel is locked.** Locking a signup channel revokes the driver's write access and arms
+its deletion 24 hours on, so the driver can read what happened.
 """
 from __future__ import annotations
 
@@ -558,216 +555,12 @@ async def test_each_question_gets_its_own_buttons(state, view_name):
 
 
 # ---------------------------------------------------------------------------
-# Committing a correction
+# The channel's lock
 # ---------------------------------------------------------------------------
-
-
-async def test_only_the_corrected_answer_changes(tmp_path):
-    record = _record()
-    svc = _service(record=record)
-    guild = _guild(old_channel=_channel(OLD_CHANNEL))
-
-    await svc._commit_correction(
-        _wizard(WizardState.COLLECTING_PLATFORM_ID, draft={"platform_id": "new_tag"}), guild
-    )
-
-    saved = svc._bot.signup_module_service.save_record.await_args.args[0]
-    assert saved.platform_id == "new_tag"
-    assert (saved.nationality, saved.platform, saved.preferred_teams) == ("British", "Steam", ["Red"])
-
-
-async def test_the_driver_goes_back_to_waiting_for_approval(tmp_path):
-    svc = _service(record=_record())
-
-    await svc._commit_correction(
-        _wizard(draft={"nationality": "Irish"}), _guild(old_channel=_channel(OLD_CHANNEL))
-    )
-
-    svc._bot.driver_service.transition.assert_awaited_once_with(
-        DRIVER, DriverState.PENDING_ADMIN_APPROVAL
-    )
-
-
-async def test_the_wizard_is_parked_and_its_answers_cleared(tmp_path):
-    svc = _service(record=_record())
-    wizard = _wizard(draft={"nationality": "Irish"})
-
-    await svc._commit_correction(wizard, _guild(old_channel=_channel(OLD_CHANNEL)))
-
-    assert wizard.wizard_state == WizardState.UNENGAGED
-    assert wizard.draft_answers == {}
-    svc._bot.signup_module_service.save_wizard.assert_awaited_once_with(wizard)
-
-
-async def test_the_timeout_on_the_correction_is_cancelled(tmp_path):
-    """Through the scheduler service's `cancel_job`."""
-    svc = _service(record=_record())
-
-    await svc._commit_correction(_wizard(draft={"notes": "hi"}), _guild(old_channel=_channel(OLD_CHANNEL)))
-
-    removed = {c.args[0] for c in svc._scheduler.cancel_job.call_args_list}
-    assert f"wizard_inactivity_{DRIVER}" in removed
-
-
-async def test_a_fresh_review_panel_is_posted(tmp_path):
-    """The manager who asked for the change is the one waiting to see it."""
-    channel = _channel(OLD_CHANNEL)
-    svc = _service(record=_record())
-
-    await svc._commit_correction(_wizard(draft={"platform_id": "new_tag"}), _guild(old_channel=channel))
-
-    posted = channel.send.await_args
-    assert "new_tag" in str(posted.args[0])
-    assert type(posted.kwargs["view"]).__name__ == "AdminReviewView"
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("nationality", "Irish"),
-        ("platform", "Xbox"),
-        ("availability_slot_ids", ["Fri_21_00"]),
-        ("driver_type", "RESERVE"),
-        ("preferred_teams", ["Blue"]),
-        ("preferred_teammate", "friend"),
-        ("lap_times", {"27": "1:22.000"}),
-        ("notes", "late on Fridays"),
-    ],
-)
-async def test_every_correctable_field_is_applied(tmp_path, field, value):
-    svc = _service(record=_record())
-
-    await svc._commit_correction(_wizard(draft={field: value}), _guild(old_channel=_channel(OLD_CHANNEL)))
-
-    saved = svc._bot.signup_module_service.save_record.await_args.args[0]
-    assert getattr(saved, field) == value
-
-
-async def test_a_correction_with_no_signup_record_does_nothing(tmp_path):
-    svc = _service(record=None)
-
-    await svc._commit_correction(_wizard(draft={"notes": "hi"}), _guild())
-
-    svc._bot.driver_service.transition.assert_not_awaited()
-    svc._bot.signup_module_service.save_record.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# The channel's end
-# ---------------------------------------------------------------------------
-
-
-async def test_ending_a_signup_holds_the_channel(tmp_path):
-    """The driver can read why it ended, and cannot type into it."""
-    channel = _channel(OLD_CHANNEL)
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=channel)
-    member = MagicMock()
-    guild.get_member = MagicMock(return_value=member)
-
-    await svc.trigger_channel_hold(DRIVER, guild, "Signups have closed.")
-
-    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
-    channel.send.assert_awaited_once_with("Signups have closed.")
-    job = svc._scheduler._scheduler.add_job.call_args
-    assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
-
-
-async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=_channel(OLD_CHANNEL))
-    guild.get_member = MagicMock(return_value=None)
-    before = datetime.now(timezone.utc)
-
-    await svc.trigger_channel_hold(DRIVER, guild, "ended")
-
-    fire_at = svc._scheduler._scheduler.add_job.call_args.kwargs["trigger"].run_date
-    assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
-
-
-async def test_no_wizard_means_no_hold(tmp_path):
-    svc = _service(existing=None)
-    guild = _guild()
-
-    await svc.trigger_channel_hold(DRIVER, guild, "ended")
-
-    svc._scheduler._scheduler.add_job.assert_not_called()
 
 
 def _refused():
     return discord.Forbidden(MagicMock(status=403), "Missing Permissions")
-
-
-async def test_the_notice_is_posted_before_the_channel_is_locked(tmp_path):
-    """The driver is told why their signup ended before their typing is taken away and the
-    channel's deletion armed, so they are never locked out of a channel that says nothing."""
-    order: list[str] = []
-    channel = _channel(OLD_CHANNEL)
-    channel.send = AsyncMock(side_effect=lambda *a, **k: order.append("send"))
-    channel.set_permissions = AsyncMock(side_effect=lambda *a, **k: order.append("lock"))
-    svc = _service(existing=_wizard())
-    svc._scheduler._scheduler.add_job = MagicMock(side_effect=lambda *a, **k: order.append("arm"))
-    guild = _guild(old_channel=channel)
-    guild.get_member = MagicMock(return_value=MagicMock())
-
-    await svc.trigger_channel_hold(DRIVER, guild, "Signups have closed.")
-
-    assert order == ["send", "lock", "arm"]
-
-
-async def test_a_notice_that_cannot_be_posted_locks_typing_and_arms_no_deletion(tmp_path):
-    """By default (a withdrawal, approval, rejection or expiry), a notice Discord refuses leaves
-    the channel readable with the driver's typing locked and no deletion armed, and says so."""
-    channel = _channel(OLD_CHANNEL)
-    channel.send = AsyncMock(side_effect=_refused())
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=channel)
-    guild.get_member = MagicMock(return_value=MagicMock())
-
-    outcome = await svc.trigger_channel_hold(DRIVER, guild, "ended")
-
-    assert channel.set_permissions.await_args.kwargs["send_messages"] is False
-    svc._scheduler._scheduler.add_job.assert_not_called()
-    assert outcome.channel_id == OLD_CHANNEL
-    assert outcome.posted is False
-    assert outcome.locked is True
-    assert outcome.reason
-
-
-async def test_a_raising_hold_raises_before_locking_where_the_notice_is_refused(tmp_path):
-    """Asked to raise (the change queue's notice job), a refused notice raises from Discord's
-    fault, having locked nothing and armed nothing, so a Retry finds the channel as it was."""
-    from leaguebot.core.models.change import StepFailedOnDiscord
-
-    refusal = _refused()
-    channel = _channel(OLD_CHANNEL)
-    channel.send = AsyncMock(side_effect=refusal)
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=channel)
-    guild.get_member = MagicMock(return_value=MagicMock())
-
-    with pytest.raises(StepFailedOnDiscord) as raised:
-        await svc.trigger_channel_hold(DRIVER, guild, "ended", raise_on_failure=True)
-
-    assert raised.value.__cause__ is refusal
-    channel.set_permissions.assert_not_awaited()
-    svc._scheduler._scheduler.add_job.assert_not_called()
-
-
-async def test_a_notice_only_hold_posts_without_locking(tmp_path):
-    """Asked only for the notice (`lock=False`), the hold posts it and leaves the channel and its
-    deletion to the job after it."""
-    channel = _channel(OLD_CHANNEL)
-    svc = _service(existing=_wizard())
-    guild = _guild(old_channel=channel)
-    guild.get_member = MagicMock(return_value=MagicMock())
-
-    outcome = await svc.trigger_channel_hold(DRIVER, guild, "ended", lock=False)
-
-    channel.send.assert_awaited_once_with("ended")
-    channel.set_permissions.assert_not_awaited()
-    svc._scheduler._scheduler.add_job.assert_not_called()
-    assert outcome.posted is True
 
 
 async def test_locking_a_signup_channel_revokes_writing_and_arms_its_deletion(tmp_path):
@@ -792,39 +585,3 @@ async def test_locking_a_signup_channel_revokes_writing_and_arms_its_deletion(tm
     with pytest.raises(StepFailedOnDiscord) as raised:
         await svc.lock_signup_channel(DRIVER, guild)
     assert raised.value.__cause__ is refusal
-
-
-async def test_the_scheduled_deletion_removes_channel_and_wizard(tmp_path):
-    channel = _channel(OLD_CHANNEL)
-    svc = _service(existing=_wizard())
-    svc._bot.get_guild = MagicMock(return_value=_guild(old_channel=channel))
-
-    await svc._execute_channel_delete(DRIVER)
-
-    channel.delete.assert_awaited_once()
-    svc._bot.signup_module_service.delete_wizard.assert_awaited_once_with(DRIVER)
-
-
-async def test_a_channel_that_will_not_delete_still_clears_the_wizard(tmp_path):
-    channel = _channel(OLD_CHANNEL)
-    channel.delete = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=403), "no"))
-    svc = _service(existing=_wizard())
-    svc._bot.get_guild = MagicMock(return_value=_guild(old_channel=channel))
-
-    await svc._execute_channel_delete(DRIVER)
-
-    svc._bot.signup_module_service.delete_wizard.assert_awaited_once()
-
-
-async def test_a_guild_the_bot_has_left_still_clears_the_wizard(tmp_path):
-    svc = _service(existing=_wizard())
-    svc._bot.get_guild = MagicMock(return_value=None)
-
-    await svc._execute_channel_delete(DRIVER)
-
-    svc._bot.signup_module_service.delete_wizard.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# A hold whose deletion was lost (#439, slice 5)
-# ---------------------------------------------------------------------------

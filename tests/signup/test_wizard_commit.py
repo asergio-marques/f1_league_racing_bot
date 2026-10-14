@@ -465,6 +465,39 @@ async def test_a_correction_amends_the_signup_it_was_asked_of(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
+async def test_a_correction_changes_only_the_corrected_answer_and_hands_the_signup_back(tmp_path):
+    """A correction changes only what was corrected, and hands the signup straight back to the
+    manager who asked for it. Kimi's saved signup is British, Steam, ID kimi7; he was asked to
+    correct his platform ID and types "new_tag". Until the queue runs nothing is saved; once it
+    has, his one signup holds ID new_tag beside British and Steam unchanged, he is Pending Admin
+    Approval again, his wizard is parked with its answers cleared, and one fresh review panel
+    is posted in his channel."""
+    league = await _correcting(tmp_path, "COLLECTING_PLATFORM_ID", {})
+
+    await _type(league, "new_tag")
+
+    record = await _record(league)
+    assert record is not None and record.platform_id == "kimi7"
+
+    await run_queue(league.bot)
+
+    record = await _record(league)
+    assert record is not None
+    assert (record.platform_id, record.nationality, record.platform) == (
+        "new_tag", "British", "Steam"
+    )
+    assert len(await _records(league)) == 1
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    [wizard] = await league.rows(
+        "SELECT wizard_state, draft_answers_json FROM signup_wizard_records "
+        "WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    assert (wizard["wizard_state"], wizard["draft_answers_json"]) == ("UNENGAGED", "{}")
+    assert len(_panels(league)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_first_submission_is_a_new_signup(tmp_path):
     """Kimi has no signup saved yet; once his notes' turn has run he has exactly one."""
     league = await _league(tmp_path)
