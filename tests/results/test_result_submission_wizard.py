@@ -330,8 +330,8 @@ async def _sessions(db_path):
 # ---------------------------------------------------------------------------
 #
 # The round's start asks the queue for `results.submission.open`, as the bot, and the queue
-# opens the submission: the round moved off NOT_RUN, the channel created beside the division's
-# results channel and recorded, the opening and the first prompt posted. These cases run on
+# opens the submission: the round moved off NOT_RUN, the channel created in the interaction
+# channel's category and recorded, the opening and the first prompt posted. These cases run on
 # `ongoing_league`'s league (Pro's round 3 NOT_RUN, its results channel 606, the league
 # managers' role 900 and the admins' 901), its server creating each text channel asked of it.
 
@@ -353,7 +353,6 @@ async def _opening_league(tmp_path: Any, **options: Any) -> SeasonLeague:
     league = await ongoing_league(tmp_path, **options)
     league.created = []
     league.create_fails = None
-    league.channel(RESULTS_606).category = MagicMock(name="Pro's results category")
 
     async def _create(name: str, **kwargs: Any) -> Any:
         if league.create_fails is not None:

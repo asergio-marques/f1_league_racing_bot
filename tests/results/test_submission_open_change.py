@@ -2,15 +2,16 @@
 
 At a round's start its timer asks the queue for `results.submission.open`, as the bot. The change's
 jobs move the round off NOT_RUN in a save of their own (`start_round`), create the round's
-submission channel beside the division's results channel and record it (`create_channel`), post
+submission channel in the interaction channel's category and record it (`create_channel`, results
+spec :244), post
 the opening that pings the league managers' role (`post_opening`) and the first session's prompt
 (`post_prompt`). The channel's creation cannot be discarded: without it the round would never have
 its results submitted, so Discard on it is refused and only Retry clears it (core spec :130,
 decision 12 of the slice). A round whose start falls while the queue is stopped stays not run, and
 so cancellable, until the stop clears and the queue reaches it (Q17).
 
-The league is `ongoing_league`'s, results on: Pro's round 3 is NOT_RUN, its results channel 606,
-in a category of the server's; the server creates each text channel asked of it as a channel
+The league is `ongoing_league`'s, results on: Pro's round 3 is NOT_RUN, its results channel 606;
+the league's interaction channel stands in a category of the server's; the server creates each text channel asked of it as a channel
 double of the league's. The change is asked as its timer asks it; everything of the change is
 reached through the queue or imported inside a test, so this file collects while it is unbuilt.
 """
@@ -63,7 +64,7 @@ async def _league(tmp_path: Any, **options: Any) -> SeasonLeague:
     the ids of the channels created are kept in `league.created`."""
     league = await ongoing_league(tmp_path, **options)
     league.created = []
-    league.channel(RESULTS).category = MagicMock(name="Pro's results category")
+    league.bot.interaction_channel.category = MagicMock(name="the interaction channel's category")
     league.create_fails = None
 
     async def _create(name: str, **kwargs: Any) -> Any:
@@ -119,8 +120,8 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     tmp_path,
 ):
     """Round 3's start asks the queue to open its submission: nothing is created as it is asked.
-    The queue then creates one channel in the category of Pro's results channel (606), records it
-    as round 3's open submission, and posts in it the opening ("Results submission open for
+    The queue then creates one channel in the interaction channel's category (results spec :244),
+    records it as round 3's open submission, and posts in it the opening ("Results submission open for
     **Round 3** (Pro)") and then the first session's prompt. The round-start timer's callback asks
     the queue rather than running the submission itself."""
     import leaguebot.__main__ as bot_module
@@ -133,7 +134,7 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
 
     assert await stopped_job(league.db_path) is None
     [made] = league.created
-    assert league.channel(made).category is league.channel(RESULTS).category
+    assert league.channel(made).category is league.bot.interaction_channel.category
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
     opening, prompt = league.texts(made)
     assert "Results submission open for **Round 3** (Pro)" in opening
