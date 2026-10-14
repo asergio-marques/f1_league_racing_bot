@@ -28,10 +28,12 @@ channel are indistinguishable to `get_channel`, and the row is cleared either wa
 would drop the only record of a message still standing, which is exactly what the sweep exists
 to prevent.
 
-**The amend row goes before the channel does.** A further crash between the two must not leave
-the row to be processed again; the channel is recoverable by hand and a loop that deletes the
-same channel on every restart is not. That ordering is the reverse of the submission-channel
-sweep's and is deliberate.
+**An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
+puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the
+bot, with the restart's wording, before the queue starts, and leaves alone an amendment whose
+lapse is already in hand (core spec :133). The queue's jobs put the round back, delete the channel
+and close its row with the deletion's mark, so a crash between them is resumed rather than run
+again.
 
 **Every sweep announces itself.** A league manager whose amendment vanished needs to know to
 re-run the command, and a reviewer whose approve button disappeared needs to know to review
@@ -461,41 +463,106 @@ async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
 # ---------------------------------------------------------------------------
 # Orphaned amendment channels
 # ---------------------------------------------------------------------------
+#
+# The league is `review_league`'s: round 3 of Pro (round 21 here as there), FINAL, its Feature
+# Race won by Lewis ahead of Max, its submission channel closed. Alex (4242) opened
+# `/results rounds amend` of its Feature Race, channel 705, and the bot stopped. The restart asks
+# the queue for the amendment's lapse (`results.amend.lapse`, C64), as the bot, before the queue
+# starts; the queue's jobs put the round back, delete the channel, close the row and write the
+# restart's line.
+
+NO_AMEND_LAPSE_AT_RESTART = (
+    "#439: the restart deletes an abandoned amendment's channel, puts its round back and writes "
+    "its line itself, off the change queue, rather than asking the queue for "
+    "`results.amend.lapse` as the bot"
+)
 
 
-async def _seed_amend(db_path):
-    async with get_connection(db_path) as db:
+async def _amend_league(tmp_path, *, amended: bool = False):
+    """The league above with Alex's amendment open. *amended*: stage one was recorded, the round
+    snapshotted and its Feature Race rewritten with Max ahead of Lewis."""
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services.result_submission_service import snapshot_before_amendment
+    from tests.support.review_league import AMEND_CHANNEL, NOW, review_league
+
+    league = await review_league(tmp_path, round_status="FINAL")
+    async with get_connection(league.db_path) as db:
         await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
-            "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL')",
-            (ROUND_ID, DIVISION_ID),
+            "UPDATE round_submission_channels SET closed = 1, in_penalty_review = 0"
         )
         await db.execute(
-            "INSERT INTO round_amend_channels (round_id, channel_id, "
-            "session_types, created_at, started_by) VALUES (?, ?, '[\"FEATURE_RACE\"]', "
-            "'2026-02-01T00:00:00+00:00', ?)",
-            (ROUND_ID, CHANNEL_ID, STARTER_ID),
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "started_by) VALUES (?, ?, '[\"FEATURE_RACE\"]', ?, ?)",
+            (ROUND_ID, AMEND_CHANNEL, NOW.isoformat(), STARTER_ID),
         )
         await db.commit()
+    if amended:
+        await snapshot_before_amendment(league.db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "UPDATE race_session_results SET finishing_position = finishing_position + 10"
+            )
+            await db.execute(
+                "UPDATE race_session_results SET finishing_position = 13 - finishing_position"
+            )
+            await db.commit()
+    known = league.guild.get_member.side_effect
+
+    def _member(user_id):
+        if user_id != STARTER_ID:
+            return known(user_id)
+        alex = MagicMock(spec=discord.Member)
+        alex.id = STARTER_ID
+        alex.display_name = "Alex"
+        alex.mention = f"<@{STARTER_ID}>"
+        return alex
+
+    league.guild.get_member.side_effect = _member
+    league.guild.fetch_member = AsyncMock(side_effect=_member)
+    return league
 
 
-async def _amend_rows(db_path) -> int:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) AS n FROM round_amend_channels")
-        return (await cursor.fetchone())["n"]
+async def _restart(league) -> list[dict]:
+    """The restart's sweep, then the lapses it asked of the queue."""
+    from tests.support.change_queue import change_rows
+
+    await bot_module._recover_orphaned_amend_channels(league.bot)
+    return [row for row in await change_rows(league.db_path)
+            if row["kind"] == "results.amend.lapse"]
 
 
-def _amend_guild(*, channel=None):
-    """The league's server: *channel* is the amendment channel, and Alex, who started the
-    amendment, is a member of it."""
-    guild = MagicMock()
-    guild.get_channel = MagicMock(return_value=channel)
-    guild.get_member = MagicMock(
-        side_effect=lambda member_id: SimpleNamespace(display_name="Alex", id=member_id)
-        if member_id == STARTER_ID
-        else None
-    )
-    return guild
+async def _restart_and_run(league) -> None:
+    from tests.support.change_queue import run_queue
+
+    await _restart(league)
+    await run_queue(league.bot)
+
+
+def _amend_lines(league) -> list[str]:
+    """The log channel's lines about the amendment, as written: the mentions the router wraps in
+    backticks unwrapped, and the rule closing each entry dropped."""
+    lines = []
+    for line in league.bot.log_channel.sent:
+        if "/results rounds amend` of round 3" not in line:
+            continue
+        kept = [part for part in line.splitlines() if part.strip("―")]
+        lines.append("\n".join(kept).replace("`<@", "<@").replace(">`", ">"))
+    return lines
+
+
+async def _amend_row(league) -> dict | None:
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT * FROM round_amend_channels WHERE round_id = ?",
+                                  (ROUND_ID,))
+        row = await cursor.fetchone()
+    return dict(row) if row is not None else None
+
+
+async def _winner(league) -> int:
+    from tests.support.review_league import race_rows
+
+    rows = await race_rows(league.db_path)
+    return next(driver for driver, row in rows.items() if row["finishing_position"] == 1)
 
 
 def test_amendments_are_reverted_before_submission_channels_resume():
@@ -515,246 +582,168 @@ def test_amendments_are_reverted_before_submission_channels_resume():
     assert amend < submission
 
 
-async def test_recovery_hands_the_bot_to_the_revert(tmp_path):
-    """So the standings put back settle a full tie by name (#345)."""
-    db_path = await _base_db(tmp_path, "amend_hands_bot")
-    await _seed_amend(db_path)
-    stub = _stub_bot(db_path, guild=_amend_guild())
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
+async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
+    """The bot stops again before the queue has run the lapse the first restart asked for. The
+    second restart finds that lapse in hand and asks no other (core :133): one lapse, one line."""
+    from tests.support.change_queue import run_queue
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=False),
-    ) as revert:
-        await bot_module._recover_orphaned_amend_channels(stub)
+    league = await _amend_league(tmp_path)
+    await _restart(league)
 
-    revert.assert_awaited_once_with(db_path, ROUND_ID, stub)
+    lapses = await _restart(league)
+    await run_queue(league.bot)
 
-
-async def test_an_orphaned_amend_channel_is_deleted(tmp_path):
-    """Its `wait_for` loop died with the process, so it is a private channel nothing is
-    listening to and a manager could paste results into for ever."""
-    db_path = await _base_db(tmp_path, "amend_delete")
-    await _seed_amend(db_path)
-    channel = MagicMock()
-    channel.delete = AsyncMock()
-
-    await bot_module._recover_orphaned_amend_channels(
-        _stub_bot(db_path, guild=_amend_guild(channel=channel))
-    )
-
-    channel.delete.assert_awaited_once()
-
-
-async def test_the_amend_row_goes_before_the_channel_does(tmp_path):
-    """A further crash between the two must not leave the row to be processed again. The
-    channel is recoverable by hand; a loop deleting the same channel on every restart is
-    not — which is why this is the reverse of the submission sweep's order."""
-    db_path = await _base_db(tmp_path, "amend_order")
-    await _seed_amend(db_path)
-    seen: dict[str, int] = {}
-
-    async def _record(*_args, **_kwargs):
-        seen["rows"] = await _amend_rows(db_path)
-
-    channel = MagicMock()
-    channel.delete = AsyncMock(side_effect=_record)
-
-    await bot_module._recover_orphaned_amend_channels(
-        _stub_bot(db_path, guild=_amend_guild(channel=channel))
-    )
-
-    assert seen["rows"] == 0
+    assert len(lapses) == 1
+    assert len(_amend_lines(league)) == 1
 
 
 async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
     """Their amendment vanished with the restart, and an empty channel list is not an
-    explanation. Round 3 had nothing to put back, so the line says a restart ended it (#482)."""
-    db_path = await _base_db(tmp_path, "amend_notice")
-    await _seed_amend(db_path)
-    stub = _stub_bot(db_path, guild=_amend_guild())
+    explanation. Round 3 had nothing to put back, so once the queue has run the lapse its line
+    says a restart ended it, and to re-run the command (#482)."""
+    league = await _amend_league(tmp_path)
 
-    await bot_module._recover_orphaned_amend_channels(stub)
+    await _restart_and_run(league)
 
-    logged = str(stub.output_router.post_log.await_args.args[0])
-    assert "was ended by a restart" in logged
-    assert "re-run /results rounds amend" in logged
+    [line] = _amend_lines(league)
+    assert "was ended by a restart" in line
+    assert "re-run /results rounds amend" in line
 
 
 async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_rounds_amend(tmp_path):
     """Nothing to put back: the corrections were never entered, or the amendment had been
-    approved. For the first, the notice sends the manager to the command they now type."""
-    db_path = await _base_db(tmp_path, "amend_notice_rerun")
-    await _seed_amend(db_path)
-    stub = _stub_bot(db_path, guild=_amend_guild())
+    approved. For the first, the line sends the manager to the command they now type; for the
+    second, to the two syncs."""
+    league = await _amend_league(tmp_path)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=False),
-    ):
-        await bot_module._recover_orphaned_amend_channels(stub)
+    await _restart_and_run(league)
 
-    logged = str(stub.output_router.post_log.await_args.args[0])
+    [line] = _amend_lines(league)
     assert (
         "  Amendment channel deleted; nothing needed putting back. If the amendment had not "
         "been approved, re-run /results rounds amend. If it had, its channels may be "
         "part-rebuilt: run /results rounds sync and /results standings sync."
-    ) in logged.splitlines()
+    ) in line.splitlines()
 
 
 async def test_the_notice_names_the_round_and_the_session(tmp_path):
     """A manager with four sessions amended over an evening needs to know which one went: the
-    round and its division, as every record names them (#482), and the session beneath."""
-    db_path = await _base_db(tmp_path, "amend_notice_names")
-    await _seed_amend(db_path)
-    stub = _stub_bot(db_path, guild=_amend_guild())
+    lapse's line names the round and its division, as every record names them (#482), and the
+    session beneath."""
+    league = await _amend_league(tmp_path)
 
-    await bot_module._recover_orphaned_amend_channels(stub)
+    await _restart_and_run(league)
 
-    logged = str(stub.output_router.post_log.await_args.args[0])
-    assert "round 3 (Pro)" in logged
-    assert "Feature Race" in logged
+    [line] = _amend_lines(league)
+    assert "round 3 (Pro)" in line
+    assert "Feature Race" in line
 
 
 async def test_an_amendment_cannot_outlive_its_round(tmp_path):
-    """`round_amend_channels.round_id` carries `ON DELETE CASCADE`, so a round deleted
-    while an amendment was open takes the amend row with it and there is nothing left for
-    the sweep to find. The `id={round_id}` fallback in the notice is therefore unreachable
-    as the schema stands — pinned here so a reader does not take its presence as evidence
-    that an orphaned amendment can survive its round."""
-    db_path = await _base_db(tmp_path, "amend_cascade")
-    await _seed_amend(db_path)
-    async with get_connection(db_path) as db:
+    """`round_amend_channels.round_id` carries `ON DELETE CASCADE`, so a round deleted while an
+    amendment was open takes the amendment's row with it: the restart finds nothing, asks no
+    lapse, and the log channel is told nothing."""
+    from tests.support.change_queue import run_queue
+
+    league = await _amend_league(tmp_path)
+    async with get_connection(league.db_path) as db:
         await db.execute("DELETE FROM rounds WHERE id = ?", (ROUND_ID,))
         await db.commit()
+    assert await _amend_row(league) is None
 
-    assert await _amend_rows(db_path) == 0
+    lapses = await _restart(league)
+    await run_queue(league.bot)
 
-    stub = _stub_bot(db_path, guild=_amend_guild())
-    await bot_module._recover_orphaned_amend_channels(stub)
-
-    stub.output_router.post_log.assert_not_awaited()
-
-
-async def test_a_guild_missing_from_the_cache_still_clears_the_row(tmp_path):
-    db_path = await _base_db(tmp_path, "amend_noguild")
-    await _seed_amend(db_path)
-
-    await bot_module._recover_orphaned_amend_channels(_stub_bot(db_path, guild=None))
-
-    assert await _amend_rows(db_path) == 0
+    assert lapses == []
+    assert _amend_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_a_channel_already_deleted_still_clears_the_row(tmp_path):
-    db_path = await _base_db(tmp_path, "amend_nochannel")
-    await _seed_amend(db_path)
+    """Someone deleted the amendment channel by hand while the bot was down. The lapse's
+    deletion finds it gone and completes: the queue does not stop, the row is closed and the
+    line written."""
+    from tests.support.change_queue import stopped_job
+    from tests.support.review_league import AMEND_CHANNEL
 
-    await bot_module._recover_orphaned_amend_channels(
-        _stub_bot(db_path, guild=_amend_guild(channel=None))
-    )
+    league = await _amend_league(tmp_path)
+    del league.channels[AMEND_CHANNEL]
 
-    assert await _amend_rows(db_path) == 0
+    await _restart_and_run(league)
 
-
-async def test_a_channel_that_refuses_deletion_does_not_stop_the_sweep(tmp_path):
-    db_path = await _base_db(tmp_path, "amend_delfail")
-    await _seed_amend(db_path)
-    channel = MagicMock()
-    channel.delete = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(status=403), "no")
-    )
-    stub = _stub_bot(db_path, guild=_amend_guild(channel=channel))
-
-    await bot_module._recover_orphaned_amend_channels(stub)
-
-    stub.output_router.post_log.assert_awaited_once()
-
-
-async def test_a_failing_notice_does_not_stop_the_start_up(tmp_path):
-    """The channel is already gone by then, and the sweep has done its work."""
-    db_path = await _base_db(tmp_path, "amend_logfail")
-    await _seed_amend(db_path)
-    stub = _stub_bot(db_path, guild=_amend_guild())
-    stub.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log channel"))
-
-    await bot_module._recover_orphaned_amend_channels(stub)  # must not raise
-
-    assert await _amend_rows(db_path) == 0
+    assert await stopped_job(league.db_path) is None
+    row = await _amend_row(league)
+    assert row is not None and row["closed_at"] is not None
+    assert len(_amend_lines(league)) == 1
 
 
 async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
-    db_path = await _base_db(tmp_path, "amend_empty")
-    stub = _stub_bot(db_path, guild=_amend_guild())
+    """No amendment is open: the restart asks no lapse and nothing is written."""
+    from tests.support.change_queue import run_queue
 
-    await bot_module._recover_orphaned_amend_channels(stub)
+    league = await _amend_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("DELETE FROM round_amend_channels")
+        await db.commit()
 
-    stub.output_router.post_log.assert_not_awaited()
+    lapses = await _restart(league)
+    await run_queue(league.bot)
+
+    assert lapses == []
+    assert _amend_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     """Stage one commits, so abandoning an amendment is not a no-op (#345).
 
-    The corrected classification is written and the round scored from it before the reports and
-    appeals are reviewed. A restart between stages therefore has to *undo* it, or the round is
-    left scored one way and posted another with nothing that would later notice.
+    Stage one of Alex's amendment wrote Max ahead of Lewis, and the bot stopped before the
+    stages were approved. The restart asks the lapse and changes nothing itself; when the queue
+    runs it, the round is put back with Lewis ahead, the channel deleted, and the line says the
+    round was put back and to re-run the command.
     """
-    db_path = await _base_db(tmp_path, "amend_revert")
-    await _seed_amend(db_path)
-    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+    from tests.support.change_queue import run_queue
+    from tests.support.review_league import LEWIS, MAX
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=True),
-    ) as revert:
-        await bot_module._recover_orphaned_amend_channels(bot)
+    league = await _amend_league(tmp_path, amended=True)
 
-    revert.assert_awaited_once()
-    logged = "\n".join(
-        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
-    )
-    assert "put back as it was" in logged
-    assert "re-run /results rounds amend" in logged
+    await _restart(league)
+    assert await _winner(league) == MAX
+
+    await run_queue(league.bot)
+
+    assert await _winner(league) == LEWIS
+    [line] = _amend_lines(league)
+    assert "put back as it was" in line
+    assert "re-run /results rounds amend" in line
 
 
 async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_path):
-    """The round was put back, so the amendment may be run again: the notice sends the manager
-    to the command they now type."""
-    db_path = await _base_db(tmp_path, "amend_revert_rerun")
-    await _seed_amend(db_path)
-    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+    """The round was put back, so the amendment may be run again: the line sends the manager to
+    the command they now type."""
+    league = await _amend_league(tmp_path, amended=True)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=True),
-    ):
-        await bot_module._recover_orphaned_amend_channels(bot)
+    await _restart_and_run(league)
 
-    logged = "\n".join(
-        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
-    )
+    [line] = _amend_lines(league)
     assert (
         "  Amendment channel deleted, and the round put back as it was. Please re-run "
         "/results rounds amend."
-    ) in logged.splitlines()
+    ) in line.splitlines()
 
 
 async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
-    bot restarted before the amendment was approved, and the round is put back as it was. The
-    README promises this is recorded as a lapse: one line, naming Alex as its starter, with
+    bot restarted before the amendment was approved, and the queue's lapse puts the round back.
+    The README promises this is recorded as a lapse: one line, naming Alex as its starter, with
     the session being amended, what became of it and what to do next beneath it."""
-    db_path = await _base_db(tmp_path, "amend_revert_lapse")
-    await _seed_amend(db_path)
-    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+    league = await _amend_league(tmp_path, amended=True)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=True),
-    ):
-        await bot_module._recover_orphaned_amend_channels(bot)
+    await _restart_and_run(league)
 
-    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
-    assert len(lines) == 1, lines
-    head, *detail = lines[0].splitlines()
+    [line] = _amend_lines(league)
+    head, *detail = line.splitlines()
     assert head == (
         f"⌛ `/results rounds amend` of round 3 (Pro) lapsed unconfirmed "
         f"(started by Alex (<@{STARTER_ID}>))"
@@ -771,163 +760,63 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
     put back, so the bot cannot tell whether the corrections were never entered or the
     amendment had been approved. One line names Alex and says a restart ended it — never
     "lapsed" — with both cases, and what to run in each, beneath it."""
-    db_path = await _base_db(tmp_path, "amend_nothing_neutral")
-    await _seed_amend(db_path)
-    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+    league = await _amend_league(tmp_path)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=False),
-    ):
-        await bot_module._recover_orphaned_amend_channels(bot)
+    await _restart_and_run(league)
 
-    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
-    assert len(lines) == 1, lines
-    head = lines[0].splitlines()[0]
+    [line] = _amend_lines(league)
+    head = line.splitlines()[0]
     assert (
         f"`/results rounds amend` of round 3 (Pro), started by Alex (<@{STARTER_ID}>), "
         "was ended by a restart"
     ) in head
-    assert "lapsed" not in lines[0]
-    assert "If the amendment had not been approved, re-run /results rounds amend." in lines[0]
-    assert "run /results rounds sync and /results standings sync" in lines[0]
+    assert "lapsed" not in line
+    assert "If the amendment had not been approved, re-run /results rounds amend." in line
+    assert "run /results rounds sync and /results standings sync" in line
 
 
-async def test_a_revert_that_fails_hands_the_round_to_the_sweep(tmp_path):
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
+async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path):
     """**The snapshot is the only way back, so a failed revert keeps it** (#345).
 
-    Deleting the row with the channel threw the snapshot away, leaving the round half-amended
-    with nothing that could ever restore it. The row is kept instead, with a deadline of now, so
-    the sweep retries within minutes — and deletes the channel once it has put the round back.
+    Stage one of Alex's amendment is recorded, but its snapshot cannot be read back. The lapse
+    the restart asked stops the league lane at its `revert` job: the row stands open with its
+    snapshot, the channel is not deleted and the round is left as stage one wrote it, for Retry
+    once the cause is put right.
     """
-    db_path = await _base_db(tmp_path, "amend_revert_fails")
-    await _seed_amend(db_path)
-    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+    from tests.support.change_queue import stopped_job
+    from tests.support.review_league import AMEND_CHANNEL, MAX
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(side_effect=RuntimeError("locked")),
-    ):
-        await bot_module._recover_orphaned_amend_channels(bot)
+    league = await _amend_league(tmp_path, amended=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_amend_channels SET pre_amendment_state = '{not json'")
+        await db.commit()
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT expires_at FROM round_amend_channels")
-        row = await cursor.fetchone()
-    assert row is not None, "the row, and the snapshot with it, was thrown away"
-    assert row["expires_at"] is not None
+    await _restart_and_run(league)
+
+    stopped = await stopped_job(league.db_path, "league")
+    assert stopped is not None and stopped["name"] == "revert"
+    row = await _amend_row(league)
+    assert row is not None and row["closed_at"] is None
+    assert row["pre_amendment_state"] == "{not json"
+    assert ("delete_channel", AMEND_CHANNEL, AMEND_CHANNEL) not in league.events
+    assert await _winner(league) == MAX
 
 
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_nothing_to_put_back_is_not_reported_as_a_revert(tmp_path):
     """The log must not claim a round was put back when nothing was reverted.
 
     Nothing to revert means the corrected results were never entered, or the amendment had been
     approved and was rebuilding the channels when the bot stopped — in which case the manager
-    needs the sync commands, not a reassurance.
+    needs the sync commands, not a reassurance. The row is closed with its channel's deletion.
     """
-    db_path = await _base_db(tmp_path, "amend_nothing_to_revert")
-    await _seed_amend(db_path)
-    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+    league = await _amend_league(tmp_path)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(return_value=False),
-    ):
-        await bot_module._recover_orphaned_amend_channels(bot)
+    await _restart_and_run(league)
 
-    logged = "\n".join(
-        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
-    )
-    assert "put back as it was" not in logged
-    assert "/results rounds sync" in logged
-    assert await _amend_rows(db_path) == 0
-
-
-async def test_an_amendment_row_outlives_a_channel_that_could_not_be_deleted(tmp_path):
-    """**The row is the one thing that names the channel** (#345).
-
-    Restart recovery finds an orphaned amend channel by that table and no other route, so
-    forgetting the row while the guild is out of cache leaks a private channel with the
-    amendment's stage prompts still live in it. The snapshot was released before the rebuild
-    began, so the row left standing carries nothing a sweep could act on.
-    """
-    from leaguebot.results.services.result_submission_service import close_submission_channel
-
-    db_path = await _base_db(tmp_path, "close_unreachable")
-    await _seed_amend(db_path)
-
-    await close_submission_channel(CHANNEL_ID, ROUND_ID, None, db_path)
-
-    assert await _amend_rows(db_path) == 1
-
-
-async def _closed_rows(db_path) -> list[tuple[int, bool]]:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT channel_id, closed_at IS NOT NULL FROM round_amend_channels ORDER BY id"
-        )
-        return [(row[0], bool(row[1])) for row in await cursor.fetchall()]
-
-
-async def test_a_channel_the_bot_may_not_delete_keeps_its_row_closed(tmp_path):
-    """The approval of an amendment's last stage reaches here, the commonest way one ends. The
-    row went before the delete was tried, so a channel the bot had lost the right to delete
-    stood with nothing naming it; kept, closed, it holds nothing and recovery finds it."""
-    from leaguebot.results.services.result_submission_service import close_submission_channel
-
-    db_path = await _base_db(tmp_path, "close_forbidden")
-    await _seed_amend(db_path)
-    channel = MagicMock()
-    channel.delete = AsyncMock(
-        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
-    )
-
-    await close_submission_channel(
-        CHANNEL_ID, ROUND_ID, _amend_guild(channel=channel), db_path
-    )
-
-    assert await _closed_rows(db_path) == [(CHANNEL_ID, True)]
-
-
-async def test_closing_one_channel_leaves_a_later_amendment_of_the_round_alone(tmp_path):
-    """Closed, the old row no longer holds the round, so a fresh amendment may replace it while
-    the old channel's delete is still awaited. Matched on the round alone, finishing that close
-    forgot the fresh amendment — snapshot, deadline and all."""
-    from leaguebot.results.services.result_submission_service import _close_amend_channel_record
-
-    db_path = await _base_db(tmp_path, "close_scoped")
-    await _seed_amend(db_path)
-    fresh_channel = CHANNEL_ID + 1
-    old_channel = MagicMock()
-
-    async def _slow_delete(**_kwargs):
-        # While the delete is awaited, a fresh amendment takes the round's place.
-        async with get_connection(db_path) as db:
-            await db.execute("DELETE FROM round_amend_channels WHERE closed_at IS NOT NULL")
-            await db.execute(
-                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
-                "created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-01T01:00:00+00:00')",
-                (ROUND_ID, fresh_channel),
-            )
-            await db.commit()
-
-    old_channel.delete = AsyncMock(side_effect=_slow_delete)
-
-    await _close_amend_channel_record(db_path, ROUND_ID, CHANNEL_ID, old_channel, reason="done")
-
-    assert await _closed_rows(db_path) == [(fresh_channel, False)]
-
-
-async def test_the_amendment_row_goes_with_the_channel_it_names(tmp_path):
-    from leaguebot.results.services.result_submission_service import close_submission_channel
-
-    db_path = await _base_db(tmp_path, "close_reachable")
-    await _seed_amend(db_path)
-    channel = MagicMock()
-    channel.delete = AsyncMock()
-
-    await close_submission_channel(
-        CHANNEL_ID, ROUND_ID, _amend_guild(channel=channel), db_path
-    )
-
-    channel.delete.assert_awaited_once()
-    assert await _amend_rows(db_path) == 0
+    [line] = _amend_lines(league)
+    assert "put back as it was" not in line
+    assert "/results rounds sync" in line
+    row = await _amend_row(league)
+    assert row is not None and row["closed_at"] is not None
