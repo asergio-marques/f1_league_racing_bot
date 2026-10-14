@@ -87,37 +87,41 @@ async def _league(tmp_path: Any, *, state: str = "COLLECTING_NATIONALITY",
                   draft: dict[str, Any] | None = None,
                   driver_state: str = "PENDING_SIGNUP_COMPLETION") -> SeasonLeague:
     """`setup_league` at Signups, the window open; Kimi at *driver_state*, his wizard at *state*
-    holding *draft*, nationality required, no lap times asked; his signup channel standing.
-    Today's wizard handler off the queue is a stand-in that does nothing, so that only what the
-    listener asks of the queue shows."""
+    holding *draft*, nationality required, no lap times asked, saved in a save of the test's own
+    as a signup job's record saves it; his signup channel standing. Today's wizard handler off
+    the queue is a stand-in that does nothing, so that only what the listener asks of the queue
+    shows."""
     from leaguebot.signup.models.signup_module import (
         ConfigSnapshot,
         SignupWizardRecord,
         WizardState,
     )
+    from leaguebot.core.db.database import get_connection
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await signing_up(league, SIGNING_UP, state=driver_state)
     signups = SignupModuleService(league.db_path)
-    await signups.save_wizard(SignupWizardRecord(
-        id=-1,
-        discord_user_id=str(SIGNING_UP),
-        wizard_state=WizardState(state),
-        signup_channel_id=KIMI_CHANNEL,
-        config_snapshot=ConfigSnapshot(
-            nationality_required=True,
-            time_type="TIME_TRIAL",
-            time_image_required=False,
-            selected_track_ids=[],
-            slots=[],
-            team_names=["Alpha", "Beta"],
-        ),
-        draft_answers=dict(draft or {}),
-        current_lap_track_index=0,
-        last_activity_at=league.clock.now.isoformat(),
-    ))
+    async with get_connection(league.db_path) as db:
+        await signups.save_wizard_on(db, SignupWizardRecord(
+            id=-1,
+            discord_user_id=str(SIGNING_UP),
+            wizard_state=WizardState(state),
+            signup_channel_id=KIMI_CHANNEL,
+            config_snapshot=ConfigSnapshot(
+                nationality_required=True,
+                time_type="TIME_TRIAL",
+                time_image_required=False,
+                selected_track_ids=[],
+                slots=[],
+                team_names=["Alpha", "Beta"],
+            ),
+            draft_answers=dict(draft or {}),
+            current_lap_track_index=0,
+            last_activity_at=league.clock.now.isoformat(),
+        ))
+        await db.commit()
     made = league._recording(channel(KIMI_CHANNEL, league.events))
     made.guild = league.guild
     made.posted = []

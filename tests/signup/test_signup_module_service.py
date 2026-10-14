@@ -6,6 +6,37 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 
+#: A signup's record and its wizard are saved, approved and deleted only inside a save the caller
+#: holds: the signup jobs' records (#439, slice 6b, C83, C84, C88); the committing forms go (C88).
+NO_SIGNUP_SAVES_ON = (
+    "#439: a signup's record and its wizard are saved, approved and deleted only by committing "
+    "forms that hold their own connection, with no save_record_on, save_wizard_on, "
+    "mark_approved_on or delete_wizard_on taking the caller's save"
+)
+
+
+async def _delete_wizard(svc, db_path, discord_user_id):
+    """Delete the driver's wizard in a save of the test's own, as the channel's deletion does."""
+    async with get_connection(db_path) as db:
+        await svc.delete_wizard_on(db, discord_user_id)
+        await db.commit()
+
+
+async def _save_record(svc, db_path, record):
+    """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
+    async with get_connection(db_path) as db:
+        record_id = await svc.save_record_on(db, record)
+        await db.commit()
+    return record_id
+
+
+async def _save_wizard(svc, db_path, wizard, *, starting=False):
+    """Save *wizard* in a save of the test's own, as a signup job's record does."""
+    async with get_connection(db_path) as db:
+        await svc.save_wizard_on(db, wizard, starting=starting)
+        await db.commit()
+
+
 #: The window is opened and closed only inside a save the caller holds (#439, slice 6b, C66, C68).
 NO_WINDOW_ON = (
     "#439: the signup window is opened and closed only by committing forms that hold their "
@@ -229,7 +260,7 @@ class TestSnapshotStoresTheDurableIdentity:
         from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         svc = SignupModuleService(db_path)
-        await svc.save_wizard(SignupWizardRecord(
+        await _save_wizard(svc, db_path, SignupWizardRecord(
             id=0, discord_user_id="snap",
             wizard_state=WizardState.COLLECTING_AVAILABILITY,
             signup_channel_id=888,
@@ -246,6 +277,7 @@ class TestSnapshotStoresTheDurableIdentity:
         ))
         return svc
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_no_display_ordinal_is_persisted(self, db_path):
         import json
 
@@ -268,6 +300,7 @@ class TestSnapshotStoresTheDurableIdentity:
         ]
         assert all("slot_sequence_id" not in s for s in stored["slots"])
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_display_ordinals_rebuilt_on_read(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -282,6 +315,7 @@ class TestSnapshotStoresTheDurableIdentity:
             "Mon_19_00", "Wed_20_00", "Fri_21_00",
         ]
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_ordinals_rebuilt_chronologically_however_stored(self, db_path):
         """Order in the stored JSON must not decide the numbers a driver was shown."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -401,11 +435,12 @@ def _make_record(user_id: str = "u1") -> "SignupRecord":
 class TestSignupRecordCRUD:
     """T053: SignupRecord save/get/clear lifecycle."""
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_save_and_get_roundtrip(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         rec = _make_record()
-        await svc.save_record(rec)
+        await _save_record(svc, db_path, rec)
         fetched = await svc.get_record("u1")
         assert fetched is not None
         assert fetched.discord_username == "TestUser"
@@ -418,14 +453,15 @@ class TestSignupRecordCRUD:
         svc = SignupModuleService(db_path)
         assert await svc.get_record("ghost") is None
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_a_second_signup_is_kept_beside_the_first(self, db_path):
         """Records are never overwritten (issue #220): the latest is what a review reads."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.save_record(_make_record())
+        await _save_record(svc, db_path, _make_record())
         second = _make_record()
         second.platform = "PSN"
-        await svc.save_record(second)
+        await _save_record(svc, db_path, second)
 
         fetched = await svc.get_record("u1")
         assert fetched is not None
@@ -437,15 +473,16 @@ class TestSignupRecordCRUD:
             )
             assert (await cursor.fetchone())["n"] == 2
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_saving_a_stored_record_updates_it_in_place(self, db_path):
         """A correction amends the signup it was asked of."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        record_id = await svc.save_record(_make_record())
+        record_id = await _save_record(svc, db_path, _make_record())
         stored = await svc.get_record("u1")
         stored.platform = "PSN"
 
-        assert await svc.save_record(stored) == record_id
+        assert await _save_record(svc, db_path, stored) == record_id
         fetched = await svc.get_record("u1")
         assert fetched.id == record_id
         assert fetched.platform == "PSN"
@@ -473,12 +510,13 @@ def _make_wizard(user_id: str = "w1") -> "SignupWizardRecord":
 class TestSignupWizardRecordCRUD:
     """T053: SignupWizardRecord save/get/delete/get_by_channel lifecycle."""
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_save_and_get_roundtrip(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         from leaguebot.signup.models.signup_module import WizardState
         svc = SignupModuleService(db_path)
         wizard = _make_wizard()
-        await svc.save_wizard(wizard)
+        await _save_wizard(svc, db_path, wizard)
         fetched = await svc.get_wizard("w1")
         assert fetched is not None
         assert fetched.wizard_state == WizardState.COLLECTING_NATIONALITY
@@ -490,32 +528,36 @@ class TestSignupWizardRecordCRUD:
         svc = SignupModuleService(db_path)
         assert await svc.get_wizard("ghost") is None
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_get_by_channel(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.save_wizard(_make_wizard())
+        await _save_wizard(svc, db_path, _make_wizard())
         fetched = await svc.get_wizard_by_channel(777)
         assert fetched is not None
         assert fetched.discord_user_id == "w1"
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_get_by_channel_wrong_channel_returns_none(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.save_wizard(_make_wizard())
+        await _save_wizard(svc, db_path, _make_wizard())
         assert await svc.get_wizard_by_channel(9999) is None
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_delete_wizard(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.save_wizard(_make_wizard())
-        await svc.delete_wizard("w1")
+        await _save_wizard(svc, db_path, _make_wizard())
+        await _delete_wizard(svc, db_path, "w1")
         assert await svc.get_wizard("w1") is None
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_get_all_active_wizards_excludes_unengaged(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         from leaguebot.signup.models.signup_module import SignupWizardRecord, WizardState
         svc = SignupModuleService(db_path)
-        await svc.save_wizard(_make_wizard(user_id="active1"))
+        await _save_wizard(svc, db_path, _make_wizard(user_id="active1"))
         inactive = SignupWizardRecord(
             id=0, discord_user_id="inactive1",
             wizard_state=WizardState.UNENGAGED,
@@ -523,7 +565,7 @@ class TestSignupWizardRecordCRUD:
             draft_answers={}, current_lap_track_index=0,
             last_activity_at="2025-01-01T00:00:00",
         )
-        await svc.save_wizard(inactive)
+        await _save_wizard(svc, db_path, inactive)
         active = await svc.get_all_active_wizards()
         ids = [w.discord_user_id for w in active]
         assert "active1" in ids
@@ -538,6 +580,7 @@ class TestSignupWizardRecordCRUD:
 class TestConfigSnapshotIsolation:
     """T053: config_snapshot in wizard is independent of live config."""
 
+    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_snapshot_isolated_from_config_changes(self, db_path):
         """Changing live settings does not affect an already-saved snapshot."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -565,7 +608,7 @@ class TestConfigSnapshotIsolation:
             current_lap_track_index=0,
             last_activity_at="2025-01-01T00:00:00",
         )
-        await svc.save_wizard(wizard)
+        await _save_wizard(svc, db_path, wizard)
         # The snapshot is serialised to JSON — live config no longer influences it.
         fetched = await svc.get_wizard("snap1")
         assert fetched is not None
@@ -597,18 +640,20 @@ async def _wizard_row(db_path, user_id: str) -> dict:
     return dict(row)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_wizard_owes_no_closing_notice_by_default(db_path):
     """A wizard saved as the wizard saves it owes no closing notice: the mark is set only by the
     change queue's close of the signup window, never by the wizard itself."""
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     svc = SignupModuleService(db_path)
-    await svc.save_wizard(_make_wizard())
+    await _save_wizard(svc, db_path, _make_wizard())
 
     assert (await _wizard_row(db_path, "w1"))["closing_notice_owed"] == 0
     assert await svc.owed_closing_notices() == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_channel(db_path):
     """`end_wizard_on` writes on the connection it is handed and commits nothing: rolled back,
     the wizard is as it was. Committed by the caller, the wizard is unengaged, owes its closing
@@ -618,7 +663,7 @@ async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     svc = SignupModuleService(db_path)
-    await svc.save_wizard(_make_wizard())
+    await _save_wizard(svc, db_path, _make_wizard())
 
     async with get_connection(db_path) as db:
         await svc.end_wizard_on(db, "w1", closing_notice_owed=True)
@@ -638,6 +683,7 @@ async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_
     assert await svc.get_wizard("ghost") is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed(db_path):
     """Three wizards saved in the order 203, 201, 202, so that their record ids run 203, 201,
     202 while their accounts sort 201, 202, 203; 201 and then 203 are marked owed, 202 is ended
@@ -650,7 +696,7 @@ async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed
 
     svc = SignupModuleService(db_path)
     for user_id in ("203", "201", "202"):
-        await svc.save_wizard(_make_wizard(user_id))
+        await _save_wizard(svc, db_path, _make_wizard(user_id))
     async with get_connection(db_path) as db:
         await svc.end_wizard_on(db, "201", closing_notice_owed=True)
         await svc.end_wizard_on(db, "203", closing_notice_owed=True)
@@ -677,6 +723,7 @@ async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed
     assert (await _wizard_row(db_path, "203"))["wizard_state"] == "UNENGAGED"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_mark_is_cleared_by_the_save_that_starts_a_signup_and_by_no_other(db_path):
     """Wizard 401's signup was ended by a close that owes them their notice, and the mark was
     never cleared. Saving the wizard as a step of a signup does not touch the mark; saving it as
@@ -686,14 +733,14 @@ async def test_a_mark_is_cleared_by_the_save_that_starts_a_signup_and_by_no_othe
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     svc = SignupModuleService(db_path)
-    await svc.save_wizard(_make_wizard("401"))
+    await _save_wizard(svc, db_path, _make_wizard("401"))
     async with get_connection(db_path) as db:
         await svc.end_wizard_on(db, "401", closing_notice_owed=True)
         await db.commit()
 
-    await svc.save_wizard(_make_wizard("401"))
+    await _save_wizard(svc, db_path, _make_wizard("401"))
     assert (await _wizard_row(db_path, "401"))["closing_notice_owed"] == 1
 
-    await svc.save_wizard(_make_wizard("401"), starting=True)
+    await _save_wizard(svc, db_path, _make_wizard("401"), starting=True)
     assert (await _wizard_row(db_path, "401"))["closing_notice_owed"] == 0
     assert await svc.owed_closing_notices() == []
