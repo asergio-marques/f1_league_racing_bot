@@ -7,10 +7,11 @@ with the real validator and the real session write, so a paste that would be ref
 production is refused here, and one that would be saved is saved.
 
 **The round's start is what moves it off NOT_RUN, and where results are off it ends there.**
-The job fires for every round at its scheduled time, whatever the modules. With results on, the
-round begins waiting for them; with results off nobody will ever enter one, so the round is made
-FINAL on the spot and its division reconsidered — otherwise it would stay outstanding for ever
-and the season could never be completed (#154).
+The round's start asks the change queue to open its submission (#439, slice 6b), and the queue's
+jobs do so whatever the modules. With results on, the round begins waiting for results; with
+results off nobody will ever enter one, so the round is made FINAL there and its division
+reconsidered — otherwise it would stay outstanding for ever and the season could never be
+completed (#154).
 
 **Sessions are asked for in racing order, one at a time, and each must be accepted before the
 next is asked.** A rejected paste is answered with every error and the same session is asked
@@ -33,9 +34,10 @@ two laps tie, and naming a driver who did not race would award it to them.
 configuration is used and the manager told; several are offered to choose from; none is saved
 without one and warned about, rather than refusing a round whose drivers have just raced.
 
-**Anything missing before the channel exists stops the job quietly and logs why.** A guild the
-bot is not in, a division without a results channel, a channel that has since been deleted —
-none of these can open a submission, and none should crash the scheduler thread.
+**Anything missing before the channel exists opens nothing.** A cancelled round, or one that
+does not exist, is no longer due and its opening is dropped. A division without a results
+channel, or one whose results channel has since been deleted, stops the queue naming
+`/results channel results`, as a bot's change lacking its channel does (#439, slice 6b).
 
 **The last paste asks the change queue to open the penalty review** (#439, slice 2): the wizard
 asks `results.review.open` rather than opening the review itself, and, since a paste answers no
@@ -47,6 +49,7 @@ read from the queue's table and the review itself is left to `test_review_open_c
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import os
 from datetime import datetime, timezone
@@ -64,7 +67,26 @@ from leaguebot.results.services.result_submission_service import (
     get_sessions_for_format,
     run_result_submission_job,
 )
-from tests.support.change_queue import attach_queue, change_rows, register, run_queue, step_rows
+from tests.support.change_queue import (
+    ADMIN_ROLE_ID,
+    MANAGER_ROLE_ID,
+    attach_queue,
+    change_rows,
+    http_error,
+    register,
+    run_queue,
+    step_rows,
+    stopped_job,
+)
+from tests.support.review_league import channel
+from tests.support.season_league import (
+    DIVISIONS,
+    PRO,
+    PRO_ROLE,
+    SeasonLeague,
+    ongoing_league,
+    round_id,
+)
 from tests.support.teams import seed_team_instances
 
 NO_QUEUE_HANDED = (
@@ -304,69 +326,142 @@ async def _sessions(db_path):
 
 
 # ---------------------------------------------------------------------------
-# The round's start
+# The round's start, on the change queue (#439, slice 6b, C45)
 # ---------------------------------------------------------------------------
+#
+# The round's start asks the queue for `results.submission.open`, as the bot, and the queue
+# opens the submission: the round moved off NOT_RUN, the channel created beside the division's
+# results channel and recorded, the opening and the first prompt posted. These cases run on
+# `ongoing_league`'s league (Pro's round 3 NOT_RUN, its results channel 606, the league
+# managers' role 900 and the admins' 901), its server creating each text channel asked of it.
+
+ROUND_3 = round_id(PRO, 3)
+RESULTS_606 = DIVISIONS[PRO][3].results
+
+NO_SUBMISSION_OPEN_CHANGE = (
+    "#439: a round's submission is opened by `run_result_submission_job` at its start, off the "
+    "change queue, rather than by a `results.submission.open` change"
+)
+
+_created_ids = itertools.count(7700)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+async def _opening_league(tmp_path: Any, **options: Any) -> SeasonLeague:
+    """`ongoing_league`'s league, its server creating text channels: the ids of the channels
+    created are kept in `league.created`; while `league.create_fails` is set, creating one
+    raises it."""
+    league = await ongoing_league(tmp_path, **options)
+    league.created = []
+    league.create_fails = None
+    league.channel(RESULTS_606).category = MagicMock(name="Pro's results category")
+
+    async def _create(name: str, **kwargs: Any) -> Any:
+        if league.create_fails is not None:
+            raise league.create_fails
+        made = league._recording(channel(next(_created_ids), league.events))
+        made.name = name
+        made.category = kwargs.get("category")
+        made.guild = league.guild
+        league.channels[made.id] = made
+        league.created.append(made.id)
+        return made
+
+    league.guild.create_text_channel = AsyncMock(side_effect=_create)
+    return league
+
+
+async def _open(league: SeasonLeague, round_: int = ROUND_3) -> None:
+    """Round *round_*'s start asks the queue to open its submission, as its timer does, and the
+    queue is run."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await league.bot.change_queue.ask(
+        "results.submission.open", {"round_id": round_}, what="opening a results submission",
+        origin=ChangeOrigin.BOT,
+    )
+    await run_queue(league.bot)
+
+
+async def _status_of(league: SeasonLeague, round_: int = ROUND_3) -> str:
+    [row] = await league.rows("SELECT status FROM rounds WHERE id = ?", round_)
+    return row["status"]
+
+
+async def _submissions(league: SeasonLeague) -> list[dict[str, Any]]:
+    return await league.rows("SELECT round_id, channel_id FROM round_submission_channels")
+
+
+def _opening(league: SeasonLeague) -> str:
+    [made] = league.created
+    return league.texts(made)[0]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_round_starts_waiting_for_results(tmp_path):
-    db_path = await _make_db(tmp_path)
+    """Round 3 starts with results on: once the queue opens its submission, round 3 awaits
+    results."""
+    league = await _opening_league(tmp_path)
 
-    await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+    await _open(league)
 
-    assert await _round_status(db_path) == "AWAITING_RESULTS"
+    assert await _status_of(league) == "AWAITING_RESULTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_with_results_off_the_round_ends_at_its_start(tmp_path):
     """#154: nobody will ever enter a result, so the round would otherwise stay outstanding
-    for ever and the season could never be completed."""
-    db_path = await _make_db(tmp_path, name="wizard_off")
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (DIVISION_ID,))
-        await db.commit()
-    bot = _bot(db_path, [], results_enabled=False)
+    for ever and the season could never be completed. Pro's rounds 1–3 are final and round 4,
+    its last, starts with results off: the queue makes round 4 FINAL, creates no channel, and
+    Pro is finished."""
+    league = await _opening_league(tmp_path, results=False)
+    await league.write(
+        "UPDATE rounds SET status = 'FINAL' WHERE division_id = ? AND round_number < 4", PRO,
+    )
 
-    stubs = await _run(bot)
+    await _open(league, round_id(PRO, 4))
 
-    assert await _round_status(db_path) == "FINAL"
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT status FROM divisions WHERE id = ?", (DIVISION_ID,))
-        assert (await cursor.fetchone())[0] == "FINISHED"
-    stubs["create"].assert_not_awaited()
+    assert await _status_of(league, round_id(PRO, 4)) == "FINAL"
+    [division] = await league.rows("SELECT status FROM divisions WHERE id = ?", PRO)
+    assert division["status"] == "FINISHED"
+    assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_round_already_moved_on_is_not_moved_back(tmp_path):
-    """The write is guarded to NOT_RUN, so a job firing late for a round already in review
-    cannot reset it."""
-    db_path = await _make_db(tmp_path, name="wizard_moved", status="AWAITING_REPORT_VERDICTS")
+    """The move is guarded to NOT_RUN, so an opening asked late for round 2, already awaiting its
+    report verdicts, cannot reset it."""
+    league = await _opening_league(tmp_path)
 
-    await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+    await _open(league, round_id(PRO, 2))
 
-    assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
+    assert await _status_of(league, round_id(PRO, 2)) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_cancelled_round_opens_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_cancelled", status="CANCELLED")
+    """Round 3 is cancelled when its start asks for the submission: the opening is dropped as no
+    longer due, the queue does not stop, no channel is created, and round 3 stays CANCELLED."""
+    league = await _opening_league(tmp_path)
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
 
-    stubs = await _run(_bot(db_path, []))
+    await _open(league)
 
-    stubs["create"].assert_not_awaited()
-    assert await _round_status(db_path) == "CANCELLED"
+    assert await stopped_job(league.db_path) is None
+    assert league.created == []
+    assert await _status_of(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_noround")
-    bot = _bot(db_path, [])
+    """An opening asked for a round id the league has none of (9999) is dropped: the queue does
+    not stop and no channel is created."""
+    league = await _opening_league(tmp_path)
 
-    sub_patch = patch("leaguebot.results.services.result_submission_service.create_submission_channel", new=AsyncMock())
-    with sub_patch as create:
-        await run_result_submission_job(9999, bot, queue=bot.change_queue)
+    await _open(league, 9999)
 
-    create.assert_not_awaited()
+    assert await stopped_job(league.db_path) is None
+    assert league.created == []
+    assert await _submissions(league) == []
 
 
 # ---------------------------------------------------------------------------
@@ -374,136 +469,147 @@ async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_noguild")
+    """The bot is no longer in the league's server when round 3 starts: no channel is created
+    and no submission recorded."""
+    league = await _opening_league(tmp_path)
+    league.bot.get_guild = MagicMock(return_value=None)
 
-    stubs = await _run(_bot(db_path, [], guild=False))
+    await _open(league)
 
-    stubs["create"].assert_not_awaited()
+    assert league.created == []
+    assert await _submissions(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_division_without_a_results_channel_opens_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_nochan", results_channel=None)
-
-    stubs = await _run(_bot(db_path, []))
-
-    stubs["create"].assert_not_awaited()
-
-
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
-async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_chgone")
-
-    stubs = await _run(_bot(db_path, [], results_channel_present=False))
-
-    stubs["create"].assert_not_awaited()
-
-
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
-async def test_failing_to_build_validation_data_opens_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_novalid")
-    bot = _bot(db_path, [])
-
-    with patch(
-        "leaguebot.results.services.result_submission_service._build_division_validation_data",
-        new=AsyncMock(side_effect=RuntimeError("team service down")),
-    ), patch(
-        "leaguebot.results.services.result_submission_service.create_submission_channel", new=AsyncMock()
-    ) as create:
-        await run_result_submission_job(ROUND_ID, bot, queue=bot.change_queue)  # must not raise
-
-    create.assert_not_awaited()
-
-
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
-async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_createfail")
-    bot = _bot(db_path, [QUALI_PASTE])
-
-    stubs = await _run(
-        bot, create_error=discord.HTTPException(MagicMock(status=403), "missing permissions")
+    """Pro has no results channel set when round 3 starts: the queue stops, its notice naming
+    `/results channel results`, and no channel is created."""
+    league = await _opening_league(tmp_path)
+    await league.write(
+        "UPDATE division_results_config SET results_channel_id = NULL WHERE division_id = ?", PRO,
     )
 
-    bot.wait_for.assert_not_awaited()
-    assert stubs["opened"] == []
+    await _open(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert "/results channel results" in league.log()
+    assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
+async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
+    """Pro's results channel (606) is set but has been deleted from the server when round 3
+    starts: the queue stops, its notice naming `/results channel results`, and no channel is
+    created."""
+    league = await _opening_league(tmp_path)
+    league.remove_channel(RESULTS_606)
+
+    await _open(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert "/results channel results" in league.log()
+    assert league.created == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
+async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
+    """Discord refuses to create round 3's channel (Missing Permissions): the queue stops at the
+    channel's creation, no submission is recorded, and no penalty review is asked."""
+    league = await _opening_league(tmp_path)
+    league.create_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+
+    await _open(league)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "create_channel"
+    assert await _submissions(league) == []
+    assert await _opened(league.db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_roles")
+    """The channel round 3's opening creates admits the league managers' role (900) and the
+    league admins' role (901)."""
+    league = await _opening_league(tmp_path)
 
-    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+    await _open(league)
 
-    kwargs = stubs["create"].await_args.kwargs
-    assert kwargs["interaction_role"].id == 900
-    assert kwargs["league_admin_role"].id == 901
-    assert kwargs["bot_cmd_channel_id"] == 100
+    overwrites = league.guild.create_text_channel.await_args.kwargs["overwrites"]
+    admitted = {getattr(target, "id", None) for target in overwrites}
+    assert {MANAGER_ROLE_ID, ADMIN_ROLE_ID} <= admitted
 
 
 # ---------------------------------------------------------------------------
-# Collecting the sessions
+# The opening message
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_opening")
+    """The opening the queue posts in round 3's new channel names Round 3, Pro, and its
+    sessions, Qualifying and Race."""
+    league = await _opening_league(tmp_path)
 
-    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+    await _open(league)
 
-    opening = str(stubs["sub"].send.await_args_list[0].args[0])
+    opening = _opening(league)
     assert "Round 3" in opening
     assert "Pro" in opening
     assert "Qualifying" in opening and "Race" in opening
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 @pytest.mark.parametrize(
     ("fmt", "label"),
     [("NORMAL", "Normal"), ("SPRINT", "Sprint"), ("MYSTERY", "Mystery"), ("ENDURANCE", "Endurance")],
 )
 async def test_the_opening_message_names_the_format_as_a_league_reads_it(tmp_path, fmt, label):
     """Issue #360. The format was interpolated as the enum member, which Python 3.12 prints as
-    ``RoundFormat.NORMAL`` — the code name, not a word a league manager uses."""
-    db_path = await _make_db(tmp_path, name=f"wizard_format_{fmt}", fmt=fmt)
-    sessions = get_sessions_for_format(RoundFormat(fmt))
+    ``RoundFormat.NORMAL`` — the code name, not a word a league manager uses. Round 3 is of each
+    format in turn; its opening names the format as a league reads it."""
+    league = await _opening_league(tmp_path)
+    await league.write("UPDATE rounds SET format = ? WHERE id = ?", fmt, ROUND_3)
 
-    stubs = await _run(_bot(db_path, ["CANCELLED"] * len(sessions)))
+    await _open(league)
 
-    opening = str(stubs["sub"].send.await_args_list[0].args[0])
+    opening = _opening(league)
     assert f"(Pro) - {label}. Sessions:" in opening
     assert "RoundFormat" not in opening
     assert fmt not in opening
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_message_pings_the_interaction_role_and_not_the_division(tmp_path):
     """Issue #136. The channel is closed to the division's role, so a ping for it reached
-    nobody and the league managers who enter the results were never told."""
-    db_path = await _make_db(tmp_path, name="wizard_ping")
+    nobody and the league managers who enter the results were never told. Round 3's opening
+    mentions the league managers' role (900), not Pro's role (801) nor the admins' (901)."""
+    league = await _opening_league(tmp_path)
 
-    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+    await _open(league)
 
-    opening = str(stubs["sub"].send.await_args_list[0].args[0])
-    assert "<@&900>" in opening
-    assert "<@&555>" not in opening
-    assert "<@&901>" not in opening
+    opening = _opening(league)
+    assert f"<@&{MANAGER_ROLE_ID}>" in opening
+    assert f"<@&{PRO_ROLE}>" not in opening
+    assert f"<@&{ADMIN_ROLE_ID}>" not in opening
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_message_pings_nobody_when_the_interaction_role_is_gone(tmp_path):
-    db_path = await _make_db(tmp_path, name="wizard_ping_gone")
-    bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
-    bot._guild.get_role = MagicMock(
-        side_effect=lambda rid: None if rid == 900 else SimpleNamespace(id=rid)
-    )
+    """The league managers' role (900) has been deleted from the server: round 3's opening
+    mentions no role at all."""
+    league = await _opening_league(tmp_path)
+    league.roles_gone.add(MANAGER_ROLE_ID)
 
-    stubs = await _run(bot)
+    await _open(league)
 
-    opening = str(stubs["sub"].send.await_args_list[0].args[0])
-    assert "<@&" not in opening
+    assert "<@&" not in _opening(league)
+
+
+# ---------------------------------------------------------------------------
+# Collecting the sessions
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
