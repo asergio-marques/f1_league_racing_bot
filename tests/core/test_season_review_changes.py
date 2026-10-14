@@ -872,3 +872,99 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
     assert "Approve" in line
     [payload] = await _take_downs(posting)
     assert (payload["ending"], payload["question_id"]) == ("refused", question.id)
+
+
+# ---------------------------------------------------------------------------
+# An expired review's button (C97a)
+# ---------------------------------------------------------------------------
+
+NO_ROUTABLE_REVIEW = (
+    "#439: a season review's button holds its five minutes in memory, from when its view was "
+    "built, and is not routed again once the bot restarts"
+)
+NO_EXPIRY_TIMER = (
+    "#439: a season review's five minutes are its view's own timeout, held in memory, not a timer "
+    "the builder registers"
+)
+
+
+def _refused_as_expired(env: Any, interaction: Any) -> None:
+    """Alex was refused, privately, the review's five minutes being up, and the refusal is the one
+    ⛔ line in the log channel, naming the button and its review."""
+    reply = acknowledgement(interaction)
+    assert "five minutes are up" in reply and "Nothing has been approved" in reply
+    assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
+    [line] = _refusals(env)
+    assert "Approve" in line and PLACEMENTS in line
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
+async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing):
+    """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
+    minutes ran long ago, though nothing has yet taken it down (the queue is stopped ahead of its
+    take-down). Alex presses Approve on Q through a view just built for it. He is refused,
+    privately, told the review's five minutes are up and nothing was approved; one ⛔ line naming
+    Approve and `/season placements-review` is in the log channel; the approval is never asked;
+    and the button itself deletes and posts nothing in channel 700."""
+    view, cog = _approve_view(standing)
+    interaction = _press_on(standing, standing.channel.q)
+
+    await _press_approve(view, interaction)
+
+    cog._do_approve.assert_not_awaited()
+    _refused_as_expired(standing, interaction)
+    assert standing.channel.deleted == [] and standing.channel.sent == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
+async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(standing):
+    """The bot restarts with Alex's review standing in channel 700, posted on 7 September. The
+    restart's step routes the button on Q again, before the queue starts, rather than leaving it
+    dead. Alex presses it before the review's take-down has run: he is refused, privately, its
+    five minutes being up, the refusal is recorded in the log channel, and the button deletes
+    nothing itself."""
+    from leaguebot.__main__ import _recover_expired_review_prompts
+    from leaguebot.core.cogs.season_cog import _ApproveView
+
+    standing.bot.add_view = MagicMock()
+    await _recover_expired_review_prompts(standing.bot)
+
+    routed = [(call.args[0], call.kwargs.get("message_id"))
+              for call in standing.bot.add_view.call_args_list
+              if call.args and isinstance(call.args[0], _ApproveView)]
+    [(view, message_id)] = routed
+    assert message_id == standing.channel.q.id
+
+    interaction = _press_on(standing, standing.channel.q)
+    await _press_approve(view, interaction)
+
+    _refused_as_expired(standing, interaction)
+    assert standing.channel.deleted == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_TIMER)
+async def test_the_review_s_five_minutes_are_armed_by_a_job_after_the_question_and_ask_the_take_down(
+        standing):
+    """The builder registers the review's expiry timer, which the review's `arm_expiry` job arms
+    for its question after it is posted. Fired for Alex's question Q, it reads Q's row again and
+    asks the review's take-down once, as the bot, ending expired; nothing is deleted until the
+    queue runs, and then the review is gone and its expiry notice posted pinging Alex. Fired again
+    for Q, its row now gone, it asks nothing."""
+    channel = standing.channel
+    callback = _expiry_callback(standing)
+
+    await callback(channel.q.id)
+
+    assert channel.deleted == []
+    [payload] = await _take_downs(standing)
+    assert (payload["ending"], payload["question_id"]) == ("expired", channel.q.id)
+
+    await run_queue(standing.bot)
+
+    assert channel.messages == []
+    [(notice, _kwargs)] = channel.sent
+    assert f"<@{REVIEWER}>" in notice
+
+    await callback(channel.q.id)
+
+    assert len(await _changes(standing, TAKE_DOWN)) == 1
