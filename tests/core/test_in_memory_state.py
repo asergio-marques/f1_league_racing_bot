@@ -45,7 +45,6 @@ _STORE = re.compile(
 CLEARED = {
     ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"),
     ("core/cogs/season_cog.py", "_pending"),
-    ("signup/services/wizard_service.py", "_correction_tasks"),
     # The interactions the change queue holds to update each change's reply: a factory reset
     # deletes the changes they belong to (#439), and a pack finds none, being refused while the
     # queue holds a job.
@@ -54,6 +53,15 @@ CLEARED = {
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
     ("core/services/change_queue.py", "_notice_tried"),
     ("core/services/change_queue.py", "_retrying"),
+}
+
+#: Stores the plan deletes, and the commit that deletes them: accounted for while they stand,
+#: and not looked for once they are gone, since the build may not change this file (#439).
+LEAVING = {
+    # The wizards' correction timeouts, cleared through the service's private store until #439
+    # 6b's C88 deletes it, a correction's five minutes then being a one-off timer asking the
+    # queue (C85, C87) with nothing held in memory.
+    ("signup/services/wizard_service.py", "_correction_tasks"): "#439 6b C88",
 }
 
 #: Stores that hold no league state, and why.
@@ -102,7 +110,7 @@ def _stores() -> set[tuple[str, str]]:
 
 
 def test_every_store_is_cleared_or_exempt():
-    unaccounted = sorted(_stores() - CLEARED - EXEMPT)
+    unaccounted = sorted(_stores() - CLEARED - EXEMPT - set(LEAVING))
     assert unaccounted == [], (
         f"clear_in_memory_state does not clear {unaccounted}; clear it there, or exempt it "
         f"here with the reason it holds no league state"
@@ -111,32 +119,28 @@ def test_every_store_is_cleared_or_exempt():
 
 def test_the_register_names_no_store_that_does_not_exist():
     assert sorted((CLEARED | EXEMPT) - _stores()) == []
+    assert not (set(LEAVING) & (CLEARED | EXEMPT))
 
 
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "#439: the clear reaches the wizard service's private correction timeouts itself, and "
-        "looks the change queue up on the bot"
+        "#439: the clear still reaches the wizard service's private correction timeouts, which "
+        "C88 deletes with the wizard's posting handlers, and looks the change queue up on the bot"
     ),
 )
 async def test_the_clear_empties_every_store():
     """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
-    so none fires after a pack or a factory reset (#482). The wizards' correction timeouts are
-    cleared through the wizard service's own `cancel_corrections` (#439, 6b), never by reaching
-    its private store."""
+    so none fires after a pack or a factory reset (#482). The wizards hold no correction
+    timeouts in memory once a correction's five minutes are a one-off timer asking the queue
+    (#439, 6b, C85/C87/C88), so the clear reaches nothing of the wizard service: a wizard
+    service holding nothing at all is left untouched."""
     import asyncio
 
     season_cog = MagicMock()
-    task = asyncio.get_running_loop().create_future()
-
-    def _cancel_corrections() -> None:
-        task.cancel()
-
-    wizard_service = SimpleNamespace(cancel_corrections=MagicMock(side_effect=_cancel_corrections))
     bot = SimpleNamespace(
         get_cog=lambda name: season_cog if name == "SeasonCog" else None,
-        wizard_service=wizard_service,
+        wizard_service=SimpleNamespace(),
     )
     lapse = asyncio.get_running_loop().create_future()
     admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x", "lapse": lapse}
@@ -145,8 +149,6 @@ async def test_the_clear_empties_every_store():
 
     season_cog.clear_pending.assert_called_once_with()
     assert admin_review_cog._PENDING_REASONS == {}
-    wizard_service.cancel_corrections.assert_called_once_with()
-    assert task.cancelled()
     assert lapse.cancelled()
 
 
