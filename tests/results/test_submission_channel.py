@@ -4,19 +4,23 @@ Issue #208. `result_submission_service.py` is the largest file in the results mo
 takes its channel lifecycle: the transient channel a round's results are typed into, which every
 button of the penalty and appeals reviews then lives inside.
 
-**It is opened to both tiers of the league** (issue #116). Every review button is in here, so a
-league admin who does not also hold the interaction role would be shut out of a round they are
-entitled to judge — on the half of the bot that is entirely button-driven, where nobody would
-notice until a season was running. `test_both_league_tiers_are_admitted` is the regression test.
+**It is created by the queue** (#439, slice 6b, C45). At a round's start its timer asks the
+queue for `results.submission.open`, whose `create_channel` job creates the channel; the cases
+below drive that change on `ongoing_league`'s league, Pro's round 3 in season 3, and are
+imported or reached through the queue so the file collects while it is unbuilt. That the channel
+admits both tiers of the league (issue #116) is pinned beside the opening's other tests, in
+`test_result_submission_wizard.py::test_the_channel_is_opened_to_both_league_roles`; that it
+stands in the interaction channel's category and is recorded against the round, in
+`test_submission_open_change.py`.
 
 **`@everyone` is denied.** The channel carries unpublished results and staged penalties; a
 division reading its own penalties before the verdicts are posted is the thing the review
 process exists to prevent.
 
-**Any previous row for the round is deleted before the new one is written.** A closed submission
-or a row orphaned by a restart would otherwise collide with the UNIQUE constraint, and the
-channel would be created in Discord and then fail to be recorded — leaving a channel nobody
-could close. `test_a_previous_row_is_replaced_rather_than_colliding` holds it.
+**Any previous row for the round gives way to the new one.** A closed submission or a row
+orphaned by a restart would otherwise collide with the UNIQUE constraint, and the channel would
+be created in Discord and then fail to be recorded — leaving a channel nobody could close.
+`test_a_previous_row_is_replaced_rather_than_colliding` holds it.
 
 **Closing marks the database first and deletes the channel second.** A channel deleted while
 still recorded as open would leave the round unable to move on, with a submission the bot
@@ -28,7 +32,9 @@ once and they are only distinguishable by name in the channel list.
 """
 from __future__ import annotations
 
+import itertools
 import os
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -38,9 +44,17 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     close_submission_channel,
-    create_submission_channel,
     is_channel_in_penalty_review,
     is_submission_open,
+)
+from tests.support.change_queue import ADMIN_ROLE_ID, MANAGER_ROLE_ID, run_queue
+from tests.support.review_league import channel
+from tests.support.season_league import (
+    PRO,
+    SEASON_NUMBER,
+    SeasonLeague,
+    ongoing_league,
+    round_id,
 )
 
 SERVER_ID = 11708
@@ -48,7 +62,14 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 5
 CHANNEL_ID = 771001
-CMD_CHANNEL_ID = 100
+PRO_ROUND_3 = round_id(PRO, 3)
+
+NO_SUBMISSION_OPEN_CHANGE = (
+    "#439: a round's submission channel is created by `create_submission_channel` off the "
+    "change queue, rather than by the jobs of a `results.submission.open` change"
+)
+
+_created_ids = itertools.count(7700)
 
 
 # ---------------------------------------------------------------------------
@@ -103,42 +124,55 @@ async def _seed_channel_row(
         await db.commit()
 
 
-def _guild(*, category=..., has_me: bool = True):
-    guild = MagicMock()
-    created = MagicMock()
-    created.id = CHANNEL_ID
-    guild.create_text_channel = AsyncMock(return_value=created)
-    guild.default_role = MagicMock(name="everyone")
-    guild.me = MagicMock(name="bot") if has_me else None
-
-    cmd_channel = MagicMock()
-    cmd_channel.category = MagicMock(name="category") if category is ... else category
-    guild.get_channel = MagicMock(return_value=cmd_channel)
-    guild._cmd_channel = cmd_channel
-    return guild
+# ---------------------------------------------------------------------------
+# Creating it, through the queue's opening of round 3's submission (C45)
+# ---------------------------------------------------------------------------
 
 
-async def _create(db_path: str, guild, *, interaction_role=None, league_admin_role=None):
-    return await create_submission_channel(
-        guild,
-        "Division 1",
-        3,
-        5,
-        ROUND_ID,
-        db_path,
-        bot_cmd_channel_id=CMD_CHANNEL_ID,
-        interaction_role=interaction_role,
-        league_admin_role=league_admin_role,
+async def _opening_league(tmp_path: Any) -> SeasonLeague:
+    """`ongoing_league`'s league, results on, its server creating text channels: the ids of the
+    channels created are kept in `league.created`. The interaction channel stands in a category
+    of the server's."""
+    league = await ongoing_league(tmp_path)
+    league.created = []
+    league.bot.interaction_channel.category = MagicMock(name="the interaction channel's category")
+
+    async def _make(name: str, **kwargs: Any) -> Any:
+        made = league._recording(channel(next(_created_ids), league.events))
+        made.name = name
+        made.category = kwargs.get("category")
+        made.guild = league.guild
+        league.channels[made.id] = made
+        league.created.append(made.id)
+        return made
+
+    league.guild.create_text_channel = AsyncMock(side_effect=_make)
+    return league
+
+
+async def _open(league: SeasonLeague) -> None:
+    """Pro's round 3 starts: its timer asks the queue to open its submission, as the bot, and
+    the queue is run."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await league.bot.change_queue.ask(
+        "results.submission.open", {"round_id": PRO_ROUND_3},
+        what="opening round 3's results submission", origin=ChangeOrigin.BOT,
     )
+    await run_queue(league.bot)
 
 
-async def _rows(db_path: str) -> list[dict]:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT channel_id, closed FROM round_submission_channels WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        return [dict(r) for r in await cursor.fetchall()]
+def _created_with(league: SeasonLeague) -> dict[str, Any]:
+    """What the server was asked as round 3's channel was created."""
+    league.guild.create_text_channel.assert_awaited_once()
+    return dict(league.guild.create_text_channel.await_args.kwargs)
+
+
+async def _pro_rows(league: SeasonLeague) -> list[dict[str, Any]]:
+    return await league.rows(
+        "SELECT channel_id, closed FROM round_submission_channels WHERE round_id = ?",
+        PRO_ROUND_3,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -152,22 +186,15 @@ def test_the_channel_name_carries_the_season_division_and_round():
     assert _make_slug("Division 1")
 
 
-@pytest.mark.parametrize(
-    "division,expected_in_name",
-    [("Division 1", "division-1"), ("Premier League", "premier-league")],
-)
-async def test_the_division_is_slugged_into_the_name(tmp_path, division, expected_in_name):
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
+async def test_the_division_is_slugged_into_the_name(tmp_path):
+    """Season 3's Pro round 3 opens: its channel is named `S3-pro-R3-results`, the season,
+    the division slugged and the round."""
+    league = await _opening_league(tmp_path)
 
-    await create_submission_channel(
-        guild, division, 3, 5, ROUND_ID, db_path, bot_cmd_channel_id=CMD_CHANNEL_ID
-    )
+    await _open(league)
 
-    name = guild.create_text_channel.await_args.kwargs["name"]
-    assert name.startswith("S3-")
-    assert name.endswith("-R5-results")
-    assert expected_in_name in name
+    assert _created_with(league)["name"] == f"S{SEASON_NUMBER}-pro-R3-results"
 
 
 # ---------------------------------------------------------------------------
@@ -175,66 +202,54 @@ async def test_the_division_is_slugged_into_the_name(tmp_path, division, expecte
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_everyone_is_denied(tmp_path):
     """The channel carries unpublished results and staged penalties — a division reading
     its own penalties before the verdicts are posted is what the review exists to prevent."""
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
+    league = await _opening_league(tmp_path)
 
-    await _create(db_path, guild)
+    await _open(league)
 
-    overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
-    assert overwrites[guild.default_role].read_messages is False
-
-
-async def test_both_league_tiers_are_admitted(tmp_path):
-    """Issue #116. Every review button lives in here, so an admin without the interaction
-    role would be shut out of a round they are entitled to judge."""
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
-    manager_role = MagicMock(name="manager")
-    league_admin_role = MagicMock(name="admin")
-
-    await _create(db_path, guild, interaction_role=manager_role, league_admin_role=league_admin_role)
-
-    overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
-    assert overwrites[manager_role].read_messages is True
-    assert overwrites[league_admin_role].read_messages is True
+    overwrites = _created_with(league)["overwrites"]
+    assert overwrites[league.guild.default_role].read_messages is False
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_bot_may_manage_its_own_messages(tmp_path):
     """It edits the review prompt on every staged penalty and deletes it at the end."""
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
+    league = await _opening_league(tmp_path)
 
-    await _create(db_path, guild)
+    await _open(league)
 
-    overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
-    assert overwrites[guild.me].manage_messages is True
+    overwrites = _created_with(league)["overwrites"]
+    assert overwrites[league.guild.me].manage_messages is True
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_league_with_only_one_role_configured_still_gets_a_channel(tmp_path):
-    """A league that has not set its admin role yet must not be blocked from running a
-    round."""
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
-    manager_role = MagicMock(name="manager")
+    """A league whose admin role cannot be found must not be blocked from running a round:
+    the channel is created, admitting the league managers' role."""
+    league = await _opening_league(tmp_path)
+    league.roles_gone.add(ADMIN_ROLE_ID)
 
-    await _create(db_path, guild, interaction_role=manager_role, league_admin_role=None)
+    await _open(league)
 
-    overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
-    assert manager_role in overwrites
+    admitted = {getattr(target, "id", None) for target in _created_with(league)["overwrites"]}
+    assert MANAGER_ROLE_ID in admitted
+    assert ADMIN_ROLE_ID not in admitted
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_guild_the_bot_is_not_a_member_of_still_gets_a_channel(tmp_path):
     """`guild.me` can be absent before the cache fills; the channel is still made and the
     bot's own access comes from its permissions rather than an overwrite."""
-    db_path = await _make_db(tmp_path)
-    guild = _guild(has_me=False)
+    league = await _opening_league(tmp_path)
+    league.guild.me = None
 
-    await _create(db_path, guild)
+    await _open(league)
 
-    guild.create_text_channel.assert_awaited_once()
+    assert len(league.created) == 1
+    assert None not in _created_with(league)["overwrites"]
 
 
 # ---------------------------------------------------------------------------
@@ -242,38 +257,29 @@ async def test_a_guild_the_bot_is_not_a_member_of_still_gets_a_channel(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-async def test_the_channel_joins_the_command_channel_s_category(tmp_path):
-    """So a league's submission channels appear beside the rest of the bot's, rather than
-    at the bottom of the server."""
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
-
-    await _create(db_path, guild)
-
-    assert (
-        guild.create_text_channel.await_args.kwargs["category"]
-        is guild._cmd_channel.category
-    )
-
-
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_command_channel_with_no_category_still_works(tmp_path):
-    db_path = await _make_db(tmp_path)
-    guild = _guild(category=None)
+    """The interaction channel stands in no category: round 3's channel is created in none."""
+    league = await _opening_league(tmp_path)
+    league.bot.interaction_channel.category = None
 
-    await _create(db_path, guild)
+    await _open(league)
 
-    assert guild.create_text_channel.await_args.kwargs["category"] is None
+    assert _created_with(league)["category"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_league_with_no_command_channel_configured_still_works(tmp_path):
-    db_path = await _make_db(tmp_path)
-    guild = _guild()
+    """The league has no interaction channel set: round 3's channel is still created, in no
+    category."""
+    league = await _opening_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE server_configs SET interaction_channel_id = NULL")
+        await db.commit()
 
-    await create_submission_channel(
-        guild, "Division 1", 3, 5, ROUND_ID, db_path, bot_cmd_channel_id=None
-    )
+    await _open(league)
 
-    assert guild.create_text_channel.await_args.kwargs["category"] is None
+    assert _created_with(league)["category"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -281,25 +287,25 @@ async def test_a_league_with_no_command_channel_configured_still_works(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-async def test_the_channel_is_recorded_against_the_round(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    await _create(db_path, _guild())
-
-    rows = await _rows(db_path)
-    assert rows == [{"channel_id": CHANNEL_ID, "closed": 0}]
-
-
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_previous_row_is_replaced_rather_than_colliding(tmp_path):
     """A closed submission or a row orphaned by a restart would hit the UNIQUE constraint
-    — and the channel would already exist in Discord, leaving one nobody could close."""
-    db_path = await _make_db(tmp_path)
-    await _seed_channel_row(db_path, channel_id=999999, closed=1)
+    — and the channel would already exist in Discord, leaving one nobody could close. Round 3
+    holds a closed row for channel 999999; its opening leaves one open row, for the channel
+    created."""
+    league = await _opening_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
+            "VALUES (?, 999999, '2026-06-01T00:00:00+00:00', 1)",
+            (PRO_ROUND_3,),
+        )
+        await db.commit()
 
-    await _create(db_path, _guild())
+    await _open(league)
 
-    rows = await _rows(db_path)
-    assert rows == [{"channel_id": CHANNEL_ID, "closed": 0}]
+    [made] = league.created
+    assert await _pro_rows(league) == [{"channel_id": made, "closed": 0}]
 
 
 # ---------------------------------------------------------------------------
