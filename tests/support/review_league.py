@@ -567,6 +567,41 @@ async def snapshot_amendment(db_path: str, round_id: int,
         await db.commit()
 
 
+async def revert_amendment(db_path: str, round_id: int, bot: Any = None) -> bool:
+    """Put a round back from its amendment's snapshot, as the amendment's lapse and cancel do;
+    gives whether there was anything to put back.
+
+    Through the form that takes a connection (`revert_abandoned_amendment_on`) where the bot has
+    it, on a connection opened and committed here: #439 6b's lapse and cancel revert through it,
+    and delete the committing form. Until then, through the committing form."""
+    from leaguebot.results.services import result_submission_service as service
+
+    on_a_connection = getattr(service, "revert_abandoned_amendment_on", None)
+    if on_a_connection is None:
+        return bool(await service.revert_abandoned_amendment(db_path, round_id, bot))
+    async with get_connection(db_path) as db:
+        reverted = await on_a_connection(db, round_id, bot)
+        await db.commit()
+    return bool(reverted)
+
+
+async def claim_amendment(db_path: str, round_id: int) -> str | None:
+    """Take an open amendment's deadline, as a stage's approval does before it writes; gives the
+    deadline taken, or None where there was nothing to claim.
+
+    Through `_claim_amendment_on` where the bot has it, on a connection opened and committed here;
+    until #439 6b gives it that form, through the committing one."""
+    from leaguebot.results.services import result_submission_service as service
+
+    on_a_connection = getattr(service, "_claim_amendment_on", None)
+    if on_a_connection is None:
+        return await service._claim_amendment(db_path, round_id)
+    async with get_connection(db_path) as db:
+        claimed = await on_a_connection(db, round_id)
+        await db.commit()
+    return claimed
+
+
 async def one(db_path: str, sql: str, *args: Any) -> Any:
     async with get_connection(db_path) as db:
         row = await (await db.execute(sql, args)).fetchone()
