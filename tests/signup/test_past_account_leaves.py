@@ -34,6 +34,8 @@ async def _cog(tmp_path) -> SignupCog:
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
     cog.bot.wizard_service.handle_member_remove = AsyncMock()
+    # Every departure is asked of the change queue as `signup.member_left` (#439, slice 6b, C80).
+    cog.bot.change_queue.ask = AsyncMock(return_value=1)
     cog.bot.output_router.post_log = AsyncMock()
     cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     return cog
