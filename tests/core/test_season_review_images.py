@@ -975,29 +975,106 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     question.channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
-async def test_a_press_the_queue_refuses_still_takes_the_review_down(tmp_path, monkeypatch):
-    """Every gate at the press passes, so Alex's approval goes through the button and the review's
-    take-down is asked of the queue first, ending confirmed and naming Q and its report. The
-    queue's own check of the approval then refuses it (a date gone by while the press was worked,
-    say): nothing is saved, but the review is taken down all the same, whatever became of the
-    approval (core :288); the button deletes and posts nothing itself."""
+#: Why a press whose approval the queue refuses at once fails until #439 slice 6b's C92, C93
+#: and C97 are built.
+NO_REFUSAL_AT_ASK = (
+    "#439: a season review's row records no evidence, and no change takes a review down on "
+    "the queue"
+)
+
+#: The queue's own check of the approval refusing it at once, for a reason the button's gates
+#: did not see: a round's date gone by while the press was worked.
+DATE_GONE_BY = "⛔ A round's date has gone by since you pressed, so nothing has been approved."
+
+
+def _approval_double(refusal: str, on_check=None):
+    """A `season.approve` whose check, made as the queue is asked, refuses with *refusal*,
+    calling *on_check* first where given. Its jobs, never reached, do nothing."""
+    from leaguebot.core.models import change
+    from leaguebot.core.services import change_queue
+
+    async def _check(_ctx):
+        if on_check is not None:
+            on_check()
+        return change.Verdict.refuse(refusal)
+
+    async def _nothing(_ctx):
+        return change.StepResult()
+
+    return change_queue.ChangeType(
+        kind="season.approve",
+        opening=(change.PlannedStep("approve", {}),),
+        steps={"approve": change_queue.Step("approve", change.StepKind.ACT, _nothing)},
+        check=_check,
+        key=lambda payload: f"season.approve|{payload.get('season_id')}",
+        doing=lambda _payload: "approving the season",
+        outcome=lambda _ctx: "✅ Done.",
+    )
+
+
+async def _on_a_real_queue(tmp_path, monkeypatch, approval):
+    """`_gated_view`'s review, its button asking a real change queue on the review's database,
+    with *approval* as the season's approval and the real take-down of a season review."""
+    from datetime import datetime, timezone
+
+    from leaguebot.core.services.season_review_changes import season_review_take_down_change
+    from tests.support.change_queue import attach_queue, league_double, seed_server
+
     view, cog, question = await _gated_view(tmp_path, monkeypatch)
+    queued = league_double(cog.bot.db_path)
+    await seed_server(cog.bot.db_path)
+    attach_queue(queued, cog.bot.db_path, now=datetime.now(timezone.utc),
+                 types=[approval, season_review_take_down_change()])
+    cog.bot.change_queue = queued.change_queue
+    return view, cog, question, queued
 
-    async def _ask(kind, _payload, **_kwargs):
-        return None if kind == "season.approve" else 1
 
-    cog.bot.change_queue.ask = AsyncMock(side_effect=_ask)
+def _queued_press(queued, question):
+    """Alex's press of Approve on *question* in channel 111, answered through the real queue."""
+    from tests.support.change_queue import member_interaction
 
-    await _ApproveView.approve(view, _gated_press(question), MagicMock())
+    press = member_interaction(queued, user=_gated_member())
+    press.guild_id = 7
+    press.channel_id = 111
+    press.message = question
+    return press
 
-    kinds = [call.args[0] for call in cog.bot.change_queue.ask.await_args_list]
-    assert kinds == ["season.review.take_down", "season.approve"]
-    [payload] = _asked(cog, "season.review.take_down")
-    assert (payload["ending"], payload["question_id"]) == ("confirmed", GATED_QUESTION)
-    assert sorted(payload["report_ids"]) == list(GATED_REPORT)
+
+async def _kinds_queued(cog) -> list[str]:
+    from tests.support.change_queue import change_rows
+
+    return [row["kind"] for row in await change_rows(cog.bot.db_path)]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_REFUSAL_AT_ASK)
+async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_path, monkeypatch):
+    """Every gate at the press passes, so Alex's approval goes through the button to the queue,
+    whose own check refuses it at once (a round's date gone by while the press was worked). That
+    is a refused press (core :288): Alex is told why, nothing is saved, no take-down and no
+    approval is left on the queue, the review's row stands and its question is undeleted. Pressed
+    again within its five minutes, the press is judged afresh and refused the same way, the
+    review still standing."""
+    from tests.support.change_queue import acknowledgement
+
+    view, cog, question, queued = await _on_a_real_queue(
+        tmp_path, monkeypatch, _approval_double(DATE_GONE_BY))
+
+    first = _queued_press(queued, question)
+    await _ApproveView.approve(view, first, MagicMock())
+
+    assert "date has gone by" in acknowledgement(first)
+    assert await _kinds_queued(cog) == []
+    assert await _prompt_rows(cog) == 1
     question.delete.assert_not_awaited()
     question.channel.send.assert_not_awaited()
+
+    again = _queued_press(queued, question)
+    await _ApproveView.approve(view, again, MagicMock())
+
+    assert "date has gone by" in acknowledgement(again)
+    assert await _kinds_queued(cog) == []
+    assert await _prompt_rows(cog) == 1
+    question.delete.assert_not_awaited()
 
 
 @pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
