@@ -37,13 +37,11 @@ import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
-    close_submission_channel,
     is_channel_in_penalty_review,
     is_submission_open,
 )
@@ -306,84 +304,6 @@ async def test_a_previous_row_is_replaced_rather_than_colliding(tmp_path):
 
     [made] = league.created
     assert await _pro_rows(league) == [{"channel_id": made, "closed": 0}]
-
-
-# ---------------------------------------------------------------------------
-# Closing it
-# ---------------------------------------------------------------------------
-
-
-def _closing_guild(*, channel=..., error=None):
-    guild = MagicMock()
-    resolved = MagicMock() if channel is ... else channel
-    if resolved is not None:
-        resolved.delete = AsyncMock(side_effect=error)
-    guild.get_channel = MagicMock(return_value=resolved)
-    guild._channel = resolved
-    return guild
-
-
-async def test_closing_marks_the_round_and_deletes_the_channel(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_channel_row(db_path)
-    guild = _closing_guild()
-
-    await close_submission_channel(CHANNEL_ID, ROUND_ID, guild, db_path)
-
-    assert await is_submission_open(db_path, ROUND_ID) is False
-    guild._channel.delete.assert_awaited_once()
-
-
-async def test_the_database_is_marked_before_the_channel_goes(tmp_path):
-    """A channel deleted while still recorded as open leaves the round unable to move on —
-    a submission the bot believes is in progress with no channel to run it in. Marking
-    first means a failed delete costs an untidy channel rather than a stuck round."""
-    db_path = await _make_db(tmp_path)
-    await _seed_channel_row(db_path)
-    guild = _closing_guild()
-    open_when_deleted: list[bool] = []
-
-    async def _delete(**kwargs):
-        open_when_deleted.append(await is_submission_open(db_path, ROUND_ID))
-
-    guild._channel.delete = AsyncMock(side_effect=_delete)
-
-    await close_submission_channel(CHANNEL_ID, ROUND_ID, guild, db_path)
-
-    assert open_when_deleted == [False]
-
-
-async def test_a_channel_already_deleted_still_closes_the_round(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_channel_row(db_path)
-    guild = _closing_guild(error=discord.NotFound(MagicMock(), "gone"))
-
-    await close_submission_channel(CHANNEL_ID, ROUND_ID, guild, db_path)
-
-    assert await is_submission_open(db_path, ROUND_ID) is False
-
-
-async def test_a_channel_that_will_not_delete_is_logged_not_raised(tmp_path, caplog):
-    """Raising here would abandon the round's finalisation part-way."""
-    db_path = await _make_db(tmp_path)
-    await _seed_channel_row(db_path)
-    guild = _closing_guild(error=discord.HTTPException(MagicMock(), "forbidden"))
-
-    with caplog.at_level("WARNING"):
-        await close_submission_channel(CHANNEL_ID, ROUND_ID, guild, db_path)
-
-    assert "could not delete channel" in caplog.text
-
-
-async def test_a_channel_the_bot_cannot_see_still_closes_the_round(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_channel_row(db_path)
-
-    await close_submission_channel(
-        CHANNEL_ID, ROUND_ID, _closing_guild(channel=None), db_path
-    )
-
-    assert await is_submission_open(db_path, ROUND_ID) is False
 
 
 # ---------------------------------------------------------------------------

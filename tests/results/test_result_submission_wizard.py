@@ -595,8 +595,8 @@ async def test_points_are_applied_for_each_saved_session(tmp_path, monkeypatch):
 
 @pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_the_round_is_handed_to_penalty_review(tmp_path, monkeypatch):
-    """The last paste asks for round 3's review to open, its first results published under
-    "Provisional Results"; the channel stays open for the review."""
+    """The last paste asks for round 3's review to open, naming round 3 and Pro, its first
+    results published under "Provisional Results"; the channel stays open for the review."""
     import json
 
     league = await _paste_league(tmp_path, monkeypatch)
@@ -606,6 +606,7 @@ async def test_the_round_is_handed_to_penalty_review(tmp_path, monkeypatch):
     [review] = await _review_asks(league)
     payload = json.loads(review["payload"])
     assert payload["round_id"] == ROUND_3
+    assert (payload["round_number"], payload["division_name"]) == (3, "Pro")
     assert payload["label"] == "Provisional Results"
     assert payload["publish"] is True
     assert not payload.get("returning")

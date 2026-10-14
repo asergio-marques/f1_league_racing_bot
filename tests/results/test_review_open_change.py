@@ -625,10 +625,6 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     [
         "reports-approve",
         "reports-approve-bare",
-        pytest.param("paste", marks=pytest.mark.xfail(strict=True, reason=(
-            "#439: the review's opening is asked of the queue on the bot rather than the one "
-            "the paste's flow is handed"
-        ))),
         "recovery",
         "appeals-recovery",
     ],
@@ -636,15 +632,14 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
     """What a review's change is doing names round 3 (Pro) wherever its payload carries the
     round's number and the division's name: the approval of its reports as Alex presses Approve,
-    read in his acknowledgement; the opening of its review asked for by the last paste
-    (`ask_review_open`), read in the refusal of the paste asked again, the queue held stopped so
-    nothing starts, or by restart recovery; and the appeals prompt recovery posts again. A bot's
+    read in his acknowledgement; the opening of its review asked for by restart recovery, the
+    queue held stopped so nothing starts; and the appeals prompt recovery posts again. (The last
+    paste's ask is a turn's job, its payload's naming pinned in `test_result_submission_wizard.py`.) A bot's
     request has no acknowledgement, so its change type's own wording of the saved payload is read.
     An approval asked with a bare payload reads as it did before."""
     import json
     import logging
 
-    from leaguebot.results.services.result_submission_service import ask_review_open
     from leaguebot.results.services.review_open_change import (
         APPEALS_OPEN_KIND,
         appeals_open_change,
@@ -680,19 +675,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
             assert said.startswith("⏳ Approving the round's reports.")
         return
 
-    if route == "paste":
-        for _ in range(2):
-            await ask_review_open(
-                league.bot, league.channel(SUBMISSION_CHANNEL), ROUND_ID, 3,
-                {"label": "Provisional Results", "publish": False}, actor=alex,
-                queue=league.bot.change_queue,
-            )
-        assert any(
-            "Opening the penalty review of round 3 (Pro) has already been asked for"
-            in record.getMessage() for record in caplog.records
-        )
-    else:
-        await _recover(league)
+    await _recover(league)
 
     kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change()) if appeals
                          else (KIND, review_open_change()))
