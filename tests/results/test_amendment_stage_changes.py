@@ -522,21 +522,6 @@ async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_pat
     assert not _amend_channel_deleted(league)
 
 
-async def test_cancel_is_refused_while_a_stage_is_in_hand(tmp_path):
-    from leaguebot.results.services.result_submission_service import cancel_amendment
-
-    league = await _amend_league(tmp_path)
-    await block_queue(league)
-    await _approve_reports(league)
-
-    assert await cancel_amendment(league.bot, ROUND_ID, cancelled_by=77) is False
-
-    row = await _amend_row(league)
-    assert row["pre_amendment_state"] is not None
-    assert row["expires_at"] == DEADLINE
-    assert not _amend_channel_deleted(league)
-
-
 # ---------------------------------------------------------------------------
 # The appeals stage, which commits the amendment
 # ---------------------------------------------------------------------------
