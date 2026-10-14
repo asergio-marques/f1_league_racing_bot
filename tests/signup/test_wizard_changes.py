@@ -980,3 +980,165 @@ async def test_a_member_leaving_ends_the_conversation_its_stopped_turn_left_stop
 
     assert len(tries) == tried
     assert await stopped_job(league.db_path, KIMI_LANE) is None
+
+
+# ---------------------------------------------------------------------------
+# What an ending leaves behind, carried over from the wizard's own lifecycle tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
+async def test_a_withdrawal_disarms_the_signup_s_24_hours_and_writes_one_withdrawn_line(tmp_path):
+    """Kimi presses Cancel Signup part-way through signing up and the queue runs. His 24-hour
+    inactivity timer is disarmed, so it cannot later fire against a driver who has withdrawn,
+    and the log channel holds exactly one line saying his signup was withdrawn, naming him."""
+    league = await _mid_signup(tmp_path)
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    disarmed = [call.args for call in league.bot.scheduler_service.disarm.call_args_list]
+    assert (INACTIVITY_TIMER, str(SIGNING_UP)) in disarmed
+    withdrawn = [line for line in league.bot.log_channel.sent if "Withdrawn" in line]
+    assert len(withdrawn) == 1
+    assert f"<@{SIGNING_UP}>" in withdrawn[0]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
+async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tmp_path):
+    """Kimi was last active 25 hours ago, but has since given his last answer: his signup awaits
+    a manager's approval and his wizard is parked. His 24-hour timer fires and the queue runs.
+    He is still Pending Admin Approval: no expiry notice is posted, his channel is not locked and
+    no deletion is armed."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=25))
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'PENDING_ADMIN_APPROVAL' "
+        "WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert _expired(league) == []
+    assert not _locked(league)
+    assert _armed(league, DELETE_TIMER) == []
+
+
+@pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
+async def test_a_restart_re_arms_each_open_signup_from_its_own_last_activity(tmp_path, naive):
+    """The bot starts again. A driver (115) part-way through signing up was last active an hour
+    ago, the time stored with its zone or, as in older rows, without one (read as UTC).
+    Recovering the wizards (the wizard service built with the change queue) asks no expiry for
+    him, and arms his 24-hour timer for 24 hours after his last activity, not 24 hours from the
+    restart."""
+    from datetime import datetime, timezone
+
+    league = await _league(tmp_path)
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    await _idle(league, OTHER, since)
+    if naive:
+        await league.write(
+            "UPDATE signup_wizard_records SET last_activity_at = ? WHERE discord_user_id = ?",
+            since.replace(tzinfo=None).isoformat(), str(OTHER),
+        )
+
+    await _wizards(league).recover_wizards()
+
+    assert await _changes_of(league, END_KIND) == []
+    assert _armed(league, INACTIVITY_TIMER) == [
+        (INACTIVITY_TIMER, str(OTHER), since + timedelta(hours=24))
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
+async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_a_manager(
+    tmp_path,
+):
+    """The bot starts again, a day and more after two signups stopped moving. Kimi's ended
+    (withdrawn, lapsed or returned by a close): he is Not Signed Up, his wizard parked. The
+    second driver (115) gave his last answer and waits on a manager: Pending Admin Approval, his
+    wizard parked. Recovering the wizards asks no expiry of either and arms neither's 24-hour
+    timer; when the queue runs nothing is posted in either channel."""
+    from datetime import datetime, timezone
+
+    league = await _league(tmp_path)
+    since = datetime.now(timezone.utc) - timedelta(hours=30)
+    for user_id, state in ((SIGNING_UP, "NOT_SIGNED_UP"), (OTHER, "PENDING_ADMIN_APPROVAL")):
+        await _idle(league, user_id, since)
+        await league.write(
+            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' "
+            "WHERE discord_user_id = ?",
+            str(user_id),
+        )
+        await league.write(
+            "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+            state, str(user_id),
+        )
+
+    await _wizards(league).recover_wizards()
+    await run_queue(league.bot)
+
+    assert await _changes_of(league, END_KIND) == []
+    assert _armed(league, INACTIVITY_TIMER) == []
+    assert league.channel(KIMI_CHANNEL).texts == []
+    assert league.channel(SIGNUP_CHANNEL_BASE + OTHER).texts == []
+
+
+@pytest.mark.parametrize("state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER"])
+@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
+async def test_a_member_leaving_while_waiting_on_a_manager_is_cleaned_up_too(tmp_path, state):
+    """Kimi has given his last answer, his wizard parked, and waits on a manager: his signup is
+    awaiting approval, or a manager has asked him to correct an answer and he has not yet been
+    told which. He leaves the server and the queue runs. He is Not Signed Up, his signup channel
+    is deleted and his wizard's row with it, as for a driver part-way through the questions."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+        state, str(SIGNING_UP),
+    )
+
+    await _leave(league)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert league.order == [f"delete {KIMI_CHANNEL}"]
+    assert await _wizard(league) is None
+
+
+@pytest.mark.parametrize("approved", [False, True], ids=["never signed up", "approved"])
+@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
+async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_path, approved):
+    """A member leaves the server with no signup in progress: Kimi, who never signed up, or a
+    driver (106) whose signup was approved and who is Unassigned. The listener asks
+    `signup.member_left` all the same; when the queue runs the change is dropped as no longer
+    due. No driver state is written or changed, no channel is deleted, and no signup or wizard
+    row is removed."""
+    from tests.support.season_league import UNASSIGNED, approved_unplaced
+
+    league = await _league(tmp_path)
+    user_id = UNASSIGNED if approved else SIGNING_UP
+    if approved:
+        await approved_unplaced(league, user_id)
+    signups = await league.rows("SELECT * FROM signup_records")
+
+    await _leave(league, user_id)
+    await run_queue(league.bot)
+
+    [change] = await _changes_of(league, MEMBER_LEFT_KIND)
+    assert change["state"] == "DROPPED"
+    assert await _driver_state(league, user_id) == ("UNASSIGNED" if approved else None)
+    assert league.order == []
+    assert await league.rows("SELECT * FROM signup_records") == signups
