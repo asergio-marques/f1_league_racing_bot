@@ -424,17 +424,32 @@ async def test_the_empty_approval_refusal_names_the_other_button():
 # ---------------------------------------------------------------------------
 
 
-async def test_resubmit_enters_the_resubmission_flow():
-    view = PenaltyReviewView(_state(staged=[_penalty()]))
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: Resubmit starts `enter_resubmit_flow` at the press rather than asking the change "
+    "queue for `results.resubmission.start`"
+))
+async def test_resubmit_asks_the_queue_to_start_the_resubmission():
+    """Alex presses 🔄 Resubmit Initial Results on round 3's review with a penalty staged. The
+    press asks the change queue for `results.resubmission.start` of round 3.
+
+    The off-queue flow is stubbed while it stands (`create=True` once it is gone), so that the
+    press fails on what it asks rather than on a flow run against a stub bot."""
+    state = _state(staged=[_penalty()])
     interaction = _interaction()
+    state.bot.change_queue = interaction.client.change_queue
+    view = PenaltyReviewView(state)
 
     with patch(
         "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None),
-    ) as resubmit:
+        new=AsyncMock(return_value=None), create=True,
+    ):
         await _press(view, "resubmit_btn", interaction)
 
-    resubmit.assert_awaited_once()
+    ask = interaction.client.change_queue.ask
+    ask.assert_awaited_once()
+    kind, payload = ask.await_args.args[:2]
+    assert kind == "results.resubmission.start"
+    assert payload["round_id"] == ROUND_ID
 
 
 async def test_the_pardon_button_opens_the_pardon_modal():
