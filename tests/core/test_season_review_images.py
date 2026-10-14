@@ -978,13 +978,18 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
 #: Why a press whose approval the queue refuses at once fails until #439 slice 6b's C92, C93
 #: and C97 are built.
 NO_REFUSAL_AT_ASK = (
-    "#439: a season review's row records no evidence, and no change takes a review down on "
-    "the queue"
+    "#439: a season review's row records no evidence, no change takes a review down on the "
+    "queue, and the button ends a review refused upon a changed season by deleting it itself"
 )
 
 #: The queue's own check of the approval refusing it at once, for a reason the button's gates
 #: did not see: a round's date gone by while the press was worked.
 DATE_GONE_BY = "⛔ A round's date has gone by since you pressed, so nothing has been approved."
+#: The queue's own check refusing it because the season changed since the review.
+SEASON_CHANGED = (
+    "⛔ Your season has changed since this review, so the report above no longer describes it. "
+    "Nothing has been approved."
+)
 
 
 def _approval_double(refusal: str, on_check=None):
@@ -1075,6 +1080,54 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
     assert await _kinds_queued(cog) == []
     assert await _prompt_rows(cog) == 1
     question.delete.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_REFUSAL_AT_ASK)
+async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as_expired(
+    tmp_path, monkeypatch
+):
+    """Alex presses Approve; the season is as the review described it when the button compares
+    it, so every gate passes, but it changes before the queue's own check of the approval, which
+    refuses it as changed. The review no longer describes the season, so it ends as an expired
+    one does (core :282, :296): Alex is told the season changed and nothing was approved; no
+    approval is left on the queue; and the review's take-down is asked once, as the bot's, naming
+    question Q (999) and its report R (900–902), ending as an expired one does rather than
+    confirmed, so its expiry notice pinging Alex is posted. The button deletes and posts nothing
+    itself."""
+    import json
+
+    from leaguebot.core.services import season_fingerprint_service as sfs
+    from tests.support.change_queue import acknowledgement, change_rows
+
+    changed = {"now": False}
+
+    def _season_changes() -> None:
+        changed["now"] = True
+
+    view, cog, question, queued = await _on_a_real_queue(
+        tmp_path, monkeypatch, _approval_double(SEASON_CHANGED, on_check=_season_changes))
+
+    async def _fingerprint(*_args, **_kwargs):
+        # As the review described it until the queue's check, changed at every look after.
+        return sfs.SeasonFingerprint({"season": "since changed" if changed["now"] else "as reviewed"})
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _fingerprint)
+    press = _queued_press(queued, question)
+
+    await _ApproveView.approve(view, press, MagicMock())
+
+    reply = acknowledgement(press)
+    assert "changed since this review" in reply and "Nothing has been approved" in reply
+    rows = await change_rows(cog.bot.db_path)
+    assert [row["kind"] for row in rows] == ["season.review.take_down"]
+    payload = json.loads(rows[0]["payload"])
+    assert payload["ending"] in ("expired", "refused")
+    assert payload["question_id"] == GATED_QUESTION
+    assert sorted(payload["report_ids"]) == list(GATED_REPORT)
+    assert payload["reviewer_id"] == REVIEWER
+    assert rows[0]["origin"] == "BOT"
+    question.delete.assert_not_awaited()
+    question.channel.send.assert_not_awaited()
 
 
 @pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
