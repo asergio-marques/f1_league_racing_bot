@@ -196,7 +196,8 @@ async def _advance(cog, interaction, entry, **patches):
     step has no runner to stub: advance asks the change queue for it (#439). Nor, once the
     check-in steps are asked of the queue too, has a check-in step: the check-in runners are
     stubbed only while the attendance module still has them, so that a test asserting an ask
-    fails on the runner's call rather than on a post."""
+    fails on the runner's call rather than on a post. The submission job is stubbed likewise, only
+    while the results module still has it."""
     from leaguebot.attendance.services import rsvp_service
 
     defaults = {
@@ -208,13 +209,16 @@ async def _advance(cog, interaction, entry, **patches):
         "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
             return_value=False
         ),
-        "leaguebot.results.services.result_submission_service.run_result_submission_job": AsyncMock(
-            return_value=None
-        ),
         "leaguebot.core.services.test_mode_service.round_result_status": AsyncMock(
             return_value="AWAITING_RESULTS"
         ),
     }
+    from leaguebot.results.services import result_submission_service
+
+    if hasattr(result_submission_service, "run_result_submission_job"):
+        defaults["leaguebot.results.services.result_submission_service.run_result_submission_job"] = (
+            AsyncMock(return_value=None)
+        )
     defaults.update(patches)
 
     from contextlib import ExitStack
@@ -386,18 +390,36 @@ async def test_a_failing_notice_is_not_marked_done(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_result_submission_opens_a_wizard(tmp_path):
+#: Why the round-start test is expected to fail until advance asks the queue for it.
+SUBMISSION_NOT_ASKED = (
+    "#439: advance opens a round's result submission by starting `run_result_submission_job` "
+    "itself rather than asking the change queue for `results.submission.open`"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=SUBMISSION_NOT_ASKED)
+async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
+    """Round 3 of Division 1's result submission (4) is next, none open. Advance asks the change
+    queue for `results.submission.open` of the round and replies that it is on the change queue,
+    naming the division and the round, as a weather step's reply does; it starts no submission
+    job of its own."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    await _advance(cog, interaction, _entry(4))
+    mocks = await _advance(cog, interaction, _entry(4))
 
-    assert "Opening result submission wizard" in _replied(interaction)
+    [(kind, payload)] = _asked(cog)
+    assert (kind, payload["round_id"]) == ("results.submission.open", ROUND_ID)
+    replied = _replied(interaction)
+    assert "is on the change queue" in replied
+    assert "**Division 1**" in replied and "Round 3" in replied
+    if "run_result_submission_job" in mocks:
+        mocks["run_result_submission_job"].assert_not_awaited()
 
 
 async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
-    """The wizard runs on its own once opened, so its line says it was started, never that the
-    results were submitted (#482)."""
+    """Advance's line names the division and the round, and never says the results were
+    submitted: the submission is opened, not done (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
 
     await _advance(cog, _interaction(), _entry(4))
@@ -405,7 +427,7 @@ async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
     [line] = _log_lines(cog)
     assert line.startswith("Maintainer (<@77>) | /test-mode advance")
     assert "Division 1" in line and "Round 3" in line
-    assert "wizard" in line.lower() and "started" in line.lower()
+    assert "submitted" not in line.lower()
 
 
 async def _noop(round_id: int) -> None:
@@ -472,7 +494,9 @@ async def test_an_open_submission_blocks_the_next_advance(tmp_path):
         },
     )
 
-    mocks["run_result_submission_job"].assert_not_awaited()
+    assert _asked(cog) == []
+    if "run_result_submission_job" in mocks:
+        mocks["run_result_submission_job"].assert_not_awaited()
     assert "awaiting" in _replied(interaction)
 
 

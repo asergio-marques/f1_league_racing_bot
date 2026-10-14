@@ -29,8 +29,11 @@ league is reading.
 staged lists, and whichever is approved second overwrites the first; the request carries the old
 prompt's id for the change to delete after posting the new one.
 
-**A mid-submission orphan is announced.** The sessions submitted before the crash are gone and
-the manager has to re-enter them; that is not something to discover from an empty wizard.
+**A mid-submission orphan is put to the queue** (#439, slice 6b). Recovery asks, as the bot, for
+`results.submission.restart` of the round and does nothing of it itself; the change clears the
+sessions and the row, deletes the channel, announces that the sessions submitted before the crash
+are gone and must be re-entered, and opens the submission afresh. What the change does is pinned in
+`test_submission_restart_change.py`; this file pins that recovery asks for it.
 
 **A restart mid-resubmission keeps the round's results** (issue #210). The pastes collected so
 far lived in memory and are gone, but nothing was written until the last session was in, so the
@@ -172,10 +175,11 @@ def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
 
 
 async def _recover(stub):
-    """Run recovery, with the submission wizard's re-run stubbed; the queue's requests are
-    recorded on the bot's stand-in queue."""
+    """Run recovery, with the submission wizard's re-run stubbed where the results module still
+    has one; the queue's requests are recorded on the bot's stand-in queue."""
     with patch(
-        "leaguebot.results.services.result_submission_service.run_result_submission_job", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.run_result_submission_job",
+        new=AsyncMock(), create=True,
     ) as rerun, patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()) as create_task:
         await bot_module._recover_orphaned_submission_channels(stub)
     return {"rerun": rerun, "create_task": create_task}
@@ -248,117 +252,69 @@ async def test_a_restart_with_nothing_open_does_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_half_submitted_rounds_results_are_deleted(tmp_path):
-    """A half-submitted race is not a result, and leaving the rows would have
-    `get_next_pending_phase` treat the round as complete."""
-    db_path = await _make_db(tmp_path, name="recover_midsub")
-    stub = _bot(db_path, channel=_channel())
-
-    await _recover(stub)
-
-    assert await _rows(db_path, "session_results") == 0
+#: Why a test of a restart mid-submission is expected to fail until the restart asks the queue.
+NO_SUBMISSION_RESTART = (
+    "#439: a restart clears a cut-off submission, deletes its channel and starts the submission "
+    "job itself, off the change queue, rather than asking for `results.submission.restart`"
+)
 
 
-async def test_the_orphaned_channel_row_is_removed(tmp_path):
-    """Otherwise the next restart recovers the same round again, for ever."""
-    db_path = await _make_db(tmp_path, name="recover_row")
-    stub = _bot(db_path, channel=_channel())
-
-    await _recover(stub)
-
-    assert await _rows(db_path, "round_submission_channels") == 0
+def _asked_restart(stub) -> dict:
+    """The one `results.submission.restart` recovery asked, for round 3 in channel 700."""
+    payload = _asked_once(stub, "results.submission.restart")
+    assert payload["channel_id"] == CHANNEL_ID
+    return payload
 
 
-async def test_the_discord_channel_is_deleted(tmp_path):
-    """The wizard opens a fresh one; leaving this would give the division two submission
-    channels and no way to tell which is live."""
-    db_path = await _make_db(tmp_path, name="recover_delchannel")
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
+async def test_the_submission_wizard_is_reopened(tmp_path):
+    """Production has no `/test-mode advance` to fall back on, so without this the round is
+    silently abandoned and nobody submits its results at all. Recovery asks the queue, as the
+    bot, for round 3's restart, naming its channel, and does the rest of it on no account itself:
+    it starts no task, deletes no channel and posts nothing, and the half-submitted results and
+    the submission row stand until the queue's jobs clear them
+    (`test_submission_restart_change.py`)."""
+    db_path = await _make_db(tmp_path, name="recover_rerun")
     channel = _channel()
     stub = _bot(db_path, channel=channel)
 
-    await _recover(stub)
-
-    channel.delete.assert_awaited_once()
-
-
-async def test_the_submission_wizard_is_reopened(tmp_path):
-    """Production has no `/test-mode advance` to fall back on, so without this the round is
-    silently abandoned and nobody submits its results at all."""
-    db_path = await _make_db(tmp_path, name="recover_rerun")
-    stub = _bot(db_path, channel=_channel())
-
     stubs = await _recover(stub)
 
-    stubs["create_task"].assert_called_once()
+    _asked_restart(stub)
+    assert [kind for kind, _ in _asked(stub)] == ["results.submission.restart"]
+    stubs["create_task"].assert_not_called()
+    stubs["rerun"].assert_not_awaited()
+    channel.delete.assert_not_awaited()
+    stub.output_router.post_log.assert_not_awaited()
+    assert await _rows(db_path, "session_results") == 1
+    assert await _rows(db_path, "round_submission_channels") == 1
 
 
-async def test_the_league_is_told_to_re_submit(tmp_path):
-    """The sessions entered before the crash are gone, and that is not something to
-    discover from a wizard that asks for them again."""
-    db_path = await _make_db(tmp_path, name="recover_notice")
-    stub = _bot(db_path, channel=_channel())
-
-    await _recover(stub)
-
-    logged = _logged(stub)
-    assert "restarted mid-result-submission" in logged
-    assert "re-submit" in logged
-
-
-async def test_the_notice_names_the_round_by_its_number(tmp_path):
-    """A round id means nothing to a league manager; "R3" is what they call it."""
-    db_path = await _make_db(tmp_path, name="recover_notice_label")
-    stub = _bot(db_path, channel=_channel())
-
-    await _recover(stub)
-
-    assert "R3" in _logged(stub)
-
-
-async def test_a_channel_that_cannot_be_deleted_does_not_stop_the_recovery(tmp_path):
-    """Permissions change; the round still needs its wizard back."""
-    db_path = await _make_db(tmp_path, name="recover_delfail")
-    stub = _bot(db_path, channel=_channel(delete_fails=True))
-
-    stubs = await _recover(stub)
-
-    stubs["create_task"].assert_called_once()
-
-
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_guild_missing_from_the_cache_still_clears_the_row(tmp_path):
     """The database half can be put right without Discord, and leaving the row would have
-    the round recovered again on every later restart."""
+    the round recovered again on every later restart. With the league's server missing from the
+    cache, recovery still asks the queue for round 3's restart, and starts no task."""
     db_path = await _make_db(tmp_path, name="recover_noguild")
     stub = _bot(db_path, guild_missing=True, channel=None)
 
     stubs = await _recover(stub)
 
-    assert await _rows(db_path, "round_submission_channels") == 0
-    assert await _rows(db_path, "session_results") == 0
+    _asked_restart(stub)
     stubs["create_task"].assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_channel_already_gone_still_reopens_the_wizard(tmp_path):
     """Someone deleted it by hand between the crash and the restart, which changes nothing
-    about the round needing its results."""
+    about the round needing its results: recovery still asks the queue for round 3's restart."""
     db_path = await _make_db(tmp_path, name="recover_nochannel")
     stub = _bot(db_path, channel=None)
 
     stubs = await _recover(stub)
 
-    stubs["create_task"].assert_called_once()
-
-
-async def test_a_failing_log_does_not_stop_the_recovery(tmp_path):
-    """The notice is the least important part of it, and the round is already recovered by
-    the time it is posted."""
-    db_path = await _make_db(tmp_path, name="recover_logfail")
-    stub = _bot(db_path, channel=_channel())
-    stub.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log channel"))
-
-    stubs = await _recover(stub)
-
-    stubs["create_task"].assert_called_once()
+    _asked_restart(stub)
+    stubs["create_task"].assert_not_called()
 
 
 # ---------------------------------------------------------------------------
