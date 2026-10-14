@@ -828,8 +828,29 @@ async def test_a_session_can_be_cancelled(tmp_path):
     stubs = await _run(bot)
 
     assert (await _sessions(db_path))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
-    assert "was cancelled" in _said(bot._results)
+    assert "marked as CANCELLED" in _said(stubs["sub"])
     assert len(stubs["opened"]) == 1
+
+
+NO_CANCELLED_LINE_WITH_THE_TABLES = (
+    "#439: the round's submission job looks the change queue up on the bot, and posts a "
+    "cancelled session's line in the results channel when CANCELLED is typed rather than with "
+    "the round's tables"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
+async def test_no_results_channel_line_is_posted_when_cancelled_is_typed(tmp_path):
+    """The manager types CANCELLED for the qualifying, then pastes the race. The submission
+    channel confirms the qualifying is marked as cancelled; nothing about it is posted in the
+    results channel then — its line comes with the round's Provisional Results."""
+    db_path = await _make_db(tmp_path, name="wizard_cancel_no_line")
+    bot = _bot(db_path, ["cancelled", RACE_PASTE])
+
+    stubs = await _run(bot)
+
+    assert "marked as CANCELLED" in _said(stubs["sub"])
+    assert "was cancelled" not in _said(bot._results)
 
 
 @pytest.mark.xfail(strict=True, reason=NO_QUEUE_HANDED)
