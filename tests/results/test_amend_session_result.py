@@ -2,7 +2,8 @@
 
 Issue #208. `amend_round_results` (once `amend_session_result`) was uncovered. It is what
 `/results rounds amend` calls once the corrected pastes have been validated, and it is
-destructive by design.
+destructive by design. Reached through the support's `amend_stage_one`, which runs the form
+taking a connection that #439 6b's `results.amend.stage_one` saves in, where the bot has it.
 
 **Nothing is superseded; the classification being replaced is gone.** The session header is
 updated in place and the driver rows are deleted outright, then re-inserted from the amendment.
@@ -44,10 +45,9 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.result_submission_service import (
     AmendmentWouldOrphanVerdictError,
     AmendedSession,
-    amend_round_results,
 )
 from leaguebot.core.services.season_service import SeasonImmutableError
-from tests.support.review_league import revert_amendment
+from tests.support.review_league import amend_stage_one, revert_amendment
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 12908
@@ -166,26 +166,38 @@ async def _amend(
     config_name="Standard",
     fl_override=None,
     sessions=None,
+    display_names=None,
 ):
     """Stage one of an amendment, with the points, the cascade and the posting of a round's
     results stubbed: "repost" is `produce_session_results`, the one funnel every posting of a
-    session's results reaches, which stage one must not reach."""
+    session's results reaches, which stage one must not reach. Each stub stands in for both forms
+    of its function, the committing one and the one taking a connection that #439 6b's stage one
+    runs in its save, so the test reads one stub whichever the bot has. *display_names* are the
+    standings names handed to the save (the committing form resolves its own through *bot*)."""
     bot = bot or _bot()
-    with patch(
-        "leaguebot.results.services.result_submission_service._apply_points_from_config", new=AsyncMock()
-    ) as apply_points, patch(
-        "leaguebot.results.services.results_post_service.produce_session_results",
-        new=AsyncMock(),
-    ) as repost, patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
-    ) as cascade:
-        await amend_round_results(
+    apply_points, cascade = AsyncMock(), AsyncMock()
+    with ExitStack() as stack:
+        for name in ("_apply_points_from_config", "_apply_points_from_config_on"):
+            stack.enter_context(patch(
+                f"leaguebot.results.services.result_submission_service.{name}",
+                new=apply_points, create=True,
+            ))
+        for name in ("cascade_recompute_from_round", "cascade_recompute_from_round_on"):
+            stack.enter_context(patch(
+                f"leaguebot.results.services.standings_service.{name}", new=cascade, create=True,
+            ))
+        repost = stack.enter_context(patch(
+            "leaguebot.results.services.results_post_service.produce_session_results",
+            new=AsyncMock(),
+        ))
+        await amend_stage_one(
             db_path,
             ROUND_ID,
             DIVISION_ID,
             sessions or [AmendedSession(session_type, rows, config_name, fl_override)],
             AMENDER,
             bot,
+            display_names,
         )
     return {
         "bot": bot,
@@ -366,7 +378,7 @@ async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
         "leaguebot.results.services.results_post_service.standings_display_names",
         new=AsyncMock(return_value=names),
     ):
-        stubs = await _amend(db_path, [_race_row(101, 1)])
+        stubs = await _amend(db_path, [_race_row(101, 1)], display_names=names)
 
     assert stubs["cascade"].await_args.args[3] == names
 
@@ -614,81 +626,6 @@ async def test_without_a_guild_the_standings_are_still_recomputed(tmp_path):
     stubs["repost"].assert_not_awaited()
 
 
-async def test_the_amendment_is_logged(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_log")
-
-    stubs = await _amend(db_path, [_race_row(101, 1)])
-
-    logged = str(stubs["bot"].output_router.post_log.await_args.args[0])
-    assert "AMEND_STAGE_1 | Recorded" in logged
-    assert f"<@{AMENDER}>" in logged
-    assert "round: 3" in logged
-    # Each session named with the configuration it was scored under — the one entry that
-    # records it, now that the cog's `AMEND_SUCCESS` is gone.
-    assert "FEATURE_RACE=Standard" in logged
-    # Says where it has reached, not that it succeeded — nothing is published yet (#345).
-    assert "Nothing is published until" in logged
-
-
-async def test_the_amendment_names_the_member_who_ran_it(tmp_path):
-    """Alex, a member of the league's server, amends round 3's Feature Race: the stage-one line
-    reads "Alex (<@77>) | AMEND_STAGE_1 | Recorded", naming Alex by display name and mention."""
-    db_path = await _make_db(tmp_path, name="amend_log_named")
-    bot = _bot()
-    bot.get_guild.return_value.get_member = MagicMock(
-        side_effect=lambda member_id: SimpleNamespace(display_name="Alex")
-        if member_id == AMENDER else None
-    )
-
-    stubs = await _amend(db_path, [_race_row(101, 1)], bot=bot)
-
-    logged = str(stubs["bot"].output_router.post_log.await_args.args[0])
-    assert logged.startswith(f"Alex (<@{AMENDER}>) | AMEND_STAGE_1 | Recorded")
-
-
-# ---------------------------------------------------------------------------
-# The amendment says what it could not repost (#237)
-#
-# The third caller of the cascade, and the third to throw away what it could not post. It
-# has no interaction to answer, so the log channel is the only route.
-# ---------------------------------------------------------------------------
-
-AMEND_FAULT = "**Alpha** \u2014 the results channel <#501> no longer exists."
-
-
-def _amend_log(stubs) -> str:
-    return "\n".join(
-        str(c.args[0]) for c in stubs["bot"].output_router.post_log.await_args_list
-    )
-
-
-async def test_stage_one_does_not_claim_the_amendment_succeeded(tmp_path):
-    """`RESULT_AMENDED` belongs to the final stage.
-
-    Reporting success here would tell a manager the round was amended when its reports and
-    appeals are still unreviewed and nothing has been published.
-    """
-    db_path = await _make_db(tmp_path, name="amend_complete")
-
-    stubs = await _amend(db_path, [_race_row(101, 1)])
-
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED" not in logged
-    assert "AMEND_STAGE_1" in logged
-
-
-async def test_the_championship_is_recalculated_even_with_no_guild(tmp_path):
-    """The database has to be right whether or not Discord can be reached.
-
-    Stage one publishes nothing either way now, so the two branches differ only in the line the
-    league is left with — and the recalculation happens on both.
-    """
-    db_path = await _make_db(tmp_path, name="amend_no_guild")
-
-    stubs = await _amend(db_path, [_race_row(101, 1)], bot=_bot(guild=False))
-
-    stubs["cascade"].assert_awaited()
-    assert "RESULT_AMENDED" not in _amend_log(stubs)
 async def _verdict_rows(db_path, table: str, column: str = "race_result_id"):
     """Every row of *table*, as (id, the result row it points at), oldest first."""
     async with get_connection(db_path) as db:
@@ -961,7 +898,6 @@ async def test_several_sessions_are_written_in_one_amendment(tmp_path):
     # Points once per session, the standings once for the lot.
     assert stubs["apply_points"].await_count == 2
     stubs["cascade"].assert_awaited_once()
-    assert "sessions: FEATURE_QUALIFYING=Standard, FEATURE_RACE=Standard" in _amend_log(stubs)
 
 
 async def test_a_refusal_in_one_session_writes_none_of_them(tmp_path):

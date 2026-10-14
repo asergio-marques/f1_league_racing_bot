@@ -547,6 +547,29 @@ async def test_the_last_amended_paste_hands_stage_one_to_the_league_and_its_prom
     assert await _winner(league) == MAX
 
 
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_stage_one_s_line_says_what_was_recorded_and_that_nothing_is_published_yet(
+    tmp_path, monkeypatch,
+):
+    """Alex pastes the amended Feature Race, scored under Standard. When the queue runs, stage
+    one's change writes one line to the log channel: "AMEND_STAGE_1 | Recorded", naming Alex by
+    mention, round 3, the session with the configuration it was scored under
+    ("FEATURE_RACE=Standard"), and that nothing is published until the report and appeal stages
+    are approved. No "RESULT_AMENDED" is written: that belongs to the final stage (#345)."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _type(league)
+
+    [line] = [sent for sent in league.bot.log_channel.sent
+              if "AMEND_STAGE_1 | Recorded" in str(sent)]
+    assert f"<@{MEMBER_ID}>" in line
+    assert "round: 3" in line
+    assert "FEATURE_RACE=Standard" in line
+    assert "Nothing is published until" in line
+    assert "RESULT_AMENDED" not in league.log()
+
+
 # ---------------------------------------------------------------------------
 # Cancel Amendment (C62)
 # ---------------------------------------------------------------------------

@@ -63,6 +63,15 @@ def _revert() -> ast.AST:
         return _function(MODULE, "revert_abandoned_amendment")
 
 
+def _stage_one() -> ast.AST:
+    """Stage one's body: its form taking a connection, which `results.amend.stage_one` runs in its
+    save since #439 6b, where the module has it; else the committing form it replaces."""
+    try:
+        return _function(MODULE, "amend_round_results_on")
+    except AssertionError:
+        return _function(MODULE, "amend_round_results")
+
+
 def _code(node: ast.AST) -> str:
     """The function's source without its docstring, which names what it avoids in prose."""
     body = list(node.body)
@@ -247,7 +256,7 @@ async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, movin
 
 def test_stage_one_publishes_nothing_at_all():
     """It records the corrected classification; every posting belongs to the final stage."""
-    source = _code(_function(MODULE, "amend_round_results"))
+    source = _code(_stage_one())
 
     assert "replay_division_channels" not in source
     assert "repost_round_results" not in source
