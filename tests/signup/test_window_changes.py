@@ -1,5 +1,6 @@
 """`/signup open` on the change queue: the window opens only once its message is up (#439, slice
-6b, C68).
+6b, C68); and the window's close, by command, timer, restart or turning signup off (C69–C71),
+whose league is described where its tests begin.
 
 Today the command posts the information message with its Sign Up button itself, then records the
 window open, moves the season on and writes its audit row, all off the queue. On the queue it asks
@@ -18,7 +19,7 @@ close time.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -47,6 +48,16 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import channel
+from tests.support.season_league import (
+    SEASON_ID,
+    SIGNING_UP,
+    SIGNUP_BUTTON,
+    SIGNUP_CHANNEL_BASE,
+    SeasonLeague,
+    setup_league,
+    signing_up,
+)
+from tests.support.season_league import SIGNUP_CHANNEL as LEAGUE_SIGNUP_CHANNEL
 from tests.support.undecorate import undecorate
 
 NOW = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
@@ -309,3 +320,395 @@ async def test_a_discarded_information_post_leaves_signups_closed(tmp_path):
     assert not config["signups_open"]
     assert config["signup_button_message_id"] is None
     assert await league.stage() == "WAITING"
+
+
+# ---------------------------------------------------------------------------
+# Closing the window: `signup.close` and `module.off:signup` (C69–C71)
+# ---------------------------------------------------------------------------
+#
+# Today `/signup close`, its Confirm Close button, the close timer, a restart past the close time
+# and `/module disable signup` close the window through `execute_forced_close`, off the queue:
+# each step that fails is named and the rest run on. On the queue each asks `signup.close` (or
+# `module.off:signup`): `return_drivers` returns each driver still filling in the wizard to Not
+# Signed Up, `delete_button` deletes the Sign Up message, `post_closed` posts the closed notice
+# and, in its record, saves the window closed, the season's move and the audit in one save; then
+# each returned driver's closing notice, lock and deletion a day on, every job on the league lane
+# (decision 31). A failed step stops the queue, and a Discard names what was not done (Q26).
+#
+# The league is `tests.support.season_league`'s `setup_league`: season 7 at its Signups stage,
+# signups open in the signup channel (620) with the Sign Up button (6201) standing. Kimi (105),
+# and in some tests a second driver (107), are still filling in the wizard (Pending Signup
+# Completion), each with their signup channel standing (6300 + their id).
+
+#: The change a close asks, and the one turning the module off asks.
+CLOSE_KIND = "signup.close"
+MODULE_OFF_KIND = "module.off:signup"
+#: The driver's lane change a last answer hands over (C83).
+SUBMIT_KIND = "signup.submit"
+#: A second driver still filling in the wizard.
+OTHER = 107
+KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
+OTHER_CHANNEL = SIGNUP_CHANNEL_BASE + OTHER
+KIMI_LANE = f"channel:{KIMI_CHANNEL}"
+#: What the signup channel and a returned driver's channel are told.
+CLOSED_TEXT = "🔒 Signups are now closed."
+DRIVER_NOTICE = "🔒 Signups have closed."
+#: The timer that deletes a held signup channel a day on.
+DELETE_TIMER = "signup_channel_delete"
+
+NO_CLOSE_CHANGE = (
+    "#439: the signup window is closed by execute_forced_close off the queue, naming a failed "
+    "step and running on, with no signup.close change whose jobs stop the queue"
+)
+NO_MODULE_OFF_CHANGE = (
+    "#439: /module disable signup closes the window and switches the module off itself, off "
+    "the queue, with no module.off:signup change"
+)
+
+
+async def _close_league(tmp_path: Any, *drivers: int) -> SeasonLeague:
+    """`setup_league` at Signups with the window open; each of *drivers* still filling in the
+    wizard (Pending Signup Completion), their signup channel standing and recording what it is
+    sent and its permission edits."""
+    os.makedirs(str(tmp_path), exist_ok=True)
+    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    for user_id in drivers:
+        await signing_up(league, user_id, state="PENDING_SIGNUP_COMPLETION")
+        cid = SIGNUP_CHANNEL_BASE + user_id
+        held = league._recording(channel(cid, league.events))
+        held.guild = league.guild
+        held.set_permissions = AsyncMock()
+        league.channels[cid] = held
+    return league
+
+
+def _manager(league: SeasonLeague) -> Any:
+    interaction = member_interaction(league.bot, user=tier_member("manager", member_id=77))
+    interaction.guild = league.guild
+    interaction.command = MagicMock(qualified_name="signup close")
+    return interaction
+
+
+async def _signup_close(league: SeasonLeague) -> Any:
+    """League manager 77 runs `/signup close`; gives his interaction."""
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    interaction = _manager(league)
+    await undecorate(SignupCog.signup_close)(cog, interaction)
+    return interaction
+
+
+async def _confirm_close(league: SeasonLeague) -> Any:
+    """Manager 77 runs `/signup close`, is shown the confirmation and presses Confirm Close;
+    gives the press's interaction."""
+    asked = await _signup_close(league)
+    view = asked.response.send_message.await_args.kwargs["view"]
+    press = _manager(league)
+    await view.confirm.callback(press)
+    return press
+
+
+async def _changes_of(league: SeasonLeague, kind: str) -> list[dict[str, Any]]:
+    return [row for row in await change_rows(league.db_path) if row["kind"] == kind]
+
+
+async def _close_jobs(league: SeasonLeague, kind: str = CLOSE_KIND) -> list[dict[str, Any]]:
+    [change] = await _changes_of(league, kind)
+    return await step_rows(league.db_path, change["id"])
+
+
+async def _window(league: SeasonLeague) -> dict[str, Any]:
+    [row] = await league.rows("SELECT * FROM signup_module_config WHERE id = 1")
+    return row
+
+
+async def _season_stage(league: SeasonLeague) -> str:
+    [row] = await league.rows("SELECT stage FROM seasons WHERE id = ?", SEASON_ID)
+    return str(row["stage"])
+
+
+async def _driver_state(league: SeasonLeague, user_id: int = SIGNING_UP) -> str:
+    [row] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(user_id)
+    )
+    return str(row["current_state"])
+
+
+async def _close_audits(league: SeasonLeague) -> list[dict[str, Any]]:
+    return await league.rows(
+        "SELECT * FROM audit_entries WHERE change_type LIKE 'SIGNUP_%CLOSE'"
+    )
+
+
+def _closed_notices(league: SeasonLeague) -> list[Any]:
+    signup = league.channel(LEAGUE_SIGNUP_CHANNEL)
+    return [message for message in signup.messages.values() if message.content == CLOSED_TEXT]
+
+
+def _told(league: SeasonLeague, cid: int = KIMI_CHANNEL) -> list[str]:
+    return [text for text in league.channel(cid).texts if text.startswith(DRIVER_NOTICE)]
+
+
+def _locked_in(league: SeasonLeague, cid: int = KIMI_CHANNEL) -> bool:
+    return any(call.kwargs.get("send_messages") is False
+               for call in league.channel(cid).set_permissions.call_args_list)
+
+
+def _deletion_armed(league: SeasonLeague, user_id: int = SIGNING_UP) -> bool:
+    return any(call.args[:2] == (DELETE_TIMER, str(user_id))
+               for call in league.bot.scheduler_service.arm_once.call_args_list)
+
+
+def _lane_of(change: dict[str, Any]) -> str:
+    return change.get("lane") or "league"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_signup_close_returns_drivers_deletes_the_button_posts_the_notice_and_tells_each_as_jobs(
+    tmp_path,
+):
+    """Kimi is still filling in the wizard. Manager 77 runs `/signup close` and presses Confirm
+    Close. He is answered at once with an under-way line, and nothing has changed yet: Kimi is
+    still signing up and the Sign Up button stands. When the queue runs, the close's jobs are
+    done in order — `return_drivers`, `delete_button`, `post_closed`, then Kimi's
+    `signup_notice`, `close_signup` and `arm_deletion` — Kimi is Not Signed Up, the button is
+    deleted, the closed notice stands in the signup channel, Kimi's channel is told signups have
+    closed and locked, its deletion is armed, and the acknowledgement is updated with ✅."""
+    league = await _close_league(tmp_path, SIGNING_UP)
+
+    press = await _confirm_close(league)
+
+    assert acknowledgement(press).startswith("⏳")
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert SIGNUP_BUTTON in league.channel(LEAGUE_SIGNUP_CHANNEL).messages
+
+    await run_queue(league.bot)
+
+    names = [job["name"] for job in await _close_jobs(league)]
+    order = ["return_drivers", "delete_button", "post_closed", "signup_notice",
+             "close_signup", "arm_deletion"]
+    assert [name for name in names if name in order] == order
+    assert all(job["done_at"] for job in await _close_jobs(league))
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert SIGNUP_BUTTON not in league.channel(LEAGUE_SIGNUP_CHANNEL).messages
+    assert len(_closed_notices(league)) == 1
+    assert len(_told(league)) == 1
+    assert _locked_in(league)
+    assert _deletion_armed(league)
+    assert updated_reply(press).startswith("✅")
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_a_close_s_window_and_season_move_are_saved_together(tmp_path):
+    """Nobody is signing up. Manager 77 runs `/signup close`; until the queue runs the window
+    stays open, the season at Signups and no close audited. When it runs, `post_closed`'s record
+    saves, with its mark, the window closed with the notice's id, the season moved to Placements
+    and the SIGNUP_CLOSE audit. In a second league whose signup channel refuses the notice, the
+    queue stops at `post_closed` with the window still open and the season still at Signups:
+    neither is saved without the other."""
+    league = await _close_league(tmp_path / "posted")
+
+    await _signup_close(league)
+
+    assert (await _window(league))["signups_open"]
+    assert await _season_stage(league) == "SIGNUPS"
+    assert await _close_audits(league) == []
+
+    await run_queue(league.bot)
+
+    post_closed = [job for job in await _close_jobs(league) if job["name"] == "post_closed"]
+    assert post_closed and post_closed[0]["done_at"]
+    [notice] = _closed_notices(league)
+    window = await _window(league)
+    assert not window["signups_open"]
+    assert window["signup_closed_message_id"] == notice.id
+    assert await _season_stage(league) == "PLACEMENTS"
+    assert [row["change_type"] for row in await _close_audits(league)] == ["SIGNUP_CLOSE"]
+
+    refused = await _close_league(tmp_path / "refused")
+    refused.channel(LEAGUE_SIGNUP_CHANNEL).fail_when = (
+        lambda content, _kwargs: content == CLOSED_TEXT
+    )
+
+    await _signup_close(refused)
+    await run_queue(refused.bot)
+
+    job = await stopped_job(refused.db_path)
+    assert job is not None and job["name"] == "post_closed"
+    assert (await _window(refused))["signups_open"]
+    assert await _season_stage(refused) == "SIGNUPS"
+    assert await _close_audits(refused) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_a_failed_close_step_stops_the_queue_and_a_discard_names_it(tmp_path):
+    """Kimi is still filling in the wizard, and Discord refuses every post in his signup channel.
+    Manager 77 confirms the close and the queue runs: Kimi is returned to Not Signed Up, the
+    button is deleted and the closed notice posted, then the queue stops at Kimi's
+    `signup_notice`, his channel neither told nor locked. A league admin discards it: the queue
+    is no longer stopped, and the close's outcome or the log channel names Kimi as not told
+    that signups had closed."""
+    league = await _close_league(tmp_path, SIGNING_UP)
+    league.channel(KIMI_CHANNEL).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    press = await _confirm_close(league)
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "signup_notice"
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_closed_notices(league)) == 1
+    assert _told(league) == []
+    assert not _locked_in(league)
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    said = updated_reply(press) + "\n" + league.log()
+    assert f"<@{SIGNING_UP}>" in said
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_path):
+    """Kimi is still filling in the wizard. Manager 77 runs `/signup close` and presses Confirm
+    Close; before the queue reaches it, signups are reopened on another Sign Up message (7777).
+    When the queue runs, the close is refused: his acknowledgement is updated saying signups
+    were reopened, nothing is closed — the window stays open, Kimi is still signing up, his
+    channel is not told — and the queue is not stopped."""
+    league = await _close_league(tmp_path, SIGNING_UP)
+
+    press = await _confirm_close(league)
+    await league.write("UPDATE signup_module_config SET signup_button_message_id = 7777")
+    await run_queue(league.bot)
+
+    assert "reopened" in updated_reply(press)
+    assert (await _window(league))["signups_open"]
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert _told(league) == []
+    assert _closed_notices(league) == []
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(tmp_path):
+    """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
+    the other the bot starts after the close time (`close_signups_unattended` with the cause
+    "timer", then "restart"). Each asks `signup.close` as the bot's own change and posts nothing
+    itself: the window stays open until the queue runs. When it runs, the window is closed, the
+    closed notice posted and Kimi returned to Not Signed Up."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+
+    for cause in ("timer", "restart"):
+        league = await _close_league(tmp_path / cause, SIGNING_UP)
+        await league.write(
+            "UPDATE signup_module_config SET close_at = ?",
+            (league.clock.now - timedelta(minutes=1)).isoformat(),
+        )
+
+        await close_signups_unattended(league.bot, cause=cause)
+
+        [change] = await _changes_of(league, CLOSE_KIND)
+        assert change["origin"] == "BOT", cause
+        assert (await _window(league))["signups_open"], cause
+        assert _closed_notices(league) == [], cause
+
+        await run_queue(league.bot)
+
+        assert not (await _window(league))["signups_open"], cause
+        assert len(_closed_notices(league)) == 1, cause
+        assert await _driver_state(league) == "NOT_SIGNED_UP", cause
+
+
+@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
+async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as_jobs(tmp_path):
+    """Kimi is still filling in the wizard. Manager 77 runs `/module disable signup`. Until the
+    queue runs, the module is still on and the window open. When it runs, the
+    `module.off:signup` change closes the window as its jobs — Kimi returned, the button
+    deleted, the closed notice posted, Kimi told — and its last job, `switch_off`, turns the
+    module off and forgets the signup channel."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+
+    league = await _close_league(tmp_path, SIGNING_UP)
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = league.bot
+    interaction = _manager(league)
+    interaction.command = MagicMock(qualified_name="module disable")
+
+    await cog._disable_signup(interaction)
+
+    assert await league.bot.module_service.is_signup_enabled()
+    assert (await _window(league))["signups_open"]
+    assert len(await _changes_of(league, MODULE_OFF_KIND)) == 1
+
+    await run_queue(league.bot)
+
+    jobs = await _close_jobs(league, MODULE_OFF_KIND)
+    assert all(job["done_at"] for job in jobs)
+    names = [job["name"] for job in jobs]
+    assert names[-1] == "switch_off"
+    assert names.index("post_closed") < names.index("switch_off")
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert SIGNUP_BUTTON not in league.channel(LEAGUE_SIGNUP_CHANNEL).messages
+    assert len(_closed_notices(league)) == 1
+    assert len(_told(league)) == 1
+    assert not await league.bot.module_service.is_signup_enabled()
+    assert await league.rows("SELECT * FROM signup_module_config") == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):
+    """Kimi and a second driver are still filling in the wizard; Discord refuses posts in Kimi's
+    signup channel alone. Manager 77 confirms the close and the queue runs: the close is one
+    change on the league lane, no change is asked on either driver's lane, and it stops the
+    league lane at Kimi's `signup_notice` — Kimi's own lane is not stopped — with the second
+    driver's notice already posted in his channel."""
+    league = await _close_league(tmp_path, SIGNING_UP, OTHER)
+    league.channel(KIMI_CHANNEL).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    await _confirm_close(league)
+    await run_queue(league.bot)
+
+    [close] = await _changes_of(league, CLOSE_KIND)
+    assert _lane_of(close) == "league"
+    assert all(_lane_of(row) == "league" for row in await change_rows(league.db_path))
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "signup_notice"
+    assert await stopped_job(league.db_path, KIMI_LANE) is None
+    assert len(_told(league, OTHER_CHANNEL)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+async def test_the_close_wins_over_a_last_answer_handed_over_behind_it(tmp_path):
+    """Kimi is still filling in the wizard. Manager 77 confirms the close; then Kimi's last
+    answer hands his signup to the league (`signup.submit`) behind it. When the queue runs, the
+    close is done and Kimi returned to Not Signed Up; his submission finds him returned and is
+    dropped as no longer due, saving no signup record. Kimi learns of the close from the close's
+    own notice in his channel, the only one he is sent."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    league = await _close_league(tmp_path, SIGNING_UP)
+
+    await _confirm_close(league)
+    await league.bot.change_queue.ask(
+        SUBMIT_KIND,
+        {"user_id": str(SIGNING_UP), "channel_id": KIMI_CHANNEL},
+        what=f"submitting the signup of <@{SIGNING_UP}>",
+        origin=ChangeOrigin.BOT,
+    )
+    await run_queue(league.bot)
+
+    [close] = await _changes_of(league, CLOSE_KIND)
+    [submit] = await _changes_of(league, SUBMIT_KIND)
+    assert close["id"] < submit["id"]
+    assert close["state"] == "DONE"
+    assert submit["state"] == "DROPPED"
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert await league.rows(
+        "SELECT * FROM signup_records WHERE discord_user_id = ?", str(SIGNING_UP)
+    ) == []
+    assert len(_told(league)) == 1
