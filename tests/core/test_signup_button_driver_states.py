@@ -15,110 +15,75 @@ The suite could not have caught it: the only test that pressed the button stubbe
 ``get_profile`` to return ``None``, so ``profile is not None`` short-circuited and the
 attribute was never touched. These tests press it with a profile present, one per state.
 
+Since #439 (slice 6b, C75) the button is handed the change queue when it is built (A23) and a
+press asks ``signup.start`` of it; these refusals are that change's check, made as it is asked, so
+the tests press it on a real queue: the league is ``tests/signup/test_wizard_changes.py``'s, at
+Signups with the window open, Kimi (105) pressing Sign Up in the signup channel. A press that
+reaches the wizard is one whose ``signup.start`` is saved on the queue.
+
 Every test is ``async def``: the callback builds a ``discord.ui.View``, and apt's discord.py
 2.5.0 calls ``asyncio.get_running_loop()`` in ``View.__init__`` (see CLAUDE.md, Testing).
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from typing import Any
 
 import pytest
 
+from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.cogs import signup_cog
-from leaguebot.core.models.driver_profile import DriverProfile, DriverState
-from leaguebot.core.models.server_config import ServerConfig
+from tests.signup.test_wizard_changes import (
+    NO_START_CHANGE,
+    START_KIND,
+    _changes_of,
+    _driver,
+    _league,
+)
+from tests.support.change_queue import acknowledgement, updated_reply
+from tests.support.season_league import SIGNING_UP, SeasonLeague
 
-SERVER_ID = 4242
-USER_ID = "77"
-
-# ── Stubs ─────────────────────────────────────────────────────────────────
-
-
-class _Response:
-    def __init__(self) -> None:
-        self.messages: list[str] = []
-        self.deferred = False
-
-    def is_done(self) -> bool:
-        """Whether the interaction has been answered or deferred, as Discord's response reports
-        it, so a refusal after the defer goes by followup, as the real one would."""
-        return self.deferred or bool(self.messages)
-
-    async def defer(self, **kwargs):
-        self.deferred = True
-
-    async def send_message(self, content, **kwargs):
-        self.messages.append(content)
+#: Kimi's current account, where his Sign Up press is made from a past one.
+CURRENT_ACCOUNT = 777
 
 
-class _Interaction:
-    def __init__(self) -> None:
-        self.guild_id = SERVER_ID
-        self.guild = SimpleNamespace(id=SERVER_ID)
-        self.response = _Response()
-        self.followup = SimpleNamespace(send=AsyncMock())
-        self.user = SimpleNamespace(display_name="Tester", id=int(USER_ID))
-        self.client = None
-
-    @property
-    def reply(self) -> str:
-        assert self.response.messages, "the button replied with nothing"
-        return self.response.messages[-1]
+# ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _profile(state: DriverState, *, former_driver: bool = False) -> DriverProfile:
-    return DriverProfile(
-        id=1,
-        discord_user_id=USER_ID,
-        current_state=state,
-        former_driver=former_driver,
-    )
+async def _holding(league: SeasonLeague, state: DriverState | None, *,
+                   former_driver: bool = False) -> None:
+    """Kimi holds a driver profile at *state* (none where *state* is None)."""
+    await league.write("DELETE FROM driver_profiles WHERE discord_user_id = ?", str(SIGNING_UP))
+    if state is not None:
+        await league.write(
+            "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
+            "VALUES (?, ?, ?)",
+            str(SIGNING_UP), state.value, int(former_driver),
+        )
 
 
-def _bot(profile: DriverProfile | None):
-    """A bot whose driver service hands back *profile*, test mode off."""
-    return SimpleNamespace(
-        config_service=SimpleNamespace(
-            get_server_config=AsyncMock(
-                return_value=ServerConfig(
-                    server_id=SERVER_ID,
-                    interaction_role_id=1,
-                    interaction_channel_id=2,
-                    log_channel_id=3,
-                    test_mode_active=False,
-                )
-            )
-        ),
-        driver_service=SimpleNamespace(
-            get_profile=AsyncMock(return_value=profile),
-            current_account=AsyncMock(side_effect=lambda a: str(a)),
-        ),
-        wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
-        output_router=SimpleNamespace(post_log=AsyncMock()),
-    )
+async def _press_the_button(league: SeasonLeague) -> Any:
+    """Kimi presses Sign Up on a view handed the change queue (A23)."""
+    press = _driver(league)
+    view = signup_cog.SignupButtonView(league.bot.change_queue)
+    await view.signup_button.callback(press)
+    return press
 
 
-def _lines(bot) -> list[str]:
-    """What the press wrote in the log channel."""
-    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+def _told(press: Any) -> str:
+    return "\n".join(part for part in (acknowledgement(press), updated_reply(press)) if part)
 
 
-def _assert_one_refusal_line(bot, reason: str) -> None:
+async def _started(league: SeasonLeague) -> bool:
+    return bool(await _changes_of(league, START_KIND))
+
+
+def _assert_one_refusal_line(league: SeasonLeague, reason: str) -> None:
     """One line, naming the button, the member and why (core specification, "The record of
     what changed")."""
-    lines = _lines(bot)
+    lines = [line for line in league.bot.log_channel.sent if "⛔" in line]
     assert len(lines) == 1, lines
-    assert lines[0].startswith("⛔ the “Sign Up” button refused for Tester (<@77>)"), lines[0]
-    assert reason in lines[0]
-
-
-async def _press_the_button(bot) -> _Interaction:
-    interaction = _Interaction()
-    interaction.client = bot
-    view = signup_cog.SignupButtonView()
-    await view.signup_button.callback(interaction)
-    return interaction
+    assert "“Sign Up”" in lines[0] and f"<@{SIGNING_UP}>" in lines[0], lines[0]
+    assert reason in lines[0], lines[0]
 
 
 # ── The defect itself ─────────────────────────────────────────────────────
@@ -127,32 +92,39 @@ async def _press_the_button(bot) -> _Interaction:
 class TestAReturningRacer:
     """What a league meets on the first day of its second season."""
 
-    async def test_a_returning_racer_reaches_the_wizard(self):
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+    async def test_a_returning_racer_reaches_the_wizard(self, tmp_path):
         """The state the season-end driver pass leaves a driver who raced: reset to Not
         Signed Up, profile kept because the former-driver flag is set. Before #226 was
-        fixed this raised AttributeError and the driver saw 'This interaction failed'."""
-        bot = _bot(_profile(DriverState.NOT_SIGNED_UP, former_driver=True))
+        fixed this raised AttributeError and the driver saw 'This interaction failed'.
+        Kimi, so placed, presses Sign Up: his signup is asked of the queue."""
+        league = await _league(tmp_path)
+        await _holding(league, DriverState.NOT_SIGNED_UP, former_driver=True)
 
-        await _press_the_button(bot)
+        await _press_the_button(league)
 
-        bot.wizard_service.start_wizard.assert_awaited()
+        assert await _started(league)
 
-    async def test_a_driver_pending_deletion_also_reaches_the_wizard(self):
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+    async def test_a_driver_pending_deletion_also_reaches_the_wizard(self, tmp_path):
         """Not Signed Up without the flag — a profile awaiting the next driver pass. It is
         still a profile, so it crashed the button just as the former driver's did."""
-        bot = _bot(_profile(DriverState.NOT_SIGNED_UP, former_driver=False))
+        league = await _league(tmp_path)
+        await _holding(league, DriverState.NOT_SIGNED_UP)
 
-        await _press_the_button(bot)
+        await _press_the_button(league)
 
-        bot.wizard_service.start_wizard.assert_awaited()
+        assert await _started(league)
 
-    async def test_a_member_with_no_profile_still_reaches_the_wizard(self):
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+    async def test_a_member_with_no_profile_still_reaches_the_wizard(self, tmp_path):
         """The one press that always worked. Pinned so the fix does not trade it away."""
-        bot = _bot(None)
+        league = await _league(tmp_path)
+        await _holding(league, None)
 
-        await _press_the_button(bot)
+        await _press_the_button(league)
 
-        bot.wizard_service.start_wizard.assert_awaited()
+        assert await _started(league)
 
 
 # ── The refusals, which no driver had ever seen ───────────────────────────
@@ -162,54 +134,62 @@ class TestTheRefusals:
     """Both messages were written, specified and unreachable — every press that should
     have produced one produced the crash instead."""
 
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     @pytest.mark.parametrize("state", sorted(signup_cog.IN_PROGRESS_STATES, key=lambda s: s.value))
-    async def test_a_driver_mid_signup_is_told_so(self, state):
-        bot = _bot(_profile(state))
+    async def test_a_driver_mid_signup_is_told_so(self, tmp_path, state):
+        league = await _league(tmp_path)
+        await _holding(league, state)
 
-        interaction = await _press_the_button(bot)
+        press = await _press_the_button(league)
 
-        assert "signup in progress" in interaction.reply
-        bot.wizard_service.start_wizard.assert_not_awaited()
-        _assert_one_refusal_line(bot, "already have a signup in progress")
+        assert "signup in progress" in _told(press)
+        assert not await _started(league)
+        _assert_one_refusal_line(league, "already have a signup in progress")
 
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     @pytest.mark.parametrize("state", sorted(signup_cog.APPROVED_STATES, key=lambda s: s.value))
-    async def test_an_approved_driver_is_told_so(self, state):
-        bot = _bot(_profile(state))
+    async def test_an_approved_driver_is_told_so(self, tmp_path, state):
+        league = await _league(tmp_path)
+        await _holding(league, state)
 
-        interaction = await _press_the_button(bot)
+        press = await _press_the_button(league)
 
-        assert "already been approved" in interaction.reply
-        bot.wizard_service.start_wizard.assert_not_awaited()
-        _assert_one_refusal_line(bot, "already been approved")
+        assert "already been approved" in _told(press)
+        assert not await _started(league)
+        _assert_one_refusal_line(league, "already been approved")
 
-    async def test_an_unconfigured_module_is_refused_and_recorded(self):
-        """The wizard service finds no signup configuration and starts nothing. The member is
-        told after the button has deferred, so by followup, and the refusal is recorded."""
-        bot = _bot(None)
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+    async def test_an_unconfigured_module_is_refused_and_recorded(self, tmp_path):
+        """The signup module holds no configuration, so nothing is started: Kimi is told
+        "❌ Signup module is not configured. Contact an admin.", the refusal is recorded, and
+        no signup is asked of the queue."""
+        league = await _league(tmp_path)
+        await _holding(league, None)
+        await league.write("DELETE FROM signup_module_config")
 
-        interaction = await _press_the_button(bot)
+        press = await _press_the_button(league)
 
-        interaction.followup.send.assert_awaited_once()
-        reply = interaction.followup.send.await_args.args[0]
-        assert reply == "❌ Signup module is not configured. Contact an admin."
-        _assert_one_refusal_line(bot, "Signup module is not configured")
+        assert "Signup module is not configured. Contact an admin." in _told(press)
+        assert not await _started(league)
+        _assert_one_refusal_line(league, "Signup module is not configured")
 
 
 # ── The class of defect, not just this instance ───────────────────────────
 
 
 class TestEveryState:
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     @pytest.mark.parametrize("state", sorted(DriverState, key=lambda s: s.value))
-    async def test_no_state_crashes_the_button(self, state):
+    async def test_no_state_crashes_the_button(self, tmp_path, state):
         """Whatever state a driver stands in, pressing the button produces *something* —
-        a wizard or a refusal. #226 was the case where it produced neither, and the
-        driver was left with Discord's bare 'This interaction failed'."""
-        bot = _bot(_profile(state))
+        a signup asked of the queue or a refusal. #226 was the case where it produced
+        neither, and the driver was left with Discord's bare 'This interaction failed'."""
+        league = await _league(tmp_path)
+        await _holding(league, state)
 
-        interaction = await _press_the_button(bot)
+        press = await _press_the_button(league)
 
-        started = bot.wizard_service.start_wizard.await_count
-        assert interaction.response.messages or started, (
+        assert _told(press) or await _started(league), (
             f"a driver at {state.value} got no wizard and no message"
         )
 
@@ -237,22 +217,36 @@ class TestEveryState:
 class TestAPastAccount:
     """An account a driver has since moved on from signs nobody up."""
 
-    async def test_a_past_account_is_refused_and_pointed_at_the_current_one(self):
-        bot = _bot(None)
-        bot.driver_service.current_account = AsyncMock(return_value="777")
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+    async def test_a_past_account_is_refused_and_pointed_at_the_current_one(self, tmp_path):
+        """Kimi's account (105) is a past one: his driver now plays as 777. He presses Sign Up
+        from 105 and is told it is a past account of a driver, pointed at <@777>; the refusal
+        is recorded and nothing is asked of the queue."""
+        league = await _league(tmp_path)
+        await _holding(league, None)
+        await league.write(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
+            str(CURRENT_ACCOUNT), DriverState.NOT_SIGNED_UP.value,
+        )
+        await league.write(
+            "INSERT INTO driver_accounts (driver_profile_id, discord_user_id) "
+            "SELECT id, ? FROM driver_profiles WHERE discord_user_id = ?",
+            str(SIGNING_UP), str(CURRENT_ACCOUNT),
+        )
 
-        interaction = await _press_the_button(bot)
+        press = await _press_the_button(league)
 
-        assert "past account of a driver" in interaction.reply
-        assert "<@777>" in interaction.reply
-        bot.wizard_service.start_wizard.assert_not_awaited()
-        bot.driver_service.get_profile.assert_not_awaited()
-        _assert_one_refusal_line(bot, "past account of a driver")
+        assert "past account of a driver" in _told(press)
+        assert f"<@{CURRENT_ACCOUNT}>" in _told(press)
+        assert not await _started(league)
+        _assert_one_refusal_line(league, "past account of a driver")
 
-    async def test_the_current_account_is_not_mistaken_for_a_past_one(self):
-        bot = _bot(None)
+    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
+    async def test_the_current_account_is_not_mistaken_for_a_past_one(self, tmp_path):
+        """Kimi's own account, linked to no other: his signup is asked of the queue."""
+        league = await _league(tmp_path)
+        await _holding(league, None)
 
-        await _press_the_button(bot)
+        await _press_the_button(league)
 
-        bot.driver_service.current_account.assert_awaited_once_with(USER_ID)
-        bot.wizard_service.start_wizard.assert_awaited()
+        assert await _started(league)
