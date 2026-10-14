@@ -308,6 +308,63 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
     assert [item["driver_name"] for item in drawn] == ["Test Lewis"]
 
 
+#: The change `/attendance sync` asks for the cards of the sanctions it applied (C37).
+SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
+
+NO_QUEUED_SANCTION_CARD = (
+    "#439: /attendance sync announces its sanctions itself, off the change queue, so no "
+    "attendance.sanctions.announce change posts a sanction's card"
+)
+
+
+async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
+    """Hand the change types attendance's real hook, then ask the queue, as the bot and as the
+    sync asks it, to announce Lewis's move to reserve in round 3 of Pro, and run it."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.review_league import candidate
+
+    _real_attendance_hook(league)
+    await league.bot.change_queue.ask(
+        SANCTIONS_ANNOUNCE,
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID, "division": "Pro",
+            "sanctions": [candidate(LEWIS_PROFILE, LEWIS)],
+        },
+        what="announcing round 3's attendance sanctions",
+        origin=ChangeOrigin.BOT,
+    )
+    await run_queue(league.bot)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_QUEUED_SANCTION_CARD)
+async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
+    """Attendance is on with its real hook, and the verdict graphic is on. A sync has moved
+    Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
+    the queue runs whole, and the sanction's card is drawn under "Lewis", never his user id
+    (#141; image spec: a graphic names a person by their display name on the server)."""
+    league = await review_league(tmp_path, attendance=True)
+
+    await _announce_lewis_s_autoreserve(league)
+
+    assert await stopped_at(league) is None
+    assert [item["driver_name"] for item in drawn] == ["Lewis"]
+    assert str(LEWIS) not in drawn[0]["driver_name"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_QUEUED_SANCTION_CARD)
+async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
+    """As above, but with image generation off: the card is posted as text in Pro's verdicts
+    channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""
+    league = await review_league(tmp_path, attendance=True)
+
+    await _announce_lewis_s_autoreserve(league)
+
+    assert await stopped_at(league) is None
+    [card] = _verdicts(league)
+    assert f"<@{LEWIS}>" in card
+    assert "Moved to Reserve" in card
+
+
 async def test_no_further_action_is_drawn_as_no_penalty(tmp_path, drawn):
     league = await review_league(tmp_path)
     await _approve_reports(league, [_nfa(LEWIS)])
