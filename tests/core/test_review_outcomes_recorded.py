@@ -139,6 +139,95 @@ def _changed_since_the_review(monkeypatch, area: str = "Division Pro's rounds") 
     monkeypatch.setattr(sfs, "take_fingerprint", _now)
 
 
+# ── A review standing on the change queue (#439, slice 6b) ───────────────────
+#
+# A review's five minutes are a timer the builder registers (`review_expiry`, C97a): its callback,
+# handed the question's id, asks the queue to take the review down, and the queue's jobs delete the
+# review, post the expiry notice and record the lapse (C92). These build the league's queue with
+# Alex's review of season 1 standing in channel 700 (report R1 and R2, question Q), recorded in
+# `season_review_prompts`, and fire the timer's callback as the scheduler would.
+
+NO_EXPIRY_ON_THE_QUEUE = (
+    "#439: a season review's five minutes run in its view's memory, and its on_timeout deletes "
+    "the review and records the lapse itself, off the change queue"
+)
+REVIEW_CHANNEL = 700
+NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+
+
+async def _standing(tmp_path, review: str):
+    """The league's queue, and Alex's *review* of season 1 standing in channel 700: its report R1
+    and R2, then its question Q, posted a moment ago. What the channel is sent is kept in `sent`;
+    what is deleted, in `deleted`; every log line, in `bot.log_channel.sent`."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from tests.support.change_queue import (
+        INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID, SERVER_ID, Clock, attach_queue, history_channel,
+        http_error, league_double, post_in, seed_server,
+    )
+    from tests.support.review_prompts import store_review_prompt
+
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    bot = league_double(db_path)
+    me = SimpleNamespace(id=1, name="LeagueBot")
+    bot.user = me
+    channel = history_channel(REVIEW_CHANNEL)
+    channel.sent = []
+
+    async def _send(content: str = "", **_kwargs):
+        channel.sent.append(content)
+        return post_in(channel, me)
+
+    channel.send = AsyncMock(side_effect=_send)
+    channel.r1, channel.r2, channel.q = (post_in(channel, me) for _ in range(3))
+    known = {LOG_CHANNEL_ID: bot.log_channel, INTERACTION_CHANNEL_ID: bot.interaction_channel,
+             REVIEW_CHANNEL: channel}
+
+    async def _fetch(channel_id: int):
+        if channel_id in known:
+            return known[channel_id]
+        raise http_error(discord.NotFound, status=404, text="Unknown Channel")
+
+    alex = _member(REVIEWER, "Alex")
+    alex.mention = f"<@{REVIEWER}>"
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = SERVER_ID
+    guild.me = me
+    guild.get_channel = MagicMock(side_effect=known.get)
+    guild.get_member = MagicMock(side_effect=lambda uid: alex if uid == REVIEWER else None)
+    channel.guild = guild
+    bot.get_channel = MagicMock(side_effect=known.get)
+    bot.fetch_channel = AsyncMock(side_effect=_fetch)
+    bot.get_guild = MagicMock(return_value=guild)
+    attach_queue(bot, db_path, now=Clock(NOW))
+    async with get_connection(db_path) as db:
+        await store_review_prompt(
+            db, season_id=1, channel_id=REVIEW_CHANNEL, message_id=channel.q.id,
+            reviewer_id=REVIEWER, review=review,
+            report_message_ids=(channel.r1.id, channel.r2.id),
+        )
+        await db.execute(
+            "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
+            (datetime.now(timezone.utc).isoformat(), channel.q.id),
+        )
+        await db.commit()
+    return SimpleNamespace(db_path=db_path, bot=bot, channel=channel)
+
+
+def _expiry_callback(env):
+    """The callback the builder registered for the review's expiry timer."""
+    [callback] = [call.args[1] for call in env.bot.scheduler_service.register_timer.call_args_list
+                  if call.args and call.args[0] == "review_expiry"]
+    return callback
+
+
+def _queue_lines(env) -> list[str]:
+    return list(env.bot.log_channel.sent)
+
+
 # ── A press refused ────────────────────────────────────────────────────────
 
 
@@ -211,62 +300,98 @@ async def test_a_press_refused_because_the_season_changed_is_recorded_once(
 # ── A review left to lapse ─────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_left_for_its_five_minutes_records_its_lapse(
-    view_class, label, review, helper, verb
+    tmp_path, view_class, label, review, helper, verb
 ):
-    """Alex runs a review and nobody presses its button; the five minutes run out.
+    """Alex runs a review and nobody presses its button; its five minutes run out, and the
+    review's expiry timer fires for its question. The timer deletes and posts nothing itself: it
+    asks the queue to take the review down. Once the queue runs, the question and its report are
+    deleted and today's public notice pinging Alex posted, and the log gets one lapse line naming
+    the review and Alex as the member who started it, with beneath it what became of it (nothing
+    done) and what to do next (run the review again)."""
+    env = await _standing(tmp_path, review)
+    channel = env.channel
 
-    The question is deleted and today's public notice posted, and the log gets one lapse line
-    naming the review and Alex as the member who started it, with beneath it what became of it
-    (nothing done) and what to do next (run the review again).
-    """
-    view, cog, message = _review(view_class, helper)
+    await _expiry_callback(env)(channel.q.id)
 
-    await view.on_timeout()
+    assert channel.deleted == [] and channel.sent == []
+    from tests.support.change_queue import run_queue
 
-    message.delete.assert_awaited_once()
-    notice = message.channel.send.await_args.args[0]
+    await run_queue(env.bot)
+
+    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
+    [notice] = channel.sent
     assert "<@4242> your review has expired" in notice
-    lines = _logged(cog)
-    assert len(lines) == 1, lines
+    lines = [line for line in _queue_lines(env) if line.startswith("⌛ ")]
+    assert len(lines) == 1, _queue_lines(env)
     head, *beneath = lines[0].splitlines()
-    assert head.startswith("⌛ "), head
     assert review in head, head
-    assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
+    assert head.replace("`", "").endswith(
+        "lapsed unconfirmed (started by Alex (<@4242>))"
+    ), head
     detail = "\n".join(beneath)
     assert "nothing has been" in detail.lower(), detail
     assert review in detail and "again" in detail, detail
 
 
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_whose_press_failed_says_so_when_it_lapses(
-    view_class, label, review, helper, verb
+    tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
-    """Alex presses his button and the bot hits a fault part-way (the press raises).
+    """Alex presses his button a moment after the question appears, the season as the review
+    described it, and the bot hits a fault part-way (the press raises: 'the database is locked').
 
-    The review stays up and may be pressed again for the rest of its five minutes, as today. Left
-    to lapse after that, its lapse line says an earlier press failed and may have been partly
-    done, to check the failure line before running the review again, and does not claim that
-    nothing was done.
-    """
-    view, cog, message = _review(view_class, helper)
-    getattr(cog, helper).side_effect = RuntimeError("the database is locked")
+    The review stays up and may be pressed again for the rest of its five minutes, as today:
+    nothing is deleted and no take-down is asked. Left to lapse after that, its expiry timer fires
+    and the queue takes it down; its lapse line says an earlier press failed and may have been
+    partly done, to check the failure line before running the review again, and does not claim
+    that nothing was done (core :105, :118, :282)."""
+    import json
+
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services import season_fingerprint_service as sfs
+    from tests.support.change_queue import change_rows, member_interaction, run_queue
+
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    area = "Division Pro's rounds"
+    async with get_connection(env.db_path) as db:
+        await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
+                         (json.dumps({area: "as reviewed"}), channel.q.id))
+        await db.commit()
+
+    async def _as_reviewed(*_args, **_kwargs):
+        return sfs.SeasonFingerprint({area: "as reviewed"})
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _as_reviewed)
+    cog = MagicMock()
+    cog.bot = env.bot
+    setattr(cog, helper, AsyncMock(side_effect=RuntimeError("the database is locked")))
+    view = view_class(cog, REVIEWER)
+    interaction = member_interaction(env.bot, user=_member(REVIEWER, "Alex"))
+    interaction.channel_id = REVIEW_CHANNEL
+    interaction.message = channel.q
 
     with pytest.raises(RuntimeError):
-        await view_class.approve(view, _press(cog), MagicMock())
+        await view_class.approve(view, interaction, MagicMock())
 
-    assert not view.is_finished()
-    assert view._message is message
-    message.delete.assert_not_awaited()
+    getattr(cog, helper).assert_awaited_once()
+    assert channel.deleted == [] and channel.sent == []
+    assert not [row for row in await change_rows(env.db_path)
+                if row["kind"] == "season.review.take_down"]
 
-    await view.on_timeout()
+    await _expiry_callback(env)(channel.q.id)
+    await run_queue(env.bot)
 
-    lines = _logged(cog)
-    assert len(lines) == 1, lines
+    lines = [line for line in _queue_lines(env) if line.startswith("⌛ ")]
+    assert len(lines) == 1, _queue_lines(env)
     head, *beneath = lines[0].splitlines()
-    assert head.startswith("⌛ "), head
-    assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
+    assert head.replace("`", "").endswith(
+        "lapsed unconfirmed (started by Alex (<@4242>))"
+    ), head
     detail = "\n".join(beneath).lower()
     assert "failed" in detail and "partly" in detail, detail
     assert "nothing has been" not in detail, detail
@@ -572,25 +697,29 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals
 
 
+@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_expired_twice_at_once_posts_one_notice(
-    view_class, label, review, helper, verb
+    tmp_path, view_class, label, review, helper, verb
 ):
-    """At the very end of Alex's five minutes the timer fires just as a late press ends the review
-    too, so two expiries run at once. The question is deleted and the public notice posted once,
-    and one lapse line at most is recorded."""
-    view, cog, message = _review(view_class, helper)
+    """At the very end of Alex's five minutes the review's expiry timer fires twice at once, so
+    two take-downs are asked together. The queue takes one: once it runs, the question is deleted
+    once, the public notice posted once, and one lapse line at most is recorded."""
+    from tests.support.change_queue import change_rows, run_queue
 
-    async def _a_slow_delete():
-        await asyncio.sleep(0.05)
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    callback = _expiry_callback(env)
 
-    message.delete = AsyncMock(side_effect=_a_slow_delete)
+    await asyncio.gather(callback(channel.q.id), callback(channel.q.id))
+    await run_queue(env.bot)
 
-    await asyncio.gather(view.on_timeout(), view.on_timeout())
-
-    message.channel.send.assert_awaited_once()
-    lapses = [line for line in _logged(cog) if line.startswith("⌛ ")]
-    assert len(lapses) <= 1, _logged(cog)
+    assert len([row for row in await change_rows(env.db_path)
+                if row["kind"] == "season.review.take_down"]) == 1
+    assert [m.id for m in channel.deleted].count(channel.q.id) == 1
+    assert len(channel.sent) == 1
+    lapses = [line for line in _queue_lines(env) if line.startswith("⌛ ")]
+    assert len(lapses) <= 1, _queue_lines(env)
 
 
 NO_CONFIRMATION_TELL = (
