@@ -661,7 +661,8 @@ async def test_nothing_after_the_commit_escapes_the_confirmation(
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     interaction = _interaction()
-    interaction.channel.send = AsyncMock()
+    # A refused reply's fallback is asked of the queue the cog's bot holds (#439, C99).
+    interaction.client = cog.bot
     _FAILURES[failure](cog, interaction, monkeypatch)
 
     await cog._do_confirm_mid_season_placements(interaction)
@@ -844,18 +845,36 @@ async def test_a_clean_confirmation_reports_nothing_undone(db_path):
     assert "not done" not in _logged(cog)
 
 
+NO_CONFIRMATION_TELL = (
+    "#439: a confirmation that cannot be sent privately tells its channel the fallback directly, "
+    "off the queue, with no channel.tell change asked"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONFIRMATION_TELL)
 async def test_a_refused_confirmation_is_told_in_the_channel_instead(db_path):
-    """As at approval (decided 2026-09-22): one line in the review's channel, through the
-    bot's own token, pointing at the log channel."""
+    """As at approval (decided 2026-09-22): one line in the review's channel, pointing at the
+    log channel. Since #439 (C99) that line is a `channel.tell` change asked of the queue as the
+    bot's, naming the channel the press came from (707), and nothing is sent there at once."""
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.channel_id = 707
+    interaction.channel.id = 707
     interaction.followup.send = AsyncMock(side_effect=_token_lapsed())
     interaction.channel.send = AsyncMock()
 
     await cog._do_confirm_mid_season_placements(interaction)
 
-    told = str(interaction.channel.send.await_args.args[0])
+    interaction.channel.send.assert_not_awaited()
+    [tell] = [
+        call for call in cog.bot.change_queue.ask.await_args_list
+        if call.args and call.args[0] == "channel.tell"
+    ]
+    payload = tell.args[1]
+    assert payload["channel_id"] == 707
+    told = str(payload["text"])
     assert "<@42> — the placements are confirmed and the season is ongoing again" in told
     assert "the log channel has what it said" in told
 
