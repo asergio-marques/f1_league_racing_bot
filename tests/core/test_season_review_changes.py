@@ -23,8 +23,9 @@ the queue"; decision 19):
   told why, in their reply or, once that can no longer be updated, the log channel.
 
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
-approve_view=...)` in `leaguebot.core.services.season_review_changes`; the builder registers them
-with the image module's drawing and the season cog's view factory. Everything of them is imported
+approve_view=..., scheduler=...)` in `leaguebot.core.services.season_review_changes`; the builder
+registers them with the image module's drawing, the season cog's view factory and the scheduler
+service, which `arm_expiry` arms its timer through (no step looks a service up on the bot). Everything of them is imported
 inside a test, so this file collects while it is unbuilt.
 
 The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242)
@@ -370,8 +371,9 @@ async def posting(tmp_path):
 
 
 def _attach(env: Any) -> None:
-    """Register `season.review.post`, built by its factory with the test's drawing and a view
-    factory recording each payload it makes the question's view for."""
+    """Register `season.review.post`, built by its factory with the test's drawing, a view
+    factory recording each payload it makes the question's view for, and the bot's scheduler
+    service, handed as the builder hands it."""
     from leaguebot.core.services.season_review_changes import season_review_post_change
 
     def approve_view(payload: Any) -> Any:
@@ -379,7 +381,8 @@ def _attach(env: Any) -> None:
         return APPROVE
 
     attach_queue(env.bot, env.db_path, now=env.clock, types=(
-        season_review_post_change(drawing=env.drawing, approve_view=approve_view),
+        season_review_post_change(drawing=env.drawing, approve_view=approve_view,
+                                  scheduler=env.bot.scheduler_service),
     ))
 
 
