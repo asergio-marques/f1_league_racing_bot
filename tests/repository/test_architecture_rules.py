@@ -1230,6 +1230,20 @@ def test_every_post_is_made_in_a_job():
            KNOWN_POSTS_OUTSIDE_A_JOB)
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: posts are still made outside a job, listed in KNOWN_POSTS_OUTSIDE_A_JOB until slice "
+    "6b's last code commit (C102) empties it"
+))
+def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
+    """The job check made absolute (slice 6b, C102): once every post is decorated, moved onto the
+    queue or named in `POSTS_OFF_THE_QUEUE` with its reason, no function anywhere posts outside a
+    job, with no list of exceptions left to grow. Until then `test_every_post_is_made_in_a_job`
+    holds the list of what is left, which each commit shrinks."""
+    found = _posts_outside_a_job_among(_nodes())
+
+    assert not found, sorted(found)
+
+
 def _sample(source: str, path: str = "core/services/sample_service.py") -> list:
     tree = ast.parse(source)
     owners = _owners(tree)
