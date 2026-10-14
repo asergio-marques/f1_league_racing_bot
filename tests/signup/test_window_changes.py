@@ -348,7 +348,6 @@ SUBMIT_KIND = "signup.submit"
 #: A second driver still filling in the wizard.
 OTHER = 107
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
-OTHER_CHANNEL = SIGNUP_CHANNEL_BASE + OTHER
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
 #: What the signup channel and a returned driver's channel are told.
 CLOSED_TEXT = "🔒 Signups are now closed."
@@ -663,8 +662,8 @@ async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):
     """Kimi and a second driver are still filling in the wizard; Discord refuses posts in Kimi's
     signup channel alone. Manager 77 confirms the close and the queue runs: the close is one
     change on the league lane, no change is asked on either driver's lane, and it stops the
-    league lane at Kimi's `signup_notice` — Kimi's own lane is not stopped — with the second
-    driver's notice already posted in his channel."""
+    league lane at Kimi's `signup_notice` — Kimi's own lane is not stopped. Which driver the
+    close tells first is not pinned: nothing behind the stopped job runs."""
     league = await _close_league(tmp_path, SIGNING_UP, OTHER)
     league.channel(KIMI_CHANNEL).send_fails = http_error(
         discord.Forbidden, status=403, text="Missing Permissions"
@@ -679,7 +678,6 @@ async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):
     job = await stopped_job(league.db_path, "league")
     assert job is not None and job["name"] == "signup_notice"
     assert await stopped_job(league.db_path, KIMI_LANE) is None
-    assert len(_told(league, OTHER_CHANNEL)) == 1
 
 
 @pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
