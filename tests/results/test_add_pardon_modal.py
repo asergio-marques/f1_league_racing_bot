@@ -40,6 +40,7 @@ channel a division reads.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -50,6 +51,14 @@ from leaguebot.results.services.penalty_wizard import (
     AddPardonModal,
     PenaltyReviewState,
     StagedPardon,
+)
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    league_double,
+    member_interaction,
+    run_queue,
+    updated_reply,
 )
 from tests.support.teams import seed_team_instances
 
@@ -141,11 +150,15 @@ async def _make_db(
     return db_path
 
 
+NOW = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
+
+
 def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
+    """Round 3's review, held by a bot carrying a real change queue on *db_path* and the
+    league's log channel: a pardon staged is a change of its own (#439, slice 6b, C54), applied
+    when `_submit` runs the queue."""
+    bot = league_double(db_path)
+    attach_queue(bot, db_path, now=NOW)
     return PenaltyReviewState(
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
@@ -159,26 +172,18 @@ def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
     )
 
 
-def _interaction(client=None):
-    """A submission by the steward Alex, answering as Discord's does — not done until it replies
-    or defers — and reaching the log channel through *client*, the review's own bot."""
-    answered = {"done": False}
-
-    async def _answer(*_args, **_kwargs):
-        answered["done"] = True
-
-    interaction = MagicMock()
+def _interaction(client):
+    """A submission by the steward Alex in the review's submission channel (700), answering as
+    Discord's does — not done until it replies or defers — and reaching the queue and the log
+    channel through *client*, the review's own bot."""
+    user = MagicMock()
+    user.id = STEWARD_ID
+    user.display_name = "Alex"
+    user.mention = f"<@{STEWARD_ID}>"
+    user.bot = False
+    interaction = member_interaction(client, user=user)
     interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = STEWARD_ID
-    interaction.user.display_name = "Alex"
-    interaction.client = client
-    interaction.response = MagicMock()
-    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
-    interaction.response.send_message = AsyncMock(side_effect=_answer)
-    interaction.response.defer = AsyncMock(side_effect=_answer)
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
+    interaction.channel_id = 700
     return interaction
 
 
@@ -196,17 +201,25 @@ async def _submit(
     modal.justification_input._value = justification  # type: ignore[attr-defined]
     with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
         await modal.on_submit(interaction)
+        await run_queue(state.bot)
     return interaction, refresh
 
 
 def _replied(interaction) -> str:
+    """Everything the steward was answered: the acknowledgement, its updates and follow-ups."""
     return "\n".join(
-        str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args
+        part for part in (acknowledgement(interaction), updated_reply(interaction)) if part
     )
 
 
 def _logged(state) -> list[str]:
-    return [str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list]
+    """The lines written to the log channel, as the router writes them: the mentions it wraps in
+    backticks unwrapped and the rule closing each entry dropped."""
+    lines = []
+    for sent in state.bot.log_channel.sent:
+        kept = [part for part in str(sent).splitlines() if part.strip("―")]
+        lines.append("\n".join(kept).replace("`<@", "<@").replace(">`", ">"))
+    return [line for line in lines if line]
 
 
 def _existing(pardon_type: str = "NO_RSVP") -> StagedPardon:
@@ -316,7 +329,7 @@ async def test_the_justification_is_logged(tmp_path):
 
     await _submit(state, justification="Power cut on the night")
 
-    logged = str(state.bot.output_router.post_log.await_args.args[0])
+    logged = _logged(state)[-1]
     assert "ATTENDANCE_PARDON_STAGED" in logged
     assert "Power cut on the night" in logged
     assert "Pro" in logged
@@ -694,7 +707,7 @@ async def test_every_refused_pardon_form_is_recorded(tmp_path, db, staged, typed
 
     assert len(state.staged_pardons) == (1 if staged else 0)
     refresh.assert_not_awaited()
-    (replied,) = [call.args[0] for call in interaction.followup.send.await_args_list]
+    replied = _replied(interaction)
     assert replied.startswith("❌ ")
     reason = replied.splitlines()[0].removeprefix("❌ ")
     (line,) = _logged(state)
