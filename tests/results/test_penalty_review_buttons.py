@@ -698,7 +698,8 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     with _approval_step() as approval, patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
     ), patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
+        create=True,
     ) as resubmit:
         if control.startswith("pw_"):
             await next(c for c in view.children if c.custom_id == control).callback(interaction)
@@ -891,7 +892,7 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
 
     with _approval_step() as approval, patch(
         "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None),
+        new=AsyncMock(return_value=None), create=True,
     ) as resubmit:
         await button.callback(interaction)
 
