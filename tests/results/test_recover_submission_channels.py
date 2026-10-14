@@ -38,7 +38,9 @@ are gone and must be re-entered, and opens the submission afresh. What the chang
 **A restart mid-resubmission keeps the round's results** (issue #210). The pastes collected so
 far lived in memory and are gone, but nothing was written until the last session was in, so the
 round is an ordinary review whose `resubmitting` flag has to come down. Treating it as
-mid-submission would delete the results the resubmission was meant to supersede.
+mid-submission would delete the results the resubmission was meant to supersede. The restart
+asks for the review back returning from a restart, and the abandon is that opening's own jobs
+(#439, slice 6b, C53), so these cases alone run on a real queue.
 
 **Nothing here may raise.** This runs inside start-up, so one unrecoverable round must not stop
 the rest being recovered — nor stop the bot finishing its start-up at all. Every failure path
@@ -47,6 +49,7 @@ deleted channel is ordinary on any.
 """
 from __future__ import annotations
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -559,11 +562,67 @@ async def test_an_appeals_round_whose_guild_is_missing_is_left_intact(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def _resubmitting_db(tmp_path, name, **kwargs):
-    return await _make_db(
-        tmp_path, name=name, in_penalty_review=1, results_posted=1, resubmitting=1,
-        round_status="AWAITING_REPORT_VERDICTS", **kwargs,
-    )
+# These cases run on a real queue (`test_review_open_change.py`'s league: round 3 of Pro, a
+# Normal round, its Feature Race won by Lewis ahead of Max, its review open in submission
+# channel 702 and resubmitting), because the abandon is the review opening's own jobs: the
+# restart asks one change, `results.review.open` returning from a restart, whose jobs take the
+# flag down and the drafts away (`abandon_resubmission`), take the Cancel button down
+# (`take_down_cancel`) and post the restart notice (`post_restart_notice`) — results spec :417.
+
+NO_ABANDON_IN_THE_REVIEW_S_JOBS = (
+    "#439: a restart abandons an interrupted resubmission in "
+    "`__main__._abandon_interrupted_resubmission`, off the queue, before it asks for the review, "
+    "rather than in the review opening's own jobs"
+)
+STARTER = 4242
+ANNOUNCEMENT = 6100
+
+
+async def _resubmitting_league(tmp_path, *, started_by: int | None = None,
+                               announcement: bool = False):
+    """Round 3 of the review league resubmitting, its review prompt standing. Where *started_by*,
+    that member pressed Resubmit, and the server knows them as Alex. Where *announcement*, the
+    resubmission's announcement (6100) stands in channel 702 with its Cancel button."""
+    from types import SimpleNamespace
+
+    from tests.results.test_review_open_change import SUBMISSION_CHANNEL, _league
+    from tests.support.review_league import PROMPT
+
+    league = await _league(tmp_path, in_review=True, results_posted=True, resubmitting=True,
+                           prompt=PROMPT, round_status="AWAITING_REPORT_VERDICTS")
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET resubmit_started_by = ?, "
+            "resubmit_prompt_message_id = ? WHERE round_id = ?",
+            (started_by, ANNOUNCEMENT, ROUND_ID),
+        )
+        await db.commit()
+    if announcement:
+        submission = league.channel(SUBMISSION_CHANNEL)
+        submission.seed(ANNOUNCEMENT, "⚠️ **Results resubmission started.**")
+        submission.messages[ANNOUNCEMENT].view = MagicMock()
+    if started_by is not None:
+        known = league.guild.get_member.side_effect
+        league.guild.get_member.side_effect = lambda member_id: (
+            SimpleNamespace(display_name="Alex", id=member_id, mention=f"<@{member_id}>")
+            if member_id == started_by else known(member_id)
+        )
+    return league
+
+
+async def _restart(league) -> list[str]:
+    """The bot restarts and recovery runs, then the queue. Gives the names of the steps done by
+    the one change the restart asked of round 3, which must be its review's opening."""
+    from tests.results.test_review_open_change import _recover
+    from tests.support.change_queue import change_rows, step_rows
+
+    before = {change["id"] for change in await change_rows(league.db_path)}
+    await _recover(league)
+    asked = [change for change in await change_rows(league.db_path)
+             if change["id"] not in before]
+    assert [change["kind"] for change in asked] == ["results.review.open"], asked
+    return [step["name"] for step in await step_rows(league.db_path, asked[0]["id"])
+            if step["done_at"] is not None]
 
 
 async def _resubmitting_flag(db_path) -> int:
@@ -574,73 +633,79 @@ async def _resubmitting_flag(db_path) -> int:
         return (await cursor.fetchone())[0]
 
 
+def _lapse_lines(league) -> list[str]:
+    return [line for line in league.bot.log_channel.sent if line.startswith("⌛")]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
-    db_path = await _resubmitting_db(tmp_path, "recover_resubmit")
-    channel = _channel()
-    stub = _bot(db_path, channel=channel)
+    """The bot restarts while round 3 is resubmitting. The round's results stay, its channel is
+    not deleted, and its review is asked back without publishing, returning from a restart; once
+    the queue has run, the resubmission was abandoned by that opening's own job and one review
+    prompt stands."""
+    from tests.results.test_review_open_change import SUBMISSION_CHANNEL, _prompts
+    from tests.support.change_queue import change_rows
 
-    stubs = await _recover(stub)
+    league = await _resubmitting_league(tmp_path)
 
-    assert await _rows(db_path, "session_results") == 1
-    channel.delete.assert_not_awaited()
-    stubs["rerun"].assert_not_called()
-    assert _asked_once(stub, "results.review.open")["publish"] is False
+    done = await _restart(league)
+
+    assert "abandon_resubmission" in done
+    assert await _rows(league.db_path, "session_results") == 1
+    assert SUBMISSION_CHANNEL in league.channels
+    [opening] = [change for change in await change_rows(league.db_path)
+                 if change["kind"] == "results.review.open"][-1:]
+    payload = json.loads(opening["payload"])
+    assert payload["publish"] is False
+    assert payload["returning"] == "restart"
+    assert len(_prompts(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_clears_the_flag(tmp_path):
-    """Left set, the review channel's guard would stay down and let messages through."""
-    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_flag")
-    stub = _bot(db_path, channel=_channel())
+    """Left set, the review channel's guard would stay down and let messages through. The flag
+    comes down in the save of the review opening's `abandon_resubmission` job."""
+    league = await _resubmitting_league(tmp_path)
 
-    await _recover(stub)
+    done = await _restart(league)
 
-    assert await _resubmitting_flag(db_path) == 0
+    assert "abandon_resubmission" in done
+    assert await _resubmitting_flag(league.db_path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_path):
     """The manager was part-way through pasting; the prompt coming back unexplained would
-    look as though the pastes had been accepted."""
-    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_notice")
-    channel = _channel()
-    stub = _bot(db_path, channel=channel)
+    look as though the pastes had been accepted. The review opening's `post_restart_notice` job
+    tells channel 702 that the earlier results still stand."""
+    from tests.results.test_review_open_change import SUBMISSION_CHANNEL, _contents
 
-    await _recover(stub)
+    league = await _resubmitting_league(tmp_path)
 
-    assert "The earlier results still stand" in _posted(channel)
+    done = await _restart(league)
+
+    assert "post_restart_notice" in done
+    assert any("The earlier results still stand" in text
+               for text in _contents(league, SUBMISSION_CHANNEL))
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro) and was part-way
-    through pasting when the bot restarted. One line records the resubmission as lapsed, naming
-    Alex as its starter, with what became of it and what to do next beneath it."""
-    from types import SimpleNamespace
+    through pasting when the bot restarted. Once the queue has run the review's opening, one
+    line in the log channel records the resubmission as lapsed, naming Alex as its starter, with
+    what became of it and what to do next beneath it."""
+    league = await _resubmitting_league(tmp_path, started_by=STARTER)
 
-    starter = 4242
-    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_lapse")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET resubmit_started_by = ? WHERE round_id = ?",
-            (starter, ROUND_ID),
-        )
-        await db.commit()
-    stub = _bot(db_path, channel=_channel())
-    stub._guild.get_member = MagicMock(
-        side_effect=lambda member_id: SimpleNamespace(display_name="Alex", id=member_id)
-        if member_id == starter
-        else None
-    )
+    done = await _restart(league)
 
-    await _recover(stub)
-
-    records = [
-        str(call.args[0]) for call in stub.output_router.post_log.await_args_list
-        if str(call.args[0]).startswith("⌛")
-    ]
+    assert "abandon_resubmission" in done
+    records = _lapse_lines(league)
     assert len(records) == 1, records
     head, *detail = records[0].splitlines()
     assert head == (
         "⌛ the “Resubmit Initial Results” button of round 3 (Pro) lapsed unconfirmed "
-        f"(started by Alex (<@{starter}>))"
+        f"(started by Alex (<@{STARTER}>))"
     )
     assert detail == [
         "  The sessions entered were lost. The earlier results stand. "
@@ -648,69 +713,59 @@ async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path):
-    """The view was not persistent, so after a restart pressing it would only fail."""
-    db_path = await _resubmitting_db(
-        tmp_path, "recover_resubmit_button", resubmit_prompt_message_id=6100
-    )
-    channel = _channel()
-    channel._old.edit = AsyncMock()
-    stub = _bot(db_path, channel=channel)
+    """The view was not persistent, so after a restart pressing it would only fail. The review
+    opening's `take_down_cancel` job edits the announcement (6100) without its button."""
+    from tests.results.test_review_open_change import SUBMISSION_CHANNEL
 
-    await _recover(stub)
+    league = await _resubmitting_league(tmp_path, announcement=True)
 
-    channel.fetch_message.assert_any_await(6100)
-    channel._old.edit.assert_awaited_once_with(view=None)
+    done = await _restart(league)
+
+    assert "take_down_cancel" in done
+    assert league.channel(SUBMISSION_CHANNEL).messages[ANNOUNCEMENT].view is None
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recovery(tmp_path):
-    db_path = await _resubmitting_db(
-        tmp_path, "recover_resubmit_gone", resubmit_prompt_message_id=6100
-    )
-    stub = _bot(db_path, channel=_channel(fetch_fails=True))
+    """The announcement (6100) was deleted by hand before the restart. Its take-down completes,
+    the queue does not stop, the flag comes down and the review is asked back once."""
+    from tests.support.change_queue import stopped_job
 
-    await _recover(stub)
+    league = await _resubmitting_league(tmp_path)
 
-    assert await _resubmitting_flag(db_path) == 0
-    _asked_once(stub, "results.review.open")
+    done = await _restart(league)
+
+    assert "take_down_cancel" in done
+    assert await stopped_job(league.db_path) is None
+    assert await _resubmitting_flag(league.db_path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_out(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro), and the bot
     restarted part-way through; meanwhile the submission channel was deleted. There is nowhere
     to post the notice or take down the Cancel button, but the round must not stay stuck as
-    resubmitting: the flag comes down, the round's results stay, and the one lapse line naming
-    Alex is written as it would be with the channel there."""
-    from types import SimpleNamespace
+    resubmitting: the review opening's restart notice completes posting nothing, the flag comes
+    down, the round's results stay, and the one lapse line naming Alex is written as it would be
+    with the channel there (results spec :417)."""
+    from tests.results.test_review_open_change import SUBMISSION_CHANNEL
 
-    starter = 4242
-    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_nochannel")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET resubmit_started_by = ? WHERE round_id = ?",
-            (starter, ROUND_ID),
-        )
-        await db.commit()
-    stub = _bot(db_path, channel=None)
-    stub._guild.get_member = MagicMock(
-        side_effect=lambda member_id: SimpleNamespace(display_name="Alex", id=member_id)
-        if member_id == starter
-        else None
-    )
+    league = await _resubmitting_league(tmp_path, started_by=STARTER)
+    league.channels.pop(SUBMISSION_CHANNEL)
 
-    await _recover(stub)
+    done = await _restart(league)
 
-    assert await _resubmitting_flag(db_path) == 0
-    assert await _rows(db_path, "session_results") == 1
-    records = [
-        str(call.args[0]) for call in stub.output_router.post_log.await_args_list
-        if str(call.args[0]).startswith("⌛")
-    ]
+    assert "post_restart_notice" in done
+    assert await _resubmitting_flag(league.db_path) == 0
+    assert await _rows(league.db_path, "session_results") == 1
+    records = _lapse_lines(league)
     assert len(records) == 1, records
     head, *detail = records[0].splitlines()
     assert head == (
         "⌛ the “Resubmit Initial Results” button of round 3 (Pro) lapsed unconfirmed "
-        f"(started by Alex (<@{starter}>))"
+        f"(started by Alex (<@{STARTER}>))"
     )
     assert detail == [
         "  The sessions entered were lost. The earlier results stand. "
