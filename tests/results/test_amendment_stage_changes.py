@@ -1178,3 +1178,34 @@ async def test_the_sheet_and_the_sanctions_follow_the_running_totals_to_the_last
     assert sheet.await_count == 1
     assert sheet.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
     assert owed.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: an amendment's stage approval does not wait for a staging still being shown"
+))
+async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
+    """Round 3 is under an amendment whose report stage is open in the amendment channel, and
+    that channel's lane is stopped, so the report for Max Alex has just added there is still
+    waiting to be shown. Alex presses Approve on the report stage: it is refused at the press,
+    telling him a change to the review is still being shown, and the stage is not approved."""
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from tests.results.test_review_stage_change import _add_penalty, _alex
+
+    league = await _amend_league(tmp_path)
+    await block_queue(league, lane=f"channel:{AMEND_CHANNEL}")
+    state = PenaltyReviewState(
+        round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMEND_CHANNEL,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
+        bot=league.bot, prompt_message_id=AMEND_PROMPT, approval_message_id=AMEND_APPROVAL,
+        round_number=3, division_name="Pro", is_amendment=True,
+    )
+    await _add_penalty(state, _alex(league), driver=MAX)
+
+    interaction = await _approve_reports(league)
+    await run_queue(league.bot)
+
+    [approval] = await changes_of(league.db_path, REPORTS)
+    assert approval["state"] == "REFUSED"
+    assert "still being shown" in acknowledgement(interaction) + updated_reply(interaction)
+    assert (await _amend_row(league))["reports_approved_at"] is None

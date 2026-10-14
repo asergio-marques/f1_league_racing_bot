@@ -1522,3 +1522,64 @@ async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
     assert await one(
         league.db_path, "SELECT appeals_prompt_message_id FROM round_submission_channels"
     ) == prompt
+
+
+# ---------------------------------------------------------------------------
+# Approve waits for the staging (#439, slice 6b, C56a; decision 26)
+# ---------------------------------------------------------------------------
+
+NO_STAGING_WAIT = (
+    "#439: Approve does not wait for a staging still being shown, nor read the approval message "
+    "the submission row holds"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_STAGING_WAIT)
+async def test_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
+    """Round 3's lane is stopped, so the penalty for Lewis Alex has just added is still waiting
+    to be shown on the prompt. Alex presses Approve on the review: it is refused at the press,
+    telling him a change to the review is still being shown and to press Approve once it appears;
+    nothing is applied and round 3 still awaits its report verdicts."""
+    from tests.results.test_review_stage_change import LANE, _add_penalty, _alex, _state
+
+    league = await review_league(tmp_path)
+    await block_queue(league, lane=LANE)
+    await _add_penalty(_state(league), _alex(league))
+
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] == "REFUSED"
+    said = acknowledgement(interaction) + updated_reply(interaction)
+    assert "still being shown" in said
+    assert await penalty_records(league.db_path) == []
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_STAGING_WAIT)
+async def test_an_approval_whose_message_was_replaced_is_refused_as_it_runs(tmp_path):
+    """Alex presses Approve on round 3's approval message 8901 while the league lane is stopped,
+    so his approval waits. Before it runs, the review's approval message is replaced (the row now
+    names 8960). When the stop clears his approval is refused: nothing applied, round 3 still in
+    its report stage, and his answer says why."""
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = ?",
+                         (APPROVAL,))
+        await db.commit()
+    holder = await block_queue(league)
+    interaction = await _approve(league, staged=[], approval=APPROVAL)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = 8960")
+        await db.commit()
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] == "REFUSED"
+    assert await penalty_records(league.db_path) == []
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
+    assert updated_reply(interaction) != ""

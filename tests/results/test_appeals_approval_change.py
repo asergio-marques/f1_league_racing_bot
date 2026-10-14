@@ -47,6 +47,7 @@ from tests.support.review_league import (
     VERDICTS_CHANNEL,
     ReviewLeague,
     appeals_prompts,
+    block_queue,
     changes_of,
     one,
     penalty,
@@ -401,3 +402,27 @@ async def test_the_final_approval_deletes_the_channel_on_the_league_and_ends_the
     assert await stopped_job(league.db_path) is None
     assert _channel_deletions(league) == [SUBMISSION_CHANNEL]
     assert ("delete", SUBMISSION_CHANNEL, APPEALS_PROMPT) not in league.events
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: the appeals approval does not wait for a staging still being shown"
+))
+async def test_appeals_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
+    """Round 3 awaits its appeal verdicts and its lane is stopped, so the correction for Lewis
+    Alex has just added is still waiting to be shown on the appeals prompt. Alex presses Approve
+    on the appeals review: it is refused at the press, telling him a change to the review is still
+    being shown; no appeal is recorded and round 3 still awaits its appeal verdicts."""
+    from tests.results.test_review_stage_change import LANE, _add_penalty, _alex, _state
+
+    league = await _league(tmp_path)
+    await block_queue(league, lane=LANE)
+    await _add_penalty(_state(league, appeals=True), _alex(league), appeals=True)
+
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] == "REFUSED"
+    assert "still being shown" in acknowledgement(interaction) + updated_reply(interaction)
+    assert await _appeal_records(league.db_path) == 0
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
