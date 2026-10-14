@@ -1,62 +1,52 @@
-"""The signup wizard's step handlers — what a driver types, and what the wizard accepts.
+"""The signup wizard's typed steps — what a driver types, and what the wizard accepts.
 
-Issue #208. `wizard_service.py` was the largest single hole in the bot at 27.0%, and these
-handlers are its input boundary: the one place a driver's own words become the league's
-record. `tests/signup/test_wizard_availability.py` covers one of them (issue #126); the rest —
-nationality, platform, platform ID, driver type, preferred teams, preferred teammate, lap
-times and notes — were unexecuted.
+Issue #208. These steps are the input boundary: the one place a driver's own words become the
+league's record. `tests/signup/test_wizard_availability.py` covers the availability step
+(issue #126) and `tests/signup/test_lap_time.py` the strict lap-time form (#362); the rest —
+nationality, platform, platform ID, driver type, preferred teams, preferred teammate, lap times
+and notes — are here.
 
-Every handler has the same shape: validate, and either send the driver an error *or* store the
-answer and advance. **The pairing is the thing worth pinning.** A handler that stored a bad
-answer and advanced anyway would put rubbish into the signup; one that sent an error and
-advanced anyway would skip the question. So each rejection test asserts both that nothing was
-stored and that the wizard did not move on, and each acceptance test asserts both that the
-right value was stored and that it did.
+On the change queue (#439, slice 6b, C81) a typed answer is judged by `judge_answer`, pure: it
+gives the answers to save (`Accepted.answers`), or the refusal (`Refused.reply`) and the step
+its log line names (`Refused.step`), and saves and posts nothing itself. `signup.answer`'s jobs
+save, post and write the line (`tests/signup/test_signup_answer_change.py`). **The pairing is
+the thing worth pinning:** a refusal gives no answer to save, and an acceptance gives the right
+value, so rubbish never reaches the signup and no question is skipped.
 
 Two rules here are the driver's, not the bot's, and are easy to tidy away:
 
 - **A rejection must quote the valid options.** The driver is typing into a private channel
   with no form validation and no list in front of them; an error that does not say what would
-  have been accepted leaves them guessing. Every rejection test asserts the options appear.
+  have been accepted leaves them guessing.
 - **"No preference" is an answer, not an absence.** Preferred teams and preferred teammate
-  both accept it, and it must advance the wizard rather than being treated as empty input.
+  both accept it, and it is accepted rather than treated as empty input.
 
 The lap-time step carries the extra rule that a screenshot may be required, and that the
 requirement is checked *before* the time is parsed — a driver who typed a good time without
 the image must be told about the image, not told their time was fine.
-
-`_advance_wizard` is stubbed throughout. Whether the wizard moves is the assertion; where it
-moves to belongs to `_advance_wizard`'s own cover.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+NO_JUDGE_ANSWER = (
+    "#439: a typed signup answer is judged inside the wizard service's handlers, which save it "
+    "or post its refusal at once; there is no pure judge_answer giving the answers to save or "
+    "the refusal and its step"
+)
 
-# ---------------------------------------------------------------------------
-# Stubs
-# ---------------------------------------------------------------------------
+# The league's teams as the wizard froze them at Sign Up: the full names a driver is offered,
+# and each team's shorthand, which a league manager types and a driver may type too (#381).
+FULL_NAMES = ["Alpha Racing", "Beta Racing", "Gamma Racing", "Delta Racing"]
+SHORTHANDS = {"Alpha": "Alpha Racing", "Beta": "Beta Racing", "Gamma": "Gamma Racing",
+              "Delta": "Delta Racing"}
 
 
-class _Channel:
-    def __init__(self) -> None:
-        self.sent: list[str] = []
-
-    async def send(self, content, *args, **kwargs):
-        self.sent.append(content)
-
-
-class _Message:
-    """A driver's message, sent by Alex (id 7). *attachments* stands in for a lap-time
-    screenshot."""
-
-    def __init__(self, content: str, *, attachments: list | None = None) -> None:
-        from types import SimpleNamespace
-
-        self.content = content
-        self.channel = _Channel()
-        self.attachments = attachments or []
-        self.author = SimpleNamespace(id=7, display_name="Alex", mention="<@7>")
+def _typed(content: str, *, attachments: list | None = None):
+    """A message Alex typed: its text, and any attachment (a lap-time screenshot)."""
+    return SimpleNamespace(content=content, attachments=attachments or [])
 
 
 def _slots():
@@ -75,27 +65,11 @@ def _slots():
 
 
 @pytest.fixture
-def wizard_and_service():
-    """A `WizardService` with `_advance_wizard` stubbed, and a wizard record to drive.
-
-    Built with `__new__` rather than the constructor: the handlers under test need none of
-    the scheduler, output router or database the real one wires up, and registering the
-    global singleton the constructor sets would leak between tests.
-    """
+def wizard():
+    """Alex's wizard: nationality required, Time Trial times on tracks 1 and 2 with no
+    screenshot asked, one availability slot, the four teams above; nothing answered yet. Each
+    test sets the step it judges."""
     from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
-    from leaguebot.signup.services.wizard_service import WizardService
-
-    from unittest.mock import AsyncMock, MagicMock
-
-    svc = WizardService.__new__(WizardService)
-    svc._bot = MagicMock()
-    svc._bot.output_router.post_log = AsyncMock()
-    advanced: list[bool] = []
-
-    async def _advance(wizard, message):
-        advanced.append(True)
-
-    svc._advance_wizard = _advance  # type: ignore[method-assign]
 
     wizard = SignupWizardRecord(
         id=1,
@@ -108,26 +82,41 @@ def wizard_and_service():
             time_image_required=False,
             selected_track_ids=["1", "2"],
             slots=_slots(),
-            team_names=["Alpha", "Beta", "Gamma", "Delta"],
+            team_names=list(FULL_NAMES),
         ),
         draft_answers={},
         current_lap_track_index=0,
         last_activity_at=None,
     )
-    return svc, wizard, advanced
+    # Set apart from the constructor: the snapshot's shorthands are the build's (C81).
+    wizard.config_snapshot.team_shorthands = dict(SHORTHANDS)  # type: ignore[attr-defined]
+    return wizard
 
 
-def _with_teams(svc, names: list[str]) -> None:
-    """Give the service a bot whose team service offers *names* plus a Reserve team."""
-    from types import SimpleNamespace
-    from unittest.mock import AsyncMock, MagicMock
+def _judge(wizard, state: str, content: str, *, attachments: list | None = None):
+    """Judge *content* typed at *state* (the state's name without COLLECTING_)."""
+    from leaguebot.signup.models.signup_module import WizardState
+    from leaguebot.signup.services.wizard_changes import judge_answer
 
-    teams = [SimpleNamespace(name=n, full_name=f"{n} Racing", is_reserve=False) for n in names]
-    teams.append(SimpleNamespace(name="Reserve", full_name="Reserve", is_reserve=True))
-    bot = getattr(svc, "_bot", None) or MagicMock()
-    bot.team_service.get_default_teams = AsyncMock(return_value=teams)
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    svc._bot = bot
+    wizard.wizard_state = WizardState[f"COLLECTING_{state}"]
+    return judge_answer(wizard, _typed(content, attachments=attachments))
+
+
+def _accepted(judged) -> dict:
+    """The answers an accepted judgement gives to save."""
+    from leaguebot.signup.services.wizard_changes import Accepted
+
+    assert isinstance(judged, Accepted), judged
+    return judged.answers
+
+
+def _refused(judged) -> str:
+    """The reply a refused judgement gives, after checking it gives nothing to save."""
+    from leaguebot.signup.services.wizard_changes import Refused
+
+    assert isinstance(judged, Refused), judged
+    assert not hasattr(judged, "answers"), "a refusal gives nothing to save"
+    return judged.reply
 
 
 # ---------------------------------------------------------------------------
@@ -135,26 +124,17 @@ def _with_teams(svc, names: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_nationality_is_stored_as_its_adjective(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_nationality_is_stored_as_its_adjective(wizard):
     """A driver may type either the country or the adjective; one form is stored, so the
     signup list does not read as a mixture of "Germany" and "German"."""
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_nationality(wizard, _Message("Germany"))
-
-    assert wizard.draft_answers["nationality"] == "German"
-    assert advanced == [True]
+    assert _accepted(_judge(wizard, "NATIONALITY", "Germany"))["nationality"] == "German"
+    assert wizard.draft_answers == {}, "judging saves nothing: its job does"
 
 
-async def test_an_unknown_nationality_is_refused_with_examples(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("xyzzy")
-
-    await svc._handle_nationality(wizard, message)
-
-    assert "nationality" not in wizard.draft_answers
-    assert advanced == []
-    assert "British" in message.channel.sent[0]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_an_unknown_nationality_is_refused_with_examples(wizard):
+    assert "British" in _refused(_judge(wizard, "NATIONALITY", "xyzzy"))
 
 
 # ---------------------------------------------------------------------------
@@ -162,27 +142,17 @@ async def test_an_unknown_nationality_is_refused_with_examples(wizard_and_servic
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize("typed", ["Steam", "steam", "STEAM"])
-async def test_a_platform_is_matched_regardless_of_case(wizard_and_service, typed):
+def test_a_platform_is_matched_regardless_of_case(wizard, typed):
     """Stored in the bot's own casing, so the signup list is consistent however it was
     typed."""
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_platform(wizard, _Message(typed))
-
-    assert wizard.draft_answers["platform"] == "Steam"
-    assert advanced == [True]
+    assert _accepted(_judge(wizard, "PLATFORM", typed))["platform"] == "Steam"
 
 
-async def test_an_unknown_platform_is_refused_listing_the_choices(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("Dreamcast")
-
-    await svc._handle_platform(wizard, message)
-
-    assert "platform" not in wizard.draft_answers
-    assert advanced == []
-    reply = message.channel.sent[0]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_an_unknown_platform_is_refused_listing_the_choices(wizard):
+    reply = _refused(_judge(wizard, "PLATFORM", "Dreamcast"))
     for option in ("Steam", "EA", "Xbox", "PlayStation"):
         assert option in reply
 
@@ -192,26 +162,16 @@ async def test_an_unknown_platform_is_refused_listing_the_choices(wizard_and_ser
 # ---------------------------------------------------------------------------
 
 
-async def test_a_platform_id_is_stored_trimmed(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_platform_id(wizard, _Message("  lh44  "))
-
-    assert wizard.draft_answers["platform_id"] == "lh44"
-    assert advanced == [True]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_platform_id_is_stored_trimmed(wizard):
+    assert _accepted(_judge(wizard, "PLATFORM_ID", "  lh44  "))["platform_id"] == "lh44"
 
 
-async def test_an_empty_platform_id_is_refused(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_an_empty_platform_id_is_refused(wizard):
     """Whitespace only. The ID is how a league finds the driver in-game, so an empty one
     is worse than no answer — it looks answered."""
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("   ")
-
-    await svc._handle_platform_id(wizard, message)
-
-    assert "platform_id" not in wizard.draft_answers
-    assert advanced == []
-    assert "cannot be empty" in message.channel.sent[0]
+    assert "cannot be empty" in _refused(_judge(wizard, "PLATFORM_ID", "   "))
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +179,7 @@ async def test_an_empty_platform_id_is_refused(wizard_and_service):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
     "typed,stored",
     [
@@ -228,25 +189,15 @@ async def test_an_empty_platform_id_is_refused(wizard_and_service):
         ("reserve driver", "Reserve Driver"),
     ],
 )
-async def test_a_driver_type_is_matched_regardless_of_case(wizard_and_service, typed, stored):
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_driver_type(wizard, _Message(typed))
-
-    assert wizard.draft_answers["driver_type"] == stored
-    assert advanced == [True]
+def test_a_driver_type_is_matched_regardless_of_case(wizard, typed, stored):
+    assert _accepted(_judge(wizard, "DRIVER_TYPE", typed))["driver_type"] == stored
 
 
-async def test_an_unknown_driver_type_is_refused_listing_the_choices(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("Test Driver")
-
-    await svc._handle_driver_type(wizard, message)
-
-    assert "driver_type" not in wizard.draft_answers
-    assert advanced == []
-    assert "Full-Time Driver" in message.channel.sent[0]
-    assert "Reserve Driver" in message.channel.sent[0]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_an_unknown_driver_type_is_refused_listing_the_choices(wizard):
+    reply = _refused(_judge(wizard, "DRIVER_TYPE", "Test Driver"))
+    assert "Full-Time Driver" in reply
+    assert "Reserve Driver" in reply
 
 
 # ---------------------------------------------------------------------------
@@ -254,78 +205,56 @@ async def test_an_unknown_driver_type_is_refused_listing_the_choices(wizard_and_
 # ---------------------------------------------------------------------------
 
 
-async def test_preferred_teams_are_stored_in_the_order_given(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_preferred_teams_are_stored_in_the_order_given(wizard):
     """The order is the driver's preference order, which the placement reads, so it is not
     the bot's to sort."""
-    svc, wizard, advanced = wizard_and_service
-    _with_teams(svc, ["Alpha", "Beta", "Gamma"])
-
-    await svc._handle_preferred_teams(wizard, _Message("Gamma, Alpha"))
-
-    assert wizard.draft_answers["preferred_teams"] == ["Gamma Racing", "Alpha Racing"]
-    assert advanced == [True]
+    answers = _accepted(_judge(wizard, "PREFERRED_TEAMS", "Gamma Racing, Alpha Racing"))
+    assert answers["preferred_teams"] == ["Gamma Racing", "Alpha Racing"]
 
 
-async def test_preferred_teams_may_be_separated_by_newlines(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_preferred_teams_may_be_separated_by_newlines(wizard):
     """A driver reading a list of teams will often paste them one per line."""
-    svc, wizard, _ = wizard_and_service
-    _with_teams(svc, ["Alpha", "Beta", "Gamma"])
-
-    await svc._handle_preferred_teams(wizard, _Message("Alpha\nBeta"))
-
-    assert wizard.draft_answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
+    answers = _accepted(_judge(wizard, "PREFERRED_TEAMS", "Alpha Racing\nBeta Racing"))
+    assert answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
 
 
-async def test_no_preference_for_teams_is_an_answer_not_an_absence(wizard_and_service):
-    """It stores an empty list and advances. Treating it as empty input would ask the
-    question again and the driver would have no way past it."""
-    svc, wizard, advanced = wizard_and_service
-    _with_teams(svc, ["Alpha"])
-
-    await svc._handle_preferred_teams(wizard, _Message("no preference"))
-
-    assert wizard.draft_answers["preferred_teams"] == []
-    assert advanced == [True]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_no_preference_for_teams_is_an_answer_not_an_absence(wizard):
+    """It gives an empty list to save. Treating it as empty input would ask the question again
+    and the driver would have no way past it."""
+    assert _accepted(_judge(wizard, "PREFERRED_TEAMS", "no preference"))["preferred_teams"] == []
 
 
-async def test_more_than_three_preferred_teams_is_refused(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    _with_teams(svc, ["Alpha", "Beta", "Gamma", "Delta"])
-    message = _Message("Alpha, Beta, Gamma, Delta")
-
-    await svc._handle_preferred_teams(wizard, message)
-
-    assert "preferred_teams" not in wizard.draft_answers
-    assert advanced == []
-    assert "up to 3" in message.channel.sent[0]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_more_than_three_preferred_teams_is_refused(wizard):
+    reply = _refused(_judge(wizard, "PREFERRED_TEAMS", "Alpha, Beta, Gamma, Delta"))
+    assert "up to 3" in reply
 
 
-async def test_an_unknown_team_is_refused_listing_the_valid_ones(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    _with_teams(svc, ["Alpha", "Beta"])
-    message = _Message("Alpha, Ferrari")
-
-    await svc._handle_preferred_teams(wizard, message)
-
-    assert "preferred_teams" not in wizard.draft_answers
-    assert advanced == []
-    reply = message.channel.sent[0]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_an_unknown_team_is_refused_listing_the_valid_ones(wizard):
+    reply = _refused(_judge(wizard, "PREFERRED_TEAMS", "Alpha Racing, Ferrari"))
     assert "Ferrari" in reply
-    assert "Alpha" in reply
+    assert "Alpha Racing" in reply
 
 
-async def test_the_reserve_team_is_not_offered_as_a_preference(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_the_reserve_team_is_not_offered_as_a_preference(wizard):
     """A driver does not choose to be a reserve by naming the Reserve team — that is what
-    the driver-type step is for. Accepting it here would give them two ways to say it and
-    the two could disagree."""
-    svc, wizard, advanced = wizard_and_service
-    _with_teams(svc, ["Alpha"])
-    message = _Message("Reserve")
+    the driver-type step is for. The wizard froze only the teams a driver may prefer, so the
+    Reserve team is refused as unknown."""
+    _refused(_judge(wizard, "PREFERRED_TEAMS", "Reserve"))
 
-    await svc._handle_preferred_teams(wizard, message)
 
-    assert "preferred_teams" not in wizard.draft_answers
-    assert advanced == []
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_typed(wizard):
+    """A driver is offered the full names and answers with one, but a shorthand they have seen
+    a league manager type is taken too, in any case. What is recorded is the full name, which
+    is what every review and export shows (#381)."""
+    answers = _accepted(_judge(wizard, "PREFERRED_TEAMS", "alpha racing, BETA"))
+    assert answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
 
 
 # ---------------------------------------------------------------------------
@@ -333,24 +262,17 @@ async def test_the_reserve_team_is_not_offered_as_a_preference(wizard_and_servic
 # ---------------------------------------------------------------------------
 
 
-async def test_a_preferred_teammate_is_stored_as_typed(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_preferred_teammate_is_stored_as_typed(wizard):
     """Free text — the driver names someone who may not have signed up yet, so it cannot
     be validated against anything."""
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_preferred_teammate(wizard, _Message("Lewis"))
-
-    assert wizard.draft_answers["preferred_teammate"] == "Lewis"
-    assert advanced == [True]
+    assert _accepted(_judge(wizard, "PREFERRED_TEAMMATE", "Lewis"))["preferred_teammate"] == "Lewis"
 
 
-async def test_no_preference_for_a_teammate_stores_nothing(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_preferred_teammate(wizard, _Message("No Preference"))
-
-    assert wizard.draft_answers["preferred_teammate"] is None
-    assert advanced == [True]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_no_preference_for_a_teammate_stores_nothing(wizard):
+    answers = _accepted(_judge(wizard, "PREFERRED_TEAMMATE", "No Preference"))
+    assert answers["preferred_teammate"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -358,98 +280,67 @@ async def test_no_preference_for_a_teammate_stores_nothing(wizard_and_service):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_lap_time_is_stored_against_the_current_track(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_lap_time(wizard, _Message("1:23.456"))
-
-    assert wizard.draft_answers["lap_times"] == {"1": "1:23.456"}
-    assert advanced == [True]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_lap_time_is_stored_against_the_current_track(wizard):
+    assert _accepted(_judge(wizard, "LAP_TIME", "1:23.456"))["lap_times"] == {"1": "1:23.456"}
 
 
-async def test_each_lap_time_advances_to_the_next_track(wizard_and_service):
-    """The index is what decides which track the *next* time belongs to. Left unmoved, a
-    driver would overwrite their first time for every track they were asked about."""
-    svc, wizard, _ = wizard_and_service
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_each_lap_time_advances_to_the_next_track(wizard):
+    """The index is what decides which track a time belongs to. With the first track timed and
+    the wizard moved on to the second, the next time is given against track 2, not track 1,
+    so a driver never overwrites their first time."""
+    wizard.draft_answers["lap_times"] = {"1": "1:23.456"}
+    wizard.current_lap_track_index = 1
 
-    await svc._handle_lap_time(wizard, _Message("1:23.456"))
-    await svc._handle_lap_time(wizard, _Message("1:24.000"))
+    answers = _accepted(_judge(wizard, "LAP_TIME", "1:24.000"))
 
-    assert wizard.draft_answers["lap_times"] == {"1": "1:23.456", "2": "1:24.000"}
-    assert wizard.current_lap_track_index == 2
-
-
-async def test_a_malformed_lap_time_is_refused_with_the_format(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("about a minute and a half")
-
-    await svc._handle_lap_time(wizard, message)
-
-    assert "lap_times" not in wizard.draft_answers
-    assert advanced == []
-    assert "M:ss.mmm" in message.channel.sent[0]
+    assert answers["lap_times"] == {"1": "1:23.456", "2": "1:24.000"}
 
 
-async def test_a_rejected_lap_time_does_not_move_to_the_next_track(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_malformed_lap_time_is_refused_with_the_format(wizard):
+    assert "M:ss.mmm" in _refused(_judge(wizard, "LAP_TIME", "about a minute and a half"))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_rejected_lap_time_does_not_move_to_the_next_track(wizard):
     """Otherwise a typo would silently cost the driver that track's time."""
-    svc, wizard, _ = wizard_and_service
-
-    await svc._handle_lap_time(wizard, _Message("nonsense"))
-
+    _refused(_judge(wizard, "LAP_TIME", "nonsense"))
     assert wizard.current_lap_track_index == 0
 
 
-async def test_a_required_screenshot_is_demanded_before_the_time_is_read(
-    wizard_and_service,
-):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_required_screenshot_is_demanded_before_the_time_is_read(wizard):
     """The image check runs first deliberately. A driver who typed a perfectly good time
     with no screenshot must be told about the screenshot — being told their time was
     invalid would send them to fix the wrong thing."""
-    svc, wizard, advanced = wizard_and_service
     wizard.config_snapshot.time_image_required = True
-    message = _Message("1:23.456")
-
-    await svc._handle_lap_time(wizard, message)
-
-    assert advanced == []
-    assert "screenshot" in message.channel.sent[0]
+    assert "screenshot" in _refused(_judge(wizard, "LAP_TIME", "1:23.456"))
 
 
-async def test_a_lap_time_with_its_screenshot_is_accepted(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_lap_time_with_its_screenshot_is_accepted(wizard):
     wizard.config_snapshot.time_image_required = True
-    message = _Message("1:23.456", attachments=[object()])
-
-    await svc._handle_lap_time(wizard, message)
-
-    assert wizard.draft_answers["lap_times"] == {"1": "1:23.456"}
-    assert advanced == [True]
+    answers = _accepted(_judge(wizard, "LAP_TIME", "1:23.456", attachments=[object()]))
+    assert answers["lap_times"] == {"1": "1:23.456"}
 
 
-async def test_the_rejection_names_the_kind_of_time_being_asked_for(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_the_rejection_names_the_kind_of_time_being_asked_for(wizard):
     """A league may ask for a time trial or a short qualification, and the driver sets
     them in different places in the game."""
-    svc, wizard, _ = wizard_and_service
     wizard.config_snapshot.time_type = "SHORT_QUALI"
-    message = _Message("nonsense")
-
-    await svc._handle_lap_time(wizard, message)
-
-    assert "Short Qualification" in message.channel.sent[0]
+    assert "Short Qualification" in _refused(_judge(wizard, "LAP_TIME", "nonsense"))
 
 
-async def test_a_lap_time_past_the_last_track_advances_rather_than_storing(
-    wizard_and_service,
-):
-    """Defensive: the index should never be past the end, and if it is, the wizard must
-    move on rather than raise an IndexError inside a driver's private channel."""
-    svc, wizard, advanced = wizard_and_service
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_lap_time_past_the_last_track_advances_rather_than_storing(wizard):
+    """Defensive: the index should never be past the end, and if it is, the answer is
+    accepted so the wizard moves on, with no time stored, rather than raising an IndexError
+    inside a driver's private channel."""
     wizard.current_lap_track_index = 99
-
-    await svc._handle_lap_time(wizard, _Message("1:23.456"))
-
-    assert advanced == [True]
-    assert "lap_times" not in wizard.draft_answers
+    assert "lap_times" not in _accepted(_judge(wizard, "LAP_TIME", "1:23.456"))
 
 
 # ---------------------------------------------------------------------------
@@ -457,45 +348,28 @@ async def test_a_lap_time_past_the_last_track_advances_rather_than_storing(
 # ---------------------------------------------------------------------------
 
 
-async def test_a_note_is_stored(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_notes(wizard, _Message("Prefer not to race Mondays"))
-
-    assert wizard.draft_answers["notes"] == "Prefer not to race Mondays"
-    assert advanced == [True]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_note_is_stored(wizard):
+    answers = _accepted(_judge(wizard, "NOTES", "Prefer not to race Mondays"))
+    assert answers["notes"] == "Prefer not to race Mondays"
 
 
-async def test_no_notes_stores_nothing(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_notes(wizard, _Message("No Notes"))
-
-    assert wizard.draft_answers["notes"] is None
-    assert advanced == [True]
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_no_notes_stores_nothing(wizard):
+    assert _accepted(_judge(wizard, "NOTES", "No Notes"))["notes"] is None
 
 
-async def test_a_note_over_fifty_characters_is_refused(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_note_over_fifty_characters_is_refused(wizard):
     """Fifty characters is the limit the signup specification sets for a note, which is
     quoted as text in the review panel and the unassigned list."""
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("x" * 51)
-
-    await svc._handle_notes(wizard, message)
-
-    assert "notes" not in wizard.draft_answers
-    assert advanced == []
-    assert "50 characters" in message.channel.sent[0]
+    assert "50 characters" in _refused(_judge(wizard, "NOTES", "x" * 51))
 
 
-async def test_a_note_of_exactly_fifty_characters_is_accepted(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_note_of_exactly_fifty_characters_is_accepted(wizard):
     """Sits the other side of the bound from the test above."""
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_notes(wizard, _Message("x" * 50))
-
-    assert wizard.draft_answers["notes"] == "x" * 50
-    assert advanced == [True]
+    assert _accepted(_judge(wizard, "NOTES", "x" * 50))["notes"] == "x" * 50
 
 
 # ---------------------------------------------------------------------------
@@ -503,61 +377,28 @@ async def test_a_note_of_exactly_fifty_characters_is_accepted(wizard_and_service
 # ---------------------------------------------------------------------------
 
 
-async def test_a_signup_note_mentioning_everyone_is_refused(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_signup_note_mentioning_everyone_is_refused(wizard):
     """The review panel quotes the note to the channel, where the bot's own permission to
     mention everybody would carry the ping."""
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("@everyone please check")
-
-    await svc._handle_notes(wizard, message)
-
-    assert "notes" not in wizard.draft_answers
-    assert advanced == []
-    assert "notes" in message.channel.sent[0]
+    assert "notes" in _refused(_judge(wizard, "NOTES", "@everyone please check"))
 
 
-async def test_a_preferred_teammate_given_as_a_role_mention_is_refused(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("<@&987654321098765432>")
-
-    await svc._handle_preferred_teammate(wizard, message)
-
-    assert "preferred_teammate" not in wizard.draft_answers
-    assert advanced == []
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_preferred_teammate_given_as_a_role_mention_is_refused(wizard):
+    _refused(_judge(wizard, "PREFERRED_TEAMMATE", "<@&987654321098765432>"))
 
 
-async def test_a_platform_id_holding_here_is_refused(wizard_and_service):
-    svc, wizard, advanced = wizard_and_service
-    message = _Message("@here")
-
-    await svc._handle_platform_id(wizard, message)
-
-    assert "platform_id" not in wizard.draft_answers
-    assert advanced == []
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_platform_id_holding_here_is_refused(wizard):
+    _refused(_judge(wizard, "PLATFORM_ID", "@here"))
 
 
-async def test_a_signup_note_with_an_emoji_is_kept(wizard_and_service):
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+def test_a_signup_note_with_an_emoji_is_kept(wizard):
     """Shown only as text, where an emoji reads as the driver meant it."""
-    svc, wizard, advanced = wizard_and_service
-
-    await svc._handle_notes(wizard, _Message("Happy to race \U0001F600"))
-
-    assert wizard.draft_answers["notes"] == "Happy to race \U0001F600"
-    assert advanced
-
-
-async def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_typed(
-    wizard_and_service,
-):
-    """A driver is offered the full names and answers with one, but a shorthand they have seen
-    a league manager type is taken too. What is recorded is the full name, which is what every
-    review and export shows (#381)."""
-    svc, wizard, _ = wizard_and_service
-    _with_teams(svc, ["Alpha", "Beta", "Gamma"])
-
-    await svc._handle_preferred_teams(wizard, _Message("alpha racing, BETA"))
-
-    assert wizard.draft_answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
+    answers = _accepted(_judge(wizard, "NOTES", "Happy to race \U0001F600"))
+    assert answers["notes"] == "Happy to race \U0001F600"
 
 
 # ---------------------------------------------------------------------------
@@ -565,91 +406,75 @@ async def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_type
 # ---------------------------------------------------------------------------
 
 # (the step as the wizard's state names it, the step as the line names it, what is typed,
-# whether a screenshot is required, whether the league's teams are offered)
+# whether a screenshot is required)
 _REFUSED_ANSWERS = [
-    ("COLLECTING_NATIONALITY", "Nationality", "xyzzy", False, False),
-    ("COLLECTING_PLATFORM", "Platform", "Dreamcast", False, False),
-    ("COLLECTING_PLATFORM_ID", "Platform ID", "   ", False, False),
-    ("COLLECTING_PLATFORM_ID", "Platform ID", "@here", False, False),
-    ("COLLECTING_AVAILABILITY", "Availability", "one", False, False),
-    ("COLLECTING_AVAILABILITY", "Availability", "9", False, False),
-    ("COLLECTING_AVAILABILITY", "Availability", ",", False, False),
-    ("COLLECTING_DRIVER_TYPE", "Driver Type", "Pro", False, False),
-    ("COLLECTING_PREFERRED_TEAMS", "Preferred Teams", "Alpha, Beta, Gamma, Delta", False, True),
-    ("COLLECTING_PREFERRED_TEAMS", "Preferred Teams", "Alpha, Ferrari", False, True),
-    ("COLLECTING_PREFERRED_TEAMMATE", "Preferred Teammate", "<@&987654321098765432>", False, False),
-    ("COLLECTING_LAP_TIME", "Lap Times", "1:23.456", True, False),
-    ("COLLECTING_LAP_TIME", "Lap Times", "fast", False, False),
-    ("COLLECTING_NOTES", "Notes", "x" * 51, False, False),
-    ("COLLECTING_NOTES", "Notes", "@everyone please check", False, False),
+    ("NATIONALITY", "Nationality", "xyzzy", False),
+    ("PLATFORM", "Platform", "Dreamcast", False),
+    ("PLATFORM_ID", "Platform ID", "   ", False),
+    ("PLATFORM_ID", "Platform ID", "@here", False),
+    ("AVAILABILITY", "Availability", "one", False),
+    ("AVAILABILITY", "Availability", "9", False),
+    ("AVAILABILITY", "Availability", ",", False),
+    ("DRIVER_TYPE", "Driver Type", "Pro", False),
+    ("PREFERRED_TEAMS", "Preferred Teams", "Alpha, Beta, Gamma, Delta", False),
+    ("PREFERRED_TEAMS", "Preferred Teams", "Alpha, Ferrari", False),
+    ("PREFERRED_TEAMMATE", "Preferred Teammate", "<@&987654321098765432>", False),
+    ("LAP_TIME", "Lap Times", "1:23.456", True),
+    ("LAP_TIME", "Lap Times", "fast", False),
+    ("NOTES", "Notes", "x" * 51, False),
+    ("NOTES", "Notes", "@everyone please check", False),
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
-    "state,step,typed,screenshot_required,teams",
+    "state,step,typed,screenshot_required",
     _REFUSED_ANSWERS,
     ids=[f"{row[1]}: {row[2].strip() or 'blank'}"[:40] for row in _REFUSED_ANSWERS],
 )
-async def test_a_typed_answer_refused_keeps_its_reply_and_writes_one_refusal_line(
-    wizard_and_service, state, step, typed, screenshot_required, teams
+def test_a_typed_answer_refused_keeps_its_reply_and_writes_one_refusal_line(
+    wizard, state, step, typed, screenshot_required
 ):
-    """A typed answer is refused by a public reply in the driver's channel, not an
-    interaction's, so the refusal's line is written without answering again: one line naming
-    the driver and the step, whose reason is the reply's first line."""
-    from leaguebot.signup.models.signup_module import WizardState
+    """A refused typed answer gives the reply posted in the driver's channel, starting ❌, and
+    the step its one refusal line names (the line itself, "⛔ the <step> step of <driver>'s
+    signup wizard refused …", is written by signup.answer's job: test_signup_answer_change)."""
+    from leaguebot.signup.services.wizard_changes import Refused
 
-    svc, wizard, advanced = wizard_and_service
-    wizard.wizard_state = WizardState[state]
     wizard.config_snapshot.time_image_required = screenshot_required
-    if teams:
-        _with_teams(svc, ["Alpha", "Beta", "Gamma", "Delta"])
-    message = _Message(typed)
 
-    await svc.handle_message(wizard, message)
+    judged = _judge(wizard, state, typed)
 
-    assert advanced == []
-    [reply] = message.channel.sent
-    assert reply.startswith("❌")
-    reason = reply.splitlines()[0].removeprefix("❌").strip()
-    [line] = [c.args[0] for c in svc._bot.output_router.post_log.await_args_list]
-    assert line == f"⛔ the {step} step of Alex's signup wizard refused for Alex (<@7>) — {reason}"
+    assert isinstance(judged, Refused)
+    assert judged.reply.startswith("❌")
+    assert judged.step == step
 
 
 _ACCEPTED_ANSWERS = [
-    ("COLLECTING_NATIONALITY", "British", False),
-    ("COLLECTING_PLATFORM", "Steam", False),
-    ("COLLECTING_PLATFORM_ID", "lh44", False),
-    ("COLLECTING_AVAILABILITY", "1", False),
-    ("COLLECTING_DRIVER_TYPE", "Full-Time Driver", False),
-    ("COLLECTING_PREFERRED_TEAMS", "Alpha, Beta", True),
-    ("COLLECTING_PREFERRED_TEAMS", "No preference", True),
-    ("COLLECTING_PREFERRED_TEAMMATE", "Max", False),
-    ("COLLECTING_PREFERRED_TEAMMATE", "No preference", False),
-    ("COLLECTING_LAP_TIME", "1:23.456", False),
-    ("COLLECTING_NOTES", "Happy to race", False),
-    ("COLLECTING_NOTES", "No notes", False),
+    ("NATIONALITY", "British"),
+    ("PLATFORM", "Steam"),
+    ("PLATFORM_ID", "lh44"),
+    ("AVAILABILITY", "1"),
+    ("DRIVER_TYPE", "Full-Time Driver"),
+    ("PREFERRED_TEAMS", "Alpha, Beta"),
+    ("PREFERRED_TEAMS", "No preference"),
+    ("PREFERRED_TEAMMATE", "Max"),
+    ("PREFERRED_TEAMMATE", "No preference"),
+    ("LAP_TIME", "1:23.456"),
+    ("NOTES", "Happy to race"),
+    ("NOTES", "No notes"),
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
-    "state,typed,teams",
+    "state,typed",
     _ACCEPTED_ANSWERS,
-    ids=[f"{row[0].removeprefix('COLLECTING_').lower()}: {row[1]}" for row in _ACCEPTED_ANSWERS],
+    ids=[f"{row[0].lower()}: {row[1]}" for row in _ACCEPTED_ANSWERS],
 )
-async def test_a_typed_answer_accepted_writes_no_line(wizard_and_service, state, typed, teams):
-    """A typed answer is a message, not a command, button or form, so an accepted one writes
-    nothing to the log channel: the "Submitted" line is the record of what was typed (owner,
-    2026-09-30, "Refusals only", kept for typed answers)."""
-    from leaguebot.signup.models.signup_module import WizardState
+def test_a_typed_answer_accepted_writes_no_line(wizard, state, typed):
+    """A typed answer is a message, not a command, button or form, so an accepted one is no
+    refusal and gives no reply and no step for a line: the "Submitted" line is the record of
+    what was typed (owner, 2026-09-30, "Refusals only", kept for typed answers)."""
+    from leaguebot.signup.services.wizard_changes import Accepted
 
-    svc, wizard, advanced = wizard_and_service
-    wizard.wizard_state = WizardState[state]
-    if teams:
-        _with_teams(svc, ["Alpha", "Beta", "Gamma", "Delta"])
-    message = _Message(typed)
-
-    await svc.handle_message(wizard, message)
-
-    assert advanced == [True]
-    assert message.channel.sent == []
-    svc._bot.output_router.post_log.assert_not_awaited()
+    assert isinstance(_judge(wizard, state, typed), Accepted)
