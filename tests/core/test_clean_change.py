@@ -33,8 +33,10 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    history_channel,
     league_double,
     member_interaction,
+    post_in,
     retry_job,
     run_queue,
     seed_server,
@@ -56,64 +58,6 @@ NO_CLEAN_CHANGE = (
 )
 
 
-def _cleaned_channel() -> Any:
-    """Channel 700, its messages newest first in `messages`; each it deletes is kept in
-    `deleted`. `history` reads what stands when it is read."""
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.id = CLEANED
-    channel.mention = f"<#{CLEANED}>"
-    channel.messages = []
-    channel.deleted = []
-    channel.permissions_for = MagicMock(return_value=MagicMock(manage_messages=True))
-
-    async def _history(*, limit: int = 100, **_kwargs: Any) -> Any:
-        for message in list(channel.messages)[:limit]:
-            yield message
-
-    def _find(message_id: int) -> Any:
-        found = [m for m in channel.messages if m.id == message_id]
-        if found:
-            return found[0]
-        gone = MagicMock(id=message_id)
-        gone.delete = AsyncMock(
-            side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
-        )
-        return gone
-
-    async def _fetch(message_id: int) -> Any:
-        found = [m for m in channel.messages if m.id == message_id]
-        if not found:
-            raise http_error(discord.NotFound, status=404, text="Unknown Message")
-        return found[0]
-
-    channel.history = _history
-    channel.get_partial_message = MagicMock(side_effect=_find)
-    channel.fetch_message = AsyncMock(side_effect=_fetch)
-    return channel
-
-
-def _post(channel: Any, author: Any, *, fails: Exception | None = None) -> Any:
-    """A message *author* posts in *channel*, now its newest. `fails` refuses its deletion."""
-    message = MagicMock(spec=discord.Message)
-    message.id = 9000 + len(channel.messages) + len(channel.deleted)
-    message.author = author
-    message.channel = channel
-    message.jump_url = f"https://discord.test/{CLEANED}/{message.id}"
-    message.fails = fails
-
-    async def _delete(*_args: Any, **_kwargs: Any) -> None:
-        if message not in channel.messages:
-            raise http_error(discord.NotFound, status=404, text="Unknown Message")
-        if message.fails is not None:
-            raise message.fails
-        channel.messages.remove(message)
-        channel.deleted.append(message)
-
-    message.delete = AsyncMock(side_effect=_delete)
-    channel.messages.insert(0, message)
-    return message
-
-
 @pytest.fixture
 async def env(tmp_path):
     """The league's queue, with every change type the builder registers, and channel 700 found
@@ -123,7 +67,7 @@ async def env(tmp_path):
     await seed_server(db_path)
     bot = league_double(db_path)
     bot.user = BOT_USER
-    channel = _cleaned_channel()
+    channel = history_channel(CLEANED)
     known = {LOG_CHANNEL_ID: bot.log_channel, INTERACTION_CHANNEL_ID: bot.interaction_channel,
              CLEANED: channel}
     guild = MagicMock(spec=discord.Guild)
@@ -172,10 +116,10 @@ async def test_clean_bot_is_acknowledged_and_deletes_the_chosen_messages_as_jobs
     Admin has been answered "⏳"; once it runs, C and B are deleted by a delete job each, after a
     job choosing them and before one closing the change, A and Kimi's message stand, and the
     acknowledgement is updated to say two were deleted."""
-    a = _post(env.channel, BOT_USER)
-    b = _post(env.channel, BOT_USER)
-    kimi = _post(env.channel, DRIVER)
-    c = _post(env.channel, BOT_USER)
+    a = post_in(env.channel, BOT_USER)
+    b = post_in(env.channel, BOT_USER)
+    kimi = post_in(env.channel, DRIVER)
+    c = post_in(env.channel, BOT_USER)
 
     interaction = await _clean(env, 2)
     deleted_before = list(env.channel.deleted)
@@ -200,9 +144,9 @@ async def test_the_messages_are_chosen_when_its_job_runs(env):
     `/clean-bot` for 2; while it waits, C and B are deleted by hand. Once the stop clears, the
     clean reads the channel as it then stands and deletes A, the newest of the bot's messages
     left, and says one was deleted: it chose when its job ran, not when it was asked."""
-    a = _post(env.channel, BOT_USER)
-    b = _post(env.channel, BOT_USER)
-    c = _post(env.channel, BOT_USER)
+    a = post_in(env.channel, BOT_USER)
+    b = post_in(env.channel, BOT_USER)
+    c = post_in(env.channel, BOT_USER)
     holder = await block_queue(SimpleNamespace(bot=env.bot, db_path=env.db_path))
 
     interaction = await _clean(env, 2)
@@ -221,11 +165,11 @@ async def test_clean_bot_may_delete_a_message_the_bot_posted_while_it_waited(env
     """The bot's message A stands. The queue is stopped when Admin runs `/clean-bot` for 1; while
     it waits, the bot posts message N in the channel. Once the stop clears, N, the newest of the
     bot's messages when the job runs, is the one deleted, and A stands (decision 18)."""
-    a = _post(env.channel, BOT_USER)
+    a = post_in(env.channel, BOT_USER)
     holder = await block_queue(SimpleNamespace(bot=env.bot, db_path=env.db_path))
 
     await _clean(env, 1)
-    n = _post(env.channel, BOT_USER)
+    n = post_in(env.channel, BOT_USER)
     holder["fail"] = False
     await retry_job(env.bot)
     await run_queue(env.bot)
@@ -240,9 +184,9 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(env):
     `/clean-bot` for 2: B is deleted and the queue stops at A's delete job. Admin discards it:
     the change completes, A stands, and Admin's reply says one was deleted, naming A as not
     deleted."""
-    a = _post(env.channel, BOT_USER,
+    a = post_in(env.channel, BOT_USER,
               fails=http_error(discord.Forbidden, status=403, text="Missing Permissions"))
-    b = _post(env.channel, BOT_USER)
+    b = post_in(env.channel, BOT_USER)
 
     interaction = await _clean(env, 2)
     await run_queue(env.bot)
@@ -268,9 +212,9 @@ async def test_a_message_already_gone_is_not_counted(env):
     job chooses C and B, then B is deleted by hand before its delete runs. B's delete completes
     without a stop, C is deleted, A is not taken in B's place, and Admin is told one was
     deleted."""
-    a = _post(env.channel, BOT_USER)
-    b = _post(env.channel, BOT_USER)
-    c = _post(env.channel, BOT_USER)
+    a = post_in(env.channel, BOT_USER)
+    b = post_in(env.channel, BOT_USER)
+    c = post_in(env.channel, BOT_USER)
 
     interaction = await _clean(env, 2)
     await run_queue(env.bot, steps=1)
@@ -289,7 +233,7 @@ async def test_clean_bot_in_a_conversation_s_channel_runs_on_the_league_lane(env
     are stopped on a failed job. The bot's message A stands there. Admin runs `/clean-bot` for 1:
     the change is on the league lane, so the conversation's stop does not hold it, and A is
     deleted (decision 30: one command, one lane)."""
-    a = _post(env.channel, BOT_USER)
+    a = post_in(env.channel, BOT_USER)
     await block_queue(SimpleNamespace(bot=env.bot, db_path=env.db_path),
                       lane=f"channel:{CLEANED}")
 

@@ -289,6 +289,70 @@ def text_channel(channel_id: int) -> Any:
     return channel
 
 
+def history_channel(channel_id: int) -> Any:
+    """A text channel whose messages stand newest first in `messages`, and each one deleted is kept
+    in `deleted`. `history` reads what stands when it is read; `get_partial_message` and
+    `fetch_message` find a message standing, and `NotFound` is raised for one gone. The bot may
+    manage its messages. A message is added by `post_in`."""
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = channel_id
+    channel.mention = f"<#{channel_id}>"
+    channel.messages = []
+    channel.deleted = []
+    channel.permissions_for = MagicMock(return_value=MagicMock(manage_messages=True))
+
+    async def _history(*, limit: int = 100, **_kwargs: Any) -> Any:
+        for message in list(channel.messages)[:limit]:
+            yield message
+
+    def _find(message_id: int) -> Any:
+        found = [m for m in channel.messages if m.id == message_id]
+        if found:
+            return found[0]
+        gone = MagicMock(id=message_id)
+        gone.delete = AsyncMock(
+            side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+        )
+        return gone
+
+    async def _fetch(message_id: int) -> Any:
+        found = [m for m in channel.messages if m.id == message_id]
+        if not found:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        return found[0]
+
+    channel.history = _history
+    channel.get_partial_message = MagicMock(side_effect=_find)
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    return channel
+
+
+#: The ids `post_in` gives the messages it posts.
+_POSTED_IDS = itertools.count(9001)
+
+
+def post_in(channel: Any, author: Any, *, fails: Exception | None = None) -> Any:
+    """A message *author* posts in *channel*, now its newest. `fails` refuses its deletion."""
+    message = MagicMock(spec=discord.Message)
+    message.id = next(_POSTED_IDS)
+    message.author = author
+    message.channel = channel
+    message.jump_url = f"https://discord.test/{channel.id}/{message.id}"
+    message.fails = fails
+
+    async def _delete(*_args: Any, **_kwargs: Any) -> None:
+        if message not in channel.messages:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        if message.fails is not None:
+            raise message.fails
+        channel.messages.remove(message)
+        channel.deleted.append(message)
+
+    message.delete = AsyncMock(side_effect=_delete)
+    channel.messages.insert(0, message)
+    return message
+
+
 def http_error(cls: type[discord.HTTPException] = discord.HTTPException, *, status: int = 500,
                text: str = "Discord failed") -> discord.HTTPException:
     """An exception of *cls* as discord.py raises it."""
