@@ -4,30 +4,28 @@ A driver types the display numbers they were shown. Those numbers are chronologi
 positions that shift whenever the slot list changes, so the wizard converts them to
 durable slot IDs at the input boundary and stores only those. Nothing a driver reads
 ever shows the stored form.
+
+On the change queue (#439, slice 6b, C81) a typed answer is judged by `judge_answer`, pure: it
+gives the answers to save, or the refusal and the step its line names, and saves and posts
+nothing itself; `signup.answer`'s jobs save and post what it gives.
 """
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Stubs
-# ---------------------------------------------------------------------------
-
-
-class _Channel:
-    def __init__(self) -> None:
-        self.sent: list[str] = []
-
-    async def send(self, content, *args, **kwargs):
-        self.sent.append(content)
+NO_JUDGE_ANSWER = (
+    "#439: a typed availability answer is judged inside the wizard service's handler, which "
+    "saves it or posts its refusal at once; there is no pure judge_answer giving the answers "
+    "to save or the refusal"
+)
 
 
-class _Message:
-    def __init__(self, content: str) -> None:
-        self.content = content
-        self.channel = _Channel()
+def _typed(content: str):
+    """A message the driver typed: its text, and no attachment."""
+    return SimpleNamespace(content=content, attachments=[])
 
 
 def _slots():
@@ -52,20 +50,12 @@ def _slots():
 
 
 @pytest.fixture
-def wizard_and_service():
-    """A WizardService with _advance_wizard stubbed, and a wizard record to drive."""
+def wizard():
+    """A driver's wizard asking for their availability, the three slots above frozen into it,
+    nothing answered yet."""
     from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
-    from leaguebot.signup.services.wizard_service import WizardService
 
-    svc = WizardService.__new__(WizardService)
-    advanced: list[bool] = []
-
-    async def _advance(wizard, message):
-        advanced.append(True)
-
-    svc._advance_wizard = _advance  # type: ignore[method-assign]
-
-    wizard = SignupWizardRecord(
+    return SignupWizardRecord(
         id=1,
         discord_user_id="7",
         wizard_state=WizardState.COLLECTING_AVAILABILITY,
@@ -81,7 +71,12 @@ def wizard_and_service():
         current_lap_track_index=0,
         last_activity_at=None,
     )
-    return svc, wizard, advanced
+
+
+def _judge(wizard, content: str):
+    from leaguebot.signup.services.wizard_changes import judge_answer
+
+    return judge_answer(wizard, _typed(content))
 
 
 # ---------------------------------------------------------------------------
@@ -90,55 +85,55 @@ def wizard_and_service():
 
 
 class TestAvailabilityConversion:
-    async def test_typed_display_numbers_stored_as_durable_ids(self, wizard_and_service):
-        svc, wizard, advanced = wizard_and_service
-        message = _Message("3")
-        await svc._handle_availability(wizard, message)
-        assert wizard.draft_answers["availability_slot_ids"] == ["Fri_21_00"]
-        assert advanced == [True]
+    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+    def test_typed_display_numbers_stored_as_durable_ids(self, wizard):
+        from leaguebot.signup.services.wizard_changes import Accepted
 
-    async def test_multiple_numbers_converted_in_the_order_given(self, wizard_and_service):
-        svc, wizard, _ = wizard_and_service
-        await svc._handle_availability(wizard, _Message("3, 1"))
-        assert wizard.draft_answers["availability_slot_ids"] == ["Fri_21_00", "Mon_19_00"]
+        judged = _judge(wizard, "3")
+        assert isinstance(judged, Accepted)
+        assert judged.answers["availability_slot_ids"] == ["Fri_21_00"]
+        assert wizard.draft_answers == {}, "judging saves nothing: its job does"
 
-    async def test_no_display_ordinal_is_ever_stored(self, wizard_and_service):
+    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+    def test_multiple_numbers_converted_in_the_order_given(self, wizard):
+        judged = _judge(wizard, "3, 1")
+        assert judged.answers["availability_slot_ids"] == ["Fri_21_00", "Mon_19_00"]
+
+    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+    def test_no_display_ordinal_is_ever_stored(self, wizard):
         """The stored answer must not be the position — that is the whole defect."""
-        svc, wizard, _ = wizard_and_service
-        await svc._handle_availability(wizard, _Message("1 2 3"))
-        stored = wizard.draft_answers["availability_slot_ids"]
+        stored = _judge(wizard, "1 2 3").answers["availability_slot_ids"]
         assert all(isinstance(s, str) for s in stored)
         assert stored == ["Mon_19_00", "Wed_20_00", "Fri_21_00"]
 
 
 class TestAvailabilityRejection:
-    async def test_unknown_display_number_rejected_quoting_display_numbers(
-        self, wizard_and_service
-    ):
-        svc, wizard, advanced = wizard_and_service
-        message = _Message("4")
-        await svc._handle_availability(wizard, message)
-        assert "availability_slot_ids" not in wizard.draft_answers
-        assert advanced == []
-        reply = message.channel.sent[0]
-        assert "4" in reply and "1, 2, 3" in reply
-        assert "_" not in reply, "the storage form must not leak into a driver's reply"
+    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+    def test_unknown_display_number_rejected_quoting_display_numbers(self, wizard):
+        from leaguebot.signup.services.wizard_changes import Refused
 
-    async def test_non_numeric_rejected(self, wizard_and_service):
-        svc, wizard, advanced = wizard_and_service
-        message = _Message("Fri_21_00")
-        await svc._handle_availability(wizard, message)
-        assert "availability_slot_ids" not in wizard.draft_answers
-        assert advanced == []
-        assert "numbers" in message.channel.sent[0]
+        judged = _judge(wizard, "4")
+        assert isinstance(judged, Refused)
+        assert judged.step == "Availability"
+        assert "4" in judged.reply and "1, 2, 3" in judged.reply
+        assert "_" not in judged.reply, "the storage form must not leak into a driver's reply"
+        assert wizard.draft_answers == {}
 
-    async def test_empty_selection_rejected(self, wizard_and_service):
-        svc, wizard, advanced = wizard_and_service
-        message = _Message("   ")
-        await svc._handle_availability(wizard, message)
-        assert "availability_slot_ids" not in wizard.draft_answers
-        assert advanced == []
-        assert "at least one" in message.channel.sent[0]
+    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+    def test_non_numeric_rejected(self, wizard):
+        from leaguebot.signup.services.wizard_changes import Refused
+
+        judged = _judge(wizard, "Fri_21_00")
+        assert isinstance(judged, Refused)
+        assert "numbers" in judged.reply
+
+    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
+    def test_empty_selection_rejected(self, wizard):
+        from leaguebot.signup.services.wizard_changes import Refused
+
+        judged = _judge(wizard, "   ")
+        assert isinstance(judged, Refused)
+        assert "at least one" in judged.reply
 
 
 # ---------------------------------------------------------------------------
