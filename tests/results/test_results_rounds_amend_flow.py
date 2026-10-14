@@ -59,6 +59,7 @@ from tests.results.test_amend_changes import (
     _ask_open,
     _deleted,
     _league,
+    _press_cancel,
     _rows,
     _texts,
     _type,
@@ -67,6 +68,10 @@ from tests.results.test_amend_changes import (
 from tests.support.change_queue import (
     ADMIN_ROLE_ID,
     MANAGER_ROLE_ID,
+    MEMBER_ID,
+    acknowledgement,
+    http_error,
+    run_queue,
     stopped_job,
     updated_reply,
 )
@@ -641,76 +646,80 @@ async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(
 
 
 # ---------------------------------------------------------------------------
-# Cancelling
+# Cancelling (#439, slice 6b: Cancel Amendment asks `results.amend.cancel` on the league lane)
 # ---------------------------------------------------------------------------
 
 
-async def test_cancelling_writes_nothing_and_tidies_up(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_cancel")
-    channel = _amend_channel()
-    interaction = _interaction(channel, wait_forever=True)
-    cog = _make_cog(db_path)
-
-    async def _press_cancel(*args, **kwargs):
-        view = kwargs.get("view")
-        if view is not None:
-            press = MagicMock()
-            press.user = SimpleNamespace(id=USER_ID)
-            press.response = MagicMock()
-            press.response.send_message = AsyncMock()
-            await type(view).cancel_btn(view, press, MagicMock())
-        return MagicMock()
-
-    channel.send = AsyncMock(side_effect=_press_cancel)
-
-    stubs = await _amend(cog, interaction)
-
-    stubs["amend"].assert_not_awaited()
-    _assert_cancelled(cog)
-    assert "Amendment cancelled" in _replied(interaction)
-    channel.delete.assert_awaited_once()
+def _plain(line: str) -> str:
+    """A log channel's line as written: the mentions the router wraps in backticks unwrapped,
+    and the rule it closes each entry with dropped."""
+    kept = [part for part in line.splitlines() if part.strip("―")]
+    return "\n".join(kept).replace("`<@", "<@").replace(">`", ">")
 
 
-async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_path):
-    """Cancelling still tears the channel down, and a refusal to delete must not raise.
-
-    The success path no longer deletes here at all — it hands over to the review stages — so
-    what this guards is the cancel route, which does.
-    """
-    db_path = await _make_db(tmp_path, name="amend_nodelete")
-    channel = _amend_channel()
-    channel.delete = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=403), "no"))
-    interaction = _interaction(channel, wait_forever=True)
-
-    async def _press_cancel(*args, **kwargs):
-        view = kwargs.get("view")
-        if view is not None:
-            press = MagicMock()
-            press.user = SimpleNamespace(id=USER_ID)
-            press.response = MagicMock()
-            press.response.send_message = AsyncMock()
-            await type(view).cancel_btn(view, press, MagicMock())
-        return MagicMock()
-
-    channel.send = AsyncMock(side_effect=_press_cancel)
-
-    await _amend(_make_cog(db_path), interaction)
-
-    # Kept, closed, rather than forgotten (#345): it holds nothing, and restart recovery
-    # deletes the channel it names.
-    from leaguebot.results.services.result_submission_service import open_amendment_in_division
-
-    assert await _amend_rows(db_path) == 1
-    assert await open_amendment_in_division(db_path, DIVISION_ID) is None
+def _cancel_line(league: Any) -> str:
+    """The one line in the standard cancel form the log channel holds."""
+    [line] = [_plain(line) for line in league.bot.log_channel.sent if line.startswith("↩️ ")]
+    return line
 
 
-async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_cancelling_writes_nothing_and_tidies_up(tmp_path, monkeypatch):
+    """Alex opens the amendment and, before pasting anything, presses ❌ Cancel Amendment. Once
+    the queue runs, nothing is written, Lewis still ahead; the amendment channel is deleted; and
+    the log channel holds one line in the standard cancel form, naming `/results rounds amend`
+    cancelled by Alex, saying beneath it that nothing was written and to re-run the command."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _winner(league) == LEWIS
+    assert _deleted(league)
+    head, *beneath = _cancel_line(league).splitlines()
+    below = "\n".join(beneath)
+    assert "/results rounds amend" in head
+    assert "cancelled by " in head and f"(<@{MEMBER_ID}>)" in head
+    assert "nothing was written" in below.lower()
+    assert "Re-run `/results rounds amend` to try again" in below
+    assert "AMEND_CANCELLED" not in league.log()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_refused_channel_deletion_on_a_cancellation_stops_the_queue(
+    tmp_path, monkeypatch,
+):
+    """Cancel Amendment is the league's change, so a deletion of its channel Discord refuses
+    stops the league lane (decision 25), rather than being passed over. Stage one of Alex's
+    amendment is recorded, Max ahead; Discord refuses to delete the amendment channel; Alex
+    presses Cancel. Once the queue runs, the round is put back, Lewis ahead again, and the league
+    lane stands stopped at the deletion, the channel still there."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    await _type(league, RACE_PASTE)
+    league.channel(LEAGUE_AMEND_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    assert await _winner(league) == LEWIS
+    assert await stopped_job(league.db_path, "league") is not None
+    assert not _deleted(league)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path, monkeypatch):
     """The retired eight-column format is gone, not merely unused (#345).
 
     `apply_penalties_on` adds to the stored penalty columns, and the replay re-inserts the driver
     rows at zero before running the round's report and appeal stages over them. A paste that
     also carried the sanctions would have each applied twice — so there is no switch left that
-    could ask for it, and the amendment validates exactly as a first submission does.
+    could ask for it, and the amendment validates exactly as a first submission does: Alex's
+    amended Feature Race, in a first submission's six columns, is taken and written.
     """
     import inspect
 
@@ -718,12 +727,12 @@ async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
 
     assert "amend_format" not in inspect.signature(validate_submission_block).parameters
 
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction(_amend_channel(), message=_message())
-    stubs = await _amend(_make_cog(db_path), interaction)
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    await _type(league, RACE_PASTE)
 
-    stubs["validate"].assert_called_once()
-    assert "amend_format" not in stubs["validate"].call_args.kwargs
+    assert await stopped_job(league.db_path) is None
+    assert await _winner(league) == MAX
 
 
 # ---------------------------------------------------------------------------
@@ -731,78 +740,54 @@ async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_second_amendment_of_an_open_session_is_refused(tmp_path):
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_second_amendment_of_an_open_session_is_refused(tmp_path, monkeypatch):
     """**The record of the first held its snapshot.** Replacing it — which the old
     `INSERT OR REPLACE` did — threw away the only way back to the classification raced, and left
-    the first channel's stages live over rows the second was rewriting."""
-    db_path = await _make_db(tmp_path, name="amend_already_open")
-    async with get_connection(db_path) as db:
+    the first channel's stages live over rows the second was rewriting. Round 3 is already being
+    amended in channel 6666, its snapshot held. Alex asks to amend round 3 again: once the queue
+    runs, no channel is created, his acknowledgement is updated naming <#6666>, and the first
+    amendment's snapshot is untouched."""
+    league = await _league(tmp_path, monkeypatch)
+    async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
-            "pre_amendment_state) VALUES (?, 6666, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00', '{}')",
-            (ROUND_ID,),
+            "pre_amendment_state) VALUES (?, 6666, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00', "
+            "'{}')",
+            (LEAGUE_ROUND_ID,),
         )
         await db.commit()
-    interaction = _interaction(_amend_channel(), message=_message())
 
-    stubs = await _amend(_make_cog(db_path), interaction)
+    interaction = await _ask_open(league)
 
-    stubs["amend"].assert_not_awaited()
-    interaction.guild.create_text_channel.assert_not_awaited()
-    assert "<#6666>" in _replied(interaction)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT pre_amendment_state FROM round_amend_channels")
-        assert (await cursor.fetchone())["pre_amendment_state"] == "{}"
+    assert league.created == []
+    assert "<#6666>" in updated_reply(interaction)
+    [row] = await _amendment_rows(league)
+    assert row["pre_amendment_state"] == "{}"
 
 
-async def test_cancelling_after_the_first_stage_puts_the_round_back(tmp_path):
-    """The corrected classification is already written by then, so the button that once only
-    stopped a paste being waited for now has to undo one. It used to reply "Amendment cancelled"
-    and do nothing at all, leaving the round scored one way and posted another."""
-    db_path = await _make_db(tmp_path, name="amend_cancel_late")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-    cog = _make_cog(db_path)
-    await _amend(cog, interaction)
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_cancelling_too_late_says_so(tmp_path, monkeypatch):
+    """The appeal stage may already have committed it; nothing is undone then. Stage one of Alex's
+    amendment is recorded, Max ahead, and the amendment is then finished and its row closed. Alex
+    presses Cancel Amendment: he is told it is too late, and once the queue runs Max is still
+    ahead."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    await _type(league, RACE_PASTE)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_amend_channels SET closed_at = ?, pre_amendment_state = NULL",
+            ("2026-10-05T12:10:00+00:00",),
+        )
+        await db.commit()
 
-    view = channel.send.await_args_list[0].kwargs["view"]
-    press = MagicMock()
-    press.user = SimpleNamespace(id=USER_ID)
-    press.response = MagicMock()
-    press.response.send_message = AsyncMock()
-    press.followup = MagicMock()
-    press.followup.send = AsyncMock()
-    with patch(
-        "leaguebot.results.services.result_submission_service.cancel_amendment",
-        new=AsyncMock(return_value=True),
-    ) as cancel:
-        await type(view).cancel_btn(view, press, MagicMock())
+    press = await _press_cancel(league)
+    await run_queue(league.bot)
 
-    cancel.assert_awaited_once()
-    assert cancel.await_args.args[1:] == (ROUND_ID,)
-
-
-async def test_cancelling_too_late_says_so(tmp_path):
-    """The appeal stage may already be committing it; nothing is undone then."""
-    db_path = await _make_db(tmp_path, name="amend_cancel_too_late")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-    await _amend(_make_cog(db_path), interaction)
-
-    view = channel.send.await_args_list[0].kwargs["view"]
-    press = MagicMock()
-    press.user = SimpleNamespace(id=USER_ID)
-    press.response = MagicMock()
-    press.response.send_message = AsyncMock()
-    press.followup = MagicMock()
-    press.followup.send = AsyncMock()
-    with patch(
-        "leaguebot.results.services.result_submission_service.cancel_amendment",
-        new=AsyncMock(return_value=False),
-    ):
-        await type(view).cancel_btn(view, press, MagicMock())
-
-    assert "Too late" in str(press.followup.send.await_args.args[0])
+    told = "\n".join([acknowledgement(press), updated_reply(press)])
+    assert "Too late" in told
+    assert await _winner(league) == MAX
 
 
 async def _stage_in_hand(db_path, *, stopped: bool) -> None:
@@ -834,45 +819,31 @@ async def _stage_in_hand(db_path, *, stopped: bool) -> None:
         pytest.param(True, id="stopped"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_cancelling_while_a_stage_is_being_approved_says_so_and_puts_nothing_back(
-    tmp_path, stopped,
+    tmp_path, monkeypatch, stopped,
 ):
     """"Leave it while stuck": while a stage's approval is on the queue, queued or stopped, the
-    amendment cannot be cancelled, and Cancel says the stage is being approved rather than that the
-    round is being put back."""
-    db_path = await _make_db(tmp_path, name="amend_cancel_in_hand")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-    await _amend(_make_cog(db_path), interaction)
-    await _stage_in_hand(db_path, stopped=stopped)
-    async with get_connection(db_path) as db:
-        before = dict(await (await db.execute(
-            "SELECT pre_amendment_state, expires_at FROM round_amend_channels"
-        )).fetchone())
+    amendment cannot be cancelled. Stage one of Alex's amendment is recorded, and round 3's
+    report-stage approval is then on the queue, waiting or stopped. Alex presses Cancel Amendment:
+    he is told the stage is being approved, not that the round is being put back; the amendment's
+    snapshot and expiry are as they were and its channel is not deleted."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    await _type(league, RACE_PASTE)
+    await _stage_in_hand(league.db_path, stopped=stopped)
+    before = {key: row[key] for row in await _amendment_rows(league)
+              for key in ("pre_amendment_state", "expires_at")}
 
-    view = channel.send.await_args_list[0].kwargs["view"]
-    press = MagicMock()
-    press.user = SimpleNamespace(id=USER_ID)
-    press.response = MagicMock()
-    press.response.send_message = AsyncMock()
-    press.response.is_done = MagicMock(return_value=False)
-    press.followup = MagicMock()
-    press.followup.send = AsyncMock()
-    await type(view).cancel_btn(view, press, MagicMock())
+    press = await _press_cancel(league)
 
-    told = "\n".join(
-        str(c.args[0] if c.args else c.kwargs.get("content"))
-        for c in [*press.response.send_message.await_args_list,
-                  *press.followup.send.await_args_list]
-    )
+    told = "\n".join([acknowledgement(press), updated_reply(press)])
     assert "being approved" in told
     assert "putting the round back" not in told.lower()
-    async with get_connection(db_path) as db:
-        after = dict(await (await db.execute(
-            "SELECT pre_amendment_state, expires_at FROM round_amend_channels"
-        )).fetchone())
+    after = {key: row[key] for row in await _amendment_rows(league)
+             for key in ("pre_amendment_state", "expires_at")}
     assert after == before
-    channel.delete.assert_not_awaited()
+    assert not _deleted(league)
 
 
 async def test_a_failed_write_puts_back_what_it_had_written_before_tidying_up(tmp_path):
