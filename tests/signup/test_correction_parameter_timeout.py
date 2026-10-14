@@ -1,327 +1,328 @@
-"""A driver awaiting a correction parameter is never left there (issue #129).
+"""A driver awaiting a correction parameter is never left there (issue #129), on the queue.
 
 Pressing **Request Changes** parks the driver in ``AWAITING_CORRECTION_PARAMETER`` while a
-manager picks which of the nine answers to re-collect. A five-minute timer returns them to
-the approval queue if nobody chooses — but that timer was an in-memory ``asyncio`` task, so
-a restart discarded it and nothing re-created it. The driver was then invisible: the state
-appears in no listing, and pressing **Sign Up** again refuses them as already in progress.
+manager picks which of the nine answers to re-collect. Five minutes after the choices appear the
+driver goes back to the approval queue if nobody chose (Q23). Before #439 slice 6b the five
+minutes were an in-memory ``asyncio`` task, and a restart released the driver itself, off the
+queue. On the queue (C85, C87) the five minutes are a one-off timer whose callback, registered by
+the builder, asks ``signup.correction.lapse`` as the bot on the league lane, and the restart asks
+the same change of each driver still awaiting a choice before the queue starts.
 
-Three decisions taken while fixing it, each pinned by a test below:
+Three decisions taken while fixing #129, each still pinned by a test below:
 
-- a restart returns *every* such driver to Pending Admin Approval **unconditionally**,
-  rather than re-arming the remainder of their five minutes;
-- the manager who asked for the correction is mentioned when the window lapses, on a
-  restart revert *and* on the ordinary five-minute timeout;
+- a restart returns *every* such driver to Pending Admin Approval **unconditionally**, rather
+  than re-arming the remainder of their five minutes;
+- the manager who asked for the correction is mentioned when the window lapses, on a restart
+  *and* on the ordinary five-minute lapse;
 - the mention goes in the driver's signup channel, which is the only place a ping works —
   ``post_log`` renders mentions as plain text by design.
 
-Every test here is ``async def`` because the revert posts ``AdminReviewView``, and
-discord.py 2.5.0 calls ``get_running_loop()`` in ``View.__init__``.
+The league: ``setup_league`` at Signups, the signup module on and its window open. Kimi (105) has
+signed up: his signup record is saved under the server name "Kimi", his signup channel (6405)
+stands and records what it is sent, and his wizard's row names it. Unless a test says otherwise
+he awaits a correction parameter, the choices posted at manager 77's ("Admin") request. Manager 77
+holds the league's interaction role.
+
+Every test here is ``async def`` because the lapse posts ``AdminReviewView``, and discord.py
+calls ``get_running_loop()`` in ``View.__init__``.
 """
 from __future__ import annotations
 
 import json
-import logging
 import os
+from datetime import timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import discord
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
+from tests.support.change_queue import (
+    MANAGER_ROLE_ID,
+    change_rows,
+    member_interaction,
+    run_queue,
+    tier_member,
+    typed_message,
+)
+from tests.support.review_league import channel
+from tests.support.season_league import (
+    SEASON_ID,
+    SIGNING_UP,
+    SIGNUP_CHANNEL_BASE,
+    SeasonLeague,
+    setup_league,
+    signing_up,
+)
 
-SERVER_ID = 5129
-DRIVER_ID = "700100"
-ADMIN_ID = 900200
-CHANNEL_ID = 4242
+LAPSE_KIND = "signup.correction.lapse"
+CORRECTION_TIMER = "correction_lapse"
+KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
+REVIEWER = 77
+AWAITING = "AWAITING_CORRECTION_PARAMETER"
+
+NO_LAPSE_TIMER = (
+    "#439: the correction's five minutes are an asyncio task that releases the driver itself "
+    "off the queue, with no correction_lapse timer callback registered by the builder asking "
+    "signup.correction.lapse as the bot on the league lane, nor the choices' correction_offered_at "
+    "saved on the wizard's row"
+)
+NO_RESTART_LAPSE = (
+    "#439: the wizard service is not handed the change queue when built, and the restart "
+    "releases each driver awaiting a choice itself off the queue rather than asking "
+    "signup.correction.lapse of the queue before it starts, nor the choices' "
+    "correction_offered_at saved on the wizard's row"
+)
+NO_REQUEST_CHANGE = (
+    "#439: a reason typed after Request Changes is acted on at once off the queue, with no "
+    "signup.request_changes change recording who asked when the queue reaches it"
+)
+
+#: The lapse the correction window records, naming the manager who asked (owner, 2026-09-30,
+#: "Log both as lapses").
+CORRECTION_LAPSE = (
+    "⌛ the correction request for Kimi's signup lapsed unconfirmed "
+    f"(started by Admin (<@{REVIEWER}>))\n"
+    "  Kimi is back in the approval queue; a fresh review panel is in their channel."
+)
 
 
 # ── Harness ───────────────────────────────────────────────────────────────
 
 
-def _channel() -> MagicMock:
-    """A text channel that records what was posted to it."""
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.id = CHANNEL_ID
-    channel.send = AsyncMock()
-    return channel
-
-
-def _member(user_id: int, name: str) -> MagicMock:
-    member = MagicMock(spec=discord.Member)
-    member.id = user_id
-    member.display_name = name
-    member.mention = f"<@{user_id}>"
-    return member
-
-
-async def _seed(tmp_path, *, state: str = "AWAITING_CORRECTION_PARAMETER") -> str:
-    """A migrated database with the signup module on and one driver parked mid-review."""
-    db_path = os.path.join(str(tmp_path), "test.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id, signup_module_enabled) "
-            "VALUES (?, ?, ?, ?, 1)",
-            (SERVER_ID, 111, 222, 333),
-        )
-        await db.execute(
-            "INSERT INTO driver_profiles (discord_user_id, current_state) "
-            "VALUES (?, ?)",
-            (DRIVER_ID, state),
-        )
-        await db.commit()
-    return db_path
-
-
-async def _save_wizard(db_path: str, draft: dict) -> None:
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-    svc = SignupModuleService(db_path)
-    await svc.save_wizard(
-        SignupWizardRecord(
-            id=-1,
-            discord_user_id=DRIVER_ID,
-            wizard_state=WizardState.UNENGAGED,
-            signup_channel_id=CHANNEL_ID,
-            config_snapshot=None,
-            draft_answers=draft,
-            current_lap_track_index=0,
-            last_activity_at="2026-09-15T12:00:00+00:00",
-        )
+async def _league(tmp_path: Any, *, state: str = AWAITING,
+                  offered_ago: timedelta | None = timedelta(minutes=5),
+                  requested_by: int | None = REVIEWER) -> SeasonLeague:
+    """``setup_league`` at Signups, the window open; Kimi at *state*, his wizard unengaged in
+    his channel and his signup record saved; the correction choices posted *offered_ago*, his
+    wizard naming *requested_by* as the manager who asked. Today's Request Changes handler off
+    the queue is a stand-in that does nothing, so that only what the reason asks shows."""
+    os.makedirs(str(tmp_path), exist_ok=True)
+    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    league.roles_held[REVIEWER] = {MANAGER_ROLE_ID}
+    await signing_up(league, SIGNING_UP, state=state)
+    draft = {} if requested_by is None else {"_correction_requested_by": str(requested_by)}
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', draft_answers_json = ? "
+        "WHERE discord_user_id = ?",
+        json.dumps(draft), str(SIGNING_UP),
     )
-    await svc.save_record(
-        SignupRecord(
-            id=-1,
-            discord_user_id=DRIVER_ID,
-            discord_username="driver",
-            server_display_name="Lewis Hamilton",
-            nationality="British",
-            platform="PC",
-            platform_id="lh44",
-            availability_slot_ids=[],
-            driver_type="Main Driver",
-            preferred_teams=[],
-            preferred_teammate=None,
-            lap_times={},
-            notes=None,
-            signup_channel_id=CHANNEL_ID,
-        )
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, "
+        "nationality, platform, platform_id, driver_type, signup_channel_id) "
+        "VALUES (?, ?, 'Kimi', 'Finnish', 'Steam', 'kimi7', 'Full-Time Driver', ?)",
+        SEASON_ID, str(SIGNING_UP), KIMI_CHANNEL,
     )
+    if offered_ago is not None:
+        await league.write(
+            "UPDATE signup_wizard_records SET correction_offered_at = ? "
+            "WHERE discord_user_id = ?",
+            (league.clock.now - offered_ago).isoformat(), str(SIGNING_UP),
+        )
+    made = league._recording(channel(KIMI_CHANNEL, league.events))
+    made.guild = league.guild
+    made.posted = []
+    made.set_permissions = AsyncMock()
+    league.channels[KIMI_CHANNEL] = made
+    league.bot.wizard_service.request_changes = AsyncMock(return_value=None)
+    return league
 
 
-def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
-    """A WizardService wired to real driver/signup services and a stubbed Discord."""
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
+async def _fire_the_timer(league: SeasonLeague) -> None:
+    """The correction's five minutes run out: the callback the builder registered for the
+    ``correction_lapse`` timer is handed Kimi's account."""
+    [callback] = [call.args[1]
+                  for call in league.bot.scheduler_service.register_timer.call_args_list
+                  if call.args and call.args[0] == CORRECTION_TIMER]
+    await callback(str(SIGNING_UP))
+
+
+async def _restart(league: SeasonLeague) -> None:
+    """The bot starts again: the wizard service, built with the change queue, recovers the
+    correction requests before the queue starts."""
     from leaguebot.signup.services.wizard_service import WizardService
 
-    svc = WizardService.__new__(WizardService)
-    svc._db_path = db_path
-    svc._correction_tasks = {}
-    svc._scheduler = MagicMock()
-    svc._output_router = MagicMock()
-    svc._output_router.post_log = AsyncMock()
-
-    guild = MagicMock(spec=discord.Guild)
-    guild.id = SERVER_ID
-    guild.get_channel = MagicMock(return_value=channel)
-    guild.get_member = MagicMock(
-        side_effect=lambda uid: _member(uid, "Lewis Hamilton" if str(uid) == DRIVER_ID else "Toto")
+    wizards = WizardService(
+        league.db_path, league.bot.scheduler_service, league.bot.output_router,
+        change_queue=league.bot.change_queue,
     )
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.driver_service = DriverService(db_path)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
-    bot.get_guild = MagicMock(return_value=guild)
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    # The service's lines and a lapse recorded through the bot land in one log (#482).
-    bot.output_router = svc._output_router
-    svc._bot = bot
-    return svc, guild
+    wizards.set_bot(league.bot)
+    await wizards.recover_correction_timeouts()
 
 
-async def _state(db_path: str) -> str:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
-            (DRIVER_ID,),
-        )
-        row = await cursor.fetchone()
-    return row["current_state"]
+async def _lapses(league: SeasonLeague) -> list[dict[str, Any]]:
+    return [row for row in await change_rows(league.db_path) if row["kind"] == LAPSE_KIND]
 
 
-async def _draft(db_path: str) -> dict:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT draft_answers_json FROM signup_wizard_records "
-            "WHERE discord_user_id = ?",
-            (DRIVER_ID,),
-        )
-        row = await cursor.fetchone()
-    return json.loads(row["draft_answers_json"] or "{}")
-
-
-#: The lapse the correction window records, naming the manager who asked (owner, 2026-09-30,
-#: "Log both as lapses").
-_CORRECTION_LAPSE = [
-    "⌛ the correction request for Lewis Hamilton's signup lapsed unconfirmed "
-    f"(started by Toto (<@{ADMIN_ID}>))",
-    "  Lewis Hamilton is back in the approval queue; a fresh review panel is in their channel.",
-]
-
-
-def _lines(svc) -> list[str]:
-    """Every line written to the league's log channel, split on new lines."""
-    return [
-        line
-        for call in svc._output_router.post_log.await_args_list
-        for line in str(call.args[0]).split("\n")
-    ]
-
-
-def _posted(channel) -> str:
-    """Everything sent to the channel, joined — assertions read better against one string."""
-    return "\n".join(
-        str(call.args[0]) for call in channel.send.call_args_list if call.args
+async def _state(league: SeasonLeague) -> str:
+    [row] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(SIGNING_UP)
     )
+    return str(row["current_state"])
+
+
+async def _draft(league: SeasonLeague) -> dict[str, Any]:
+    [row] = await league.rows(
+        "SELECT draft_answers_json FROM signup_wizard_records WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    return dict(json.loads(row["draft_answers_json"] or "{}"))
+
+
+def _posted(league: SeasonLeague) -> str:
+    """Everything Kimi's channel was sent, joined."""
+    return "\n".join(league.channel(KIMI_CHANNEL).texts)
+
+
+def _panels(league: SeasonLeague) -> list[Any]:
+    return [call for call in league.channel(KIMI_CHANNEL).send.call_args_list
+            if type(call.kwargs.get("view")).__name__ == "AdminReviewView"]
 
 
 # ── Remembering who asked ─────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_request_changes_records_the_requesting_admin(tmp_path):
-    """Nothing could mention the manager later because nobody wrote their ID down."""
-    db_path = await _seed(tmp_path, state="PENDING_ADMIN_APPROVAL")
-    await _save_wizard(db_path, {})
-    channel = _channel()
-    svc, guild = _build_service(db_path, channel)
+    """Kimi awaits approval. Manager 77 presses Request Changes and types the reason in Kimi's
+    channel. When the queue reaches the request, Kimi's wizard names 77 as the manager who
+    asked, so the lapse can mention him later."""
+    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
 
-    await svc.request_changes(
-        DRIVER_ID, guild, _member(ADMIN_ID, "Toto"), reason="Lap time looks wrong"
-    )
+    league = await _league(tmp_path, state="PENDING_ADMIN_APPROVAL", offered_ago=None,
+                           requested_by=None)
+    manager = league._member(REVIEWER)
+    manager.bot = False
+    press = member_interaction(league.bot, user=manager, created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    await press.response.defer(ephemeral=True)
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
+        "action": "request_changes", "discord_user_id": str(SIGNING_UP), "actor": manager,
+        "guild": league.guild, "interaction": press, "followup": press.followup,
+    }
+    reason = typed_message(league.channel(KIMI_CHANNEL), manager, "Lap time looks wrong",
+                           created_at=league.clock.now)
+    reason.guild = league.guild
+    try:
+        await AdminReviewCog(league.bot).on_message(reason)
+    finally:
+        _PENDING_REASONS.clear()
+    await run_queue(league.bot)
 
-    assert (await _draft(db_path))["_correction_requested_by"] == str(ADMIN_ID)
+    assert (await _draft(league))["_correction_requested_by"] == str(REVIEWER)
 
 
-# ── The restart sweep ─────────────────────────────────────────────────────
+# ── The restart ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_returns_the_driver_to_pending_admin_approval(tmp_path):
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Kimi's choices were posted five minutes ago and the bot restarts. The restart asks the
+    lapse as the bot on the league lane, posting nothing; when the queue runs Kimi is back
+    awaiting approval."""
+    league = await _league(tmp_path)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
 
-    assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
+    [lapse] = await _lapses(league)
+    assert ((lapse.get("lane") or "league"), lapse["origin"]) == ("league", "BOT")
+    assert _posted(league) == ""
+
+    await run_queue(league.bot)
+
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
-    """The revert is unconditional — it does not re-arm whatever time was left."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(
-        db_path,
-        {
-            "_correction_requested_by": str(ADMIN_ID),
-            # Parked seconds ago: a deadline-aware implementation would leave them be.
-            "_correction_deadline": "2099-01-01T00:00:00+00:00",
-        },
-    )
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Kimi's choices were posted a minute ago and the bot restarts. The release is
+    unconditional, not re-armed for what was left: when the queue runs Kimi is back awaiting
+    approval."""
+    league = await _league(tmp_path, offered_ago=timedelta(minutes=1))
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_path):
-    """Toto pressed Request Changes on Lewis Hamilton's signup and the bot restarted before a
-    parameter was chosen. Toto is mentioned in Lewis's channel, and one lapse naming Toto is
-    recorded in the log channel."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Manager 77 asked for a correction of Kimi's signup and the bot restarted before a
+    parameter was chosen. When the queue runs the lapse, 77 is mentioned in Kimi's channel and
+    the lapse naming 77 is recorded in the log channel."""
+    league = await _league(tmp_path)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    assert f"<@{ADMIN_ID}>" in _posted(channel)
-    assert _lines(svc) == _CORRECTION_LAPSE
+    assert f"<@{REVIEWER}>" in _posted(league)
+    assert CORRECTION_LAPSE in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_says_that_the_bot_restarted(tmp_path):
-    """The two lapse reasons read differently, so a manager knows which happened."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """The two lapse reasons read differently, so a manager knows which happened: the notice a
+    restart's lapse posts in Kimi's channel says the bot restarted, and the log records it as
+    the five minutes' lapse is recorded (owner, 2026-09-30)."""
+    league = await _league(tmp_path)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    assert "restart" in _posted(channel).lower()
-    # The log records the restart's lapse as it records the five minutes' (owner, 2026-09-30).
-    assert _lines(svc) == _CORRECTION_LAPSE
+    assert "restart" in _posted(league).lower()
+    assert CORRECTION_LAPSE in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_driver_stranded_before_the_fix_is_released_without_a_mention(tmp_path):
-    """Their wizard record was written before the key existed — the revert still works."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Kimi's wizard names no manager who asked (written before the key existed). The restart's
+    lapse still releases him and posts in his channel, and mentions no one as `<@None>`."""
+    league = await _league(tmp_path, requested_by=None)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
-    assert channel.send.await_count >= 1
-    assert "<@None>" not in _posted(channel)
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert _posted(league) != ""
+    assert "<@None>" not in _posted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_driver_not_awaiting_a_parameter_is_left_alone(tmp_path):
-    db_path = await _seed(tmp_path, state="PENDING_ADMIN_APPROVAL")
-    await _save_wizard(db_path, {})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Kimi awaits approval, not a correction parameter, and the bot restarts. No lapse is
+    asked and nothing is posted in his channel."""
+    league = await _league(tmp_path, state="PENDING_ADMIN_APPROVAL", offered_ago=None)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    assert channel.send.await_count == 0
+    assert await _lapses(league) == []
+    assert _posted(league) == ""
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_the_revert_reposts_the_review_panel(tmp_path):
-    """Without the panel the manager has the driver back but no buttons to act on."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Without the panel the manager has the driver back but no buttons to act on: the
+    restart's lapse posts one fresh review panel in Kimi's channel."""
+    league = await _league(tmp_path)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    views = [call.kwargs.get("view") for call in channel.send.call_args_list]
-    assert any(v is not None and type(v).__name__ == "AdminReviewView" for v in views)
+    assert len(_panels(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
-    """The repost quotes the same answers the first panel did (#362)."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """The reposted panel quotes the same answers the first did (#362): it may notify neither
+    everyone nor any role."""
+    league = await _league(tmp_path)
 
-    await svc.recover_correction_timeouts()
+    await _restart(league)
+    await run_queue(league.bot)
 
-    panel = next(
-        call for call in channel.send.call_args_list
-        if type(call.kwargs.get("view")).__name__ == "AdminReviewView"
-    )
+    [panel] = _panels(league)
     assert panel.kwargs["allowed_mentions"].everyone is False
     assert panel.kwargs["allowed_mentions"].roles is False
 
@@ -329,86 +330,58 @@ async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
 # ── The ordinary five-minute lapse ────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
-    """Toto pressed Request Changes on Lewis Hamilton's signup and chose no parameter within
-    five minutes. Lewis is back awaiting review, Toto is mentioned in Lewis's channel, and one
-    lapse naming Toto is recorded in the log channel."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
+    """Manager 77 asked for a correction of Kimi's signup and chose no parameter within five
+    minutes of the choices appearing. When the timer's lapse runs Kimi is back awaiting review,
+    77 is mentioned in Kimi's channel, and the lapse naming 77 is recorded in the log channel."""
+    league = await _league(tmp_path)
 
-    await svc._correction_timeout_callback(DRIVER_ID)
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
 
-    assert f"<@{ADMIN_ID}>" in _posted(channel)
-    assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
-    assert _lines(svc) == _CORRECTION_LAPSE
+    assert f"<@{REVIEWER}>" in _posted(league)
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    assert CORRECTION_LAPSE in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_a_lapse_whose_driver_has_already_moved_on_records_nothing(tmp_path):
-    """The five minutes run out just as Lewis Hamilton's signup moves on, so moving him back
-    to awaiting review is refused (`ValueError`, caught by name). Nothing is posted in his
-    channel and no lapse is recorded."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
-    svc._bot.driver_service = MagicMock()
-    svc._bot.driver_service.transition = AsyncMock(side_effect=ValueError("not allowed"))
+    """The five minutes run out and the timer asks the lapse, but before the queue reaches it
+    Kimi's signup moves on (to Pending Driver Correction). When the queue runs the lapse is no
+    longer due: Kimi stays where he is, nothing is posted in his channel and no lapse is
+    recorded."""
+    league = await _league(tmp_path)
 
-    await svc._correction_timeout_callback(DRIVER_ID)
-
-    assert channel.send.await_count == 0
-    svc._output_router.post_log.assert_not_awaited()
-
-
-async def test_a_lapse_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
-    tmp_path, caplog,
-):
-    """Moving Lewis Hamilton back to awaiting review fails on something other than the expected
-    refusal (#457). The error goes to the host log with its traceback, whether logged here or
-    raised to whatever ran the lapse; nothing is posted in his channel and no lapse is
-    recorded for a request that did not end."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
-    svc._bot.driver_service = MagicMock()
-    svc._bot.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
-
-    raised = False
-    with caplog.at_level(logging.WARNING):
-        try:
-            await svc._correction_timeout_callback(DRIVER_ID)
-        except RuntimeError:
-            raised = True
-
-    logged = any(
-        record.exc_info and isinstance(record.exc_info[1], RuntimeError)
-        for record in caplog.records
+    await _fire_the_timer(league)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'PENDING_DRIVER_CORRECTION' "
+        "WHERE discord_user_id = ?", str(SIGNING_UP),
     )
-    assert raised or logged, "the error reached neither the caller nor the host log"
-    assert channel.send.await_count == 0
-    svc._output_router.post_log.assert_not_awaited()
+    await run_queue(league.bot)
+
+    assert await _state(league) == "PENDING_DRIVER_CORRECTION"
+    assert _posted(league) == ""
+    assert "lapsed" not in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
-    """A stale reason would otherwise resurface on the manager's next correction."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(
-        db_path,
-        {
-            "_correction_requested_by": str(ADMIN_ID),
-            "_correction_reason": "Lap time looks wrong",
-            "_is_correction": True,
-        },
+    """Kimi's wizard holds the correction's reason, the manager who asked and the correction
+    flag. Once the timer's lapse runs none of them is left, so a stale reason cannot resurface
+    on the manager's next correction."""
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE signup_wizard_records SET draft_answers_json = ? WHERE discord_user_id = ?",
+        json.dumps({"_correction_requested_by": str(REVIEWER),
+                    "_correction_reason": "Lap time looks wrong", "_is_correction": True}),
+        str(SIGNING_UP),
     )
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel)
 
-    await svc._correction_timeout_callback(DRIVER_ID)
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
 
-    draft = await _draft(db_path)
+    draft = await _draft(league)
     assert "_correction_reason" not in draft
     assert "_correction_requested_by" not in draft
     assert "_is_correction" not in draft
@@ -417,90 +390,72 @@ async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
 # ── The disabled module ───────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_path):
-    """A durable sweep must not post a review panel into a module a league turned off."""
-    db_path = await _seed(tmp_path)
-    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
-    channel = _channel()
-    svc, _ = _build_service(db_path, channel, signup_enabled=False)
+    """The signup module is turned off and Kimi's five minutes run out. The lapse posts no
+    review panel into a module the league turned off: Kimi stays awaiting a parameter, nothing
+    is posted in his channel and no lapse line is written (core specification, Modules)."""
+    league = await _league(tmp_path)
+    await league.switch("signup", False)
 
-    await svc._correction_timeout_callback(DRIVER_ID)
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
 
-    assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
-    assert channel.send.await_count == 0
-    # A disabled module produces nothing, a lapse line included (core specification, Modules).
-    svc._output_router.post_log.assert_not_awaited()
+    assert await _state(league) == AWAITING
+    assert _posted(league) == ""
+    assert "lapsed" not in league.log()
 
 
 # ── Closing the window ────────────────────────────────────────────────────
 
 
-async def _open_the_window(db_path: str) -> None:
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO signup_module_config (id, signups_open, close_at) "
-            "VALUES (?, 1, NULL)",
-            (1,),
-        )
-        await db.commit()
-
-
-def _close_cog(db_path: str):
-    from leaguebot.signup.cogs.signup_cog import SignupCog
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.db_path = db_path
-    bot.driver_service = DriverService(db_path)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.get_guild = MagicMock(return_value=None)
-    bot.output_router.post_log = AsyncMock()
-
-    cog = SignupCog.__new__(SignupCog)
-    cog.bot = bot
-    return cog
-
-
-async def test_the_close_confirmation_counts_a_driver_awaiting_a_correction_parameter(tmp_path):
-    """Parked alone, they used to let `/signup close` shut with no confirmation at all."""
+async def _signup_close(league: SeasonLeague) -> Any:
+    """Manager 77 runs `/signup close`; gives his interaction."""
     from leaguebot.signup.cogs.signup_cog import SignupCog
     from tests.support.undecorate import undecorate
 
-    db_path = await _seed(tmp_path)
-    await _open_the_window(db_path)
-    cog = _close_cog(db_path)
-
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.guild = None
-    interaction.user.id = ADMIN_ID
-    interaction.user.display_name = "Toto"
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot, user=tier_member("manager", member_id=REVIEWER))
+    interaction.guild = league.guild
+    interaction.command = MagicMock(qualified_name="signup close")
     await undecorate(SignupCog.signup_close)(cog, interaction)
+    return interaction
 
-    reply = interaction.response.send_message.await_args.args[0]
+
+async def _signup_close_press(league: SeasonLeague) -> Any:
+    """Manager 77's press of Confirm Close."""
+    press = member_interaction(league.bot, user=tier_member("manager", member_id=REVIEWER))
+    press.guild = league.guild
+    press.command = MagicMock(qualified_name="signup close")
+    return press
+
+
+async def test_the_close_confirmation_counts_a_driver_awaiting_a_correction_parameter(tmp_path):
+    """Kimi awaits a correction parameter and manager 77 runs `/signup close`. Parked alone, he
+    used to let the window shut with no confirmation at all: the confirmation counts him among
+    the drivers who keep their place, naming him and his channel."""
+    league = await _league(tmp_path, offered_ago=None)
+
+    asked = await _signup_close(league)
+
+    reply = asked.response.send_message.await_args.args[0]
     assert "1 driver(s) awaiting approval or a correction will keep their place" in reply
-    assert DRIVER_ID in reply
+    assert f"Kimi — <#{KIMI_CHANNEL}>" in reply
 
 
 async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp_path):
-    """Listed, but untouched — like the other two review-cycle states beside it.
+    """Kimi awaits a correction parameter; manager 77 runs `/signup close`, presses Confirm
+    Close, and the queue runs the close. Kimi is listed but untouched, like the other two
+    review-cycle states beside it: a manager may still press Request Changes after the window
+    has shut, so a close-time release would rescue nobody the restart does not (decided
+    2026-09-15)."""
+    league = await _league(tmp_path, offered_ago=None)
 
-    A manager may still press Request Changes after the window has shut, so a close-time
-    revert would rescue nobody the restart sweep does not already rescue (decided
-    2026-09-15).
-    """
-    from leaguebot.core.cogs.module_cog import execute_forced_close
+    asked = await _signup_close(league)
+    view = asked.response.send_message.await_args.kwargs["view"]
+    await view.confirm.callback(await _signup_close_press(league))
+    await run_queue(league.bot)
 
-    db_path = await _seed(tmp_path)
-    await _open_the_window(db_path)
-    cog = _close_cog(db_path)
+    assert await _state(league) == AWAITING
 
-    await execute_forced_close(cog.bot, audit_action="SIGNUP_CLOSE")
-
-    assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
