@@ -65,12 +65,14 @@ KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
 
 NO_START_CHANGE = (
-    "#439: Sign Up creates the driver's signup channel, saves the wizard and posts the welcome "
-    "itself off the queue, with no signup.start change"
+    "#439: the Sign Up view is not handed the change queue, and Sign Up creates the driver's "
+    "signup channel, saves the wizard and posts the welcome itself off the queue, with no "
+    "signup.start change"
 )
 NO_END_CHANGE = (
-    "#439: Cancel Signup ends the signup and posts its closing notice itself off the queue, with "
-    "no signup.end change on the league lane asking signup.closing back of the driver's lane"
+    "#439: the Cancel Signup view is not handed the change queue, and Cancel Signup ends the "
+    "signup and posts its closing notice itself off the queue, with no signup.end change on the "
+    "league lane asking signup.closing back of the driver's lane"
 )
 
 
@@ -133,20 +135,24 @@ def _driver(league: SeasonLeague, user_id: int = SIGNING_UP, *, cid: int = SIGNU
 
 
 async def _press_sign_up(league: SeasonLeague) -> Any:
-    """Kimi presses Sign Up in the signup channel; gives his press."""
+    """Kimi presses Sign Up in the signup channel; gives his press. The view is handed the change
+    queue when it is built (A23), never reaching it through the bot."""
     from leaguebot.signup.cogs.signup_cog import SignupButtonView
 
     press = _driver(league)
-    await SignupButtonView().signup_button.callback(press)
+    await SignupButtonView(league.bot.change_queue).signup_button.callback(press)
     return press
 
 
 async def _press_cancel(league: SeasonLeague) -> Any:
-    """Kimi presses Cancel Signup in his signup channel; gives his press."""
+    """Kimi presses Cancel Signup in his signup channel; gives his press. The view is handed his
+    account and the change queue when it is built (A23), never reaching the queue through the
+    bot."""
     from leaguebot.signup.cogs.signup_cog import WithdrawButtonView
 
     press = _driver(league, cid=KIMI_CHANNEL)
-    await WithdrawButtonView(str(SIGNING_UP), league.bot).withdraw_button.callback(press)
+    view = WithdrawButtonView(str(SIGNING_UP), league.bot.change_queue)
+    await view.withdraw_button.callback(press)
     return press
 
 
