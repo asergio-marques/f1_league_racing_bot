@@ -679,6 +679,48 @@ async def test_a_lapsed_amendment_tells_the_manager_who_ran_it_that_it_expired(
 
 
 @pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_an_unanswered_configuration_choice_lapses_and_tells_the_manager_it_expired(
+    tmp_path, monkeypatch,
+):
+    """The season has Standard and Heavy attached and the Feature Race carries neither. Alex opens
+    the amendment and, two minutes on, pastes the Feature Race: its turn posts the configuration
+    picker, records when it appeared, and arms the five minutes again from then. Nobody presses
+    it. The five minutes armed for the picker run out and the lapse runs: the channel is deleted
+    and the row closed, nothing is written (Lewis still leads), the lapse is recorded in the log
+    channel naming Alex, and Alex is told privately that the amendment expired and that
+    `/results rounds amend` may be run again (results :460, #135)."""
+    league = await _league(tmp_path, monkeypatch, configs=("Standard", HEAVY))
+    interaction = await _ask_open(league)
+    getattr(league.bot, "_change_queue_test_setup").clock.advance(minutes=2)
+
+    await _type(league, after=timedelta(minutes=2))
+
+    assert [message for message in league.channel(AMEND_CHANNEL).messages.values()
+            if message.view is not None
+            and "Select the points configuration" in str(message.content)]
+    [row] = await _amend_rows(league)
+    assert row["prompt_posted_at"] == (NOW + timedelta(minutes=2)).isoformat()
+    *_, last = _armed(league)
+    assert last[2] == NOW + timedelta(minutes=7)
+
+    await _fire(league)
+    [lapse] = await _changes(league, LAPSE)
+    assert (_lane(lapse), lapse["origin"]) == ("league", "BOT")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert _deleted(league)
+    [row] = await _amend_rows(league)
+    assert row["closed_at"] is not None
+    assert await _winner(league) == LEWIS
+    assert await _drafts(league) == []
+    assert f"<@{MEMBER_ID}>" in league.log() or "Alex" in league.log()
+    told = updated_reply(interaction)
+    assert "expired" in told.lower()
+    assert "/results rounds amend" in told
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_paste_typed_in_time_holds_the_lapse_though_its_turn_waits(tmp_path, monkeypatch):
     """The amendment's lane is stopped at another job when Alex pastes the Feature Race four
     minutes after the prompt; his turn waits. The five minutes run out and the lapse is asked:
