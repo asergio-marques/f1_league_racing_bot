@@ -103,6 +103,7 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
     category.create_text_channel = league.guild.create_text_channel
     # Today's handlers off the queue, reached by the presses until the changes replace them.
     league.bot.wizard_service.start_wizard = AsyncMock(return_value=None)
+    league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
     return league
 
 
@@ -368,3 +369,94 @@ async def test_sign_up_posts_its_welcome_on_the_league_lane(tmp_path):
     assert change["state"] == "DONE"
     assert "post_welcome" in await _job_names(league, START_KIND)
     assert league.channel(NEW_CHANNEL).texts != []
+
+
+# ---------------------------------------------------------------------------
+# Cancel Signup (C76)
+# ---------------------------------------------------------------------------
+
+
+async def _mid_signup(tmp_path: Any) -> SeasonLeague:
+    """`_league`, Kimi part-way through signing up (Pending Signup Completion), his signup
+    channel (6405) standing and recording what it is sent and its permission edits."""
+    league = await _league(tmp_path)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    _held(league, KIMI_CHANNEL)
+    return league
+
+
+def _told(league: SeasonLeague) -> list[str]:
+    return [text for text in league.channel(KIMI_CHANNEL).texts if "withdrawn" in text.lower()]
+
+
+def _locked(league: SeasonLeague) -> bool:
+    return any(call.kwargs.get("send_messages") is False
+               for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
+async def test_a_withdrawal_ends_the_signup_tells_the_driver_and_locks_the_channel_as_jobs(
+    tmp_path,
+):
+    """Kimi presses Cancel Signup part-way through signing up. At once he is answered privately
+    that it is under way, and nothing is posted in his channel. When the queue runs he is Not
+    Signed Up, his channel is told his signup was withdrawn, his typing there is revoked, and the
+    channel's deletion is armed a day after the job ran."""
+    league = await _mid_signup(tmp_path)
+
+    press = await _press_cancel(league)
+
+    assert acknowledgement(press).startswith("⏳")
+    assert league.channel(KIMI_CHANNEL).texts == []
+
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert len(_told(league)) == 1
+    assert _locked(league)
+    assert _armed(league, DELETE_TIMER) == [
+        (DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
+async def test_a_refused_closing_notice_stops_the_queue(tmp_path):
+    """Kimi presses Cancel Signup, and Discord refuses every post in his signup channel. When
+    the queue runs he is Not Signed Up (the league's change is done), but the turns in his
+    channel stop at `signup_notice`: no notice, his typing not revoked and no deletion armed.
+    The league lane is not stopped."""
+    league = await _mid_signup(tmp_path)
+    league.channel(KIMI_CHANNEL).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    job = await stopped_job(league.db_path, KIMI_LANE)
+    assert job is not None and job["name"] == "signup_notice"
+    assert await stopped_job(league.db_path, "league") is None
+    assert _told(league) == []
+    assert not _locked(league)
+    assert _armed(league, DELETE_TIMER) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
+async def test_withdraw_changes_the_status_on_the_league_and_the_notice_comes_back_on_the_driver_s_lane(
+    tmp_path,
+):
+    """Kimi presses Cancel Signup and the queue runs. The `signup.end` change that returns him to
+    Not Signed Up runs on the league lane; it asks back a `signup.closing` change, asked after
+    it, on the lane of his signup channel, which posts the notice there."""
+    league = await _mid_signup(tmp_path)
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    [end] = await _changes_of(league, END_KIND)
+    [closing] = await _changes_of(league, CLOSING_KIND)
+    assert (_lane(end), _lane(closing)) == ("league", KIMI_LANE)
+    assert end["id"] < closing["id"]
+    assert (end["state"], closing["state"]) == ("DONE", "DONE")
+    assert len(_told(league)) == 1
