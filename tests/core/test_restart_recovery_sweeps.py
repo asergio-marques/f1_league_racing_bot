@@ -482,8 +482,12 @@ async def _amend_league(tmp_path, *, amended: bool = False):
     """The league above with Alex's amendment open. *amended*: stage one was recorded, the round
     snapshotted and its Feature Race rewritten with Max ahead of Lewis."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.result_submission_service import snapshot_before_amendment
-    from tests.support.review_league import AMEND_CHANNEL, NOW, review_league
+    from tests.support.review_league import (
+        AMEND_CHANNEL,
+        NOW,
+        review_league,
+        snapshot_amendment,
+    )
 
     league = await review_league(tmp_path, round_status="FINAL")
     async with get_connection(league.db_path) as db:
@@ -497,7 +501,7 @@ async def _amend_league(tmp_path, *, amended: bool = False):
         )
         await db.commit()
     if amended:
-        await snapshot_before_amendment(league.db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+        await snapshot_amendment(league.db_path, ROUND_ID, [SessionType.FEATURE_RACE])
         async with get_connection(league.db_path) as db:
             await db.execute(
                 "UPDATE race_session_results SET finishing_position = finishing_position + 10"

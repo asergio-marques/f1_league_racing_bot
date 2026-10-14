@@ -548,6 +548,25 @@ async def race_rows(db_path: str) -> dict[int, dict[str, Any]]:
         return {row["driver_user_id"]: dict(row) for row in await cursor.fetchall()}
 
 
+async def snapshot_amendment(db_path: str, round_id: int,
+                             session_types: list[SessionType]) -> None:
+    """Record the round as it stands before an amendment's stage one writes, as stage one does,
+    for a test that seeds an amendment past stage one.
+
+    Through the form that takes a connection (`snapshot_before_amendment_on`) where the bot has it,
+    on a connection opened and committed here: #439 6b's stage one writes through it, and deletes
+    the committing form. Until then, through the committing form."""
+    from leaguebot.results.services import result_submission_service as service
+
+    on_a_connection = getattr(service, "snapshot_before_amendment_on", None)
+    if on_a_connection is None:
+        await service.snapshot_before_amendment(db_path, round_id, session_types)
+        return
+    async with get_connection(db_path) as db:
+        await on_a_connection(db, round_id, session_types)
+        await db.commit()
+
+
 async def one(db_path: str, sql: str, *args: Any) -> Any:
     async with get_connection(db_path) as db:
         row = await (await db.execute(sql, args)).fetchone()
