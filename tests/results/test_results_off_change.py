@@ -1133,3 +1133,62 @@ async def test_an_open_amendment_is_forgotten_with_the_season_and_its_channel_ta
 
     await run_queue(bot)
     assert bot.channels[AMEND_CHANNEL_ID].deleted is True
+
+
+# ---------------------------------------------------------------------------
+# Results off ends every submission and amendment (#439, slice 6b, C88a)
+# ---------------------------------------------------------------------------
+#
+# A round's submission channel and an amendment's channel each have a lane of their own, their
+# pastes taken there as turns. The switch-off ends both conversations in its own save, erasing
+# their rows with the season's; each lane's waiting turns are then found no longer due when they
+# come, and dropped.
+
+NO_RESULTS_OFF_ENDS_THE_CONVERSATIONS = (
+    "#439: a submission and an amendment have no lane of their own, their pastes taken off the "
+    "change queue, so turning results off leaves no turn of theirs to find no longer due"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RESULTS_OFF_ENDS_THE_CONVERSATIONS)
+async def test_turning_results_off_ends_every_submission_and_amendment(tmp_path):
+    """Division 1's round 1 waits for its results, its submission open in channel 8000; its
+    round 2 is final and being amended in channel 9100. The admin confirms `/module disable
+    results`; before the queue runs, the manager types a paste into 8000 and another into 9100,
+    each a turn on its channel's own lane, asked after the switch-off. The queue run: the
+    switch-off erases both rows and closes the rounds; both turns are then found no longer due
+    and dropped, nothing saved for either round's sessions, and neither lane stopped."""
+    from tests.support.change_queue import member
+
+    seeded = await _seed(tmp_path, rounds=("AWAITING_RESULTS", "FINAL"))
+    await _set(
+        seeded.db_path,
+        "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+        "pre_amendment_state, expires_at) VALUES (?, ?, '[\"RACE\"]', "
+        "'2026-01-01T00:00:00', '{}', '2026-01-01T00:30:00')",
+        (seeded.round_ids[1], AMEND_CHANNEL_ID),
+    )
+    bot = _league(seeded.db_path)
+    await _confirm(bot)
+    turns = []
+    for kind, channel_id, message_id in (("results.submission.turn", 8000, 8101),
+                                         ("results.amend.turn", AMEND_CHANNEL_ID, 9101)):
+        turns.append(await bot.change_queue.ask(
+            kind,
+            {"channel_id": channel_id, "message_id": message_id, "author_id": MEMBER_ID,
+             "content": "1. Lewis Hamilton 1:30.000", "attachments": [],
+             "typed_at": NOW.isoformat()},
+            actor=member(MEMBER_ID), what="a typed paste",
+        ))
+    assert None not in turns
+
+    await run_queue(bot)
+
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
+    assert await _count(seeded.db_path, "round_submission_channels") == 0
+    assert await _count(seeded.db_path, "round_amend_channels") == 0
+    states = {row["id"]: row["state"] for row in await change_rows(seeded.db_path)}
+    assert [states[turn] for turn in turns] == ["DROPPED", "DROPPED"]
+    assert await _count(seeded.db_path, "session_results") == 0
+    assert await stopped_job(seeded.db_path, "channel:8000") is None
+    assert await stopped_job(seeded.db_path, f"channel:{AMEND_CHANNEL_ID}") is None

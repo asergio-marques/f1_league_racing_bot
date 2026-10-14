@@ -1534,3 +1534,98 @@ async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
     rows = await change_rows(league.db_path)
     assert [row["kind"] for row in rows][-2:] == [kind, SEASON_CANCEL_KIND]
     assert rows[-1]["state"] == "QUEUED"
+
+
+# ── A season's end ends every conversation it closes (#439, slice 6b, C88a) ──────────
+#
+# A round's submission channel and a driver's signup channel each have a lane of their own, their
+# typed answers taken there as turns. The cancellation marks each conversation it closes ended in
+# its own save: the empty submission closed in `apply`, the wizard unengaged by the driver pass in
+# `end` (through the season end's hooks, never by core writing signup's table). Each lane's waiting
+# turns are then found no longer due when they come, and dropped.
+
+NO_SEASON_END_ENDS_THE_CONVERSATIONS = (
+    "#439: a submission and a signup wizard have no lane of their own, their answers taken off the "
+    "change queue, so a season's end leaves no turn of theirs to find no longer due"
+)
+SUBMISSION_TURN = "results.submission.turn"
+KIMI_TURN = "test.kimi_turn"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SEASON_END_ENDS_THE_CONVERSATIONS)
+async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
+    """Pro's round 3 waits for its results, its submission open in channel 690 with nothing
+    accepted; driver 105 (Kimi) is part-way through signing up, his wizard collecting his notes in
+    his signup channel 6405. The admin runs `/season cancel`; before the queue runs, the manager
+    types CANCELLED into 690 and Kimi types his notes into 6405, each a turn on its channel's own
+    lane, asked after the cancellation. The queue run: the season is cancelled, round 3's
+    submission closed and Kimi's wizard unengaged; both turns are then found no longer due and
+    dropped, nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
+    and neither lane stopped."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+    from tests.support.change_queue import member, register
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
+
+    kimi_channel = SIGNUP_CHANNEL_BASE + SIGNING_UP
+    kimi_lane = f"channel:{kimi_channel}"
+    league = await ongoing_league(tmp_path)
+    await _empty_submission(league)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'COLLECTING_NOTES' "
+        "WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    posted: list[str] = []
+
+    async def post(_ctx: Any) -> StepResult:
+        posted.append("Kimi's next question")
+        return StepResult()
+
+    async def check(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    async def kimi_signing_up(db: Any, _payload: dict[str, Any]) -> bool:
+        cursor = await db.execute(
+            "SELECT 1 FROM signup_wizard_records WHERE discord_user_id = ? "
+            "AND wizard_state != 'UNENGAGED'",
+            (str(SIGNING_UP),),
+        )
+        return await cursor.fetchone() is not None
+
+    register(league.bot, ChangeType(
+        kind=KIMI_TURN,
+        opening=(PlannedStep("post"),),
+        steps={"post": Step("post", StepKind.ACT, post)},
+        check=check,
+        key=lambda _payload: KIMI_TURN,
+        doing=lambda _payload: "Taking Kimi's answer",
+        outcome=lambda _ctx: "Taken.",
+        lane=lambda _payload: kimi_lane,
+        conversation_open=kimi_signing_up,
+    ))
+    await _asked(league)
+    paste = await league.bot.change_queue.ask(
+        SUBMISSION_TURN,
+        {"channel_id": SUBMISSION_CHANNEL, "message_id": 6901, "author_id": 77,
+         "content": "CANCELLED", "attachments": [],
+         "typed_at": league.clock.now.isoformat()},
+        actor=member(77), what="a typed answer",
+    )
+    answer = await league.bot.change_queue.ask(
+        KIMI_TURN, {}, actor=member(SIGNING_UP), what="Kimi's answer",
+    )
+    assert paste is not None and answer is not None
+
+    await run_queue(league.bot)
+
+    assert await _status(league) == "CANCELLED"
+    assert await _closed(league) == {R3: 1}
+    assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
+    states = {row["id"]: row["state"] for row in await change_rows(league.db_path)}
+    assert (states[paste], states[answer]) == ("DROPPED", "DROPPED")
+    assert await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3) == []
+    assert posted == []
+    assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
+    assert await stopped_job(league.db_path, kimi_lane) is None
