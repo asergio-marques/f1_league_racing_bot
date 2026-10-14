@@ -26,9 +26,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.result_submission_service import (
-    run_amendment_review_stages,
-)
+from tests.support.change_queue import in_a_job
 from tests.support.teams import seed_team_instances
 
 SEASON_ID = 31
@@ -99,15 +97,23 @@ def _channel():
 
 
 async def _run(db_path, channel=None, *, attendance=True):
+    """Stage two's prompt posted for round 3 of Pro, inside a job: the prompt is a post the
+    amendment's stage-two job makes (#439 slice 6b), never one made outside a job. Imported here
+    so the file still collects should the function move."""
+    from leaguebot.results.services.result_submission_service import (
+        run_amendment_review_stages,
+    )
+
     channel = channel or _channel()
     bot = MagicMock()
     bot.add_view = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
-    state = await run_amendment_review_stages(
-        db_path, ROUND_ID, DIVISION_ID, channel, bot,
-        round_number=3, division_name="Pro",
-        session_types=[SessionType.FEATURE_RACE],
-    )
+    with in_a_job():
+        state = await run_amendment_review_stages(
+            db_path, ROUND_ID, DIVISION_ID, channel, bot,
+            round_number=3, division_name="Pro",
+            session_types=[SessionType.FEATURE_RACE],
+        )
     return state, channel, bot
 
 
