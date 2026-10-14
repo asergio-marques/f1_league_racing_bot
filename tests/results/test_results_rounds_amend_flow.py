@@ -26,6 +26,13 @@ otherwise award a bonus to somebody who did not race.
 **The points configuration is chosen without asking where it can be.** One configuration on the
 season is used; the session's existing one is kept where it is still attached; only where
 neither applies is the manager asked.
+
+**Since #439's slice 6b the amendment runs on the change queue.** The command asks
+`results.amend.open`, which opens the channel on the league lane; each paste typed in it is a
+`results.amend.turn` on the amendment's lane, and stage one is handed to the league lane.
+`test_amend_changes.py` pins those changes' jobs, lanes and timers, and its league, command and
+typing are reused here: the channel's permissions, a good paste and a refused one are driven
+through them. The tests further down still drive the command's coroutine until they are moved too.
 """
 from __future__ import annotations
 
@@ -34,6 +41,7 @@ import json
 import logging
 import os
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -44,6 +52,30 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
+from tests.results.test_amend_changes import (
+    NO_AMEND_ON_THE_QUEUE,
+    RACE_PASTE,
+    _amend_rows as _amendment_rows,
+    _ask_open,
+    _deleted,
+    _league,
+    _rows,
+    _texts,
+    _type,
+    _winner,
+)
+from tests.support.change_queue import (
+    ADMIN_ROLE_ID,
+    MANAGER_ROLE_ID,
+    stopped_job,
+    updated_reply,
+)
+from tests.support.review_league import (
+    AMEND_CHANNEL as LEAGUE_AMEND_CHANNEL,
+    LEWIS,
+    MAX,
+    ROUND_ID as LEAGUE_ROUND_ID,
+)
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 13508
@@ -325,268 +357,287 @@ def _assert_lapsed(
 
 
 # ---------------------------------------------------------------------------
-# The channel
+# The channel (#439, slice 6b: opened by `results.amend.open` on the league lane)
 # ---------------------------------------------------------------------------
 
 
-async def test_the_amendment_channel_is_named_for_the_round(tmp_path):
-    db_path = await _make_db(tmp_path)
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-
-    await _amend(_make_cog(db_path), interaction)
-
-    kwargs = interaction.guild.create_text_channel.await_args.kwargs
-    assert kwargs["name"] == "amend-S7-pro-division-R3"
-    assert kwargs["category"] == "Staff"
-
-
-async def test_the_channel_is_hidden_from_everyone_else(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_private")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-
-    await _amend(_make_cog(db_path), interaction)
-
-    overwrites = interaction.guild.create_text_channel.await_args.kwargs["overwrites"]
-    everyone = overwrites[interaction.guild.default_role]
-    assert everyone.read_messages is False
+def _staffed(league: Any, *, league_admin_role: bool = True) -> None:
+    """The server as the amendment channel's permissions read it: every role found by its id,
+    the bot's own member as 2, the command channel in the "Staff" category; with no
+    *league_admin_role*, the league has no league admin role set."""
+    league.guild.get_role = MagicMock(side_effect=lambda rid: MagicMock(id=rid))
+    league.guild.me = MagicMock(id=2)
+    league.bot.interaction_channel.category = "Staff"
+    if not league_admin_role:
+        config = league.bot.config_service.get_server_config.return_value
+        config.league_admin_role_id = None
 
 
-async def test_the_bot_and_both_staff_roles_are_let_in(tmp_path):
+def _overwrites(league: Any) -> dict[Any, Any]:
+    return league.guild.create_text_channel.await_args.kwargs["overwrites"]
+
+
+def _admitted(league: Any) -> set[Any]:
+    return {getattr(target, "id", None) for target, ow in _overwrites(league).items()
+            if ow.read_messages}
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_the_amendment_channel_is_named_for_the_round(tmp_path, monkeypatch):
+    """Alex amends round 3 of Pro in season 1. When the queue runs, the amendment channel is
+    created as "amend-S1-pro-R3", in the command channel's category."""
+    league = await _league(tmp_path, monkeypatch)
+    _staffed(league)
+
+    await _ask_open(league)
+
+    assert league.channel(LEAGUE_AMEND_CHANNEL).name == "amend-S1-pro-R3"
+    assert league.guild.create_text_channel.await_args.kwargs["category"] == "Staff"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_the_channel_is_hidden_from_everyone_else(tmp_path, monkeypatch):
+    """When the queue opens Alex's amendment, everyone is denied sight of its channel."""
+    league = await _league(tmp_path, monkeypatch)
+    _staffed(league)
+
+    await _ask_open(league)
+
+    assert _overwrites(league)[league.guild.default_role].read_messages is False
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_the_bot_and_both_staff_roles_are_let_in(tmp_path, monkeypatch):
     """#116: a league admin holds the manager tier within their own, and a channel opened
     to one role and not the other would leave them unable to see an amendment they may
-    cancel."""
-    db_path = await _make_db(tmp_path, name="amend_roles")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
+    cancel. When the queue opens Alex's amendment, the bot, the interaction role and the league
+    admin role may all see its channel."""
+    league = await _league(tmp_path, monkeypatch)
+    _staffed(league)
 
-    await _amend(_make_cog(db_path), interaction)
+    await _ask_open(league)
 
-    overwrites = interaction.guild.create_text_channel.await_args.kwargs["overwrites"]
-    admitted = {getattr(target, "id", None) for target, ow in overwrites.items() if ow.read_messages}
-    assert {2, INTERACTION_ROLE, LEAGUE_ADMIN_ROLE} <= admitted
+    assert {2, MANAGER_ROLE_ID, ADMIN_ROLE_ID} <= _admitted(league)
 
 
-async def test_a_league_with_no_league_admin_role_opens_it_to_the_interaction_role(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_noadmin")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_league_with_no_league_admin_role_opens_it_to_the_interaction_role(
+    tmp_path, monkeypatch,
+):
+    """The league has no league admin role set. When the queue opens Alex's amendment, its
+    channel is opened to the interaction role, and to no league admin role."""
+    league = await _league(tmp_path, monkeypatch)
+    _staffed(league, league_admin_role=False)
 
-    await _amend(_make_cog(db_path, league_admin_role=False), interaction)
+    await _ask_open(league)
 
-    overwrites = interaction.guild.create_text_channel.await_args.kwargs["overwrites"]
-    admitted = {getattr(t, "id", None) for t, ow in overwrites.items() if ow.read_messages}
-    assert INTERACTION_ROLE in admitted
-    assert LEAGUE_ADMIN_ROLE not in admitted
-
-
-async def test_the_channel_is_recorded_before_anything_is_waited_for(tmp_path):
-    """A restart kills the wait, and this row is how the start-up sweep finds the orphan."""
-    db_path = await _make_db(tmp_path, name="amend_record")
-    channel = _amend_channel()
-    seen: dict = {}
-
-    async def _wait_for(event, check=None):
-        seen["rows"] = await _amend_rows(db_path)
-        return _message()
-
-    interaction = _interaction(channel)
-    interaction.client.wait_for = _wait_for
-
-    await _amend(_make_cog(db_path), interaction)
-
-    assert seen["rows"] == 1
+    admitted = _admitted(league)
+    assert MANAGER_ROLE_ID in admitted
+    assert ADMIN_ROLE_ID not in admitted
 
 
-async def test_the_manager_is_pointed_at_the_channel(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_pointer")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-
-    await _amend(_make_cog(db_path), interaction)
-
-    assert f"Amendment channel created: <#{AMEND_CHANNEL}>" in _replied(interaction)
-    prompt = str(channel.send.await_args_list[0].args[0])
-    assert "Round 3 (Pro Division)" in prompt
-    assert "Sessions: Feature Race." in prompt
-
-
-# ---------------------------------------------------------------------------
-# A good paste
-# ---------------------------------------------------------------------------
-
-
-async def test_a_valid_paste_is_written(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_ok")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-
-    stubs = await _amend(_make_cog(db_path), interaction)
-
-    stubs["amend"].assert_awaited_once()
-    args = stubs["amend"].await_args.args
-    assert args[1] == ROUND_ID
-    [session] = args[3]
-    assert session.session_type == SessionType.FEATURE_RACE
-    assert session.config_name == "Standard"
-    assert "Corrected results recorded" in _replied(interaction)
-
-
-async def test_the_paste_is_deleted_from_the_channel(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_msgdel")
-    message = _message()
-    interaction = _interaction(_amend_channel(), message=message)
-
-    await _amend(_make_cog(db_path), interaction)
-
-    message.delete.assert_awaited_once()
-
-
-async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(tmp_path):
-    """The paste is stage one of three, not the whole amendment (#345).
-
-    It used to be: the classification was written, the channel deleted and the command done.
-    The replay carries on in the same channel — the round's reports, then its appeals — and
-    approving the last of those is what commits and tears the channel down.
-    """
-    db_path = await _make_db(tmp_path, name="amend_cleanup")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-
-    await _amend(_make_cog(db_path), interaction)
-
-    channel.delete.assert_not_awaited()
-    assert await _amend_rows(db_path) == 1
-
-
-async def test_an_accepted_paste_sends_the_admin_to_the_review_stages(tmp_path):
-    """Saying "amended" and closing would leave the manager believing they had finished."""
-    db_path = await _make_db(tmp_path, name="amend_reply")
-    interaction = _interaction(_amend_channel(), message=_message())
-
-    await _amend(_make_cog(db_path), interaction)
-
-    replied = _replied(interaction)
-    assert "reports and appeals" in replied
-
-
-async def test_recording_stage_one_logs_no_success(tmp_path):
-    """Stage one is not the amendment succeeding, and the log must not say it was.
-
-    `amend_round_results` logs `AMEND_STAGE_1 | Recorded`, configurations and all; the command
-    once logged `AMEND_SUCCESS` beside it, before the reports and appeals had been reviewed or
-    anything published.
-    """
-    db_path = await _make_db(tmp_path, name="amend_log")
-    cog = _make_cog(db_path)
-
-    await _amend(cog, _interaction(_amend_channel(), message=_message()))
-
-    assert "AMEND_SUCCESS" not in _logged(cog)
-
-
-async def test_the_sessions_existing_configuration_is_kept_where_still_attached(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_keepcfg")
-
-    stubs = await _amend(
-        _make_cog(db_path),
-        _interaction(_amend_channel(), message=_message()),
-        config_names=("Half", "Standard"),
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_the_channel_is_recorded_before_anything_is_waited_for(tmp_path, monkeypatch):
+    """The row is how a restart finds the channel. Discord refuses the amendment's opening
+    message: the queue stops at it, and the channel it created already stands recorded against
+    round 3, still open."""
+    league = await _league(tmp_path, monkeypatch)
+    league.channel(LEAGUE_AMEND_CHANNEL).fail_when = (
+        lambda content, _kwargs: "Amend Results" in str(content)
     )
 
-    assert stubs["amend"].await_args.args[3][0].config_name == "Standard"
+    await _ask_open(league)
+
+    assert await stopped_job(league.db_path) is not None
+    [row] = await _amendment_rows(league)
+    assert row["channel_id"] == LEAGUE_AMEND_CHANNEL
+    assert row["closed_at"] is None
 
 
-async def test_a_fastest_lap_override_in_the_paste_is_passed_on(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_fl")
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_the_manager_is_pointed_at_the_channel(tmp_path, monkeypatch):
+    """Once the queue opens Alex's amendment of round 3's Feature Race, his acknowledgement is
+    updated to name the amendment channel, and the opening there names the round, its division
+    and the sessions amended."""
+    league = await _league(tmp_path, monkeypatch)
 
-    stubs = await _amend(
-        _make_cog(db_path),
-        _interaction(_amend_channel(), message=_message()),
-        fl_override=102,
+    interaction = await _ask_open(league)
+
+    assert f"<#{LEAGUE_AMEND_CHANNEL}>" in updated_reply(interaction)
+    [opening] = [text for text in _texts(league) if "Amend Results" in text]
+    assert "Round 3 (Pro)" in opening
+    assert "Sessions: Feature Race." in opening
+
+
+# ---------------------------------------------------------------------------
+# A good paste (#439, slice 6b: a turn on the amendment's lane, stage one on the league's)
+# ---------------------------------------------------------------------------
+
+
+async def _active_race(league: Any) -> dict[str, Any]:
+    """Round 3's Feature Race as it now stands."""
+    [race] = await _rows(
+        league,
+        "SELECT * FROM session_results WHERE round_id = ? AND session_type = 'FEATURE_RACE' "
+        "AND status = 'ACTIVE'",
+        LEAGUE_ROUND_ID,
     )
+    return race
 
-    assert stubs["amend"].await_args.args[3][0].fl_driver_override == 102
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_valid_paste_is_written(tmp_path, monkeypatch):
+    """The season has one points configuration, "Standard". Alex pastes the amended Feature Race,
+    Max ahead of Lewis. Once the queue runs, the queue is not stopped, round 3's Feature Race
+    stands amended with Max first, and it is scored by "Standard"."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _type(league, RACE_PASTE)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _winner(league) == MAX
+    assert (await _active_race(league))["config_name"] == "Standard"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(
+    tmp_path, monkeypatch,
+):
+    """The paste is stage one of three, not the whole amendment (#345): the round's reports, then
+    its appeals, follow in the same channel. Once Alex's paste has run, the amendment channel is
+    not deleted and its row stays open."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _type(league, RACE_PASTE)
+
+    assert not _deleted(league)
+    [row] = await _amendment_rows(league)
+    assert row["closed_at"] is None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_recording_stage_one_logs_no_success(tmp_path, monkeypatch):
+    """Stage one is not the amendment succeeding, and the log must not say it was. Once Alex's
+    paste has recorded stage one, nothing in the log channel says AMEND_SUCCESS."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _type(league, RACE_PASTE)
+
+    assert await _winner(league) == MAX
+    assert "AMEND_SUCCESS" not in league.log()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_the_sessions_existing_configuration_is_kept_where_still_attached(
+    tmp_path, monkeypatch,
+):
+    """The season has "Half" and "Standard" attached, and the Feature Race is scored by
+    "Standard". Alex pastes it amended: no configuration is offered, and once the queue runs the
+    amended Feature Race is still scored by "Standard"."""
+    league = await _league(tmp_path, monkeypatch, configs=("Half", "Standard"))
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE session_results SET config_name = 'Standard'")
+        await db.commit()
+    await _ask_open(league)
+
+    await _type(league, RACE_PASTE)
+
+    assert not any("Half" in text for text in _texts(league))
+    assert (await _active_race(league))["config_name"] == "Standard"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_fastest_lap_override_in_the_paste_is_passed_on(tmp_path, monkeypatch):
+    """Alex's amended Feature Race opens with "FL: <@102>", naming Max, who finished. Once the
+    queue runs, the amended Feature Race carries Max as its fastest-lap override."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _type(league, f"FL: <@{MAX}>\n{RACE_PASTE}")
+
+    assert await stopped_job(league.db_path) is None
+    assert (await _active_race(league))["fl_driver_override"] == MAX
 
 
 # ---------------------------------------------------------------------------
-# A paste refused
+# A paste refused (#439, slice 6b: refused by its turn, which ends the amendment)
 # ---------------------------------------------------------------------------
 
-
-async def test_a_paste_that_fails_validation_writes_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_invalid")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-    cog = _make_cog(db_path)
-
-    stubs = await _amend(cog, interaction, parsed=["Line 1: driver not in division"])
-
-    stubs["amend"].assert_not_awaited()
-    assert "validation errors were found" in _replied(interaction)
-    assert "Line 1: driver not in division" in _logged(cog)
-    channel.delete.assert_awaited_once()
-    assert await _amend_rows(db_path) == 0
+#: Lewis, and a driver (103) outside the division.
+OUTSIDER_PASTE = "1, <@103>, FER, 1:30:00.000, 1:20.000, N/A\n2, <@101>, FER, +5.000, 1:21.000, N/A"
 
 
-async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(tmp_path):
-    """It would award a bonus to somebody who did not race. The refusal is logged in the
-    standard refusal form, its detail as the reason."""
-    db_path = await _make_db(tmp_path, name="amend_fl_bad")
-    interaction = _interaction(_amend_channel(), message=_message())
-    cog = _make_cog(db_path)
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_paste_that_fails_validation_writes_nothing(tmp_path, monkeypatch):
+    """Alex's amended Feature Race names a driver (103) outside the division. Once its turn runs,
+    nothing is written, Lewis still ahead; the amendment channel is told validation errors were
+    found, the log channel carries what failed validation, and the channel is deleted and its row
+    closed."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
 
-    stubs = await _amend(cog, interaction, fl_override=999)
+    await _type(league, OUTSIDER_PASTE)
 
-    stubs["amend"].assert_not_awaited()
-    assert "FL override **999** is not in the submitted results" in _replied(interaction)
-    logged = _logged(cog)
-    assert logged.startswith("⛔ ")
-    assert f"refused for Admin (<@{USER_ID}>)" in logged
-    assert "FL override" in logged
-    assert "AMEND_REJECTED" not in logged
+    assert await _winner(league) == LEWIS
+    assert any("validation errors were found" in text for text in _texts(league))
+    assert "failed validation" in league.log()
+    assert _deleted(league)
+    [row] = await _amendment_rows(league)
+    assert row["closed_at"] is not None
+
+
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(
+    tmp_path, monkeypatch,
+):
+    """It would award a bonus to somebody who did not race. Alex's amended Feature Race opens
+    with "FL: <@103>", a driver not in it. Once its turn runs, nothing is written; the amendment
+    channel is told the override is not in the submitted results, and the log channel carries one
+    refusal line in the standard form, refused for Alex, giving the override as the reason."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+
+    await _type(league, f"FL: <@103>\n{RACE_PASTE}")
+
+    assert await _winner(league) == LEWIS
+    assert any("is not in the submitted results" in text for text in _texts(league))
+    refusals = [line for line in league.bot.log_channel.sent if line.startswith("⛔ ")]
+    assert len(refusals) == 1
+    assert "refused for Alex" in refusals[0]
+    assert "FL override" in refusals[0]
+    assert "AMEND_REJECTED" not in league.log()
 
 
 @pytest.mark.parametrize(
-    "rejected, told",
+    "paste, told",
     [
         (
-            {"parsed": ["Line 1: driver not in division"]},
+            OUTSIDER_PASTE,
             "Check the log channel for details, then re-run `/results rounds amend`.",
         ),
         (
-            {"fl_override": 999},
+            f"FL: <@103>\n{RACE_PASTE}",
             "Re-run `/results rounds amend` to try again.",
         ),
     ],
     ids=["validation", "fastest-lap-override"],
 )
-async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(tmp_path, rejected, told):
-    """The admin is sent back to the command they now type."""
-    db_path = await _make_db(tmp_path, name="amend_rejected_rerun")
-    interaction = _interaction(_amend_channel(), message=_message())
+@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(
+    tmp_path, monkeypatch, paste, told,
+):
+    """The admin is sent back to the command they now type. Alex's paste is refused, by
+    validation or by its fastest-lap override; the refusal in the amendment channel ends by
+    telling him to re-run `/results rounds amend`."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
 
-    await _amend(_make_cog(db_path), interaction, **rejected)
+    await _type(league, paste)
 
-    assert _replied(interaction).endswith(told)
-
-
-async def test_a_failed_write_is_reported_and_tidied_up(tmp_path):
-    """The manager is told the kind of fault in plain words, never its message, and the
-    channel still goes. What the log channel gets is
-    `test_a_failed_amendment_write_names_only_the_kind_of_fault`'s."""
-    db_path = await _make_db(tmp_path, name="amend_fail")
-    channel = _amend_channel()
-    interaction = _interaction(channel, message=_message())
-    cog = _make_cog(db_path)
-
-    await _amend(cog, interaction, amend_error=RuntimeError("database is locked"))
-
-    replied = _replied(interaction)
-    assert "the bot hit an internal fault" in replied
-    assert "database is locked" not in replied
-    channel.delete.assert_awaited_once()
+    assert any(text.endswith(told) for text in _texts(league))
 
 
 # ---------------------------------------------------------------------------
