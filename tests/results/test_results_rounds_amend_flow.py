@@ -68,10 +68,21 @@ from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     MEMBER_ID,
     acknowledgement,
+    change_rows,
     http_error,
+    member,
+    member_interaction,
     run_queue,
     stopped_job,
+    tier_member,
     updated_reply,
+)
+from tests.results.test_results_rounds_amend_gates import (
+    OPEN,
+    _amend as _command,
+    _interaction as _command_interaction,
+    _make_cog as _command_cog,
+    _make_db as _command_db,
 )
 from tests.support.teams import seed_team_instances
 from tests.support.review_league import (
@@ -803,3 +814,187 @@ async def test_a_later_paste_disagreeing_with_the_earlier_one_ends_the_amendment
     assert await _winner(league) == LEWIS
     assert await _drafts(league) == []
     assert _deleted(league)
+
+
+# ---------------------------------------------------------------------------
+# The command's own presses are recorded (#482), through the command as it stands under #439's
+# slice 6b: the session picker stays the command's, before it asks the queue
+# ---------------------------------------------------------------------------
+
+
+def _log_lines(bot: Any) -> list[str]:
+    return [str(line) for line in bot.log_channel.sent]
+
+
+def _picker_press(bot: Any) -> Any:
+    """Manager's press on the session picker (member 77)."""
+    return member_interaction(bot, user=member(77, "Manager", "Manager#0001"))
+
+
+async def _left_at_the_picker(tmp_path: Any, *, lapse: bool) -> tuple[str, Any, Any]:
+    """Manager runs `/results rounds amend` of round 3 of Pro naming no session, and at the session
+    picker either presses its Cancel (*lapse* False) or leaves it five minutes (*lapse* True).
+    Gives the database, the cog and the command's interaction."""
+    from leaguebot.results.cogs.results_cog import _AmendSessionsView
+
+    db_path = await _command_db(tmp_path, name="amend_picker_" + ("lapse" if lapse else "cancel"))
+    cog = await _command_cog(db_path)
+    interaction = _command_interaction(cog)
+
+    async def _send(*_args: Any, **kwargs: Any) -> Any:
+        view = kwargs.get("view")
+        if isinstance(view, _AmendSessionsView):
+            if lapse:
+                view.wait = AsyncMock(return_value=True)  # the five minutes pass
+            else:
+                [cancel] = [item for item in view.children
+                            if "Cancel" in str(getattr(item, "label", ""))]
+                await cancel.callback(_picker_press(cog.bot))
+        return MagicMock()
+
+    interaction.followup.send = AsyncMock(side_effect=_send)
+    await _command(cog, interaction, session=None)
+    return db_path, cog, interaction
+
+
+def _one_line(bot: Any, mark: str) -> tuple[str, str]:
+    """The one log line starting with *mark*, as its head and what stands beneath it."""
+    [line] = [text for text in _log_lines(bot) if text.startswith(mark)]
+    head, *beneath = line.splitlines()
+    return head, "\n".join(beneath)
+
+
+async def _nothing_opened(db_path: str) -> bool:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        rows = (await cursor.fetchone())[0]
+    asked = [row for row in await change_rows(db_path) if row["kind"] == OPEN]
+    return rows == 0 and asked == []
+
+
+async def test_cancelling_the_session_picker_is_recorded(tmp_path):
+    """Manager runs `/results rounds amend` of round 3 of Pro without naming a session and presses
+    Cancel on the session picker: one cancel line naming them, with beneath it that nothing was
+    amended and the command to run again, and no lapse line; no amendment is asked of the queue,
+    none recorded and no channel created."""
+    db_path, cog, interaction = await _left_at_the_picker(tmp_path, lapse=False)
+
+    head, below = _one_line(cog.bot, "↩️ ")
+    assert "/results rounds amend" in head
+    assert "cancelled by Manager (`<@77>`)" in head
+    assert "nothing" in below.lower()
+    assert "/results rounds amend" in below, "the line gives no next step"
+    assert not any(text.startswith("⌛ ") for text in _log_lines(cog.bot))
+    interaction.guild.create_text_channel.assert_not_awaited()
+    assert await _nothing_opened(db_path)
+
+
+async def test_a_session_picker_left_to_lapse_is_recorded_and_answered_as_a_lapse(tmp_path):
+    """Manager runs `/results rounds amend` of round 3 of Pro without naming a session and leaves
+    the session picker five minutes: they are told the choice expired, nothing was amended and the
+    command may be run again — not "Amendment cancelled" — and one lapse line names them as its
+    starter, with what became of it and the next step beneath; no cancel line; nothing is asked
+    of the queue or recorded."""
+    db_path, cog, interaction = await _left_at_the_picker(tmp_path, lapse=True)
+
+    head, below = _one_line(cog.bot, "⌛ ")
+    assert "/results rounds amend" in head
+    assert "lapsed unconfirmed (started by Manager (`<@77>`))" in head
+    assert "nothing" in below.lower()
+    assert "/results rounds amend" in below, "the line gives no next step"
+    told = str(interaction.followup.send.await_args.args[0])
+    assert "Amendment cancelled" not in told
+    assert "expired" in told.lower() or "lapsed" in told.lower()
+    assert "nothing" in told.lower()
+    assert "/results rounds amend" in told
+    assert not any(text.startswith("↩️ ") for text in _log_lines(cog.bot))
+    assert await _nothing_opened(db_path)
+
+
+async def _continue_with_nothing_ticked(tmp_path: Any) -> tuple[Any, Any]:
+    """Round 3 of Pro has a Feature Qualifying and a Feature Race. Manager runs
+    `/results rounds amend` naming no session and presses Continue on the picker before ticking
+    any; the picker is then cancelled. Gives the bot and the press."""
+    from leaguebot.results.cogs.results_cog import _AmendSessionsView
+
+    db_path = await _command_db(
+        tmp_path, name="amend_press_continue",
+        sessions=(("FEATURE_RACE", "ACTIVE"), ("FEATURE_QUALIFYING", "ACTIVE")),
+    )
+    cog = await _command_cog(db_path)
+    interaction = _command_interaction(cog)
+    pressed: dict[str, Any] = {}
+
+    async def _send(*_args: Any, **kwargs: Any) -> Any:
+        view = kwargs.get("view")
+        if isinstance(view, _AmendSessionsView) and "press" not in pressed:
+            press = _picker_press(cog.bot)
+            [go] = [item for item in view.children if getattr(item, "label", None) == "Continue"]
+            await go.callback(press)
+            pressed["press"] = press
+            view.cancelled = True
+            view.wait = AsyncMock(return_value=False)
+        return MagicMock()
+
+    interaction.followup.send = AsyncMock(side_effect=_send)
+    await _command(cog, interaction, session=None)
+    return cog.bot, pressed["press"]
+
+
+async def _cancel_by_a_non_manager(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Alex's amendment of round 3 is opened on the queue; Driver (member 88), who neither opened
+    it nor holds the league manager tier, presses Cancel Amendment on its opening. Gives the bot
+    and the press."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    [opening] = [message for message in league.channel(LEAGUE_AMEND_CHANNEL).messages.values()
+                 if "Amend Results — Round 3" in str(message.content)]
+    [button] = [item for item in opening.view.children
+                if "Cancel" in str(getattr(item, "label", ""))]
+    press = member_interaction(
+        league.bot, user=tier_member(None, member_id=88, display_name="Driver", name="Driver#0001"),
+    )
+    press.guild = league.guild
+    press.channel_id = LEAGUE_AMEND_CHANNEL
+    press.message = opening
+    await button.callback(press)
+    await run_queue(league.bot)
+    assert await _amendment_rows(league), "the refused press ended the amendment"
+    return league.bot, press
+
+
+@pytest.mark.parametrize(
+    "case, reply, who",
+    [
+        pytest.param(
+            "continue-with-no-session-chosen", "Choose at least one session first.",
+            "Manager (`<@77>`)", id="continue-with-no-session-chosen",
+        ),
+        pytest.param(
+            "cancel-by-a-non-manager", "⛔ Only league managers can cancel.",
+            "Driver (`<@88>`)", id="cancel-by-a-non-manager",
+            marks=pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE),
+        ),
+    ],
+)
+async def test_every_refused_press_of_results_rounds_amend_is_recorded(
+    tmp_path, monkeypatch, case, reply, who,
+):
+    """Manager presses Continue on the session picker with no session ticked, or Driver, who is not
+    a league manager, presses Cancel Amendment on an amendment the queue has opened: each is
+    answered privately as today, and one line records the refusal, naming the button, the
+    amendment, the presser and the reason; the amendment stands."""
+    if case == "continue-with-no-session-chosen":
+        bot, press = await _continue_with_nothing_ticked(tmp_path)
+    else:
+        bot, press = await _cancel_by_a_non_manager(tmp_path, monkeypatch)
+
+    press.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    [line] = [text.splitlines()[0] for text in _log_lines(bot) if text.startswith("⛔ ")]
+    assert line.endswith(f" refused for {who} — {reply.removeprefix('⛔ ')}")
+    if case == "cancel-by-a-non-manager":
+        assert line.startswith(
+            "⛔ the “Cancel Amendment” button of `/results rounds amend` of round 3 (Pro)"
+        )
+    else:
+        assert "Continue" in line and "`/results rounds amend`" in line
