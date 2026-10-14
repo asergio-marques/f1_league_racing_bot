@@ -19,6 +19,13 @@ it has not, because a different person can press this one.
 **A rebuilt panel finds its driver by channel**, the same recovery path the approval panel uses,
 and refuses when the lookup finds nothing rather than acting on `None`.
 
+**On the change queue (#439, slice 6b, C86).** The panel is handed the change queue when it is
+built (A23), and a press asks `signup.correction.choose` of it, acknowledged privately and the
+acknowledgement updated with its outcome; the choice's work (Kimi's state, the re-collect prompt)
+is done when the queue reaches it. These tests drive the panel through a real queue: the league is
+`tests/signup/test_review_changes.py`'s, Kimi (105) awaiting a correction parameter, the choices
+posted a minute ago at manager 77's request, in his signup channel (6405).
+
 Its class docstring still says "Restricted to tier-2 role or Manage Guild permission". The
 Manage Guild half is stale — `_may_review_signup` stopped admitting it when the two-tier model
 landed, and its own docstring records that. These tests hold the behaviour, which is the
@@ -26,18 +33,29 @@ two-tier check.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+import json
+from datetime import timedelta
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
-import leaguebot.signup.cogs.admin_review_cog as arc
 from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView
-
-SERVER_ID = 10608
-DRIVER_ID = "4242"
-CHANNEL_ID = 770901
-MANAGER_ID = 77
+from tests.signup.test_review_changes import (
+    CHOOSE_KIND,
+    KIMI_CHANNEL,
+    NO_CHOOSE_CHANGE,
+    RECOLLECT_KIND,
+    REVIEWER,
+    _answered,
+    _changes_of,
+    _driver_state,
+    _league,
+    _manager,
+    _wizard,
+)
+from tests.support.change_queue import member_interaction, run_queue
+from tests.support.season_league import SIGNING_UP, SeasonLeague
 
 #: Every question the wizard asks, as label and stored key.
 PARAMETERS = [
@@ -52,85 +70,60 @@ PARAMETERS = [
     ("Notes", "notes"),
 ]
 
+#: The wizard step that re-collects each key.
+COLLECTING = {key: f"COLLECTING_{key.upper()}" for _, key in PARAMETERS}
+COLLECTING["lap_times"] = "COLLECTING_LAP_TIME"
+
+#: A channel holding no signup wizard.
+NO_WIZARD_CHANNEL = 6499
+
+_ENDED = "This correction request has ended. Nothing was changed."
+
+NO_QUEUE_AT_CONSTRUCTION = (
+    "#439: the correction choices are built with the bot, not handed the change queue (A23)"
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
-def _league_server():
-    """The league's server, on which the driver is Alex (id 4242)."""
-    guild = MagicMock()
-    guild.id = SERVER_ID
-    guild.get_member = MagicMock(
-        side_effect=lambda uid: SimpleNamespace(id=int(uid), display_name="Alex", mention=f"<@{uid}>")
-        if str(uid) == DRIVER_ID else None
-    )
-    return guild
+async def _awaiting(tmp_path: Any, **kwargs: Any) -> SeasonLeague:
+    """Kimi awaiting a correction parameter, the choices posted a minute ago by 77."""
+    kwargs.setdefault("state", "AWAITING_CORRECTION_PARAMETER")
+    kwargs.setdefault("offered_ago", timedelta(minutes=1))
+    return await _league(tmp_path, **kwargs)
 
 
-def _bot(*, wizard_user: str | None = DRIVER_ID):
-    bot = MagicMock()
-    bot.wizard_service = MagicMock()
-    bot.wizard_service.select_correction_parameter = AsyncMock(return_value=None)
-    bot.wizard_service.get_wizard_by_channel = AsyncMock(
-        return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
-    )
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.get_guild = MagicMock(return_value=_league_server())
-    bot.output_router.post_log = AsyncMock()
-    return bot
+def _pressed_by(league: SeasonLeague, user_id: int, *, channel_id: int = KIMI_CHANNEL) -> Any:
+    """A press by *user_id* in *channel_id*, now."""
+    who = _manager(league) if user_id == REVIEWER else league._member(user_id)
+    press = member_interaction(league.bot, user=who, created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = channel_id
+    press.channel = league.channels.get(channel_id) or MagicMock()
+    return press
 
 
-def _interaction(bot):
-    interaction = MagicMock()
-    interaction.client = bot
-    interaction.guild_id = SERVER_ID
-    interaction.channel_id = CHANNEL_ID
-    interaction.guild = bot.get_guild.return_value
-    interaction.user = MagicMock()
-    interaction.user.id = MANAGER_ID
-    interaction.user.display_name = "Manager"
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    # Answered once the interaction has been replied to or deferred, as Discord's is.
-    interaction.response.is_done = lambda: bool(
-        interaction.response.send_message.await_count + interaction.response.defer.await_count
-    )
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+async def _choose(
+    league: SeasonLeague,
+    label: str,
+    *,
+    by: int = REVIEWER,
+    driver: str | None = str(SIGNING_UP),
+    channel_id: int = KIMI_CHANNEL,
+) -> Any:
+    """*by* presses *label* on a panel built for *driver* (none: a panel rebuilt at a restart)."""
+    view = CorrectionParameterView(driver, change_queue=league.bot.change_queue)
+    press = _pressed_by(league, by, channel_id=channel_id)
+    await _button(view, label).callback(press)
+    return press
 
 
-def _lines(bot) -> list[str]:
-    """Every line written to the league's log channel."""
-    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
-
-
-def _assert_refusal_recorded(bot, label: str, reason: str) -> None:
-    """One line in the log channel, naming the button, the member who pressed it, and why, and
-    no failure line (core specification, "The record of what changed")."""
-    lines = _lines(bot)
-    assert len(lines) == 1, lines
-    line = lines[0]
-    assert line.startswith(f"⛔ the “{label}” button"), line
-    assert "signup review" in line
-    assert f"refused for Manager (<@{MANAGER_ID}>)" in line
-    assert line.endswith(f"— {reason}"), line
-
-
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
-
-
-def _permitted(monkeypatch, allowed: bool):
-    monkeypatch.setattr(arc, "_may_review_signup", AsyncMock(return_value=allowed))
+def _payload(change: dict[str, Any]) -> dict[str, Any]:
+    payload = change["payload"]
+    return json.loads(payload) if isinstance(payload, str) else dict(payload)
 
 
 def _button(view, label: str):
@@ -142,20 +135,22 @@ def _button(view, label: str):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 async def test_a_button_is_offered_for_every_question_the_wizard_asks():
     """A question with no button could never be corrected, and the manager would have to
     reject the whole signup to get it changed."""
-    view = CorrectionParameterView(DRIVER_ID, _bot())
+    view = CorrectionParameterView("4242", change_queue=MagicMock())
 
     labels = [c.label for c in view.children if getattr(c, "label", None)]
     for label, _ in PARAMETERS:
         assert label in labels
 
 
+@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 async def test_each_button_carries_its_own_custom_id():
     """Persistent views are matched by custom id, so two buttons sharing one would make
     which parameter a press means depend on the order Discord matched them."""
-    view = CorrectionParameterView(DRIVER_ID, _bot())
+    view = CorrectionParameterView("4242", change_queue=MagicMock())
 
     ids = [c.custom_id for c in view.children if getattr(c, "custom_id", None)]
     assert len(ids) == len(set(ids))
@@ -167,34 +162,34 @@ async def test_each_button_carries_its_own_custom_id():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 @pytest.mark.parametrize("label,key", PARAMETERS, ids=[k for _, k in PARAMETERS])
-async def test_each_button_sends_back_its_own_parameter(monkeypatch, label, key):
+async def test_each_button_sends_back_its_own_parameter(tmp_path, label, key):
     """The nine callbacks are built in a loop. A loop variable captured by reference would
     give every button the *last* parameter, so pressing "Nationality" would ask the driver
-    to re-enter their notes — and nothing else in the suite would notice."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    to re-enter their notes — and nothing else in the suite would notice. Manager 77 presses
+    *label*; once the queue runs, Kimi's wizard is at the step that re-collects that answer."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, label).callback(interaction)
+    await _choose(league, label)
+    await run_queue(league.bot)
 
-    bot.wizard_service.select_correction_parameter.assert_awaited_once()
-    assert bot.wizard_service.select_correction_parameter.await_args.args[1] == key
+    assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
+    assert (await _wizard(league))["wizard_state"] == COLLECTING[key]
 
 
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 @pytest.mark.parametrize("label,key", PARAMETERS, ids=[k for _, k in PARAMETERS])
-async def test_the_driver_is_told_which_answer_to_give_again(monkeypatch, label, key):
+async def test_the_driver_is_told_which_answer_to_give_again(tmp_path, label, key):
     """Named in the league's words rather than the stored key — "platform id", not
-    `platform_id`."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    `platform_id`: the manager's acknowledgement, updated once the queue has run the choice,
+    names the answer re-collected."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, label).callback(interaction)
+    press = await _choose(league, label)
+    await run_queue(league.bot)
 
-    assert key.replace("_", " ") in _replied(interaction)
+    assert key.replace("_", " ") in _answered(press).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -202,104 +197,86 @@ async def test_the_driver_is_told_which_answer_to_give_again(monkeypatch, label,
 # ---------------------------------------------------------------------------
 
 
-async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(monkeypatch):
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(tmp_path):
     """The panel lands in the driver's own channel, and re-opening an answer lets them
     change it. The check is easy to assume has already happened — a manager pressed a
-    button to get here — but a different person can press this one."""
-    _permitted(monkeypatch, False)
-    bot = _bot()
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    button to get here — but a different person can press this one. Kimi himself presses
+    Nationality: he is told he has insufficient permissions, the refusal is recorded in the
+    log channel, no choice is asked of the queue, and he still awaits a correction parameter."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, "Nationality").callback(interaction)
+    press = await _choose(league, "Nationality", by=SIGNING_UP)
+    await run_queue(league.bot)
 
-    assert "Insufficient permissions" in _replied(interaction)
-    _assert_refusal_recorded(bot, "Nationality", "Insufficient permissions.")
-    bot.wizard_service.select_correction_parameter.assert_not_awaited()
-
-
-_ENDED = "This correction request has ended. Nothing was changed."
+    assert "Insufficient permissions" in _answered(press)
+    assert "⛔" in league.log() and "Insufficient permissions" in league.log()
+    assert await _changes_of(league, CHOOSE_KIND) == []
+    assert await _driver_state(league) == "AWAITING_CORRECTION_PARAMETER"
 
 
-async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(monkeypatch):
-    """A manager presses "Platform" on Alex's correction panel after the request has ended: its
-    five minutes lapsed, another parameter was already chosen, or the signup was approved or
-    rejected. The service refuses and says why; the button answers "⛔ This correction request
-    has ended. Nothing was changed.", writes one refusal line and no failure line, and never
-    says it is re-collecting anything (D2)."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    bot.wizard_service.select_correction_parameter = AsyncMock(return_value=_ENDED)
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(tmp_path):
+    """Manager 77 presses "Platform" on Kimi's correction panel after the request has ended:
+    its five minutes lapsed, another parameter was already chosen, or the signup was approved
+    or rejected — Kimi is back awaiting approval. The press answers "⛔ This correction request
+    has ended. Nothing was changed.", records the refusal in the log channel, never says it is
+    re-collecting anything (D2), and nothing is re-collected."""
+    league = await _league(tmp_path, state="PENDING_ADMIN_APPROVAL")
 
-    await _button(view, "Platform").callback(interaction)
+    press = await _choose(league, "Platform")
+    await run_queue(league.bot)
 
-    replied = _replied(interaction)
-    assert f"⛔ {_ENDED}" in replied, replied
-    assert "✅" not in replied, replied
-    _assert_refusal_recorded(bot, "Platform", _ENDED)
+    answered = _answered(press)
+    assert f"⛔ {_ENDED}" in answered, answered
+    assert "✅" not in answered, answered
+    assert _ENDED in league.log()
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert await _changes_of(league, RECOLLECT_KIND) == []
 
 
-async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(monkeypatch):
-    """A manager presses "Platform" on Alex's correction panel at the moment the request ends:
-    the five minutes lapse, or a second manager's choice lands first, just after Alex has been
-    read as still awaiting a correction parameter, so the state change that follows is refused.
-    Through the real service, the button answers "⛔ This correction request has ended. Nothing
-    was changed.", writes one refusal line and no failure line, and Alex's signup is left as it
-    was: no wizard saved, no deadline armed and no prompt posted."""
-    from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.signup.services.wizard_service import WizardService
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(tmp_path):
+    """Manager 77 presses "Platform" on Kimi's correction panel while the request is still
+    open, and the choice is asked of the queue; before the queue reaches it the request ends
+    (Kimi is returned to awaiting approval, as the lapse returns him). The choice is judged
+    again when it runs: the press answers "⛔ This correction request has ended. Nothing was
+    changed.", and Kimi's signup is left as it was: still awaiting approval, his wizard not
+    moved to any re-collecting step, and no prompt to re-submit asked of his lane."""
+    league = await _awaiting(tmp_path)
 
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    svc = WizardService.__new__(WizardService)
-    svc._correction_tasks = {}
-    svc._bot = bot
-    svc._arm_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    bot.wizard_service = svc
-    bot.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.AWAITING_CORRECTION_PARAMETER)
+    press = await _choose(league, "Platform")
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'PENDING_ADMIN_APPROVAL' "
+        "WHERE discord_user_id = ?", str(SIGNING_UP),
     )
-    bot.driver_service.transition = AsyncMock(
-        side_effect=ValueError("Illegal transition: PENDING_ADMIN_APPROVAL -> PENDING_DRIVER_CORRECTION")
-    )
-    bot.signup_module_service.get_wizard = AsyncMock(
-        return_value=SimpleNamespace(discord_user_id=DRIVER_ID, signup_channel_id=CHANNEL_ID)
-    )
-    bot.signup_module_service.save_wizard = AsyncMock()
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    await run_queue(league.bot)
 
-    await _button(view, "Platform").callback(interaction)
-
-    replied = _replied(interaction)
-    assert f"⛔ {_ENDED}" in replied, replied
-    assert "✅" not in replied, replied
-    _assert_refusal_recorded(bot, "Platform", _ENDED)
-    bot.driver_service.transition.assert_awaited_once()
-    bot.signup_module_service.save_wizard.assert_not_awaited()
-    svc._arm_inactivity_job.assert_not_awaited()
-    interaction.guild.get_channel.assert_not_called()
+    answered = _answered(press)
+    assert f"⛔ {_ENDED}" in answered, answered
+    assert "✅" not in answered, answered
+    assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
+    assert (await _wizard(league))["wizard_state"] == "UNENGAGED"
+    assert await _changes_of(league, RECOLLECT_KIND) == []
 
 
-async def test_a_choice_writes_one_line_naming_the_parameter(monkeypatch):
-    """Manager presses "Platform" on Alex's correction panel while the request is still open.
-    Alex is sent back to the platform question, and one line records the choice, naming the
-    manager, the button and whose signup review it sits on, and the answer by its button's
-    label, as the "Correction submitted" line names it (owner, 2026-10-01, Gate 3)."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_choice_writes_one_line_naming_the_parameter(tmp_path):
+    """Manager 77 presses "Platform" on Kimi's correction panel while the request is still
+    open. Once the queue runs, Kimi is sent back to the platform question, and one line records
+    the choice, naming the manager, the button and whose signup review it sits on, and the
+    answer by its button's label, as the "Correction submitted" line names it (owner,
+    2026-10-01, Gate 3)."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, "Platform").callback(interaction)
+    await _choose(league, "Platform")
+    await run_queue(league.bot)
 
-    assert "✅ Re-collecting **platform**." in _replied(interaction)
-    assert _lines(bot) == [
-        f"Manager (<@{MANAGER_ID}>) | the “Platform” button of Alex's signup review "
-        "| Correction requested: Platform"
-    ]
+    lines = [line for line in league.bot.log_channel.sent
+             if "Correction requested: Platform" in line]
+    assert len(lines) == 1, league.log()
+    assert f"<@{REVIEWER}>" in lines[0]
+    assert "the “Platform” button of" in lines[0] and "signup review" in lines[0]
 
 
 # ---------------------------------------------------------------------------
@@ -307,44 +284,47 @@ async def test_a_choice_writes_one_line_naming_the_parameter(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """The five-minute window can outlive a restart, so the panel has to work without the
-    driver it was built with."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = CorrectionParameterView()
-    interaction = _interaction(bot)
+    driver it was built with: a panel rebuilt with no driver, pressed in Kimi's channel, finds
+    Kimi by the channel's wizard, and once the queue runs his platform is re-collected."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, "Platform").callback(interaction)
+    await _choose(league, "Platform", driver=None)
+    await run_queue(league.bot)
 
-    bot.wizard_service.get_wizard_by_channel.assert_awaited_once()
-    assert bot.wizard_service.select_correction_parameter.await_args.args[0] == DRIVER_ID
+    [choose] = await _changes_of(league, CHOOSE_KIND)
+    assert str(SIGNING_UP) in json.dumps(_payload(choose))
+    assert (await _wizard(league))["wizard_state"] == "COLLECTING_PLATFORM"
 
 
-async def test_a_panel_whose_channel_has_no_wizard_refuses(monkeypatch):
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_panel_whose_channel_has_no_wizard_refuses(tmp_path):
     """Acting on `None` would reach the service with no driver and fail somewhere the
-    manager could not interpret."""
-    _permitted(monkeypatch, True)
-    bot = _bot(wizard_user=None)
-    view = CorrectionParameterView()
-    interaction = _interaction(bot)
+    manager could not interpret. A panel rebuilt with no driver is pressed in a channel
+    holding no signup wizard: the manager is told the driver could not be identified, the
+    refusal is recorded, and nothing is asked of the queue."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, "Platform").callback(interaction)
+    press = await _choose(league, "Platform", driver=None, channel_id=NO_WIZARD_CHANNEL)
+    await run_queue(league.bot)
 
-    assert "Could not identify driver" in _replied(interaction)
-    _assert_refusal_recorded(bot, "Platform", "Could not identify driver for this correction.")
-    bot.wizard_service.select_correction_parameter.assert_not_awaited()
+    assert "Could not identify driver" in _answered(press)
+    assert "Could not identify driver" in league.log()
+    assert await _changes_of(league, CHOOSE_KIND) == []
 
 
-async def test_a_stored_driver_is_preferred_over_the_lookup(monkeypatch):
+@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
+async def test_a_stored_driver_is_preferred_over_the_lookup(tmp_path):
     """While the process that posted the panel is still alive there is no need to ask the
     database, and asking would make the panel depend on a wizard row that a withdrawal may
-    already have removed."""
-    _permitted(monkeypatch, True)
-    bot = _bot()
-    view = CorrectionParameterView(DRIVER_ID, bot)
-    interaction = _interaction(bot)
+    already have removed. A panel built for Kimi, pressed where no wizard row names the
+    channel, still asks Kimi's choice of the queue."""
+    league = await _awaiting(tmp_path)
 
-    await _button(view, "Notes").callback(interaction)
+    press = await _choose(league, "Notes", channel_id=NO_WIZARD_CHANNEL)
 
-    bot.wizard_service.get_wizard_by_channel.assert_not_awaited()
+    assert "Could not identify driver" not in _answered(press)
+    [choose] = await _changes_of(league, CHOOSE_KIND)
+    assert str(SIGNING_UP) in json.dumps(_payload(choose))
