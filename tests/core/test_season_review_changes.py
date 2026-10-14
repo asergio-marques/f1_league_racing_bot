@@ -661,3 +661,214 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 
     assert len(await _changes(standing, TAKE_DOWN)) == 1
     assert len(await _prompts(standing.db_path)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The question's button (C93–C97): what a press reads, and what it asks of the queue
+# ---------------------------------------------------------------------------
+
+NO_PRESS_ON_THE_QUEUE = (
+    "#439: a season review's button deletes the review and posts its expiry itself, judging the "
+    "season against a fingerprint it took in memory, off the change queue"
+)
+#: The area of the season the tests change, as the review's evidence names it.
+PRO_ROUNDS = "Division Pro's rounds"
+
+
+def _approve_view(env: Any) -> tuple[Any, Any]:
+    """An Approve view for Alex's review, built as the question's view is, on a cog whose approval
+    (`_do_approve`) is recorded and goes through."""
+    from leaguebot.core.cogs.season_cog import _ApproveView
+
+    cog = MagicMock()
+    cog.bot = env.bot
+    cog._do_approve = AsyncMock(return_value=True)
+    return _ApproveView(cog, REVIEWER), cog
+
+
+def _press_on(env: Any, question: Any) -> Any:
+    """Alex's press of the button on *question*, in channel 700."""
+    interaction = member_interaction(env.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    interaction.message = question
+    return interaction
+
+
+async def _press_approve(view: Any, interaction: Any) -> None:
+    await type(view).approve(view, interaction, MagicMock())
+
+
+async def _posted_a_moment_ago(env: Any, question_id: int) -> None:
+    """The question's row says it was posted just now, so its five minutes are still running."""
+    async with get_connection(env.db_path) as db:
+        await db.execute(
+            "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
+            (datetime.now(timezone.utc).isoformat(), question_id),
+        )
+        await db.commit()
+
+
+async def _evidence_of(env: Any, question_id: int, value: str) -> None:
+    """The question's row records the evidence its report was computed from: Pro's rounds as
+    *value*."""
+    async with get_connection(env.db_path) as db:
+        await db.execute(
+            "UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
+            (json.dumps({PRO_ROUNDS: value}), question_id),
+        )
+        await db.commit()
+
+
+def _season_now(monkeypatch: Any, value: str) -> None:
+    """The season as it stands now: Pro's rounds as *value*."""
+    from leaguebot.core.services import season_fingerprint_service as sfs
+
+    async def _now(*_args: Any, **_kwargs: Any) -> Any:
+        return sfs.SeasonFingerprint({PRO_ROUNDS: value})
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _now)
+
+
+async def _take_downs(env: Any) -> list[dict[str, Any]]:
+    return [json.loads(row["payload"]) for row in await _changes(env, TAKE_DOWN)]
+
+
+def _refusals(env: Any) -> list[str]:
+    return [line for line in env.bot.log_channel.sent if line.startswith("⛔")]
+
+
+def _expiry_callback(env: Any) -> Any:
+    """The callback the builder registered for the review's expiry timer."""
+    [callback] = [call.args[1] for call in env.bot.scheduler_service.register_timer.call_args_list
+                  if call.args and call.args[0] == TIMER]
+    return callback
+
+
+async def test_the_private_faults_stay_a_reply(standing):
+    """Alex's placements review finds that Pro has no lineup channel. The fault is told to Alex
+    alone, as a private follow-up of his command: nothing is posted in channel 700, nothing is
+    kept as part of the review, and nothing is asked of the queue for it."""
+    from leaguebot.core.cogs.season_cog import SeasonCog, _ReviewPoster
+
+    interaction = member_interaction(standing.bot, user=_alex())
+    poster = _ReviewPoster(interaction)
+
+    await SeasonCog._send_channel_faults(
+        poster, ["Pro has no lineup channel: set one with `/division lineup-channel`"]
+    )
+
+    calls = interaction.followup.send.await_args_list
+    assert calls and all(call.kwargs.get("ephemeral") is True for call in calls)
+    assert "Pro has no lineup channel" in calls[0].args[0]
+    assert poster.posted == []
+    assert standing.channel.sent == []
+    assert await change_rows(standing.db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)
+async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_review_is_gone_before_its_first_job(
+        standing):
+    """Alex's review stands in channel 700 (report R1 and R2, question Q), posted a moment ago,
+    the season unchanged. Alex presses Approve. By the time the approval is asked, the review's
+    take-down has already been asked, ending confirmed and naming Q, R1 and R2 in channel 700, so
+    it runs on the queue ahead of the approval's jobs; the button deletes nothing itself. Once
+    the queue runs the review is gone, its row with it, and no expiry notice is posted."""
+    channel = standing.channel
+    await _posted_a_moment_ago(standing, channel.q.id)
+    view, cog = _approve_view(standing)
+    asked_first: list[dict[str, Any]] = []
+
+    async def _approve(*_args: Any, **_kwargs: Any) -> bool:
+        asked_first.extend(await _take_downs(standing))
+        return True
+
+    cog._do_approve = AsyncMock(side_effect=_approve)
+
+    await _press_approve(view, _press_on(standing, channel.q))
+
+    cog._do_approve.assert_awaited_once()
+    [payload] = asked_first
+    assert payload["ending"] == "confirmed"
+    assert (payload["channel_id"], payload["question_id"]) == (REVIEW_CHANNEL, channel.q.id)
+    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
+    assert channel.deleted == []
+
+    await run_queue(standing.bot)
+
+    assert channel.messages == [] and channel.sent == []
+    assert await _prompts(standing.db_path) == []
+
+
+@pytest.mark.parametrize("ending", [
+    pytest.param("expired", id="five_minutes",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)),
+    pytest.param("refused", id="refused_press",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)),
+])
+async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
+    """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
+    timer fires for Q), or Alex presses Approve a moment after it was posted but the season has
+    changed since the report (Pro's rounds), so the press is refused. Either way nothing is
+    deleted or posted at once: the review's take-down is asked of the queue as the bot's, naming
+    channel 700, Q, R1, R2, Alex and `/season placements-review`, ending expired or refused."""
+    channel = standing.channel
+    if ending == "expired":
+        await _expiry_callback(standing)(channel.q.id)
+    else:
+        await _posted_a_moment_ago(standing, channel.q.id)
+        await _evidence_of(standing, channel.q.id, "before")
+        _season_now(monkeypatch, "after")
+        view, cog = _approve_view(standing)
+        await _press_approve(view, _press_on(standing, channel.q))
+        cog._do_approve.assert_not_awaited()
+
+    assert channel.deleted == [] and channel.sent == []
+    [payload] = await _take_downs(standing)
+    assert payload["ending"] == ending
+    assert (payload["channel_id"], payload["question_id"]) == (REVIEW_CHANNEL, channel.q.id)
+    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
+    assert (payload["reviewer_id"], payload["review"]) == (REVIEWER, PLACEMENTS)
+    [change] = await _changes(standing, TAKE_DOWN)
+    assert change["origin"] == "BOT"
+
+
+@pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)
+async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
+    """The queue is stopped when Alex runs his review of season 1; its evidence is what the
+    command computed the report from, Pro's rounds "before". While the review waits, Pro's
+    rounds change. The stop clears and the review is posted. Alex presses Approve a moment after
+    the question appears: he is refused, privately, the reply naming Pro's rounds as changed and
+    saying nothing was approved; one ⛔ line is in the log channel; the approval is never asked;
+    and the review's take-down is asked, ending refused."""
+    from leaguebot.core.services.season_review_changes import season_review_take_down_change
+    from tests.support.change_queue import register, retry_job
+    from tests.support.review_league import block_queue
+
+    _attach(posting)
+    register(posting.bot, season_review_take_down_change())
+    holder = await block_queue(SimpleNamespace(bot=posting.bot, db_path=posting.db_path))
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    await posting.bot.change_queue.ask(
+        POST, {**_payload(), "evidence": {PRO_ROUNDS: "before"}}, interaction=interaction,
+        what="posting the placements review",
+    )
+    _season_now(monkeypatch, "after")
+    holder["fail"] = False
+    await retry_job(posting.bot)
+    await run_queue(posting.bot)
+
+    question = _question(posting.channel)
+    await _posted_a_moment_ago(posting, question.id)
+    view, cog = _approve_view(posting)
+    press = _press_on(posting, question)
+    await _press_approve(view, press)
+
+    cog._do_approve.assert_not_awaited()
+    reply = acknowledgement(press)
+    assert "has changed since this review" in reply and PRO_ROUNDS in reply
+    assert "Nothing has been approved" in reply
+    [line] = _refusals(posting)
+    assert "Approve" in line
+    [payload] = await _take_downs(posting)
+    assert (payload["ending"], payload["question_id"]) == ("refused", question.id)
