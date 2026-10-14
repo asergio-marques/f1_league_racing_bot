@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.change_queue import change_rows, member_interaction, run_queue, tier_member
+from tests.support.season_league import setup_league
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 7731
@@ -144,6 +147,43 @@ async def _audit_types(db_path) -> list[str]:
         return [row["change_type"] for row in await cursor.fetchall()]
 
 
+# ── The close, on the league's queue ──────────────────────────────────────
+
+CLOSE_KIND = "signup.close"
+NO_CLOSE_CHANGE = (
+    "#439: /signup close closes the window by execute_forced_close off the queue, asking no "
+    "signup.close change"
+)
+
+
+async def _close_league(tmp_path, *, close_at: str | None) -> Any:
+    """`setup_league` at Signups with the window open and its close time *close_at*, on a real
+    change queue: nobody part-way through signing up."""
+    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    await league.write("UPDATE signup_module_config SET close_at = ?", close_at)
+    return league
+
+
+def _manager(league) -> Any:
+    interaction = member_interaction(league.bot, user=tier_member("manager", member_id=77))
+    interaction.guild = league.guild
+    interaction.command = MagicMock(qualified_name="signup close")
+    return interaction
+
+
+async def _close_on(league) -> Any:
+    """League manager 77 runs `/signup close` on *league*; gives his interaction."""
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    interaction = _manager(league)
+    await undecorate(SignupCog.signup_close)(cog, interaction)
+    return interaction
+
+
+async def _close_changes(league) -> list[dict[str, Any]]:
+    return [row for row in await change_rows(league.db_path) if row["kind"] == CLOSE_KIND]
+
+
 def _registered_signup_commands() -> set[str]:
     """Every `/signup …` command the cog actually registers, fully qualified."""
 
@@ -166,45 +206,48 @@ class TestTheCloseRefusal:
 
         Asserted against the registered command list, not against a literal: a refusal
         that sends a manager somewhere is only useful if somewhere is there, and the
-        previous wording pointed at `/signup cancel-timer`, which never was.
+        previous wording pointed at `/signup cancel-timer`, which never was. The league's
+        window is open with its close time armed a week on; manager 77 runs `/signup close`
+        on the league's queue (#439, slice 6b: the refusal is the close's own check, made as
+        it is asked, so nothing is queued).
         """
-        cog = _cog(await _seed(tmp_path, close_at=ARMED))
-        interaction = _interaction()
-
-        await _close(cog, interaction)
+        league = await _close_league(tmp_path, close_at=ARMED)
+        interaction = await _close_on(league)
 
         named = set(re.findall(r"`(/signup [a-z- ]+)`", _reply(interaction)))
         assert named, "the refusal names no command at all"
         assert named <= _registered_signup_commands()
+        assert await _close_changes(league) == []
 
     async def test_close_is_still_refused_while_a_timer_is_armed(self, tmp_path):
-        """Closing early stays two deliberate steps (decided 2026-09-15)."""
-        cog = _cog(await _seed(tmp_path, close_at=ARMED))
-        interaction = _interaction()
-
-        await _close(cog, interaction)
+        """Closing early stays two deliberate steps (decided 2026-09-15). The window is open
+        with its close time armed; manager 77 runs `/signup close` on the league's queue: he
+        is refused, told of the auto-close and pointed at `/signup close-time cancel`, and
+        no close is asked of the queue."""
+        league = await _close_league(tmp_path, close_at=ARMED)
+        interaction = await _close_on(league)
 
         assert "auto-close" in _reply(interaction)
         assert "`/signup close-time cancel`" in _reply(interaction)
+        assert await _close_changes(league) == []
 
-    async def test_cancel_unblocks_a_manual_close(self, tmp_path, monkeypatch):
-        """The whole point of the fix: after a cancel, closing by hand actually closes."""
-        from leaguebot.signup.cogs import signup_cog
+    @pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
+    async def test_cancel_unblocks_a_manual_close(self, tmp_path):
+        """The whole point of the fix: after a cancel, closing by hand actually closes. The
+        window is open with its close time armed; manager 77 cancels the close time, then runs
+        `/signup close` with nobody part-way through signing up. The close is asked of the
+        queue (#439, slice 6b, C69) and, once the queue runs, the window is closed."""
+        league = await _close_league(tmp_path, close_at=ARMED)
+        cog = SignupCog.__new__(SignupCog)
+        cog.bot = league.bot
+        await _cancel(cog, _manager(league))
 
-        forced_close = AsyncMock()
-        monkeypatch.setattr(signup_cog, "execute_forced_close", forced_close)
+        await _close_on(league)
 
-        db_path = await _seed(tmp_path, close_at=ARMED)
-        cog = _cog(db_path)
-
-        await _cancel(cog, _interaction())
-        closing = _interaction()
-        closing.response.defer = AsyncMock()
-        closing.followup.send = AsyncMock()
-        await _close(cog, closing)
-
-        forced_close.assert_awaited_once()
-        assert not closing.response.send_message.await_args_list
+        assert len(await _close_changes(league)) == 1
+        await run_queue(league.bot)
+        [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
+        assert not window["signups_open"]
 
 
 # ── /signup close-time cancel ─────────────────────────────────────────────
