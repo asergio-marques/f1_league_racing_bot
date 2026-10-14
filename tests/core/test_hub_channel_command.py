@@ -175,6 +175,28 @@ async def test_the_hub_is_set_permissioned_and_given_its_panel(db_path):
     assert f"**Hub channel** set to <#{HUB}>" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NO_HUB_MOVE_ON_THE_QUEUE)
+async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue(db_path):
+    """Core spec :135: a command that makes its own change and then asks for a post replies
+    with what it did, and the post follows on the queue. The manager points the hub at 7920:
+    before the queue runs, the reply names the new hub channel and says its panel follows on
+    the queue, and no panel has been posted; once the queue runs, the panel is posted."""
+    channel = _channel(HUB)
+    cog, interaction = _setup(db_path, channel)
+
+    await undecorate(BotCog.handle_hub_channel)(cog, interaction, channel)
+
+    replied = _replied(interaction)
+    assert f"**Hub channel** set to <#{HUB}>" in replied
+    assert "queue" in replied
+    channel.send.assert_not_awaited()
+
+    await run_queue(cog.bot)
+
+    channel.send.assert_awaited_once()
+    assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
+
+
 async def test_the_change_is_audited_and_logged(db_path):
     await _configure(db_path, hub_channel_id=OLD_HUB)
     old, new = _channel(OLD_HUB), _channel(HUB)
