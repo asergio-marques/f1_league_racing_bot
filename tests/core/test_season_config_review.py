@@ -472,26 +472,36 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
 @pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: Alex presses ✅ Confirm configuration, the season
-    unchanged, and the configuration is confirmed. The review's take-down is asked of the queue
-    before the confirmation is worked, ending confirmed and naming Q, R1 and R2; the button
-    deletes nothing itself. Once the queue runs Q, R1 and R2 are deleted, the review's row is
-    forgotten, and neither an expiry notice nor a lapse line is posted."""
+    unchanged, and the real confirmation runs past its gates (no fault found afresh, signup off),
+    so the configuration is confirmed. By the time the confirmation's own work moves the season on,
+    the review's take-down has already been asked of the queue, ending confirmed and naming Q, R1
+    and R2; the button deletes nothing itself. Once the queue runs Q, R1 and R2 are deleted, the
+    review's row is forgotten, and neither an expiry notice nor a lapse line is posted."""
+    from types import MethodType
+
     from tests.support.change_queue import run_queue
 
     env = await _standing_review(tmp_path)
     channel = env.channel
     await _team_list_since_the_review(env, monkeypatch)
     view, cog = _confirm_view(env)
+    # The real confirmation, on a cog whose gates pass: the season in configuration, no fault.
+    cog._get_pending = MagicMock(
+        return_value=PendingConfig(season_id=1, season_number=4, game_edition=25)
+    )
+    cog._configuration_faults = AsyncMock(return_value=[])
+    cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
+    env.bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
     asked_first: list[dict] = []
 
-    async def _confirm(*_args, **_kwargs):
+    async def _move_on(*_args, **_kwargs):
         asked_first.extend(await _take_downs(env))
-        return True
 
-    cog._do_confirm_configuration = AsyncMock(side_effect=_confirm)
+    env.bot.season_service.set_stage = AsyncMock(side_effect=_move_on)
 
     await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
 
+    env.bot.season_service.set_stage.assert_awaited_once()
     [payload] = asked_first
     assert (payload["ending"], payload["question_id"]) == ("confirmed", channel.q.id)
     assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])

@@ -784,36 +784,65 @@ async def test_the_private_faults_stay_a_reply(standing):
 
 @pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)
 async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_review_is_gone_before_its_first_job(
-        standing):
-    """Alex's review stands in channel 700 (report R1 and R2, question Q), posted a moment ago,
-    the season unchanged. Alex presses Approve. By the time the approval is asked, the review's
-    take-down has already been asked, ending confirmed and naming Q, R1 and R2 in channel 700, so
-    it runs on the queue ahead of the approval's jobs; the button deletes nothing itself. Once
-    the queue runs the review is gone, its row with it, and no expiry notice is posted."""
-    channel = standing.channel
-    await _posted_a_moment_ago(standing, channel.q.id)
-    view, cog = _approve_view(standing)
-    asked_first: list[dict[str, Any]] = []
+        tmp_path, monkeypatch):
+    """Season 3 is in placements, ready to approve, and the league admin's placements review of it
+    stands in channel 610 (report R1 and R2, question Q), posted a moment ago, its row recording
+    the season as it stands. The admin presses Approve, and the real approval runs past every gate.
+    The review's take-down is asked of the queue before the season's approval, ending confirmed
+    and naming Q, R1 and R2 in channel 610, so it runs on the queue ahead of the approval's jobs;
+    the button deletes nothing itself. Run a job at a time, the queue takes the review down, its
+    row with it, before any of the approval's jobs is done."""
+    from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.core.services.season_approval_change import KIND as APPROVAL
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.season_league import ADMIN_ID, SEASON_ID, Review, press_approve, season_league
+    from tests.support.season_league import REVIEW_CHANNEL as CHANNEL_610
 
-    async def _approve(*_args: Any, **_kwargs: Any) -> bool:
-        asked_first.extend(await _take_downs(standing))
-        return True
+    league = await season_league(tmp_path, monkeypatch=monkeypatch)
+    channel = history_channel(CHANNEL_610)
+    channel.guild = league.guild
+    league.channels[CHANNEL_610] = channel
+    me = SimpleNamespace(id=league.bot.user.id, name="LeagueBot")
+    r1, r2, q = (post_in(channel, me) for _ in range(3))
+    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=CHANNEL_610, message_id=q.id,
+            reviewer_id=ADMIN_ID, review=PLACEMENTS,
+            posted_at=datetime.now(timezone.utc).isoformat(), report_message_ids=(r1.id, r2.id),
+        )
+        await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
+                         (json.dumps(evidence), q.id))
+        await db.commit()
+    review = Review(view=_ApproveView(league.cog, ADMIN_ID), prompt=q, report=[r1, r2])
 
-    cog._do_approve = AsyncMock(side_effect=_approve)
+    await press_approve(league, review)
 
-    await _press_approve(view, _press_on(standing, channel.q))
-
-    cog._do_approve.assert_awaited_once()
-    [payload] = asked_first
+    rows = await change_rows(league.db_path)
+    take_downs = [row for row in rows if row["kind"] == TAKE_DOWN]
+    approvals = [row for row in rows if row["kind"] == APPROVAL]
+    assert (len(take_downs), len(approvals)) == (1, 1), (league.errors, rows)
+    assert take_downs[0]["id"] < approvals[0]["id"]
+    payload = json.loads(take_downs[0]["payload"])
     assert payload["ending"] == "confirmed"
-    assert (payload["channel_id"], payload["question_id"]) == (REVIEW_CHANNEL, channel.q.id)
-    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
+    assert (payload["channel_id"], payload["question_id"]) == (CHANNEL_610, q.id)
+    assert sorted(payload["report_ids"]) == sorted([r1.id, r2.id])
     assert channel.deleted == []
 
-    await run_queue(standing.bot)
+    async def _state(change_id: int) -> str:
+        [row] = [row for row in await change_rows(league.db_path) if row["id"] == change_id]
+        return row["state"]
 
-    assert channel.messages == [] and channel.sent == []
-    assert await _prompts(standing.db_path) == []
+    for _ in range(20):
+        if await _state(take_downs[0]["id"]) == "DONE":
+            break
+        await run_queue(league.bot, steps=1)
+
+    assert await _state(take_downs[0]["id"]) == "DONE"
+    assert channel.messages == []
+    assert await _prompts(league.db_path) == []
+    assert not [job for job in await step_rows(league.db_path, approvals[0]["id"])
+                if job["done_at"]]
 
 
 @pytest.mark.parametrize("ending", [
