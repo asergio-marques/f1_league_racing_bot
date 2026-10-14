@@ -630,7 +630,7 @@ async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
 # ---------------------------------------------------------------------------
 
 #: The league manager reviewing Kimi's signup, and the reason they type after Reject.
-MANAGER = 77
+REVIEWER = 77
 REASON = "Lap time not credible"
 
 
@@ -662,13 +662,13 @@ async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path)
     league = await _league(tmp_path)
     await signing_up(league, SIGNING_UP, state="PENDING_ADMIN_APPROVAL")
     _held(league, KIMI_CHANNEL)
-    manager = league._member(MANAGER)
+    manager = league._member(REVIEWER)
     manager.bot = False
     press = member_interaction(league.bot, user=manager)
     press.guild = league.guild
     press.channel_id = KIMI_CHANNEL
     await press.response.defer(ephemeral=True)
-    _PENDING_REASONS[(KIMI_CHANNEL, MANAGER)] = {
+    _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
         "action": "reject",
         "discord_user_id": str(SIGNING_UP),
         "actor": manager,
