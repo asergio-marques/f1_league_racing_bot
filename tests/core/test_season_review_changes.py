@@ -623,13 +623,16 @@ NO_BUILDER_DRAWING = (
 
 
 @pytest.mark.xfail(strict=True, reason=NO_BUILDER_DRAWING)
+@pytest.mark.parametrize("uncommitted", [False, True], ids=["placements", "mid_season"])
 async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portraits(
-        posting, monkeypatch):
+        posting, monkeypatch, uncommitted):
     """The real change types are registered, as the builder registers them, and the drawing it
     hands `season.review.post` is kept. Asked, off the event loop, to draw Pro's lineup for
     Alex's review, it has the image module draw the lineup obtaining each seated driver's
     missing portrait (#407), so the review is not judged on a placeholder the league will not
-    see (image specification, "The drawing of placements under review")."""
+    see (image specification, "The drawing of placements under review"). A mid-season review's
+    lineup, asked with `include_uncommitted`, is drawn with its uncommitted drivers in it, as
+    confirming will post it (#374); a placements review's, without."""
     import asyncio
 
     from leaguebot.core.services import season_review_changes
@@ -651,10 +654,15 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     monkeypatch.setattr(image_lineup_post, "lineup_enabled", AsyncMock(return_value=True))
     attach_queue(posting.bot, posting.db_path, now=posting.clock)
 
-    await asyncio.to_thread(handed["drawing"], PICTURES[1])
+    picture = dict(PICTURES[1])
+    if uncommitted:
+        picture["include_uncommitted"] = True
+
+    await asyncio.to_thread(handed["drawing"], picture)
 
     assert render.await_count == 1
     assert render.await_args.kwargs["obtain_missing_portraits"] is True
+    assert bool(render.await_args.kwargs.get("include_uncommitted")) is uncommitted
 
 
 # ---------------------------------------------------------------------------
