@@ -18,7 +18,7 @@ or imported inside a test, so this file collects while it is unbuilt.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -33,6 +33,7 @@ from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     MARK,
     change_rows,
+    member_interaction,
     queued_log_lines,
     retry_job,
     run_queue,
@@ -396,3 +397,155 @@ async def test_a_paste_s_turn_writes_only_its_round_s_rows(tmp_path, monkeypatch
     assert turn["lane"] == LANE
     assert await _sessions(league) == [("FEATURE_QUALIFYING", "ACTIVE")]
     assert [await league.rows(sql) for sql in reads] == before
+
+
+# ---------------------------------------------------------------------------
+# C48 — the configuration choice a turn of its own
+# ---------------------------------------------------------------------------
+
+CONFIG_KIND = "results.submission.config"
+#: A second points configuration attached to the season, so that the session's is chosen.
+HEAVY = "Heavy"
+
+NO_CONFIG_TURN = (
+    "#439: the points-configuration picker is waited on inside the submission coroutine and the "
+    "session saved there at once, rather than the press asking `results.submission.config` on the "
+    "round's lane"
+)
+
+
+async def _two_configs(league: SeasonLeague) -> None:
+    """The season has a second points configuration, "Heavy", attached beside "Standard"."""
+    await league.write("INSERT INTO points_config_store (config_name) VALUES (?)", HEAVY)
+    [season] = await league.rows("SELECT id FROM seasons")
+    await league.write(
+        "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+        season["id"], HEAVY,
+    )
+
+
+def _picker(league: SeasonLeague) -> Any:
+    """The message standing in the submission channel that offers the configurations."""
+    [picker] = [message for message in league.channel(SUBMISSION_CHANNEL).messages.values()
+                if message.view is not None
+                and "Select the points configuration" in str(message.content)]
+    return picker
+
+
+def _choice(league: SeasonLeague, picker: Any) -> Any:
+    """The admin's press of "Heavy" on *picker*: its response, edits and follow-ups recorded;
+    the acknowledgement, where it is a follow-up, is a message whose edits are recorded."""
+    press = member_interaction(
+        league.bot, user=league._member(ADMIN_ID), created_at=league.clock.now,
+    )
+    press.guild = league.guild
+    press.channel_id = SUBMISSION_CHANNEL
+    press.message = picker
+    answered = {"done": False}
+
+    async def _answer(*_args: Any, **_kwargs: Any) -> None:
+        answered["done"] = True
+
+    for name in ("send_message", "defer", "edit_message"):
+        setattr(press.response, name, AsyncMock(side_effect=_answer))
+    press.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    press.acknowledged = MagicMock()
+    press.acknowledged.edit = AsyncMock()
+    press.followup.send = AsyncMock(return_value=press.acknowledged)
+    return press
+
+
+async def _press_heavy(league: SeasonLeague) -> Any:
+    """The admin presses "Heavy" on the configuration picker; gives the press."""
+    picker = _picker(league)
+    [button] = [item for item in picker.view.children if getattr(item, "label", None) == HEAVY]
+    press = _choice(league, picker)
+    await button.callback(press)
+    return press
+
+
+def _private_texts(press: Any) -> list[str]:
+    """Every message the press was answered with privately, in order."""
+    calls = [*press.response.send_message.await_args_list, *press.followup.send.await_args_list]
+    return [str(call.args[0] if call.args else call.kwargs.get("content", ""))
+            for call in calls if call.kwargs.get("ephemeral")]
+
+
+async def _configs(league: SeasonLeague) -> list[tuple[str, str, str | None]]:
+    rows = await league.rows(
+        "SELECT session_type, status, config_name FROM session_results WHERE round_id = ? "
+        "ORDER BY id", ROUND_3,
+    )
+    return [(row["session_type"], row["status"], row["config_name"]) for row in rows]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONFIG_TURN)
+async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, monkeypatch):
+    """The season has two points configurations attached. The admin pastes round 3's
+    qualifying; its turn offers the configurations in the submission channel and saves nothing
+    yet. The admin presses "Heavy": `results.submission.config` is asked on round 3's lane, and
+    when it runs the qualifying is saved scored by "Heavy" and the race is asked for."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    assert await _configs(league) == []
+    assert "📋 Submit" not in _said(league)
+
+    await _press_heavy(league)
+    [choice] = [row for row in await change_rows(league.db_path) if row["kind"] == CONFIG_KIND]
+    assert choice["lane"] == LANE
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
+    assert f"📋 Submit **{RACE}** results" in _said(league)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONFIG_TURN)
+async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkeypatch):
+    """The admin presses "Heavy" on the configuration picker. The picker is changed to
+    "🔧 Config selected: **Heavy**", its buttons taken off, by the press's own response (a reply,
+    not a job); the bot makes no edit of the picker message of its own."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    picker = _picker(league)
+
+    press = await _press_heavy(league)
+    await run_queue(league.bot)
+
+    [edit] = press.response.edit_message.await_args_list
+    assert f"Config selected: **{HEAVY}**" in str(edit.kwargs.get("content"))
+    assert "view" in edit.kwargs and edit.kwargs["view"] is None
+    assert ("edit", SUBMISSION_CHANNEL, picker.id) not in league.events
+
+
+@pytest.mark.xfail(strict=True, reason=NO_CONFIG_TURN)
+async def test_a_configuration_choice_is_acknowledged_and_updated_and_kept_while_the_queue_is_stopped(
+    tmp_path, monkeypatch,
+):
+    """Round 3's own lane is stopped at another job when the admin presses "Heavy". The press is
+    answered privately that the choice is under way, naming the stopped job; nothing is saved.
+    Once the stopped job is retried and goes through, the qualifying is saved scored by "Heavy"
+    and the private answer is updated with the outcome."""
+    league = await _league(tmp_path, monkeypatch)
+    await _two_configs(league)
+    await _type(league, QUALI_PASTE)
+    await run_queue(league.bot)
+    holder = await block_queue(league, lane=LANE)
+
+    press = await _press_heavy(league)
+    await run_queue(league.bot)
+
+    [acknowledged] = _private_texts(press)
+    assert acknowledged.startswith("⏳") and "stopped at job #" in acknowledged
+    assert await _configs(league) == []
+
+    holder["fail"] = False
+    await retry_job(league.bot, lane=LANE)
+
+    assert await _configs(league) == [("FEATURE_QUALIFYING", "ACTIVE", HEAVY)]
+    assert press.acknowledged.edit.await_args_list or press.edit_original_response.await_args_list
