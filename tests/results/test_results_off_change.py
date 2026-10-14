@@ -596,6 +596,24 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
 
 
+async def test_turning_results_off_deletes_a_session_cancelled_line(tmp_path):
+    """The round's qualifying was cancelled, its line standing in the results channel as message
+    1500, recorded as that session's results message. Turning results off deletes it with the
+    round's other results (results spec :16)."""
+    seeded = await _seed(tmp_path)
+    await _set(
+        seeded.db_path,
+        "INSERT INTO session_results (round_id, division_id, session_type, status, "
+        "results_message_id) VALUES (?, ?, 'QUALIFYING', 'CANCELLED', 1500)",
+        (seeded.round_ids[0], seeded.division_id),
+    )
+    bot = _league(seeded.db_path)
+    await _confirm(bot)
+    await run_queue(bot)
+
+    assert 1500 in _deleted(bot, RESULTS_CHANNEL_ID)
+
+
 async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_linked_not_counted(
     tmp_path,
 ):
