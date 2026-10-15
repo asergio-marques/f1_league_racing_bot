@@ -424,6 +424,8 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
 # ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
 
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+#: How a discarded closed notice is named: the window was not closed.
+WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
 #: How a driver returned and left untold would be named: never for a discarded closed notice,
 #: which drops only that post (b15-2).
 RETURNED_NOT_TOLD = (
@@ -501,8 +503,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     """The signup window open with driver 105 still filling in the wizard. The wind-down's close
     returns 105, then `post_closed`, whose record writes the window closed, fails, and a league
     admin discards it. Only that post is dropped (b15-2): 105 is still told, then their channel
-    locked, by their own jobs, and no line names them as returned but not told; the window is
-    still recorded open, the season moved on to Pending completion, and 105 is owed nothing
+    locked, by their own jobs, and no line names them as returned but not told. One log line
+    says the signup window could not be closed and to close it with `/signup close`; the window
+    is still recorded open, the season moved on to Pending completion, and 105 is owed nothing
     more."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
@@ -520,6 +523,7 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
         ("notice", SIGNING_UP), ("lock", SIGNING_UP),
     ]
     assert not any(_logged(RETURNED_NOT_TOLD) in line for line in league.bot.log_channel.sent)
+    assert len([line for line in league.bot.log_channel.sent if WINDOW_OPEN in line]) == 1
     assert await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
     assert await _owed(league) == []
