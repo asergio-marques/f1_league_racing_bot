@@ -48,6 +48,19 @@ conversation has ended (`_choose` clears its `next_try_at`, as a restart does), 
 try that finds it no longer due and clears the stop, a Discard dropping it. The conversation's other
 changes are then found no longer due in turn.
 
+**A conversation's save may write only its conversation's own tables.** A change type of a
+conversation's lane declares, in `ChangeType.writes`, the tables its kind writes (the conversation's
+own rows, never the league's); the connection of every save the lane makes for it, a `SAVE` step's
+or a record's, is given an SQLite authorizer (`_confine`) that refuses an insert, update or delete on
+any other table, and always allows the queue's own tables (`QUEUE_TABLES`: the job's mark, its audit
+records, its log lines and the changes it asks), so the mark, the lines and the refusal pass. A
+breach raises in the step, rolling its save back whole and stopping the lane at the job, so it never
+lands. A league change type declares nothing and is not restricted. *Rejected:* trusting each step to
+keep to its tables, which a lane's own tests would never catch once the flows are many; and a
+separate connection per lane, which SQLite would not make a second writer. Pinned by
+`test_a_conversation_lane_s_save_may_not_write_another_table` and
+`test_a_conversation_save_s_mark_and_lines_pass_and_a_league_save_is_not_restricted`.
+
 **A step is one of four kinds** (`StepKind`). A `SAVE` step is handed the open save and writes only
 on it, never committing. The other kinds do Discord or legacy work with no connection open and are
 marked in a save after it. Nothing is awaited inside a save but the connection.
@@ -344,6 +357,33 @@ class DiscardedContext:
 
 LEAGUE_LANE = "league"
 
+#: The queue's own tables: a conversation lane's save may always write them, since the job's mark,
+#: its audit records, its log lines and the changes it asks are the queue's, not the lane's.
+QUEUE_TABLES = frozenset(
+    {"queued_changes", "queued_change_steps", "pending_messages", "audit_entries"}
+)
+
+#: SQLite's authorizer action codes for a write to a table: `arg1` of the callback names the table.
+_TABLE_WRITES = frozenset({sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE})
+
+
+async def _confine(db: aiosqlite.Connection, writes: Collection[str] | None) -> None:
+    """Refuse, on *db*, a write to any table but those of *writes* and the queue's own; see the
+    module. None leaves the connection unrestricted, as a league change's is."""
+    if writes is None:
+        return
+    allowed = {name.lower() for name in writes} | QUEUE_TABLES
+
+    def _authorize(
+        action: int, table: str | None, _arg2: str | None, _database: str | None,
+        _source: str | None,
+    ) -> int:
+        if action in _TABLE_WRITES and (table or "").lower() not in allowed:
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    await db.set_authorizer(_authorize)
+
 
 def league_lane(_payload: dict[str, Any]) -> str:
     """The lane of a change type that names none: the league's."""
@@ -369,6 +409,10 @@ class ChangeType:
     longer due and dropped. A turn needs the conversation still running; a closing change the
     league asks back needs only its channel to stand. It reads on the connection it is handed.
     None where the change has no conversation to end.
+
+    *writes*, on a change type of a conversation's lane, are the tables its kind's saves may write,
+    the queue's own always besides (`QUEUE_TABLES`): a save writing another table raises and stops
+    the lane at the job. None, the league's, restricts nothing.
     """
 
     kind: str
@@ -383,6 +427,7 @@ class ChangeType:
     on_discarded: Callable[[DiscardedContext], tuple[FollowOn, ...]] | None = None
     lane: Callable[[dict[str, Any]], str] = league_lane
     conversation_open: Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[bool]] | None = None
+    writes: tuple[str, ...] | None = None
 
 
 class ChangeRefused(Exception):
@@ -1246,9 +1291,9 @@ class ChangeQueue:
                             due_again = due_again and (
                                 recheck.still_open is None or await recheck.still_open(db)
                             )
-                            result = (
-                                await step.run(db, ctx) if due_again else recheck.ended
-                            )
+                            if due_again:
+                                await _confine(db, change_type.writes)
+                            result = await step.run(db, ctx) if due_again else recheck.ended
                             saved = await self._save_result(db, change, row, result, stopped_as)
                             if saved is None:
                                 await db.rollback()
@@ -1260,7 +1305,8 @@ class ChangeQueue:
                 return await self._delivered(change, saved, row)
             produced = await step.run(ctx)
             return await self._complete(
-                change, row, produced, stopped_as, record=self._recording(step, ctx, produced),
+                change, row, produced, stopped_as,
+                record=self._recording(step, ctx, produced, change_type.writes),
                 recheck=recheck,
             )
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_stop`
@@ -1270,15 +1316,16 @@ class ChangeQueue:
 
     @staticmethod
     def _recording(
-        step: Step, ctx: StepContext, result: StepResult
+        step: Step, ctx: StepContext, result: StepResult, writes: Collection[str] | None = None,
     ) -> Callable[[aiosqlite.Connection], Awaitable[None]] | None:
-        """The step's record bound to what it returned, to run in the save marking it done; None
-        where it carries none."""
+        """The step's record bound to what it returned, to run in the save marking it done, on a
+        connection confined to *writes* (a conversation lane's); None where it carries none."""
         record = step.record
         if record is None:
             return None
 
         async def _record(db: aiosqlite.Connection) -> None:
+            await _confine(db, writes)
             await record(db, ctx, result)
 
         return _record
@@ -1404,7 +1451,8 @@ class ChangeQueue:
             completed = StepResult(result={"gone": True}, lines=lines)
             return await self._complete(
                 change, row, completed, await self._stopped_as(change, row, ctx),
-                record=self._recording(step, ctx, completed),
+                record=self._recording(
+                    step, ctx, completed, self._types[change["kind"]].writes),
                 recheck=await self._recheck(
                     change, self._types[change["kind"]], step, ctx, row,
                     await self._stopped_as(change, row, ctx),

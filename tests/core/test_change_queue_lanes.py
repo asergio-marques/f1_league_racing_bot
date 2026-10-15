@@ -48,7 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
 NO_LANE_WORKERS = "#439: one worker runs the whole queue, one change at a time"
 NO_LANE_NOTICE = (
     "#439: the stop notice and the queue's lines name no conversation's channel, and the notice "
@@ -1082,7 +1081,6 @@ def _writing(name: str, *tables: str, lines: tuple[str, ...] = ()) -> Any:
     return api.Step(name, api.StepKind.SAVE, _run)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_WRITES)
 async def test_a_conversation_lane_s_save_may_not_write_another_table(env):
     """A turn in channel 7 declares that it writes `answers` alone. Its save writes an answer, then
     a row into `league_rows`, a table its conversation does not own. The write is refused: the
@@ -1107,7 +1105,6 @@ async def test_a_conversation_lane_s_save_may_not_write_another_table(env):
     assert ran == ["d"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_WRITES)
 async def test_a_conversation_save_s_mark_and_lines_pass_and_a_league_save_is_not_restricted(env):
     """A turn in channel 7 declares that it writes `answers` alone; its save writes an answer, an
     audit record and a log line, and asks nothing else. A league change declaring nothing saves a
