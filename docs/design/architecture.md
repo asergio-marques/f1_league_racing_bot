@@ -193,10 +193,10 @@ module offers the others is public, and its docstring says what it promises.
 
 ## How a change is carried out
 
-**Every change goes through one queue.** Every change to the bot's data is put on one queue and
-carried out one at a time, whoever or whatever asks for it: a person (a command, a button, a form, a
-typed answer), a timer, a Discord event (a member leaving), or a handler or start step the start-up
-sweep calls. Commands that only read do not use it. Carrying out changes on the spot is what left
+**Every change goes through one queue.** Every change to the bot's data is put on one queue, one
+durable list of jobs, and carried out in order within its lane (below), whoever or whatever asks for
+it: a person (a command, a button, a form, a typed answer), a timer, a Discord event (a member
+leaving), or a handler or start step the start-up sweep calls. Commands that only read do not use it. Carrying out changes on the spot is what left
 data half-changed when two presses overlapped, the bot stopped part-way or a step failed, and what
 let a success be reported over a change only half done.
 
@@ -251,15 +251,43 @@ audit record, which is how some settings came to have none.
   snapshots and the round's new status are saved together, and a fault in any of them rolls the
   whole step back and stops the queue there (results specification, stage one: what the commit
   writes shall be saved together).
-- **One change at a time.** One worker runs one change at a time, across the whole bot, since SQLite
-  lets one writer in at a time anyway. It takes changes in the order they were put on it, the
-  with no exception: nothing overtakes a change, not even one whose job is stopped (below). Two presses of the same button can no
-  longer run into each other. A change's posts hold the worker while they are sent, so a long run of
-  posts delays the changes behind it; that is the price of one change at a time.
+- **One change at a time to a lane.** The queue is divided into lanes. The *league lane* carries
+  every change to what the league shares (its configuration, its seasons, results, standings,
+  drivers' status, the posts in the league's channels), and every change a command, a timer, a
+  Discord event or a start step asks for, whole, even where it posts in a conversation's channel. A
+  *conversation lane*, one for each channel the bot opens for a conversation (a driver's signup
+  channel, a round's submission channel with its penalty review, an amendment's channel), carries
+  that conversation's own turns: a typed answer, a paste, a staging, and the posts in its own channel.
+  A conversation lane writes only its conversation's own rows, held at run time (see "The database"),
+  and what a conversation hands the league (a signup sent for review, a review opening, an approval)
+  it asks of the league lane as a follow-on, which waits there in order with the league's other
+  changes. Each lane runs one change at a time, in the order put on it, with no exception: nothing
+  on a lane overtakes a change, not even one whose job is stopped (below). Lanes run side by side,
+  the league lane always and at most three conversation lanes with it, the rest waiting oldest
+  change first. SQLite lets one writer in at a time, so one write lock, taken round each save and
+  released at its commit, keeps that single writer in the process; no call to Discord is made under
+  it, so a long save makes another lane's save wait in Python rather than fail on SQLite's busy
+  timeout. A change is checked again inside its save, under the lock, since another lane's save may
+  have landed between the check and the save. The tests run the lanes one at a time, taking the
+  runnable lane head with the lowest change number, so a test's outcome does not depend on timing.
+  Two presses of the same button can no longer run into each other. A change's posts hold its lane's
+  worker while they are sent, so a long run of posts delays the changes behind it on that lane; that
+  is the price of one change at a time to a lane. Job numbers stay one sequence across the lanes, so
+  that "job #N" names one job anywhere. In the specifications "the queue" stays the league lane's
+  name, and a conversation lane is "the turns in" its channel.
+- **A conversation ends by the league's hand or its own, and its waiting turns are then dropped.** A
+  league change that ends a conversation (a close, a cancellation, a season's end, a member leaving,
+  an approval) marks it ended in its own save and does nothing else to the lane. Each change of that
+  lane is then found no longer due when its turn comes, and dropped with a line saying which job
+  ended the conversation; a closing change asked back by the league needs only its channel to stand.
+  A job of that lane already stopped stays stopped, with its notice: an admin's Retry runs a try that
+  finds it no longer due and clears the stop, a Discard drops it, and the bot makes no try of its
+  own on it. A refused deletion of the conversation's channel stops the lane that asked: a
+  conversation ending itself stops its own, a league change ending it stops the league.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
   division's channel to a given one), and that name is its key. A request's key is compared with the
-  last change saved, whatever became of it, and the request is turned away as a repeat where they
+  last change saved on its own lane, whatever became of it, and the request is turned away as a repeat where they
   match and that change is still waiting to be taken up: a member's request is refused, a bot's
   dropped (the core specification's "How a change is carried out" holds what a member is told, and
   when a request is queued again). A change of a kind that may be repeated, such as a repost, is
@@ -308,17 +336,17 @@ audit record, which is how some settings came to have none.
   A deletion that fails stops the queue like any other job (below). A deletion that follows a post
   which was discarded deletes nothing, since the post left no new message for the old one to give
   way to. A deletion that is discarded leaves both messages standing.
-- **A job that fails stops the queue.** The queue is a list of jobs carried out in order, one at a
+- **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
   time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
-  bot's own code, a check that raises as a change starts), stops it there until the job is
-  cleared. Nothing behind it runs: a change that makes the stopped job's work no longer due
-  cannot overtake it either. The change keeps its state and the stop is the job's own record
+  bot's own code, a check that raises as a change starts), stops that lane there until the job is
+  cleared. Nothing behind it on the lane runs: a change that makes the stopped job's work no longer due
+  cannot overtake it either. The other lanes carry on, a stop in one holding only that one. The change keeps its state and the stop is the job's own record
   (when it first failed, how often it has been tried, when it is next due), so it survives a
   restart. What the job's earlier steps saved stays saved, which is why anything that must be all
   or nothing is saved in one step; the failed step's own save is rolled back, so a try runs it
   afresh. Every job of a round's review is such a job, one a module cannot step over (the results
   and attendance specifications say which, and what each stop leaves). A new change asked for meanwhile is
-  acknowledged as usual, joins the back of the queue and says that the queue is stopped.
+  acknowledged as usual, joins the back of its lane and says that the lane is stopped.
   Nothing overtakes the stopped job, so whatever runs outside the queue leaves alone what a change
   is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
   specification, "How a change is carried out"). Discord answering that a message is already
@@ -354,13 +382,16 @@ audit record, which is how some settings came to have none.
   put it right. A change stopped at its check, before any job of it ran, is still dropped whole,
   since a stop at the check sits on the change's first job, and no arming is a first job.
 
-  Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
-  and names the job. They work directly on the queue's own records, and are not changes put on the
+  Both buttons are on the stop notice, the one log-channel message that says a lane is stopped
+  and names the job, and the channel of a conversation's lane. A league lane's stop always mentions
+  the league admins' role, the one mention the log channel notifies; a conversation lane's stop does
+  so only where no other conversation's stop notice stands, and only on the notice's first landing,
+  so that a notice posted again, a restart's line and an hour's line mention nobody. They work directly on the queue's own records, and are not changes put on the
   queue: the queue is stopped, so a change put on it could not run. Each press is saved with its own record (the line, and
   for a Discard the audit record), and a press that is refused is recorded as well. A press made
-  while the worker is trying that job's change, its check included, is refused, to be made again
-  once the try has ended: each press is taken under the lock the worker holds as it chooses a
-  change, and a press saved during a try could outlive the stop that try clears, so that a later
+  while the worker of that job's lane is trying that job's change, its check included, is refused,
+  to be made again once the try has ended: each press is taken under the lock the workers hold as
+  they choose a change, and a press saved during a try could outlive the stop that try clears, so that a later
   failure of the job would be read as the press's.
 
   After a restart a stopped job stays stopped, as "When the bot stops" in the core specification
@@ -370,12 +401,18 @@ audit record, which is how some settings came to have none.
 
   *Rejected:* a failed job stepping aside while later changes go ahead, and a job tried once and
   handed to the league, as turning results off once did for a message it removes. Each is a
-  second rule beside "every failure stops the queue", which is the rule the core specification's
-  "How a change is carried out" records. Also rejected: an automatic try after a restart, which
+  second rule beside "every failure stops its lane", which is the rule the core specification's
+  "How a change is carried out" records. The lanes are not a job stepping aside: within each lane
+  nothing overtakes, and a conversation runs apart only because its work is its own and what it
+  hands the league goes to the league lane's back. *Rejected:* a queue for each module, which
+  leaves the conversations of one module waiting on each other and the league's work split across
+  queues with no one order; and the league dropping a stopped conversation's job when it ends the
+  conversation, which would let a change overtake a stop and leave the member's channel with no
+  word of what was lost. Also rejected: an automatic try after a restart, which
   "When the bot stops" in the core specification rules out.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
-  save raises, nothing is marked stopped: the worker's catch-all (`ChangeQueue._work`) puts the
-  error in the host's log, the worker pauses and looks again, and the job runs again, so that its
+  save raises, nothing is marked stopped: the lane's catch-all (`ChangeQueue._work`, one for each lane) puts the
+  error in the host's log, that lane's worker pauses and looks again, and the job runs again, so that its
   failure is recorded then. Where the save committed and only the notice's post raised, the stop
   stands and the notice is posted again (see "Posting to Discord").
 - **The record is the queue's.** The queue writes the records the specifications ask of a change:
