@@ -320,13 +320,17 @@ async def _driver_role_held(league: Any) -> None:
 # ── Defect 5: every failure stops the queue ─────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
+    """The signup window is open and the abort queued; recording the window closed fails. The
+    queue stops at `post_closed`, whose record writes the window's close, with the season still
+    standing and the window open; retried, the window closes and the season is deleted."""
     league = await setup_league(tmp_path, signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await _season_stands(league)
     assert await window_open(league)
 
@@ -419,10 +423,14 @@ async def test_the_driver_pass_test_mode_and_the_season_s_deletion_are_saved_tog
     assert not await _season_stands(league)
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_stop_part_way_is_finished_on_restart(tmp_path):
+    """The abort is run as far as `post_closed`, which records the window closed, and the bot
+    stops there with the season still standing. When it starts again, the abort is finished:
+    the season deleted, test mode off, and one closing line written."""
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await _asked(league)
-    await _run_through(league, "close_window")
+    await _run_through(league, "post_closed")
     assert not await window_open(league)
     assert await _season_stands(league)
 
@@ -762,14 +770,18 @@ async def _role_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
 #: Each job a league admin may discard: the league that makes it fail, where the queue stops,
 #: and what the reply and the line say was not done.
 _DISCARDS = {
-    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "post_closed": (_window_refused, ("post_closed", None), WINDOW_OPEN),
     "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
     "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
     "take_driver_role": (_role_refused, ("take_driver_role", LEWIS), DRIVER_ROLE_KEPT),
 }
 
 
-@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.parametrize("job", [
+    pytest.param(job, marks=pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE))
+    if job == "post_closed" else job
+    for job in sorted(_DISCARDS)
+])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand(tmp_path, monkeypatch, job):
     build, where, text = _DISCARDS[job]
     league = await build(tmp_path, monkeypatch)
