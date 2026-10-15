@@ -717,7 +717,7 @@ async def main() -> None:
                 await close_signups_unattended(bot, cause="restart")
             else:
                 from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
-                if bot.scheduler_service._scheduler.get_job(SIGNUP_CLOSE_JOB_ID) is None:
+                if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
                     log.info("on_ready: re-arming the signup close timer at %s", _close_at_iso)
                     bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
 
