@@ -31,6 +31,7 @@ import discord
 from leaguebot.core.db.database import inserted_id
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.answering import answering_now
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 from leaguebot.core.utils.messages import chunk_message
 
@@ -92,6 +93,7 @@ class OutputRouter:
     # Public API
     # ------------------------------------------------------------------
 
+    @posts_in_a_job
     async def post_forecast(
         self, division: ForecastTarget, content: str
     ) -> "Optional[discord.Message]":

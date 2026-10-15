@@ -49,6 +49,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
@@ -302,6 +303,7 @@ async def render_for_command(
     )
 
 
+@posts_in_a_job
 async def replace_calendar_message(
     channel,
     *,

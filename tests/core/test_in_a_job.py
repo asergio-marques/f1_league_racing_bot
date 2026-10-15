@@ -33,7 +33,6 @@ from tests.support.change_queue import (
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
-NO_GUARD = "#439: no guard refuses a post made outside a job"
 
 
 @pytest.fixture
@@ -188,7 +187,6 @@ async def _a_post() -> str:
     return "posted"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_GUARD)
 async def test_a_post_outside_a_job_raises_naming_the_function():
     """A function that posts, marked as posting in a job, is called from the test's own code,
     outside every job: it does not run, and the error raised names it."""
@@ -205,7 +203,6 @@ async def test_a_post_outside_a_job_raises_naming_the_function():
     assert ran == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_GUARD)
 async def test_a_post_inside_a_job_runs():
     """The same function called while job 7 runs: it runs and gives back what it returned, its
     name and docstring kept."""
@@ -219,7 +216,6 @@ async def test_a_post_inside_a_job_runs():
     assert guarded.__doc__ == _a_post.__doc__
 
 
-@pytest.mark.xfail(strict=True, reason=NO_GUARD)
 async def test_the_guard_raises_no_discord_failure():
     """A post outside a job is a fault in the bot's own code, not a refusal by Discord: the error
     is no `StepFailedOnDiscord`, so a step that posts outside its job is never taken for a

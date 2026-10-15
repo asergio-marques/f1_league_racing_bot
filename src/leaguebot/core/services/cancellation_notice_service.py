@@ -33,6 +33,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 SCOPE_ROUND = "round"
@@ -142,6 +143,7 @@ async def _module_channels(bot: LeagueBot, division_id: int) -> dict[str, int | 
     }
 
 
+@posts_in_a_job
 async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
     """Send *content* to *channel_id*, as a job on the change queue. Returns what went wrong, or None.
 

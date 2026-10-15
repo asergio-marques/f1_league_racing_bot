@@ -27,6 +27,7 @@ from pathlib import Path
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.image_lineup_service import resolve_driver_name
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -349,6 +350,7 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     )
 
 
+@posts_in_a_job
 async def try_post(
     bot: LeagueBot,
     guild,

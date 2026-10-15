@@ -14,6 +14,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
@@ -393,6 +394,7 @@ async def _build_penalty_review_state(
     )
 
 
+@posts_in_a_job
 async def send_review_prompt(
     bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"
 ) -> discord.Message:
@@ -531,6 +533,7 @@ async def recompute_former_drivers_for_round(
         )
 
 
+@posts_in_a_job
 async def send_appeals_prompt(
     bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"
 ) -> discord.Message:
@@ -3855,6 +3858,7 @@ async def take_down_cancel_message(message: discord.Message | discord.PartialMes
         pass
 
 
+@posts_in_a_job
 async def send_cancelled_line(sub_channel: discord.TextChannel) -> None:
     """Tell the submission channel that a resubmission was cancelled and the earlier results
     stand. The one place it is sent, for `_resubmit_collection_task` and the review's job."""

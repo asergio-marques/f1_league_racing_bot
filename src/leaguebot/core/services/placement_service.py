@@ -14,6 +14,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.core.models.team import TeamRoleConfig
 from leaguebot.core.utils.input_validator import parse_time
@@ -2068,6 +2069,7 @@ class PlacementService:
         """
         return await self._refresh_lineup_post(guild, division_id, as_text=as_text)
 
+    @posts_in_a_job
     async def _refresh_lineup_post(
         self,
         guild: discord.Guild,

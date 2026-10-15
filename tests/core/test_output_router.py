@@ -20,7 +20,6 @@ LOG_CHANNEL_ID = 101
 ADMIN_ROLE_ID = 901
 
 NO_NOTICE_ROLE = "#439: the router's stop notice takes no role to mention"
-NO_FORECAST_GUARD = "#439: the router's forecast post runs outside a job"
 NO_FORECAST_MENTIONS = "#439: the router's forecast post takes no mentions and notifies nobody"
 DIVISION_ROLE_ID = 801
 
@@ -65,7 +64,6 @@ async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
     assert _role_ids(silent.kwargs["allowed_mentions"]) == set()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_GUARD)
 async def test_the_router_s_forecast_post_is_made_in_a_job():
     """The router is asked, outside every job, to post a forecast to division channel 701: it
     raises `PostedOutsideAJob` and sends nothing. A forecast is posted by its change's job, and

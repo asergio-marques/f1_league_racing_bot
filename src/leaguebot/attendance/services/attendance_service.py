@@ -25,6 +25,7 @@ from leaguebot.attendance.models.attendance import (
 )
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -1051,6 +1052,7 @@ async def _rewrite_round_pardons_on(
         )
 
 
+@posts_in_a_job
 async def post_attendance_sheet(
     bot: LeagueBot,
     guild: discord.Guild,

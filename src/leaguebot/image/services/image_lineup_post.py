@@ -28,6 +28,7 @@ import discord
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -273,6 +274,7 @@ async def render_png(
     )
 
 
+@posts_in_a_job
 async def try_post(
     bot: LeagueBot,
     guild: discord.Guild | None,

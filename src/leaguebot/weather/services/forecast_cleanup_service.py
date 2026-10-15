@@ -26,6 +26,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -154,6 +155,7 @@ async def forecast_deletes(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+@posts_in_a_job
 async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) -> None:
     """Delete the message *message_id* in the channel *channel_id*, raising where it cannot.
 
@@ -176,6 +178,7 @@ async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) ->
 # 042 — the one send site every weather posting takes
 # ---------------------------------------------------------------------------
 
+@posts_in_a_job
 async def post_phase_message(
     bot: "LeagueBot",
     *,
