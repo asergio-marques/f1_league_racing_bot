@@ -48,7 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
 NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
 NO_LANE_WORKERS = "#439: one worker runs the whole queue, one change at a time"
 NO_LANE_NOTICE = (
@@ -903,7 +902,6 @@ async def _open_changes(env) -> list[str]:
             if row["state"] in ("QUEUED", "RUNNING")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_a_conversation_s_waiting_change_is_dropped_once_the_league_has_ended_it(env):
     """The league is asked to end the conversation in channel 7, and a turn there is asked behind
     it, saving an answer. Once the league's change has ended the conversation, the waiting turn is
@@ -922,7 +920,6 @@ async def test_a_conversation_s_waiting_change_is_dropped_once_the_league_has_en
     assert await _open_changes(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_notice(env):
     """A turn in channel 7 stops at a post Discord refuses. The league then ends that conversation,
     and Discord would now take the post. The bot carries on past the job's scheduled tries, an
@@ -956,7 +953,6 @@ async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_not
                    for line in env.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_retry_of_a_stopped_job_of_an_ended_conversation_finds_it_no_longer_due_and_clears_the_stop(env):
     """A turn in channel 7 stops at a post Discord refuses, and the league then ends that
     conversation. Discord would now take the post, but a league manager's Retry finds the job no
@@ -985,7 +981,6 @@ async def test_retry_of_a_stopped_job_of_an_ended_conversation_finds_it_no_longe
     assert await _open_changes(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_discard_of_it_drops_it_and_the_lane_s_waiting_changes_are_then_dropped(env):
     """In channel 7 a first turn stops at a post Discord refuses and a second turn, saving an
     answer, waits behind it. The league ends the conversation. A league admin's Discard drops the
@@ -1009,7 +1004,6 @@ async def test_discard_of_it_drops_it_and_the_lane_s_waiting_changes_are_then_dr
     assert await _open_changes(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_a_closing_change_asked_back_needs_only_its_channel_to_stand(env):
     """A turn is asked in channel 7, then the league ends that conversation and, in the same save,
     asks back a closing change of channel 7's lane, which needs only the channel to stand. The
@@ -1030,7 +1024,6 @@ async def test_a_closing_change_asked_back_needs_only_its_channel_to_stand(env):
     assert await _open_changes(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONVERSATION_END)
 async def test_a_job_failing_because_its_channel_was_deleted_under_it_stops_its_lane_and_retry_drops_it(env):
     """A turn in channel 7 is posting when the league ends the conversation and deletes its
     channel, so Discord refuses the post as the channel is unknown. The turn's lane stops at the

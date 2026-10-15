@@ -148,6 +148,15 @@ def cleared_line(job_id: int, job: str, why: str) -> str:
     return f"ℹ️ Job #{job_id} ({job}) no longer stops the queue: {why}. The queue runs on."
 
 
+def conversation_ended_line(job_id: int, job: str) -> str:
+    """The log channel's line for job *job_id*, a turn of a conversation, found no longer due
+    because the league ended the conversation: it was dropped."""
+    return (
+        f"ℹ️ Job #{job_id} ({job}) is no longer due: its conversation was ended, so it was "
+        f"dropped."
+    )
+
+
 def retried_line(named: str, job_id: int, job: str, request: str) -> str:
     """The log channel's line for *named* pressing Retry on job *job_id*, *job* being what it
     does and *request* the change it belongs to."""

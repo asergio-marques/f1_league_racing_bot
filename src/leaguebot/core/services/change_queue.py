@@ -39,6 +39,15 @@ the lock: a save is handed the connection and waits on nothing else. The lock or
 `_working[lane]`, then `_asking`, then `_writing`, and never the other way. Pinned by
 `test_two_lanes_saves_never_overlap`.
 
+**A conversation the league ends is found no longer due.** A change type of a conversation's lane
+says, through `conversation_open`, whether its conversation still stands, and the worker asks it
+before every job, and again in the save of a `SAVE` step or of a record. A job whose conversation
+has ended is marked done as dropped, with a line saying so; what a job already sent stands. A job
+the lane is already stopped at stays stopped: the bot makes no scheduled try of it once its
+conversation has ended (`_choose` clears its `next_try_at`, as a restart does), and a Retry makes a
+try that finds it no longer due and clears the stop, a Discard dropping it. The conversation's other
+changes are then found no longer due in turn.
+
 **A step is one of four kinds** (`StepKind`). A `SAVE` step is handed the open save and writes only
 on it, never committing. The other kinds do Discord or legacy work with no connection open and are
 marked in a save after it. Nothing is awaited inside a save but the connection.
@@ -158,6 +167,7 @@ from leaguebot.core.services.queue_stop_view import QueueStopView
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.log_lines import (
     cleared_line,
+    conversation_ended_line,
     discarded_line,
     hour_line,
     refusal_line,
@@ -353,6 +363,12 @@ class ChangeType:
     queue as a league knows it) or a conversation's, `"channel:<id>"`, keyed by the channel it is
     held in. The lane is fixed by what asked for the change, so the same payload always gives the
     same lane; a follow-on a step asks takes its own kind's lane, not its asker's.
+
+    *conversation_open*, on a change type of a conversation's lane, says from the payload whether
+    that conversation still stands: a job of the change whose conversation has ended is found no
+    longer due and dropped. A turn needs the conversation still running; a closing change the
+    league asks back needs only its channel to stand. It reads on the connection it is handed.
+    None where the change has no conversation to end.
     """
 
     kind: str
@@ -366,6 +382,7 @@ class ChangeType:
     on_refused: Callable[[RefusedContext], tuple[FollowOn, ...]] | None = None
     on_discarded: Callable[[DiscardedContext], tuple[FollowOn, ...]] | None = None
     lane: Callable[[dict[str, Any]], str] = league_lane
+    conversation_open: Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[bool]] | None = None
 
 
 class ChangeRefused(Exception):
@@ -377,6 +394,18 @@ def _refusal_text(verdict: Verdict) -> str:
     """What a member is told of a request whose check is not GO: the verdict's reply, or where
     it gives none (a check of the bot's kind), its reason."""
     return verdict.reply or f"⚠️ {verdict.reason}"
+
+
+@dataclass(frozen=True)
+class _Recheck:
+    """What is asked again in the save that runs a step's work or its record, with the write lock
+    held: the step's `still_due`, and its change's `conversation_open` on the save's connection.
+    Where either says no, the step is marked done as dropped with *ended*, and its work or record
+    is not run."""
+
+    due: Callable[[], Awaitable[bool]] | None
+    still_open: Callable[[aiosqlite.Connection], Awaitable[bool]] | None
+    ended: StepResult
 
 
 class ChangeQueue:
@@ -881,18 +910,39 @@ class ChangeQueue:
         )
         for change in await cursor.fetchall():
             cursor = await db.execute(
-                "SELECT failing_since, next_try_at FROM queued_change_steps "
+                "SELECT id, failing_since, next_try_at FROM queued_change_steps "
                 "WHERE change_id = ? AND done_at IS NULL ORDER BY position LIMIT 1",
                 (change["id"],),
             )
             job = await cursor.fetchone()
-            if job is not None and job["failing_since"] is not None and (
-                job["next_try_at"] is None
-                or datetime.fromisoformat(job["next_try_at"]) > self._clock()
-            ):
-                continue
+            if job is not None and job["failing_since"] is not None:
+                if job["next_try_at"] is None or (
+                    datetime.fromisoformat(job["next_try_at"]) > self._clock()
+                ):
+                    continue
+                if job["id"] not in self._retrying and await self._conversation_over(
+                    db, change
+                ):
+                    # Due for a try of its own, but its conversation has ended: no try is made, so
+                    # that it cannot post into a conversation the league has taken down. It waits,
+                    # as a stop does after a restart, for Retry or Discard.
+                    async with self._writing:
+                        await db.execute(
+                            "UPDATE queued_change_steps SET next_try_at = NULL WHERE id = ?",
+                            (job["id"],),
+                        )
+                        await db.commit()
+                    continue
             return change
         return None
+
+    async def _conversation_over(self, db: aiosqlite.Connection, change: aiosqlite.Row) -> bool:
+        """Whether the conversation *change* belongs to has ended, read on *db*; False for a
+        change of no conversation."""
+        change_type = self._types.get(change["kind"])
+        if change_type is None or change_type.conversation_open is None:
+            return False
+        return not await change_type.conversation_open(db, json.loads(change["payload"]))
 
     @staticmethod
     async def _read_steps(db: aiosqlite.Connection, change_id: int) -> list[aiosqlite.Row]:
@@ -1173,24 +1223,31 @@ class ChangeQueue:
             return False
         ctx = self._step_context(change, step_rows, row)
         stopped_as = await self._stopped_as(change, row, ctx)
+        recheck = await self._recheck(change, change_type, step, ctx, row, stopped_as)
         produced: StepResult | None = None
         try:
             if step.still_due is not None and not await step.still_due(ctx):
                 return await self._complete(
                     change, row, StepResult(result={"dropped": True}), stopped_as
                 )
+            if step.kind is not StepKind.SAVE and recheck.still_open is not None:
+                async with get_connection(self._db_path) as db:
+                    standing = await recheck.still_open(db)
+                if not standing:
+                    return await self._complete(change, row, recheck.ended, stopped_as)
             if step.kind is StepKind.SAVE:
                 async with self._writing:
                     # Asked again with the lock held: a save of another lane may have landed
                     # since the check above, and none can land between this one and the save.
-                    due_again = step.still_due is None or await step.still_due(ctx)
+                    due_again = recheck.due is None or await recheck.due()
                     async with get_connection(self._db_path) as db:
                         await db.execute("BEGIN IMMEDIATE")
                         try:
+                            due_again = due_again and (
+                                recheck.still_open is None or await recheck.still_open(db)
+                            )
                             result = (
-                                await step.run(db, ctx)
-                                if due_again
-                                else StepResult(result={"dropped": True})
+                                await step.run(db, ctx) if due_again else recheck.ended
                             )
                             saved = await self._save_result(db, change, row, result, stopped_as)
                             if saved is None:
@@ -1204,7 +1261,7 @@ class ChangeQueue:
             produced = await step.run(ctx)
             return await self._complete(
                 change, row, produced, stopped_as, record=self._recording(step, ctx, produced),
-                due_again=self._asking_again(step, ctx),
+                recheck=recheck,
             )
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_stop`
             log.log(self._failure_level(row), "job %s (%r) of %s raised (change %s)", row["id"],
@@ -1226,20 +1283,39 @@ class ChangeQueue:
 
         return _record
 
-    @staticmethod
-    def _asking_again(
-        step: Step, ctx: StepContext
-    ) -> Callable[[], Awaitable[bool]] | None:
-        """The step's `still_due` bound to its context, to be asked again in the save that runs
-        its record; None where the step has no record or no check."""
+    async def _recheck(
+        self, change: aiosqlite.Row, change_type: ChangeType, step: Step, ctx: StepContext,
+        row: aiosqlite.Row, stopped_as: str | None,
+    ) -> _Recheck:
+        """What is asked again in the save of the job *row*, formed beforehand since nothing but
+        the connection is awaited in a save.
+
+        The step's `still_due` is asked again only for a `SAVE` step and a step with a record, the
+        saves that write what the change is for. A job found no longer due because its
+        conversation ended says so in a line of its own, unless it had stopped the lane, where
+        the line saying it no longer stops it is that line.
+        """
         still_due = step.still_due
-        if still_due is None or step.record is None:
-            return None
+        due: Callable[[], Awaitable[bool]] | None = None
+        if still_due is not None and (step.kind is StepKind.SAVE or step.record is not None):
 
-        async def _again() -> bool:
-            return await still_due(ctx)
+            async def _again() -> bool:
+                return await still_due(ctx)
 
-        return _again
+            due = _again
+        conversation_open = change_type.conversation_open
+        if conversation_open is None:
+            return _Recheck(due, None, StepResult(result={"dropped": True}))
+        payload = json.loads(change["payload"])
+
+        async def _standing(db: aiosqlite.Connection) -> bool:
+            return await conversation_open(db, payload)
+
+        lines: tuple[str, ...] = ()
+        if stopped_as is None:
+            lines = (conversation_ended_line(
+                row["id"], await self._name_job(change, row, ctx)),)
+        return _Recheck(due, _standing, StepResult(result={"dropped": True}, lines=lines))
 
     async def _stopped_as(
         self, change: aiosqlite.Row, row: aiosqlite.Row, ctx: StepContext
@@ -1254,22 +1330,27 @@ class ChangeQueue:
         self, change: aiosqlite.Row, row: aiosqlite.Row, result: StepResult,
         stopped_as: str | None,
         record: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None,
-        due_again: Callable[[], Awaitable[bool]] | None = None,
+        recheck: _Recheck | None = None,
     ) -> bool:
         """Save the mark of a step whose work needed no connection, with *result*'s audits and
         lines, then deliver the lines. The step's *record* runs first, in the same save, so that
         what it writes lands with the mark or not at all.
 
-        *due_again* is asked with the write lock held, before the save opens: where the step is
-        then no longer due, its record is not run and the step is marked done as dropped, what it
-        sent standing untracked.
+        *recheck* is asked, where the step has a record, with the write lock held: where the step
+        is then no longer due, or its conversation has ended, the record is not run and the step
+        is marked done as dropped, what it sent standing untracked.
         """
         async with self._writing:
-            if due_again is not None and not await due_again():
-                result, record = StepResult(result={"dropped": True}), None
+            checking = recheck if recheck is not None and record is not None else None
+            due_again = checking is None or checking.due is None or await checking.due()
             async with get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 try:
+                    if checking is not None and not (
+                        due_again
+                        and (checking.still_open is None or await checking.still_open(db))
+                    ):
+                        result, record = checking.ended, None
                     if record is not None:
                         await record(db)
                     saved = await self._save_result(db, change, row, result, stopped_as)
@@ -1324,7 +1405,10 @@ class ChangeQueue:
             return await self._complete(
                 change, row, completed, await self._stopped_as(change, row, ctx),
                 record=self._recording(step, ctx, completed),
-                due_again=self._asking_again(step, ctx),
+                recheck=await self._recheck(
+                    change, self._types[change["kind"]], step, ctx, row,
+                    await self._stopped_as(change, row, ctx),
+                ),
             )
         job = await self._name_job(change, row, ctx)
         kept = produced.result if produced is not None and step.kind is not StepKind.SAVE else None
