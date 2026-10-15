@@ -101,13 +101,24 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=N
     bot.scheduler_service = MagicMock()
     bot.scheduler_service._scheduler = MagicMock()
     bot.wizard_service = MagicMock()
-    bot.wizard_service.trigger_channel_hold = AsyncMock()
     channel = channel if channel is not None else _channel()
     g = MagicMock()
     g.get_channel = MagicMock(return_value=channel)
     bot.get_guild = MagicMock(return_value=g if guild else None)
     bot._channel = channel
     return bot
+
+
+def _driver_notices(bot) -> list:
+    """Every message the close posted other than the window's "signups are now closed" notice:
+    a driver's closing notice. The bot's guild hands this one channel for every channel id, a
+    driver's signup channel included, so a notice posted in any of them is counted. The queue's
+    form posts none: each driver's notice is a job of its own, signup's closing steps."""
+    return [
+        call
+        for call in bot._channel.send.await_args_list
+        if call.args != ("🔒 Signups are now closed.",)
+    ]
 
 
 async def _audit(db_path):
@@ -236,7 +247,7 @@ async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds
     assert bot.driver_service.transition.await_args.args == ("101", DriverState.NOT_SIGNED_UP)
     db = await _handed_on(bot)
     assert ended == [(db, "101", True)]
-    bot.wizard_service.trigger_channel_hold.assert_not_awaited()
+    assert _driver_notices(bot) == []
     assert outcome.returned == 1
     assert [str(uid) for uid in outcome.returned_ids] == ["101"]
     assert list(outcome.failed) == []
@@ -454,7 +465,7 @@ async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is
     assert raised.value.result == {"returned": [first]}
     cancelled = {c.args[0] for c in bot.scheduler_service.cancel_job.call_args_list}
     assert cancelled == {f"wizard_inactivity_{first}", f"wizard_channel_delete_{first}"}
-    bot.wizard_service.trigger_channel_hold.assert_not_awaited()
+    assert _driver_notices(bot) == []
     bot.signup_module_service.set_window_closed.assert_not_awaited()
 
 
@@ -533,7 +544,6 @@ def _unattended_bot(db_path, *, signups_open=True, enabled=True, channel=None):
     """A bot whose signup module is *enabled* or not, and whose window is open or not, with
     its close time set at `SET_TIME`, and a log channel that keeps what is posted to it."""
     bot = _bot(db_path, config=_window(signups_open=signups_open, close_at=SET_TIME), channel=channel)
-    bot.wizard_service.trigger_channel_hold = AsyncMock()
     bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
     bot.output_router.post_log = AsyncMock(return_value=None)
     return bot
