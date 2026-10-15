@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
@@ -61,8 +62,9 @@ class PackRefused(Exception):
     """The pack is refused, for one of two reasons the command words for the admin.
 
     The league has a current season: *season_number* and *stage* say which. Or the queue
-    holds a job: *job_id* is the job the pack would wait on, and *stopped* says it failed and
-    holds the queue until Retry or Discard. The other pair is then None (or False).
+    holds a job: *job_id* is the job the pack would wait on, *lane* the lane it is on, and
+    *stopped* says it failed and holds that lane until Retry or Discard. The other pair is then
+    None (or False).
     """
 
     def __init__(
@@ -72,11 +74,13 @@ class PackRefused(Exception):
         *,
         job_id: int | None = None,
         stopped: bool = False,
+        lane: str = LEAGUE_LANE,
     ) -> None:
         self.season_number = season_number
         self.stage = stage
         self.job_id = job_id
         self.stopped = stopped
+        self.lane = lane
         if job_id is not None:
             super().__init__(f"the queue holds job #{job_id}" + (" (stopped)" if stopped else ""))
         else:
@@ -93,21 +97,23 @@ class PackResult:
     scheduled_jobs: int
 
 
-async def pending_job(db) -> tuple[int, bool] | None:
-    """The job a pack would wait on as (number, stopped), or None where the queue is empty.
+async def pending_job(db) -> tuple[int, bool, str] | None:
+    """The job a pack would wait on as (number, stopped, lane), or None where no lane holds one.
 
-    The first job not yet done of the oldest change still open, which is the one the worker
-    runs next, or the one holding it where it has failed (*stopped*): the queue runs in order.
+    Every lane is read, the league's and each conversation's, since a pack would otherwise
+    clear a server a lane still changes. A job *stopped* (failed, holding its lane until Retry
+    or Discard) comes first, as the one an admin has to act on; else the first job not yet done
+    of the oldest change still open, which is the one its lane's worker runs next.
     """
     row = await (
         await db.execute(
-            "SELECT s.id, s.failing_since IS NOT NULL FROM queued_change_steps s "
+            "SELECT s.id, s.failing_since IS NOT NULL, c.lane FROM queued_change_steps s "
             "JOIN queued_changes c ON c.id = s.change_id "
             "WHERE c.state IN ('QUEUED', 'RUNNING') AND s.done_at IS NULL "
-            "ORDER BY c.id, s.position LIMIT 1"
+            "ORDER BY s.failing_since IS NULL, c.id, s.position LIMIT 1"
         )
     ).fetchone()
-    return None if row is None else (int(row[0]), bool(row[1]))
+    return None if row is None else (int(row[0]), bool(row[1]), str(row[2]))
 
 
 async def current_season(db) -> tuple[int, str | None] | None:
@@ -182,7 +188,7 @@ async def pack(
                 raise PackRefused(*season)
             job = await pending_job(db)
             if job is not None:
-                raise PackRefused(job_id=job[0], stopped=job[1])
+                raise PackRefused(job_id=job[0], stopped=job[1], lane=job[2])
 
             cleared = await _cleared_configuration(db)
 

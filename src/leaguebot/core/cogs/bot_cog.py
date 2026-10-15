@@ -39,6 +39,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
 from leaguebot.core.utils.channel_guard import (
@@ -52,7 +53,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_server import guild_of
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import lane_name, refuse
 
 log = logging.getLogger(__name__)
 
@@ -742,7 +743,7 @@ class BotCog(commands.Cog):
             )
         except pack_service.PackRefused as refused:
             if refused.job_id is not None:
-                reason = _queue_refusal(refused.job_id, refused.stopped)
+                reason = _queue_refusal(refused.job_id, refused.stopped, refused.lane)
             elif refused.season_number is not None:
                 reason = _current_season_refusal(refused.season_number, refused.stage)
             else:
@@ -1016,17 +1017,19 @@ async def _open_progress(user: discord.User | discord.Member) -> discord.Message
         return None
 
 
-def _queue_refusal(job_id: int, stopped: bool) -> str:
-    """Why pack will not run while the queue holds a job, naming the job it would wait on."""
+def _queue_refusal(job_id: int, stopped: bool, lane: str = LEAGUE_LANE) -> str:
+    """Why pack will not run while a lane holds a job, naming the job it would wait on and the
+    lane it is on: the queue (the league's), or the turns in a conversation's channel."""
+    where = lane_name(lane)
     if stopped:
         return (
-            f"⛔ The bot does not leave a server while its queue holds a job, and the queue is "
-            f"stopped at job #{job_id}. A league manager or admin can press Retry on its notice "
-            f"in the log channel, or a league admin Discard, and then pack again."
+            f"⛔ The bot does not leave a server while a lane holds a job: job #{job_id} on "
+            f"{where} is stopped. A league manager or admin can press Retry on its notice in "
+            f"the log channel, or a league admin Discard, and then pack again."
         )
     return (
-        f"⛔ The bot does not leave a server while its queue holds a job: job #{job_id} is "
-        f"still to run. Let it finish, then pack again."
+        f"⛔ The bot does not leave a server while a lane holds a job: job #{job_id} on "
+        f"{where} is still to run. Let it finish, then pack again."
     )
 
 

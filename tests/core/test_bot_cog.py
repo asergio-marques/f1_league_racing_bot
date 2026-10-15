@@ -48,9 +48,6 @@ CONFIGURED_ROLE = 222
 CONFIGURED_LOG = 333
 CONFIGURED_ADMIN_ROLE = 444
 
-NO_PACK_LANE_NAMED = "#439: a pack's refusal does not name the lane its job is on: the queue, or the turns in a channel"
-
-
 def _unwrap(cmd):
     """Strip `bot_setup_only` and return the command body.
 
@@ -901,7 +898,6 @@ async def _queue_rows(db_path: str) -> list[tuple]:
     return [tuple(r) for r in changes] + [tuple(r) for r in jobs]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(tmp_path):
     """A job still to run would go on changing Discord on a server the bot no longer serves, so
     a pack waits for the queue to empty (#439): refused before anything is cleared, naming the
@@ -927,7 +923,6 @@ async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(t
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 async def test_bot_pack_is_refused_while_the_queue_is_stopped_and_names_the_stopped_job(tmp_path):
     """A stopped job holds the queue until a league manager or admin presses Retry, or a league
     admin Discard, on its notice (#439): the pack is refused naming the stopped job, on the queue (the league's lane), and those two
@@ -982,7 +977,6 @@ async def _seed_job_on_lane(db_path: str, lane: str, *, stopped: bool) -> int:
         return int(cursor.lastrowid)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 @pytest.mark.parametrize("stopped", [False, True], ids=["waiting", "stopped"])
 async def test_bot_pack_held_by_a_conversation_s_job_names_the_turns_in_its_channel(
     tmp_path, stopped
@@ -1077,7 +1071,6 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE_NAMED)
 async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season(
     tmp_path, monkeypatch
 ):

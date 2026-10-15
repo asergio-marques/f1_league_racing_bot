@@ -24,11 +24,6 @@ SERVER = 4242
 #: The member who packs. Nothing but a member's command packs the bot, so it is required.
 ACTOR = {"actor_id": 7, "actor_name": "admin"}
 
-NO_PACK_LANE = (
-    "#439: a pack's refusal names no lane, and waits on the oldest change's job, not a stopped one"
-)
-
-
 def _scheduler() -> MagicMock:
     scheduler = MagicMock()
     scheduler.cancel_all.return_value = 3
@@ -435,7 +430,6 @@ async def _on_lane(db_path: str, lane: str, *, stopped: bool) -> int:
         return int(cursor.lastrowid)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE)
 async def test_a_pack_is_refused_while_any_lane_holds_a_job_naming_it_and_its_lane(db_path):
     """The league's lane is empty, but a turn in channel 7 waits its turn there. The pack is
     refused all the same, naming that job and channel 7's lane, and nothing is cleared."""
@@ -452,7 +446,6 @@ async def test_a_pack_is_refused_while_any_lane_holds_a_job_naming_it_and_its_la
     assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] == SERVER
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PACK_LANE)
 async def test_the_refusal_names_a_stopped_job_first(db_path):
     """A league change waits its turn, asked first; a turn in channel 8, asked after it, is
     stopped at a job Discord refused. The pack's refusal names the stopped job on channel 8's

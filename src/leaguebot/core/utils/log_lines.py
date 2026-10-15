@@ -121,6 +121,12 @@ class _Lane:
         return self.the[:1].upper() + self.the[1:]
 
 
+def lane_name(lane: str) -> str:
+    """How a reply names *lane* to a league admin: "the queue" for the league's, "the turns in
+    <#channel>" for a conversation's. Never the lane's raw key."""
+    return _Lane(lane).the
+
+
 def stop_line(
     job_id: int, job: str, request: str, asker: str, fault: str, lane: str = LEAGUE_LANE,
     *, admins: int | None = None,
