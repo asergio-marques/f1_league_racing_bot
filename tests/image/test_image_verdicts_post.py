@@ -12,6 +12,7 @@ import pytest
 
 from leaguebot.results.services import verdict_announcement_service as vas
 from leaguebot.image.services.image_verdict_service import VerdictKind
+from tests.support.change_queue import in_a_job
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -134,7 +135,8 @@ async def _send(channel, *, kind=VerdictKind.PENALTY, **overrides):
         team_name="Red Bull",
     )
     values.update(overrides)
-    await vas._send_verdict(_Bot(), channel, **values)
+    with in_a_job():
+        await vas._send_verdict(_Bot(), channel, **values)
 
 
 # ── T028: the message is the mention and nothing besides ──────────────────

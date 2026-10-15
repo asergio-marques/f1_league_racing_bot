@@ -522,9 +522,10 @@ async def test_a_sanction_announcement_shares_the_round_s_verdict_heading(tmp_pa
         )
         await db.commit()
 
-    await _hook(league.bot, _placement()).announce_sanction(
-        ROUND_ID, PRO, candidate(MAX_PROFILE, MAX_ID), as_text=False
-    )
+    with in_a_job():
+        await _hook(league.bot, _placement()).announce_sanction(
+            ROUND_ID, PRO, candidate(MAX_PROFILE, MAX_ID), as_text=False
+        )
 
     assert len(league.sent_to(VERDICTS_CHANNEL)) == 1
     assert verdict_headings(league) == []

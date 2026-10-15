@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.results.services.results_post_service import _label_from_status
+from tests.support.change_queue import in_a_job
 
 
 # ---------------------------------------------------------------------------
@@ -112,17 +113,18 @@ async def test_session_results_include_heading_and_label(tmp_path):
     mock_guild.get_member.return_value = None
     mock_guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
 
-    await produce_session_results(
-        db_path=db_path,
-        session_result=session_result,
-        driver_rows=driver_rows,
-        points_map={},
-        results_channel=mock_channel,
-        guild=mock_guild,
-        round_number=5,
-        track_name="Monaco",
-        label="Provisional Results",
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=driver_rows,
+            points_map={},
+            results_channel=mock_channel,
+            guild=mock_guild,
+            round_number=5,
+            track_name="Monaco",
+            label="Provisional Results",
+        )
 
     assert len(captured_content) == 1
     content = captured_content[0]
@@ -204,17 +206,18 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
             return msg
         mock_channel.send = fake_send
 
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=mock_channel,
-            guild=mock_guild,
-            round_number=1,
-            track_name="Monza",
-            label=label,
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=mock_channel,
+                guild=mock_guild,
+                round_number=1,
+                track_name="Monza",
+                label=label,
+            )
 
         assert label in captured[0], f"Label '{label}' not found for status {status}"
 
@@ -273,19 +276,20 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
     mock_guild.get_member.return_value = None
     mock_guild.get_role.return_value = None
 
-    await produce_standings(
-        db_path=db_path,
-        division_id=division_id,
-        round_id=round_id,
-        round_number=3,
-        track_name="Silverstone",
-        standings_channel=mock_channel,
-        driver_snapshots=[],
-        team_snapshots=[],
-        guild=mock_guild,
-        show_reserves=False,
-        label="Final Results",
-    )
+    with in_a_job():
+        await produce_standings(
+            db_path=db_path,
+            division_id=division_id,
+            round_id=round_id,
+            round_number=3,
+            track_name="Silverstone",
+            standings_channel=mock_channel,
+            driver_snapshots=[],
+            team_snapshots=[],
+            guild=mock_guild,
+            show_reserves=False,
+            label="Final Results",
+        )
 
     assert len(captured_content) == 1
     content = captured_content[0]
@@ -1030,16 +1034,18 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     )
 
     async def _results(**kwargs) -> PostedTable:
-        return await produce_session_results(
-            db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
-            "Provisional Results", **kwargs,
-        )
+        with in_a_job():
+            return await produce_session_results(
+                db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
+                "Provisional Results", **kwargs,
+            )
 
     async def _standings(label: str = "Provisional Results", **kwargs) -> list[PostedTable]:
-        return await produce_standings(
-            db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
-            guild, True, label, **kwargs,
-        )
+        with in_a_job():
+            return await produce_standings(
+                db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
+                guild, True, label, **kwargs,
+            )
 
     # A session's results: posted afresh, the old posting handed back and left standing.
     posted = await _results()

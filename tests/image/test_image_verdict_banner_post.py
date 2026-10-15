@@ -28,6 +28,7 @@ import pytest
 
 from leaguebot.image.services import image_verdict_banner_post as banner
 from leaguebot.results.services import verdict_announcement_service as vas
+from tests.support.change_queue import in_a_job
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -150,7 +151,8 @@ def _drawing():
 
 async def test_the_banner_message_carries_no_text_at_all(flow):
     channel = _Channel()
-    await banner.try_post(_Bot(channel), channel, _drawing())
+    with in_a_job():
+        await banner.try_post(_Bot(channel), channel, _drawing())
 
     assert len(channel.sent) == 1
     content, file = channel.sent[0]
@@ -195,13 +197,15 @@ async def test_a_text_heading_is_returned_so_it_can_be_taken_down(flow):
         round_number=8, race_name=None, country_name=None,
     )
 
-    assert await banner.try_post(_Bot(channel), channel, drawing) is sent
+    with in_a_job():
+        assert await banner.try_post(_Bot(channel), channel, drawing) is sent
     assert channel.sent == [("**Season 5 Pit Wall Premier Round 8**", None)]
 
 
 async def test_the_banner_is_discarded_once_posted(flow):
     channel = _Channel()
-    await banner.try_post(_Bot(channel), channel, _drawing())
+    with in_a_job():
+        await banner.try_post(_Bot(channel), channel, _drawing())
 
     assert flow["discarded"] == [flow["png"]]
 

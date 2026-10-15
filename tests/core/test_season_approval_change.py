@@ -33,6 +33,7 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    in_a_job,
     member_interaction,
     retry_job,
     run_queue,
@@ -1302,9 +1303,10 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
     )
 
     for division in (PRO, AM):
-        await season_classification_service.post_opening_standings(
-            league.bot, league.guild, league.db_path, division, as_text=False,
-        )
+        with in_a_job():
+            await season_classification_service.post_opening_standings(
+                league.bot, league.guild, league.db_path, division, as_text=False,
+            )
 
     assert league.texts(PRO_CH.standings)
     assert league.texts(AM_CH.standings) == []

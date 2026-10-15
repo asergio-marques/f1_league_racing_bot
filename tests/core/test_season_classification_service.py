@@ -18,6 +18,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services import season_classification_service as service
+from tests.support.change_queue import in_a_job
 
 pytestmark = pytest.mark.asyncio
 
@@ -400,9 +401,10 @@ async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_not
 
     first, second = _final_inputs(round_id, division_id)
     with first, second:
-        await service.post_final_standings(
-            _bot(db_path), guild, db_path, division_id, round_id, as_text=True
-        )
+        with in_a_job():
+            await service.post_final_standings(
+                _bot(db_path), guild, db_path, division_id, round_id, as_text=True
+            )
 
     channel.send.assert_awaited()
     old_message.edit.assert_not_awaited()

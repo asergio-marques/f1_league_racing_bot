@@ -128,17 +128,18 @@ async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await produce_session_results(
-        db_path=db_path,
-        session_result=session_result,
-        driver_rows=[],
-        points_map={},
-        results_channel=_channel(sent),
-        guild=_guild(),
-        round_number=5,
-        track_name="Monaco",
-        label="Provisional Results",
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=_channel(sent),
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Provisional Results",
+        )
 
     assert len(sent) == 1
     assert "Provisional Results" in sent[0][0]
@@ -151,18 +152,19 @@ async def test_the_module_being_disabled_leaves_the_text(tmp_path):
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await produce_session_results(
-        db_path=db_path,
-        session_result=session_result,
-        driver_rows=[],
-        points_map={},
-        results_channel=_channel(sent),
-        guild=_guild(),
-        round_number=5,
-        track_name="Monaco",
-        label="Provisional Results",
-        bot=_bot(db_path, module=False),
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=_channel(sent),
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Provisional Results",
+            bot=_bot(db_path, module=False),
+        )
 
     assert len(sent) == 1 and "file" not in sent[0][1]
 
@@ -173,18 +175,19 @@ async def test_the_aspect_being_off_leaves_the_text(tmp_path):
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await produce_session_results(
-        db_path=db_path,
-        session_result=session_result,
-        driver_rows=[],
-        points_map={},
-        results_channel=_channel(sent),
-        guild=_guild(),
-        round_number=5,
-        track_name="Monaco",
-        label="Provisional Results",
-        bot=_bot(db_path, toggle=False),
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=_channel(sent),
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Provisional Results",
+            bot=_bot(db_path, toggle=False),
+        )
 
     assert len(sent) == 1 and "file" not in sent[0][1]
 
@@ -196,18 +199,19 @@ async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
 
-    await produce_session_results(
-        db_path=db_path,
-        session_result=session_result,
-        driver_rows=[],
-        points_map={},
-        results_channel=_channel(sent),
-        guild=_guild(),
-        round_number=5,
-        track_name="Monaco",
-        label="Provisional Results",
-        bot=_bot(db_path, valid=False),
-    )
+    with in_a_job():
+        await produce_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=_channel(sent),
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Provisional Results",
+            bot=_bot(db_path, valid=False),
+        )
 
     assert len(sent) == 1
     assert "Provisional Results" in sent[0][0]
@@ -297,18 +301,19 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
         "render_png",
         AsyncMock(return_value=_decision(posts=False, problem=MagicMock(detail="boom"))),
     ):
-        posted = await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            posted = await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     # The textual table went out in its place, handed back with the message it replaces, 111,
     # which still stands and is still the stored id: the caller's job saves the new one.
@@ -630,18 +635,19 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
         "try_post",
         AsyncMock(side_effect=RuntimeError("something unforeseen")),
     ):
-        await produce_session_results(
-            db_path=db_path,
-            session_result=session_result,
-            driver_rows=[],
-            points_map={},
-            results_channel=_channel(sent),
-            guild=_guild(),
-            round_number=5,
-            track_name="Monaco",
-            label="Final Results",
-            bot=_bot(db_path),
-        )
+        with in_a_job():
+            await produce_session_results(
+                db_path=db_path,
+                session_result=session_result,
+                driver_rows=[],
+                points_map={},
+                results_channel=_channel(sent),
+                guild=_guild(),
+                round_number=5,
+                track_name="Monaco",
+                label="Final Results",
+                bot=_bot(db_path),
+            )
 
     assert len(sent) == 1
     assert "Final Results" in sent[0][0]

@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tests.support.change_queue import in_a_job
 
 
 pytestmark = pytest.mark.asyncio
@@ -193,7 +194,8 @@ async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
     for p in patches:
         p.start()
     try:
-        return await try_post(bot, _guild(), channel, **kwargs)
+        with in_a_job():
+            return await try_post(bot, _guild(), channel, **kwargs)
     finally:
         for p in patches:
             p.stop()
@@ -993,20 +995,21 @@ async def _post(db_path, division_id, round_id, captured, *, bot=None, channel=N
     guild.get_member.return_value = None
     guild.get_role.return_value = None
 
-    return await produce_standings(
-        db_path=db_path,
-        division_id=division_id,
-        round_id=round_id,
-        round_number=3,
-        track_name="Silverstone",
-        standings_channel=channel,
-        driver_snapshots=[],
-        team_snapshots=[],
-        guild=guild,
-        show_reserves=False,
-        label="Final Results",
-        bot=bot,
-    )
+    with in_a_job():
+        return await produce_standings(
+            db_path=db_path,
+            division_id=division_id,
+            round_id=round_id,
+            round_number=3,
+            track_name="Silverstone",
+            standings_channel=channel,
+            driver_snapshots=[],
+            team_snapshots=[],
+            guild=guild,
+            show_reserves=False,
+            label="Final Results",
+            bot=bot,
+        )
 
 
 async def test_no_bot_leaves_the_textual_body_exactly_as_it_was(tmp_path):
@@ -1226,20 +1229,21 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
         "leaguebot.image.services.image_standings_post.try_post",
         AsyncMock(return_value=_outcome(fallbacks=("drivers",))),
     ):
-        tables = await produce_standings(
-            db_path=db_path,
-            division_id=division_id,
-            round_id=round_id,
-            round_number=3,
-            track_name="Silverstone",
-            standings_channel=channel,
-            driver_snapshots=[snapshot],
-            team_snapshots=[],
-            guild=guild,
-            show_reserves=False,
-            label="Final Results",
-            bot=MagicMock(),
-        )
+        with in_a_job():
+            tables = await produce_standings(
+                db_path=db_path,
+                division_id=division_id,
+                round_id=round_id,
+                round_number=3,
+                track_name="Silverstone",
+                standings_channel=channel,
+                driver_snapshots=[snapshot],
+                team_snapshots=[],
+                guild=guild,
+                show_reserves=False,
+                label="Final Results",
+                bot=MagicMock(),
+            )
 
     assert order == ["posted"]
     assert PostedTable([9999], [4321], championship="drivers") in tables
