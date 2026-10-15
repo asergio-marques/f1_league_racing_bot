@@ -54,6 +54,13 @@ from tests.support.season_league import (
 
 
 
+#: Until C66/C67, the wind-down's close records the window closed in its `wind_down` job; from
+#: them on, in the record of its `post_closed` job, in the same save as that job's mark.
+CLOSE_RECORDED_BY_ITS_NOTICE = (
+    "#439: the wind-down's window close is not yet recorded by its post_closed job (C66, C67)"
+)
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
@@ -402,7 +409,8 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
 # ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
 
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
-#: How a driver a discarded window close returned is named.
+#: How a driver returned and left untold would be named: never for a discarded closed notice,
+#: which drops only that post (b15-2).
 RETURNED_NOT_TOLD = (
     f"<@{SIGNING_UP}> was returned to Not Signed Up when signups closed, but was not told and "
     "their channel was not closed: tell them and delete it by hand."
@@ -470,23 +478,34 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     assert await _owed(league) == []
 
 
-async def test_a_discarded_wind_down_names_and_forgets_the_drivers_it_returned(tmp_path):
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
+async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_wind_down_returned(
+    tmp_path,
+):
     """The signup window open with driver 105 still filling in the wizard. The wind-down's close
-    returns 105, then recording the window closed fails, and a league admin discards
-    `wind_down`. `turn_down`'s save names 105 as returned but not told, their channel to delete
-    by hand; no `signup_notice` is planned for them, and the mark is taken."""
+    returns 105, then `post_closed`, whose record writes the window closed, fails, and a league
+    admin discards it. Only that post is dropped (b15-2): 105 is still told, then their channel
+    locked, by their own jobs, and no line names them as returned but not told; the window is
+    still recorded open, the season moved on to Pending completion, and 105 is owed nothing
+    more."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _ask(league)
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("wind_down", None)
+    assert await _stopped_at(league) == ("post_closed", None)
+    assert league.notices == [] and league.locked == []
 
     await discard_job(league.bot)
 
-    assert any(_logged(RETURNED_NOT_TOLD) in line for line in league.bot.log_channel.sent)
-    assert ("signup_notice", SIGNING_UP) not in await _jobs(league)
-    assert league.notices == []
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    assert [(kind, uid) for kind, uid, _n in league.events if kind in ("notice", "lock")] == [
+        ("notice", SIGNING_UP), ("lock", SIGNING_UP),
+    ]
+    assert not any(_logged(RETURNED_NOT_TOLD) in line for line in league.bot.log_channel.sent)
+    assert await window_open(league)
+    assert await _stage(league) == "PENDING_COMPLETION"
     assert await _owed(league) == []
 
 
