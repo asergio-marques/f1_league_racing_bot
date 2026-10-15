@@ -155,7 +155,9 @@ async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its
 async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch):
     """The admin pastes the qualifying, then the race before the queue has reached the first.
     The second is deleted at once and a note in the channel says the earlier message is still
-    waiting its turn; only one turn is asked, and only the qualifying is saved when it runs."""
+    waiting its turn; the refusal is logged, one ⛔ line naming the admin, round 3 and the
+    qualifying still waited on (results :257); only one turn is asked, and only the qualifying is
+    saved when it runs."""
     league = await _league(tmp_path, monkeypatch)
 
     await _type(league, QUALI_PASTE)
@@ -163,6 +165,10 @@ async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path,
 
     assert second.gone
     assert "still waiting its turn" in _said(league)
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    assert logged.count("⛔") == 1, logged
+    line = logged[logged.index("⛔"):]
+    assert f"<@{ADMIN_ID}>" in line and "Round 3" in line and QUALIFYING in line, line
     assert len(await _turns(league)) == 1
     await run_queue(league.bot)
     assert await _sessions(league) == [("FEATURE_QUALIFYING", "ACTIVE")]

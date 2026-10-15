@@ -398,7 +398,10 @@ async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
 async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, monkeypatch):
     """Alex pastes the Feature Race, and before its turn has run pastes it again. The second
     message is turned away at once: deleted, with a note in the channel, and no second turn is
-    asked; the first stays marked ⏳."""
+    asked; the first stays marked ⏳. The refusal is logged: one ⛔ line naming Alex, round 3 and
+    the Feature Race still waited on (results :257)."""
+    from tests.support.change_queue import queued_log_lines
+
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
     first = await _type(league, run=False)
@@ -410,6 +413,10 @@ async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, mo
     assert MARK in first.marks
     assert len(await _changes(league, TURN)) == 1
     assert len(league.sent_to(AMEND_CHANNEL)) == sent_before + 1
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    assert logged.count("⛔") == 1, logged
+    line = logged[logged.index("⛔"):]
+    assert f"<@{MEMBER_ID}>" in line and "Round 3" in line and "Feature Race" in line, line
 
 
 @pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
