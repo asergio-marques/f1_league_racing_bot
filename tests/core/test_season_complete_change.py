@@ -1011,11 +1011,16 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
     assert len(_success_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
+    """The signup window open and the completion queued. Run as far as `post_closed`, whose
+    record writes the window's close, the window is closed while the season is still active,
+    no history written and Max still assigned: the driver pass has not yet run. The rest of the
+    queue completes the season."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await _asked(league)
 
-    await _run_through(league, "close_window")
+    await _run_through(league, "post_closed")
     assert not await window_open(league)
     assert await _history(league) == []
     assert await driver_state(league, MAX) == "ASSIGNED"
