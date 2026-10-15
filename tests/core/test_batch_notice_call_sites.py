@@ -1,7 +1,6 @@
 """The render batches that carry a notice, and the one ordering rule between them.
 
-`batch_notice` is tested on its own in `test_batch_notice.py`. What is left is whether
-each slow batch is actually inside one, and whether the appeals batch closes its notice
+What is pinned here is whether each slow batch is actually inside one, and whether the appeals batch closes its notice
 before it deletes the channel the notice lives in — an ordering that is invisible to the
 helper and would fail only in production, silently, as an ignored `NotFound`.
 

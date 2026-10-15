@@ -996,8 +996,7 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
 @pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
 async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing):
     """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
-    minutes ran long ago, though nothing has yet taken it down (the queue is stopped ahead of its
-    take-down). Alex presses Approve on Q through a view just built for it. He is refused,
+    minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a view just built for it. He is refused,
     privately, told the review's five minutes are up and nothing was approved; one ⛔ line naming
     Approve and `/season placements-review` is in the log channel; the approval is never asked;
     and the button itself deletes and posts nothing in channel 700."""
