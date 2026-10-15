@@ -428,6 +428,10 @@ class ChangeType:
     *writes*, on a change type of a conversation's lane, are the tables its kind's saves may write,
     the queue's own always besides (`QUEUE_TABLES`): a save writing another table raises and stops
     the lane at the job. None, the league's, restricts nothing.
+
+    *turn_channel*, on a change that answers a message typed into a channel, says from the payload
+    which channel: the channel then waits (`typed_turns.turn_waiting`) while the change is in hand,
+    and a message typed there meanwhile is turned away. A change that is not a turn declares none.
     """
 
     kind: str
@@ -443,6 +447,7 @@ class ChangeType:
     lane: Callable[[dict[str, Any]], str] = league_lane
     conversation_open: Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[bool]] | None = None
     writes: tuple[str, ...] | None = None
+    turn_channel: Callable[[dict[str, Any]], int | None] | None = None
 
 
 class ChangeRefused(Exception):

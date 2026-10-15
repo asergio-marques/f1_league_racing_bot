@@ -943,6 +943,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "run_result_submission_job"): (14, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
+    ("core/services/typed_turns.py", "turn_away"): (2, HANDLERS),
     ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "run_rsvp_last_notice"): (1, PASS["attendance"]),
@@ -1287,9 +1288,6 @@ def test_a_not_a_post_entry_is_not_counted_by_the_job_check():
     assert _posts_outside_a_job_among(nodes) == Counter({(path, "ChangeQueue._elsewhere"): 1})
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: typed_turns.turn_away, the turn-away's note and deletion, is not written yet"
-))
 def test_every_post_off_the_queue_names_its_reason():
     """Each post off the queue says why it is one, and names a function the source holds, so an
     entry outliving its function, or added without a reason, fails."""
