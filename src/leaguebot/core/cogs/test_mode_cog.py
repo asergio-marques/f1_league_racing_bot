@@ -429,7 +429,11 @@ class TestModeCog(commands.Cog):
                 f"(**{entry['track_name']}**). A submission channel will appear shortly.",
                 ephemeral=True,
             )
-            asyncio.create_task(run_result_submission_job(entry["round_id"], self.bot))
+            asyncio.create_task(
+                run_result_submission_job(
+                    entry["round_id"], self.bot, queue=self.bot.change_queue
+                )
+            )
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"  phase: result submission wizard started (it runs on its own)\n"

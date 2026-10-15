@@ -1776,7 +1776,10 @@ class PenaltyReviewView(LeagueView):
         await interaction.response.defer(ephemeral=True)
         from leaguebot.results.services.result_submission_service import enter_resubmit_flow
         await enter_resubmit_flow(
-            interaction, self.state, what=_button(button.label, self.state)
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state),
         )
 
     @discord.ui.button(

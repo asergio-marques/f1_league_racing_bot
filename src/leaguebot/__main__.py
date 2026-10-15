@@ -628,7 +628,7 @@ async def main() -> None:
         from leaguebot.results.services.result_submission_service import run_result_submission_job
 
         async def _result_submission_cb(round_id: int) -> None:
-            await run_result_submission_job(round_id, bot)
+            await run_result_submission_job(round_id, bot, queue=bot.change_queue)
 
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 
@@ -1548,7 +1548,9 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         log.info(
             "Recovery: re-triggering result submission wizard for round %s", round_id
         )
-        asyncio.create_task(run_result_submission_job(round_id, bot))
+        asyncio.create_task(
+            run_result_submission_job(round_id, bot, queue=bot.change_queue)
+        )
 
         # Notify the log channel so the LM knows to re-submit any sessions
         # that were in progress when the bot was terminated.

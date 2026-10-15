@@ -18,6 +18,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.team_service import resolve_team_reference
 from leaguebot.results.utils import results_formatter
@@ -3218,12 +3219,17 @@ async def _insert_new_tables_in_tx(
 # Main wizard
 # ---------------------------------------------------------------------------
 
-async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
+async def run_result_submission_job(
+    round_id: int, bot: LeagueBot, *, queue: ChangeQueue
+) -> None:
     """APScheduler job entry point — runs the full submission wizard for a round.
 
     Triggered at each round's scheduled start time. Creates a transient submission
     channel, collects results session by session with validation, prompts for config
     selection, persists everything, and then closes the channel.
+
+    *queue* is the change queue, handed by whoever starts the job: the timer, the start-up
+    recovery and test mode's advance.
     """
     db_path: str = bot.db_path
 
@@ -3307,7 +3313,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         # the season is not yet done (#439).
         from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 
-        await bot.change_queue.ask(
+        await queue.ask(
             WIND_DOWN, {}, origin=ChangeOrigin.BOT, what="winding the season down"
         )
         log.info(
@@ -3643,6 +3649,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     await ask_review_open(
         bot, sub_channel, round_id, round_number,
         {"label": "Provisional Results", "publish": True}, actor=last_author, say=True,
+        queue=queue,
     )
 
 
@@ -3653,6 +3660,7 @@ async def ask_review_open(
     round_number: int,
     payload: Mapping[str, Any],
     *,
+    queue: ChangeQueue,
     actor: Any = None,
     origin: ChangeOrigin = ChangeOrigin.MEMBER,
     say: bool = False,
@@ -3672,7 +3680,7 @@ async def ask_review_open(
             "SELECT d.name FROM rounds r JOIN divisions d ON d.id = r.division_id "
             "WHERE r.id = ?", (round_id,),
         )).fetchone()
-    change_id = await bot.change_queue.ask(
+    change_id = await queue.ask(
         "results.review.open",
         {
             "round_id": round_id, "round_number": round_number,
@@ -3688,7 +3696,7 @@ async def ask_review_open(
             "are saved; the review is put back when the bot next starts."
         )
     elif say:
-        first_job, stopped_at = await bot.change_queue.job_numbers(change_id)
+        first_job, stopped_at = await queue.job_numbers(change_id)
         line = f"⏳ The penalty review is being opened (job #{first_job})."
         if stopped_at is not None:
             line += (
@@ -3880,6 +3888,7 @@ async def _ask_return_to_review(
     round_number: int,
     cancel_view: ResubmissionCancelView | None,
     *,
+    queue: ChangeQueue,
     returning: str,
     actor: Any = None,
     origin: ChangeOrigin = ChangeOrigin.BOT,
@@ -3901,7 +3910,7 @@ async def _ask_return_to_review(
     await ask_review_open(
         bot, sub_channel, round_id, round_number,
         {"publish": False, "returning": returning, "cancel_message_id": message_id},
-        actor=actor, origin=origin,
+        queue=queue, actor=actor, origin=origin,
     )
 
 
@@ -3909,6 +3918,7 @@ async def enter_resubmit_flow(
     interaction: discord.Interaction,
     state,
     *,
+    queue: ChangeQueue,
     what: str | None = None,
 ) -> None:
     """Discard staged penalties and pardons and restart collection over the round's existing results.
@@ -4035,6 +4045,7 @@ async def enter_resubmit_flow(
             bot,
             sub_channel,
             cancel_view,
+            queue=queue,
             interaction=interaction,
             what=what,
         ),
@@ -4074,6 +4085,7 @@ async def _resubmit_collection_task(
     sub_channel: discord.TextChannel | None,
     cancel_view: ResubmissionCancelView | None = None,
     *,
+    queue: ChangeQueue,
     interaction: discord.Interaction | None = None,
     what: str | None = None,
 ) -> None:
@@ -4139,7 +4151,7 @@ async def _resubmit_collection_task(
     async def _cancelled() -> None:
         await _ask_return_to_review(
             bot, sub_channel, round_id, round_number, cancel_view,
-            returning="cancelled",
+            queue=queue, returning="cancelled",
             actor=_member_of(guild, cancel_view.cancelled_by if cancel_view is not None else None),
             origin=ChangeOrigin.MEMBER,
         )
@@ -4161,7 +4173,8 @@ async def _resubmit_collection_task(
         )
         await _record_failure(exc)
         await _ask_return_to_review(
-            bot, sub_channel, round_id, round_number, cancel_view, returning="failed"
+            bot, sub_channel, round_id, round_number, cancel_view,
+            queue=queue, returning="failed"
         )
         return
 
@@ -4338,7 +4351,8 @@ async def _resubmit_collection_task(
             "The earlier results still stand."
         )
         await _ask_return_to_review(
-            bot, sub_channel, round_id, round_number, cancel_view, returning="failed"
+            bot, sub_channel, round_id, round_number, cancel_view,
+            queue=queue, returning="failed"
         )
         return
     await _take_down_cancel_button(cancel_view)
@@ -4351,7 +4365,7 @@ async def _resubmit_collection_task(
     await ask_review_open(
         bot, sub_channel, round_id, round_number,
         {"label": "Provisional Results (amended)", "publish": True},
-        actor=_member_of(guild, last_author_id), say=True,
+        queue=queue, actor=_member_of(guild, last_author_id), say=True,
     )
 
 
