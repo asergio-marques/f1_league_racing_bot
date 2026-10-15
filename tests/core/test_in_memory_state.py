@@ -213,7 +213,6 @@ async def test_the_clear_empties_every_store():
     assert lapse.cancelled()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the clearing of what the bot holds in memory looks the change queue up on the bot")
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
     """A factory reset deletes the changes the queue holds replies for (#439), so the clear makes
     the queue forget them: a change finishing afterwards updates no member's reply.

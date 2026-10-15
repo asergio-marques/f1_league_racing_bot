@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -25,8 +26,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def clear_in_memory_state(bot: LeagueBot) -> None:
-    """Drop every in-memory store of league state the running bot holds."""
+def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
+    """Drop every in-memory store of league state the running bot holds.
+
+    *queue* is the change queue, handed by the command that clears (a service does not look it
+    up on the bot), whose held replies are forgotten with the rest."""
     season_cog = cast("SeasonCog | None", bot.get_cog("SeasonCog"))
     if season_cog is not None:
         season_cog.clear_pending()
@@ -46,8 +50,6 @@ def clear_in_memory_state(bot: LeagueBot) -> None:
 
     # The interactions held to update a change's reply: the changes they belong to are deleted
     # with the pack or reset, so nothing is left to update.
-    change_queue = getattr(bot, "change_queue", None)
-    if change_queue is not None:
-        change_queue.forget_held()
+    queue.forget_held()
 
     log.info("Cleared the league state held in memory")

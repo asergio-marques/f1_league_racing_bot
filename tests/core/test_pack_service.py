@@ -238,9 +238,6 @@ async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
     assert result.scheduled_jobs == 3
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: a pack is not handed the change queue to clear what it holds"
-))
 async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     """A pack clears what the bot holds in memory, handing the clear the change queue it was
     handed (#439 slice 6b, fold-in 6)."""

@@ -738,6 +738,7 @@ class BotCog(commands.Cog):
                 self.bot.db_path,
                 self.bot.scheduler_service,
                 self.bot,
+                self.bot.change_queue,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
             )
@@ -844,7 +845,9 @@ class BotCog(commands.Cog):
         # The wipe takes the configuration and with it any way to find the log channel, so
         # where the closing line goes is learned now.
         log_channel = await self.bot.output_router.log_destination()
-        await factory_reset_service.wipe(db_path, scheduler, self.bot)
+        await factory_reset_service.wipe(
+            db_path, scheduler, self.bot, self.bot.change_queue
+        )
         log.warning(
             "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",
             interaction.user, interaction.user.id, backup.database,

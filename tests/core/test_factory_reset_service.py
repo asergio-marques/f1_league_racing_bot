@@ -285,9 +285,6 @@ async def test_the_wipe_frees_the_claim(db_path):
     assert await ConfigService(db_path).get_league_server_id() is None
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: a factory reset's wipe is not handed the change queue to clear what it holds"
-))
 async def test_the_wipe_clears_every_job_and_the_memory(db_path, monkeypatch):
     """The wipe cancels every scheduled job and clears what the bot holds in memory, handing
     the clear the change queue it was handed (#439 slice 6b, fold-in 6)."""

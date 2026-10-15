@@ -30,7 +30,11 @@ import discord
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import backup_service
-from leaguebot.core.services.change_queue import carry_job_numbering, highest_job_number
+from leaguebot.core.services.change_queue import (
+    ChangeQueue,
+    carry_job_numbering,
+    highest_job_number,
+)
 from leaguebot.core.services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -164,7 +168,12 @@ async def gather_targets(db_path: str) -> DiscordTargets:
 # ── The wipe ──────────────────────────────────────────────────────────────
 
 
-async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) -> None:
+async def wipe(
+    db_path: str,
+    scheduler_service,
+    bot: LeagueBot | None = None,
+    queue: ChangeQueue | None = None,
+) -> None:
     """Return the database, the scheduled work and the memory to a fresh install.
 
     **The database is replaced by a freshly migrated one, not emptied table by table.** A
@@ -176,10 +185,13 @@ async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) ->
 
     **One counter is carried over: the job number.** A job's number is never reused, so the fresh
     database is told the highest the live one has issued before it replaces it.
+
+    *bot* and *queue* travel together: the memory is cleared where both are given, the command
+    handing the queue on to the clear, and left alone otherwise.
     """
     scheduler_service.cancel_all()
-    if bot is not None:
-        clear_in_memory_state(bot)
+    if bot is not None and queue is not None:
+        clear_in_memory_state(bot, queue=queue)
 
     live = Path(db_path)
     fresh = live.with_name(f"{live.stem}.fresh.db")
