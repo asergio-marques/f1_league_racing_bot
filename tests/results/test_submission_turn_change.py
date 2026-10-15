@@ -327,8 +327,10 @@ async def test_a_paste_typed_while_the_queue_is_stopped_waits_and_later_ones_are
     tmp_path, monkeypatch,
 ):
     """Round 3's own lane is stopped at another job. The admin's qualifying paste is marked and
-    waits, nothing saved; a second paste is turned away with a note. Once the stopped job is
-    retried and goes through, the qualifying is saved and its mark cleared."""
+    waits, nothing saved; a second paste is turned away with a note, and the refusal is logged,
+    one ⛔ line naming the admin, round 3 and the qualifying still waited on (results :257).
+    Once the stopped job is retried and goes through, the qualifying is saved and its mark
+    cleared."""
     league = await _league(tmp_path, monkeypatch)
     holder = await block_queue(league, lane=LANE)
 
@@ -338,6 +340,11 @@ async def test_a_paste_typed_while_the_queue_is_stopped_waits_and_later_ones_are
     assert await _sessions(league) == []
     second = await _type(league, RACE_PASTE)
     assert second.gone
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    turned_away = [line for line in logged.splitlines() if "⛔" in line]
+    assert len(turned_away) == 1, logged
+    line = logged[logged.index(turned_away[0]):]
+    assert f"<@{ADMIN_ID}>" in line and "Round 3" in line and QUALIFYING in line, line
 
     holder["fail"] = False
     await retry_job(league.bot, lane=LANE)
