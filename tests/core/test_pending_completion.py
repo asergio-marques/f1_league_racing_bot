@@ -198,11 +198,17 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
     assert seats[0]["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "#439: the wind-down's close audits the window's close and writes its line itself, not in "
+    "post_closed's record (C66, C67)"
+))
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
     """The season is in Ongoing signups with every division finished, and signups are open:
-    winding it down closes the window through the close nobody ran, as every division being
-    done, which writes the close's own line, and cancels the close timer."""
-    from tests.support.change_queue import queued_log_lines
+    winding it down closes the window as every division being done, and cancels the close
+    timer. The "Signups are now closed" post's own job records the window closed and, in the
+    same record, audits the close once and writes its one "🔒 Signups closed as every division
+    is done" line."""
+    from tests.support.change_queue import queued_log_lines, step_rows
     from tests.support.season_league import window_open
 
     league = await _wind_down_league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
@@ -211,8 +217,16 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
 
     assert not league.errors, league.errors
     assert not await window_open(league)
+    assert [row["done_at"] is not None for row in await step_rows(league.db_path)
+            if row["name"] == "post_closed"] == [True]
+    audits = await league.rows(
+        "SELECT old_value, new_value FROM audit_entries "
+        "WHERE change_type = 'SIGNUP_DIVISIONS_DONE_CLOSE'"
+    )
+    assert [(row["old_value"], row["new_value"]) for row in audits] == [("open", "closed")]
     lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
-    assert any("Signups closed as every division is done" in line for line in lines), lines
+    assert len([line for line in lines
+                if "🔒 Signups closed as every division is done" in line]) == 1, lines
     league.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
     assert await _league_stage(league) == "PENDING_COMPLETION"
 

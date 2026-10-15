@@ -504,9 +504,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     returns 105, then `post_closed`, whose record writes the window closed, fails, and a league
     admin discards it. Only that post is dropped (b15-2): 105 is still told, then their channel
     locked, by their own jobs, and no line names them as returned but not told. One log line
-    says the signup window could not be closed and to close it with `/signup close`; the window
-    is still recorded open, the season moved on to Pending completion, and 105 is owed nothing
-    more."""
+    says the signup window could not be closed and to close it with `/signup close`, and none
+    that signups closed, nor is the window's close audited; the window is still recorded open,
+    the season moved on to Pending completion, and 105 is owed nothing more."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -524,6 +524,11 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     ]
     assert not any(_logged(RETURNED_NOT_TOLD) in line for line in league.bot.log_channel.sent)
     assert len([line for line in league.bot.log_channel.sent if WINDOW_OPEN in line]) == 1
+    assert await league.rows(
+        "SELECT * FROM audit_entries WHERE change_type = 'SIGNUP_DIVISIONS_DONE_CLOSE'"
+    ) == []
+    assert not any("🔒 Signups closed" in line
+                   for line in league.bot.log_channel.sent + await queued_log_lines(league.db_path))
     assert await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
     assert await _owed(league) == []
