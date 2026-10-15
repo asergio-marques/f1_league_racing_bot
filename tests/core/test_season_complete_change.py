@@ -1581,19 +1581,27 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
 
 
 @pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
+@pytest.mark.parametrize("refused", ["the record", "the post"])
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_close_returned(
-    tmp_path,
+    tmp_path, refused,
 ):
     """The signup window open with driver 105 still filling in the wizard. The window's close
-    returns 105, then `post_closed`, whose record writes the window closed, fails, and a league
-    admin discards it. Only that post is dropped (b15-2): 105 is still told, then their channel
-    locked, by their own jobs; the reply and the closing line say the window was not closed, to
-    be closed with `/signup close`, and never name 105 as returned but not told; the window is
-    still recorded open, with no audit of its close and no "🔒 Signups closed" line, the season
-    completed, and 105 is owed nothing more."""
+    returns 105, then `post_closed` fails: where *refused* is "the record", recording the window
+    closed fails; where "the post", Discord refuses the "Signups are now closed" post itself. A
+    league admin discards it. Only that post is dropped (b15-2): no closed notice stands in the
+    signup channel, and 105 is still told, then their channel locked, by their own jobs; the
+    reply and the closing line say the window was not closed, to be closed with `/signup close`,
+    and never name 105 as returned but not told; the window is still recorded open, with no
+    audit of its close and no "🔒 Signups closed" line, the season completed, and 105 is owed
+    nothing more."""
+    from tests.support.season_league import SIGNUP_CHANNEL
+
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
-    league.close_fails = RuntimeError("the window could not be recorded closed")
+    if refused == "the record":
+        league.close_fails = RuntimeError("the window could not be recorded closed")
+    else:
+        league.channel(SIGNUP_CHANNEL).send_fails = _forbidden()
     interaction = await _asked(league)
     await run_queue(league.bot)
     assert await _stopped_at(league) == ("post_closed", None)
@@ -1601,6 +1609,8 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
 
     await discard_job(league.bot)
 
+    assert [message for message in league.channel(SIGNUP_CHANNEL).messages.values()
+            if "Signups are now closed" in str(message.content)] == []
     assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
     assert league.locked == [SIGNING_UP]
     assert [(kind, uid) for kind, uid, _n in league.events
