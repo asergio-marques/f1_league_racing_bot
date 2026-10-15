@@ -392,10 +392,11 @@ class ChangeQueue:
         self._signal = asyncio.Event()
         self._working = asyncio.Lock()
         self._asking = asyncio.Lock()
-        # The change the worker is carrying out a unit of, which a Discard must not drop under
-        # it. Set and read only under `_asking`, so a Discard and the worker's choice of a change
-        # are in one order: either the Discard is saved before the choice, or it is refused.
-        self._trying: int | None = None
+        # The change each lane's worker is carrying out a unit of, by lane, which a Retry or a
+        # Discard must not meet under it. Set and read only under `_asking`, so a press and the
+        # worker's choice of a change are in one order: either the press is saved before the
+        # choice, or it is refused. A lane trying a job refuses only its own presses.
+        self._trying: dict[str, int] = {}
         self._task: Optional["asyncio.Task[None]"] = None
         # When each stopped job's notice was last attempted, for the job whose notice has not
         # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
@@ -820,16 +821,16 @@ class ChangeQueue:
             change = await self._choose(db)
             if change is None:
                 return None
-            self._trying = change["id"]
+            self._trying[change["lane"]] = change["id"]
             try:
                 step_rows = await self._read_steps(db, change["id"])
             except BaseException:
-                self._trying = None
+                self._trying.pop(change["lane"], None)
                 raise
         try:
             return await self._carry_out(change, step_rows)
         finally:
-            self._trying = None
+            self._trying.pop(change["lane"], None)
 
     async def _carry_out(
         self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row]
@@ -1488,7 +1489,7 @@ class ChangeQueue:
         # behind once the try had cleared the stop, and a later failure would be read as the
         # Retry's.
         async with self._asking:
-            if self._trying == found[0]["id"]:
+            if self._trying.get(found[0]["lane"]) == found[0]["id"]:
                 await refuse(
                     interaction,
                     f"⛔ Job #{found[2]['id']} is being tried now. Press Retry again once the "
@@ -1602,7 +1603,7 @@ class ChangeQueue:
         # Under `_asking`, which the worker holds as it chooses a change: a Discard is saved
         # before the worker chooses, or finds the change in hand and waits for the try to end.
         async with self._asking:
-            if self._trying == change["id"]:
+            if self._trying.get(change["lane"]) == change["id"]:
                 await refuse(
                     interaction,
                     f"⛔ Job #{found[2]['id']} is being tried now. Press Discard again once the "
