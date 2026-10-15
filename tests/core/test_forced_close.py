@@ -555,27 +555,16 @@ def _unattended_bot(db_path, *, signups_open=True, enabled=True, channel=None):
     return bot
 
 
-# (the cause the caller gives; what the line's head says; the audit action it is closed under).
-# The timer and the restart sweep ask the change queue's own close (`signup.close`), whose line
-# that close writes; a season's end and every division done close on the queue through this one.
-_CAUSES = [
-    pytest.param(
-        "season end", ("🔒 Signups closed as the season ended",), "SIGNUP_SEASON_END_CLOSE",
-        id="season end",
-    ),
-    pytest.param(
-        "divisions done",
-        ("🔒 Signups closed as every division is done",),
-        "SIGNUP_DIVISIONS_DONE_CLOSE",
-        id="divisions done",
-    ),
-]
+# The causes a close nobody ran is given on the change queue. The timer and the restart sweep
+# ask the change queue's own close (`signup.close`), whose line that close writes; a season's end
+# and every division done close on the queue through this one.
+_CAUSES = ["season end", "divisions done"]
 
 
 @pytest.mark.xfail(strict=True, reason=AUDITED_BY_ITS_NOTICE)
-@pytest.mark.parametrize("cause, heads, audit_action", _CAUSES)
+@pytest.mark.parametrize("cause", _CAUSES)
 async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_closed_notice(
-    tmp_path, cause, heads, audit_action
+    tmp_path, cause
 ):
     """Signups are open with drivers 101 and 102 still filling in the wizard, and the window
     closes on the change queue with nobody at the keyboard: the season ended, or every division
