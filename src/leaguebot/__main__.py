@@ -350,6 +350,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change,
         season_cancel_change,
     )
+    from leaguebot.core.services.channel_tell_change import channel_tell_change
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
     from leaguebot.core.services.round_amend_change import amendment_in_hand, round_amend_change
@@ -464,6 +465,7 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    bot.change_queue.register(channel_tell_change())
     bot.change_queue.register(
         round_amend_change(
             modules=bot.module_service,

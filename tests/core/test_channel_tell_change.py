@@ -40,8 +40,6 @@ NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 CHANNEL = 707
 TEXT = "Placements for season 3 were confirmed, but the reviewer could not be told privately."
 
-NO_TELL = "#439: no change tells a channel one line"
-
 
 def _channels(bot: Any, *channels: Any) -> None:
     """Let *bot* find *channels* beside its log and interaction channels; any other is gone."""
@@ -90,7 +88,6 @@ def _log(env) -> str:
     return "\n".join(env.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TELL)
 async def test_a_tell_posts_its_line_in_its_channel(env):
     """The bot asks for a line to be told in channel 707: once the queue runs, the line is
     posted there, once, and the change is done."""
@@ -102,7 +99,6 @@ async def test_a_tell_posts_its_line_in_its_channel(env):
     assert _states(await change_rows(env.db_path)) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TELL)
 async def test_a_refused_tell_stops_the_queue_and_retries(env):
     """Discord refuses the line: the queue stops at the tell, nothing posted. A minute later it is
     tried again on the schedule and, Discord taking it now, the line is posted and the change
@@ -124,7 +120,6 @@ async def test_a_refused_tell_stops_the_queue_and_retries(env):
     assert _states(await change_rows(env.db_path)) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TELL)
 async def test_a_tell_whose_channel_is_gone_stops_the_queue_naming_it(env):
     """Channel 707 has been deleted from the server: the queue stops at the tell, and the stop
     notice in the log channel names the channel."""
@@ -137,7 +132,6 @@ async def test_a_tell_whose_channel_is_gone_stops_the_queue_naming_it(env):
     assert f"<#{CHANNEL}>" in _log(env)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TELL)
 async def test_a_discarded_tell_is_named_in_the_log(env):
     """A refused tell is discarded by a league admin: the queue runs on, nothing is posted, and
     the log channel's line for the Discard names the channel the line was for."""
@@ -153,7 +147,6 @@ async def test_a_discarded_tell_is_named_in_the_log(env):
     assert f"<#{CHANNEL}>" in "\n".join(env.bot.log_channel.sent[before:])
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TELL)
 async def test_a_tell_mentions_nobody_but_the_member_its_payload_names(env):
     """A line with no member named is posted mentioning nobody; one naming the member 4242 is
     posted allowing that member's mention alone — no role, no everyone, no other member."""
