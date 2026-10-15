@@ -48,7 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again inside it"
 NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
 NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
 NO_LANE_WORKERS = "#439: one worker runs the whole queue, one change at a time"
@@ -795,7 +794,6 @@ def _due_until_ended_after_the_first_check(env, asked: list[bool | None]) -> Any
     return _due
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SAVE_RECHECK)
 async def test_a_save_finds_its_job_no_longer_due_where_a_league_save_landed_after_its_check(env):
     """A change saves an answer for the conversation in channel 7, due only while that
     conversation is open. The job is found due, and then, before its save opens, a league save
@@ -817,7 +815,6 @@ async def test_a_save_finds_its_job_no_longer_due_where_a_league_save_landed_aft
     assert len(asked) == 2 and asked[1] is True
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SAVE_RECHECK)
 async def test_a_record_is_checked_again_inside_its_save(env):
     """A change posts a message whose record saves it into `answers` for the conversation in
     channel 7, due only while that conversation is open. The job is found due and posts, and a league save then ends the

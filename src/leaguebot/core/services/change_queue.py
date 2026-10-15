@@ -278,7 +278,8 @@ class Step:
 
     A `SAVE` step's `run(db, ctx)` writes only on *db* and never commits; any other step's
     `run(ctx)` does its work with no connection open. `still_due(ctx)` is asked before the step
-    runs, and a step no longer due is marked done as dropped. `describe(ctx)` names the job in the
+    runs, and a step no longer due is marked done as dropped; it is asked again, with the queue's
+    write lock held, before the save of a `SAVE` step or of a step's record. `describe(ctx)` names the job in the
     lines that say it stopped the queue, was retried or discarded ("refreshing the hub panel"); by
     default the job is named by the change's own `what`. `gone_line`, a line or what forms one, is
     what an `EDIT` step writes where its message is gone. `record(db, ctx, result)`, on a step that
@@ -1179,22 +1180,31 @@ class ChangeQueue:
                     change, row, StepResult(result={"dropped": True}), stopped_as
                 )
             if step.kind is StepKind.SAVE:
-                async with self._writing, get_connection(self._db_path) as db:
-                    await db.execute("BEGIN IMMEDIATE")
-                    try:
-                        result = await step.run(db, ctx)
-                        saved = await self._save_result(db, change, row, result, stopped_as)
-                        if saved is None:
+                async with self._writing:
+                    # Asked again with the lock held: a save of another lane may have landed
+                    # since the check above, and none can land between this one and the save.
+                    due_again = step.still_due is None or await step.still_due(ctx)
+                    async with get_connection(self._db_path) as db:
+                        await db.execute("BEGIN IMMEDIATE")
+                        try:
+                            result = (
+                                await step.run(db, ctx)
+                                if due_again
+                                else StepResult(result={"dropped": True})
+                            )
+                            saved = await self._save_result(db, change, row, result, stopped_as)
+                            if saved is None:
+                                await db.rollback()
+                            else:
+                                await db.commit()
+                        except BaseException:
                             await db.rollback()
-                        else:
-                            await db.commit()
-                    except BaseException:
-                        await db.rollback()
-                        raise
+                            raise
                 return await self._delivered(change, saved, row)
             produced = await step.run(ctx)
             return await self._complete(
-                change, row, produced, stopped_as, record=self._recording(step, ctx, produced)
+                change, row, produced, stopped_as, record=self._recording(step, ctx, produced),
+                due_again=self._asking_again(step, ctx),
             )
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_stop`
             log.log(self._failure_level(row), "job %s (%r) of %s raised (change %s)", row["id"],
@@ -1216,6 +1226,21 @@ class ChangeQueue:
 
         return _record
 
+    @staticmethod
+    def _asking_again(
+        step: Step, ctx: StepContext
+    ) -> Callable[[], Awaitable[bool]] | None:
+        """The step's `still_due` bound to its context, to be asked again in the save that runs
+        its record; None where the step has no record or no check."""
+        still_due = step.still_due
+        if still_due is None or step.record is None:
+            return None
+
+        async def _again() -> bool:
+            return await still_due(ctx)
+
+        return _again
+
     async def _stopped_as(
         self, change: aiosqlite.Row, row: aiosqlite.Row, ctx: StepContext
     ) -> str | None:
@@ -1229,23 +1254,32 @@ class ChangeQueue:
         self, change: aiosqlite.Row, row: aiosqlite.Row, result: StepResult,
         stopped_as: str | None,
         record: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None,
+        due_again: Callable[[], Awaitable[bool]] | None = None,
     ) -> bool:
         """Save the mark of a step whose work needed no connection, with *result*'s audits and
         lines, then deliver the lines. The step's *record* runs first, in the same save, so that
-        what it writes lands with the mark or not at all."""
-        async with self._writing, get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            try:
-                if record is not None:
-                    await record(db)
-                saved = await self._save_result(db, change, row, result, stopped_as)
-                if saved is None:
+        what it writes lands with the mark or not at all.
+
+        *due_again* is asked with the write lock held, before the save opens: where the step is
+        then no longer due, its record is not run and the step is marked done as dropped, what it
+        sent standing untracked.
+        """
+        async with self._writing:
+            if due_again is not None and not await due_again():
+                result, record = StepResult(result={"dropped": True}), None
+            async with get_connection(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                try:
+                    if record is not None:
+                        await record(db)
+                    saved = await self._save_result(db, change, row, result, stopped_as)
+                    if saved is None:
+                        await db.rollback()
+                    else:
+                        await db.commit()
+                except BaseException:
                     await db.rollback()
-                else:
-                    await db.commit()
-            except BaseException:
-                await db.rollback()
-                raise
+                    raise
         return await self._delivered(change, saved, row)
 
     async def _delivered(
@@ -1290,6 +1324,7 @@ class ChangeQueue:
             return await self._complete(
                 change, row, completed, await self._stopped_as(change, row, ctx),
                 record=self._recording(step, ctx, completed),
+                due_again=self._asking_again(step, ctx),
             )
         job = await self._name_job(change, row, ctx)
         kept = produced.result if produced is not None and step.kind is not StepKind.SAVE else None
