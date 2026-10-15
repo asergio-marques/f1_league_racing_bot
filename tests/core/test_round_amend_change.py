@@ -137,12 +137,7 @@ class _Reposts:
                          "FROM rsvp_embed_messages")}
         return [calls[each] for each in sent if each in calls]
 
-    @property
-    def fault(self) -> BaseException | None:
-        return self.league.channel(PRO_CH.checkin).send_fails
-
-    @fault.setter
-    def fault(self, fault: BaseException | None) -> None:
+    def refuse_sends(self, fault: BaseException | None) -> None:
         """Every send to Pro's check-in channel raises *fault* in its place."""
         self.league.channel(PRO_CH.checkin).send_fails = fault
 
@@ -156,7 +151,7 @@ def reposts(monkeypatch):
     It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
     service, its writers included (`_attendance_as_it_is`), and the fixture keeps it. `posted`
     is `(round id, division id)` of each call sent to a check-in channel and recorded as the
-    round's call; setting `fault` refuses every send to Pro's check-in channel with it."""
+    round's call; `refuse_sends(fault)` refuses every send to Pro's check-in channel with it."""
     record = _Reposts()
     built = ongoing_league
 
@@ -928,7 +923,7 @@ async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path,
     down and posted again. The repost fails on a fault of the bot's own and a league admin
     discards it: the reply names the call and the command that posts it."""
     league = await ongoing_league(tmp_path, attendance=True)
-    reposts.fault = RuntimeError("embed could not be built")
+    reposts.refuse_sends(RuntimeError("embed could not be built"))
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
     assert await _stopped_at(league) == "post_call"
@@ -1308,7 +1303,7 @@ async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_q
     on the host alone."""
     league = await ongoing_league(tmp_path, attendance=True)
     await _deadline_not_yet_run(league)
-    reposts.fault = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    reposts.refuse_sends(http_error(discord.Forbidden, status=403, text="Missing Permissions"))
 
     await _place_and_discard_past_the_deadline(league)
 
