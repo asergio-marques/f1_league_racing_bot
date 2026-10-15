@@ -1,8 +1,8 @@
 """What happens when a member leaves the server, from the signup cog's listener.
 
-Issue #208. `SignupCog.on_member_remove` was untested; the wizard clean-up it calls,
-`handle_member_remove`, is tested in `test_wizard_lifecycle.py`. The listener adds one thing of
-its own, and it is the part a league notices.
+Issue #208. `SignupCog.on_member_remove` was untested; the clean-up it asks for,
+`signup.member_left`, is tested in `test_wizard_changes.py`. The listener adds one thing of its
+own, and it is the part a league notices.
 
 **Every departure is handed to the change queue first.** A driver halfway through signing up
 has a channel, jobs and a driver state to put right, and that is the `signup.member_left` change's
@@ -65,6 +65,8 @@ def _cog(db_path):
     bot = MagicMock()
     bot.db_path = db_path
     bot.wizard_service = MagicMock()
+    # Today's clean-up off the queue, a stand-in that does nothing, so that only what the
+    # listener asks of the queue shows.
     bot.wizard_service.handle_member_remove = AsyncMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
@@ -110,17 +112,24 @@ def _logged(cog) -> str:
 @pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_ASK)
 async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state):
     """Whatever the member's state, the listener asks the queue, as the bot, for one
-    `signup.member_left` change naming them, and cleans nothing up itself."""
+    `signup.member_left` change naming them, and cleans nothing up itself: their driver state
+    is as it was."""
     from leaguebot.core.models.change import ChangeOrigin
 
-    cog = _cog(await _make_db(tmp_path, name=f"mr_{state}", state=state))
+    db_path = await _make_db(tmp_path, name=f"mr_{state}", state=state)
+    cog = _cog(db_path)
 
     await _leave(cog)
 
     [ask] = _asked_member_left(cog)
     assert str(DRIVER) in str(ask.args[1])
     assert ask.kwargs.get("origin") == ChangeOrigin.BOT
-    cog.bot.wizard_service.handle_member_remove.assert_not_awaited()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (str(DRIVER),)
+        )
+        row = await cursor.fetchone()
+    assert (row[0] if row else None) == state
 
 
 @pytest.mark.parametrize("state", ["UNASSIGNED", "ASSIGNED"])

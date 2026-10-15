@@ -401,7 +401,7 @@ def _listener_bot():
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
     bot.wizard_service.get_wizard_by_channel = AsyncMock(return_value=None)
-    bot.wizard_service.handle_member_remove = AsyncMock()
+    bot.change_queue.ask = AsyncMock(return_value=1)
     bot.output_router.post_log = AsyncMock()
     return bot
 
@@ -437,6 +437,7 @@ async def test_the_wizard_listener_ignores_another_server():
     await cog.on_message(_message_elsewhere())
 
     cog.bot.wizard_service.get_wizard_by_channel.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
 async def test_a_member_leaving_another_server_is_nothing_to_the_league():
@@ -450,7 +451,7 @@ async def test_a_member_leaving_another_server_is_nothing_to_the_league():
 
     await cog.on_member_remove(member)
 
-    cog.bot.wizard_service.handle_member_remove.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
