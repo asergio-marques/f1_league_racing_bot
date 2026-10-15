@@ -6,7 +6,8 @@ Issue #208, #439 slice 6b. `execute_forced_close` was once the shared sub-flow b
 close (`signup.close`, `module.off:signup`, pinned in `tests/signup/test_window_changes.py`), and
 what is left here is the form a season's end closes the window with (`hold_channels=False`): it
 decides which drivers caught mid-signup are returned, and leaves telling them and closing their
-channels to the queue's jobs.
+channels to the queue's jobs. Recording the window closed is left to signup's own `post_closed`
+job, whose record writes it (#439 slice 6b, C66), so these tests do not read it here.
 
 **Only a driver still filling in the wizard is turned away.** `PENDING_SIGNUP_COMPLETION` is the
 one state transitioned back to Not Signed Up. A driver waiting on a manager's approval, or
@@ -180,8 +181,7 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
 
 async def test_a_job_already_gone_is_stepped_over(tmp_path):
     """Driver 101 is part-way through the wizard, but the scheduler no longer holds their
-    inactivity or channel-delete job: the queue's close returns them all the same and closes
-    the window."""
+    inactivity or channel-delete job: the queue's close returns them all the same."""
     from apscheduler.jobstores.base import JobLookupError
 
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -200,13 +200,12 @@ async def test_a_job_already_gone_is_stepped_over(tmp_path):
     outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
 
     assert list(outcome.returned_ids) == ["101"]
-    bot.signup_module_service.set_window_closed.assert_awaited_once()
 
 
 async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_path):
     """Driver 101's transition is refused as the state machine refuses a driver who has moved
-    on since the queue's close read them (`ValueError`): the window closes, they are not counted
-    as returned, none of their timers is cancelled, and nothing is reported as failed (#457)."""
+    on since the queue's close read them (`ValueError`): they are not counted as returned, none
+    of their timers is cancelled, and nothing is reported as failed (#457)."""
     db_path = await _make_db(
         tmp_path, name="fc_movedon", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
     )
@@ -214,7 +213,6 @@ async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_pa
 
     outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
 
-    bot.signup_module_service.set_window_closed.assert_awaited_once()
     assert outcome.returned == 0
     assert list(outcome.returned_ids) == []
     bot.scheduler_service.cancel_job.assert_not_called()
@@ -251,7 +249,6 @@ async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds
     assert outcome.returned == 1
     assert [str(uid) for uid in outcome.returned_ids] == ["101"]
     assert list(outcome.failed) == []
-    bot.signup_module_service.set_window_closed.assert_awaited_once()
 
 
 async def _real_services(tmp_path, *, name, hours_since_activity=1.0):
@@ -572,8 +569,8 @@ async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
 ):
     """Signups are open with drivers 101 and 102 still filling in the wizard, and the window
     closes on the change queue with nobody at the keyboard: the season ended, or every division
-    finished. The window closes under the cause's audit action, and one line is written naming
-    no member: its head says why signups closed, with the two drivers returned beneath."""
+    finished. The close is audited under the cause's audit action, and one line is written
+    naming no member: its head says why signups closed, with the two drivers returned beneath."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
 
     db_path = await _make_db(
@@ -587,7 +584,6 @@ async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
 
     await close_signups_unattended(bot, cause=cause, hold_channels=False)
 
-    bot.signup_module_service.set_window_closed.assert_awaited_once()
     assert await _audit(db_path) == [(audit_action, "open", "closed", "system")]
     [call] = bot.output_router.post_log.await_args_list
     line = str(call.args[0])
