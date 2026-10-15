@@ -32,8 +32,6 @@ from tests.support.change_queue import (
     stopped_job,
 )
 
-NO_ONE_OFF_TIMER = "#439: the scheduler service arms no one-off timer that asks a change"
-
 
 def _dispose(service: Any) -> None:
     """Stop the scheduler and close the job store's connections, so its file can be deleted."""
@@ -77,7 +75,6 @@ async def _settle() -> None:
         await asyncio.sleep(0.01)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ONE_OFF_TIMER)
 async def test_a_one_off_timer_is_armed_with_no_lateness_limit(services):
     """A lock warning's clear is armed for an hour from now: the scheduler holds one job for it,
     and that job has no lateness limit."""
@@ -91,7 +88,6 @@ async def test_a_one_off_timer_is_armed_with_no_lateness_limit(services):
     assert job.misfire_grace_time is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ONE_OFF_TIMER)
 async def test_a_one_off_timer_hands_its_key_to_the_callback_the_builder_registered(services):
     """Two kinds are registered, and a timer of one is armed a moment from now for the message
     77: when it fires, its kind's callback alone is called, handed 77."""
@@ -117,7 +113,6 @@ async def test_a_one_off_timer_hands_its_key_to_the_callback_the_builder_registe
     assert handed == {"review_lock_clear": [77], "amend_lapse": []}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ONE_OFF_TIMER)
 async def test_a_one_off_timer_armed_again_for_the_same_key_replaces_the_earlier(services):
     """An amendment's five minutes are armed, then armed again for a later prompt: one timer
     stands for that amendment, at the later time. A timer of another kind for the same key, and
@@ -142,7 +137,6 @@ async def test_a_one_off_timer_armed_again_for_the_same_key_replaces_the_earlier
     assert sorted(job.trigger.run_date for job in service._scheduler.get_jobs()) == [first, first]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ONE_OFF_TIMER)
 async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(services):
     """A correction's five minutes were armed, and the bot went down before they ran out and
     stayed down two hours past them. When the bot starts again and the builder registers the
@@ -168,7 +162,6 @@ async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(serv
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ONE_OFF_TIMER)
 async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_path):
     """A round's review channel, 707, holds a lock warning whose clear is armed. The league lane
     is stopped at a change of its own. When the timer fires, the callback the builder registered

@@ -20,6 +20,7 @@ stall is one small write to an uncontended database.
 from __future__ import annotations
 
 import contextvars
+import inspect
 import logging
 import os
 import re
@@ -144,6 +145,29 @@ async def _signup_close_timer_job() -> None:
         log.warning("_signup_close_timer_job: no callback registered — skipping")
         return
     await cb()
+
+
+async def _one_off_timer_job(kind: str, key: int | str) -> None:
+    """Module-level APScheduler callable for a one-off timer — picklable for the job store.
+
+    Hands *key* to the callback the builder registered for *kind* (`register_timer`), which reads
+    its row again and asks its change. A kind with no callback is passed over with a warning, and
+    a callback that raises is logged: a timer's fault belongs to its host's log, and the queue it
+    would have asked is never the worse for it.
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning("_one_off_timer_job %s fired but _GLOBAL_SERVICE is None — skipping", kind)
+        return
+    callback = _GLOBAL_SERVICE._timer_callbacks.get(kind)
+    if callback is None:
+        log.warning("_one_off_timer_job: no callback registered for %s — skipping", kind)
+        return
+    try:
+        outcome = callback(key)
+        if inspect.isawaitable(outcome):
+            await outcome
+    except Exception:  # noqa: BLE001 — one timer's fault must not reach the scheduler
+        log.exception("_one_off_timer_job: the %s timer for %s failed", kind, key)
 
 
 #: One league, so one daily refresh: the job is named by what it does, not by a server.
@@ -429,6 +453,8 @@ class SchedulerService:
         self._rsvp_last_notice_callback: "Callable | None" = None
         self._rsvp_deadline_callback: "Callable | None" = None
         self._rsvp_cleanup_callback: "Callable | None" = None
+        # One-off timer callbacks, by kind, registered by the builder before the scheduler starts
+        self._timer_callbacks: dict[str, Callable] = {}
 
     def register_callbacks(
         self,
@@ -496,6 +522,41 @@ class SchedulerService:
         Called from __main__.py on_ready after the scheduler is started.
         """
         self._rsvp_cleanup_callback = callback
+
+    def register_timer(self, kind: str, callback: Callable) -> None:
+        """Register the callable invoked, handed its key, when a one-off timer of *kind* fires.
+
+        The builder registers each kind before the scheduler starts, so that a timer missed while
+        the bot was down finds its callback when it fires on start.
+        """
+        self._timer_callbacks[kind] = callback
+
+    @staticmethod
+    def _timer_id(kind: str, key: int | str) -> str:
+        return f"once:{kind}:{key}"
+
+    def arm_once(self, kind: str, key: int | str, run_at: datetime) -> None:
+        """Arm the one-off timer of *kind* for *key* to fire at *run_at* (aware, UTC).
+
+        A timer armed again for the same kind and key replaces the earlier. It is armed with no
+        lateness limit (`misfire_grace_time=None`), so one missed while the bot was down fires
+        when it starts (architecture.md, "Timed work and restarts"). It is armed by a job of its
+        own, after the job whose record saved its row, never inside a record.
+        """
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            trigger=DateTrigger(run_date=run_at, timezone="UTC"),
+            id=self._timer_id(kind, key),
+            replace_existing=True,
+            misfire_grace_time=None,
+            name=f"One-off {kind} {key}",
+            kwargs={"kind": kind, "key": key},
+        )
+        log.info("Armed the %s timer for %s at %s", kind, key, run_at.isoformat())
+
+    def disarm(self, kind: str, key: int | str) -> None:
+        """Take away the one-off timer of *kind* for *key*, if it stands."""
+        self._remove_job(self._timer_id(kind, key))
 
     @property
     def jobstore_path(self) -> str:
