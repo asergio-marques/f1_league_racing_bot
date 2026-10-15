@@ -1805,24 +1805,30 @@ async def test_a_completion_with_a_discard_and_a_driver_with_no_channel_left_rea
     assert await _status(league) == "COMPLETED"
 
 
-async def test_a_completion_whose_discarded_close_left_drivers_untold_reads_incomplete(tmp_path):
-    """The signup window's close returns driver 105, then recording the window closed fails, and
-    a league admin discards `close_window`: 105 is left untold. The closing line reads
-    "| Incomplete", naming 105 as returned but not told beneath it, the drivers so left counting
-    as a discard."""
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
+async def test_a_completion_whose_closed_notice_was_discarded_reads_incomplete_for_the_window_alone(
+    tmp_path,
+):
+    """The signup window's close returns driver 105, then `post_closed`, whose record writes the
+    window closed, fails, and a league admin discards it. 105 is still told by their own job
+    (b15-2), so the closing line reads "| Incomplete" for the window alone: beneath it the window
+    is named as not closed, and nothing not done names 105; the reply says the same."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
     interaction = await _asked(league)
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
 
     await discard_job(league.bot)
 
     [line] = _closing_lines(league)
     assert line.startswith(INCOMPLETE)
-    assert f"  not done: {_logged(RETURNED_NOT_TOLD)}" in line
-    assert RETURNED_NOT_TOLD in _not_done(reply(interaction))
+    not_done = [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                if each.startswith("  not done: ")]
+    assert not_done == [_logged(WINDOW_OPEN)]
+    assert _not_done(reply(interaction)) == [WINDOW_OPEN]
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
 
 
 #: Work in hand that is not an end of the season, as a request about it would find it: each kind,
