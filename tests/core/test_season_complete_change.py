@@ -41,6 +41,7 @@ from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
+    member_interaction,
     retry_job,
     run_queue,
     step_rows,
@@ -1549,10 +1550,12 @@ async def test_a_discarded_window_close_names_and_forgets_the_drivers_it_returne
 
 
 async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_UP) -> Any:
-    """Driver *user_id*, part-way through the wizard, withdraws through the real wizard service;
-    Discord refuses the closing notice in their signup channel, so the channel is kept, readable
-    with their typing locked and no deletion armed (P3). Gives the channel kept."""
-    from leaguebot.signup.services.wizard_service import WizardService
+    """Driver *user_id*, part-way through the wizard, presses Cancel Signup in their signup
+    channel, on a view handed the change queue, and Discord refuses the closing notice there.
+    Once the queue has run they are Not Signed Up (the league's `signup.end` done), and the turns
+    in their channel stop at `signup_notice`: nothing posted, their typing not revoked, no
+    deletion armed (C76, decision 25). Gives the channel."""
+    from leaguebot.signup.cogs.signup_cog import WithdrawButtonView
 
     await _mid_wizard(league, user_id)
     kept = MagicMock(spec=discord.TextChannel)
@@ -1561,30 +1564,49 @@ async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_
     kept.send = AsyncMock(side_effect=_forbidden())
     kept.set_permissions = AsyncMock(return_value=None)
     league.channels[kept.id] = kept
-    wizards = WizardService.__new__(WizardService)
-    wizards._db_path = league.db_path
-    wizards._correction_tasks = {}
-    wizards._scheduler = league.bot.scheduler_service
-    wizards._output_router = league.bot.output_router
-    wizards._bot = league.bot
-    assert await wizards.withdraw(str(user_id), league.guild) is None
-    assert kept.set_permissions.await_args.kwargs["send_messages"] is False
+    # Today's withdrawal off the queue, a stand-in that does nothing, so that only what the
+    # press asks of the queue shows.
+    league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
+    press = member_interaction(league.bot, user=league._member(user_id))
+    press.guild = league.guild
+    press.channel_id = kept.id
+    press.channel = kept
+    await WithdrawButtonView(str(user_id), league.bot.change_queue).withdraw_button.callback(press)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, _lane_of(user_id))
+    assert job is not None and job["name"] == "signup_notice"
+    assert not any(call.kwargs.get("send_messages") is False
+                   for call in kept.set_permissions.call_args_list)
     return kept
 
 
-def _deletions_armed(league: Any) -> list[str]:
-    return [call.kwargs.get("id") for call in
-            league.bot.scheduler_service._scheduler.add_job.call_args_list
-            if str(call.kwargs.get("id", "")).startswith("wizard_channel_delete_")]
+def _lane_of(user_id: int = SIGNING_UP) -> str:
+    """The lane of driver *user_id*'s signup channel."""
+    return f"channel:{SIGNUP_CHANNEL_BASE + user_id}"
 
 
+def _deletions_armed(league: Any) -> list[Any]:
+    """Each 24-hour deletion of a signup channel armed through the scheduler service."""
+    return [call.args for call in league.bot.scheduler_service.arm_once.call_args_list
+            if call.args and call.args[0] == "signup_channel_delete"]
+
+
+NO_WITHDRAW_CHANGE = (
+    "#439: the Cancel Signup view is not handed the change queue, and a withdrawal ends the "
+    "signup and posts its closing notice itself off the queue, keeping the channel with its "
+    "typing locked where the notice is refused"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=NO_WITHDRAW_CHANGE)
 async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_the_season_s_end(
     tmp_path,
 ):
     """Driver 105 withdrew while the signup window stood open, and Discord refused their
-    closing notice, so their channel is kept, readable with their typing locked (P3). The
+    closing notice, so the turns in their signup channel stand stopped at `signup_notice`. The
     completion then closes the window: it plans no `signup_notice` and no `close_signup` for
-    105, locks nothing of theirs and arms no deletion; their kept channel is told nothing more."""
+    105, locks nothing of theirs and arms no deletion; their channel is told nothing more, and
+    their stopped job is left stopped for Retry or Discard (decision 24)."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     kept = await _withdrew_with_the_notice_refused(league)
     await _asked(league)
@@ -1598,6 +1620,8 @@ async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_th
     assert league.notices == []
     assert _deletions_armed(league) == []
     assert kept.send.await_count == 1
+    job = await stopped_job(league.db_path, _lane_of())
+    assert job is not None and job["name"] == "signup_notice"
     assert await _status(league) == "COMPLETED"
 
 
