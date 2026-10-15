@@ -597,15 +597,17 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
     the other the bot starts after the close time (`close_signups_unattended` with the cause
     "timer", then "restart"). Each asks `signup.close` as the bot's own change and posts nothing
     itself: the window stays open until the queue runs. When it runs, the window is closed, the
-    closed notice posted and Kimi returned to Not Signed Up."""
+    closed notice posted and Kimi returned to Not Signed Up. The close is audited once, by the
+    system, as an automatic close, and one "🔒 Signups closed automatically at their set time"
+    line is written, its head showing the set time (and, for the restart, that it came at
+    start-up); it names no member and states beneath it the one driver returned (signup :67)."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from tests.support.change_queue import queued_log_lines
 
     for cause in ("timer", "restart"):
         league = await _close_league(tmp_path / cause, SIGNING_UP)
-        await league.write(
-            "UPDATE signup_module_config SET close_at = ?",
-            (league.clock.now - timedelta(minutes=1)).isoformat(),
-        )
+        set_at = league.clock.now - timedelta(minutes=1)
+        await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
 
         await close_signups_unattended(league.bot, cause=cause)
 
@@ -619,6 +621,21 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
         assert not (await _window(league))["signups_open"], cause
         assert len(_closed_notices(league)) == 1, cause
         assert await _driver_state(league) == "NOT_SIGNED_UP", cause
+        audits = await league.rows(
+            "SELECT change_type, old_value, new_value, actor_name FROM audit_entries "
+            "WHERE change_type LIKE 'SIGNUP_%CLOSE'"
+        )
+        assert [(row["change_type"], row["old_value"], row["new_value"], row["actor_name"])
+                for row in audits] == [("SIGNUP_AUTO_CLOSE", "open", "closed", "system")], cause
+        lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        [line] = [line for line in lines
+                  if "🔒 Signups closed automatically at their set time" in line]
+        head, *beneath = line.splitlines()
+        assert (set_at.isoformat() in head
+                or f"<t:{int(set_at.timestamp())}" in head), (cause, head)
+        assert ("start-up" in head) == (cause == "restart"), (cause, head)
+        assert "<@" not in line, (cause, line)
+        assert any("returned" in text and "1" in text for text in beneath), (cause, line)
 
 
 @pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
