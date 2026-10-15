@@ -137,12 +137,17 @@ async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_that_cannot_be_closed_stops_the_queue(tmp_path):
+    """The signup window is open and the wind-down asked; recording the window closed fails. The
+    queue stops at `post_closed`, whose record writes the window's close, with the season still
+    in Ongoing, signups open, and both pending placements standing; retried, the window closes
+    and the season moves on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _ask(league)
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("wind_down", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await _stage(league) == "ONGOING_SIGNUPS"
     assert await _pending(league) == 2
 
@@ -258,11 +263,20 @@ async def test_a_discarded_signup_notice_still_closes_the_channel(tmp_path):
     assert discard_lines and f"<@{SIGNING_UP}>" in discard_lines[-1]
 
 
+def _close_recording(service: Any) -> str:
+    """The name of the form through which the signup service records the window closed:
+    `set_window_closed_on`, which `post_closed`'s record calls on its save's connection from
+    C66 on, or until then the committing `set_window_closed`."""
+    return ("set_window_closed_on" if hasattr(service, "set_window_closed_on")
+            else "set_window_closed")
+
+
 def _closes_then_fails_once(league: Any) -> None:
-    """The window's close records the window closed, then fails once, after it has returned its
-    drivers: as an audit that cannot be written would make it."""
+    """Recording the window closed goes through, then fails once, after the close has returned
+    its drivers: as an audit that cannot be written would make it."""
     service = league.bot.signup_module_service
-    closing = service.set_window_closed
+    name = _close_recording(service)
+    closing = getattr(service, name)
     failing = {"now": True}
 
     async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
@@ -272,26 +286,27 @@ def _closes_then_fails_once(league: Any) -> None:
             raise RuntimeError("disk I/O error")
         return closed
 
-    service.set_window_closed = _set_window_closed
+    setattr(service, name, _set_window_closed)
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tells_and_closes_them(
     tmp_path,
 ):
-    """The wind-down's own `wind_down` job, as the completion's `close_window`: the window's
-    close returns a driver still filling in the wizard, records the window closed, then fails,
-    and the queue stops there. Retried with the window now read as closed, it still plans the
-    driver's notice and the close of their channel, the notice posted before the lock, and the
-    season is moved on to Pending completion."""
+    """The wind-down's close returns a driver still filling in the wizard; `post_closed`'s record
+    then writes the window closed and fails, so its save is undone: the queue stops at
+    `post_closed` with the window still open and the driver Not Signed Up, told nothing.
+    Retried, the window is recorded closed, the driver's notice is posted before their
+    channel's lock, and the season is moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _closes_then_fails_once(league)
     await _ask(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("wind_down", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
-    assert not await window_open(league)
+    assert await window_open(league)
     assert league.notices == [] and league.locked == []
 
     await retry_job(league.bot)
@@ -304,6 +319,7 @@ async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tel
     assert league.notices == [(SIGNING_UP, "🔒 Signups have closed. This channel will be "
                                            "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
+    assert not await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
@@ -316,7 +332,8 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     after the close has returned its drivers, their transitions committed, and before the job's
     mark or any result of its is saved. The bot started again closes as it should."""
     service = league.bot.signup_module_service
-    closing = service.set_window_closed
+    name = _close_recording(service)
+    closing = getattr(service, name)
     killing = {"now": True}
 
     async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
@@ -325,17 +342,17 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
             raise _Killed()
         return await closing(*args, **kwargs)
 
-    service.set_window_closed = _set_window_closed
+    setattr(service, name, _set_window_closed)
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
     tmp_path,
 ):
-    """The wind-down's own `wind_down` job, as the completion's `close_window`: the bot is killed
-    in the window's close, after a driver still filling in the wizard is returned to Not Signed Up
-    and before the window is recorded closed or the job's mark and result are saved. When the bot
-    starts again, the driver it had returned is told, then their channel closed, and the season is
-    moved on to Pending completion."""
+    """The bot is killed after the wind-down's close has returned a driver still filling in the
+    wizard to Not Signed Up, as `post_closed` comes to record the window closed and before its
+    mark is saved. When the bot starts again, the driver it had returned is told, then their
+    channel closed, and the season is moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_before_the_window_is_recorded_closed(league)
@@ -343,8 +360,8 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
 
     with pytest.raises(_Killed):
         await run_queue(league.bot)
-    [wind_down] = [row for row in await step_rows(league.db_path) if row["name"] == "wind_down"]
-    assert wind_down["done_at"] is None and wind_down["result"] is None
+    [closed] = [row for row in await step_rows(league.db_path) if row["name"] == "post_closed"]
+    assert closed["done_at"] is None and closed["result"] is None
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
     assert await window_open(league)
 
@@ -363,15 +380,16 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 @pytest.mark.parametrize("failures", [1, 2], ids=["fails once", "fails again on the retry"])
 async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
     tmp_path, failures,
 ):
-    """The wind-down's own `wind_down` job, as the completion's `close_window`: the close returns
-    driver 105, still filling in the wizard, then recording the window closed fails; the queue
-    stops there keeping 105 on the job, with the window still open, and does so again where the
-    first Retry fails the same way. Once the record goes through, 105 is told, then their channel
-    closed, each once, and the season is moved on to Pending completion."""
+    """The wind-down's close returns driver 105, still filling in the wizard, then recording the
+    window closed fails: the queue stops at `post_closed`, with the window still open and 105 Not
+    Signed Up, told nothing, and does so again where the first Retry fails the same way. Once the
+    record goes through, 105 is told, then their channel closed, each once, and the season is
+    moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -381,10 +399,7 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
     for attempt in range(failures):
         if attempt:
             await retry_job(league.bot)
-        assert await _stopped_at(league) == ("wind_down", None)
-        [wind_down] = [row for row in await step_rows(league.db_path)
-                       if row["name"] == "wind_down"]
-        assert wind_down["result"] == {"returned": [str(SIGNING_UP)]}
+        assert await _stopped_at(league) == ("post_closed", None)
         assert await window_open(league)
         assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
         assert league.notices == [] and league.locked == []
@@ -433,7 +448,8 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     once, before the close's audit is written and before the job's mark or any result of its is
     saved. The bot started again closes as it should."""
     service = league.bot.signup_module_service
-    closing = service.set_window_closed
+    name = _close_recording(service)
+    closing = getattr(service, name)
     killing = {"now": True}
 
     async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
@@ -443,17 +459,17 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
             raise _Killed()
         return closed
 
-    service.set_window_closed = _set_window_closed
+    setattr(service, name, _set_window_closed)
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_closed_still_tells_and_closes_its_drivers_at_start(
     tmp_path,
 ):
-    """The wind-down's own `wind_down` job, as the completion's `close_window`: the bot is killed
-    in the window's close straight after the window is recorded closed, before the close's audit
-    and the job's mark. When the bot starts again, driver 105, whom the close had returned, is
-    told once, then their channel locked; the season is moved on to Pending completion, and 105
-    is owed nothing more."""
+    """The bot is killed in `post_closed`'s record straight after it writes the window closed,
+    before its save commits: the window is still open. When the bot starts again, driver 105,
+    whom the wind-down's close had returned, is told once, then their channel locked; the season
+    is moved on to Pending completion, and 105 is owed nothing more."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_after_the_window_is_recorded_closed(league)
@@ -461,10 +477,10 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
 
     with pytest.raises(_Killed):
         await run_queue(league.bot)
-    [wind_down] = [row for row in await step_rows(league.db_path) if row["name"] == "wind_down"]
-    assert wind_down["done_at"] is None and wind_down["result"] is None
+    [closed] = [row for row in await step_rows(league.db_path) if row["name"] == "post_closed"]
+    assert closed["done_at"] is None and closed["result"] is None
     assert await driver_state(league, SIGNING_UP) == "NOT_SIGNED_UP"
-    assert not await window_open(league)
+    assert await window_open(league)
 
     await league.restart()
     await run_queue(league.bot)
