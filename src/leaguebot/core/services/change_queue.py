@@ -24,10 +24,20 @@ step returned is kept on the job as the partial result a failure on Discord keep
 try can remove the copy already sent before it posts again (`StepContext.kept`): a second copy is
 accepted only where the bot stops, not where a save fails.
 
-**One change runs at a time, in the order asked.** One asyncio task, `ChangeQueue._task`, is kept
-on the instance and started by `start()` (idempotent), from `on_ready` and never from an
-interaction, so that it inherits no interaction's context. `run_until_idle` is the same loop for the
-tests. A lock holds the task and a test's call to one step at a time.
+**One change runs at a time on a lane, in the order asked.** One dispatcher task,
+`ChangeQueue._task`, is kept on the instance and started by `start()` (idempotent), from `on_ready`
+and never from an interaction, so that it inherits no interaction's context. It wakes on the signal
+or when the next try falls due and starts one task per lane that has something to do, kept in
+`_workers`: the league lane's always, and at most `CONVERSATION_LANES_AT_ONCE` conversations'
+besides, the oldest change first, the rest waiting for a slot. A lane's task holds that lane's
+`_working` lock while it drains the lane, and has a catch-all of its own, so that a fault outside
+any change pauses only its lane (`WORKER_PAUSE_AFTER_FAULT`); the dispatcher holds no lane's lock.
+The league lane's task runs once when the queue starts, so that a fault there is met at once.
+`run_until_idle` is the tests' loop: serial, one change at a time across lanes, the lowest change id
+first, taking each lane's lock as it runs that lane's head, so that a test's drain and the
+production task never drain one lane at once. A due time the dispatcher cannot act on, because its
+lane has a task already or every conversation slot is taken, is not waited for
+(`_seconds_to_next_try`): the task ending wakes it, so it neither spins nor sleeps through.
 
 **One save at a time, across lanes.** SQLite has one writer, so the twelve saves the queue makes
 (the request's, its acknowledgement's mark, the restart's, a start, an end, a `SAVE` step's, a
@@ -213,6 +223,9 @@ WORKER_PAUSE_AFTER_FAULT = 5.0
 #: When the bot tries a stopped job again, in minutes after its first failure. After the last the
 #: bot no longer tries on its own, and only Retry or Discard moves the queue.
 RETRY_AFTER = (1, 5, 10, 15, 30, 60)
+
+#: How many conversations' lanes have a task at once, beside the league's, which always has its slot.
+CONVERSATION_LANES_AT_ONCE = 3
 
 #: How often the stop notice is posted again, once the marks of `RETRY_AFTER` are spent and it has
 #: still not landed.
@@ -475,7 +488,9 @@ class ChangeQueue:
         self._types: dict[str, ChangeType] = {}
         self._held: dict[int, _Held] = {}
         self._signal = asyncio.Event()
-        self._working = asyncio.Lock()
+        # One lock per lane, made on first use (`_lock`): held by the lane's worker while it
+        # drains the lane.
+        self._working: dict[str, asyncio.Lock] = {}
         self._asking = asyncio.Lock()
         # Taken around each save, so that two lanes never write at once; see the module.
         self._writing = asyncio.Lock()
@@ -485,6 +500,10 @@ class ChangeQueue:
         # choice, or it is refused. A lane trying a job refuses only its own presses.
         self._trying: dict[str, int] = {}
         self._task: Optional["asyncio.Task[None]"] = None
+        # The task of each lane that has one, by lane; see the module.
+        self._workers: dict[str, "asyncio.Task[None]"] = {}
+        # Set at start: the league lane's task runs once whether or not it has work.
+        self._first_pass = False
         # When each stopped job's notice was last attempted, for the job whose notice has not
         # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
         self._notice_tried: dict[int, datetime] = {}
@@ -731,6 +750,7 @@ class ChangeQueue:
             never_tried = [row["id"] for row in await cursor.fetchall()]
         await self._router.deliver_queued(never_tried)
         await self._post_missing_notices()
+        self._first_pass = True
         self._task = asyncio.create_task(self._work(), name="change-queue")
         self._task.add_done_callback(self._worker_ended)
 
@@ -818,15 +838,20 @@ class ChangeQueue:
         self._retrying.clear()
 
     async def stop(self) -> None:
-        """Stop the worker, leaving any change where it stood for the next start."""
+        """Stop the dispatcher and every lane's task, leaving any change where it stood for the
+        next start."""
         task, self._task = self._task, None
         if task is None:
             return
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        tasks = [task, *self._workers.values()]
+        for each in tasks:
+            each.cancel()
+        for each in tasks:
+            try:
+                await each
+            except asyncio.CancelledError:
+                pass
+        self._workers.clear()
 
     @staticmethod
     def _worker_ended(task: "asyncio.Task[None]") -> None:
@@ -834,16 +859,16 @@ class ChangeQueue:
             log.error("the change queue's worker stopped on a fault", exc_info=error)
 
     async def _work(self) -> None:
-        """Carry out what can run, then sleep until woken or until the earliest retry is due."""
+        """The dispatcher: start the lanes' tasks, then sleep until woken or until the earliest
+        retry is due."""
         while True:
             self._signal.clear()
             try:
-                await self.run_until_idle()
+                await self._dispatch()
             except Exception:  # noqa: BLE001 — a fault outside any change must not end the queue
-                log.error("the change queue's worker met a fault and carries on", exc_info=True)
+                log.error("the change queue's dispatcher met a fault and carries on",
+                          exc_info=True)
                 await asyncio.sleep(WORKER_PAUSE_AFTER_FAULT)
-                # Look again: nothing may be left to set the signal, and a change the fault
-                # left QUEUED would otherwise wait for the next ask or a restart.
                 continue
             # The wait is built only once the time to the next try is known, so a cancel while
             # that is read drops no coroutine unawaited.
@@ -853,21 +878,85 @@ class ChangeQueue:
             except asyncio.TimeoutError:
                 pass
 
+    async def _dispatch(self) -> None:
+        """Start a task for each lane that has something to do and none: the league's always, and
+        a conversation's while fewer than `CONVERSATION_LANES_AT_ONCE` have one, the oldest
+        change first. A lane has something to do where its head can run now, or a stop notice of
+        its own is due to be posted again."""
+        async with get_connection(self._db_path) as db:
+            heads = await self._heads(db, None)
+        wanted = [change["lane"] for change, job in heads if not self._waits_for_a_try(job)]
+        for change, _steps, job in await self._stopped_jobs(without_notice=True):
+            if self._notice_due(job) <= self._clock():
+                wanted.append(change["lane"])
+        if self._first_pass:
+            self._first_pass = False
+            wanted.insert(0, LEAGUE_LANE)
+        conversations = sum(1 for lane in self._workers if lane != LEAGUE_LANE)
+        for lane in dict.fromkeys(sorted(wanted, key=lambda each: each != LEAGUE_LANE)):
+            if lane in self._workers:
+                continue
+            if lane != LEAGUE_LANE:
+                if conversations >= CONVERSATION_LANES_AT_ONCE:
+                    continue
+                conversations += 1
+            self._start_lane(lane)
+
+    def _start_lane(self, lane: str) -> None:
+        task = asyncio.create_task(self._work_lane(lane), name=f"change-queue:{lane}")
+        self._workers[lane] = task
+        task.add_done_callback(lambda ended: self._lane_ended(lane, ended))
+
+    def _lane_ended(self, lane: str, task: "asyncio.Task[None]") -> None:
+        """A lane's task is done: free its slot and wake the dispatcher, which may start the lane
+        again or a lane that waited for the slot."""
+        if self._workers.get(lane) is task:
+            del self._workers[lane]
+        if not task.cancelled() and (error := task.exception()) is not None:
+            log.error("the change queue's worker of lane %s stopped on a fault", lane,
+                      exc_info=error)
+        self._signal.set()
+
+    async def _work_lane(self, lane: str) -> None:
+        """Carry out what can run on *lane*; a fault outside any change pauses this lane alone,
+        and it looks again after."""
+        while True:
+            try:
+                await self.run_until_idle(lane=lane)
+                return
+            except Exception:  # noqa: BLE001 — a fault outside any change must not end the lane
+                log.error("the change queue's worker of lane %s met a fault and carries on",
+                          lane, exc_info=True)
+                await asyncio.sleep(WORKER_PAUSE_AFTER_FAULT)
+
     async def _seconds_to_next_try(self) -> float | None:
         """How long until the earliest stopped job is due for a try, or the earliest stop notice
-        that has not landed is due to be posted again; None where nothing waits."""
+        that has not landed is due to be posted again; None where nothing waits.
+
+        A job or notice on a lane that has a task already, or on a conversation's while every
+        conversation slot is taken, is left out: the task ending wakes the dispatcher, so waiting
+        for a time that has passed would spin.
+        """
+        conversations = sum(1 for lane in self._workers if lane != LEAGUE_LANE)
+
+        def _counts(lane: str) -> bool:
+            if lane in self._workers:
+                return False
+            return lane == LEAGUE_LANE or conversations < CONVERSATION_LANES_AT_ONCE
+
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT MIN(s.next_try_at) AS due FROM queued_change_steps s "
+                "SELECT c.lane, s.next_try_at FROM queued_change_steps s "
                 "JOIN queued_changes c ON c.id = s.change_id "
                 "WHERE s.done_at IS NULL AND s.next_try_at IS NOT NULL "
                 "AND c.state IN ('QUEUED', 'RUNNING')"
             )
-            row = await cursor.fetchone()
-        times = [] if row is None or row["due"] is None else [datetime.fromisoformat(row["due"])]
+            rows = list(await cursor.fetchall())
+        times = [datetime.fromisoformat(row["next_try_at"]) for row in rows
+                 if _counts(row["lane"])]
         times += [
-            self._notice_due(job) for _change, _steps, job in
-            await self._stopped_jobs(without_notice=True)
+            self._notice_due(job) for change, _steps, job in
+            await self._stopped_jobs(without_notice=True) if _counts(change["lane"])
         ]
         if not times:
             return None
@@ -884,28 +973,64 @@ class ChangeQueue:
         marks = (since + timedelta(minutes=minutes) for minutes in RETRY_AFTER)
         return next((mark for mark in marks if mark > tried), tried + NOTICE_REPOST_EVERY)
 
-    async def run_until_idle(self, *, steps: int | None = None) -> None:
-        """Carry out what can run now, in order: until nothing can, or *steps* steps are done."""
-        done = 0
-        async with self._working:
-            while True:
-                progress = await self._advance()
-                if progress is None:
-                    break
-                if progress:
-                    done += 1
-                    if steps is not None and done >= steps:
-                        return
-            await self._post_missing_notices()
+    async def run_until_idle(self, *, steps: int | None = None, lane: str | None = None) -> None:
+        """Carry out what can run now, in order: until nothing can, or *steps* steps are done.
 
-    async def _advance(self) -> bool | None:
-        """Do the next unit of work: start a change, run a job, or finish a change.
+        On *lane*, that lane alone, holding its lock for the length of the drain, as a lane's task
+        does. Without one, every lane, serially: the head asked first goes first, each taking its
+        lane's lock as it runs, which is the tests' runner.
+        """
+        if lane is not None:
+            async with self._lock(lane):
+                if await self._drain(lane, steps):
+                    await self._post_missing_notices(lane)
+            return
+        done = 0
+        while True:
+            head = await self._next_lane()
+            if head is None:
+                break
+            async with self._lock(head):
+                progress = await self._advance(head)
+            if progress:
+                done += 1
+                if steps is not None and done >= steps:
+                    return
+        for each in sorted({change["lane"] for change, _s, _j in
+                            await self._stopped_jobs(without_notice=True)}):
+            async with self._lock(each):
+                await self._post_missing_notices(each)
+
+    async def _drain(self, lane: str, steps: int | None) -> bool:
+        """Do the work of *lane*, its lock held: False where *steps* were done first."""
+        done = 0
+        while True:
+            progress = await self._advance(lane)
+            if progress is None:
+                return True
+            if progress:
+                done += 1
+                if steps is not None and done >= steps:
+                    return False
+
+    def _lock(self, lane: str) -> asyncio.Lock:
+        return self._working.setdefault(lane, asyncio.Lock())
+
+    async def _next_lane(self) -> str | None:
+        """The lane of the change to work on next, across lanes; None where nothing can run."""
+        async with self._asking, get_connection(self._db_path) as db:
+            change = await self._choose(db)
+        return None if change is None else str(change["lane"])
+
+    async def _advance(self, lane: str) -> bool | None:
+        """Do the next unit of work on *lane*, its lock held: start a change, run a job, or finish
+        a change.
 
         Returns True where a job was done, False for other progress, and None where nothing
         can run now.
         """
         async with self._asking, get_connection(self._db_path) as db:
-            change = await self._choose(db)
+            change = await self._choose(db, lane)
             if change is None:
                 return None
             self._trying[change["lane"]] = change["id"]
@@ -938,46 +1063,66 @@ class ChangeQueue:
             return False
         return await self._run_step(change, change_type, step_rows, pending)
 
-    async def _choose(self, db: aiosqlite.Connection) -> aiosqlite.Row | None:
-        """The change to work on next, in strict order within each lane.
-
-        A lane's head is its RUNNING change, as one resumed after a stop, else its QUEUED change
-        with the lowest id, which nothing on that lane overtakes. A lane whose head's next job is
-        stopped and not yet due (its `next_try_at` in the future, or none left) is not runnable and
-        holds only itself. Of the runnable lanes' heads the one asked first, the lowest id, is
-        taken, so that one runner carrying out one change at a time is deterministic.
-        """
+    async def _heads(
+        self, db: aiosqlite.Connection, lane: str | None
+    ) -> list[tuple[aiosqlite.Row, aiosqlite.Row | None]]:
+        """The head of each lane (or of *lane* alone), oldest first, each with its next job not
+        done. A lane's head is its RUNNING change, as one resumed after a stop, else its QUEUED
+        change with the lowest id, which nothing on that lane overtakes."""
+        on_lane = "" if lane is None else " AND c.lane = ?"
         cursor = await db.execute(
             "SELECT * FROM queued_changes c WHERE c.state IN ('RUNNING', 'QUEUED') AND c.id = ("
             "SELECT h.id FROM queued_changes h WHERE h.lane = c.lane "
-            "AND h.state IN ('RUNNING', 'QUEUED') "
-            "ORDER BY h.state = 'RUNNING' DESC, h.id LIMIT 1) ORDER BY c.id"
+            "AND h.state IN ('RUNNING', 'QUEUED') ORDER BY h.state = 'RUNNING' DESC, h.id LIMIT 1)"
+            f"{on_lane} ORDER BY c.id",
+            () if lane is None else (lane,),
         )
+        heads = []
         for change in await cursor.fetchall():
             cursor = await db.execute(
                 "SELECT id, failing_since, next_try_at FROM queued_change_steps "
                 "WHERE change_id = ? AND done_at IS NULL ORDER BY position LIMIT 1",
                 (change["id"],),
             )
-            job = await cursor.fetchone()
-            if job is not None and job["failing_since"] is not None:
-                if job["next_try_at"] is None or (
-                    datetime.fromisoformat(job["next_try_at"]) > self._clock()
-                ):
-                    continue
-                if job["id"] not in self._retrying and await self._conversation_over(
-                    db, change
-                ):
-                    # Due for a try of its own, but its conversation has ended: no try is made, so
-                    # that it cannot post into a conversation the league has taken down. It waits,
-                    # as a stop does after a restart, for Retry or Discard.
-                    async with self._writing:
-                        await db.execute(
-                            "UPDATE queued_change_steps SET next_try_at = NULL WHERE id = ?",
-                            (job["id"],),
-                        )
-                        await db.commit()
-                    continue
+            heads.append((change, await cursor.fetchone()))
+        return heads
+
+    def _waits_for_a_try(self, job: aiosqlite.Row | None) -> bool:
+        """Whether a head's next job is stopped and not yet due: its lane runs nothing."""
+        if job is None or job["failing_since"] is None:
+            return False
+        return job["next_try_at"] is None or (
+            datetime.fromisoformat(job["next_try_at"]) > self._clock()
+        )
+
+    async def _choose(
+        self, db: aiosqlite.Connection, lane: str | None = None
+    ) -> aiosqlite.Row | None:
+        """The change to work on next, in strict order within each lane, on *lane* or across
+        lanes.
+
+        A lane whose head's next job is stopped and not yet due (its `next_try_at` in the future,
+        or none left) is not runnable and holds only itself. Of the runnable lanes' heads the one
+        asked first, the lowest id, is taken, so that one runner carrying out one change at a time
+        is deterministic.
+        """
+        for change, job in await self._heads(db, lane):
+            if self._waits_for_a_try(job):
+                continue
+            if (
+                job is not None and job["failing_since"] is not None
+                and job["id"] not in self._retrying and await self._conversation_over(db, change)
+            ):
+                # Due for a try of its own, but its conversation has ended: no try is made, so
+                # that it cannot post into a conversation the league has taken down. It waits,
+                # as a stop does after a restart, for Retry or Discard.
+                async with self._writing:
+                    await db.execute(
+                        "UPDATE queued_change_steps SET next_try_at = NULL WHERE id = ?",
+                        (job["id"],),
+                    )
+                    await db.commit()
+                continue
             return change
         return None
 
@@ -1616,11 +1761,14 @@ class ChangeQueue:
             log.error("could not post the stop notice of job %s (change %s)", job_id,
                       change["id"], exc_info=True)
 
-    async def _post_missing_notices(self) -> None:
+    async def _post_missing_notices(self, lane: str | None = None) -> None:
         """Post again the stop notice of every stopped job whose notice has not landed, where it
-        is due: at start-up and on each pass of the worker, no more often than the retry marks
-        (`_notice_due`) and hourly once they are spent."""
-        for change, steps, job in await self._stopped_jobs(without_notice=True):
+        is due: at start-up and at the end of each pass of a lane's worker, no more often than the
+        retry marks (`_notice_due`) and hourly once they are spent.
+
+        On *lane*, that lane's alone, the caller holding its lock; without one, every lane's, which
+        only the start does, before any lane has a task."""
+        for change, steps, job in await self._stopped_jobs(without_notice=True, lane=lane):
             if self._notice_due(job) > self._clock():
                 continue
             name = await self._name_job(change, job, self._step_context(change, steps, job))

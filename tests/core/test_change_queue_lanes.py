@@ -48,7 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_LANE_WORKERS = "#439: one worker runs the whole queue, one change at a time"
 NO_LANE_NOTICE = (
     "#439: the stop notice and the queue's lines name no conversation's channel, and the notice "
     "mentions nobody"
@@ -1159,7 +1158,6 @@ def _holding() -> SimpleNamespace:
     return gate
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
 async def test_two_lanes_run_side_by_side_in_the_production_task(env):
     """With the bot running, a turn in channel 7 is in the middle of a job that takes its time. A
     league change asked meanwhile is carried out to the end while the turn's job is still under
@@ -1193,7 +1191,6 @@ async def test_two_lanes_run_side_by_side_in_the_production_task(env):
     assert gate.ran == ["t"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
 async def test_at_most_three_conversation_lanes_run_beside_the_league(env):
     """With the bot running, turns are asked in channels 7, 8, 9 and 10, in that order, then a
     league change, each in the middle of a job that takes its time. The league change and the
@@ -1236,7 +1233,6 @@ async def test_at_most_three_conversation_lanes_run_beside_the_league(env):
             await maybe_await(queue.stop())
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
 async def test_a_fault_outside_a_change_pauses_only_its_lane(env, monkeypatch):
     """With the bot running, choosing the next change of channel 7's lane meets a fault outside
     any change (the database locked), so that lane's worker pauses, for an hour here. Turns in
@@ -1276,7 +1272,6 @@ async def test_a_fault_outside_a_change_pauses_only_its_lane(env, monkeypatch):
     assert sorted(ran) == ["d", "t"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_WORKERS)
 async def test_stop_ends_every_lane_task(env):
     """With the bot running, a turn in channel 7 and a league change are each in the middle of a
     job that takes its time, side by side. Stopping the queue, as the bot does when it shuts down,
