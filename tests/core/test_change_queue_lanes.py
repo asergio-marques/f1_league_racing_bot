@@ -48,8 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_TYPE_LANE = "#439: a change type does not say its lane yet"
-NO_FOLLOW_ON_LANE = "#439: a follow-on does not take its own kind's lane yet"
 NO_LANE_REPEAT = "#439: changes carry no lane, so a repeat is compared across the whole queue"
 NO_LANE_ACK = "#439: changes carry no lane, so an acknowledgement names a stop anywhere"
 NO_LANE_CHOICE = (
@@ -249,7 +247,6 @@ async def test_a_change_saved_without_a_lane_is_the_league_s(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TYPE_LANE)
 async def test_a_change_takes_its_type_s_lane(env):
     """A conversation kind asked for channel 7 is saved on channel 7's lane; a kind that names no
     lane is saved on the league's."""
@@ -262,7 +259,6 @@ async def test_a_change_takes_its_type_s_lane(env):
     assert await _lanes(env) == [("turn", TURNS_7), ("dummy", "league")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FOLLOW_ON_LANE)
 async def test_a_follow_on_takes_its_own_kind_s_lane(env):
     """A league change asking a conversation kind as a follow-on in its save puts it on the
     conversation's lane; a conversation's change asking a league kind puts that on the league's."""
@@ -292,7 +288,6 @@ async def test_a_follow_on_takes_its_own_kind_s_lane(env):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FOLLOW_ON_LANE)
 async def test_a_refusal_s_and_a_discard_s_follow_ons_take_their_own_lanes(env):
     """A league change refused as it starts, whose refusal hook asks a conversation kind, and one
     stopped at its check and discarded, whose discard hook asks one: each follow-on is saved on its

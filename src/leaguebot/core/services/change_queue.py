@@ -319,6 +319,14 @@ class DiscardedContext:
     reply_updatable: bool
 
 
+LEAGUE_LANE = "league"
+
+
+def league_lane(_payload: dict[str, Any]) -> str:
+    """The lane of a change type that names none: the league's."""
+    return LEAGUE_LANE
+
+
 @dataclass(frozen=True)
 class ChangeType:
     """A kind of change: what it does, how it is checked and keyed, and what it tells the member.
@@ -327,6 +335,11 @@ class ChangeType:
     makes two requests the same. *doing* says what the change does ("Turning Results & Standings
     off"), from which the acknowledgement and the refusal of a repeat are formed. A *repeatable*
     change is never refused as a repeat.
+
+    *lane* says, from the payload, the lane the change runs on: `LEAGUE_LANE` (the default, the
+    queue as a league knows it) or a conversation's, `"channel:<id>"`, keyed by the channel it is
+    held in. The lane is fixed by what asked for the change, so the same payload always gives the
+    same lane; a follow-on a step asks takes its own kind's lane, not its asker's.
     """
 
     kind: str
@@ -339,6 +352,7 @@ class ChangeType:
     repeatable: bool = False
     on_refused: Callable[[RefusedContext], tuple[FollowOn, ...]] | None = None
     on_discarded: Callable[[DiscardedContext], tuple[FollowOn, ...]] | None = None
+    lane: Callable[[dict[str, Any]], str] = league_lane
 
 
 class ChangeRefused(Exception):
@@ -495,7 +509,8 @@ class ChangeQueue:
                 if not repeat:
                     cursor = await db.execute(
                         "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, "
-                        "actor_name, actor_display, what) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "actor_name, actor_display, what, lane) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             kind,
                             key,
@@ -505,6 +520,7 @@ class ChangeQueue:
                             None if member is None else str(member),
                             getattr(member, "display_name", None),
                             what,
+                            change_type.lane(payload),
                         ),
                     )
                     change_id = inserted_id(cursor)
@@ -1817,7 +1833,7 @@ class ChangeQueue:
         change_type = self._type(follow_on.kind)
         cursor = await db.execute(
             "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, actor_name, "
-            "actor_display, what) VALUES (?, ?, ?, 'BOT', ?, ?, ?, ?)",
+            "actor_display, what, lane) VALUES (?, ?, ?, 'BOT', ?, ?, ?, ?, ?)",
             (
                 follow_on.kind,
                 change_type.key(follow_on.payload),
@@ -1826,6 +1842,7 @@ class ChangeQueue:
                 change["actor_name"],
                 change["actor_display"],
                 follow_on.what,
+                change_type.lane(follow_on.payload),
             ),
         )
         change_id = inserted_id(cursor)
