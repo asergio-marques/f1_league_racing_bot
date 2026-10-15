@@ -1074,6 +1074,10 @@ POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
         "the turn-away's note and deletion, made at once while an earlier turn waits; a "
         "refusal of either is lost, not retried"
     ),
+    ("core/services/retry_service.py", "attempt_delivery"): (
+        "the retry of a log line the log channel refused: it carries log lines alone, which stay "
+        "off the queue (decision 1)"
+    ),
 }
 
 #: The calls that make a channel, which the job check counts beside the posts.
@@ -1161,7 +1165,6 @@ KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/cancellation_notice_service.py", "_send"): (1, SLICE["6b"]),
     ("core/services/hub_service.py", "refresh_panel"): (2, SLICE["6b"]),
     ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, SLICE["6b"]),
-    ("core/services/retry_service.py", "attempt_delivery"): (1, SLICE["6b"]),
     ("core/utils/batch_notice.py", "delete_notice"): (1, SLICE["6b"]),
     ("core/utils/batch_notice.py", "send_notice"): (1, SLICE["6b"]),
     ("image/services/image_lineup_post.py", "try_post"): (1, SLICE["6b"]),
