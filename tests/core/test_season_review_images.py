@@ -21,9 +21,6 @@ from leaguebot.core.cogs.season_cog import _ReviewPoster
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
-#: Why the review poster's tests fail until #439 slice 6b's C1 is built.
-NO_POSTER_REPLY = "#439: the review poster's send is not yet renamed reply"
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -864,7 +861,6 @@ async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkey
 # ── Collecting the report, so approving can clear it ──────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_keeps_every_public_message():
     """Every public message a review sends is kept, so that approving it can take them down."""
     interaction = MagicMock()
@@ -878,7 +874,6 @@ async def test_the_poster_keeps_every_public_message():
     assert poster.posted == sent
 
 
-@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_asks_for_the_message_back():
     """`followup.send` returns None unless `wait=True`, so without it nothing is kept and the
     report could never be cleared."""
@@ -891,7 +886,6 @@ async def test_the_poster_asks_for_the_message_back():
     assert original.await_args.kwargs["wait"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_leaves_ephemeral_messages_alone():
     """An ephemeral followup is the reviewer's alone and cannot be deleted by id; the
     fault reports among them are how a manager knows what to fix."""
@@ -906,7 +900,6 @@ async def test_the_poster_leaves_ephemeral_messages_alone():
     assert "wait" not in original.await_args.kwargs
 
 
-@pytest.mark.xfail(strict=True, reason=NO_POSTER_REPLY)
 async def test_the_poster_passes_a_file_and_a_view_on():
     interaction = MagicMock()
     original = AsyncMock(return_value=MagicMock())
