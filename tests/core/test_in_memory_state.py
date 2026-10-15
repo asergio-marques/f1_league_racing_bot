@@ -64,6 +64,11 @@ LEAVING = {
     # on the queue, its question's row then holding every report id (C93). Exempt while it
     # stands: it dies with the view, and once no server is claimed every press on it is refused.
     ("core/cogs/season_cog.py", "_report"): "#439 6b C93",
+    # A season review's poster: the messages one review command posted, handed to its button
+    # and gone when the command returns (#228), `_report` above being where they then live.
+    # Exempt while it stands; it goes with `_ReviewPoster` when the review is posted on the
+    # queue (C93).
+    ("core/cogs/season_cog.py", "posted"): "#439 6b C93",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit
@@ -98,9 +103,6 @@ EXEMPT = {
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),
-    # A season review's poster: the messages one review command posted, handed to its button
-    # and gone when the command returns (#228). `_report` above is where they then live.
-    ("core/cogs/season_cog.py", "posted"),
     # One parsed SVG document's index of its own elements.
     ("image/utils/svg_document.py", "by_id"),
     ("image/utils/svg_document.py", "by_label"),
