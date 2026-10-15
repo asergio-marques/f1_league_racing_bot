@@ -48,8 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_LANE_REPEAT = "#439: changes carry no lane, so a repeat is compared across the whole queue"
-NO_LANE_ACK = "#439: changes carry no lane, so an acknowledgement names a stop anywhere"
 NO_LANE_CHOICE = (
     "#439: the queue chooses one change for the whole bot, so a stop on one lane holds every lane"
 )
@@ -332,7 +330,6 @@ async def test_a_refusal_s_and_a_discard_s_follow_ons_take_their_own_lanes(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_REPEAT)
 async def test_a_repeat_is_refused_only_against_the_last_change_on_its_own_lane(env):
     """A kind keyed without its channel, asked for channel 7 then for channel 8: the same request
     by its key, but on another lane, so the second is not a repeat and is queued."""
@@ -346,7 +343,6 @@ async def test_a_repeat_is_refused_only_against_the_last_change_on_its_own_lane(
     assert "already been asked for" not in acknowledgement(second)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_REPEAT)
 async def test_a_turn_on_another_lane_between_two_presses_does_not_make_the_second_new(env):
     """A league change asked twice, a conversation's turn in channel 7 asked between the two: the
     second press still repeats the last change on the league lane and is refused, saying so."""
@@ -365,7 +361,6 @@ async def test_a_turn_on_another_lane_between_two_presses_does_not_make_the_seco
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_ACK)
 async def test_an_acknowledgement_names_the_stop_on_its_own_lane_only(env):
     """Channel 7's lane stopped at a job Discord refuses. A league change asked then is
     acknowledged with no word of that stop, and its job numbers name none; a second turn in

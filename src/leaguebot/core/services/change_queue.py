@@ -415,11 +415,14 @@ class ChangeQueue:
     async def job_numbers(self, change_id: int) -> tuple[int | None, int | None]:
         """The number of *change_id*'s first job not done, and of the job the queue is stopped
         at (None where it is not stopped), for a request made with no interaction to
-        acknowledge, which says in a channel what the acknowledgement would."""
+        acknowledge, which says in a channel what the acknowledgement would. The stop is the one
+        on the change's own lane, as an acknowledgement names it."""
         async with get_connection(self._db_path) as db:
             steps = await self._read_steps(db, change_id)
+            cursor = await db.execute("SELECT lane FROM queued_changes WHERE id = ?", (change_id,))
+            row = await cursor.fetchone()
         first = next((row["id"] for row in steps if row["done_at"] is None), None)
-        stopped = await self._stopped_jobs()
+        stopped = await self._stopped_jobs(lane=row["lane"] if row is not None else None)
         return first, (stopped[0][2]["id"] if stopped else None)
 
     def register(self, change_type: ChangeType) -> None:
@@ -492,12 +495,15 @@ class ChangeQueue:
         # change up before its acknowledgement is recorded and the interaction is held.
         async with self._asking:
             key = change_type.key(payload)
+            lane = change_type.lane(payload)
             change_id: int | None = None
             first_job: int | None = None
             async with get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 cursor = await db.execute(
-                    "SELECT dedup_key, state FROM queued_changes ORDER BY id DESC LIMIT 1"
+                    "SELECT dedup_key, state FROM queued_changes WHERE lane = ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (lane,),
                 )
                 last = await cursor.fetchone()
                 repeat = (
@@ -520,7 +526,7 @@ class ChangeQueue:
                             None if member is None else str(member),
                             getattr(member, "display_name", None),
                             what,
-                            change_type.lane(payload),
+                            lane,
                         ),
                     )
                     change_id = inserted_id(cursor)
@@ -548,7 +554,7 @@ class ChangeQueue:
                 return None
 
             if interaction is not None:
-                stopped = await self._stopped_jobs()
+                stopped = await self._stopped_jobs(lane=lane)
                 await self._acknowledge(
                     change_id, change_type, payload, interaction,
                     first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
@@ -639,17 +645,20 @@ class ChangeQueue:
         self._task.add_done_callback(self._worker_ended)
 
     async def _stopped_jobs(
-        self, *, without_notice: bool = False
+        self, *, without_notice: bool = False, lane: str | None = None
     ) -> list[tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row]]:
         """Every job the queue is stopped at, in job order, each with its change and the change's
-        steps; with *without_notice*, only those whose stop notice has not landed."""
+        steps; with *without_notice*, only those whose stop notice has not landed, and with
+        *lane*, only those on that lane."""
         missing = " AND s.notice_message_id IS NULL" if without_notice else ""
+        on_lane = "" if lane is None else " AND c.lane = ?"
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT c.*, s.id AS job_id FROM queued_change_steps s "
                 "JOIN queued_changes c ON c.id = s.change_id "
                 "WHERE s.done_at IS NULL AND s.failing_since IS NOT NULL "
-                f"AND c.state IN ('QUEUED', 'RUNNING'){missing} ORDER BY s.id"
+                f"AND c.state IN ('QUEUED', 'RUNNING'){missing}{on_lane} ORDER BY s.id",
+                () if lane is None else (lane,),
             )
             changes = list(await cursor.fetchall())
             found = []
