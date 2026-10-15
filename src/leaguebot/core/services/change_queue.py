@@ -29,6 +29,16 @@ on the instance and started by `start()` (idempotent), from `on_ready` and never
 interaction, so that it inherits no interaction's context. `run_until_idle` is the same loop for the
 tests. A lock holds the task and a test's call to one step at a time.
 
+**One save at a time, across lanes.** SQLite has one writer, so the twelve saves the queue makes
+(the request's, its acknowledgement's mark, the restart's, a start, an end, a `SAVE` step's, a
+mark, a stop, the notice's id, a Retry, a Discard, a finish) each hold `ChangeQueue._writing`, an
+in-process lock, for the length of the save and no longer. *Rejected:* one worker for every lane,
+which holds a conversation behind the league's Discord calls; and SQLite's own busy wait, which
+gives up after `_BUSY_TIMEOUT_SECONDS` where a save is held longer. No Discord call is made under
+the lock: a save is handed the connection and waits on nothing else. The lock order is
+`_working[lane]`, then `_asking`, then `_writing`, and never the other way. Pinned by
+`test_two_lanes_saves_never_overlap`.
+
 **A step is one of four kinds** (`StepKind`). A `SAVE` step is handed the open save and writes only
 on it, never committing. The other kinds do Discord or legacy work with no connection open and are
 marked in a save after it. Nothing is awaited inside a save but the connection.
@@ -392,6 +402,8 @@ class ChangeQueue:
         self._signal = asyncio.Event()
         self._working = asyncio.Lock()
         self._asking = asyncio.Lock()
+        # Taken around each save, so that two lanes never write at once; see the module.
+        self._writing = asyncio.Lock()
         # The change each lane's worker is carrying out a unit of, by lane, which a Retry or a
         # Discard must not meet under it. Set and read only under `_asking`, so a press and the
         # worker's choice of a change are in one order: either the press is saved before the
@@ -501,7 +513,7 @@ class ChangeQueue:
             lane = change_type.lane(payload)
             change_id: int | None = None
             first_job: int | None = None
-            async with get_connection(self._db_path) as db:
+            async with self._writing, get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 cursor = await db.execute(
                     "SELECT dedup_key, state FROM queued_changes WHERE lane = ? "
@@ -604,7 +616,7 @@ class ChangeQueue:
                 message = await interaction.followup.send(text, ephemeral=True, wait=True)
             else:
                 await interaction.response.send_message(text, ephemeral=True)
-            async with get_connection(self._db_path) as db:
+            async with self._writing, get_connection(self._db_path) as db:
                 await db.execute(
                     "UPDATE queued_changes SET acknowledged_at = ? WHERE id = ?",
                     (self._clock().isoformat(), change_id),
@@ -680,7 +692,7 @@ class ChangeQueue:
             lines.append((job["id"], restart_line(job["id"], name)))
         if not lines:
             return
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 for job_id, line in lines:
@@ -940,7 +952,7 @@ class ChangeQueue:
         """
         stopped = pending is not None and pending["failing_since"] is not None
         ids: list[int] = []
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 cursor = await db.execute(
@@ -1075,7 +1087,7 @@ class ChangeQueue:
         *follow_ons* asked for, in the same save. Returns the lines' ids, for delivery once saved. A change removed under the
         worker is left, and its lines unwritten."""
         ids: list[int] = []
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 cursor = await db.execute(
@@ -1167,7 +1179,7 @@ class ChangeQueue:
                     change, row, StepResult(result={"dropped": True}), stopped_as
                 )
             if step.kind is StepKind.SAVE:
-                async with get_connection(self._db_path) as db:
+                async with self._writing, get_connection(self._db_path) as db:
                     await db.execute("BEGIN IMMEDIATE")
                     try:
                         result = await step.run(db, ctx)
@@ -1221,7 +1233,7 @@ class ChangeQueue:
         """Save the mark of a step whose work needed no connection, with *result*'s audits and
         lines, then deliver the lines. The step's *record* runs first, in the same save, so that
         what it writes lands with the mark or not at all."""
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 if record is not None:
@@ -1368,7 +1380,7 @@ class ChangeQueue:
             next_try = None if before is None else datetime.fromisoformat(before)
             line = retry_failed_line(presser, row["id"], named, kind)
         ids: list[int] = []
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 cursor = await db.execute(
@@ -1426,7 +1438,7 @@ class ChangeQueue:
             )
             if message is None:
                 return
-            async with get_connection(self._db_path) as db:
+            async with self._writing, get_connection(self._db_path) as db:
                 await db.execute(
                     "UPDATE queued_change_steps SET notice_message_id = ?, notice_channel_id = ? "
                     "WHERE id = ? AND done_at IS NULL",
@@ -1510,7 +1522,7 @@ class ChangeQueue:
             before = (
                 self._retrying[job["id"]][1] if job["id"] in self._retrying else job["next_try_at"]
             )
-            async with get_connection(self._db_path) as db:
+            async with self._writing, get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 try:
                     cursor = await db.execute(
@@ -1717,7 +1729,7 @@ class ChangeQueue:
         """
         member = interaction.user
         presser = interaction_member(interaction)
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 if started:
@@ -1901,7 +1913,7 @@ class ChangeQueue:
 
     async def _finish(self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row]) -> None:
         """Mark the change DONE and update its acknowledgement with the outcome."""
-        async with get_connection(self._db_path) as db:
+        async with self._writing, get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE queued_changes SET state = 'DONE' WHERE id = ?", (change["id"],)
             )

@@ -48,7 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_WRITE_LOCK = "#439: the queue's saves take no write lock of their own"
 NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again inside it"
 NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
 NO_LANE_WRITES = "#439: a conversation lane's save may write any table"
@@ -616,7 +615,6 @@ def _held_save(gate: SimpleNamespace) -> Any:
     return api.Step("save", api.StepKind.SAVE, _run)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WRITE_LOCK)
 async def test_two_lanes_saves_never_overlap(env):
     """A turn in channel 7 is in the middle of a save, which holds the queue's write lock. A league
     change asked meanwhile waits for that save to end before saving the request, and is saved,
@@ -644,7 +642,6 @@ async def test_two_lanes_saves_never_overlap(env):
     assert await _lanes(env) == [("turn", TURNS_7), ("dummy", "league")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WRITE_LOCK)
 async def test_no_discord_call_is_made_under_the_write_lock(env):
     """A member asks for a turn in channel 7 of a save and a post, and a second turn there stops at
     a post Discord refuses. The save holds the queue's write lock; the member's acknowledgement
@@ -691,7 +688,6 @@ async def test_no_discord_call_is_made_under_the_write_lock(env):
     assert all(held is False for held in in_discord)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WRITE_LOCK)
 async def test_a_turn_s_save_waits_for_a_long_league_save_rather_than_failing(env, monkeypatch):
     """SQLite's wait for a lock is cut to a fifth of a second. A league change's save is held three
     times as long; a turn in channel 7 asked meanwhile waits for it rather than failing on a
