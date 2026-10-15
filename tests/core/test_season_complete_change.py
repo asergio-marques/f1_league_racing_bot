@@ -1597,8 +1597,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     """The signup window open with driver 105 still filling in the wizard. The window's close
     returns 105, then `post_closed` fails: where *refused* is "the record", recording the window
     closed fails; where "the post", Discord refuses the "Signups are now closed" post itself. A
-    league admin discards it. Only that post is dropped (b15-2): no closed notice stands in the
-    signup channel, and 105 is still told, then their channel locked, by their own jobs; the
+    league admin discards it. Only that post is dropped (b15-2): where its record failed, the
+    "Signups are now closed" message already sent is left standing; where Discord refused it,
+    none stands. 105 is still told, then their channel locked, by their own jobs; the
     reply and the closing line say the window was not closed, to be closed with `/signup close`,
     and never name 105 as returned but not told; the window is still recorded open, with no
     audit of its close and no "🔒 Signups closed" line, the season completed, and 105 is owed
@@ -1618,8 +1619,11 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
 
     await discard_job(league.bot)
 
-    assert [message for message in league.channel(SIGNUP_CHANNEL).messages.values()
-            if "Signups are now closed" in str(message.content)] == []
+    closed_notices = [message for message in league.channel(SIGNUP_CHANNEL).messages.values()
+                      if "Signups are now closed" in str(message.content)]
+    # Where the post went out and only its record failed, it is left standing (the owner:
+    # "Leave it standing"); where Discord refused it, none stands.
+    assert len(closed_notices) == (1 if refused == "the record" else 0)
     assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
     assert league.locked == [SIGNING_UP]
     assert [(kind, uid) for kind, uid, _n in league.events
