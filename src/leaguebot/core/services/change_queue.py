@@ -37,12 +37,14 @@ marked in a save after it. Nothing is awaited inside a save but the connection.
 its `id` in `queued_change_steps`, never renumbered or reused (a restored state and a factory reset
 carry the numbering on: `highest_job_number`, `carry_job_numbering`) and shown wherever the job is
 named. A member's
-request is acknowledged once and is made of jobs that run one after another: `_choose` takes the
-RUNNING change, or else the QUEUED change with the lowest id, and nothing overtakes it.
+request is acknowledged once and is made of jobs that run one after another: `_choose` takes, of
+each lane, the RUNNING change, or else the QUEUED change with the lowest id, and nothing on that
+lane overtakes it; of the lanes that can run, the head asked first goes first.
 
 **A job that fails stops the queue.** Whatever the failure, from Discord or from the bot, and
 whether in a job or in a bot change's check as it starts (`_stop`), nothing behind the job runs
-until it is cleared: `_choose` runs nothing while its next job is stopped and not yet due. A stop
+on its lane until it is cleared: `_choose` runs nothing of a lane while its head's next job is
+stopped and not yet due, and the other lanes carry on. A stop
 is the job's own record (`failing_since`, `tries`, `last_failure`, `next_try_at`), the change's
 state staying as it was. The bot tries a stopped job again on `RETRY_AFTER`, counted from the first
 failure, and says nothing of a try that fails but the last, which says the bot has stopped trying
@@ -849,33 +851,34 @@ class ChangeQueue:
         return await self._run_step(change, change_type, step_rows, pending)
 
     async def _choose(self, db: aiosqlite.Connection) -> aiosqlite.Row | None:
-        """The change to work on next, in strict order.
+        """The change to work on next, in strict order within each lane.
 
-        A RUNNING change comes first, as one resumed after a stop; otherwise the QUEUED change
-        with the lowest id, which nothing overtakes. Where that change's next job is stopped and
-        not yet due (its `next_try_at` in the future, or none left), nothing runs.
+        A lane's head is its RUNNING change, as one resumed after a stop, else its QUEUED change
+        with the lowest id, which nothing on that lane overtakes. A lane whose head's next job is
+        stopped and not yet due (its `next_try_at` in the future, or none left) is not runnable and
+        holds only itself. Of the runnable lanes' heads the one asked first, the lowest id, is
+        taken, so that one runner carrying out one change at a time is deterministic.
         """
-        cursor = await db.execute("SELECT * FROM queued_changes WHERE state = 'RUNNING' LIMIT 1")
-        change = await cursor.fetchone()
-        if change is None:
-            cursor = await db.execute(
-                "SELECT * FROM queued_changes WHERE state = 'QUEUED' ORDER BY id LIMIT 1"
-            )
-            change = await cursor.fetchone()
-        if change is None:
-            return None
         cursor = await db.execute(
-            "SELECT failing_since, next_try_at FROM queued_change_steps "
-            "WHERE change_id = ? AND done_at IS NULL ORDER BY position LIMIT 1",
-            (change["id"],),
+            "SELECT * FROM queued_changes c WHERE c.state IN ('RUNNING', 'QUEUED') AND c.id = ("
+            "SELECT h.id FROM queued_changes h WHERE h.lane = c.lane "
+            "AND h.state IN ('RUNNING', 'QUEUED') "
+            "ORDER BY h.state = 'RUNNING' DESC, h.id LIMIT 1) ORDER BY c.id"
         )
-        job = await cursor.fetchone()
-        if job is not None and job["failing_since"] is not None and (
-            job["next_try_at"] is None
-            or datetime.fromisoformat(job["next_try_at"]) > self._clock()
-        ):
-            return None
-        return change
+        for change in await cursor.fetchall():
+            cursor = await db.execute(
+                "SELECT failing_since, next_try_at FROM queued_change_steps "
+                "WHERE change_id = ? AND done_at IS NULL ORDER BY position LIMIT 1",
+                (change["id"],),
+            )
+            job = await cursor.fetchone()
+            if job is not None and job["failing_since"] is not None and (
+                job["next_try_at"] is None
+                or datetime.fromisoformat(job["next_try_at"]) > self._clock()
+            ):
+                continue
+            return change
+        return None
 
     @staticmethod
     async def _read_steps(db: aiosqlite.Connection, change_id: int) -> list[aiosqlite.Row]:

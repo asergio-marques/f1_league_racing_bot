@@ -48,10 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_LANE_CHOICE = (
-    "#439: the queue chooses one change for the whole bot, so a stop on one lane holds every lane"
-)
-NO_LANE_TRYING = "#439: the job being tried is the whole queue's, not each lane's"
 NO_WRITE_LOCK = "#439: the queue's saves take no write lock of their own"
 NO_SAVE_RECHECK = "#439: a job is checked only before its save, never again inside it"
 NO_CONVERSATION_END = "#439: a change type cannot say whether its conversation is still open"
@@ -387,7 +383,6 @@ async def test_an_acknowledgement_names_the_stop_on_its_own_lane_only(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
 async def test_a_stop_on_one_lane_leaves_another_running(env):
     """A turn in channel 7 stops at a job Discord refuses. A league change and a turn in channel 8,
     asked after it, are carried out all the same; the turn in channel 7 stays stopped."""
@@ -406,7 +401,6 @@ async def test_a_stop_on_one_lane_leaves_another_running(env):
     assert (await stopped_job(env.db_path))["name"] == "post"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
 async def test_changes_run_in_the_order_asked_within_a_lane(env):
     """In channel 7 a first turn stops at its second job, and a second turn is asked behind it,
     with a league change asked between the two. The league change runs; the second turn waits and
@@ -434,7 +428,6 @@ async def test_changes_run_in_the_order_asked_within_a_lane(env):
     assert await _states(env) == ["DONE", "DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
 async def test_each_lane_resumes_its_running_change_after_a_restart(env):
     """A turn in channel 7 is stopped at its second job, and a league change of two jobs is cut
     off by a restart after its first. After the restart the league change carries on from its
@@ -468,7 +461,6 @@ async def test_each_lane_resumes_its_running_change_after_a_restart(env):
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
 async def test_the_serial_runner_takes_the_lowest_runnable_change_first(env):
     """A turn in channel 9 is stopped. Then, in this order: a turn of two jobs in channel 7, a
     league change, a turn in channel 8 and a second turn in channel 7. The tests' runner carries
@@ -493,7 +485,6 @@ async def test_the_serial_runner_takes_the_lowest_runnable_change_first(env):
     assert await _states(env) == ["RUNNING", "DONE", "DONE", "DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_CHOICE)
 async def test_a_lane_s_retry_falls_due_on_its_own_schedule(env):
     """A turn in channel 7 stops at noon, and a league change stops thirty seconds later. Each job
     is tried again on its own schedule, counted from its own first failure: at 12:01 only the
@@ -526,7 +517,6 @@ async def test_a_lane_s_retry_falls_due_on_its_own_schedule(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_TRYING)
 async def test_retry_and_discard_are_refused_only_while_their_own_lane_tries_the_job(env):
     """A turn in channel 7 and a league change each stop at a job Discord refuses. While the turn's
     job is being tried again, Retry and Discard on its notice are each refused as being tried now.
@@ -572,7 +562,6 @@ async def test_retry_and_discard_are_refused_only_while_their_own_lane_tries_the
     assert await _states(env) == ["DONE", "RUNNING"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_TRYING)
 async def test_a_press_on_one_lane_s_notice_goes_through_while_another_lane_runs(env):
     """A turn in channel 7 is stopped at a job Discord refuses. While a league change is in the
     middle of a long job, Retry on the turn's notice is taken at once and the presser told it is
