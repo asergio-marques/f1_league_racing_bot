@@ -1015,15 +1015,22 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
     """The signup window open and the completion queued. Run as far as `post_closed`, whose
     record writes the window's close, the window is closed while the season is still active,
-    no history written and Max still assigned: the driver pass has not yet run. The window's
-    close is audited once and its "🔒 Signups closed as the season ended" line written once, in
-    that post's record. The rest of the queue completes the season."""
+    no history written and Max still assigned: the driver pass has not yet run. Driver 105,
+    still filling in the wizard, is returned by the close. The window's close is audited once,
+    by the system, and its one "🔒 Signups closed as the season ended" line written in that
+    post's record: it names no member, and states the one driver returned beneath it (signup
+    :67). The rest of the queue completes the season."""
     league = await pending_completion_league(tmp_path, signups_open=True)
+    await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     await _asked(league)
 
     await _run_through(league, "post_closed")
-    assert await _window_close_audits(league) == [("SIGNUP_SEASON_END_CLOSE", "open", "closed")]
-    assert len(await _closed_lines(league)) == 1
+    assert await _window_close_audits(league) == [
+        ("SIGNUP_SEASON_END_CLOSE", "open", "closed", "system")
+    ]
+    [line] = await _closed_lines(league)
+    assert "<@" not in line, line
+    assert any("returned" in text and "1" in text for text in line.splitlines()[1:]), line
     assert not await window_open(league)
     assert await _history(league) == []
     assert await driver_state(league, MAX) == "ASSIGNED"
@@ -1488,13 +1495,15 @@ RETURNED_NOT_TOLD = (
 CLOSED_AS_THE_SEASON_ENDED = "🔒 Signups closed as the season ended"
 
 
-async def _window_close_audits(league: Any) -> list[tuple[str, str, str]]:
-    """Each audit record of the window's close as the season ends."""
+async def _window_close_audits(league: Any) -> list[tuple[str, str, str, str]]:
+    """Each audit record of the window's close as the season ends, with who it names."""
     rows = await league.rows(
-        "SELECT change_type, old_value, new_value FROM audit_entries WHERE change_type = ?",
+        "SELECT change_type, old_value, new_value, actor_name FROM audit_entries "
+        "WHERE change_type = ?",
         "SIGNUP_SEASON_END_CLOSE",
     )
-    return [(row["change_type"], row["old_value"], row["new_value"]) for row in rows]
+    return [(row["change_type"], row["old_value"], row["new_value"], row["actor_name"])
+            for row in rows]
 
 
 async def _closed_lines(league: Any) -> list[str]:
