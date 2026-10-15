@@ -39,6 +39,7 @@ from typing import Any
 
 import discord
 
+from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.member_names import interaction_member, member_named  # noqa: F401
 from leaguebot.core.utils.messages import chunk_message
@@ -103,17 +104,53 @@ def refusal_line(named: str, what: str, reason: str, *, detail: str | None = Non
     return f"{line}\n{detail}" if detail else line
 
 
-def stop_line(job_id: int, job: str, request: str, asker: str, fault: str) -> str:
+class _Lane:
+    """How a line names the lane a change runs on: "the queue" for the league's, and "the turns in
+    <#channel>" for a conversation's, with the verbs that follow it in the plural."""
+
+    def __init__(self, lane: str) -> None:
+        if lane.startswith("channel:"):
+            self.the, self.is_, self.runs, self.stays = (
+                f"the turns in <#{lane.split(':', 1)[1]}>", "are", "run", "stay",
+            )
+        else:
+            self.the, self.is_, self.runs, self.stays = "the queue", "is", "runs", "stays"
+
+    @property
+    def The(self) -> str:  # noqa: N802 — the same words, capitalised
+        return self.the[:1].upper() + self.the[1:]
+
+
+def stop_line(
+    job_id: int, job: str, request: str, asker: str, fault: str, lane: str = LEAGUE_LANE,
+    *, admins: int | None = None,
+) -> str:
     """The log channel's line for the queue stopping at job *job_id*, *job* being what it does,
     *request* the change it belongs to, *asker* who asked and *fault* the kind of fault.
 
+    *lane* is the lane it stopped: "The queue" for the league's, "The turns in <#channel>" for a
+    conversation's. *admins*, where given, is the league admins' role, mentioned on a line of its
+    own after the line, so that they are notified (the notice's caller says when).
+
     The change queue's line, formed here with the others.
     """
-    return (
-        f"❌ The queue is stopped at job #{job_id}: {job} for {request} ({asker}) failed "
+    who = _Lane(lane)
+    line = (
+        f"❌ {who.The} {who.is_} stopped at job #{job_id}: {job} for {request} ({asker}) failed "
         f"({fault}). The bot tries again 1, 5, 10, 15, 30 and 60 minutes after this; a league "
         f"manager or admin may press Retry at any time, and a league admin may press Discard "
         f"to drop it."
+    )
+    return line if admins is None else f"{line}\n<@&{admins}>"
+
+
+def held_behind_text(job_id: int, lane: str = LEAGUE_LANE) -> str:
+    """What a member's acknowledgement adds where *lane* is stopped at job *job_id*: their request
+    runs once that job is cleared. A sentence for the end of the acknowledgement, not a log line."""
+    who = _Lane(lane)
+    return (
+        f"{who.The} {who.is_} stopped at job #{job_id}, so this request runs once that job is "
+        f"cleared."
     )
 
 
@@ -126,26 +163,28 @@ def hour_line(job_id: int, job: str) -> str:
     )
 
 
-def restart_line(job_id: int, job: str) -> str:
-    """The log channel's line for the queue still stopped at job *job_id* after a restart: the bot
+def restart_line(job_id: int, job: str, lane: str = LEAGUE_LANE) -> str:
+    """The log channel's line for *lane* still stopped at job *job_id* after a restart: the bot
     no longer tries it on its own."""
+    who = _Lane(lane)
     return (
-        f"❌ The queue is still stopped at job #{job_id} ({job}). After the restart the bot no "
-        f"longer tries it on its own: press Retry or Discard on its notice."
+        f"❌ {who.The} {who.is_} still stopped at job #{job_id} ({job}). After the restart the bot "
+        f"no longer tries it on its own: press Retry or Discard on its notice."
     )
 
 
-def went_through_line(job_id: int, job: str) -> str:
+def went_through_line(job_id: int, job: str, lane: str = LEAGUE_LANE) -> str:
     """The log channel's line for a stopped job *job_id* going through, on a try or a Retry: the
-    queue runs on."""
-    return f"✅ Job #{job_id} ({job}) went through. The queue runs on."
+    lane runs on."""
+    return f"✅ Job #{job_id} ({job}) went through. {_Lane(lane).The} {_Lane(lane).runs} on."
 
 
-def cleared_line(job_id: int, job: str, why: str) -> str:
+def cleared_line(job_id: int, job: str, why: str, lane: str = LEAGUE_LANE) -> str:
     """The log channel's line for a stopped job *job_id* clearing without going through, *why*
     saying how: it was no longer due and was dropped, or its request was refused at its check.
-    The queue runs on."""
-    return f"ℹ️ Job #{job_id} ({job}) no longer stops the queue: {why}. The queue runs on."
+    The lane runs on."""
+    who = _Lane(lane)
+    return f"ℹ️ Job #{job_id} ({job}) no longer stops {who.the}: {why}. {who.The} {who.runs} on."
 
 
 def conversation_ended_line(job_id: int, job: str) -> str:
@@ -163,11 +202,14 @@ def retried_line(named: str, job_id: int, job: str, request: str) -> str:
     return f"{named} | Retry job #{job_id} | Retried\n  {job} for {request}"
 
 
-def retry_failed_line(named: str, job_id: int, job: str, fault: str) -> str:
+def retry_failed_line(
+    named: str, job_id: int, job: str, fault: str, lane: str = LEAGUE_LANE
+) -> str:
     """The log channel's line for the try *named* asked of job *job_id* failing, *fault* being the
-    kind of fault: the queue stays stopped, on the schedule it was on."""
+    kind of fault: the lane stays stopped, on the schedule it was on."""
+    who = _Lane(lane)
     return (
-        f"❌ Retry of job #{job_id} ({job}) by {named} failed ({fault}). The queue stays "
+        f"❌ Retry of job #{job_id} ({job}) by {named} failed ({fault}). {who.The} {who.stays} "
         f"stopped."
     )
 

@@ -29,6 +29,11 @@ class ChangeState(str, Enum):
     DISCARDED = "DISCARDED"
 
 
+#: The lane of the league's changes, the queue as a league knows it. A conversation's lane is
+#: `"channel:<id>"`, keyed by the channel it is held in.
+LEAGUE_LANE = "league"
+
+
 class ChangeOrigin(str, Enum):
     """Who asked: a member, through a command, button or form, or the bot itself."""
 

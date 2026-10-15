@@ -185,11 +185,14 @@ class OutputRouter:
         view: discord.ui.View,
         *,
         interaction: "Optional[discord.Interaction]" = None,
+        mention_role: int | None = None,
     ) -> "Optional[discord.Message]":
         """Post *content* to the log channel as a notice carrying *view*'s buttons.
 
-        Formed and sent as a log line is, mentions wrapped and the separator appended, but **never
-        put on the retry queue**: a line retried would come back without its buttons, so the
+        Formed and sent as a log line is, mentions wrapped and the separator appended, but
+        *mention_role*'s mention, where given, left as it is and allowed to notify that role alone,
+        the one mention the log channel notifies (the stop notice's, for the league admins). It is
+        **never put on the retry queue**: a line retried would come back without its buttons, so the
         caller keeps the notice itself and posts it again until it lands. Where the post fails
         the member whose interaction *interaction* is, where it can still be answered, is
         warned here, as `post_log` does (`_warn_member`), so the caller never does.
@@ -203,8 +206,8 @@ class OutputRouter:
             return None
         channel_id = config.log_channel_id
         message = await self._send(
-            channel_id, self._as_log_line(content), enqueue_on_failure=False,
-            fallback_label="log", view=view,
+            channel_id, self._as_log_line(content, keep_role=mention_role),
+            enqueue_on_failure=False, fallback_label="log", view=view, mention_role=mention_role,
         )
         if message is None:
             await self._warn_member(channel_id, interaction)
@@ -378,9 +381,14 @@ class OutputRouter:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
 
     @staticmethod
-    def _as_log_line(content: str) -> str:
-        """Wrap mentions in code so they name without notifying, and append the separator."""
-        content = _MENTION_RE.sub(r"`\1`", content)
+    def _as_log_line(content: str, *, keep_role: int | None = None) -> str:
+        """Wrap mentions in code so they name without notifying, and append the separator;
+        *keep_role*'s mention alone is left as it is."""
+        kept = None if keep_role is None else f"<@&{keep_role}>"
+        content = _MENTION_RE.sub(
+            lambda found: found.group(1) if found.group(1) == kept else f"`{found.group(1)}`",
+            content,
+        )
         return content + "\n" + "\u2015" * 36
 
     async def _send(
@@ -392,6 +400,7 @@ class OutputRouter:
         fallback_label: str = "unknown",
         return_first: bool = False,
         view: "Optional[discord.ui.View]" = None,
+        mention_role: int | None = None,
     ) -> "Optional[discord.Message]":
         """Attempt to send *content* to *channel_id*.
 
@@ -407,7 +416,7 @@ class OutputRouter:
         *view* is sent with the last part, so that its buttons end the message.
         """
         message, reason, retryable = await self._try_send(
-            channel_id, content, fallback_label, return_first, view
+            channel_id, content, fallback_label, return_first, view, mention_role
         )
         if message is None and retryable:
             await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, reason)
@@ -420,6 +429,7 @@ class OutputRouter:
         fallback_label: str,
         return_first: bool,
         view: "Optional[discord.ui.View]" = None,
+        mention_role: int | None = None,
     ) -> "tuple[Optional[discord.Message], str, bool]":
         """Send *content*, and say how it went: the message, or None with why and whether a
         retry could mend it (a refused or failed post can; a channel not found cannot).
@@ -446,16 +456,16 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
+            allowed = (
+                discord.AllowedMentions.none() if mention_role is None
+                else discord.AllowedMentions(roles=[discord.Object(id=mention_role)])
+            )
             chunks = chunk_message(content)
             for number, chunk in enumerate(chunks, start=1):
                 if view is not None and number == len(chunks):
-                    last_msg = await channel.send(
-                        chunk, allowed_mentions=discord.AllowedMentions.none(), view=view
-                    )
+                    last_msg = await channel.send(chunk, allowed_mentions=allowed, view=view)
                 else:
-                    last_msg = await channel.send(
-                        chunk, allowed_mentions=discord.AllowedMentions.none()
-                    )
+                    last_msg = await channel.send(chunk, allowed_mentions=allowed)
                 if first_msg is None:
                     first_msg = last_msg
             return (first_msg if return_first else last_msg), "", False

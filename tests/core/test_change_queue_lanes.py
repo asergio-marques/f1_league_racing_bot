@@ -48,11 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_LANE_NOTICE = (
-    "#439: the stop notice and the queue's lines name no conversation's channel, and the notice "
-    "mentions nobody"
-)
-
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
@@ -1348,7 +1343,6 @@ def _stubborn(name: str, holder: dict[str, Any], key: str) -> Any:
     return api.Step(name, api.StepKind.ACT, _run, still_due=_due)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
 async def test_a_conversation_s_stop_notice_names_its_channel(env):
     """A turn in channel 7 stops at a job Discord refuses. Its stop notice in the log channel says
     the turns in channel 7 are stopped at that job, never that the queue is, and carries Retry and
@@ -1366,7 +1360,6 @@ async def test_a_conversation_s_stop_notice_names_its_channel(env):
     assert {child.custom_id for child in notice.view.children} == {"queue:retry", "queue:discard"}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
 async def test_a_league_stop_notice_mentions_the_league_admin_role(env):
     """A turn in channel 7 stops first, its notice standing. A league change then stops at a job
     Discord refuses: its stop notice mentions the league admins' role, so that they are notified,
@@ -1388,7 +1381,6 @@ async def test_a_league_stop_notice_mentions_the_league_admin_role(env):
     assert [_pings_the_admins(call) for call in notices[1:]] == [True, True]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
 async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_conversation_notice_stands(env):
     """A league change stops first, its notice standing. A turn in channel 7 then stops: its notice
     mentions the league admins' role, as no other conversation's stop notice stands (the league's
@@ -1411,7 +1403,6 @@ async def test_a_conversation_stop_notice_mentions_the_role_only_where_no_other_
     assert [_pings_the_admins(call) for call in _notices(env)] == [True, True, False, True]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
 async def test_the_first_notice_to_land_pings_the_admins_once_and_restart_and_hour_lines_mention_nobody(env):
     """The league admins are pinged when a stop's notice first lands (decision 28, "League always";
     A28): where the first post of the notice is refused, the re-post is that first landing and pings
@@ -1447,7 +1438,6 @@ async def test_the_first_notice_to_land_pings_the_admins_once_and_restart_and_ho
     assert pings[0].kwargs.get("view") is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_NOTICE)
 async def test_a_conversation_s_lines_say_the_turns_in_its_channel_and_the_league_s_say_the_queue(env):
     """A turn in channel 7 and a league change, each of two jobs, both stop at their first job.
     A member then asks a second turn in channel 7, and a second league change: the first is told

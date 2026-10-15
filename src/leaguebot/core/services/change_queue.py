@@ -178,6 +178,7 @@ from leaguebot.core.models.change import (
     ChangeOrigin,
     ChangeState,
     FollowOn,
+    LEAGUE_LANE,
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
@@ -192,6 +193,7 @@ from leaguebot.core.utils.log_lines import (
     cleared_line,
     conversation_ended_line,
     discarded_line,
+    held_behind_text,
     hour_line,
     refusal_line,
     refuse,
@@ -368,7 +370,6 @@ class DiscardedContext:
     reply_updatable: bool
 
 
-LEAGUE_LANE = "league"
 
 #: The queue's own tables: a conversation lane's save may always write them, since the job's mark,
 #: its audit records, its log lines and the changes it asks are the queue's, not the lane's.
@@ -667,6 +668,7 @@ class ChangeQueue:
                 await self._acknowledge(
                     change_id, change_type, payload, interaction,
                     first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
+                    lane=lane,
                 )
             self._signal.set()
             return change_id
@@ -680,10 +682,11 @@ class ChangeQueue:
         *,
         first_job: int | None,
         stopped_at: int | None,
+        lane: str = LEAGUE_LANE,
     ) -> None:
         """Tell the member their saved change is under way, and hold the interaction to update.
 
-        The acknowledgement names the request's first job, *first_job*, and where the queue is
+        The acknowledgement names the request's first job, *first_job*, and where its *lane* is
         stopped, at the job *stopped_at*, says so and that the request runs once that job is
         cleared.
 
@@ -698,10 +701,7 @@ class ChangeQueue:
         if first_job is not None:
             text += f" It begins with job #{first_job}."
         if stopped_at is not None:
-            text += (
-                f" The queue is stopped at job #{stopped_at}, so this request runs once that "
-                f"job is cleared."
-            )
+            text += f" {held_behind_text(stopped_at, lane)}"
         message: discord.WebhookMessage | None = None
         try:
             if interaction.response.is_done():
@@ -784,7 +784,7 @@ class ChangeQueue:
         lines: list[tuple[int, str]] = []
         for change, steps, job in await self._stopped_jobs():
             name = await self._name_job(change, job, self._step_context(change, steps, job))
-            lines.append((job["id"], restart_line(job["id"], name)))
+            lines.append((job["id"], restart_line(job["id"], name, change["lane"])))
         if not lines:
             return
         async with self._writing, get_connection(self._db_path) as db:
@@ -1209,7 +1209,7 @@ class ChangeQueue:
                         (pending["id"],),
                     )
                     line_id = await self._router.queue_log_on(
-                        db, went_through_line(pending["id"], change["what"])
+                        db, went_through_line(pending["id"], change["what"], change["lane"])
                     )
                     if line_id is not None:
                         ids.append(line_id)
@@ -1304,7 +1304,7 @@ class ChangeQueue:
         was not stopped."""
         if pending is None or pending["failing_since"] is None:
             return None
-        return cleared_line(pending["id"], change["what"], why)
+        return cleared_line(pending["id"], change["what"], why, change["lane"])
 
     async def _strip_stop(self, pending: aiosqlite.Row | None) -> None:
         """Take the buttons off the stop notice of the job *pending*, once its stop has cleared
@@ -1690,7 +1690,7 @@ class ChangeQueue:
             # A Retry's try that fails is no mark of the schedule: it leaves it as it was.
             presser, before = retried
             next_try = None if before is None else datetime.fromisoformat(before)
-            line = retry_failed_line(presser, row["id"], named, kind)
+            line = retry_failed_line(presser, row["id"], named, kind, change["lane"])
         ids: list[int] = []
         async with self._writing, get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -1743,10 +1743,13 @@ class ChangeQueue:
         """
         self._notice_tried[job_id] = self._clock()
         try:
+            admins = await self._admins_to_notify(change["lane"])
             message = await self._router.post_notice(
-                stop_line(job_id, job, change["what"], self._named(change), fault),
+                stop_line(job_id, job, change["what"], self._named(change), fault,
+                          change["lane"], admins=admins),
                 QueueStopView(self),
                 interaction=self._answerable(change),
+                mention_role=admins,
             )
             if message is None:
                 return
@@ -1760,6 +1763,30 @@ class ChangeQueue:
         except Exception:  # noqa: BLE001 — the stop stands; the notice is posted again
             log.error("could not post the stop notice of job %s (change %s)", job_id,
                       change["id"], exc_info=True)
+
+    async def _admins_to_notify(self, lane: str) -> int | None:
+        """The league admins' role, where a stop notice of *lane* is to mention it, else None.
+
+        A league stop always mentions them; a conversation's only where no other conversation's
+        stop notice stands (one that has landed, on a job still stopped), so that a burst of
+        conversations notifies them once. Asked only of a notice that has not landed, so a
+        re-post, which is the first landing where the first post was refused, mentions them and
+        the hour and restart lines, which are not notices, mention nobody.
+        """
+        config = await self._config.get_server_config()
+        role = None if config is None else config.league_admin_role_id
+        if role is None or lane == LEAGUE_LANE:
+            return role
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM queued_change_steps s JOIN queued_changes c ON c.id = s.change_id "
+                "WHERE s.done_at IS NULL AND s.failing_since IS NOT NULL "
+                "AND s.notice_message_id IS NOT NULL AND c.state IN ('QUEUED', 'RUNNING') "
+                "AND c.lane <> ? AND c.lane <> ? LIMIT 1",
+                (LEAGUE_LANE, lane),
+            )
+            standing = await cursor.fetchone()
+        return None if standing is not None else role
 
     async def _post_missing_notices(self, lane: str | None = None) -> None:
         """Post again the stop notice of every stopped job whose notice has not landed, where it
@@ -2119,9 +2146,10 @@ class ChangeQueue:
         lines = list(result.lines)
         if stopped_as is not None:
             lines.append(
-                cleared_line(row["id"], stopped_as, "it is no longer due, so it was dropped")
+                cleared_line(row["id"], stopped_as, "it is no longer due, so it was dropped",
+                             change["lane"])
                 if (result.result or {}).get("dropped")
-                else went_through_line(row["id"], stopped_as)
+                else went_through_line(row["id"], stopped_as, change["lane"])
             )
         for line in lines:
             line_id = await self._router.queue_log_on(db, line)
