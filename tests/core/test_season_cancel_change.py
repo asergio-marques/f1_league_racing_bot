@@ -456,13 +456,18 @@ def _forbidden() -> discord.HTTPException:
 # ── Defect 5, and the cancellation's windows ────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
+    """The signup window is open and the cancellation queued; recording the window closed fails.
+    The queue stops at `post_closed`, whose record writes the window's close, with the season
+    still active, the window open and nothing written to its history; retried, the window closes
+    and the season is cancelled."""
     league = await ongoing_league(tmp_path, signups_open=True)
     league.close_fails = RuntimeError("the window could not be recorded closed")
     await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == ("close_window", None)
+    assert await _stopped_at(league) == ("post_closed", None)
     assert await _status(league) == "ACTIVE"
     assert await window_open(league)
     assert await _history(league) == []
@@ -1359,14 +1364,18 @@ async def _role_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
 #: Each job a league admin may discard: the league that makes it fail, where the queue stops,
 #: and what the reply and the line say was not done.
 _DISCARDS = {
-    "close_window": (_window_refused, ("close_window", None), WINDOW_OPEN),
+    "post_closed": (_window_refused, ("post_closed", None), WINDOW_OPEN),
     "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
     "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
     "take_driver_role": (_role_refused, ("take_driver_role", UNASSIGNED), DRIVER_ROLE_KEPT),
 }
 
 
-@pytest.mark.parametrize("job", sorted(_DISCARDS))
+@pytest.mark.parametrize("job", [
+    pytest.param(job, marks=pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE))
+    if job == "post_closed" else job
+    for job in sorted(_DISCARDS)
+])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_success_line(
     tmp_path, monkeypatch, job,
 ):
