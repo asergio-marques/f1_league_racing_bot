@@ -189,6 +189,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.queue_stop_view import QueueStopView
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
+from leaguebot.core.utils.in_a_job import running_job
 from leaguebot.core.utils.log_lines import (
     cleared_line,
     conversation_ended_line,
@@ -1438,7 +1439,11 @@ class ChangeQueue:
                             )
                             if due_again:
                                 await _confine(db, change_type.writes)
-                            result = await step.run(db, ctx) if due_again else recheck.ended
+                            if due_again:
+                                with running_job(row["id"]):
+                                    result = await step.run(db, ctx)
+                            else:
+                                result = recheck.ended
                             saved = await self._save_result(db, change, row, result, stopped_as)
                             if saved is None:
                                 await db.rollback()
@@ -1448,10 +1453,11 @@ class ChangeQueue:
                             await db.rollback()
                             raise
                 return await self._delivered(change, saved, row)
-            produced = await step.run(ctx)
+            with running_job(row["id"]):
+                produced = await step.run(ctx)
             return await self._complete(
                 change, row, produced, stopped_as,
-                record=self._recording(step, ctx, produced, change_type.writes),
+                record=self._recording(step, ctx, produced, change_type.writes, row["id"]),
                 recheck=recheck,
             )
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_stop`
@@ -1461,17 +1467,20 @@ class ChangeQueue:
 
     @staticmethod
     def _recording(
-        step: Step, ctx: StepContext, result: StepResult, writes: Collection[str] | None = None,
+        step: Step, ctx: StepContext, result: StepResult, writes: Collection[str] | None,
+        job_id: int,
     ) -> Callable[[aiosqlite.Connection], Awaitable[None]] | None:
         """The step's record bound to what it returned, to run in the save marking it done, on a
-        connection confined to *writes* (a conversation lane's); None where it carries none."""
+        connection confined to *writes* (a conversation lane's), as job *job_id*; None where it
+        carries none."""
         record = step.record
         if record is None:
             return None
 
         async def _record(db: aiosqlite.Connection) -> None:
             await _confine(db, writes)
-            await record(db, ctx, result)
+            with running_job(job_id):
+                await record(db, ctx, result)
 
         return _record
 
@@ -1597,7 +1606,7 @@ class ChangeQueue:
             return await self._complete(
                 change, row, completed, await self._stopped_as(change, row, ctx),
                 record=self._recording(
-                    step, ctx, completed, self._types[change["kind"]].writes),
+                    step, ctx, completed, self._types[change["kind"]].writes, row["id"]),
                 recheck=await self._recheck(
                     change, self._types[change["kind"]], step, ctx, row,
                     await self._stopped_as(change, row, ctx),

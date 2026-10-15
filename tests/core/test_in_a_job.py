@@ -33,7 +33,6 @@ from tests.support.change_queue import (
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
-NO_JOB_CONTEXT = "#439: the worker keeps no running job's number while a step runs"
 NO_GUARD = "#439: no guard refuses a post made outside a job"
 
 
@@ -90,7 +89,6 @@ async def _job_ids(env) -> dict[str, int]:
     return {row["name"]: row["id"] for row in await step_rows(env.db_path)}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JOB_CONTEXT)
 async def test_a_step_runs_with_its_job_number_in_context(env):
     """A change of two jobs runs: each job's `run` sees its own job's number, not the other's."""
     seen: dict[str, Any] = {}
@@ -102,7 +100,6 @@ async def test_a_step_runs_with_its_job_number_in_context(env):
     assert ids["first"] != ids["second"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JOB_CONTEXT)
 async def test_a_record_runs_with_its_job_number_in_context(env):
     """A job that posts and records what it posted: its `record`, saved with its mark, sees the
     job's number too."""
@@ -123,7 +120,6 @@ async def test_a_record_runs_with_its_job_number_in_context(env):
     assert seen == {"record": (await _job_ids(env))["post"]}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JOB_CONTEXT)
 async def test_nothing_outside_a_step_sees_a_job_number(env):
     """Before a change is asked, and once the queue has run it, the test's own code — outside
     every job — sees no job's number."""
@@ -138,7 +134,6 @@ async def test_nothing_outside_a_step_sees_a_job_number(env):
     assert current_job() is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JOB_CONTEXT)
 async def test_a_task_a_step_starts_inherits_its_job_number(env):
     """A job starts a task of its own and waits for it: the task sees the job's number."""
     from leaguebot.core.models.change import StepKind, StepResult
@@ -159,7 +154,6 @@ async def test_a_task_a_step_starts_inherits_its_job_number(env):
     assert seen == {"task": (await _job_ids(env))["post"]}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JOB_CONTEXT)
 async def test_a_step_s_check_and_still_due_run_outside_a_job(env):
     """The change's check, asked when it is asked for and again when it runs, and a job's
     `still_due`, asked before the job runs, are not the job: they see no job's number, while
