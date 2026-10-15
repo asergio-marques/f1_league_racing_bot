@@ -257,6 +257,39 @@ async def test_each_resubmitted_paste_is_a_draft_saved_by_its_turn(tmp_path, mon
 
 
 @pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
+async def test_a_resubmitted_paste_while_its_turn_waits_is_turned_away_and_logged(
+    tmp_path, monkeypatch,
+):
+    """With the resubmission started, the manager types CANCELLED for Qualifying and, before its
+    turn has run, types it again. The second message is turned away at once: deleted, with a note
+    in the channel that the earlier message is still waiting its turn, and no second turn is
+    asked; the first stays marked ⏳. The refusal is logged: one ⛔ line naming the manager,
+    round 3 and Qualifying still waited on (results :257). Once the queue runs, only the first is
+    saved as a draft."""
+    from tests.support.change_queue import queued_log_lines
+
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    first = await _type(league, "CANCELLED", run=False)
+
+    second = await _type(league, "CANCELLED", run=False)
+
+    assert second.gone
+    assert MARK in first.marks
+    assert len(await _changes(league, TURN_KIND)) == 1
+    assert any("still waiting its turn" in text for text in _texts(league))
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    turned_away = [line for line in logged.splitlines() if "⛔" in line]
+    assert len(turned_away) == 1, logged
+    line = logged[logged.index(turned_away[0]):]
+    assert f"<@{MEMBER_ID}>" in line and "Round 3" in line and QUALIFYING in line, line
+
+    await run_queue(league.bot)
+
+    assert await _drafts(league) == [(QUALIFYING_TYPE.value, "CANCELLED")]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_last_resubmitted_paste_swaps_the_results_takes_cancel_down_and_opens_the_review(
     tmp_path, monkeypatch,
 ):
