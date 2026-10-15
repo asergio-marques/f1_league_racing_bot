@@ -18,6 +18,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import accounts_of_in_division, current_account_map_for_division
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
@@ -1396,7 +1397,11 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
 
 
 async def _ask_reports_approved(
-    interaction: discord.Interaction, state: PenaltyReviewState, *, what: str
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+    *,
+    queue: ChangeQueue,
+    what: str,
 ) -> None:
     """Ask the change queue to approve the review's reports as it stands (#439).
 
@@ -1411,7 +1416,7 @@ async def _ask_reports_approved(
     if state.is_amendment:
         from leaguebot.results.services.amendment_stage_changes import REPORTS_KIND
 
-        await bot_of(interaction).change_queue.ask(
+        await queue.ask(
             REPORTS_KIND,
             {
                 "round_id": state.round_id,
@@ -1430,7 +1435,7 @@ async def _ask_reports_approved(
         return
     from leaguebot.results.services.report_approval_change import KIND
 
-    await bot_of(interaction).change_queue.ask(
+    await queue.ask(
         KIND,
         {
             "round_id": state.round_id,
@@ -1448,7 +1453,11 @@ async def _ask_reports_approved(
 
 
 async def _ask_appeals_approved(
-    interaction: discord.Interaction, state: PenaltyReviewState, *, what: str
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+    *,
+    queue: ChangeQueue,
+    what: str,
 ) -> None:
     """Ask the change queue to approve the review's appeals as it stands (#439).
 
@@ -1463,7 +1472,7 @@ async def _ask_appeals_approved(
     if state.is_amendment:
         from leaguebot.results.services.amendment_stage_changes import APPEALS_KIND
 
-        await bot_of(interaction).change_queue.ask(
+        await queue.ask(
             APPEALS_KIND,
             {
                 "round_id": state.round_id,
@@ -1481,7 +1490,7 @@ async def _ask_appeals_approved(
         return
     from leaguebot.results.services.appeals_approval_change import KIND
 
-    await bot_of(interaction).change_queue.ask(
+    await queue.ask(
         KIND,
         {
             "round_id": state.round_id,
@@ -1733,7 +1742,12 @@ class PenaltyReviewView(LeagueView):
                 what=_button(button.label, self.state),
             )
             return
-        await _ask_reports_approved(interaction, self.state, what=_button(button.label, self.state))
+        await _ask_reports_approved(
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state),
+        )
 
     @discord.ui.button(
         label="🔄 Resubmit Initial Results",
@@ -1917,7 +1931,12 @@ class ApprovalView(LeagueView):
                 what=_button(button.label, self.state),
             )
             return
-        await _ask_reports_approved(interaction, self.state, what=_button(button.label, self.state))
+        await _ask_reports_approved(
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2057,7 +2076,10 @@ class AppealsReviewView(LeagueView):
         if not self.state.staged_appeals:
             # No corrections — finalise directly
             await _ask_appeals_approved(
-                interaction, self.state, what=_button(button.label, self.state, "appeals")
+                interaction,
+                self.state,
+                queue=bot_of(interaction).change_queue,
+                what=_button(button.label, self.state, "appeals"),
             )
         else:
             # Ask for explicit confirmation before clearing
@@ -2103,7 +2125,10 @@ class AppealsReviewView(LeagueView):
             )
             return
         await _ask_appeals_approved(
-            interaction, self.state, what=_button(button.label, self.state, "appeals")
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state, "appeals"),
         )
 
 
@@ -2161,7 +2186,10 @@ class _AppealsConfirmClearView(LeagueView):
             f"cleared: {cleared}",
         )
         await _ask_appeals_approved(
-            interaction, self.state, what=_button(button.label, self.state, "appeals")
+            interaction,
+            self.state,
+            queue=bot_of(interaction).change_queue,
+            what=_button(button.label, self.state, "appeals"),
         )
 
     @discord.ui.button(

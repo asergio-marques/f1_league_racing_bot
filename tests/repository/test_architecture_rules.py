@@ -1356,8 +1356,6 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
 #: (C55) and No Penalties (C56).
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/in_memory_state.py", "clear_in_memory_state"): (1, SLICE["6b"]),
-    ("results/services/penalty_wizard.py", "_ask_appeals_approved"): (2, SLICE["6b"]),
-    ("results/services/penalty_wizard.py", "_ask_reports_approved"): (2, SLICE["6b"]),
     ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
