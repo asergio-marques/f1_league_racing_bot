@@ -1037,6 +1037,37 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     assert standing.channel.deleted == []
 
 
+@pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
+async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
+        standing, monkeypatch):
+    """Alex's review stands in channel 700, its question posted four minutes ago by its row, and
+    the season is as its evidence describes it. Alex presses Approve on a view just built for it:
+    the approval is asked once, handed as its deadline the question's posting time plus five
+    minutes, about one minute on, so a backup question under test mode shares what is left of
+    the review's five minutes rather than taking five of its own (core :281)."""
+    from datetime import timedelta
+
+    from leaguebot.core.cogs.season_cog import APPROVAL_WINDOW_SECONDS
+
+    posted = datetime.now(timezone.utc) - timedelta(minutes=4)
+    async with get_connection(standing.db_path) as db:
+        await db.execute(
+            "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
+            (posted.isoformat(), standing.channel.q.id),
+        )
+        await db.commit()
+    await _evidence_of(standing, standing.channel.q.id, "as reviewed")
+    _season_now(monkeypatch, "as reviewed")
+    view, cog = _approve_view(standing)
+
+    await _press_approve(view, _press_on(standing, standing.channel.q))
+
+    cog._do_approve.assert_awaited_once()
+    deadline = cog._do_approve.await_args.kwargs["deadline"]
+    expected = posted + timedelta(seconds=APPROVAL_WINDOW_SECONDS)
+    assert abs((deadline - expected).total_seconds()) < 2, (deadline, expected)
+
+
 @pytest.mark.xfail(strict=True, reason=NO_EXPIRY_TIMER)
 async def test_the_review_s_five_minutes_are_armed_by_a_job_after_the_question_and_ask_the_take_down(
         standing):

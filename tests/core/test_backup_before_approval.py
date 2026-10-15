@@ -20,9 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.season_cog import (
-    APPROVAL_WINDOW_SECONDS,
     SeasonCog,
-    _ApproveView,
     _BackupBeforeApprovalView,
 )
 
@@ -268,21 +266,3 @@ def test_the_question_falls_after_every_gate_and_before_every_write():
                  "approval_in_hand("):
         assert source.index(gate) < asked, f"{gate} runs after the backup question"
     assert asked < source.index("change_queue.ask("), "the approval is asked before the question"
-
-
-async def test_the_approve_view_carries_a_deadline():
-    """What the question divides. Without it the question would be given a window of its
-    own and a review could be held open indefinitely."""
-    view = _ApproveView(_cog(), reviewer_id=1)
-
-    remaining = (view._deadline - datetime.now(timezone.utc)).total_seconds()
-    assert 0 < remaining <= APPROVAL_WINDOW_SECONDS
-    assert view.timeout == APPROVAL_WINDOW_SECONDS
-
-
-def test_the_deadline_reaches_the_approval():
-    import inspect
-
-    source = inspect.getsource(_ApproveView.approve)
-
-    assert "deadline=self._deadline" in source
