@@ -1063,21 +1063,34 @@ def signup_channel(league: SeasonLeague, user_id: int) -> Any:
     return held
 
 
-def _signup_services(league: SeasonLeague) -> None:
-    """The real signup module service and driver service, the window's recording of its close
-    raising `league.close_fails` where set."""
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.signup.services.signup_module_service import SignupModuleService
+def _refused_while(league: SeasonLeague, closing: Any) -> Any:
+    """*closing*, raising `league.close_fails` instead where it is set."""
 
-    service = SignupModuleService(league.db_path)
-    closing = service.set_window_closed
-
-    async def _set_window_closed(*args: Any, **kwargs: Any) -> Any:
+    async def _closing(*args: Any, **kwargs: Any) -> Any:
         if league.close_fails is not None:
             raise league.close_fails
         return await closing(*args, **kwargs)
 
-    service.set_window_closed = _set_window_closed
+    return _closing
+
+
+def _signup_services(league: SeasonLeague) -> None:
+    """The real signup module service and driver service, the window's recording of its close
+    raising `league.close_fails` where set.
+
+    The close is recorded through whichever of the service's two forms it carries: the
+    committing `set_window_closed`, which the close's own job calls until #439 slice 6b's C72
+    deletes it, and `set_window_closed_on`, the form on a handed connection that `post_closed`'s
+    record calls from C66 on. Each is wrapped only where it exists, so a league builds on either
+    side of those commits, and a close refused this way stops the job that records it."""
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    service = SignupModuleService(league.db_path)
+    for name in ("set_window_closed", "set_window_closed_on"):
+        closing = getattr(service, name, None)
+        if closing is not None:
+            setattr(service, name, _refused_while(league, closing))
     league.bot.signup_module_service = service
     league.bot.driver_service = DriverService(league.db_path)
 
