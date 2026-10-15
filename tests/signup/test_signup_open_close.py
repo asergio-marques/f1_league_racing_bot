@@ -980,7 +980,6 @@ async def _confirmation(tmp_path, *, in_progress=("PENDING_SIGNUP_COMPLETION",))
         await db.commit()
     cog = _cog(db_path)
     cog.bot.driver_service.transition = AsyncMock()
-    cog.bot.wizard_service.trigger_channel_hold = AsyncMock()
     asked = _interaction(members={})
     asked.client = cog.bot
     asked.edit_original_response = AsyncMock()
@@ -1102,7 +1101,8 @@ async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, 
     given a close time. The press is refused with the reason (the armed case in the command's
     own words, stating the time and naming `/signup close-time cancel`), one refusal line names
     the Confirm Close button and the manager, and nothing is closed: the driver is not returned,
-    no notice is posted, the window is as the change left it, and no close is audited."""
+    no notice is posted and no close is asked of the queue, the window is as the change left it,
+    and no close is audited."""
     db_path, cog, asked, view = await _confirmation(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(change)
@@ -1121,6 +1121,7 @@ async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, 
     assert "refused for Manager (`<@42>`)" in line
     cog.bot.driver_service.transition.assert_not_awaited()
     asked._signup_channel.send.assert_not_awaited()
+    assert [row for row in await change_rows(db_path) if row["kind"] == "signup.close"] == []
     assert await SignupModuleService(db_path).get_config() == before
     async with get_connection(db_path) as db:
         cursor = await db.execute(

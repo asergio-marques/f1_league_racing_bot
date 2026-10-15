@@ -18,9 +18,8 @@ from __future__ import annotations
 
 import json
 import re
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import discord
 import pytest
@@ -43,6 +42,7 @@ from tests.support.season_league import (
     MAX,
     SEASON_ID,
     SIGNING_UP,
+    SIGNUP_CHANNEL_BASE,
     WIND_DOWN_KIND,
     driver_state,
     pending_completion_league,
@@ -537,31 +537,33 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
 
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:
-    """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
-    (`channel_id` None), as the wizard service answers for a wizard with no channel. The lock is
-    the support's double still, so a lock asked for them is recorded in `league.locked`."""
-    wizard = league.bot.wizard_service
-    holding = wizard.trigger_channel_hold.side_effect
-
-    async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
-        if int(uid) == user_id:
-            league.events.append(("notice", int(uid), 0))
-            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
-        return await holding(uid, guild, notice, **kwargs)
-
-    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
+    """Driver *user_id*'s signup channel is gone from the server: deleted before their
+    `signup_notice` ran, so there is nothing to tell or lock in it."""
+    league.remove_channel(SIGNUP_CHANNEL_BASE + user_id)
 
 
 def _locks_asked(league: Any, user_id: int = SIGNING_UP) -> list[Any]:
-    """Each lock of driver *user_id*'s signup channel asked of the wizard service."""
-    return [call for call in league.bot.wizard_service.lock_signup_channel.await_args_list
-            if int(call.args[0]) == user_id]
+    """Each permission edit taking driver *user_id*'s typing away in their signup channel, the
+    channel looked for on the server and among those removed from it."""
+    cid = SIGNUP_CHANNEL_BASE + user_id
+    held = league.channels.get(cid) or league._removed.get(cid)
+    if held is None:
+        return []
+    return [call for call in held.set_permissions.call_args_list
+            if call.kwargs.get("send_messages") is False]
 
 
 def _deletion_armed_for(league: Any, user_id: int = SIGNING_UP) -> bool:
-    """Whether a deletion of driver *user_id*'s signup channel was armed on the scheduler."""
-    return any(call.kwargs.get("id") == f"wizard_channel_delete_{user_id}"
-               for call in league.bot.scheduler_service._scheduler.add_job.call_args_list)
+    """Whether a deletion of driver *user_id*'s signup channel was armed: through the scheduler
+    service's `signup_channel_delete` timer, or the wizard service's own job on the scheduler."""
+    scheduler = league.bot.scheduler_service
+    return any(
+        call.args[:2] == ("signup_channel_delete", str(user_id))
+        for call in scheduler.arm_once.call_args_list
+    ) or any(
+        call.kwargs.get("id") == f"wizard_channel_delete_{user_id}"
+        for call in scheduler._scheduler.add_job.call_args_list
+    )
 
 
 async def test_a_driver_with_no_signup_channel_left_is_named_in_a_line(tmp_path):
