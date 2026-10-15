@@ -1,12 +1,13 @@
-"""What a division's `/results ... sync` finds before it is asked of the change queue.
+"""What a division's `/results rounds sync` finds before it is asked of the change queue.
 
 Issue #208. Both syncs are changes on the change queue (#439: the results sync in
 `test_rounds_sync_change.py`, the standings sync in `test_standings_sync_change.py`), and each
-repost, its order and its labels are pinned there. What each command finds before it asks, its
-status, is read here: `division_repost_status` for the results, `standings_repost_status` for
-the standings. They are what a manager reaches when the automatic posts have gone missing — a
-channel deleted, a message purged, a restart at the wrong moment — and they exist so a league
-does not have to re-race a round to get its board back.
+repost, its order and its labels are pinned there. What the results sync finds before it asks,
+its status, is read here through `division_repost_status`; the standings sync's gates are its
+change's check, held when asked and again when it runs, and pinned in
+`test_standings_sync_change.py`. It is what a manager reaches when the automatic posts have
+gone missing — a channel deleted, a message purged, a restart at the wrong moment — and it
+exists so a league does not have to re-race a round to get its board back.
 
 **They answer with a status, not a boolean.** "Reposted", "there are no completed rounds" and
 "no channel is configured" are three different situations with three different next steps, and
@@ -26,15 +27,7 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock
 
-import pytest
-
 from leaguebot.core.db.database import get_connection, run_migrations
-
-#: Why the standings status tests fail until C21 builds `standings_repost_status`.
-NO_STANDINGS_STATUS = (
-    "#439: the standings sync's status is read by repost_standings_for_division as it reposts, "
-    "not by a standings_repost_status of its own"
-)
 
 SERVER_ID = 12508
 SEASON_ID = 1
@@ -126,14 +119,6 @@ async def _results(db_path, *, guild=None):
     return await division_repost_status(db_path, DIVISION_ID, guild or _guild())
 
 
-async def _standings(db_path, *, guild=None):
-    """What the standings sync finds for the division: its status, read by
-    `standings_repost_status`, the repost itself being a change on the queue (#439 6b)."""
-    from leaguebot.results.services.results_post_service import standings_repost_status
-
-    return await standings_repost_status(db_path, DIVISION_ID, guild or _guild())
-
-
 # ---------------------------------------------------------------------------
 # The results sync
 # ---------------------------------------------------------------------------
@@ -181,53 +166,5 @@ async def test_a_division_that_does_not_exist_says_no_rounds(tmp_path):
     db_path = await _make_db(tmp_path, name="results_nodiv", division_row=False)
 
     status = await _results(db_path)
-
-    assert status == "no_rounds"
-
-
-# ---------------------------------------------------------------------------
-# The standings sync
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
-async def test_a_division_with_no_standings_channel_says_so(tmp_path):
-    db_path = await _make_db(tmp_path, name="standings_nochannel", standings_channel=None)
-
-    status = await _standings(db_path)
-
-    assert status == "no_channel"
-
-
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
-async def test_a_deleted_standings_channel_says_no_channel(tmp_path):
-    db_path = await _make_db(tmp_path, name="standings_chgone")
-
-    status = await _standings(db_path, guild=_guild(missing=True))
-
-    assert status == "no_channel"
-
-
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
-async def test_a_division_with_no_submitted_rounds_says_no_rounds(tmp_path):
-    """Checked before the channel, unlike the results sync — a division with neither is
-    told it has no rounds, which is the more actionable of the two."""
-    db_path = await _make_db(tmp_path, name="standings_norounds", rounds=())
-
-    status = await _standings(db_path)
-
-    assert status == "no_rounds"
-
-
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
-async def test_a_superseded_round_alone_counts_as_no_rounds(tmp_path):
-    """Its results were replaced; there is no standings snapshot that describes it."""
-    db_path = await _make_db(
-        tmp_path,
-        name="standings_superseded",
-        sessions=(("FEATURE_RACE", "SUPERSEDED", None),),
-    )
-
-    status = await _standings(db_path)
 
     assert status == "no_rounds"
