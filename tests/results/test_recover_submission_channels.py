@@ -426,9 +426,6 @@ async def test_a_round_with_no_recorded_prompt_fetches_nothing(tmp_path):
     channel.fetch_message.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: the review's recovery looks the change queue up on the bot rather than being handed it"
-))
 async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
     """A service is handed the change queue rather than looking it up on the bot (#439 slice 6b,
     fold-in 6). A round left in its penalty review at a restart is put back by asking the queue

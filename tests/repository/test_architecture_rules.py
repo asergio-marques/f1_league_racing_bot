@@ -1375,7 +1375,6 @@ KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "ask_review_open"): (2, SLICE["6b"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, SLICE["6b"]),
-    ("results/services/review_recovery.py", "_put_back"): (3, SLICE["6b"]),
 }
 
 

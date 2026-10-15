@@ -45,7 +45,7 @@ import discord
 
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.change_queue import ever_asked
+from leaguebot.core.services.change_queue import ChangeQueue, ever_asked
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services import review_open_change
@@ -67,9 +67,15 @@ async def recover_review(
     row: aiosqlite.Row,
     guild: discord.Guild | None,
     abandon: Abandon,
+    *,
+    queue: ChangeQueue,
 ) -> bool:
     """Put round ``row["round_id"]``'s review back, or leave it to the queue; give ``False`` where
     the round is no review but a first paste cut short.
+
+    *queue* is the change queue the review is put back through, handed by whoever calls the
+    recovery and never looked up on the bot (architecture.md, "Services stay attached to the bot,
+    and are built in one place").
 
     *row* is the round's open submission channel row with its round's ``status``, ``division_id``,
     ``round_number`` and the division's ``division_name``. *guild* is the league's server, or
@@ -84,7 +90,7 @@ async def recover_review(
         stage = await _stage(bot.db_path, row)
         if stage is None:
             return False
-        await _put_back(bot, row, guild, abandon, stage)
+        await _put_back(bot, row, guild, abandon, stage, queue)
     except Exception:
         log.exception("Recovery: failed to restore the review of round %s", round_id)
     return True
@@ -113,6 +119,7 @@ async def _put_back(
     guild: discord.Guild | None,
     abandon: Abandon,
     stage: str,
+    queue: ChangeQueue,
 ) -> None:
     round_id = int(row["round_id"])
     channel_id = int(row["channel_id"])
@@ -140,7 +147,7 @@ async def _put_back(
         return
 
     if stage == "final":
-        await bot.change_queue.ask(
+        await queue.ask(
             review_open_change.CLOSE_STALE_KIND,
             {
                 "round_id": round_id, "round_number": int(row["round_number"]),
@@ -155,7 +162,7 @@ async def _put_back(
         }
         if row["appeals_prompt_message_id"] is not None:
             payload["old_prompt_id"] = int(row["appeals_prompt_message_id"])
-        await bot.change_queue.ask(
+        await queue.ask(
             review_open_change.APPEALS_OPEN_KIND, payload, origin=_BOT,
             what=f"posting the appeals review of {round_label} again",
         )
@@ -172,7 +179,7 @@ async def _put_back(
         }
         if row["prompt_message_id"] is not None:
             payload["old_prompt_id"] = int(row["prompt_message_id"])
-        await bot.change_queue.ask(
+        await queue.ask(
             review_open_change.KIND, payload, origin=_BOT,
             what=f"opening the penalty review of {round_label} again",
         )

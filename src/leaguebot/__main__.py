@@ -1498,7 +1498,9 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
         # A round that is a review is put back, or left to the change carrying it out, by the
         # results service (#439). What is left is a first paste cut short, which is no review.
-        if await recover_review(bot, row, guild, _abandon_interrupted_resubmission):
+        if await recover_review(
+            bot, row, guild, _abandon_interrupted_resubmission, queue=bot.change_queue,
+        ):
             continue
 
         # ------------------------------------------------------------------
