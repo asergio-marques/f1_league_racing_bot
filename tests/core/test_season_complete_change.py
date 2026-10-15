@@ -1015,12 +1015,15 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
     """The signup window open and the completion queued. Run as far as `post_closed`, whose
     record writes the window's close, the window is closed while the season is still active,
-    no history written and Max still assigned: the driver pass has not yet run. The rest of the
-    queue completes the season."""
+    no history written and Max still assigned: the driver pass has not yet run. The window's
+    close is audited once and its "🔒 Signups closed as the season ended" line written once, in
+    that post's record. The rest of the queue completes the season."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await _asked(league)
 
     await _run_through(league, "post_closed")
+    assert await _window_close_audits(league) == [("SIGNUP_SEASON_END_CLOSE", "open", "closed")]
+    assert len(await _closed_lines(league)) == 1
     assert not await window_open(league)
     assert await _history(league) == []
     assert await driver_state(league, MAX) == "ASSIGNED"
@@ -1481,6 +1484,27 @@ RETURNED_NOT_TOLD = (
     f"<@{SIGNING_UP}> was returned to Not Signed Up when signups closed, but was not told and "
     "their channel was not closed: tell them and delete it by hand."
 )
+#: The head of the line a season end's close writes, with its audit, in `post_closed`'s record.
+CLOSED_AS_THE_SEASON_ENDED = "🔒 Signups closed as the season ended"
+
+
+async def _window_close_audits(league: Any) -> list[tuple[str, str, str]]:
+    """Each audit record of the window's close as the season ends."""
+    rows = await league.rows(
+        "SELECT change_type, old_value, new_value FROM audit_entries WHERE change_type = ?",
+        "SIGNUP_SEASON_END_CLOSE",
+    )
+    return [(row["change_type"], row["old_value"], row["new_value"]) for row in rows]
+
+
+async def _closed_lines(league: Any) -> list[str]:
+    """Each line, sent or still queued, saying signups closed as the season ended."""
+    from tests.support.change_queue import queued_log_lines
+
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    return [line for line in lines if CLOSED_AS_THE_SEASON_ENDED in line]
+
+
 #: How a driver the season's end cannot tell for want of a signup channel is named.
 NO_CHANNEL = f"<@{SIGNING_UP}> had no signup channel left to tell"
 
@@ -1565,7 +1589,8 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     admin discards it. Only that post is dropped (b15-2): 105 is still told, then their channel
     locked, by their own jobs; the reply and the closing line say the window was not closed, to
     be closed with `/signup close`, and never name 105 as returned but not told; the window is
-    still recorded open, the season completed, and 105 is owed nothing more."""
+    still recorded open, with no audit of its close and no "🔒 Signups closed" line, the season
+    completed, and 105 is owed nothing more."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -1588,6 +1613,8 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert f"  not done: {_logged(WINDOW_OPEN)}" in line
     assert _logged(RETURNED_NOT_TOLD) not in line
     assert await window_open(league)
+    assert await _window_close_audits(league) == []
+    assert await _closed_lines(league) == []
     assert await _status(league) == "COMPLETED"
     assert await _owed(league) == []
 
