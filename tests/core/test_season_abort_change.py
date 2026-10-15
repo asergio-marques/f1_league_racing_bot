@@ -863,19 +863,11 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
 
 
 def _no_channel_left(league: Any, user_id: int = SIGNING_UP) -> None:
-    """Driver *user_id*'s signup channel is gone: holding it finds nothing to tell
-    (`channel_id` None), as the wizard service answers for a wizard with no channel."""
-    from types import SimpleNamespace
+    """Driver *user_id*'s signup channel is gone from the server, so there is nothing to tell or
+    lock in it."""
+    from tests.support.season_league import SIGNUP_CHANNEL_BASE
 
-    wizard = league.bot.wizard_service
-    holding = wizard.trigger_channel_hold.side_effect
-
-    async def _hold(uid: Any, guild: Any, notice: str, **kwargs: Any) -> Any:
-        if int(uid) == user_id:
-            return SimpleNamespace(channel_id=None, posted=False, locked=False, reason=None)
-        return await holding(uid, guild, notice, **kwargs)
-
-    wizard.trigger_channel_hold = AsyncMock(side_effect=_hold)
+    league.remove_channel(SIGNUP_CHANNEL_BASE + user_id)
 
 
 async def test_an_abort_whose_only_line_beneath_is_a_driver_with_no_channel_left_has_no_warning_heading(
