@@ -18,7 +18,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from leaguebot.core.db.database import run_migrations
-from leaguebot.signup.cogs import admin_review_cog
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 from tests.support.change_queue import (
     acknowledgement,
@@ -43,7 +42,6 @@ _STORE = re.compile(
 
 #: Stores `clear_in_memory_state` clears, by (file, name).
 CLEARED = {
-    ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"),
     ("core/cogs/season_cog.py", "_pending"),
     # The interactions the change queue holds to update each change's reply: a factory reset
     # deletes the changes they belong to (#439), and a pack finds none, being refused while the
@@ -62,15 +60,41 @@ LEAVING = {
     # 6b's C88 deletes it, a correction's five minutes then being a one-off timer asking the
     # queue (C85, C87) with nothing held in memory.
     ("signup/services/wizard_service.py", "_correction_tasks"): "#439 6b C88",
+    # The placements-review button's own report, held by the view until the review is posted
+    # on the queue, its question's row then holding every report id (C93). Exempt while it
+    # stands: it dies with the view, and once no server is claimed every press on it is refused.
+    ("core/cogs/season_cog.py", "_report"): "#439 6b C93",
+}
+
+#: Stores the plan moves with no change, by (file, name): the file each moves to and the commit
+#: that moves it. Accounted for at either address, and the clear's test reaches each wherever
+#: it stands (#439).
+MOVING = {
+    # The pending reasons of Reject and Request Changes, cleared by `clear_pending_reasons`,
+    # moving with the review's views into signup's services.
+    ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"): (
+        "signup/services/signup_views.py", "#439 6b C65a",
+    ),
+}
+
+#: Stores the plan adds that hold no league state, and the commit that adds each, with why:
+#: accounted for once they stand, and not looked for before (#439).
+ARRIVING_EXEMPT = {
+    # One lock per lane, each lane's worker holding its own while it drains its lane: the
+    # queue's wiring, not the league's data (6b L4).
+    ("core/services/change_queue.py", "_working"): "#439 6b L4",
+    # The job each lane's worker is trying, keyed by lane, set only while a job runs: a pack is
+    # refused while any lane holds a job, and a factory reset empties every lane (6b L5).
+    ("core/services/change_queue.py", "_trying"): "#439 6b L5",
+    # Each running lane's worker task, keyed by lane: the queue's own tasks, cancelled by
+    # `stop()`, never the league's data (6b L10).
+    ("core/services/change_queue.py", "_workers"): "#439 6b L10",
 }
 
 #: Stores that hold no league state, and why.
 EXEMPT = {
     # The phase callables bound at start-up: the bot's wiring, not the league's data.
     ("core/services/scheduler_service.py", "_phase_callbacks"),
-    # The placements-review button's own report. It dies with the view, and once no server
-    # is claimed every press on it is refused.
-    ("core/cogs/season_cog.py", "_report"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),
@@ -109,8 +133,15 @@ def _stores() -> set[tuple[str, str]]:
     return found
 
 
+def _moving() -> set[tuple[str, str]]:
+    """Both addresses of every store the plan moves."""
+    return set(MOVING) | {(to, name) for (_, name), (to, _commit) in MOVING.items()}
+
+
 def test_every_store_is_cleared_or_exempt():
-    unaccounted = sorted(_stores() - CLEARED - EXEMPT - set(LEAVING))
+    unaccounted = sorted(
+        _stores() - CLEARED - EXEMPT - set(LEAVING) - _moving() - set(ARRIVING_EXEMPT)
+    )
     assert unaccounted == [], (
         f"clear_in_memory_state does not clear {unaccounted}; clear it there, or exempt it "
         f"here with the reason it holds no league state"
@@ -118,8 +149,35 @@ def test_every_store_is_cleared_or_exempt():
 
 
 def test_the_register_names_no_store_that_does_not_exist():
-    assert sorted((CLEARED | EXEMPT) - _stores()) == []
+    stores = _stores()
+    assert sorted((CLEARED | EXEMPT) - stores) == []
     assert not (set(LEAVING) & (CLEARED | EXEMPT))
+    assert not ((_moving() | set(ARRIVING_EXEMPT)) & (CLEARED | EXEMPT | set(LEAVING)))
+    stranded = sorted(
+        (old, to) for old, (to, _commit) in MOVING.items()
+        if old not in stores and (to, old[1]) not in stores
+    )
+    assert stranded == [], f"a moving store stands at neither address: {stranded}"
+
+
+def _pending_reasons() -> dict:
+    """The pending reasons' store, wherever it stands: in signup's views once C65a moves it
+    there, in the review cog until then."""
+    import importlib
+
+    for module in (
+        "leaguebot.signup.services.signup_views",
+        "leaguebot.signup.cogs.admin_review_cog",
+    ):
+        try:
+            found = importlib.import_module(module)
+        except ModuleNotFoundError as missing:
+            if missing.name != module:
+                raise
+            continue
+        if hasattr(found, "_PENDING_REASONS"):
+            return found._PENDING_REASONS
+    raise AssertionError("no module holds the pending reasons")
 
 
 @pytest.mark.xfail(
@@ -143,12 +201,13 @@ async def test_the_clear_empties_every_store():
         wizard_service=SimpleNamespace(),
     )
     lapse = asyncio.get_running_loop().create_future()
-    admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x", "lapse": lapse}
+    pending = _pending_reasons()
+    pending[(1, 2)] = {"action": "x", "lapse": lapse}
 
     clear_in_memory_state(bot, queue=MagicMock())
 
     season_cog.clear_pending.assert_called_once_with()
-    assert admin_review_cog._PENDING_REASONS == {}
+    assert pending == {}
     assert lapse.cancelled()
 
 
