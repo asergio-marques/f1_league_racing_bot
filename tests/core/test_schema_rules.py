@@ -377,9 +377,6 @@ async def test_the_queue_holds_one_running_change(db_path):
     db.close()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#439: one change runs at a time across every lane, not per lane"
-)
 async def test_the_queue_holds_one_running_change_per_lane(db_path):
     """Each lane runs one change at a time: a second RUNNING change on channel 7's lane is
     refused, while one RUNNING on the league lane and one on channel 8's stand beside it."""

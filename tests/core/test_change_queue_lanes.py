@@ -48,7 +48,6 @@ DOING = "Doing the dummy thing"
 TURNS_7 = "channel:7"
 TURNS_8 = "channel:8"
 
-NO_LANE_COLUMN = "#439: a queued change has no lane yet"
 NO_TYPE_LANE = "#439: a change type does not say its lane yet"
 NO_FOLLOW_ON_LANE = "#439: a follow-on does not take its own kind's lane yet"
 NO_LANE_REPEAT = "#439: changes carry no lane, so a repeat is compared across the whole queue"
@@ -233,7 +232,6 @@ async def _lanes(env) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LANE_COLUMN)
 async def test_a_change_saved_without_a_lane_is_the_league_s(env):
     """A change written without naming a lane, as every change was before lanes, is the league's."""
     async with get_connection(env.db_path) as db:

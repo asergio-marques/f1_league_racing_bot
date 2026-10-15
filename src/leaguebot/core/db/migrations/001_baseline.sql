@@ -856,7 +856,9 @@ CREATE TABLE "pending_messages" (
 -- stays as it was: the stop is the job's, in its `failing_since`.
 -- `actor_name` is str(member), as the audit records it; `actor_display` the display name, as the
 -- log channel names a member. `what` is how the change's lines name it. `acknowledged_at` bounds
--- the update of the member's reply.
+-- the update of the member's reply. `lane` is the lane the change runs on: `league`, or
+-- `channel:<id>` for a conversation's own channel; each lane runs one change at a time and stops
+-- alone.
 CREATE TABLE "queued_changes" (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     kind            TEXT    NOT NULL,
@@ -869,11 +871,12 @@ CREATE TABLE "queued_changes" (
     actor_name      TEXT,
     actor_display   TEXT,
     what            TEXT    NOT NULL,
-    acknowledged_at TEXT
+    acknowledged_at TEXT,
+    lane            TEXT    NOT NULL DEFAULT 'league'
 );
-CREATE INDEX "queued_changes_open" ON "queued_changes" (id)
+CREATE INDEX "queued_changes_open" ON "queued_changes" (lane, id)
     WHERE state IN ('QUEUED', 'RUNNING');
-CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (state)
+CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (lane)
     WHERE state = 'RUNNING';
 
 -- queued_change_steps
