@@ -41,6 +41,13 @@ SIGNUP_CHANNEL = 700
 BUTTON_MESSAGE = 8800
 CLOSED_MESSAGE = 9900
 
+#: Until C66/C67, the queue's close audits the window's close and writes its "🔒 Signups closed"
+#: line itself; from them on, `post_closed`'s record writes both, with the window's close.
+AUDITED_BY_ITS_NOTICE = (
+    "#439: the queue's close still audits the window's close and writes its line itself, not in "
+    "post_closed's record (C66, C67)"
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -492,16 +499,18 @@ async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_close_is_audited_under_the_callers_action(tmp_path):
-    """The queue's close serves a season's end and every division done, and the audit says
-    which closed the window."""
+@pytest.mark.xfail(strict=True, reason=AUDITED_BY_ITS_NOTICE)
+async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
+    """The queue's close serves a season's end and every division done. It writes no audit of
+    the window's close: that record is written by the "Signups are now closed" post's own job,
+    with the window's close, so a discarded post leaves no record that signups closed."""
     db_path = await _make_db(tmp_path, name="fc_audit")
 
     await execute_forced_close(
         _bot(db_path), audit_action="SIGNUP_DIVISIONS_DONE_CLOSE", hold_channels=False
     )
 
-    assert await _audit(db_path) == [("SIGNUP_DIVISIONS_DONE_CLOSE", "open", "closed", "system")]
+    assert await _audit(db_path) == []
 
 
 async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
@@ -563,14 +572,16 @@ _CAUSES = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=AUDITED_BY_ITS_NOTICE)
 @pytest.mark.parametrize("cause, heads, audit_action", _CAUSES)
-async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
+async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_closed_notice(
     tmp_path, cause, heads, audit_action
 ):
     """Signups are open with drivers 101 and 102 still filling in the wizard, and the window
     closes on the change queue with nobody at the keyboard: the season ended, or every division
-    finished. The close is audited under the cause's audit action, and one line is written
-    naming no member: its head says why signups closed, with the two drivers returned beneath."""
+    finished. The close returns both drivers, but writes no audit and no "🔒 Signups closed"
+    line: the "Signups are now closed" post's own job writes both, with the window's close, so
+    a discarded post leaves no record that signups closed."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
 
     db_path = await _make_db(
@@ -582,16 +593,12 @@ async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
     )
     bot = _unattended_bot(db_path)
 
-    await close_signups_unattended(bot, cause=cause, hold_channels=False)
+    outcome = await close_signups_unattended(bot, cause=cause, hold_channels=False)
 
-    assert await _audit(db_path) == [(audit_action, "open", "closed", "system")]
-    [call] = bot.output_router.post_log.await_args_list
-    line = str(call.args[0])
-    first = line.splitlines()[0]
-    for head in heads:
-        assert head in first
-    assert "<@" not in line
-    assert any("2" in text and "returned" in text for text in line.splitlines())
+    assert outcome is not None
+    assert sorted(outcome.returned_ids) == ["101", "102"]
+    assert await _audit(db_path) == []
+    bot.output_router.post_log.assert_not_awaited()
 
 
 @pytest.mark.parametrize("cause", ["timer", "restart", "season end", "divisions done"])
