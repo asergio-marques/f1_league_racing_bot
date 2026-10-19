@@ -390,6 +390,29 @@ async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db)
     assert journal == []
 
 
+@pytest.mark.asyncio
+async def test_a_missing_channel_is_reported_by_the_divisions_name(sheet_db):
+    """Where the division has no attendance channel set, the stop names the division as the
+    league knows it, and the command that sets the channel, and carries no database number
+    (#439, slice 6b, fault 5)."""
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE divisions SET name = 'Pro' WHERE id = 7")
+        await db.execute("DELETE FROM attendance_division_config")
+        await db.commit()
+
+    journal: list[str] = []
+    guild = _FakeGuild(_FakeChannel(journal), {111: "Ayrton"})
+
+    with in_a_job(), pytest.raises(StepFailedOnDiscord) as stopped:
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    message = str(stopped.value)
+    assert message.startswith("**Pro** has no attendance channel set: ")
+    assert "`/attendance channel attendance`" in message
+    assert "7" not in message
+    assert journal == []
+
+
 # ── What the sheet says (FR-017–FR-019) ──────────────────────────────────
 
 
