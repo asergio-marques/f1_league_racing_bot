@@ -1250,13 +1250,6 @@ async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_r
     assert reposts.posted == []
 
 
-#: Why a test of the amendment's deadline fails until C31 builds it (fold-in 12e).
-NO_AMEND_DEADLINE_JOBS = (
-    "#439: the amendment's `run_deadline` job runs `run_rsvp_deadline` whole, which logs a "
-    "refused lock or announcement rather than stopping the queue"
-)
-
-
 async def _deadline_not_yet_run(league: Any) -> None:
     """Round 3's reserves not yet distributed: no announcement recorded."""
     await league.write(
@@ -1288,7 +1281,6 @@ async def _distribution_recorded(league: Any) -> Any:
     return row["distribution_msg_id"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_DEADLINE_JOBS)
 async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_queue(
     tmp_path, reposts,
 ):
@@ -1306,7 +1298,6 @@ async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_q
     assert await _distribution_recorded(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_DEADLINE_JOBS)
 async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp_path, reposts):
     """As the deadline run once its save is discarded (Pro's round 3, its old deadline passed),
     Discord refusing the edit that takes the call's buttons off (7001): the queue stops there,

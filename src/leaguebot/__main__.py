@@ -287,6 +287,7 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     needed."""
     from leaguebot.attendance.services import rsvp_service
     from leaguebot.attendance.services.check_in_changes import (
+        check_in_deadline_steps,
         check_in_steps,
         close_check_in_on,
         give_up_text_for,
@@ -307,9 +308,6 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
         return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
-    async def run_deadline(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_deadline(round_id, bot_)
-
     async def clean_up_check_in(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_cleanup(round_id, bot_)
 
@@ -324,7 +322,9 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         call_steps=check_in_steps(bot.attendance_service, now=lambda: bot.change_queue.now()),
         give_up_text=give_up_text_for,
         give_up_on=close_check_in_on,
-        run_deadline=run_deadline,
+        deadline_steps=check_in_deadline_steps(
+            bot.attendance_service, now=lambda: bot.change_queue.now()
+        ),
         clean_up_check_in=clean_up_check_in,
         round_list=format_round_list,
     )

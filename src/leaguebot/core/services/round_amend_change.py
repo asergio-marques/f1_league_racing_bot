@@ -93,7 +93,12 @@ PLAN_FORECAST_DELETES = "plan_forecast_deletes"
 DRAW_FORECAST = "draw_forecast"
 NOTIFY_INVALIDATION = "notify_invalidation"
 RERUN_PHASE = "rerun_phase"
-RUN_DEADLINE = "run_deadline"
+#: Attendance's own jobs of a check-in deadline, which the amendment plans as the deadline's
+#: timer would, under the names attendance gives them (core names a kind's jobs as strings).
+DISTRIBUTE = "distribute"
+CLOSE_WITHOUT_CALL = "close_without_call"
+LOCK_CALL = "lock_call"
+ANNOUNCE = "announce"
 CLEAN_UP_FORECAST = "clean_up_forecast"
 CLEAN_UP_CHECK_IN = "clean_up_check_in"
 
@@ -146,9 +151,11 @@ class AmendHooks:
     start-up recovery does, clearing in the same save any check-in answers left for the round and
     the placements made on them, and says whether it did; it raises where the close cannot be
     saved, so that the queue stops rather than report a give-up never made.
-    *run_deadline* runs the round's check-in deadline and *clean_up_check_in* takes its check-in
-    down, each as its timer would, for a moment that passed while the amendment stood stopped (its
-    forecast, whichever of Phases 1 to 3 stands, is deleted by a job planned through
+    *deadline_steps* are attendance's own jobs of a check-in deadline (placing the reserves, taking
+    the buttons off the call, posting the announcement), which the amendment plans as the timer
+    would for a moment that passed while it stood stopped, so that Discord refusing one stops the
+    queue. *clean_up_check_in* takes the check-in down as its timer would (its forecast,
+    whichever of Phases 1 to 3 stands, is deleted by a job planned through
     *forecast_steps*). *round_list* formats
     the division's rounds for the reply.
     """
@@ -163,7 +170,7 @@ class AmendHooks:
     call_steps: Mapping[str, Step]
     give_up_text: Callable[[str, int], Awaitable[str | None]]
     give_up_on: Callable[[aiosqlite.Connection, int], Awaitable[bool]]
-    run_deadline: Callable[[int, Any], Awaitable[None]]
+    deadline_steps: Mapping[str, Step]
     clean_up_check_in: Callable[[int, Any], Awaitable[None]]
     round_list: Callable[[list[Round]], str]
 
@@ -616,7 +623,7 @@ def round_amend_change(
             planned.append(PlannedStep(POST_CALL, {"repost": False}))
         if (attendance is not None and call_left and standing["undistributed"]
                 and deadline_passed(rnd, attendance)):
-            planned.append(PlannedStep(RUN_DEADLINE))
+            planned.append(PlannedStep(DISTRIBUTE))
         posted = after.get("posted", [])
         planned += [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
         if posted:
@@ -953,11 +960,24 @@ def round_amend_change(
                     "not drawn, and a league admin discarded it; it is drawn when the bot next "
                     "starts, while the round is still to be run",
                 ))
-            elif each.name == RUN_DEADLINE:
+            elif each.name == DISTRIBUTE:
                 failures.append(notices.NoticeFailure(
                     division, "check-in deadline",
                     "the reserves were not distributed, and a league admin discarded it; it is "
                     "run when the bot next starts, while the call stands",
+                ))
+            elif each.name == LOCK_CALL:
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    "the buttons could not be taken off the call at its deadline, and a league "
+                    "admin discarded it; the placements stand, and the call can be taken down "
+                    "by hand",
+                ))
+            elif each.name == ANNOUNCE:
+                failures.append(notices.NoticeFailure(
+                    division, "reserve announcement",
+                    "the reserves' announcement could not be posted, and a league admin "
+                    "discarded it; the placements stand",
                 ))
             elif each.name == CLEAN_UP_FORECAST:
                 standing = each.payload.get("standing", ())
@@ -1052,10 +1072,21 @@ def round_amend_change(
             RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=phase_still_due,
             describe=describe_draw,
         ),
-        RUN_DEADLINE: Step(
-            RUN_DEADLINE, StepKind.ACT, catching_up(hooks.run_deadline, "run"),
-            still_due=attendance_on,
-            describe=named("running the check-in deadline of round {number} in **{division}**"),
+        # Attendance's own jobs of a deadline, named for the round the amendment stands for.
+        DISTRIBUTE: dataclasses.replace(
+            hooks.deadline_steps[DISTRIBUTE],
+            describe=named("placing the reserves of round {number} in **{division}**"),
+        ),
+        CLOSE_WITHOUT_CALL: dataclasses.replace(
+            hooks.deadline_steps[CLOSE_WITHOUT_CALL],
+            describe=named(
+                "closing the check-in of round {number} in **{division}**, which has no call"
+            ),
+        ),
+        LOCK_CALL: hooks.deadline_steps[LOCK_CALL],
+        ANNOUNCE: dataclasses.replace(
+            hooks.deadline_steps[ANNOUNCE],
+            describe=named("posting the reserve announcement of round {number} in **{division}**"),
         ),
         CLEAN_UP_FORECAST: dataclasses.replace(
             hooks.forecast_steps[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST,
