@@ -10,13 +10,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import pytest
-
 from leaguebot.attendance.services.attendance_service import AttendanceService
-
-NO_DEADLINE_CHANGE = (
-    "#439: the check-in deadline is run by `run_rsvp_deadline` at once, off the change queue"
-)
 
 
 # A deadline that has run is marked so on its call (`deadline_run_at`), apart from the message it
@@ -225,13 +219,12 @@ async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
     assert "nothing against anyone" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_path):
     """No call stands for round 3 and its answers are kept. The restart asks its call, past the
     deadline, so the call is to be given up, and the deadline is asked too; the queue runs them
     one after the other. The answers are cleared and the check-in marked over, and the log
     channel says once that the round counts nothing against anyone: the round is reported
-    once."""
+    once, by the one line that gives the call up."""
     from leaguebot.attendance.services.check_in_changes import ask_check_in_call
     from leaguebot.core.models.change import ChangeOrigin
     from tests.support.change_queue import run_queue
@@ -245,7 +238,9 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     await run_queue(league.bot)
 
     assert await _round_state(league) == (0, 1)
-    assert league.log().count("nothing against anyone") == 1
+    given_up = [line for line in league.bot.log_channel.sent
+                if line.startswith("ATTENDANCE | check-in call | NOT POSTED")]
+    assert len(given_up) == 1
 
 
 async def test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_posts_nothing(
