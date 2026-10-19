@@ -44,7 +44,7 @@ no longer due in those cases and is dropped; only a channel missing or unusable 
 with the check's reason, since the manager can set it right and press Retry.
 
 The payload is ``round_id``, ``label``, ``publish`` (whether the interim results go out),
-``returning`` (``"cancelled"``, ``"lapsed"`` or ``"failed"`` for a resubmission's return),
+``returning`` (``"cancelled"`` or ``"failed"`` for a resubmission's return),
 ``cancel_message_id`` and ``old_prompt_id``.
 
 **Two more kinds put a review back after a restart, as the bot.** `results.appeals.open` posts a
@@ -383,11 +383,6 @@ def review_open_change() -> ChangeType:
         elif returning == "cancelled":
             lines = (abandoned_line(
                 ctx.named, resubmission, lapsed=False,
-                detail="The earlier results stand.\nPress 🔄 Resubmit Initial Results to start again.",
-            ),)
-        elif returning == "lapsed":
-            lines = (abandoned_line(
-                ctx.named, resubmission, lapsed=True,
                 detail="The earlier results stand.\nPress 🔄 Resubmit Initial Results to start again.",
             ),)
         elif returning == "failed":
