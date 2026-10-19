@@ -605,6 +605,9 @@ class TestModeCog(commands.Cog):
             "round_id": entry["round_id"],
             "division_name": entry["division_name"],
             "round_number": entry["round_number"],
+            # Judged by no clock: under test mode the step that ends the check-in is the one
+            # advance fires, a past-dated round's call being posted however late it is.
+            "advanced": True,
         }
         if kind == CHECK_IN_CALL:
             payload |= {"replaces": None, "late": False}

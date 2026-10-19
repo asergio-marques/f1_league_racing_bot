@@ -21,6 +21,11 @@ A round is owed one call: a call asked of a round that has one standing, a cance
 whose results are in or whose check-in is over, or with attendance off is dropped, judged when it
 is asked and again when it runs. A call is not repeatable.
 
+A step that `/test-mode advance` asks carries `advanced` in its payload and is judged by no clock:
+a past-dated round's call is posted rather than given up, its last notice is not dropped for the
+real deadline, and its deadline places the reserves on every answer held. Under test mode the step
+that ends a check-in is the one advance fires.
+
 The last notice is `attendance.check_in.last_notice`, asked by its timer: one `post_last_notice`
 job posts it in the division's check-in channel as it then stands, naming the silent full-time
 drivers, and records its message and channel with the job's mark so that the round's clean-up
@@ -214,17 +219,19 @@ def _not_due(
 
 
 def _notice_not_due(
-    row: aiosqlite.Row | None, standing: aiosqlite.Row | None, *, now: datetime
+    row: aiosqlite.Row | None, standing: aiosqlite.Row | None, *, now: datetime,
+    advanced: bool = False,
 ) -> str | None:
     """Why the round is owed no last notice, else None: it needs a call standing to remind of,
-    and is posted late while the check-in deadline is ahead, never after it."""
+    and is posted late while the check-in deadline is ahead, never after it. A step *advanced* by
+    test mode is judged by no clock: the deadline that ends the check-in is the one advance fires."""
     reason = _round_not_owed(row)
     if reason is not None:
         return reason
     if standing is None:
         return "no check-in call stands for the round"
     assert row is not None
-    if now >= _deadline(row):
+    if not advanced and now >= _deadline(row):
         return "the check-in deadline has passed"
     return None
 
@@ -410,7 +417,7 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
         row = await _call_row(db, round_id)
         if row is None:
             return StepResult(result={"dropped": True})
-        if now() < _deadline(row):
+        if ctx.payload.get("advanced") or now() < _deadline(row):
             return StepResult(result={"in_time": True}, then=(PlannedStep(POST_CALL),))
         if not await close_check_in_on(db, round_id):
             return StepResult(result={"dropped": True})
@@ -715,7 +722,9 @@ def check_in_last_notice_steps(
         async with get_connection(ctx.db_path) as db:
             row = await _call_row(db, round_id)
             standing = await _standing(db, round_id)
-        reason = _notice_not_due(row, standing, now=now())
+        reason = _notice_not_due(
+            row, standing, now=now(), advanced=bool(ctx.payload.get("advanced"))
+        )
         if reason is not None:
             log.info("The last notice of round %s is no longer owed: %s.", round_id, reason)
         return reason is None
@@ -786,7 +795,9 @@ def check_in_last_notice_change(
         async with get_connection(ctx.db_path) as db:
             row = await _call_row(db, round_id)
             standing = await _standing(db, round_id)
-        reason = _notice_not_due(row, standing, now=now())
+        reason = _notice_not_due(
+            row, standing, now=now(), advanced=bool(ctx.payload.get("advanced"))
+        )
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(_ctx: OutcomeContext) -> str:
@@ -1064,7 +1075,8 @@ def check_in_deadline_steps(
             return StepResult(result={"dropped": True})
         division_id: int = row["division_id"]
         assignments, standby = await rsvp_service.reserve_distribution_on(
-            db, round_id, division_id, answered_by=_deadline(row)
+            db, round_id, division_id,
+            answered_by=None if ctx.payload.get("advanced") else _deadline(row),
         )
         await rsvp_service.write_distribution_on(
             db, round_id, division_id, assignments, standby, at=now()
