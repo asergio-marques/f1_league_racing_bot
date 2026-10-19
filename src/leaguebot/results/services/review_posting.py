@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 import aiosqlite
@@ -112,6 +112,19 @@ _STANDINGS_SYNC = "/results standings sync"
 _AMEND = "/results rounds amend"
 
 
+def delete_message_step(
+    name: str = DELETE_MESSAGE,
+    *,
+    record: Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]] | None = None,
+) -> Step:
+    """The shared deletion of one old message, under *name* and with *record* written in the save
+    that marks it done: the one delete a change of results plans for a message it replaces, so
+    that none copies it (a payload of ``channel_id``, ``message_id`` and ``what``)."""
+    return Step(
+        name, StepKind.DELETE, _delete_message, describe=_describe_delete, record=record,
+    )
+
+
 def posting_steps() -> dict[str, Step]:
     """The posting jobs, keyed by their names, for a change type's `steps`."""
     return {
@@ -129,9 +142,7 @@ def posting_steps() -> dict[str, Step]:
             POST_STANDINGS_AFRESH, StepKind.ACT, _post_standings_afresh,
             describe=_describe_standings_post, record=_record_standings_post,
         ),
-        DELETE_MESSAGE: Step(
-            DELETE_MESSAGE, StepKind.DELETE, _delete_message, describe=_describe_delete,
-        ),
+        DELETE_MESSAGE: delete_message_step(),
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, _post_batch_notice,
             describe=_describe_notice_post,

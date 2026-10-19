@@ -195,6 +195,9 @@ def _in_channel(state: PenaltyReviewState, channel) -> None:
 
     state.bot.get_channel = MagicMock(side_effect=lambda cid: channel if cid == own else found(cid))
     state.bot.fetch_channel = AsyncMock(side_effect=_fetch)
+    # The approval message's withdrawal is the shared delete step (#439, C54), which finds the
+    # channel through the league's server, so the server answers as the bot double does.
+    state.bot.get_guild = MagicMock(return_value=MagicMock(get_channel=state.bot.get_channel))
 
 
 def _answered(interaction) -> str:

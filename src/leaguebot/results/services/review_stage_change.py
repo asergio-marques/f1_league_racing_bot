@@ -42,11 +42,8 @@ from typing import Any
 
 import aiosqlite
 
-import discord
-
 from leaguebot.core.models.change import (
     PlannedStep,
-    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -59,7 +56,6 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services import penalty_wizard
 from leaguebot.results.services.penalty_wizard import (
@@ -67,7 +63,7 @@ from leaguebot.results.services.penalty_wizard import (
     StagedPardon,
     held_review,
 )
-from leaguebot.results.services.results_post_service import _delete_posting
+from leaguebot.results.services import review_posting
 
 __all__ = ["KIND", "review_stage_change"]
 
@@ -181,28 +177,6 @@ async def _stage(ctx: StepContext) -> StepResult:
     return StepResult(result={"staged": True}, then=tuple(then), lines=(line,))
 
 
-async def _withdraw(ctx: StepContext) -> StepResult:
-    """Delete the approval message, found in the review's channel as the review's own redraw finds
-    it. A message already gone, or its channel, completes the job; a deletion Discord refuses
-    raises, for the queue to stop the round's lane at it."""
-    payload = ctx.step_payload
-    channel = as_text_channel(ctx.bot.get_channel(int(payload["channel_id"])))
-    if channel is None:
-        return StepResult(result={"gone": True})
-    message_id = int(payload["message_id"])
-    failures: list[discord.HTTPException] = []
-    left = await _delete_posting(
-        channel, message_id, [message_id], label=payload.get("what", "message"),
-        failures=failures,
-    )
-    if left:
-        raise StepFailedOnDiscord(
-            "the approval message could not be deleted",
-            result={"link": channel.get_partial_message(message_id).jump_url},
-        ) from (failures[0] if failures else None)
-    return StepResult(result={"deleted": True})
-
-
 async def _redraw(ctx: StepContext) -> StepResult:
     """Edit the review's prompt to show what is staged, as the review's own refresh does (it
     raises, to stop the round's lane at this job, where Discord refuses the edit)."""
@@ -233,10 +207,6 @@ async def _describe_stage(ctx: StepContext) -> str:
 
 async def _describe_redraw(ctx: StepContext) -> str:
     return f"redrawing the penalty review prompt in <#{ctx.payload['channel_id']}>"
-
-
-async def _describe_withdraw(ctx: StepContext) -> str:
-    return f"withdrawing the approval message in <#{ctx.step_payload['channel_id']}>"
 
 
 async def conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
@@ -278,9 +248,8 @@ def review_stage_change() -> ChangeType:
 
     steps: dict[str, Step] = {
         STAGE: Step(STAGE, StepKind.ACT, _stage, describe=_describe_stage),
-        WITHDRAW_APPROVAL: Step(
-            WITHDRAW_APPROVAL, StepKind.DELETE, _withdraw, describe=_describe_withdraw,
-            record=_clear_approval_on_the_row,
+        WITHDRAW_APPROVAL: review_posting.delete_message_step(
+            WITHDRAW_APPROVAL, record=_clear_approval_on_the_row,
         ),
         REDRAW: Step(REDRAW, StepKind.EDIT, _redraw, describe=_describe_redraw),
     }
