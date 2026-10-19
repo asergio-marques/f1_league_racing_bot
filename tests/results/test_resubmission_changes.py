@@ -73,12 +73,6 @@ ROUND_ID = 21
 LANE = f"channel:{SUBMISSION_CHANNEL}"
 ANNOUNCEMENT = "⚠️ **Results resubmission started.**"
 
-NO_RESUBMISSION_ON_THE_QUEUE = (
-    "#439: Resubmit starts `enter_resubmit_flow` at the press and collects the pastes in "
-    "`_resubmit_collection_task`'s wait, off the change queue, rather than through "
-    "`results.resubmission.start`, its turns and the swap"
-)
-
 QUALIFYING_TYPE, RACE_TYPE = get_sessions_for_format(RoundFormat.NORMAL)[:2]
 QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
@@ -230,7 +224,6 @@ async def test_the_announcement_s_id_is_saved_with_its_mark(tmp_path, monkeypatc
     assert posted["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_each_resubmitted_paste_is_a_draft_saved_by_its_turn(tmp_path, monkeypatch):
     """With the resubmission started, the manager types CANCELLED for Qualifying. The message is
     marked ⏳ at once and a turn asked on the round's lane; nothing is saved until it runs. Once it
@@ -254,7 +247,6 @@ async def test_each_resubmitted_paste_is_a_draft_saved_by_its_turn(tmp_path, mon
     assert MARK not in message.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_resubmitted_paste_while_its_turn_waits_is_turned_away_and_logged(
     tmp_path, monkeypatch,
 ):
@@ -287,7 +279,6 @@ async def test_a_resubmitted_paste_while_its_turn_waits_is_turned_away_and_logge
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "CANCELLED")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_last_resubmitted_paste_swaps_the_results_takes_cancel_down_and_opens_the_review(
     tmp_path, monkeypatch,
 ):
@@ -313,7 +304,6 @@ async def test_the_last_resubmitted_paste_swaps_the_results_takes_cancel_down_an
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_resubmission_s_drafts_survive_a_restart_until_it_is_abandoned(
     tmp_path, monkeypatch,
 ):
@@ -360,7 +350,6 @@ async def test_a_restart_during_a_resubmission_abandons_it_in_the_review_s_own_j
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_refused_cancel_take_down_after_the_swap_stops_the_queue(tmp_path, monkeypatch):
     """Discord refuses to edit the announcement (Missing Permissions) when its Cancel button is to
     come down after the last paste. The results are swapped all the same and the drafts gone,
@@ -399,7 +388,6 @@ async def test_a_restart_notice_whose_channel_is_gone_completes_and_the_resubmis
     assert await _drafts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_last_resubmitted_paste_hands_the_swap_to_the_league(tmp_path, monkeypatch):
     """The league lane is stopped at another job when the manager types the last paste. The
     paste's turn still runs on the round's lane, but the swap waits on the league: the round is

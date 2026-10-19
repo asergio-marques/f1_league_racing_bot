@@ -64,12 +64,6 @@ from tests.support.change_queue import (
 from tests.support.review_league import ReviewLeague
 from tests.support.teams import seed_team_instances
 
-NO_RESUBMISSION_ON_THE_QUEUE = (
-    "#439: Resubmit starts `enter_resubmit_flow` at the press and collects the pastes in "
-    "`_resubmit_collection_task`'s wait, off the change queue, rather than through "
-    "`results.resubmission.start`, its turns and the swap"
-)
-
 AMENDED = "Provisional Results (amended)"
 AMENDED_ROUND = 20
 AMEND_CHANNEL = 8200
@@ -132,7 +126,6 @@ async def _review_asked(league: ReviewLeague) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_each_session_is_saved_again(tmp_path, monkeypatch):
     """Alex presses Resubmit on round 3 (Pro, Normal) and types Qualifying's results, then the
     Feature Race's. Once the queue has run, the round holds both sessions anew."""
@@ -147,7 +140,6 @@ async def test_each_session_is_saved_again(tmp_path, monkeypatch):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_sprint_round_asks_for_all_four_sessions(tmp_path, monkeypatch):
     """Round 3 is a Sprint round. Alex resubmits and types each of its four sessions in racing
     order: the round then holds all four, in that order."""
@@ -164,7 +156,6 @@ async def test_a_sprint_round_asks_for_all_four_sessions(tmp_path, monkeypatch):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_round_goes_back_to_penalty_review_as_a_resubmission(tmp_path, monkeypatch):
     """Once the last session is in, the round's review is asked again, publishing the new
     results as "Provisional Results (amended)", so the tables it posts say they replace the
@@ -182,7 +173,6 @@ async def test_the_round_goes_back_to_penalty_review_as_a_resubmission(tmp_path,
     assert not back.get("returning")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_refused_paste_is_answered_and_the_session_asked_again(tmp_path, monkeypatch):
     """Alex types "garbage" for Qualifying. Its turn answers in channel 702 that validation
     failed, and nothing is saved; Qualifying's and the race's results typed after it are taken."""
@@ -202,7 +192,6 @@ async def test_a_refused_paste_is_answered_and_the_session_asked_again(tmp_path,
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path, monkeypatch):
     """Qualifying is taken; the race is then typed with a fastest-lap override naming <@999>,
     who is not in it. The paste is refused naming the override, and only Qualifying is held."""
@@ -217,7 +206,6 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path,
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "ACTIVE")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_every_session_cancelled_closes_the_channel(tmp_path, monkeypatch):
     """Alex types CANCELLED for both sessions. The resubmission closes channel 702 rather than
     asking the review again."""
@@ -237,7 +225,6 @@ async def test_every_session_cancelled_closes_the_channel(tmp_path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path, monkeypatch):
     """**Issue #210.** A resubmission supersedes the round's results rather than deleting them
     first. With Qualifying typed, the round still holds exactly its earlier Feature Race, and
@@ -257,7 +244,6 @@ async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path, 
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_team_agreement_is_checked_against_the_resubmission_not_the_old_results(
     tmp_path, monkeypatch,
 ):
@@ -280,7 +266,6 @@ async def test_team_agreement_is_checked_against_the_resubmission_not_the_old_re
     assert [swap["state"] for swap in await _changes(league, SWAP_KIND)] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path, monkeypatch):
     """Lewis is a reserve, so no seat pins his team: only the Qualifying just typed does, under
     FER. The race typed with him under MCL is refused, saying where he was recorded, and only
@@ -313,7 +298,6 @@ async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path, 
 # one is open, the last of them being what swaps the results in.
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(
     tmp_path, monkeypatch,
 ):
@@ -334,7 +318,6 @@ async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(
     assert await _drafts(league) == [(QUALIFYING_TYPE.value, "ACTIVE")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_last_paste_refused_leaves_the_earlier_results_standing(tmp_path, monkeypatch):
     """Qualifying is taken; round 2's amendment then opens, and the race typed is refused. The
     round still holds its earlier results, and no swap is asked."""
@@ -350,7 +333,6 @@ async def test_the_last_paste_refused_leaves_the_earlier_results_standing(tmp_pa
     assert await _changes(league, SWAP_KIND) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_cancelling_a_resubmitted_session_is_refused_while_amended(tmp_path, monkeypatch):
     """Round 2 is being amended when Alex types CANCELLED for Qualifying: refused, nothing
     held."""
@@ -378,7 +360,6 @@ async def test_the_button_is_labelled_cancel(tmp_path, monkeypatch):
     assert [child.label for child in _announcement(league).view.children] == ["Cancel"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_cancelling_the_resubmission_keeps_the_earlier_results(tmp_path, monkeypatch):
     """Alex types Qualifying, then presses Cancel. The round keeps its earlier results and the
     channel is no longer resubmitting."""
@@ -392,7 +373,6 @@ async def test_cancelling_the_resubmission_keeps_the_earlier_results(tmp_path, m
     assert (await _row(league))["resubmitting"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(
     tmp_path, monkeypatch,
 ):

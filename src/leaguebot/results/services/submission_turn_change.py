@@ -1,5 +1,11 @@
 """`results.submission.turn` and `.config`: each results paste a turn on the round's lane (#439, 6b).
 
+**A resubmission's pastes are turns of the same shape** (`results.resubmission.turn` and
+`.config`, built by `resubmission_changes`, which share these jobs): a paste is judged against the
+session the resubmission then expects, and an accepted one is held as a draft (`save_draft`, in
+place of `save_session`) while the round's own results stand. The last draft hands the swap to the
+league (see `resubmission_changes`).
+
 A league manager's message in a round's open submission channel is marked ⏳ at once (`take_paste`)
 and `results.submission.turn` is asked for it, as the member's, on the round's own lane
 (``channel:<submission channel>``). Nothing waits in memory for the next paste. When its turn comes
@@ -31,6 +37,7 @@ typed before the cancellation is answered, and nothing saved, when its turn come
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -67,15 +74,25 @@ from leaguebot.results.utils import results_formatter
 
 KIND = "results.submission.turn"
 CONFIG_KIND = "results.submission.config"
+RESUBMISSION_KIND = "results.resubmission.turn"
+RESUBMISSION_CONFIG_KIND = "results.resubmission.config"
+SWAP_KIND = "results.resubmission.swap"
 JUDGE = "judge"
 SETTLE = "settle"
 SAVE_SESSION = "save_session"
+SAVE_DRAFT = "save_draft"
 POST_CONFIG_CHOICE = "post_config_choice"
 POST_OPENING_REVIEW = "post_opening_review"
 
 __all__ = [
-    "CONFIG_KIND", "KIND", "submission_config_change", "submission_turn_change", "take_paste",
+    "CONFIG_KIND", "KIND", "NO_CONFIG", "RESUBMISSION_CONFIG_KIND", "RESUBMISSION_KIND",
+    "SWAP_KIND", "submission_config_change", "submission_turn_change", "take_paste", "turn_steps",
 ]
+
+#: The configuration name a draft keeps for a season with none attached. A draft whose
+#: configuration is unset is still awaiting its choice (`expected_resubmitted_session_on`), so a
+#: season with nothing to choose stores this, and the swap saves the session with none.
+NO_CONFIG = ""
 
 #: The round whose submission is held in a channel, with what its turns need to know of it.
 _ROUND = (
@@ -89,7 +106,7 @@ _ROUND = (
 #: The tables a turn's saves may write.
 _WRITES = (
     "session_results", "qualifying_session_results", "race_session_results",
-    "round_submission_channels",
+    "round_submission_channels", "resubmission_drafts",
 )
 
 ServerConfig = Callable[[], Awaitable[Any]]
@@ -130,13 +147,17 @@ async def take_paste(
     """
     async with get_connection(bot.db_path) as db:
         row = await (await db.execute(_ROUND, (message.channel.id,))).fetchone()
-        if row is None or row["closed"] or row["resubmitting"]:
+        if row is None or row["closed"]:
             return
         if not isinstance(message.author, discord.Member) or config is None or not (
             is_league_manager(config, message.author)
         ):
             return
-        expected = await submissions.expected_session_on(db, int(row["round_id"]))
+        resubmitting = bool(row["resubmitting"])
+        expected = await (
+            submissions.expected_resubmitted_session_on if resubmitting
+            else submissions.expected_session_on
+        )(db, int(row["round_id"]))
     if await typed_turns.turn_waiting(bot.db_path, queue.types, message.channel.id):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
         waiting = "its session" if expected is None else _label(expected, row)
@@ -151,7 +172,7 @@ async def take_paste(
         return
     await typed_turns.mark(message)
     await queue.ask(
-        KIND,
+        RESUBMISSION_KIND if resubmitting else KIND,
         {
             "channel_id": message.channel.id,
             "message_id": message.id,
@@ -161,7 +182,10 @@ async def take_paste(
             "typed_at": message.created_at.isoformat(),
         },
         actor=message.author,
-        what=f"a results paste for round {row['round_number']}",
+        what=(
+            f"a resubmitted results paste for round {row['round_number']}" if resubmitting
+            else f"a results paste for round {row['round_number']}"
+        ),
     )
 
 
@@ -169,8 +193,15 @@ def _say(channel_id: int, text: str) -> PlannedStep:
     return PlannedStep(POST, {"channel_id": channel_id, "text": text})
 
 
-def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
-    """The jobs the two changes share, keyed by their names."""
+def turn_steps(
+    queue: ChangeQueue, server_config: ServerConfig, *, resubmission: bool = False
+) -> dict[str, Step]:
+    """The jobs a dialogue's turn and its configuration change share, keyed by their names.
+
+    With *resubmission* the turn judges against the session a resubmission expects and holds an
+    accepted one as a draft (`save_draft`), in place of a first submission's `save_session`.
+    """
+    held_verb = "received" if resubmission else "saved"
 
     async def judge(ctx: StepContext) -> StepResult:
         payload = ctx.payload
@@ -179,10 +210,12 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         clear = (PlannedStep(typed_turns.CLEAR_MARK, mark),)
         async with get_connection(ctx.db_path) as db:
             row = await (await db.execute(_ROUND, (channel_id,))).fetchone()
-            expected = (
-                None if row is None
-                else await submissions.expected_session_on(db, int(row["round_id"]))
-            )
+            if row is not None and bool(row["resubmitting"]) != resubmission:
+                row = None
+            expected = None if row is None else await (
+                submissions.expected_resubmitted_session_on if resubmission
+                else submissions.expected_session_on
+            )(db, int(row["round_id"]))
         if row is None or expected is None:
             return StepResult(result={"judged": False}, then=clear)
         round_id = int(row["round_id"])
@@ -218,7 +251,14 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         lines = content.splitlines()
         current_of = await submissions.current_accounts(ctx.db_path)
         fl_override, lines = submissions.extract_current_fl_override(lines, expected, current_of)
-        other = await submissions.other_active_team_assignments(ctx.db_path, round_id, expected)
+        if resubmission:
+            # Checked against the resubmission's own drafts, not the stored results being
+            # replaced: those may be wrong in exactly the way that made the manager resubmit.
+            async with get_connection(ctx.db_path) as db:
+                drafted = await submissions.resubmission_drafts_on(db, round_id)
+            other = submissions.collected_team_assignments(drafted, expected)
+        else:
+            other = await submissions.other_active_team_assignments(ctx.db_path, round_id, expected)
         data = await submissions._build_division_validation_data(int(row["division_id"]), ctx.bot)
         errors, parsed = submissions.split_validation(
             submissions.validate_submission_block(
@@ -279,11 +319,11 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         settle_paste = {
             **base, "status": "ACTIVE", "rows": driver_rows, "fl_override": fl_override,
             "held_then": f"Paste **{label}** again then.",
-            "saved_text": f"✅ **{label}** results saved.",
+            "saved_text": f"✅ **{label}** results {held_verb}.",
             "accepted_line": accepted,
         }
         # What the configuration's choice has to say is said with the save, in one post.
-        said = f"✅ **{label}** results saved."
+        said = f"✅ **{label}** results {held_verb}."
         config_names = await season_points_service.get_attached_config_names(
             ctx.db_path, int(row["season_id"])
         )
@@ -318,9 +358,11 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
             result={"judged": "no configuration"},
             then=(
                 PlannedStep(SETTLE, {
-                    **settle_paste, "config_name": None,
-                    "saved_text": "⚠️ No points configuration attached to this season. "
-                                  f"Results will be saved without a config.\n{said}",
+                    **settle_paste, "config_name": NO_CONFIG if resubmission else None,
+                    "saved_text": said if resubmission else (
+                        "⚠️ No points configuration attached to this season. "
+                        f"Results will be saved without a config.\n{said}"
+                    ),
                 }),
                 *clear,
             ),
@@ -340,7 +382,10 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         )
         if held:
             return StepResult(result={"held": True}, then=(_say(channel_id, held),))
-        return StepResult(result={"held": False}, then=(PlannedStep(SAVE_SESSION, dict(payload)),))
+        return StepResult(
+            result={"held": False},
+            then=(PlannedStep(SAVE_DRAFT if resubmission else SAVE_SESSION, dict(payload)),),
+        )
 
     async def save_session(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
@@ -423,6 +468,79 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
             ),),
         )
 
+    async def save_draft(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Hold the session as a draft of the resubmission, then ask for the next session, or, with
+        every session drafted, hand the swap of the round's results to the league."""
+        payload = ctx.step_payload
+        round_id = int(payload["round_id"])
+        channel_id = int(payload["channel_id"])
+        session = SessionType(payload["session_type"])
+        already = await (
+            await db.execute(
+                "SELECT 1 FROM resubmission_drafts WHERE round_id = ? AND session_type = ? "
+                "AND (config_name IS NOT NULL OR status = 'CANCELLED')",
+                (round_id, session.value),
+            )
+        ).fetchone()
+        if already is not None:
+            # Two presses of one picker reach the queue; the first held it.
+            return StepResult(result={"saved": False})
+        await db.execute(
+            "INSERT OR REPLACE INTO resubmission_drafts "
+            "(round_id, session_type, status, rows_json, config_name, submitted_by) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                round_id, session.value, str(payload["status"]),
+                json.dumps({"rows": payload["rows"], "fl_override": payload["fl_override"]}),
+                payload["config_name"], int(payload["submitted_by"]),
+            ),
+        )
+        lines = tuple(
+            line for line in (payload.get("accepted_line"), payload.get("choice_line")) if line
+        )
+        then: list[PlannedStep] = [_say(channel_id, str(payload["saved_text"]))]
+        upcoming = await submissions.expected_resubmitted_session_on(db, round_id)
+        if upcoming is not None:
+            then.append(PlannedStep(
+                POST_PROMPT,
+                {
+                    "channel_id": channel_id, "round_id": round_id,
+                    "session_type": upcoming.value, "override_fl": True,
+                },
+            ))
+            return StepResult(result={"saved": True}, lines=lines, then=tuple(then))
+        drafted = await submissions.resubmission_drafts_on(db, round_id)
+        announcement = await (
+            await db.execute(
+                "SELECT resubmit_prompt_message_id FROM round_submission_channels "
+                "WHERE round_id = ?",
+                (round_id,),
+            )
+        ).fetchone()
+        everything_cancelled = all(each.status == "CANCELLED" for each in drafted)
+        asked: dict[str, Any] = {
+            "round_id": round_id,
+            "channel_id": channel_id,
+            "division_id": int(payload["division_id"]),
+            "season_id": int(payload["season_id"]),
+            "round_number": int(payload["round_number"]),
+            "division_name": payload["division_name"],
+            "cancel_message_id": (
+                None if announcement is None else announcement["resubmit_prompt_message_id"]
+            ),
+            "all_cancelled": everything_cancelled,
+        }
+        if payload.get("mark") is not None and not everything_cancelled:
+            asked["mark"] = payload["mark"]
+        return StepResult(
+            result={"saved": True, "review_asked": not everything_cancelled}, lines=lines,
+            then=tuple(then),
+            follow_ons=(FollowOn(
+                SWAP_KIND, asked,
+                f"replacing round {payload['round_number']}'s results with the resubmission",
+            ),),
+        )
+
     async def post_opening_review(ctx: StepContext) -> StepResult:
         """Say in the channel that the review is being opened, with its first job's number and,
         where the league's queue is stopped, the job it is stopped at (results spec :382)."""
@@ -458,7 +576,11 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         payload = ctx.step_payload
         return submissions._ConfigSelectView(
             list(payload["config_names"]), await server_config(),
-            session=str(payload["session"]), ask=(CONFIG_KIND, dict(payload["settle"])),
+            session=str(payload["session"]),
+            ask=(
+                RESUBMISSION_CONFIG_KIND if resubmission else CONFIG_KIND,
+                dict(payload["settle"]),
+            ),
         )
 
     async def describe_judge(_ctx: StepContext) -> str:
@@ -471,13 +593,18 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         payload = ctx.step_payload
         return f"saving the {payload['label']} of round {payload['round_number']}"
 
+    async def describe_draft(ctx: StepContext) -> str:
+        payload = ctx.step_payload
+        return f"holding the {payload['label']} of round {payload['round_number']}'s resubmission"
+
     async def describe_opening_review(_ctx: StepContext) -> str:
         return "working out the number of the penalty review's first job"
 
     async def still_marked(ctx: StepContext) -> bool:
         """The last paste's ⏳ stays until the review's prompt appears and clears it."""
         return not any(
-            view.name == SAVE_SESSION and view.result and view.result.get("review_asked")
+            view.name in (SAVE_SESSION, SAVE_DRAFT) and view.result
+            and view.result.get("review_asked")
             for view in ctx.steps
         )
 
@@ -485,6 +612,7 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
         SETTLE: Step(SETTLE, StepKind.ACT, settle, describe=describe_settle),
         SAVE_SESSION: Step(SAVE_SESSION, StepKind.SAVE, save_session, describe=describe_save),
+        SAVE_DRAFT: Step(SAVE_DRAFT, StepKind.SAVE, save_draft, describe=describe_draft),
         POST: post_step(describing="posting a line in the submission channel"),
         POST_PROMPT: post_prompt_step(),
         POST_CONFIG_CHOICE: post_choice_step(
@@ -500,19 +628,32 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
     }
 
 
-async def _check(ctx: CheckContext) -> Verdict:
-    async with get_connection(ctx.db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT 1 FROM round_submission_channels WHERE channel_id = ?",
-                (int(ctx.payload["channel_id"]),),
-            )
-        ).fetchone()
-    return Verdict.go() if row is not None else Verdict.not_due("the round's submission is gone")
+def _checking(resubmission: bool) -> Callable[[CheckContext], Awaitable[Verdict]]:
+    """The check of a turn or its configuration: due while the round's submission stands, and,
+    for a resubmission's, while the round is still being resubmitted."""
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT resubmitting FROM round_submission_channels WHERE channel_id = ?",
+                    (int(ctx.payload["channel_id"]),),
+                )
+            ).fetchone()
+        if row is None:
+            return Verdict.not_due("the round's submission is gone")
+        if resubmission and not row["resubmitting"]:
+            return Verdict.not_due("the resubmission has ended")
+        return Verdict.go()
+
+    return check
 
 
-def submission_turn_change(*, queue: ChangeQueue, server_config: ServerConfig) -> ChangeType:
-    """The `results.submission.turn` change type, for the builder to register.
+def submission_turn_change(
+    *, queue: ChangeQueue, server_config: ServerConfig, resubmission: bool = False
+) -> ChangeType:
+    """The `results.submission.turn` change type, for the builder to register; with
+    *resubmission*, `results.resubmission.turn`, a resubmission's paste held as a draft.
 
     *queue* is the change queue, which tells the review's stopped job; *server_config* reads the
     server configuration the points-configuration picker checks its presser against. The payload
@@ -523,13 +664,16 @@ def submission_turn_change(*, queue: ChangeQueue, server_config: ServerConfig) -
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
+    kind = RESUBMISSION_KIND if resubmission else KIND
     return ChangeType(
-        kind=KIND,
+        kind=kind,
         opening=(PlannedStep(JUDGE),),
-        steps=_steps(queue, server_config),
-        check=_check,
-        key=lambda payload: f"{KIND}:{payload['message_id']}",
-        doing=lambda _payload: "Taking a results paste",
+        steps=turn_steps(queue, server_config, resubmission=resubmission),
+        check=_checking(resubmission),
+        key=lambda payload: f"{kind}:{payload['message_id']}",
+        doing=lambda _payload: (
+            "Taking a resubmitted results paste" if resubmission else "Taking a results paste"
+        ),
         outcome=outcome,
         lane=_lane,
         conversation_open=_conversation_open,
@@ -538,9 +682,12 @@ def submission_turn_change(*, queue: ChangeQueue, server_config: ServerConfig) -
     )
 
 
-def submission_config_change(*, queue: ChangeQueue, server_config: ServerConfig) -> ChangeType:
+def submission_config_change(
+    *, queue: ChangeQueue, server_config: ServerConfig, resubmission: bool = False
+) -> ChangeType:
     """The `results.submission.config` change type, for the builder to register: a session pasted
-    and judged, saved with the configuration its press chose.
+    and judged, saved with the configuration its press chose; with *resubmission*,
+    `results.resubmission.config`, held as a draft.
 
     The payload is the session's (`judge`'s ``settle``) with ``config_name`` and the press's
     ``choice_line``.
@@ -552,12 +699,13 @@ def submission_config_change(*, queue: ChangeQueue, server_config: ServerConfig)
     def outcome(ctx: OutcomeContext) -> str:
         payload = ctx.payload
         if any(
-            view.name == SAVE_SESSION and view.done and (view.result or {}).get("saved")
+            view.name in (SAVE_SESSION, SAVE_DRAFT) and view.done
+            and (view.result or {}).get("saved")
             for view in ctx.steps
         ):
             return (
-                f"✅ The {payload['label']} of round {payload['round_number']} is saved, scored "
-                f"by **{payload['config_name']}**."
+                f"✅ The {payload['label']} of round {payload['round_number']} is "
+                f"{'held' if resubmission else 'saved'}, scored by **{payload['config_name']}**."
             )
         held = next(
             (
@@ -568,16 +716,17 @@ def submission_config_change(*, queue: ChangeQueue, server_config: ServerConfig)
         )
         return held or "ℹ️ Nothing was saved."
 
+    kind = RESUBMISSION_CONFIG_KIND if resubmission else CONFIG_KIND
     return ChangeType(
-        kind=CONFIG_KIND,
+        kind=kind,
         opening=(),
         plan=plan,
-        steps=_steps(queue, server_config),
-        check=_check,
-        key=lambda payload: f"{CONFIG_KIND}:{payload['channel_id']}:{payload['session_type']}",
+        steps=turn_steps(queue, server_config, resubmission=resubmission),
+        check=_checking(resubmission),
+        key=lambda payload: f"{kind}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (
-            f"Saving the {payload['label']} of round {payload['round_number']} with the "
-            f"{payload['config_name']} configuration"
+            f"{'Holding' if resubmission else 'Saving'} the {payload['label']} of round "
+            f"{payload['round_number']} with the {payload['config_name']} configuration"
         ),
         outcome=outcome,
         lane=_lane,

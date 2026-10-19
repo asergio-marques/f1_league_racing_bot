@@ -3866,35 +3866,84 @@ async def replace_round_results(
     """
     async with get_connection(db_path) as db:
         try:
-            await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
-            for session in collected:
-                session_result_id = await _save_session_result_in_tx(
-                    db, round_id, division_id, session.session_type, session.status,
-                    session.config_name, session.submitted_by, session.driver_rows,
-                    fl_driver_override=session.fl_driver_override,
-                )
-                if session.config_name is not None:
-                    await _apply_points_in_tx(
-                        db, session_result_id, season_id, session.config_name,
-                        session.session_type,
-                    )
-            await db.execute(
-                "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0, "
-                "resubmit_prompt_message_id = NULL WHERE round_id = ?",
-                (round_id,),
-            )
+            await replace_round_results_on(db, round_id, division_id, season_id, collected)
             await db.commit()
         except BaseException:
             await db.rollback()
             raise
 
 
+async def replace_round_results_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    season_id: int,
+    collected: list[CollectedSession],
+) -> None:
+    """`replace_round_results` on the connection handed, committing nothing: the resubmission's
+    swap does it in a save of its own (#439)."""
+    await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
+    for session in collected:
+        session_result_id = await _save_session_result_in_tx(
+            db, round_id, division_id, session.session_type, session.status,
+            session.config_name, session.submitted_by, session.driver_rows,
+            fl_driver_override=session.fl_driver_override,
+        )
+        if session.config_name is not None:
+            await _apply_points_in_tx(
+                db, session_result_id, season_id, session.config_name,
+                session.session_type,
+            )
+    await db.execute(
+        "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0, "
+        "resubmit_prompt_message_id = NULL WHERE round_id = ?",
+        (round_id,),
+    )
+
+
+async def resubmission_drafts_on(
+    db: aiosqlite.Connection, round_id: int
+) -> list[CollectedSession]:
+    """The sessions a round's resubmission holds as drafts, in running order, read on the
+    connection handed. A draft kept for a season with no configuration to choose
+    (`NO_CONFIG`) gives none."""
+    row = await (await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))).fetchone()
+    if row is None:
+        return []
+    drafts = {
+        found["session_type"]: found
+        for found in await (
+            await db.execute(
+                "SELECT session_type, status, rows_json, config_name, submitted_by "
+                "FROM resubmission_drafts WHERE round_id = ?",
+                (round_id,),
+            )
+        ).fetchall()
+    }
+    collected: list[CollectedSession] = []
+    for session in get_sessions_for_format(RoundFormat(row["format"])):
+        found = drafts.get(session.value)
+        if found is None:
+            continue
+        held = _json.loads(found["rows_json"])
+        collected.append(CollectedSession(
+            session, found["status"], found["config_name"] or None, found["submitted_by"],
+            list(held["rows"]), held["fl_override"],
+        ))
+    return collected
+
+
 class ResubmissionCancelView(LeagueView):
     """The **Cancel** button on a resubmission's announcement.
 
     Pressing it ends the resubmission and keeps the round's earlier results, which were never
-    touched: nothing is written until the last session is in. Not persistent — a restart ends
-    the resubmission itself, and the restart sweep takes the button down.
+    touched: nothing is written until the last session is in. The press asks the queue for the
+    round's review back (`results.review.open`, returning as cancelled), answered privately; the
+    review's own jobs end the resubmission and take the button down. Not persistent — a restart
+    ends the resubmission itself, and the restart sweep takes the button down.
+
+    The *state* is the review the button belongs to (`resubmission_changes.ReviewRef`, which also
+    hands the queue; a bare review state stands in for it where a press is refused).
     """
 
     def __init__(self, state) -> None:
@@ -3924,12 +3973,14 @@ class ResubmissionCancelView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
-        self.cancelled_by = interaction.user.id
-        self.pressed.set()
-        await interaction.response.send_message(
-            "Resubmission cancelled. The earlier results stand.", ephemeral=True
-        )
-        self.stop()
+        from leaguebot.results.services.resubmission_changes import ask_resubmission_cancel
+
+        if await ask_resubmission_cancel(
+            interaction, self.state, what=_button(button.label, self.state)
+        ):
+            self.cancelled_by = interaction.user.id
+            self.pressed.set()
+            self.stop()
 
 
 async def _next_paste(bot: LeagueBot, sub_channel, cancel_view: ResubmissionCancelView | None):
@@ -4185,7 +4236,7 @@ async def enter_resubmit_flow(
     )
 
 
-def _collected_team_assignments(
+def collected_team_assignments(
     collected: list[CollectedSession],
     exclude_session_type: SessionType,
 ) -> dict[int, tuple[int, str]]:
@@ -4370,7 +4421,7 @@ async def _resubmit_collection_task(
             # Checked against the sessions of this resubmission, not the round's stored
             # results: those are the ones being replaced, and may be wrong in exactly the way
             # that made the manager resubmit.
-            other_assignments = _collected_team_assignments(collected, session_type)
+            other_assignments = collected_team_assignments(collected, session_type)
             result = validate_submission_block(
                 lines, session_type, division_driver_ids, team_of_role,
                 reserve_team_role_id, driver_team_map, reserve_driver_ids,

@@ -17,6 +17,13 @@ own lane (``channel:<submission channel>``), the conversation it begins. Its job
 4. **`first_prompt`** reads the first session the resubmission expects and plans the
    **`post_prompt`** that asks for it.
 
+**The pastes that follow** are `results.resubmission.turn`s on the same lane
+(`submission_turn_change`), each held as a draft. The last hands **`results.resubmission.swap`**
+to the league lane, which replaces the round's results with the drafts, deletes them, and asks the
+review again, naming the announcement so that its Cancel button comes down with the prompt's
+posting; with every session cancelled it asks the round's cancelled sessions posted and the
+channel closed instead. **Cancel** asks the review back as cancelled (`ask_resubmission_cancel`).
+
 The round's results stand meanwhile: nothing is deleted or replaced until every session has been
 entered again. **A channel that cannot be found refuses the press** before anything is discarded:
 with nowhere to collect in, the review is all the round has. The press clears the review's staged
@@ -33,7 +40,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
     ChangeType,
@@ -43,7 +50,10 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.results.services import result_submission_service as submissions
+from leaguebot.results.services import review_open_change
 from leaguebot.results.services.review_posting import DELETE_MESSAGE, posting_steps
+from leaguebot.results.services.submission_changes import ALL_CANCELLED_KIND
+from leaguebot.results.services.submission_turn_change import SWAP_KIND
 from leaguebot.results.services.submission_steps import (
     POST_PROMPT,
     post_choice_step,
@@ -51,6 +61,7 @@ from leaguebot.results.services.submission_steps import (
 )
 
 KIND = "results.resubmission.start"
+SWAP = "swap"
 MARK = "mark"
 DELETE_PROMPT = "delete_prompt"
 DELETE_APPROVAL = "delete_approval"
@@ -63,7 +74,10 @@ ANNOUNCEMENT = (
     "Press **Cancel** to stop and keep them."
 )
 
-__all__ = ["KIND", "ask_resubmission_start", "resubmission_start_change"]
+__all__ = [
+    "KIND", "ask_resubmission_cancel", "ask_resubmission_start",
+    "resubmission_start_change", "resubmission_swap_change",
+]
 
 
 @dataclass(frozen=True)
@@ -74,8 +88,10 @@ class ReviewRef:
 
     bot: Any
     db_path: str
+    round_id: int
     round_number: int
     division_name: str
+    queue: ChangeQueue
 
 
 def _lane(payload: dict[str, Any]) -> str:
@@ -128,7 +144,7 @@ def _plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
             "what": "approval message",
         }))
     steps.append(PlannedStep(POST_ANNOUNCEMENT, {
-        "channel_id": channel_id, "text": ANNOUNCEMENT,
+        "channel_id": channel_id, "text": ANNOUNCEMENT, "round_id": int(payload["round_id"]),
         "round_number": payload["round_number"], "division_name": payload["division_name"],
     }))
     steps.append(PlannedStep(FIRST_PROMPT, {
@@ -148,8 +164,9 @@ def _started_line(named: str, payload: dict[str, Any]) -> str:
     )
 
 
-def resubmission_start_change() -> ChangeType:
-    """The `results.resubmission.start` change type, for the builder to register.
+def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
+    """The `results.resubmission.start` change type, for the builder to register; *queue* is
+    handed to the Cancel button it posts, which asks the review back of it.
 
     The payload is ``round_id``, ``division_id``, ``round_number``, ``division_name``,
     ``channel_id`` (the submission channel), ``started_by``, ``prompt_message_id`` and
@@ -191,7 +208,8 @@ def resubmission_start_change() -> ChangeType:
         payload = ctx.step_payload
         return submissions.ResubmissionCancelView(
             ReviewRef(
-                ctx.bot, ctx.db_path, int(payload["round_number"]), str(payload["division_name"])
+                ctx.bot, ctx.db_path, int(payload["round_id"]), int(payload["round_number"]),
+                str(payload["division_name"]), queue,
             )
         )
 
@@ -235,6 +253,95 @@ def resubmission_start_change() -> ChangeType:
         lane=_lane,
         conversation_open=_conversation_open,
         writes=("round_submission_channels",),
+    )
+
+
+def resubmission_swap_change() -> ChangeType:
+    """The `results.resubmission.swap` change type, for the builder to register, on the league
+    lane: the last resubmitted paste, handed over by the round's lane.
+
+    The payload is ``round_id``, ``channel_id``, ``division_id``, ``season_id``, ``round_number``,
+    ``division_name``, ``cancel_message_id`` (the announcement, None where unrecorded),
+    ``all_cancelled`` and the last paste's ``mark``. Its one job, ``swap``, is one save: the
+    round's results replaced by the drafts (`replace_round_results_on`, which clears the
+    resubmission's flag), the drafts deleted, and the next request asked in the same save. With a
+    session held the review is asked again, publishing the new results as "Provisional Results
+    (amended)"; with every session cancelled the cancelled sessions are asked posted and the
+    channel closed (`results.submission.all_cancelled`).
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT resubmitting FROM round_submission_channels WHERE round_id = ?",
+                    (int(ctx.payload["round_id"]),),
+                )
+            ).fetchone()
+        if row is None or not row["resubmitting"]:
+            return Verdict.not_due("the resubmission has ended")
+        return Verdict.go()
+
+    async def swap(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        payload = ctx.payload
+        round_id = int(payload["round_id"])
+        held = await submissions.resubmission_drafts_on(db, round_id)
+        await submissions.replace_round_results_on(
+            db, round_id, int(payload["division_id"]), int(payload["season_id"]), held
+        )
+        await db.execute("DELETE FROM resubmission_drafts WHERE round_id = ?", (round_id,))
+        number = payload["round_number"]
+        if payload["all_cancelled"]:
+            order = [session.session_type for session in held]
+            entered = await (
+                await db.execute(
+                    "SELECT id, session_type FROM session_results WHERE round_id = ?", (round_id,)
+                )
+            ).fetchall()
+            sessions = sorted(
+                ({"session_id": int(each["id"]), "session_type": each["session_type"]}
+                 for each in entered),
+                key=lambda each: [value.value for value in order].index(each["session_type"]),
+            )
+            follow_on = FollowOn(
+                ALL_CANCELLED_KIND,
+                {
+                    "round_id": round_id, "channel_id": int(payload["channel_id"]),
+                    "round_number": number, "sessions": sessions,
+                },
+                f"posting round {number}'s cancelled sessions",
+            )
+        else:
+            asked: dict[str, Any] = {
+                "round_id": round_id,
+                "round_number": number,
+                "division_name": payload["division_name"],
+                "label": "Provisional Results (amended)",
+                "publish": True,
+                "cancel_message_id": payload.get("cancel_message_id"),
+            }
+            if payload.get("mark") is not None:
+                asked["mark"] = payload["mark"]
+            follow_on = FollowOn(
+                review_open_change.KIND, asked, f"the penalty review of round {number}"
+            )
+        return StepResult(result={"swapped": True}, follow_ons=(follow_on,))
+
+    async def describe_swap(_ctx: StepContext) -> str:
+        return "replacing the round's results with the resubmission"
+
+    return ChangeType(
+        kind=SWAP_KIND,
+        opening=(PlannedStep(SWAP),),
+        steps={SWAP: Step(SWAP, StepKind.SAVE, swap, describe=describe_swap)},
+        check=check,
+        key=lambda payload: f"{SWAP_KIND}:{payload['round_id']}",
+        doing=lambda payload: f"Replacing round {payload['round_number']}'s results",
+        outcome=lambda _ctx: "",
+        writes=(
+            "session_results", "qualifying_session_results", "race_session_results",
+            "round_submission_channels", "resubmission_drafts",
+        ),
     )
 
 
@@ -285,3 +392,41 @@ async def ask_resubmission_start(
     state.staged.clear()
     state.staged_pardons.clear()
     state.approval_message_id = None
+
+
+async def ask_resubmission_cancel(
+    interaction: discord.Interaction, ref: ReviewRef, *, what: str
+) -> bool:
+    """Ask the queue for round *ref*'s penalty review back, the resubmission cancelled, as the
+    member who pressed **Cancel**; whether it was asked.
+
+    The round's results were never touched and are already posted, so nothing is published; the
+    review's jobs clear the resubmission's flag, take the Cancel button off the announcement
+    (named here by the id the start saved) and put the prompt back (`review_open_change`).
+    """
+    async with get_connection(ref.db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT resubmit_prompt_message_id FROM round_submission_channels "
+                "WHERE round_id = ?",
+                (ref.round_id,),
+            )
+        ).fetchone()
+    announcement = None if row is None else row["resubmit_prompt_message_id"]
+    if announcement is None and interaction.message is not None:
+        announcement = interaction.message.id
+    asked = await ref.queue.ask(
+        review_open_change.KIND,
+        {
+            "round_id": ref.round_id,
+            "round_number": ref.round_number,
+            "division_name": ref.division_name,
+            "publish": False,
+            "returning": "cancelled",
+            "cancel_message_id": announcement,
+        },
+        interaction=interaction,
+        what=f"cancelling round {ref.round_number}'s resubmission",
+        refusal_what=what,
+    )
+    return asked is not None
