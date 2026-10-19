@@ -58,11 +58,6 @@ TURN_KIND = "results.submission.turn"
 ROUND_3 = round_id(PRO, 3)
 LANE = f"channel:{SUBMISSION_CHANNEL}"
 
-NO_SUBMISSION_RESTART = (
-    "#439: a restart clears a cut-off submission, deletes its channel and starts the submission "
-    "job itself, off the change queue, rather than asking for `results.submission.restart`"
-)
-
 _new_ids = itertools.count(7700)
 
 
@@ -168,7 +163,6 @@ async def test_a_first_paste_cut_short_is_cleared_and_reopened_as_jobs(tmp_path)
     assert "re-submit" in league.log() and "R3" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_submission_whose_turn_is_in_hand_is_left_alone_at_a_restart(tmp_path):
     """The admin typed a paste in channel 690 and its turn was asked, but had not run, when the
     bot stopped. At the restart the recovery leaves round 3 alone: it asks no restart of it, and

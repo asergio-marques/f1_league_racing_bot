@@ -1471,9 +1471,12 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         from leaguebot.core.services.change_queue import unfinished
         from leaguebot.results.services.submission_changes import ask_submission_restart
 
+        # A turn's payload names the channel it was typed in, not the round.
         if any(
-            payload.get("round_id") == round_id
-            for payload in await unfinished(bot.db_path, ["results.submission.turn"])
+            payload.get("channel_id") == channel_id
+            for payload in await unfinished(
+                bot.db_path, ["results.submission.turn", "results.submission.config"]
+            )
         ):
             continue
         log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
