@@ -933,9 +933,6 @@ async def test_a_cancelled_resubmission_whose_prompt_was_discarded_is_recorded_o
     assert (await _channel_row(league.db_path))["resubmitting"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: a refused take-down of the resubmission's Cancel button is swallowed, not a stop"
-))
 async def test_a_cancel_button_whose_take_down_is_refused_stops_the_queue(tmp_path):
     """A cancel puts round 3's review back, and Discord refuses the edit that takes the Cancel
     button off the resubmission's announcement. The queue stops at that job, with the button

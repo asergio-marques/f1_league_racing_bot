@@ -13,7 +13,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import ChangeOrigin
+from leaguebot.core.models.change import ChangeOrigin, StepFailedOnDiscord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
@@ -3852,18 +3852,27 @@ async def _take_down_cancel_button(cancel_view: ResubmissionCancelView | None) -
     cancel_view.stop()
     if cancel_view.message is None:
         return
-    await take_down_cancel_message(cancel_view.message)
+    try:
+        await take_down_cancel_message(cancel_view.message)
+    except StepFailedOnDiscord:
+        pass  # Off the queue a refused edit leaves the button standing, as it always has.
 
 
 async def take_down_cancel_message(message: discord.Message | discord.PartialMessage) -> None:
     """Take the Cancel button off the resubmission's announcement; one already gone is no fault.
 
-    Called by `_take_down_cancel_button` and by the review's job doing the same (#439).
+    Called by `_take_down_cancel_button` and by the review's job doing the same (#439). An edit
+    Discord refuses otherwise raises `StepFailedOnDiscord`, for the job to stop the queue on; the
+    off-queue caller passes over it.
     """
     try:
         await message.edit(view=None)
-    except (discord.NotFound, discord.HTTPException):
+    except discord.NotFound:
         pass
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord(
+            "the Cancel button could not be taken off the resubmission's announcement"
+        ) from exc
 
 
 @posts_in_a_job
