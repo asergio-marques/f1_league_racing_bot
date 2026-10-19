@@ -106,11 +106,6 @@ REVIEW_OPEN = "results.review.open"
 ROUND_3 = round_id(PRO, 3)
 RESULTS_606 = DIVISIONS[PRO][3].results
 
-NO_SUBMISSION_OPEN_CHANGE = (
-    "#439: a round's submission is opened by `run_result_submission_job` at its start, off the "
-    "change queue, rather than by a `results.submission.open` change"
-)
-
 _created_ids = itertools.count(7700)
 
 
@@ -272,7 +267,6 @@ async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
     """Discord refuses to create round 3's channel (Missing Permissions): the queue stops at the
     channel's creation, no submission is recorded, and no penalty review is asked."""
@@ -284,7 +278,7 @@ async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
     job = await stopped_job(league.db_path)
     assert job is not None and job["name"] == "create_channel"
     assert await _submissions(league) == []
-    assert await _opened(league.db_path) == []
+    assert [row for row in await change_rows(league.db_path) if row["kind"] == REVIEW_OPEN] == []
 
 
 async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
@@ -372,11 +366,6 @@ async def test_the_opening_message_pings_nobody_when_the_interaction_role_is_gon
 # and the qualifying's pole 3. Each paste is typed through the results cog and the queue run
 # after it.
 
-NO_PASTE_TURN = (
-    "#439: a results paste is read by `next_submission_message`'s wait inside the submission "
-    "coroutine and saved at once, rather than taken as a `results.submission.turn` on the "
-    "round's lane"
-)
 
 QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
@@ -507,7 +496,6 @@ async def _end_amendment(league: SeasonLeague) -> None:
     await league.write("DELETE FROM round_amend_channels")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_normal_round_is_saved_session_by_session(tmp_path, monkeypatch):
     """The admin pastes round 3's qualifying, then its race. Each is saved when its turn comes,
     scored by "Standard" and submitted by the admin."""
@@ -521,7 +509,6 @@ async def test_a_normal_round_is_saved_session_by_session(tmp_path, monkeypatch)
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_the_drivers_rows_are_written(tmp_path, monkeypatch):
     """Once both pastes' turns have run, the race holds Lewis first and Max second, and the
     qualifying holds both drivers."""
@@ -542,7 +529,6 @@ async def test_the_drivers_rows_are_written(tmp_path, monkeypatch):
     assert len(qualifying) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_sprint_round_asks_for_all_four_sessions_in_order(tmp_path, monkeypatch):
     """Round 3 is a sprint round. The admin pastes four sessions in turn: they are saved as the
     sprint qualifying, the sprint race, the feature qualifying and the feature race, and after
@@ -558,7 +544,6 @@ async def test_a_sprint_round_asks_for_all_four_sessions_in_order(tmp_path, monk
     assert len(prompts) == 3
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_points_are_applied_for_each_saved_session(tmp_path, monkeypatch):
     """Both sessions are scored as they are saved: in the race Lewis has 25 and Max 18, and in
     the qualifying Lewis's pole has 3."""
@@ -580,7 +565,6 @@ async def test_points_are_applied_for_each_saved_session(tmp_path, monkeypatch):
     assert [r["points_awarded"] for r in pole] == [3]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_the_round_is_handed_to_penalty_review(tmp_path, monkeypatch):
     """The last paste asks for round 3's review to open, naming round 3 and Pro, its first
     results published under "Provisional Results"; the channel stays open for the review."""
@@ -600,7 +584,6 @@ async def test_the_round_is_handed_to_penalty_review(tmp_path, monkeypatch):
     assert ("delete_channel", SUBMISSION_CHANNEL) not in [event[:2] for event in league.events]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 @pytest.mark.parametrize(
     "stopped",
     [pytest.param(False, id="queue_clear"), pytest.param(True, id="queue_stopped")],
@@ -633,7 +616,6 @@ async def test_the_last_paste_says_in_the_channel_that_the_review_is_being_opene
         assert "stopped" not in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_the_accepted_input_is_logged_verbatim(tmp_path, monkeypatch):
     """The log is the only record of what was actually typed: each accepted paste is logged as
     accepted, the race's text with it."""
@@ -651,7 +633,6 @@ async def test_the_accepted_input_is_logged_verbatim(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_rejected_paste_is_answered_and_the_session_asked_again(tmp_path, monkeypatch):
     """The admin pastes a qualifying whose driver is not a mention, then a good qualifying and
     the race. The first is answered with every error and the qualifying asked again; the
@@ -667,7 +648,6 @@ async def test_a_rejected_paste_is_answered_and_the_session_asked_again(tmp_path
     assert [s[0] for s in await _entered(league)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_rejected_paste_is_logged_with_its_input(tmp_path, monkeypatch):
     """The admin types "garbage". Its turn refuses it and logs it as rejected, with what was
     typed (results spec :257)."""
@@ -680,7 +660,6 @@ async def test_a_rejected_paste_is_logged_with_its_input(tmp_path, monkeypatch):
     assert "garbage" in logged
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_driver_outside_the_division_is_refused(tmp_path, monkeypatch):
     """The admin pastes a qualifying naming <@999>, who does not race in Pro, then a good
     qualifying and the race. The first is refused, and the next two saved."""
@@ -693,7 +672,6 @@ async def test_a_driver_outside_the_division_is_refused(tmp_path, monkeypatch):
     assert [s[0] for s in await _entered(league)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path, monkeypatch):
     """It would award the bonus to somebody who did not race. The admin pastes the qualifying,
     then a race whose fastest-lap override names <@999>, then the race again without it. The
@@ -707,7 +685,6 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path,
     assert [s[0] for s in await _entered(league)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_valid_fastest_lap_override_is_saved(tmp_path, monkeypatch):
     """The admin pastes the race with a fastest-lap override naming Max: the race is saved with
     Max as its override."""
@@ -727,7 +704,6 @@ async def test_a_valid_fastest_lap_override_is_saved(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_session_can_be_cancelled(tmp_path, monkeypatch):
     """The admin types "cancelled" for the qualifying, then pastes the race. The qualifying is
     entered as cancelled, the channel says it is marked as CANCELLED, and the review is asked
@@ -741,14 +717,8 @@ async def test_a_session_can_be_cancelled(tmp_path, monkeypatch):
     assert len(await _review_asks(league)) == 1
 
 
-NO_CANCELLED_LINE_WITH_THE_TABLES = (
-    "#439: a paste is read inside the submission coroutine rather than taken as a turn on the "
-    "round's lane, and a cancelled session's line is posted in the results channel when "
-    "CANCELLED is typed rather than with the round's tables"
-)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
 async def test_no_results_channel_line_is_posted_when_cancelled_is_typed(tmp_path, monkeypatch):
     """The manager types CANCELLED for the qualifying. When its turn comes the submission
     channel confirms the qualifying is marked as cancelled; nothing about it is posted in the
@@ -761,7 +731,6 @@ async def test_no_results_channel_line_is_posted_when_cancelled_is_typed(tmp_pat
     assert "was cancelled" not in "\n".join(league.texts(RESULTS_606))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(
     tmp_path, monkeypatch,
 ):
@@ -785,7 +754,6 @@ async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_single_configuration_is_chosen_without_asking(tmp_path, monkeypatch):
     """Only "Standard" is attached: the qualifying's turn uses it and says so."""
     league = await _paste_league(tmp_path, monkeypatch)
@@ -795,7 +763,6 @@ async def test_a_single_configuration_is_chosen_without_asking(tmp_path, monkeyp
     assert f"Auto-selected config **{CONFIG}**" in _sub_said(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_several_configurations_are_offered_to_choose_from(tmp_path, monkeypatch):
     """"Standard" and "Heavy" are attached. Each paste's turn offers them; the admin presses
     "Heavy" each time, and both sessions are saved scored by it."""
@@ -812,7 +779,6 @@ async def test_several_configurations_are_offered_to_choose_from(tmp_path, monke
     assert len(await _entered(league)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_no_configuration_saves_without_one_and_warns(tmp_path, monkeypatch):
     """Refusing a round whose drivers have just raced would be the worse outcome. No
     configuration is attached to the season: both sessions are saved without one, the channel
@@ -841,7 +807,6 @@ async def test_no_configuration_saves_without_one_and_warns(tmp_path, monkeypatc
 # turn runs and the session asked again, the channel staying open.
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path, monkeypatch):
     """Round 1 of Pro stands open for amendment. The admin pastes the qualifying: its turn
     saves nothing and says round 1 is being amended, to paste the qualifying again then. Once
@@ -865,7 +830,6 @@ async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path, monke
     assert (await _logs(league)).count("RESULT_SUBMISSION_ACCEPTED") == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_cancelling_a_session_is_refused_while_another_round_is_amended(
     tmp_path, monkeypatch,
 ):
@@ -886,7 +850,6 @@ async def test_cancelling_a_session_is_refused_while_another_round_is_amended(
     assert (await _entered(league))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_an_amendment_opened_while_the_configuration_is_chosen_still_holds(
     tmp_path, monkeypatch,
 ):
@@ -905,7 +868,6 @@ async def test_an_amendment_opened_while_the_configuration_is_chosen_still_holds
     assert await _entered(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 async def test_an_amendment_in_another_division_holds_nothing(tmp_path, monkeypatch):
     """Round 1 of Am stands open for amendment. The admin pastes Pro's qualifying and race:
     both are saved, and nothing is said of an amendment."""
@@ -935,7 +897,6 @@ _CLOSED_BY = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PASTE_TURN)
 @pytest.mark.parametrize("closed_by", sorted(_CLOSED_BY))
 @pytest.mark.parametrize("paste", [
     pytest.param(QUALI_PASTE, id="results"),

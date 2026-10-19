@@ -600,6 +600,8 @@ def typed_message(channel: Any, author: Any, content: str = "", *,
     message = MagicMock(spec=discord.Message)
     message.id = next(_TYPED_IDS)
     message.channel = channel
+    # Typed in a server: the server of the channel, as a listener asks which it came from.
+    message.guild = getattr(channel, "guild", None)
     message.author = author
     message.content = content
     message.created_at = created_at

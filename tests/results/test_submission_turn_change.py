@@ -61,11 +61,6 @@ ROUND_3 = round_id(PRO, 3)
 RESULTS = DIVISIONS[PRO][3].results
 LANE = f"channel:{SUBMISSION_CHANNEL}"
 
-NO_SUBMISSION_TURN = (
-    "#439: a results paste is read by `next_submission_message`'s wait inside the submission "
-    "coroutine, saved and answered at once, rather than taken as a `results.submission.turn` on "
-    "the round's lane"
-)
 
 QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
@@ -127,7 +122,6 @@ def _said(league: SeasonLeague) -> str:
     return "\n".join(league.texts(SUBMISSION_CHANNEL))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its_turn_comes(
     tmp_path, monkeypatch,
 ):
@@ -151,7 +145,6 @@ async def test_a_paste_is_marked_at_once_and_saved_with_the_next_prompt_when_its
     assert MARK not in paste.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch):
     """The admin pastes the qualifying, then the race before the queue has reached the first.
     The second is deleted at once and a note in the channel says the earlier message is still
@@ -174,7 +167,6 @@ async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path,
     assert await _sessions(league) == [("FEATURE_QUALIFYING", "ACTIVE")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_that_fails_validation_is_refused_by_its_job_with_a_line(
     tmp_path, monkeypatch,
 ):
@@ -194,7 +186,6 @@ async def test_a_paste_that_fails_validation_is_refused_by_its_job_with_a_line(
     assert "<@103>" in "\n".join(await queued_log_lines(league.db_path)) + league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_judged_against_the_session_expected_when_it_runs(tmp_path, monkeypatch):
     """The admin pastes a race while the qualifying is still expected; before the queue reaches
     it, the qualifying is saved. When the paste's turn runs it is judged as the race, the session
@@ -208,7 +199,6 @@ async def test_a_paste_judged_against_the_session_expected_when_it_runs(tmp_path
     assert ("FEATURE_RACE", "ACTIVE") in await _sessions(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_cancelled_typed_is_confirmed_in_the_submission_channel_only(tmp_path, monkeypatch):
     """The admin types CANCELLED for the qualifying. When its turn comes the qualifying is saved
     as cancelled and the submission channel says "✅ **Qualifying** marked as CANCELLED."; nothing
@@ -223,7 +213,6 @@ async def test_cancelled_typed_is_confirmed_in_the_submission_channel_only(tmp_p
     assert league.texts(RESULTS) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_the_last_paste_asks_the_review_and_says_its_job_number(tmp_path, monkeypatch):
     """The qualifying is saved; the admin pastes the race, the last session. When its turn comes
     the race is saved, `results.review.open` is asked for round 3, and the channel says "⏳ The
@@ -240,7 +229,6 @@ async def test_the_last_paste_asks_the_review_and_says_its_job_number(tmp_path, 
     assert f"⏳ The penalty review is being opened (job #{first})" in _said(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, monkeypatch):
     """The qualifying was entered as cancelled; the admin types CANCELLED for the race too. When
     the queue runs, the channel says "⏭️", round 3's submission row is closed and its channel
@@ -262,7 +250,6 @@ async def test_every_session_cancelled_closes_the_channel_as_a_job(tmp_path, mon
     assert not [row for row in await change_rows(league.db_path) if row["kind"] == REVIEW_OPEN]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path, monkeypatch):
     """Discord refuses the race's prompt in the submission channel. The qualifying's turn stops
     at `post_prompt`, on the round's lane, with the qualifying already saved."""
@@ -320,7 +307,6 @@ async def test_a_message_by_someone_other_than_a_league_manager_is_ignored(tmp_p
     assert league.texts(SUBMISSION_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_typed_while_the_queue_is_stopped_waits_and_later_ones_are_turned_away(
     tmp_path, monkeypatch,
 ):
@@ -351,7 +337,6 @@ async def test_a_paste_typed_while_the_queue_is_stopped_waits_and_later_ones_are
     assert MARK not in first.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_is_taken_while_the_league_is_stopped(tmp_path, monkeypatch):
     """The league lane is stopped at a job of its own. The admin pastes the qualifying: on
     round 3's lane it is saved and the race asked for all the same, and the league stays
@@ -368,7 +353,6 @@ async def test_a_paste_is_taken_while_the_league_is_stopped(tmp_path, monkeypatc
     assert await stopped_job(league.db_path, "league") is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_the_last_paste_s_mark_stays_until_its_review_prompt_appears(tmp_path, monkeypatch):
     """The qualifying is saved and the league lane is stopped. The admin pastes the race: it is
     saved, but its ⏳ stays, since the review it handed to the league has not yet posted its
@@ -389,7 +373,6 @@ async def test_the_last_paste_s_mark_stays_until_its_review_prompt_appears(tmp_p
     assert MARK not in paste.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_paste_s_turn_writes_only_its_round_s_rows(tmp_path, monkeypatch):
     """The admin pastes the qualifying. Its turn runs on round 3's lane, and writes the round's
     session results alone: the rounds, the standings and the season are as they were."""
@@ -418,11 +401,6 @@ CONFIG_KIND = "results.submission.config"
 #: A second points configuration attached to the season, so that the session's is chosen.
 HEAVY = "Heavy"
 
-NO_CONFIG_TURN = (
-    "#439: the points-configuration picker is waited on inside the submission coroutine and the "
-    "session saved there at once, rather than the press asking `results.submission.config` on the "
-    "round's lane"
-)
 
 
 async def _two_configs(league: SeasonLeague) -> None:
@@ -490,7 +468,6 @@ async def _configs(league: SeasonLeague) -> list[tuple[str, str, str | None]]:
     return [(row["session_type"], row["status"], row["config_name"]) for row in rows]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONFIG_TURN)
 async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, monkeypatch):
     """The season has two points configurations attached. The admin pastes round 3's
     qualifying; its turn offers the configurations in the submission channel and saves nothing
@@ -514,7 +491,6 @@ async def test_a_configuration_choice_saves_the_session_and_moves_on(tmp_path, m
     assert f"📋 Submit **{RACE}** results" in _said(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONFIG_TURN)
 async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkeypatch):
     """The admin presses "Heavy" on the configuration picker. The picker is changed to
     "🔧 Config selected: **Heavy**", its buttons taken off, by the press's own response (a reply,
@@ -534,7 +510,6 @@ async def test_the_picker_is_edited_by_the_press_s_own_response(tmp_path, monkey
     assert ("edit", SUBMISSION_CHANNEL, picker.id) not in league.events
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONFIG_TURN)
 async def test_a_configuration_choice_is_acknowledged_and_updated_and_kept_while_the_queue_is_stopped(
     tmp_path, monkeypatch,
 ):

@@ -94,6 +94,7 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services import typed_turns
 from leaguebot.core.utils.log_lines import abandoned_line
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.result_submission_service import (
@@ -398,6 +399,8 @@ async def _reopening(
         for key in ("returning", "cancel_message_id"):
             if payload.get(key) is not None:
                 again[key] = payload[key]
+    if payload.get("mark") is not None:
+        again["mark"] = payload["mark"]
     return FollowOn(
         KIND, again,
         f"the penalty review of round {number}, opened again after a job of it was discarded",
@@ -429,6 +432,7 @@ def _hand_the_prompt_over(ctx: StepContext, channel_id: int) -> StepResult:
         "results_posted": bool(payload.get("publish", True)) and not tables_discarded,
         "left": review_posting.not_done(ctx, reposted=False),
         "left_reposted": review_posting.not_done(ctx, reposted=True),
+        "mark": payload.get("mark"),
     }
     return StepResult(
         result={"closed": True},
@@ -770,12 +774,19 @@ def review_prompt_change() -> ChangeType:
             still_due=_prompt_not_discarded, describe=_describe_cancel_line,
         ),
         _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+        typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
     }
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         if payload.get("stage") == APPEALS_STAGE:
             return (*appeals_stage_steps(payload), PlannedStep(_CLOSE))
-        return (*prompt_steps(payload, int(payload["channel_id"])), PlannedStep(_CLOSE))
+        # The last paste's ⏳ is cleared once the prompt stands (the member seeing nothing else
+        # while the league worked), a reopening after a discard carrying it on.
+        clear = (
+            (PlannedStep(typed_turns.CLEAR_MARK, dict(payload["mark"])),)
+            if payload.get("mark") else ()
+        )
+        return (*prompt_steps(payload, int(payload["channel_id"])), *clear, PlannedStep(_CLOSE))
 
     def key(payload: dict[str, Any]) -> str:
         stage = ":appeals" if payload.get("stage") == APPEALS_STAGE else ""

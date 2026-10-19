@@ -31,7 +31,7 @@ from leaguebot.core.utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.image.utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -2797,11 +2797,13 @@ class _ConfigSelectView(LeagueView):
         config: Any | None = None,
         *,
         session: str | None = None,
+        ask: tuple[str, dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self.selected: str | None = None
         self._config = config
         self._session = session
+        self._ask = ask
         for name in config_names:
             async def _cb(
                 interaction: discord.Interaction,
@@ -2817,6 +2819,27 @@ class _ConfigSelectView(LeagueView):
                     )
                     return
                 self.selected = _name
+                if self._ask is not None:
+                    # A submission's picker: the choice is a change of its own, asked of the
+                    # queue with the pasted session's payload, and the picker comes down by the
+                    # press's own response (#439).
+                    kind, asked = self._ask
+                    queue = bot_of(interaction).change_queue
+                    await interaction.response.edit_message(
+                        content=f"🔧 Config selected: **{_name}**", view=None
+                    )
+                    await queue.ask(
+                        kind,
+                        {
+                            **asked, "config_name": _name,
+                            "choice_line": (
+                                f"{interaction_member(interaction)} | {what} | Success\n"
+                                f"  configuration: {_name}"
+                            ),
+                        },
+                        interaction=interaction, what=what,
+                    )
+                    return
                 self.stop()
                 await interaction.response.defer()
                 await self._record_choice(interaction, what, _name)

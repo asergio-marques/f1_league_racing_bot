@@ -72,11 +72,18 @@ async def mark(message: discord.Message) -> None:
 async def _clear_mark(ctx: StepContext) -> StepResult:
     """Take the bot's ⏳ off the typed message. A message or channel since gone completes the job;
     any other refusal stops the lane, to be tried again."""
-    payload = ctx.payload
+    # The message is named by the job's own payload where it carries it (a change that hands the
+    # clearing to another reaches it so), else by the change's.
+    payload = ctx.step_payload if "message_id" in ctx.step_payload else ctx.payload
     bot_user = ctx.bot.user
     if bot_user is None:
         raise StepFailedOnDiscord("the bot is not connected to Discord")
-    partial = ctx.bot.get_partial_messageable(int(payload["channel_id"]))
+    channel_id = int(payload["channel_id"])
+    found = ctx.bot.get_channel(channel_id)
+    partial = (
+        found if isinstance(found, (discord.TextChannel, discord.Thread))
+        else ctx.bot.get_partial_messageable(channel_id)
+    )
     message = partial.get_partial_message(int(payload["message_id"]))
     try:
         await message.remove_reaction(MARK, bot_user)

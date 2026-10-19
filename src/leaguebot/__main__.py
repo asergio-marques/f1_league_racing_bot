@@ -402,6 +402,10 @@ def register_change_types(bot: LeagueBot) -> None:
         submission_open_change,
         submission_restart_change,
     )
+    from leaguebot.results.services.submission_turn_change import (
+        submission_config_change,
+        submission_turn_change,
+    )
     from leaguebot.results.services.review_open_change import (
         appeals_open_change,
         close_stale_change,
@@ -414,6 +418,16 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(submission_restart_change())
+    bot.change_queue.register(
+        submission_turn_change(
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+        )
+    )
+    bot.change_queue.register(
+        submission_config_change(
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+        )
+    )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())
     bot.change_queue.register(appeals_open_change())

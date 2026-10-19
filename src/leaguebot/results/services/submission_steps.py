@@ -146,16 +146,18 @@ def create_channel_step(record: Record) -> Step:
 
 @posts_in_a_job
 async def _send(
-    channel: discord.TextChannel, text: str, *, mentions: discord.AllowedMentions, refused: str
+    channel: discord.TextChannel, text: str, *, mentions: discord.AllowedMentions, refused: str,
+    view: discord.ui.View | None = None,
 ) -> int:
     """The one place a dialogue's line is sent: *text* to *channel*, notifying only what
     *mentions* allows, and the id of the message posted.
 
     Both posting steps below send through it, so the module has one posting step to list and
-    every post states who it may notify. Raises `StepFailedOnDiscord` with *refused* where
-    Discord refuses it."""
+    every post states who it may notify. *view*, where given, is the buttons the line carries.
+    Raises `StepFailedOnDiscord` with *refused* where Discord refuses it."""
     try:
-        message = await channel.send(text, allowed_mentions=mentions)
+        shown: dict[str, Any] = {} if view is None else {"view": view}
+        message = await channel.send(text, allowed_mentions=mentions, **shown)
     except discord.HTTPException as error:
         raise StepFailedOnDiscord(refused) from error
     return message.id
@@ -179,6 +181,33 @@ def post_step(name: str = POST, *, describing: str = "posting a line in the dial
         mentions = discord.AllowedMentions(everyone=False, users=False, roles=roles or False)
         message_id = await _send(
             channel, str(payload["text"]), mentions=mentions, refused="the line could not be posted"
+        )
+        return StepResult(result={"message_id": message_id})
+
+    async def describe(_ctx: StepContext) -> str:
+        return describing
+
+    return Step(name, StepKind.ACT, post, describe=describe)
+
+
+def post_choice_step(
+    name: str, view_for: Callable[[StepContext], Awaitable[discord.ui.View]], *, describing: str
+) -> Step:
+    """The job that posts a line carrying buttons in a dialogue's channel, named *name*.
+
+    The payload is ``channel_id`` and ``text``; *view_for* builds the buttons from the job's
+    context as it runs, and they notify nobody. It returns ``{"message_id": <id>}``.
+    """
+
+    async def post(ctx: StepContext) -> StepResult:
+        payload = ctx.step_payload
+        guild = await _guild(ctx)
+        channel = guild.get_channel(int(payload["channel_id"]))
+        if not isinstance(channel, discord.TextChannel):
+            raise StepFailedOnDiscord("the dialogue's channel is not in the server")
+        message_id = await _send(
+            channel, str(payload["text"]), mentions=discord.AllowedMentions.none(),
+            refused="the choice could not be posted", view=await view_for(ctx),
         )
         return StepResult(result={"message_id": message_id})
 
@@ -231,6 +260,7 @@ __all__ = [
     "POST",
     "POST_PROMPT",
     "create_channel_step",
+    "post_choice_step",
     "post_prompt_step",
     "post_step",
     "session_prompt",

@@ -134,7 +134,20 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
         return channel.messages[message_id]
 
     def _partial(message_id: int) -> Any:
-        return channel.messages.get(message_id) or _message(message_id, "")
+        # A message a member typed (`typed_message`) stands in `posted`, where a test keeps it; one
+        # since deleted is gone, and its reactions raise `NotFound`.
+        typed = [m for m in getattr(channel, "posted", ()) if m.id == message_id]
+        if typed:
+            return typed[0]
+        found = channel.messages.get(message_id)
+        if found is not None:
+            return found
+        absent = _message(message_id, "")
+        for name in ("add_reaction", "remove_reaction", "clear_reaction"):
+            setattr(absent, name, AsyncMock(
+                side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+            ))
+        return absent
 
     async def _delete_channel(*_args: Any, **_kwargs: Any) -> None:
         if channel.delete_fails is not None:

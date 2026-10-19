@@ -557,6 +557,12 @@ class ChangeQueue:
         stopped = await self._stopped_jobs(lane=row["lane"] if row is not None else None)
         return first, (stopped[0][2]["id"] if stopped else None)
 
+    @property
+    def types(self) -> tuple[ChangeType, ...]:
+        """The change types made known, which a listener reads to tell whether a turn waits in
+        a channel (`typed_turns.turn_waiting`)."""
+        return tuple(self._types.values())
+
     def register(self, change_type: ChangeType) -> None:
         """Make *change_type* known. A `SAVE` step carrying a `record` is refused: it writes in
         its own run."""
