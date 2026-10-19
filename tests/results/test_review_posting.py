@@ -1459,10 +1459,6 @@ async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(t
 # A standings picture is saved and replaced by the jobs, as a text table is (#439 6b, fault 1)
 # ---------------------------------------------------------------------------
 
-NO_PICTURE_DELETE_JOB = (
-    "#439: a standings picture deletes the message it replaces as it posts, outside any job"
-)
-
 
 def _standings_drawn(league: _League, tmp_path: Any, *, championships: tuple[str, ...] = (
     "drivers", "constructors",
@@ -1538,15 +1534,15 @@ async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PICTURE_DELETE_JOB)
 async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keeping_both(
     tmp_path,
 ):
     """Round 3's standings stand as two pictures, 8807 (drivers) and 8808 (constructors), each
     recorded. They are drawn again, and Discord refuses to delete the old ones: the queue stops
-    at a `delete_message` job, the old pictures and the new standing together, and the new
-    pictures' ids saved with their post. A league admin discards the job: the outcome links the
-    old picture left standing."""
+    at the first `delete_message` job, the drivers' 8807, the old pictures and the new standing
+    together, and the new pictures' ids saved with their post. A league admin discards it, the
+    queue stops again at the constructors' 8808, and the admin discards that too: the outcome
+    links the old picture left standing."""
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -1568,6 +1564,7 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
 
     job = await stopped_job(league.db_path)
     assert job is not None and job["name"] == "delete_message"
+    assert json.loads(job["payload"])["message_id"] == DRIVERS_GRAPHIC
     drivers, constructors = league.sent_to(STANDINGS_CHANNEL)
     assert {DRIVERS_GRAPHIC, CONSTRUCTORS_GRAPHIC, drivers, constructors} <= set(
         standings.messages
@@ -1575,6 +1572,12 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     assert await _standings_ids(league.db_path) == (drivers, constructors)
 
     await discard_job(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "delete_message"
+    assert json.loads(job["payload"])["message_id"] == CONSTRUCTORS_GRAPHIC
+
+    await discard_job(league.bot)
+    assert await stopped_job(league.db_path) is None
     assert old_link in updated_reply(interaction)
     assert DRIVERS_GRAPHIC in standings.messages
 
