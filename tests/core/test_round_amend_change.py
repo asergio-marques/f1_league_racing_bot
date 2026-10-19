@@ -2373,3 +2373,19 @@ async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeyp
     )) == 2
     league.bot.attendance_service.insert_embed_message.assert_not_called()
     league.bot.attendance_service.bulk_insert_attendance_rows.assert_not_called()
+
+
+async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp_path, reposts):
+    """Attendance on. Pro's round 3, its call standing, is brought forward to three days out, so
+    its call is taken down and posted again by the amendment's own jobs. The log channel records
+    the amendment, and no line saying the amending manager ran `/attendance post-check-in`, a
+    command nobody ran (core spec, the record of what changed)."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _amended(league, scheduled_at=_at(league, days=3))
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert reposts.posted == [(R3, PRO)]
+    assert len(_success_lines(league)) == 1
+    assert [line for line in _log_lines(league) if "/attendance post-check-in" in line] == []
