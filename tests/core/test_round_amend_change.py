@@ -94,11 +94,6 @@ NOTHING_LEFT = ("no call stands, and no attendance rows are open for this round 
 MAY_HAVE_LANDED = ("; it may have reached Discord all the same: the bot posts it again on its "
                    "next try, and any second copy is to be deleted by hand")
 NOT_POSTED = "ATTENDANCE | check-in call | NOT POSTED"
-#: Why a test of the amendment's call fails until C28 builds it.
-NO_CALL_RECORD_IN_THE_JOB = (
-    "#439: the amendment's check-in call is posted by `run_rsvp_notice` whole, its record "
-    "written by the attendance service rather than by the call's own job"
-)
 
 
 # ── Recorders, patched before the league is built ──────────────────────────────────
@@ -2065,7 +2060,6 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     assert said and all(not line.startswith("_recover_missed_check_in_calls:") for line in said)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_it_may_have_landed(
     tmp_path, monkeypatch,
 ):
@@ -2125,7 +2119,6 @@ async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_pos
         assert f"{ANSWERS_KEPT}{MAY_HAVE_LANDED}" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 @pytest.mark.parametrize("fault", ["the call is refused", "the channel is gone"])
 async def test_a_call_posted_again_that_discord_refuses_stops_the_queue_and_is_posted_on_retry(
     tmp_path, monkeypatch, fault,
@@ -2215,7 +2208,6 @@ async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, le
     assert f"**Pro** — check-in call: {said}" in outcome
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the_command(
     tmp_path, monkeypatch,
 ):
@@ -2372,7 +2364,6 @@ async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded
     assert str(earlier) in bullet
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_RECORD_IN_THE_JOB)
 async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeypatch):
     """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not), is
     brought forward to three days out, so its call is taken down and posted again. The attendance

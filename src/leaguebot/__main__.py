@@ -286,6 +286,11 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
     needed."""
     from leaguebot.attendance.services import rsvp_service
+    from leaguebot.attendance.services.check_in_changes import (
+        check_in_steps,
+        close_check_in_on,
+        give_up_text_for,
+    )
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.weather.services import phase_withdrawal
@@ -302,17 +307,6 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     def plan_phase(round_id: int, phase: int) -> "tuple[PlannedStep, ...]":
         return (PlannedStep(DRAW_FORECAST, {"round_id": round_id, "phase": phase}),)
 
-    async def repost_call(round_id: int, division_id: int, bot_: Any) -> None:
-        await rsvp_service.repost_rsvp_call(
-            round_id, division_id, bot_, raise_on_failure=True
-        )
-
-    async def post_call(round_id: int, bot_: Any) -> None:
-        await rsvp_service.run_rsvp_notice(round_id, bot_, raise_on_failure=True)
-
-    async def give_up_call(bot_: Any, row: Mapping[str, Any]) -> bool:
-        return await _give_up_missed_check_in_call(bot_, row)
-
     async def run_deadline(round_id: int, bot_: Any) -> None:
         await rsvp_service.run_rsvp_deadline(round_id, bot_)
 
@@ -327,9 +321,9 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         forecast_failure=forecast_failure,
         invalidation_text=invalidation_message,
         reopen_check_in_on=rsvp_service.reopen_check_in_on,
-        repost_call=repost_call,
-        post_call=post_call,
-        give_up_call=give_up_call,
+        call_steps=check_in_steps(bot.attendance_service, now=lambda: bot.change_queue.now()),
+        give_up_text=give_up_text_for,
+        give_up_on=close_check_in_on,
         run_deadline=run_deadline,
         clean_up_check_in=clean_up_check_in,
         round_list=format_round_list,
@@ -1080,83 +1074,6 @@ async def _recover_missed_check_in_calls(
                 "_recover_missed_check_in_calls: could not ask for round %d's call",
                 row["round_id"],
             )
-
-
-async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> bool:
-    """Report a round whose call and deadline both went by unposted, and close its check-in;
-    say whether it did, False where the round was left as it stood.
-
-    Decided 2026-09-24 (#429): no call is posted once the deadline has passed. A call nobody
-    could answer would open the round's attendance rows only to record every driver as not
-    having answered. The log channel is told instead, with a note in place of the usual advice,
-    since `/attendance post-check-in` refuses a round past its deadline too.
-
-    The round is marked ``checkin_cleared``: no call is owed it any more, which is what the
-    mark says, and it is what keeps the next start from reporting it again. An amendment that
-    reopens the round's check-in clears the mark, as it does after a cleanup.
-
-    Any check-in answers left for the round, and the placements made on them, are deleted in the
-    same save (`clear_check_in_answers_on`), whoever gives the call up, so that the line below
-    is always true (owner, 2026-10-09: "Yes, clear them"). No call stands for a round given up,
-    but answers can: an amendment that took its call down and stopped, or the bot restarted,
-    before posting it again leaves the answers to the old call.
-
-    **It gives up, and clears, only a round whose results are not in** (its status in
-    `ROUND_CANCELLABLE`) **and whose check-in is not over** (``checkin_cleared = 0``), judged in
-    the save itself, whichever caller asks. A round further on has had its attendance charged
-    and its pardons granted, and a check-in over is settled; clearing either would erase a
-    record a league has acted on. Nothing is written and nothing told for such a round
-    (`test_a_give_up_leaves_a_round_whose_results_are_in_or_whose_check_in_is_over`).
-
-    **It raises** where the mark cannot be saved, and the mark is saved before the log channel
-    is told, so that a give-up tried again tells it once. The start-up recovery catches the
-    fault, logs it on the host and goes on to the next round; an amendment's catch-up on the
-    change queue (`_amend_hooks`) lets it stop the queue, a fault of the bot's own, so that
-    Retry gives the call up in earnest rather than reporting a give-up never saved
-    (`test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_once_retried`).
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.attendance.services.rsvp_service import (
-        _report_call_failure,
-        clear_check_in_answers_on,
-    )
-
-    from leaguebot.core.models.round import ROUND_CANCELLABLE
-
-    round_id: int = row["round_id"]
-    to_run = sorted(ROUND_CANCELLABLE)
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
-            f"AND status IN ({', '.join('?' for _ in to_run)})",
-            (round_id, *to_run),
-        )
-        if cursor.rowcount != 1:
-            log.info(
-                "_give_up_missed_check_in_call: round %d's results are in or its check-in is "
-                "over — nothing given up",
-                round_id,
-            )
-            return False
-        await clear_check_in_answers_on(db, round_id)
-        await db.commit()
-    log.info(
-        "_give_up_missed_check_in_call: round %d's deadline has passed — call not posted",
-        round_id,
-    )
-    await _report_call_failure(
-        bot,
-        division_id=row["division_id"],
-        division_name=row["division_name"],
-        season_number=row["season_number"],
-        round_number=row["round_number"],
-        reason="the round's check-in deadline passed before its call could be posted",
-        note=(
-            "a call posted now could not be answered, so none was posted. No attendance "
-            "rows were opened, and this round will count nothing against anyone."
-        ),
-    )
-    return True
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:

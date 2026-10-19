@@ -43,11 +43,6 @@ NOTHING_LEFT = "no attendance rows are open for this round until this call is po
 #: count nothing against anyone until the call is posted").
 COUNTS_NOTHING = "will count nothing against anyone"
 
-NO_CALL_STOP = (
-    "#439: a check-in call that does not post is reported to the log channel and stops no "
-    "queue; it is not yet a job of a change on the queue"
-)
-
 
 def _bot():
     bot = MagicMock()
@@ -193,7 +188,6 @@ async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tm
     assert COUNTS_NOTHING in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_the_note_names_the_command_that_posts_the_call_again(tmp_path):
     """The advice must name a command that exists (#123), filled in for the division and round so
     a manager can copy it out of the log channel: a league admin discards the refused call, and

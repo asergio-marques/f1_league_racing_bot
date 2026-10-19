@@ -260,6 +260,62 @@ def _earlier_messages(call: RsvpEmbedMessage) -> list[tuple[str, str]]:
     ]
 
 
+def given_up_text(row: aiosqlite.Row) -> str:
+    """The log channel's line for a round whose call is given up, as the start-up has always
+    worded it."""
+    return rsvp_service.call_failure_text(
+        division_id=row["division_id"],
+        division_name=row["division_name"],
+        season_number=row["season_number"],
+        round_number=row["round_number"],
+        reason="the round's check-in deadline passed before its call could be posted",
+        note=(
+            "a call posted now could not be answered, so none was posted. No attendance "
+            "rows were opened, and this round will count nothing against anyone."
+        ),
+    ) + "\n  result: the round's check-in is closed and its answers cleared; the round " \
+        "counts nothing against anyone."
+
+
+async def close_check_in_on(db: aiosqlite.Connection, round_id: int) -> bool:
+    """Close *round_id*'s check-in as a call given up closes it, on *db* and committing nothing:
+    the round marked ``checkin_cleared``, and any answers left for it and the placements made on
+    them cleared in the same save, so that the line saying so is true.
+
+    Only a round whose results are not in (its status in `ROUND_CANCELLABLE`) and whose check-in
+    is not over is closed: a round further on has had its attendance charged, and a check-in over
+    is settled, and clearing either would erase a record a league has acted on. Says whether it
+    closed the round; nothing is written for one it left as it stood."""
+    to_run = sorted(ROUND_CANCELLABLE)
+    cursor = await db.execute(
+        "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
+        f"AND status IN ({', '.join('?' for _ in to_run)})",
+        (round_id, *to_run),
+    )
+    if cursor.rowcount != 1:
+        log.info("check-in call give-up: round %d's results are in or its check-in is over — "
+                 "nothing given up", round_id)
+        return False
+    await rsvp_service.clear_check_in_answers_on(db, round_id)
+    return True
+
+
+async def give_up_text_for(db_path: str, round_id: int) -> str | None:
+    """The line giving up *round_id*'s call, or None where there is nothing to give up: no call
+    is owed a round that is gone, whose results are in or whose check-in is over, and a call
+    standing is the round's live one."""
+    async with get_connection(db_path) as db:
+        row = await _call_row(db, round_id)
+        standing = await _standing(db, round_id)
+    if row is None or standing is not None:
+        return None
+    if row["checkin_cleared"] or row["round_status"] not in ROUND_CANCELLABLE:
+        log.info("check-in call give-up: round %d's results are in or its check-in is over — "
+                 "nothing given up", round_id)
+        return None
+    return given_up_text(row)
+
+
 def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -> dict[str, Step]:
     """The jobs of a check-in call, *service* being attendance's and *now* the queue's clock."""
 
@@ -280,29 +336,10 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
             return StepResult(result={"dropped": True})
         if now() < _deadline(row):
             return StepResult(result={"in_time": True}, then=(PlannedStep(POST_CALL),))
-        to_run = sorted(ROUND_CANCELLABLE)
-        cursor = await db.execute(
-            "UPDATE rounds SET checkin_cleared = 1 WHERE id = ? AND checkin_cleared = 0 "
-            f"AND status IN ({', '.join('?' for _ in to_run)})",
-            (round_id, *to_run),
-        )
-        if cursor.rowcount != 1:
+        if not await close_check_in_on(db, round_id):
             return StepResult(result={"dropped": True})
-        await rsvp_service.clear_check_in_answers_on(db, round_id)
-        text = rsvp_service.call_failure_text(
-            division_id=row["division_id"],
-            division_name=row["division_name"],
-            season_number=row["season_number"],
-            round_number=row["round_number"],
-            reason="the round's check-in deadline passed before its call could be posted",
-            note=(
-                "a call posted now could not be answered, so none was posted. No attendance "
-                "rows were opened, and this round will count nothing against anyone."
-            ),
-        ) + "\n  result: the round's check-in is closed and its answers cleared; the round " \
-            "counts nothing against anyone."
         log.info("round %d's deadline has passed — its check-in call is given up", round_id)
-        return StepResult(result={"given_up": True}, lines=(text,))
+        return StepResult(result={"given_up": True}, lines=(given_up_text(row),))
 
     async def describe_give_up(ctx: StepContext) -> str:
         return (
@@ -320,7 +357,12 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
         division_id: int = row["division_id"]
         division = row["division_name"]
         standing = await service.get_embed_message(round_id, division_id)
-        earlier = standing if ctx.payload.get("replaces") is not None else None
+        # An amendment's repost says in its job's payload whether the call it replaces still
+        # stands (``replacing``: a discarded take-down left it), and a call it posts again carries
+        # the answers given to the one it took down (``repost``).
+        replaces = ctx.payload.get("replaces") is not None or bool(ctx.step_payload.get("replacing"))
+        earlier = standing if replaces else None
+        amending = bool(ctx.step_payload.get("repost"))
         answers_kept = earlier is None and await rsvp_service._answers_kept(ctx.db_path, round_id)
 
         async def stops(
@@ -332,7 +374,7 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
             vanished = earlier is not None and await rsvp_service._call_vanished(ctx.bot, earlier)
             if vanished:
                 await rsvp_service.withdraw_rsvp_call(round_id, division_id, ctx.bot)
-            if answers_kept and not timed_out:
+            if answers_kept and not timed_out and not amending:
                 left = rsvp_service.ANSWERS_KEPT.format(
                     division=division, round=row["round_number"]
                 )
@@ -419,8 +461,12 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
 
             discard_attachment(attachment)
 
+        # The messages of the call this one replaces come down by jobs of their own after it only
+        # where the request said so. An amendment's repost, which replaces the call a discarded
+        # take-down left standing, plans none: the admin who discarded the take-down was told
+        # which messages stand, and the reply names them for deletion by hand.
         then: tuple[PlannedStep, ...] = ()
-        if earlier is not None:
+        if earlier is not None and ctx.payload.get("replaces") is not None:
             then = tuple(
                 PlannedStep(DELETE_EARLIER, {
                     "channel_id": int(channel_id), "message_id": int(message_id),
@@ -448,7 +494,7 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
             result={
                 "new": [message.id], "channel_id": message.channel.id,
                 "round_id": round_id, "division_id": division_id, "driver_ids": driver_ids,
-                "replacing": earlier is not None,
+                "replacing": earlier is not None or amending,
             },
             then=then,
             lines=lines,
@@ -476,7 +522,8 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
     async def describe_post(ctx: StepContext) -> str:
         return (
             f"{_doing(ctx.payload)} (a call discarded is posted by hand with "
-            f"`/attendance post-check-in`)"
+            f"`/attendance post-check-in division: {ctx.payload.get('division_name', '?')} "
+            f"round: {ctx.payload.get('round_number', '?')}`)"
         )
 
     async def delete_earlier(ctx: StepContext) -> StepResult:

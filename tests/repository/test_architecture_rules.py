@@ -173,7 +173,6 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
-    ("__main__.py", "_give_up_missed_check_in_call"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_expired_review_prompts"): (4, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
@@ -714,7 +713,6 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "leaguebot.attendance.services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
@@ -1850,7 +1848,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
-    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
     ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
@@ -2177,7 +2174,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "save_session_result"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "snapshot_before_amendment"): (1, PASS["results"]),
     # Attendance's pass
-    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.answer_rsvp"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.bulk_insert_attendance_rows"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.delete_division_configs"): (1, PASS["attendance"]),
