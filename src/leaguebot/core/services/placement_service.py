@@ -2060,8 +2060,9 @@ class PlacementService:
 
         What the post job of a change on the change queue calls (#439): a lineup channel the
         division was given and the guild no longer holds, or a send Discord refuses, raises
-        `StepFailedOnDiscord`, for the queue to stop on and try again. A division never given a
-        lineup channel posts nothing and gives None. The post is all it does: the job's `record`
+        `StepFailedOnDiscord`, for the queue to stop on and try again; so does a division never
+        given a lineup channel, the message naming `/division lineup-channel`. A division no
+        longer there posts nothing and gives None. The post is all it does: the job's `record`
         saves the new id and a job after it deletes the message replaced.
 
         *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
@@ -2098,8 +2099,13 @@ class PlacementService:
             )
             div_row = await cur.fetchone()
 
-        if div_row is None or div_row["lineup_channel_id"] is None:
+        if div_row is None:
             return None
+        if div_row["lineup_channel_id"] is None:
+            raise StepFailedOnDiscord(
+                f"{div_row['div_name'] or division_id} has no lineup channel set: set one with "
+                "/division lineup-channel, then press Retry"
+            )
 
         lineup_channel_id: int = div_row["lineup_channel_id"]
         lineup_message_id: int | None = div_row["lineup_message_id"]

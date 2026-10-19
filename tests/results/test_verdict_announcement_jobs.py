@@ -68,10 +68,6 @@ from tests.support.review_league import (
 
 APPEALS_PROMPT = 8902
 
-NO_LINEUP_CHANNEL_STOP = (
-    "#439: a review's lineup with no lineup channel completes posting nothing, rather than "
-    "stopping the queue naming /division lineup-channel"
-)
 
 
 def _nfa(driver: int) -> StagedPenalty:
@@ -711,7 +707,6 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
 ATTENDANCE_CHANNEL = 707
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LINEUP_CHANNEL_STOP)
 async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles granted and
     revoked by doubles), and division 11 (Pro) has an attendance channel but was never given a

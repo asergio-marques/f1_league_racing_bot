@@ -52,10 +52,11 @@ _LIVE = ("SETUP", "ACTIVE")
 
 
 def posted_result(posted: "LineupPosted | None") -> dict[str, Any]:
-    """What a lineup post job returns: the new message and the one it replaces, or `unset` where
-    the division has no lineup channel and nothing was posted."""
+    """What a lineup post job returns: the new message and the one it replaces, or an empty
+    result where nothing was posted (the division is gone, or its picture is not posted by this
+    job)."""
     if posted is None:
-        return {"unset": True}
+        return {}
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "division_name": posted.division_name, "form": posted.form,
@@ -105,7 +106,7 @@ def lineup_step(
     """The job that posts a division's lineup, the job's own `division_id` or else the change's.
 
     The first try posts as configured (the picture where the image module has one); a try
-    again posts the text. A division with no lineup channel posts nothing. A try after a save
+    again posts the text. A division with no lineup channel raises, naming the command that sets it. A try after a save
     that failed removes the copy it sent first. The job returns the message posted and the one it
     replaces, saves the new one with its mark (`record_lineup_on`) and plans the deletion of the
     old one (`standing_posts`).

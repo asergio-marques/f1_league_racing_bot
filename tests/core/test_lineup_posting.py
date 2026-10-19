@@ -33,10 +33,6 @@ from tests.support.season_league import AM, DIVISIONS, PRO, ongoing_league
 
 
 KIND = "lineup.post"
-NO_LINEUP_CHANNEL_RAISE = (
-    "#439: the lineup job of a division with no lineup channel returns `unset` having posted "
-    "nothing, rather than raising naming /division lineup-channel"
-)
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
 
 
@@ -429,7 +425,6 @@ async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one
         "delete_replaced") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LINEUP_CHANNEL_RAISE)
 async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     """Pro's lineup channel was never set. The lineup job a review or an approval runs for Pro
     (`lineup_step`, through the real placement service) raises, naming the command that sets the
