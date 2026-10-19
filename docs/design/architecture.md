@@ -319,12 +319,16 @@ audit record, which is how some settings came to have none.
   that message is still closed. *Rejected:* a save step after each post to write its id, which
   doubles the jobs a review numbers and stops on, for no gain. Where the post replaces an earlier message, deleting that message is a step of its own,
   after it, reading the old message's id, which the posting step saved beside the new one, so the
-  new post stands before the old one goes (Constitution XIV rule 8). Two windows remain. If the bot
+  new post stands before the old one goes (Constitution XIV rule 8). Three windows remain. If the bot
   stops after a post is sent but before its id is saved, the step runs again after the restart and
-  sends a second copy, and the first copy is left behind. And the old and new messages stand
+  sends a second copy, and the first copy is left behind. The old and new messages stand
   together between a post and the deletion after it: until the change finishes on restart, if the
-  bot stops in between, or for as long as the deletion's stop lasts (below). The design accepts
-  both,
+  bot stops in between, or for as long as the deletion's stop lasts (below). And a conversation's
+  job may send its message just as the league ends that conversation: the job's save then finds
+  the conversation no longer due and records nothing, so the message stands untracked until the
+  ended conversation's channel is deleted. That one arises only in a conversation's own channel,
+  which the ending takes down, and deleting the message would need a job of its own on a lane
+  that has just been closed. The design accepts all three,
   and Constitution XIV rule 8 ("at most one such message stands at any moment") is amended with the
   queue to allow them. A `record` that raises is not a stop of the bot: its save is rolled back, the queue stops at
   the job like any failure, and what the step returned is kept on the job (`StepContext.kept`,
