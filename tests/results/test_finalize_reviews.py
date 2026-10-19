@@ -465,9 +465,10 @@ async def test_without_a_guild_the_round_still_moves_on(tmp_path):
 
 
 async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
-    """The reports are approved, but Discord refuses the appeals prompt: it stops the queue like
-    any job. Once a league admin discards it, Alex's reply says the reports are approved and the
-    appeals review is being posted again, and the approval's line says it is incomplete."""
+    """The reports are approved, but Discord refuses the appeals prompt: it stops the round's lane
+    like any job. Once a league admin discards it, Alex's reply says the reports are approved (the
+    prompt is the round's lane's, so the reply cannot hear of the discard), and the log carries the
+    approval's line as incomplete, naming the prompt as not posted and being posted again."""
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
 
@@ -479,9 +480,8 @@ async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
     said = updated_reply(interaction).lower()
     assert "approved" in said
     assert "appeals review" in said
-    assert "posted again" in said
     assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
-    assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
+    assert "The appeals review prompt was not posted. It is being posted again." in league.log()
 
 
 # ---------------------------------------------------------------------------
