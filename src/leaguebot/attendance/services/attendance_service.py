@@ -2036,24 +2036,18 @@ async def enforce_attendance_sanctions(
     round_id: int,
     division_id: int,
     season_id: int,
-    head=None,
     *,
     queue: "ChangeQueue",
 ) -> SanctionOutcome:
     """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027).
 
-    *head* is the banner poster for the run of verdicts this belongs to, an attendance
-    sanction being a verdict and headed like one (decided 2026-09-09). A penalty approval
-    reaches this further down the same call that posted its penalty verdicts and passes
-    **its** poster, already spent, so the sanctions fall under that banner rather than
-    raising a second. Reached any other way — a recalculation after a pardon or an amendment
-    — this builds one of its own, which is the case that would otherwise post sanctions
-    with nothing above them.
-
-    **The lineups and the sheets a sanction touches are asked of *queue*,** the change queue the
-    caller hands in, and not posted here (#439): the lineup of the division, and of every other
-    division an applied autosack reached, and the sheet of each division that has one. A post
-    Discord refuses stops the queue and is tried again, instead of being reported with this run.
+    **The cards, the lineups and the sheets a sanction touches are asked of *queue*,** the change
+    queue the caller hands in, and not posted here (#439): the announcement of the sanctions
+    applied (`attendance.sanctions.announce`), which heads them like a verdict (decided
+    2026-09-09) with the round's banner, or a heading of its own where none stands; the lineup of
+    the division, and of every other division an applied autosack reached; and the sheet of each
+    division that has one. A post Discord refuses stops the queue and is tried again, instead of
+    being reported with this run.
 
     **No driver's failure stops the run, and none is swallowed** (decided 2026-09-18, #239).
     A sanction that raises is recorded in the returned :class:`SanctionOutcome` and the next
@@ -2077,13 +2071,12 @@ async def enforce_attendance_sanctions(
         return outcome  # both disabled — nothing to do (FR-027)
 
     from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.results.services import verdict_announcement_service as _vas
-    if head is None:
-        head = _vas.banner_for_round(bot, db_path, round_id)
     placement: PlacementService = bot.placement_service
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
     sanctioned_profile_ids: set[int] = set()
+    # The candidates whose sanction applied, whose cards the queue is asked for.
+    applied_candidates: list[dict] = []
     # Other divisions an autosacked driver sat in, and who of theirs was sacked from them.
     other_divisions: dict[int, set[int]] = {}
 
@@ -2111,22 +2104,7 @@ async def enforce_attendance_sanctions(
             outcome.applied.append((driver, label))
             for other in candidate["other_divisions"]:
                 other_divisions.setdefault(other, set()).add(profile_id)
-            # An announcement that never went out is recorded with the run (#237). The
-            # `except` below only ever caught what *raised*, and this returns quietly
-            # instead — so `ATTENDANCE_SANCTIONS | Incomplete` has been promising a
-            # line about unannounced sanctions that it could not produce.
-            outcome.posting_faults += await _vas.post_autosanction_announcement(
-                bot=bot,
-                db_path=db_path,
-                round_id=round_id,
-                driver_discord_id=driver_discord_id,
-                driver_display_name=test_display_name,
-                sanction_type=sanction,
-                threshold=(
-                    autosack_threshold if sanction == "AUTOSACK" else autoreserve_threshold
-                ) or 0,
-                head=head,
-            )
+            applied_candidates.append(candidate)
         except SanctionNotApplicable as exc:
             outcome.failed.append((driver, label, str(exc)))
         except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
@@ -2137,16 +2115,19 @@ async def enforce_attendance_sanctions(
                 exc, applied=profile_id in sanctioned_profile_ids
             )))
 
-    # Ask for the lineup and the attendance sheet to be posted again, the sheet with the
+    # Ask for the cards, the lineup and the attendance sheet to be posted, the sheet with the
     # sanctioned drivers annotated. The queue posts them (#439).
     if sanctioned_profile_ids:
-        from leaguebot.attendance.services import sheet_posting
+        from leaguebot.attendance.services import sanctions_announce_change, sheet_posting
         from leaguebot.core.services.lineup_posting import ask_lineup_posts
 
         reached = [
             other_division_id for other_division_id, profile_ids in other_divisions.items()
             if profile_ids & sanctioned_profile_ids
         ]
+        await sanctions_announce_change.ask_sanctions_announce(
+            queue, db_path, round_id, division_id, applied_candidates
+        )
         await ask_lineup_posts(queue, db_path, [division_id, *reached])
         await sheet_posting.ask_sheet_post(
             queue, db_path, division_id, round_id, sanctioned_profile_ids

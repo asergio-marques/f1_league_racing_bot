@@ -220,13 +220,7 @@ async def test_the_banner_is_discarded_once_posted(flow):
 # tests/attendance/test_attendance_sync.py, and the shared poster the sync built until then is
 # gone with the announcer.
 
-NO_SANCTIONS_ANNOUNCE = (
-    "#439: /attendance sync posts the verdicts and banner of its sanctions itself, off the "
-    "change queue"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_sanction_standing_alone_heads_itself(tmp_path):
     """Pro's round 3 had no penalty applied, so no heading stands in its verdicts channel (704).
     A sync moves Lewis to reserve and asks the queue to announce it, as the bot. The queue's

@@ -35,11 +35,6 @@ from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_
 #: The change the sync asks for the verdicts and banner its sanctions owe.
 ANNOUNCE_KIND = "attendance.sanctions.announce"
 
-NO_SANCTIONS_ANNOUNCE = (
-    "#439: /attendance sync posts the verdicts and banner of its sanctions itself, off the "
-    "change queue"
-)
-
 
 async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:
     """Rounds 2 onwards of the division, by number, beside the fixture's round 1."""
@@ -135,7 +130,6 @@ async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
     assert await _sync(_make_bot(db_path), db_path) is outcome
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_second_sync_applies_nothing_twice(tmp_path):
     """The recovery is to run it again, so running it again must be harmless: the driver
     sacked by the first run is not attempted by the second. The first asks the change queue,
@@ -479,7 +473,6 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
 # The sync's announcements follow on the change queue (#439, slice 6b, C37)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
     """Division 1's full-time driver has 25 attendance points against an autosack threshold of
     20, and round 1 is final. A manager syncs from round 1: the driver is sacked as today, but
@@ -521,7 +514,6 @@ async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
     assert asked[0].args[1]["round_id"] == ROUND_ID
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_the_sync_s_reply_lists_the_sanctions_applied_and_says_the_announcements_follow(
     tmp_path,
 ):
@@ -580,7 +572,6 @@ def _cards(league: rl.ReviewLeague) -> list[int]:
     return [call[1] for call in league.attendance.calls if call[0] == "announce_sanction"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_sync_s_banner_is_posted_before_its_first_card_and_recorded_with_its_mark(
     tmp_path,
 ):
@@ -609,7 +600,6 @@ async def test_a_sync_s_banner_is_posted_before_its_first_card_and_recorded_with
     assert _cards(league) == [rl.LEWIS_PROFILE, rl.MAX_PROFILE]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_a_refused_card_stops_the_queue_and_a_discard_names_it(tmp_path):
     """As above, but Discord refuses Max's card (Missing Access). The queue stops at Max's card,
     Lewis's posted beneath the heading. A league admin discards it: the queue goes on, and the

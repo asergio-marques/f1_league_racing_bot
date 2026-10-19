@@ -436,6 +436,10 @@ class ChangeType:
     *plan*, on a kind whose first steps depend on what it was asked (a check-in answer is one
     driver's press or a maintainer's paste of many), says from the payload which steps to open
     with, in place of *opening*; `opening_steps` is the one place either is read.
+
+    *finished_lines*, on a change no member waits on (a bot's), says from what became of it the
+    lines the log channel carries once it is done: what a league admin discarded and so left
+    undone, named for doing by hand. They are written in the save that marks the change done.
     """
 
     kind: str
@@ -453,6 +457,7 @@ class ChangeType:
     writes: tuple[str, ...] | None = None
     turn_channel: Callable[[dict[str, Any]], int | None] | None = None
     plan: Callable[[dict[str, Any]], tuple[PlannedStep, ...]] | None = None
+    finished_lines: Callable[[OutcomeContext], tuple[str, ...]] | None = None
 
     def opening_steps(self, payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         """The steps saved when the change is asked for with *payload*: *opening*, or where the
@@ -2280,12 +2285,26 @@ class ChangeQueue:
 
     async def _finish(self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row]) -> None:
         """Mark the change DONE and update its acknowledgement with the outcome."""
+        change_type = self._types[change["kind"]]
+        lines: tuple[str, ...] = ()
+        if change_type.finished_lines is not None:
+            try:
+                lines = change_type.finished_lines(self._outcome_context(change, step_rows))
+            except Exception:  # noqa: BLE001 — the change is done whatever its lines' wording does
+                log.error("could not word the lines closing %s (change %s)", change["what"],
+                          change["id"], exc_info=True)
+        line_ids: list[int] = []
         async with self._writing, get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE queued_changes SET state = 'DONE' WHERE id = ?", (change["id"],)
             )
+            for line in lines:
+                line_id = await self._router.queue_log_on(db, line)
+                if line_id is not None:
+                    line_ids.append(line_id)
             await db.commit()
-        change_type = self._types[change["kind"]]
+        if line_ids:
+            await self._router.deliver_queued(line_ids)
         try:
             text = change_type.outcome(self._outcome_context(change, step_rows))
         except Exception:  # noqa: BLE001 — the change is done whatever its outcome's wording does

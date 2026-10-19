@@ -770,10 +770,6 @@ async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
 #: The change the run asks for the verdicts and banner its sanctions owe (#439, slice 6b, C37).
 ANNOUNCE_KIND = "attendance.sanctions.announce"
 
-NO_SANCTIONS_ANNOUNCE = (
-    "#439: the attendance sanctions are announced by the run itself, off the change queue"
-)
-
 
 def _announcements_asked(bot) -> list[dict]:
     """The payload of each `attendance.sanctions.announce` asked of the bot's change queue."""
@@ -781,7 +777,6 @@ def _announcements_asked(bot) -> list[dict]:
             if call.args[0] == ANNOUNCE_KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, announcer, sheet):
     """The full-time driver has 25 attendance points against an autosack threshold of 20, and is
     sacked. The run is complete, nothing announced by the run itself, and the announcement of
@@ -799,7 +794,6 @@ async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, announcer
     assert len(_announcements_asked(bot)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SANCTIONS_ANNOUNCE)
 async def test_the_announcement_asked_names_each_sanction_applied_and_none_that_failed(
     tmp_path, announcer, sheet
 ):

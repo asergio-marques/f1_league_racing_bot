@@ -672,6 +672,7 @@ class AttendanceCog(commands.Cog):
         if outcome.applied:
             lines.append("Sanctions applied:")
             lines += [f"\u2022 {driver} \u2014 {sanction}" for driver, sanction in outcome.applied]
+            lines.append("Their announcements follow on the change queue.")
         elif outcome.complete:
             lines.append("No sanction was owed.")
         if not outcome.complete:

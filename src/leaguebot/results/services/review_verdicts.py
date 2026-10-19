@@ -127,6 +127,16 @@ def verdict_steps(
             int(result.result["message_id"]), result.result["channel_id"],
         )
 
+    async def record_card(db: Any, ctx: StepContext, result: StepResult) -> None:
+        # The banner the card stands beneath is noted as heading a sanction card, in the save that
+        # marks the card posted: a replay of the round's verdicts then keeps it (#345).
+        payload = ctx.step_payload
+        banners = await vas._banners_of_on(
+            db, int(payload.get("heading_round_id", payload["round_id"]))
+        )
+        if banners:
+            await vas._mark_banner_over_sanction_on(db, banners[-1][1])
+
     async def record_sheet(db: Any, ctx: StepContext, result: StepResult) -> None:
         await attendance.record_sheet_on(
             db, int(ctx.step_payload["division_id"]), result.result
@@ -156,7 +166,7 @@ def verdict_steps(
         ),
         ANNOUNCE_SANCTION: Step(
             ANNOUNCE_SANCTION, StepKind.ACT, bound(_announce_sanction), still_due=_was_applied,
-            describe=_describe_announce,
+            describe=_describe_announce, record=record_card,
         ),
         REFRESH_LINEUP: Step(
             REFRESH_LINEUP, StepKind.ACT, bound(_refresh_lineup), still_due=_after_a_sanction,
@@ -450,13 +460,17 @@ async def _describe_heading(ctx: StepContext) -> str:
 
 async def _heading_still_due(ctx: StepContext, hook: AttendanceAfterReview) -> bool:
     """A heading over the verdicts is always due. One over a round's sanction cards is due only
-    while attendance is on: the cards are attendance's, and the hook posts none once it is off,
-    so a heading tried after attendance was turned off (on a Retry, the switch not being a change
-    the queue carries) would stand over no card. The switch is asked of the hook, never read
-    here."""
+    while attendance is on and no heading stands over the round: the cards are attendance's, and
+    the hook posts none once it is off, so a heading tried after attendance was turned off (on a
+    Retry, the switch not being a change the queue carries) would stand over no card; and the
+    cards of `/attendance sync` go beneath the banner the round's verdicts already have, so it
+    plans a heading for any that has none and the job finds the round headed. The switch is
+    asked of the hook, never read here."""
     if ctx.step_payload.get("over") != _OVER_SANCTIONS:
         return True
-    return await hook.enabled()
+    if not await hook.enabled():
+        return False
+    return not await vas._banners_of(ctx.db_path, int(ctx.step_payload["round_id"]))
 
 
 async def _announce_heading(ctx: StepContext) -> StepResult:
@@ -651,7 +665,10 @@ async def _still_owed(ctx: StepContext, hook: AttendanceAfterReview) -> bool:
 
 
 async def _was_applied(ctx: StepContext) -> bool:
-    """The announcement is due only where this change's own job applied the sanction."""
+    """The announcement is due only where this change's own job applied the sanction, or where the
+    change was asked for sanctions already applied (`/attendance sync`'s: its payload says so)."""
+    if ctx.step_payload.get("applied"):
+        return True
     return any(
         view.name == APPLY_SANCTION and _same_driver(view, ctx.step_payload) and view.done
         and not (view.result or {}).get("dropped") and not _discarded(view)

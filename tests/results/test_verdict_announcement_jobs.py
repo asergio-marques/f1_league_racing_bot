@@ -303,11 +303,6 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
 #: The change `/attendance sync` asks for the cards of the sanctions it applied (C37).
 SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
 
-NO_QUEUED_SANCTION_CARD = (
-    "#439: /attendance sync announces its sanctions itself, off the change queue, so no "
-    "attendance.sanctions.announce change posts a sanction's card"
-)
-
 
 async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
     """Hand the change types attendance's real hook, then ask the queue, as the bot and as the
@@ -328,7 +323,6 @@ async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
     await run_queue(league.bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUED_SANCTION_CARD)
 async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
     """Attendance is on with its real hook, and the verdict graphic is on. A sync has moved
     Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
@@ -343,7 +337,6 @@ async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tm
     assert str(LEWIS) not in drawn[0]["driver_name"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUED_SANCTION_CARD)
 async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
     """As above, but with image generation off: the card is posted as text in Pro's verdicts
     channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""

@@ -7,13 +7,11 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import aiosqlite
 import discord
-from types import SimpleNamespace
 
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.db.database import get_connection
@@ -237,130 +235,6 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     }
 
 
-def _banner_once(bot: LeagueBot, channel, ctx: dict):
-    """A callable that heads a run of verdicts with a banner, at most once.
-
-    **Lazy, and that is the point.** A run can produce nothing: a record whose result
-    context will not load is skipped, and every record of a run may be such a one. Posted
-    eagerly, the banner would then stand alone over an empty run. Called immediately before
-    the first verdict that actually goes out, it cannot.
-
-    **One of these covers a whole approval, not one function.** Approving a penalty review
-    posts the penalty verdicts and then, further down the same call, the attendance
-    sanctions that review's scoring triggered — into the same channel, for the same round.
-    They are one run of verdicts as a league reads them, so a caller posting both builds one
-    poster with `banner_for_round` and hands it to both paths; the second finds it
-    already spent. An attendance sanction `/attendance sync` fires where no penalty was applied
-    heads itself, which is the case a per-function poster left bare (decided 2026-09-09). A
-    review's approval no longer posts through this: its headings are jobs on the queue
-    (`review_verdicts`), the sanction cards' own included, which stop the queue where they cannot
-    be posted.
-
-    Never raises, and never returns anything the caller must act on: a header failing must
-    not cost a league the decisions it heads.
-    """
-    posted = False
-
-    async def post():
-        """Returns the message the banner was posted as, or None."""
-        nonlocal posted
-        if posted:
-            return None
-        posted = True  # set before the attempt: one try per batch, whatever it returns
-        try:
-            from leaguebot.image.services import image_verdict_banner_post
-
-            drawing = image_verdict_banner_post.build_drawing(
-                season_number=ctx.get("season_number"),
-                division_name=ctx["division_name"],
-                division_tier=ctx.get("division_tier"),
-                round_number=ctx.get("round_number"),
-                race_name=ctx.get("race_name"),
-                country_name=ctx.get("country_name"),
-            )
-            return await image_verdict_banner_post.try_post(bot, channel, drawing)
-        except Exception:
-            log.exception("verdict banner: could not head the batch")
-        return None
-
-    return post
-
-
-class _RecordingPoster:
-    """A banner poster that keeps the banner it put up, called with no arguments like any other.
-
-    `message` is the banner once it is up, and None until then; a sanction card beneath it reads
-    it, and may come from a later path of the same approval (#345). A class rather than an
-    attribute set on a closure, which is the same thing to a caller but invisible to the type
-    check (#228).
-    """
-
-    message: discord.Message | None = None
-
-    def __init__(self, post: Callable[[_RecordingPoster], Awaitable[None]]) -> None:
-        self._post = post
-
-    async def __call__(self) -> None:
-        await self._post(self)
-
-
-def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
-    """A shared banner poster for every verdict one approval will post.
-
-    The same callable as :func:`_banner_once`, resolving the round's context and channel on
-    the first call rather than being handed them. That is what lets a caller holding neither
-    — one that knows only the round — build one poster and pass it
-    to the several paths that post verdicts beneath it.
-
-    Resolving lazily costs nothing where no verdict follows: an approval applying no penalty
-    and triggering no sanction never calls it, so the query is never made.
-    """
-    posted = False
-
-    async def post(poster: _RecordingPoster) -> None:
-        nonlocal posted
-        if posted:
-            return
-        posted = True  # set before the attempt: one try per approval, whatever it returns
-        try:
-            ctx = await _get_announcement_context(db_path, round_id)
-            if not ctx:
-                return
-            channel_id_raw = ctx.get("penalty_channel_id")
-            if channel_id_raw is None:
-                return  # no verdicts channel configured — skip silently
-            channel = bot.get_channel(int(channel_id_raw))
-            if channel is None:
-                return
-            message = await _banner_once(bot, channel, ctx)()
-            poster.message = message
-            await _record_banner(db_path, round_id, channel_id_raw, message)
-        except Exception:
-            log.exception("verdict banner: could not head round %s", round_id)
-
-    return _RecordingPoster(post)
-
-
-async def _record_banner(db_path: str, round_id: int, channel_id, message) -> None:
-    """Note which message heads a round's run of verdicts, so it can be taken down with them.
-
-    A banner belongs to no verdict record — it is a message of its own above the cards — so
-    without this an amendment removed a round's announcements and left the header standing over
-    the empty space, then posted a fresh one below it, once per amendment (#345).
-    """
-    message_id = getattr(message, "id", None)
-    if message_id is None:
-        return
-    try:
-        async with get_connection(db_path) as db:
-            await _record_banner_on(
-                db, round_id, channel_id, message_id, now=datetime.now(timezone.utc)
-            )
-            await db.commit()
-    except Exception:  # noqa: BLE001 — the banner went out; only the record of it failed
-        log.exception("could not record the banner of round %s", round_id)
-
-
 async def _record_banner_on(
     db: aiosqlite.Connection, round_id: int, channel_id, message_id: int, *, now: datetime
 ) -> None:
@@ -398,30 +272,6 @@ async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
     """Every banner recorded for *round_id*, as (channel id, message id), oldest first."""
     async with get_connection(db_path) as db:
         return await _banners_of_on(db, round_id)
-
-
-async def _mark_banner_over_sanction(db_path: str, banner) -> None:
-    """Note that *banner* heads an attendance sanction card (decided 2026-09-21).
-
-    A sanction card is no verdict record: no replay re-announces it or takes it down. So a
-    banner over one is kept by every replay, or the card would be left without its header.
-
-    *banner* is the message the card's own poster put up, picture or words — spent earlier by
-    the approval the card belongs to, or posted for it just now. Since #246 a header goes up
-    whether or not the aspect is on, so the switch being off no longer leaves a card bare;
-    only a post that failed does. Such a card marks nothing: the header that merely came
-    before it in the channel heads another run, and marked it would never come down. Never
-    raises: the card went out, and only this note of it failed.
-    """
-    banner_id = getattr(banner, "id", None)
-    if banner_id is None:
-        return
-    try:
-        async with get_connection(db_path) as db:
-            await _mark_banner_over_sanction_on(db, banner_id)
-            await db.commit()
-    except Exception:  # noqa: BLE001
-        log.exception("could not note banner %s as heading a sanction card", banner_id)
 
 
 async def _mark_banner_over_sanction_on(db: aiosqlite.Connection, banner_id: int) -> None:
@@ -685,15 +535,13 @@ async def announce_sanction(
 ) -> None:
     """Post a sanction's card in the round's verdicts channel, raising where it cannot.
 
-    What a queued sanction announcement is (#439): where `post_autosanction_announcement`
-    returns what it could not announce, this raises, for the queue to stop on and try again,
-    and the lines it would have returned are the failure's reason. The card goes beneath the
-    heading the round's verdicts already stand under, **read back from its row** and not from
-    a poster held in memory, so a stop and a restart between the verdicts and the sanctions
-    post no second one. A round whose verdicts posted no heading (no penalty was applied) is
-    headed by a job of its own, planned ahead of the first card (`review_verdicts`), whose row
-    this reads back the same way; this posts no heading, so a card whose heading was discarded
-    stands beneath none. *as_text* leaves the picture out of the card.
+    What a queued sanction announcement is (#439): it raises where it cannot post, for the queue
+    to stop on and try again. The card goes beneath the heading the round's verdicts already
+    stand under, which the job's own record notes as heading a sanction card in the save that
+    marks the card posted (`review_verdicts`). A round whose verdicts posted no heading (no
+    penalty was applied) is headed by a job of its own, planned ahead of the first card; this
+    posts no heading, so a card whose heading was discarded stands beneath none. *as_text*
+    leaves the picture out of the card.
 
     A division with no verdicts channel set is a failure, not a card skipped: a verdicts
     channel is one the season cannot be approved without.
@@ -711,9 +559,6 @@ async def announce_sanction(
             "the server"
         )
 
-    banners = await _banners_of(db_path, round_id)
-    banner_id = banners[-1][1] if banners else None
-
     driver_ref = f"<@{driver_discord_id}>"
     if driver_display_name:
         driver_ref += f" ({driver_display_name})"
@@ -721,7 +566,7 @@ async def announce_sanction(
         sanction_type, driver_ref, threshold
     )
     try:
-        card = await _send_verdict(
+        await _send_verdict(
             bot,
             channel,
             db_path=db_path,
@@ -746,8 +591,6 @@ async def announce_sanction(
         )
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the sanction's announcement could not be posted: {exc}") from exc
-    if card is not None and banner_id is not None:
-        await _mark_banner_over_sanction(db_path, SimpleNamespace(id=banner_id))
 
 
 async def announce_verdict(
@@ -843,133 +686,6 @@ async def announce_verdict(
     if message is None:
         raise StepFailedOnDiscord("the verdict could not be posted")
     return int(getattr(message, "id")), int(channel.id)
-
-
-async def post_autosanction_announcement(
-    bot: LeagueBot,
-    db_path: str,
-    round_id: int,
-    driver_discord_id: int,
-    driver_display_name: str | None,
-    sanction_type: str,  # "AUTOSACK" or "AUTORESERVE"
-    threshold: int,
-    head=None,
-) -> list[str]:
-    """Post a verdict-channel announcement for an autosack or autoreserve action.
-
-    Returns what it could not announce, as lines a league can read (#237). Its caller adds
-    them to ``SanctionOutcome.posting_faults``, which is where "the sanction took effect but
-    its announcement could not be posted" already belonged — the `except` around the call
-    site only ever caught what *raised*, and every exit below returned quietly instead, so
-    the report #239 built has been promising a line it could not produce.
-
-    **An attendance sanction is a verdict** (decided 2026-09-09) and is headed like one.
-    *head* is the run's shared banner poster: the sanctions of one round come from a loop in
-    `enforce_attendance_sanctions`, which builds one and passes it to every call, so a round
-    sanctioning three drivers raises one banner and not three. Where that run was itself
-    reached from a penalty approval, the poster is that approval's and is already spent by
-    the penalty verdicts, so the sanctions fall under their banner rather than a second.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT s.season_number, d.name AS division_name,
-                   drc.penalty_channel_id, r.round_number
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-
-    sanction_label = "autosack" if sanction_type == "AUTOSACK" else "autoreserve"
-
-    if row is None:
-        log.warning("post_autosanction_announcement: could not load context for round %s", round_id)
-        return [
-            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
-            f"round {round_id} could not be read, so it was not announced"
-        ]
-
-    division_name_for_fault: str = row["division_name"] or "the division"
-
-    penalty_channel_id_raw = row["penalty_channel_id"]
-    if penalty_channel_id_raw is None:
-        log.error(
-            "post_autosanction_announcement: no verdicts channel for round %s", round_id
-        )
-        return [
-            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
-            f"**{division_name_for_fault}** has no verdicts channel set, so it was not announced"
-        ]
-
-    target_channel = bot.get_channel(int(penalty_channel_id_raw))
-    if target_channel is None:
-        log.error(
-            "post_autosanction_announcement: verdicts channel %s inaccessible — skipping",
-            penalty_channel_id_raw,
-        )
-        return [
-            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
-            f"**{division_name_for_fault}**'s verdicts channel (id "
-            f"{int(penalty_channel_id_raw)}) is not in the server, so it was not announced"
-        ]
-
-    season_number: int | None = row["season_number"]
-    division_name: str = row["division_name"]
-    round_number: int = row["round_number"]
-
-    driver_ref = f"<@{driver_discord_id}>"
-    if driver_display_name:
-        driver_ref += f" ({driver_display_name})"
-
-    penalty_label, description_text, justification_text = _sanction_texts(
-        sanction_type, driver_ref, threshold
-    )
-
-    try:
-        #  After every check that could still make this a no-op, so a banner is never
-        #  posted over a sanction that is not announced.
-        poster = head if head is not None else banner_for_round(bot, db_path, round_id)
-        await poster()
-
-        card = await _send_verdict(
-            bot,
-            target_channel,
-            db_path=db_path,
-            round_id=round_id,
-            kind=VerdictKind.ATTENDANCE_SANCTION,
-            season_number=season_number,
-            division_name=division_name,
-            round_number=round_number,
-            session_label=None,
-            driver_discord_id=driver_discord_id,
-            driver_display_name=driver_display_name,
-            driver_name=await _graphic_name(
-                bot,
-                getattr(target_channel, "guild", None),
-                driver_discord_id,
-                fallback_display_name=driver_display_name,
-            ),
-            penalty_description=penalty_label,
-            description_text=description_text,
-            justification_text=justification_text,
-        )
-        if card is not None:
-            await _mark_banner_over_sanction(db_path, getattr(poster, "message", None))
-        return []
-    except Exception as exc:  # noqa: BLE001 — recorded with the sanction's outcome
-        log.exception(
-            "post_autosanction_announcement: error posting announcement for driver %s",
-            driver_discord_id,
-        )
-        return [
-            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
-            f"its announcement failed: {exc}"
-        ]
 
 
 def _parse_chunk_ids(raw):

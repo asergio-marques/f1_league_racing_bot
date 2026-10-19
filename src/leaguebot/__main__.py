@@ -342,6 +342,9 @@ def register_change_types(bot: LeagueBot) -> None:
         check_in_deadline_change,
         check_in_last_notice_change,
     )
+    from leaguebot.attendance.services.sanctions_announce_change import (
+        sanctions_announce_change,
+    )
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
@@ -427,6 +430,11 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(check_in_clean_up_change())
     bot.change_queue.register(check_in_answer_change(bot.attendance_service))
+    bot.change_queue.register(
+        sanctions_announce_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
