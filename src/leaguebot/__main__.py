@@ -1340,7 +1340,7 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     A cancelled round or division is left alone. Its cancellation removed both jobs, and the
     weather module keeps the forecasts of a round called off. The season's status is not asked,
     since the live jobs fire after a season completes as well. Each module's own gate applies:
-    weather's here, and attendance's inside `run_rsvp_cleanup`.
+    weather's here, and attendance's inside its clean-up change's check.
 
     Running a cleanup a second time finds nothing left to take down, so a job the scheduler
     still runs inside its grace alongside this does no harm.

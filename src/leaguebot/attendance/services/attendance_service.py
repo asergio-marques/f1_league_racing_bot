@@ -334,19 +334,6 @@ class AttendanceService:
 
     # ── driver_round_attendance CRUD ───────────────────────────────────────
 
-    async def bulk_insert_attendance_rows(
-        self,
-        round_id: int,
-        division_id: int,
-        driver_profile_ids: list[int],
-    ) -> None:
-        """Insert NO_RSVP rows for every driver in the list (ignore if already exists)."""
-        async with get_connection(self._db_path) as db:
-            await self.bulk_insert_attendance_rows_on(
-                db, round_id, division_id, driver_profile_ids
-            )
-            await db.commit()
-
     @staticmethod
     async def bulk_insert_attendance_rows_on(
         db: aiosqlite.Connection,
@@ -354,8 +341,9 @@ class AttendanceService:
         division_id: int,
         driver_profile_ids: list[int],
     ) -> None:
-        """`bulk_insert_attendance_rows` on *db*, committing nothing: the call's record writes
-        its rows in the save that marks the posting job done."""
+        """Insert NO_RSVP rows for every driver in the list (ignore if already exists) on *db*,
+        committing nothing: the call's record writes its rows in the save that marks the posting
+        job done."""
         await db.executemany(
             """
             INSERT OR IGNORE INTO driver_round_attendance
@@ -390,8 +378,8 @@ class AttendanceService:
         **It inserts, and that is the point** (issue #209). This was two bare ``UPDATE``
         statements despite its name, so a driver holding no ``driver_round_attendance`` row
         had their answer discarded in silence while the button handler thanked them for it.
-        Only ``bulk_insert_attendance_rows`` creates those rows and only ``run_rsvp_notice``
-        calls it, against the roster as it stood when the call was posted — so a driver
+        Only ``bulk_insert_attendance_rows_on`` creates those rows and only the check-in call's
+        record calls it, against the roster as it stood when the call was posted — so a driver
         assigned, moved or confirmed into the division afterwards has none, and pressing a
         button was the one way they could ever get one.
 
@@ -408,7 +396,7 @@ class AttendanceService:
         A row created here is written carrying the answered status in one statement, never
         created as NO_RSVP and then updated: the intermediate state has no reader, and
         ``accepted_at`` follows the ordinary rule above rather than a special case of it.
-        Every other column takes the same default ``bulk_insert_attendance_rows`` gives it.
+        Every other column takes the same default ``bulk_insert_attendance_rows_on`` gives it.
         """
         accepted_at = now.isoformat() if status == "ACCEPTED" else None
         return await AttendanceService._write_answer(
@@ -543,25 +531,6 @@ class AttendanceService:
 
     # ── rsvp_embed_messages CRUD ───────────────────────────────────────────
 
-    async def insert_embed_message(
-        self,
-        round_id: int,
-        division_id: int,
-        message_id: str,
-        channel_id: str,
-    ) -> None:
-        """Store (or replace) the RSVP embed message IDs for a (round, division) pair.
-
-        A call replacing one recorded for the pair takes its record in this one statement, its
-        last notice and distribution announcement cleared: they were the earlier call's, and the
-        new one has none yet (`run_rsvp_notice`'s *replacing*)."""
-        async with get_connection(self._db_path) as db:
-            await self.insert_embed_message_on(
-                db, round_id, division_id, message_id, channel_id,
-                posted_at=datetime.now(timezone.utc),
-            )
-            await db.commit()
-
     @staticmethod
     async def insert_embed_message_on(
         db: aiosqlite.Connection,
@@ -570,10 +539,13 @@ class AttendanceService:
         message_id: str,
         channel_id: str,
         *,
-        posted_at: datetime,
+        posted_at: datetime | None = None,
     ) -> None:
-        """`insert_embed_message` on *db*, committing nothing, the call posted at *posted_at*: the
-        call's record is saved with the mark of the job that posted it."""
+        """Store (or replace) the RSVP embed message IDs for a (round, division) pair on *db*,
+        committing nothing, the call posted at *posted_at* (now where none is given): the call's record is saved with the
+        mark of the job that posted it. A call replacing one recorded for the pair takes its record
+        in this one statement, its last notice and distribution announcement cleared: they were
+        the earlier call's, and the new one has none yet."""
         await db.execute(
             """
             INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, posted_at)
@@ -588,7 +560,8 @@ class AttendanceService:
                           distribution_channel_id = NULL,
                           deadline_run_at = NULL
             """,
-            (round_id, division_id, message_id, channel_id, posted_at.isoformat()),
+            (round_id, division_id, message_id, channel_id,
+             (posted_at or datetime.now(timezone.utc)).isoformat()),
         )
 
     async def get_embed_message(
@@ -644,18 +617,6 @@ class AttendanceService:
             return still_open[0]
         return calls[-1] if calls else None
 
-    async def update_embed_last_notice_msg(
-        self,
-        round_id: int,
-        division_id: int,
-        msg_id: str,
-        channel_id: str | None = None,
-    ) -> None:
-        """Store the Discord message ID of the last-notice ping for this round."""
-        async with get_connection(self._db_path) as db:
-            await self.update_embed_last_notice_msg_on(db, round_id, division_id, msg_id, channel_id)
-            await db.commit()
-
     @staticmethod
     async def update_embed_last_notice_msg_on(
         db: aiosqlite.Connection,
@@ -664,25 +625,13 @@ class AttendanceService:
         msg_id: str,
         channel_id: str | None = None,
     ) -> None:
-        """`update_embed_last_notice_msg` on *db*, committing nothing: the last notice's record
-        is saved with the mark of the job that posted it."""
+        """Store the last-notice ping's message ID for this round on *db*, committing nothing:
+        the last notice's record is saved with the mark of the job that posted it."""
         await db.execute(
             "UPDATE rsvp_embed_messages SET last_notice_msg_id = ?, last_notice_channel_id = ?"
             " WHERE round_id = ? AND division_id = ?",
             (msg_id, channel_id, round_id, division_id),
         )
-
-    async def update_embed_distribution_msg(
-        self,
-        round_id: int,
-        division_id: int,
-        msg_id: str,
-        channel_id: str | None = None,
-    ) -> None:
-        """Store the Discord message ID of the reserve distribution announcement."""
-        async with get_connection(self._db_path) as db:
-            await self.update_embed_distribution_msg_on(db, round_id, division_id, msg_id, channel_id)
-            await db.commit()
 
     @staticmethod
     async def update_embed_distribution_msg_on(
@@ -692,8 +641,8 @@ class AttendanceService:
         msg_id: str,
         channel_id: str | None = None,
     ) -> None:
-        """`update_embed_distribution_msg` on *db*, committing nothing: the announcement's record
-        is saved with the mark of the job that posted it."""
+        """Store the reserve distribution announcement's message ID on *db*, committing nothing:
+        the announcement's record is saved with the mark of the job that posted it."""
         await db.execute(
             "UPDATE rsvp_embed_messages SET distribution_msg_id = ?, distribution_channel_id = ?"
             " WHERE round_id = ? AND division_id = ?",

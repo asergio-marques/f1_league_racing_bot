@@ -647,12 +647,6 @@ async def _make_attendance_db(tmp_path) -> str:
     return path
 
 
-NO_CALL_WRITERS_ON = (
-    "#439: the call's record is written by the attendance service's committing writers, with no "
-    "form taking the queue's save (`insert_embed_message_on`, `bulk_insert_attendance_rows_on`)"
-)
-
-
 async def _write(svc, db_path: str, writer: str, *args, **kwargs):
     """Call the attendance service's *writer* in its `_on` form, on a connection of the test's
     own that it then commits, as a job's save does (#439, slice 6b: the committing forms are
@@ -770,7 +764,6 @@ class TestAttendanceServiceCrud:
         row = await svc.get_attendance_row_for_driver(99, 10, 999)
         assert row is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_CALL_WRITERS_ON)
     @pytest.mark.asyncio
     async def test_insert_and_get_embed_message(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
@@ -783,7 +776,6 @@ class TestAttendanceServiceCrud:
         assert em.message_id == "999000111"
         assert em.channel_id == "555000222"
 
-    @pytest.mark.xfail(strict=True, reason=NO_CALL_WRITERS_ON)
     @pytest.mark.asyncio
     async def test_insert_embed_message_upserts(self, tmp_path):
         """Re-inserting same (round, division) should update message_id, not raise."""
@@ -805,7 +797,6 @@ class TestAttendanceServiceCrud:
         em = await svc.get_embed_message(round_id=99, division_id=10)
         assert em is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_CALL_WRITERS_ON)
     @pytest.mark.asyncio
     async def test_get_all_embed_messages(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
