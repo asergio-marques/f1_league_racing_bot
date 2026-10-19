@@ -27,10 +27,6 @@ from leaguebot.attendance.services.attendance_service import (
 )
 from tests.support.change_queue import in_a_job
 
-NO_SHEET_CHANNEL_STOP = (
-    "#439: a sheet for a division with no attendance channel returns having posted nothing, "
-    "rather than raising for its job to stop the queue naming /attendance channel attendance"
-)
 
 # ── The deadline derivation (T010/T011) ───────────────────────────────────
 
@@ -371,7 +367,6 @@ async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
     assert await _stored_message_id(sheet_db) == "4242"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
 @pytest.mark.asyncio
 async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db):
     """FR-046: where the division has no attendance channel set, nothing is posted or deleted,

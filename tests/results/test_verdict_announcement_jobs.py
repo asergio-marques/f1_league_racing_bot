@@ -68,10 +68,6 @@ from tests.support.review_league import (
 
 APPEALS_PROMPT = 8902
 
-NO_SHEET_CHANNEL_STOP = (
-    "#439: a review's or an amendment's attendance sheet with no attendance channel completes "
-    "posting nothing, rather than stopping the queue naming /attendance channel attendance"
-)
 NO_LINEUP_CHANNEL_STOP = (
     "#439: a review's lineup with no lineup channel completes posting nothing, rather than "
     "stopping the queue naming /division lineup-channel"
@@ -568,7 +564,8 @@ async def _no_attendance_channel(league: ReviewLeague) -> None:
 async def _no_reserve_team(league: ReviewLeague) -> None:
     """Division 11 sets an autoreserve threshold of one point and has no Reserve team. Lewis, in
     the seat of team 3001, raced round 4, the last final round and so where the division's totals
-    stand, without an RSVP, which puts him on the threshold."""
+    stand, without an RSVP, which puts him on the threshold. The division has an attendance
+    channel the server holds, for the sheet before the sanction to post to."""
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
         seat = await db.execute(
@@ -586,7 +583,13 @@ async def _no_reserve_team(league: ReviewLeague) -> None:
             "rsvp_status, attended) VALUES (?, ?, ?, 'NO_RSVP', 1)",
             (LATER_ROUND_ID, DIVISION_ID, LEWIS_PROFILE),
         )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(ATTENDANCE_CHANNEL)),
+        )
         await db.commit()
+    league.channels[ATTENDANCE_CHANNEL] = channel(ATTENDANCE_CHANNEL, league.events)
 
 
 @pytest.mark.parametrize(
@@ -650,7 +653,6 @@ def _sheet_stop(league: ReviewLeague) -> str:
     return stop
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
 async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_naming_the_command(
     tmp_path,
 ):
@@ -667,7 +669,6 @@ async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_namin
     assert "/attendance channel attendance" in _sheet_stop(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
 async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
     """Round 3 of Pro, final, is under an amendment of its Feature Race whose report stage is
     approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was

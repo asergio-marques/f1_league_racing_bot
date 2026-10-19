@@ -63,7 +63,8 @@ class AttendanceAfterReview(Protocol):
 
         Saves and deletes nothing (#439). Gives the sheet posted and the one it replaces (`new`,
         `old`, `channel_id`, `takes_slot`) for the job to save and to plan the old one's
-        deletion, or `{"unset": True}` where nothing was posted; None while attendance is off."""
+        deletion, or an empty result where nothing was due; None while attendance is off. Raises
+        where the division has no attendance channel, for the job to stop the queue."""
 
     async def record_sheet_on(
         self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]

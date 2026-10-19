@@ -1075,9 +1075,10 @@ async def post_attendance_sheet(
     **A sheet that cannot be posted is raised** (#439): a channel the division was given and the
     guild no longer holds, or a send Discord refuses, raises `StepFailedOnDiscord`, so the queue
     stops on the job that called this and tries it again, and nothing is put on the old retry
-    queue, which would post a second copy beside the retry. A division never given a channel, and
-    a cancelled round, post nothing and raise nothing. *as_text* leaves the graphic out, which is
-    how a job retries (Constitution XIV rule 8).
+    queue, which would post a second copy beside the retry. A division never given a channel
+    raises too, its message naming `/attendance channel attendance`, so the queue stops there and
+    does not complete having posted nothing; a cancelled round posts nothing and raises nothing.
+    *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
@@ -1102,7 +1103,10 @@ async def post_attendance_sheet(
 
     if row is None or not row["attendance_channel_id"]:
         log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
-        return None
+        raise StepFailedOnDiscord(
+            f"division {division_id} has no attendance channel: set one with "
+            "/attendance channel attendance, then press Retry"
+        )
 
     # A round recorded as cancelled distributes no attendance points and produces no sheet,
     # whatever the `attendance` toggle says (FR-047). The recording flow already skips a
@@ -1280,9 +1284,9 @@ class PostedSheet:
 
 def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
     """A sheet job's result: the sheet posted (`new`, `old`, `channel_id`, `takes_slot`), or
-    `{"unset": True}` where nothing was posted."""
+    an empty result where nothing was due (a cancelled round, a division with no opening round)."""
     if posted is None:
-        return {"unset": True}
+        return {}
     return {
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "takes_slot": posted.takes_slot,

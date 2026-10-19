@@ -41,10 +41,6 @@ from tests.support.season_league import (
     pending_completion_league,
 )
 
-NO_SHEET_CHANNEL_STOP = (
-    "#439: a season end's final sheet with no attendance channel completes posting nothing, "
-    "rather than stopping the queue naming /attendance channel attendance"
-)
 
 PRO_CH = DIVISIONS[PRO][3]
 
@@ -56,7 +52,6 @@ async def _unset_pro_attendance_channel(league) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
 async def test_the_final_sheet_with_no_channel_stops_the_queue(tmp_path):
     """Attendance is on, and Pro's attendance channel was never set. Admin 77 completes the
     season: the queue stops at Pro's final sheet, its stop line naming the command that sets the
