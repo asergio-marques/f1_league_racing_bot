@@ -37,7 +37,7 @@ import aiohttp
 import aiosqlite
 import discord
 
-from leaguebot.attendance.models.attendance import RsvpEmbedMessage
+from leaguebot.attendance.models.attendance import AttendanceConfig, RsvpEmbedMessage
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection
@@ -160,6 +160,90 @@ def _scheduled(row: aiosqlite.Row) -> datetime:
 
 def _deadline(row: aiosqlite.Row) -> datetime:
     return _scheduled(row) - timedelta(hours=row["deadline_hours"] or 0)
+
+
+def _closed_text(row: aiosqlite.Row, deadline_hours: int) -> str:
+    """How the moment a call can no longer be answered is told: the deadline, or with none set
+    (zero disables the closing of a check-in, not the race) the round's own start."""
+    at = int((_scheduled(row) - timedelta(hours=deadline_hours)).timestamp())
+    return f"closed at <t:{at}:F>" if deadline_hours > 0 else f"started at <t:{at}:F>"
+
+
+def hand_post_refusal(
+    row: aiosqlite.Row,
+    standing: aiosqlite.Row | None,
+    cfg: AttendanceConfig | None,
+    *,
+    now: datetime,
+) -> str | None:
+    """Why `/attendance post-check-in` may not post *row*'s round a call now, in the command's
+    words, else None.
+
+    A last resort confined to the window in which a call should stand and does not: not before it
+    is due (the scheduled one is still coming), not once its deadline has passed (the buttons
+    would lock on arrival), and never over a call standing, which an amendment replaces with the
+    answers carried across. *cfg* is attendance's configuration, None where there is none. The
+    command asks this before it asks the queue, and the change's check asks it again when the
+    change runs.
+    """
+    name, number = row["division_name"], row["round_number"]
+    if row["round_status"] == "CANCELLED":
+        return f"⛔ Round {number} of **{name}** is cancelled, so it has no check-in to answer."
+    if row["checkin_cleared"]:
+        return (
+            f"⛔ Round {number} of **{name}** has no check-in left to answer: the round's "
+            f"check-in is over. Nothing was posted."
+        )
+    if standing is not None:
+        return (
+            f"⛔ A check-in call is already standing for round {number} of **{name}**, so "
+            f"nothing was posted. Amend the round if it needs to go out again — that carries "
+            f"every answer already given across."
+        )
+    if cfg is None:
+        return "\u274c No attendance configuration found. Enable the module first."
+    notice_days, deadline_hours = cfg.rsvp_notice_days, cfg.rsvp_deadline_hours
+    due_at = _scheduled(row) - timedelta(days=notice_days)
+    if now < due_at:
+        return (
+            f"⛔ The check-in call for round {number} of **{name}** is not due until "
+            f"<t:{int(due_at.timestamp())}:F>, and is still scheduled to post then. Nothing "
+            f"was posted."
+        )
+    if now >= _scheduled(row) - timedelta(hours=deadline_hours):
+        return (
+            f"⛔ Round {number} of **{name}** {_closed_text(row, deadline_hours)}, so a call "
+            f"posted now could not be answered. Nothing was posted."
+        )
+    return None
+
+
+async def judge_hand_post(
+    db_path: str,
+    cfg: AttendanceConfig | None,
+    division_id: int,
+    division_name: str,
+    round_number: int,
+    *,
+    now: datetime,
+) -> tuple[int | None, str | None]:
+    """The round *round_number* of a division, and the refusal `/attendance post-check-in`
+    answers with if it may not post it a call: (round id, None) to go ahead, (None, the refusal)
+    otherwise. *cfg* is attendance's configuration, None where there is none."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM rounds WHERE division_id = ? AND round_number = ?",
+            (division_id, round_number),
+        )
+        found = await cursor.fetchone()
+        if found is None:
+            return None, f"❌ **{division_name}** has no round {round_number}."
+        row = await _call_row(db, found["id"])
+        standing = await _standing(db, found["id"])
+    if row is None:
+        return None, f"❌ **{division_name}** has no round {round_number}."
+    refusal = hand_post_refusal(row, standing, cfg, now=now)
+    return (None, refusal) if refusal is not None else (int(found["id"]), None)
 
 
 def _earlier_messages(call: RsvpEmbedMessage) -> list[tuple[str, str]]:
@@ -345,8 +429,14 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
                 for message_id, channel_id in _earlier_messages(earlier)
             )
         lines: tuple[str, ...] = ()
+        if ctx.actor_id is not None:
+            lines += (
+                f"{ctx.named} | /attendance post-check-in | Success\n"
+                f"  division: {division}\n"
+                f"  round: {row['round_number']}",
+            )
         if ctx.payload.get("late"):
-            lines = (
+            lines += (
                 f"ATTENDANCE | check-in call | POSTED LATE\n"
                 f"  season: {row['season_number']}\n"
                 f"  division: {division} (id={division_id})\n"
@@ -436,11 +526,30 @@ def check_in_call_change(service: AttendanceService, *, now: Callable[[], dateti
         async with get_connection(ctx.db_path) as db:
             row = await _call_row(db, round_id)
             standing = await _standing(db, round_id)
+        if ctx.origin is ChangeOrigin.MEMBER and row is not None:
+            # A hand-posted call is judged in the command's own words, as the command judged it
+            # when it asked and again here, since a queue stopped for a while can bring it up to
+            # run after its deadline or beside a call the timer has posted meanwhile.
+            refusal = hand_post_refusal(row, standing, await service.get_config(), now=now())
+            if refusal is not None:
+                return Verdict.refuse(refusal)
         reason = _not_due(row, standing, ctx.payload.get("replaces"))
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
-    def outcome(_ctx: OutcomeContext) -> str:
-        return ""
+    def outcome(ctx: OutcomeContext) -> str:
+        """What a member who posted the call by hand is told: it was posted, or why it was not.
+        The bot's own request tells nobody."""
+        if ctx.actor_id is None:
+            return ""
+        name, number = ctx.payload.get("division_name", "?"), ctx.payload.get("round_number", "?")
+        steps = {step.name: step for step in ctx.steps}
+        posted = steps.get(POST_CALL)
+        if posted is not None and posted.done and (posted.result or {}).get("new"):
+            return f"✅ Check-in call posted for round {number} of **{name}**."
+        return (
+            f"⛔ The check-in call for round {number} of **{name}** was not posted: it was "
+            f"no longer owed when it came to run."
+        )
 
     return ChangeType(
         kind=CHECK_IN_CALL,
@@ -461,6 +570,8 @@ async def ask_check_in_call(
     origin: ChangeOrigin,
     replacing: bool = False,
     late: bool = False,
+    interaction: discord.Interaction | None = None,
+    refusal_what: str | None = None,
 ) -> None:
     """Ask the queue to post *round_id*'s check-in call, as its timer does.
 
@@ -469,6 +580,10 @@ async def ask_check_in_call(
     alone. *late* marks a call asked by a restart for one that fell due while the bot was down:
     the log channel is told it was posted late. A round that is not there asks nothing; the
     change's check drops a request that is no longer owed.
+
+    *interaction*, with a member's *origin*, is the manager who posts the call by hand: they are
+    told it is under way, then what became of it, and a refusal is made to them in the command's
+    words, recorded as *refusal_what*.
     """
     async with get_connection(db_path) as db:
         row = await _call_row(db, round_id)
@@ -482,4 +597,7 @@ async def ask_check_in_call(
         "replaces": None if standing is None else str(standing["message_id"]),
         "late": late,
     }
-    await queue.ask(CHECK_IN_CALL, payload, what=_doing(payload), origin=origin)
+    await queue.ask(
+        CHECK_IN_CALL, payload, interaction=interaction, what=_doing(payload),
+        refusal_what=refusal_what, origin=origin,
+    )

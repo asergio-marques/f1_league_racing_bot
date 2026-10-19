@@ -84,11 +84,6 @@ KIND = "attendance.check_in.call"
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
 
-NO_CALL_CHANGE = (
-    "#439: /attendance post-check-in posts the call at once through `run_rsvp_notice`, off the "
-    "change queue"
-)
-
 
 async def _make_db(tmp_path, *, scheduled_at: datetime, status: str = "NOT_RUN") -> str:
     """A migrated database with one division and one round at *scheduled_at*."""
@@ -430,7 +425,6 @@ async def test_a_call_not_yet_due_is_refused(tmp_path):
     assert await _rows(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_exactly_due_is_posted(tmp_path):
     """The boundary belongs to the window: at the due moment the call is late, not early, and
     is asked of the queue."""
@@ -493,7 +487,6 @@ async def test_a_disabled_deadline_still_stops_at_the_race_itself(tmp_path, offs
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_it_posts_the_call_for_the_named_round(tmp_path):
     """The defect itself: a league can reach the round's call, asked of the queue with the
     manager's interaction rather than posted at once."""
@@ -506,7 +499,6 @@ async def test_it_posts_the_call_for_the_named_round(tmp_path):
     posts.assert_asked_once(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_that_fails_to_post_is_reported_as_failed(tmp_path):
     """Discord refuses the call: the queue stops at it, and the manager's acknowledgement is
     updated to say so, never with a tick. A failed post is not reported as a success, which is
@@ -559,7 +551,6 @@ async def test_a_missing_attendance_configuration_is_refused(tmp_path):
     assert "No attendance configuration" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
     """The boundary is the race, not some margin before it — a minute out is still answerable."""
     db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(minutes=1))
@@ -579,7 +570,6 @@ async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_post_check_in_is_acknowledged_and_updated_with_the_call(tmp_path):
     """The manager is answered that the call is under way and nothing is posted yet; once the
     queue has run, one call stands in Pro's check-in channel, recorded, and the acknowledgement
@@ -600,7 +590,6 @@ async def test_post_check_in_is_acknowledged_and_updated_with_the_call(tmp_path)
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_post_check_in_whose_deadline_passed_while_queued_is_refused_when_it_runs(tmp_path):
     """Round 4 starts in 2 hours 10 minutes, so its check-in closes in ten. The queue is stopped
     ahead of the command, which is acknowledged; eleven minutes on the stop is cleared and the
@@ -621,7 +610,6 @@ async def test_post_check_in_whose_deadline_passed_while_queued_is_refused_when_
     assert await _call_states(league) == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_post_check_in_while_the_queue_is_stopped_says_so(tmp_path):
     """The queue is stopped at another job: the manager's acknowledgement says the queue is
     stopped at that job and the call runs once it is cleared, and nothing is posted meanwhile."""

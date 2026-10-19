@@ -183,7 +183,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
-    ("attendance/cogs/attendance_cog.py", "AttendanceCog.post_check_in"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
