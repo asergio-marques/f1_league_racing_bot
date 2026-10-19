@@ -27,8 +27,6 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
@@ -128,7 +126,9 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
 
 
 async def _seed_rsvp_rows(db_path: str, *, reserve_accepted: bool = True) -> None:
-    """Give the round the attendance rows a posted call would have created."""
+    """Give the round the attendance rows a posted call would have created. The reserve answered
+    two hours ago: three hours before a round an hour off (`_an_hour_off`), so before its
+    two-hour deadline, as the deadline places reserves on the answers as they stood then."""
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_round_attendance "
@@ -143,7 +143,7 @@ async def _seed_rsvp_rows(db_path: str, *, reserve_accepted: bool = True) -> Non
                 ROUND_ID,
                 DIVISION_ID,
                 "ACCEPTED" if reserve_accepted else "NO_RSVP",
-                datetime.now(timezone.utc).isoformat(),
+                (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
             ),
         )
         await db.commit()
@@ -211,12 +211,6 @@ async def _counts(db_path: str) -> tuple[int, int, int]:
 # as no longer due while attendance is off, or for a cancelled round, so nothing is computed,
 # recorded or posted and the queue does not stop. The round's deadline passed an hour ago where
 # a test asks it (the round an hour off, the deadline two hours before it).
-
-NO_CHECK_IN_CHANGE = (
-    "#439: the check-in call and deadline are run at once by `run_rsvp_notice` and "
-    "`run_rsvp_deadline`, and a restart runs a missed deadline itself, rather than each being "
-    "asked of the change queue"
-)
 
 
 def _an_hour_off() -> datetime:
@@ -354,7 +348,6 @@ async def test_the_deadline_distributes_nobody_while_attendance_is_disabled(tmp_
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_deadline_distributes_reserves_while_attendance_is_enabled(tmp_path):
     """Attendance is on: the queue places the reserve who accepted into the vacant seat."""
     db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
@@ -423,7 +416,6 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     assert distributed == 0, "a restart ran a missed deadline for a disabled module"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_path):
     """Attendance is on and the round's deadline passed while the bot was down: the restart
     re-arms the call's buttons and asks the queue for the deadline, placing no reserve itself;
