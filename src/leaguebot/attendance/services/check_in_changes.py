@@ -474,7 +474,9 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
                 for message_id, channel_id in _earlier_messages(earlier)
             )
         lines: tuple[str, ...] = ()
-        if ctx.actor_id is not None:
+        if ctx.actor_id is not None and ctx.kind == CHECK_IN_CALL:
+            # Only the call's own change was asked by the command: an amendment that borrows this
+            # step to repost the call has its own line, and nobody ran /attendance post-check-in.
             lines += (
                 f"{ctx.named} | /attendance post-check-in | Success\n"
                 f"  division: {division}\n"
