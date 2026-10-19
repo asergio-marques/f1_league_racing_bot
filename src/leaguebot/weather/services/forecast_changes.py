@@ -137,6 +137,17 @@ def _not_due(
     return None
 
 
+def _forecast_mentions(phase: int, role_id: int | None) -> discord.AllowedMentions:
+    """Who a forecast's post may notify: its division's role alone, whether it is posted as text
+    or as a picture and whether it is a first try or a retry, and nobody for the mystery notice
+    (phase 0) or a division with no role set. No member and not everyone, ever."""
+    if phase == 0 or not role_id:
+        return discord.AllowedMentions.none()
+    return discord.AllowedMentions(
+        everyone=False, users=False, roles=[discord.Object(id=int(role_id))]
+    )
+
+
 def _drawers() -> dict[int, Callable[..., Any]]:
     """Each phase's draw, resolved through its module as it is called."""
     return {
@@ -247,6 +258,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             text=text,
             attachment=attachment,
             attachment_text="" if phase == 0 else f"<@&{mention}>",
+            mentions=_forecast_mentions(phase, mention),
         )
         result = {
             "new": message.id, "channel_id": int(row["forecast_channel_id"]), "phase": phase,

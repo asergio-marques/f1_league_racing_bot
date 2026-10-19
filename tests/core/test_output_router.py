@@ -20,7 +20,6 @@ LOG_CHANNEL_ID = 101
 ADMIN_ROLE_ID = 901
 
 NO_NOTICE_ROLE = "#439: the router's stop notice takes no role to mention"
-NO_FORECAST_MENTIONS = "#439: the router's forecast post takes no mentions and notifies nobody"
 DIVISION_ROLE_ID = 801
 
 
@@ -78,7 +77,6 @@ async def test_the_router_s_forecast_post_is_made_in_a_job():
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTIONS)
 async def test_a_forecast_s_allowed_mentions_are_passed_to_every_part():
     """The router is asked, in a job, to post a forecast too long for one message to division
     channel 701, letting the division's role 801 notify. It is sent in more than one part, and

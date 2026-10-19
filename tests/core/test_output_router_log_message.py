@@ -23,8 +23,6 @@ import pytest
 from leaguebot.core.services.output_router import OutputRouter
 from tests.support.change_queue import in_a_job
 
-#: Why a forecast posted through the router fails until it is handed the mentions it notifies.
-NO_FORECAST_MENTIONS = "#439: the router's forecast post takes no mentions to send with"
 #: The mentions a forecast of a division with role 801 is sent with.
 ROLE_801 = discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(801)])
 
@@ -76,7 +74,6 @@ async def test_a_split_block_returns_its_first_message():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTIONS)
 async def test_post_forecast_still_returns_its_last_message():
     """Its callers store the id to edit that message later (calendar, constructor
     standings). Returning a different one would repoint those edits."""
@@ -132,7 +129,6 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
     assert f"`{mention}`" in sent[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTIONS)
 async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing():
     """Nothing to post to. It came to the same before — the router asked Discord for a channel
     with no id and logged the failure — less the request (#228)."""
@@ -150,7 +146,6 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing(
     bot.fetch_channel.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTIONS)
 async def test_a_forecast_the_channel_refuses_raises_for_the_queue_and_queues_nothing(
     tmp_path, monkeypatch
 ):

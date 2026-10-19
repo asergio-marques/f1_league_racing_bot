@@ -468,8 +468,6 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
 # the mystery round's notice names and notifies nobody.
 # ---------------------------------------------------------------------------
 
-NO_FORECAST_MENTION = "#439: a forecast posted as text notifies nobody, its role not allowed"
-NO_ROLELESS_FORECAST = "#439: a forecast for a division with no role writes the mention <@&0>"
 NO_RECORDED_CHANNEL = "#439: a forecast is deleted from its division's current channel"
 
 
@@ -494,7 +492,6 @@ def _notifies_no_member(send: Any) -> bool:
     return not getattr(mentions, "users", False) and not getattr(mentions, "everyone", False)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTION)
 async def test_a_forecast_posted_as_text_notifies_the_division_s_role(tmp_path):
     """Images off: Pro's phase 1 forecast for round 3 is asked and the queue run. It is posted as
     text in Pro's forecast channel, naming Pro's role 801, and is sent letting that role notify,
@@ -510,7 +507,6 @@ async def test_a_forecast_posted_as_text_notifies_the_division_s_role(tmp_path):
     assert _notifies_no_member(send)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_FORECAST_MENTION)
 async def test_a_retried_forecast_notifies_the_role(tmp_path):
     """Pro's phase 1 forecast is refused by Discord, stopping the queue; Retry posts it again, as
     text. The forecast that finally stands notifies Pro's role 801 as the first would have."""
@@ -545,7 +541,6 @@ async def test_the_mystery_notice_notifies_nobody(tmp_path):
     assert _notifies_no_member(send)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROLELESS_FORECAST)
 @pytest.mark.parametrize("phase, payload", [
     (1, {"track": TRACK, "rpc": 40}),
     (2, {"track": TRACK, "session_draws": [{"session_type": "LONG_RACE", "slot": "rain"}]}),

@@ -76,16 +76,22 @@ PHASE_DESCRIPTIONS = {
 }
 
 
-def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
+def _role_prefix(division_role_id: int | None) -> str:
+    """The division's role mention and a space, or nothing where the division has no role: a
+    forecast for it names no one rather than the role `<@&0>`."""
+    return f"<@&{division_role_id}> " if division_role_id else ""
+
+
+def phase1_message(division_role_id: int | None, track: str, rpc_pct: float) -> str:
     """Phase 1 forecast: the round's chance of rain, drawn at the phase 1 horizon.
 
     Titled by ``PHASE_DESCRIPTIONS[1]`` and naming no horizon of its own — see that constant
     for why. The promise of a further forecast stays, the weather specification requiring this
     message to indicate that a more detailed one follows; only the "at T−2 days" left it.
     """
-    role_mention = f"<@&{division_role_id}>"
+    role_mention = _role_prefix(division_role_id)
     return (
-        f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[1]}**\n"
+        f"{role_mention}🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[1]}**\n"
         f"**Track**: {track}\n"
         f"**Rain Probability**: {format_rain_probability(rpc_pct)}\n"
         f"A more detailed forecast will follow later."
@@ -93,7 +99,7 @@ def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
 
 
 def phase2_message(
-    division_role_id: int,
+    division_role_id: int | None,
     track: str,
     session_slots: list[tuple[str, str]],
 ) -> str:
@@ -106,9 +112,9 @@ def phase2_message(
     Args:
         session_slots: list of (session_type_label, slot_type) e.g. ('Qualifying', 'rain')
     """
-    role_mention = f"<@&{division_role_id}>"
+    role_mention = _role_prefix(division_role_id)
     lines = [
-        f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[2]}**",
+        f"{role_mention}🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[2]}**",
         f"**Track**: {track}",
         "",
         "**Session Overview**:",
@@ -124,7 +130,7 @@ def phase2_message(
 
 
 def phase3_message(
-    division_role_id: int,
+    division_role_id: int | None,
     track: str,
     session_weather: list[tuple[str, list[str]]],
 ) -> str:
@@ -137,9 +143,9 @@ def phase3_message(
     Args:
         session_weather: list of (session_label, [weather_slot, ...])
     """
-    role_mention = f"<@&{division_role_id}>"
+    role_mention = _role_prefix(division_role_id)
     lines = [
-        f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[3]}**",
+        f"{role_mention}🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[3]}**",
         f"**Track**: {track}",
         "",
         "**Slot-by-Slot Forecast**:",
@@ -246,7 +252,8 @@ def forecast_text(phase: int, division_role_id: int | None, payload: dict | None
 
     A forecast is posted by a job after its draw, and a try again composes the text at the moment
     it is sent, so the text is built from what the draw stored rather than carried from it. Phase
-    0 is a mystery round's notice, which has no draw and no payload and tags no role.
+    0 is a mystery round's notice, which has no draw and no payload and tags no role. A division
+    with no role (*division_role_id* None) is tagged to no one.
 
     A phase of 1 to 3 handed no payload raises `ValueError`: its draw is gone, and the post job's
     check drops that case before it gets here, so reaching it is a fault to stop the queue at,
@@ -256,7 +263,7 @@ def forecast_text(phase: int, division_role_id: int | None, payload: dict | None
         return mystery_notice_message()
     if payload is None:
         raise ValueError(f"the Phase {phase} forecast has no recorded draw to be built from")
-    role = int(division_role_id or 0)
+    role = division_role_id
     track = payload["track"]
     if phase == 1:
         return phase1_message(role, track, payload["rpc"])

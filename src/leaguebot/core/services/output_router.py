@@ -95,9 +95,14 @@ class OutputRouter:
 
     @posts_in_a_job
     async def post_forecast(
-        self, division: ForecastTarget, content: str
+        self, division: ForecastTarget, content: str, *, mentions: discord.AllowedMentions
     ) -> "Optional[discord.Message]":
-        """Post *content* to the division's forecast channel.
+        """Post *content* to the division's forecast channel, letting *mentions* notify.
+
+        *mentions* is the caller's to state, every part of the text is sent with it, and there is
+        no default: a forecast that names its division's role passes that role, and the mystery
+        round's notice passes `AllowedMentions.none()` (architecture.md, "Posting to Discord",
+        "Who it may mention, stated where it is sent").
 
         Returns the ``discord.Message`` sent (the last, where the text is split), or ``None``
         where the division has no forecast channel set. A post Discord refuses, or to a channel
@@ -111,7 +116,9 @@ class OutputRouter:
             # channel with no id and logged the failure — less the request.
             log.error("post_forecast: the division has no forecast channel")
             return None
-        message, reason, _retryable = await self._try_send(channel_id, content, "forecast", False)
+        message, reason, _retryable = await self._try_send(
+            channel_id, content, "forecast", False, mentions=mentions
+        )
         if message is None:
             raise StepFailedOnDiscord(
                 f"the forecast could not be posted to <#{channel_id}>: {reason}"
@@ -459,6 +466,7 @@ class OutputRouter:
         return_first: bool,
         view: "Optional[discord.ui.View]" = None,
         mention_role: int | None = None,
+        mentions: "Optional[discord.AllowedMentions]" = None,
     ) -> "tuple[Optional[discord.Message], str, bool]":
         """Send *content*, and say how it went: the message, or None with why and whether a
         retry could mend it (a refused or failed post can; a channel not found cannot).
@@ -485,7 +493,7 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
-            allowed = (
+            allowed = mentions if mentions is not None else (
                 discord.AllowedMentions.none() if mention_role is None
                 else discord.AllowedMentions(roles=[discord.Object(id=mention_role)])
             )

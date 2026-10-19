@@ -188,6 +188,7 @@ async def post_phase_message(
     text: str,
     attachment=None,
     attachment_text: str = "",
+    mentions: discord.AllowedMentions,
 ) -> "discord.Message":
     """Post one weather occasion, and nothing else: the job that calls it records the message and
     deletes the one it supersedes.
@@ -204,13 +205,17 @@ async def post_phase_message(
 
     *attachment* is a ``discord.File`` where the league draws a graphic; *attachment_text* is
     the message it rides on, which for a forecast is the division role mention and nothing
-    besides, and for a mystery notice is empty.
+    besides, and for a mystery notice is empty. *mentions* is who either may notify, stated by the
+    caller and sent with the text or the picture alike: the division's role for a forecast,
+    nobody for a mystery notice.
     """
     if attachment is None:
         # The textual path, unchanged: the router chunks it, and raises where Discord refuses.
         from leaguebot.core.services.output_router import ForecastChannel
 
-        msg = await bot.output_router.post_forecast(ForecastChannel(channel_id), text)
+        msg = await bot.output_router.post_forecast(
+            ForecastChannel(channel_id), text, mentions=mentions
+        )
         if msg is None:
             raise StepFailedOnDiscord(
                 f"the Phase {phase_number} forecast has no channel to be posted to"
@@ -243,7 +248,7 @@ async def post_phase_message(
             return await channel.send(
                 attachment_text,
                 file=attachment,
-                allowed_mentions=discord.AllowedMentions.all(),
+                allowed_mentions=mentions,
             )
         except discord.HTTPException as exc:
             log.warning(
