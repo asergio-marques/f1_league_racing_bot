@@ -233,9 +233,10 @@ def text_channel(channel_id: int) -> Any:
     """A text channel recording what it is sent; set `fails` to an exception to refuse.
 
     `sent` holds the content of each message, and `posted` each message as Discord returned it:
-    its `id`, `content` and `view`, which an `edit` with `view=` replaces. `fetch_message` and
-    `get_partial_message` find a posted message by id; one removed from `posted` is gone, and
-    `NotFound` is raised for it: by an edit, a delete, or a reaction added, removed or cleared.
+    its `id`, `content` and `view`, which an `edit` with `view=` replaces, and a `delete` that
+    takes it out of `posted`. `fetch_message` and `get_partial_message` find a posted message by
+    id; one removed from `posted` is gone, and `NotFound` is raised for it: by an edit, a delete,
+    or a reaction added, removed or cleared.
     """
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
@@ -261,7 +262,13 @@ def text_channel(channel_id: int) -> Any:
                     setattr(message, name, changes[name])
             return message
 
+        async def _delete(*_args: Any, **_kwargs: Any) -> None:
+            if message not in channel.posted:
+                raise http_error(discord.NotFound, status=404, text="Unknown Message")
+            channel.posted.remove(message)
+
         message.edit = AsyncMock(side_effect=_edit)
+        message.delete = AsyncMock(side_effect=_delete)
         channel.posted.append(message)
         return message
 

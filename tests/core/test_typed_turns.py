@@ -57,11 +57,6 @@ OTHER_CHANNEL = 708
 TURNS = f"channel:{CHANNEL}"
 DRIVER = tier_member(None, member_id=4343, display_name="Driver", name="Driver#0001")
 
-NO_TYPED_TURNS = (
-    "#439: no change answers a typed message: nothing marks it, nor turns away what is typed "
-    "while it waits"
-)
-
 
 def _channels(bot: Any, *channels: Any) -> None:
     """Let *bot* find *channels* beside its log and interaction channels; any other is gone."""
@@ -302,7 +297,6 @@ async def test_a_mark_that_cannot_be_cleared_stops_the_queue(env):
     assert [row["state"] for row in await change_rows(env.db_path)] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TYPED_TURNS)
 async def test_a_turned_away_message_is_deleted_at_once_and_the_note_stays(env):
     """A second message typed while the first waits is deleted at once, before the queue runs;
     the note saying so stays in the channel, and stays after the first turn is answered."""
