@@ -214,6 +214,29 @@ async def test_a_cancelled_round_s_open_is_dropped(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
+async def test_a_second_open_asked_while_the_first_is_stopped_is_dropped_once_the_channel_stands(
+    tmp_path,
+):
+    """Test mode's advance asks round 3's opening twice: the first stops at the channel's
+    creation (Discord refuses it), and the second is asked behind it. Once the refusal clears and
+    the first is retried, the second finds the submission open and is dropped as no longer due:
+    one channel is made, and the queue does not stop."""
+    league = await _league(tmp_path)
+    league.create_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    await _ask(league)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "create_channel"
+    await _ask(league)
+
+    league.create_fails = None
+    await retry_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+
+
 async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_command(tmp_path):
     """Pro has no results channel set when round 3 starts. The queue stops rather than passing
     over it, its stop notice in the log channel naming `/results channel results`, and no

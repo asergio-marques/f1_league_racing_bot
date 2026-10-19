@@ -119,6 +119,17 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
             return Verdict.not_due("the round is gone")
         if row["status"] == RoundStatus.CANCELLED.value:
             return Verdict.not_due("the round was cancelled")
+        async with get_connection(ctx.db_path) as db:
+            standing = await (
+                await db.execute(
+                    "SELECT 1 FROM round_submission_channels WHERE round_id = ? AND closed = 0",
+                    (int(ctx.payload["round_id"]),),
+                )
+            ).fetchone()
+        if standing is not None:
+            # An earlier opening already made the channel (this one waited behind it, as test
+            # mode's advance can ask twice): a second would orphan the first's channel.
+            return Verdict.not_due("the round's submission is already open")
         return Verdict.go()
 
     async def not_cancelled(ctx: StepContext) -> bool:
