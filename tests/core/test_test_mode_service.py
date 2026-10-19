@@ -785,6 +785,34 @@ async def test_a_cleanup_job_waits_for_its_own_round_s_results(tmp_path) -> None
     assert result is not None and result["phase_number"] == 4
 
 
+async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp_path) -> None:
+    """Round 1's result submission is the step advance would offer. An advance has already asked
+    the queue to open it, and the opening is not done: the next advance passes over the round
+    start, since offering it again would ask for a second channel."""
+    import json
+
+    db_path = str(tmp_path / "round_start_in_hand.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
+    await _stand(db_path, 1, call=True)
+    scheduler = _StubScheduler([_job(1, 9, days=1)])
+    offered = await get_next_pending_phase(db_path, scheduler)
+    assert offered is not None and offered["phase_number"] == 4
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('results.submission.open', 'results.submission.open:1', ?, 'BOT', 'QUEUED', "
+            "'opening the results submission')",
+            (json.dumps({"round_id": 1}),),
+        )
+        await db.commit()
+
+    again = await get_next_pending_phase(db_path, scheduler)
+
+    assert again is None or again["phase_number"] != 4
+
+
 async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     """A finished round offers no other step, which once meant any job of its was thrown away
     as stale. Its cleanups are still to run."""

@@ -279,6 +279,11 @@ async def get_next_pending_phase(
         int(p["round_id"]) for p in await unfinished(db_path, (FORECAST_CLEAN_UP,))
     }
     check_ins_in_hand = await _check_ins_in_hand(db_path)
+    # Rounds whose results submission an earlier advance asked of the queue and which it has not
+    # opened yet: the database alone would offer the round start again.
+    submissions_in_hand: set[int] = {
+        int(p["round_id"]) for p in await unfinished(db_path, ("results.submission.open",))
+    }
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -526,8 +531,9 @@ async def get_next_pending_phase(
 
         # ── Phase 4: result submission ────────────────────────────────────
         if results_module_enabled:
-            if rid not in rounds_with_results and row["status"] in (
-                "NOT_RUN", "AWAITING_RESULTS"
+            if (
+                rid not in rounds_with_results and rid not in submissions_in_hand
+                and row["status"] in ("NOT_RUN", "AWAITING_RESULTS")
             ):
                 return _make(4)
 
