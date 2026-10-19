@@ -28,6 +28,13 @@ deletes it from there. It is owed a round with a call standing and before the ch
 asked late while the deadline is ahead, it is posted late; once the deadline has passed, or no call
 stands, it is dropped.
 
+The clean-up is `attendance.check_in.clean_up`, asked by its timer a day after the round and by the
+restart: its `plan` job reads the messages the round's check-in left recorded (the call, the last
+notice and the announcement, each with the channel it was posted in), one `delete_message` job
+takes each down, through the one delete step every standing post shares, and `mark_cleared` marks
+the round's check-in over, naming in the log channel any message a league admin discarded the
+deletion of, for deletion by hand. A refused deletion stops the queue.
+
 The posts of a check-in (the call, and the last notice and announcement that follow) go through
 `post_check_in_message`, the module's one send site, which keeps the mentions the post may notify
 stated where it is sent.
@@ -35,6 +42,7 @@ stated where it is sent.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -77,6 +85,10 @@ POST_CALL = "post_call"
 DELETE_EARLIER = "delete_earlier"
 CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
 POST_LAST_NOTICE = "post_last_notice"
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
+PLAN_CLEAN_UP = "plan"
+DELETE_MESSAGE = "delete_message"
+MARK_CLEARED = "mark_cleared"
 
 
 def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
@@ -782,3 +794,192 @@ async def ask_check_in_last_notice(
         "division_name": row["division_name"], "round_number": row["round_number"],
     }
     await queue.ask(CHECK_IN_LAST_NOTICE, payload, what=_doing_notice(payload), origin=origin)
+
+
+#: The columns a check-in message is recorded in, each with the one naming the channel it was posted
+#: in, so that a message deleted is forgotten by the column that held it.
+_MESSAGE_COLUMNS = {
+    "message_id": "channel_id",
+    "last_notice_msg_id": "last_notice_channel_id",
+    "distribution_msg_id": "distribution_channel_id",
+}
+_MESSAGE_WHAT = {
+    "message_id": "check-in call",
+    "last_notice_msg_id": "last check-in notice",
+    "distribution_msg_id": "reserve announcement",
+}
+
+
+def _doing_clean_up(payload: dict[str, Any]) -> str:
+    return (
+        f"taking down the check-in of round {payload.get('round_number', '?')} in "
+        f"**{payload.get('division_name', '?')}** a day after it"
+    )
+
+
+async def _forget_message(db: aiosqlite.Connection, payload: dict[str, Any]) -> None:
+    """Forget a check-in message the clean-up took down, or whose deletion a league admin
+    discarded, on *db* and committing nothing: the call's deletion drops the call's record, the
+    others clear their id and channel from it."""
+    column = str(payload["column"])
+    where = "round_id = ? AND division_id = ? AND " + column + " = ?"
+    args = (int(payload["round_id"]), int(payload["division_id"]), str(payload["message_id"]))
+    if column == "message_id":
+        await db.execute("DELETE FROM rsvp_embed_messages WHERE " + where, args)  # noqa: S608
+        return
+    await db.execute(  # noqa: S608 — the column is one of the three above
+        f"UPDATE rsvp_embed_messages SET {column} = NULL, {_MESSAGE_COLUMNS[column]} = NULL "
+        f"WHERE {where}",
+        args,
+    )
+
+
+def _not_cleaned(row: aiosqlite.Row | None) -> str | None:
+    """Why the round is owed no clean-up, else None: unlike a call, a clean-up is owed a round
+    whose results are in and whose check-in is over."""
+    if row is None:
+        return "the round is gone"
+    if row["round_status"] == "CANCELLED":
+        return "the round is cancelled"
+    if row["division_status"] == "CANCELLED":
+        return "the division is cancelled"
+    if not row["attendance_on"]:
+        return "the attendance module is off"
+    return None
+
+
+def check_in_clean_up_steps() -> dict[str, Step]:
+    """The jobs of a round's check-in clean-up."""
+
+    async def still_due(ctx: StepContext) -> bool:
+        async with get_connection(ctx.db_path) as db:
+            row = await _call_row(db, int(ctx.payload["round_id"]))
+        reason = _not_cleaned(row)
+        if reason is not None:
+            log.info("The check-in clean-up of round %s is no longer owed: %s.",
+                     ctx.payload["round_id"], reason)
+        return reason is None
+
+    async def plan(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        round_id = int(ctx.payload["round_id"])
+        row = await _call_row(db, round_id)
+        if row is None:
+            return StepResult(result={"dropped": True})
+        cursor = await db.execute(
+            "SELECT * FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
+        )
+        call = await cursor.fetchone()
+        base = {
+            "round_id": round_id, "division_id": row["division_id"],
+            "division_name": row["division_name"], "round_number": row["round_number"],
+        }
+        deletes: list[PlannedStep] = []
+        if call is not None:
+            for column, channel_column in _MESSAGE_COLUMNS.items():
+                if call[column] is None:
+                    continue
+                deletes.append(PlannedStep(DELETE_MESSAGE, {
+                    **base, "column": column, "message_id": int(call[column]),
+                    "channel_id": int(call[channel_column] or call["channel_id"]),
+                    "what": _MESSAGE_WHAT[column],
+                }))
+        return StepResult(
+            result={"planned": len(deletes)},
+            then=(*deletes, PlannedStep(MARK_CLEARED)),
+        )
+
+    async def describe_plan(ctx: StepContext) -> str:
+        return f"finding what is left of the check-in of round {ctx.payload.get('round_number', '?')}"
+
+    async def record_delete(
+        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
+    ) -> None:
+        await _forget_message(db, ctx.step_payload)
+
+    async def describe_delete(ctx: StepContext) -> str:
+        payload = ctx.step_payload
+        return (
+            f"deleting the {payload.get('what', 'message')} of round "
+            f"{payload.get('round_number', '?')} in **{payload.get('division_name', '?')}** from "
+            f"<#{payload['channel_id']}>"
+        )
+
+    async def mark_cleared(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        round_id = int(ctx.payload["round_id"])
+        left: list[str] = []
+        for view in ctx.steps:
+            if view.name == DELETE_MESSAGE and "discarded" in (view.result or {}):
+                # Nothing would take it down again from its record, so the record goes with it.
+                await _forget_message(db, view.payload)
+                left.append(
+                    f"{view.payload['message_id']} in <#{view.payload['channel_id']}> "
+                    f"({view.payload.get('what', 'message')})"
+                )
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        lines: tuple[str, ...] = ()
+        if left:
+            lines = (
+                f"ATTENDANCE | check-in clean-up | NOT DELETED\n"
+                f"  division: {ctx.payload.get('division_name', '?')}\n"
+                f"  round: {ctx.payload.get('round_number', '?')}\n"
+                f"  messages: {', '.join(left)}\n"
+                f"  note: Discord refused to delete them and a league admin discarded the job; "
+                f"delete them by hand.",
+            )
+        return StepResult(result={"cleared": True}, lines=lines)
+
+    async def describe_mark(ctx: StepContext) -> str:
+        return f"marking the check-in of round {ctx.payload.get('round_number', '?')} over"
+
+    delete = dataclasses.replace(
+        standing_posts.delete_replaced_step(DELETE_MESSAGE),
+        record=record_delete, describe=describe_delete,
+    )
+    return {
+        PLAN_CLEAN_UP: Step(PLAN_CLEAN_UP, StepKind.SAVE, plan, still_due=still_due,
+                            describe=describe_plan),
+        DELETE_MESSAGE: delete,
+        MARK_CLEARED: Step(MARK_CLEARED, StepKind.SAVE, mark_cleared, describe=describe_mark),
+    }
+
+
+def check_in_clean_up_change() -> ChangeType:
+    """`attendance.check_in.clean_up`: the bot's change that takes a round's check-in down a day
+    after it. Not repeatable: a second request for a round still waiting is dropped."""
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await _call_row(db, int(ctx.payload["round_id"]))
+        reason = _not_cleaned(row)
+        return Verdict.go() if reason is None else Verdict.not_due(reason)
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=CHECK_IN_CLEAN_UP,
+        opening=(PlannedStep(PLAN_CLEAN_UP),),
+        steps=check_in_clean_up_steps(),
+        check=check,
+        key=lambda payload: f"{CHECK_IN_CLEAN_UP}:{payload['round_id']}",
+        doing=_doing_clean_up,
+        outcome=outcome,
+    )
+
+
+async def ask_check_in_clean_up(
+    queue: ChangeQueue, db_path: str, round_id: int, *, origin: ChangeOrigin
+) -> None:
+    """Ask the queue to take *round_id*'s check-in down, as its timer does a day after the round.
+    A round that is not there asks nothing; the change's check drops a request no longer owed."""
+    async with get_connection(db_path) as db:
+        row = await _call_row(db, round_id)
+    if row is None:
+        log.error("Check-in clean-up: round_id=%s not found — nothing asked of the queue.",
+                  round_id)
+        return
+    payload: dict[str, Any] = {
+        "round_id": round_id, "division_id": row["division_id"],
+        "division_name": row["division_name"], "round_number": row["round_number"],
+    }
+    await queue.ask(CHECK_IN_CLEAN_UP, payload, what=_doing_clean_up(payload), origin=origin)

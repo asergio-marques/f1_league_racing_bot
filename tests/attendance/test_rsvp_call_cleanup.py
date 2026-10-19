@@ -248,10 +248,6 @@ async def test_posting_a_call_takes_down_no_other_call(tmp_path, scheduled_at, d
 # ---------------------------------------------------------------------------
 
 
-NO_CLEAN_UP_CHANGE = (
-    "#439: the check-in clean-up is run by `run_rsvp_cleanup` at once, off the change queue"
-)
-
 
 async def _clean_up(
     db_path: str, round_id: int = EARLIER_ROUND, *, attendance_enabled: bool = True
@@ -296,7 +292,6 @@ async def _cleared(db_path: str, round_id: int = EARLIER_ROUND) -> bool:
         return bool((await cursor.fetchone())["checkin_cleared"])
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_takes_down_the_call_and_its_notices(tmp_path):
     """The call, its last notice and its distribution message, and the row recording them."""
     db_path = await _make_db(tmp_path)
@@ -308,7 +303,6 @@ async def test_the_cleanup_takes_down_the_call_and_its_notices(tmp_path):
     assert await _standing_rounds(db_path) == set()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_keeps_the_answers(tmp_path):
     """The messages go; what the drivers answered is the attendance record and stays."""
     db_path = await _make_db(tmp_path)
@@ -332,7 +326,6 @@ async def test_the_cleanup_keeps_the_answers(tmp_path):
     assert [row["rsvp_status"] for row in rows] == ["ACCEPTED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 @pytest.mark.parametrize("call_standing", [True, False], ids=["call-standing", "no-call"])
 async def test_the_cleanup_marks_the_round_cleared(tmp_path, call_standing):
     """Test mode reads a round with no call recorded as one whose call is still to be posted.
@@ -349,7 +342,6 @@ async def test_the_cleanup_marks_the_round_cleared(tmp_path, call_standing):
     assert await _cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_does_nothing_while_attendance_is_disabled(tmp_path):
     """A call already posted when the module is switched off stays where it is (attendance
     specification), so the cleanup leaves it, and does not mark the round either."""
@@ -363,7 +355,6 @@ async def test_the_cleanup_does_nothing_while_attendance_is_disabled(tmp_path):
     assert not await _cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_leaves_a_cancelled_round_alone(tmp_path):
     """A cancelled round's call came down with the cancellation; a cleanup job that survived it
     has nothing to do."""
@@ -379,7 +370,6 @@ async def test_the_cleanup_leaves_a_cancelled_round_alone(tmp_path):
     assert not await _cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_cleanup_leaves_the_other_round_of_a_double_header_standing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
@@ -517,7 +507,6 @@ async def _call_row(league) -> list[dict]:
     return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", ROUND_3)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OWN_CHANNEL)
 async def test_a_last_notice_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
     tmp_path,
 ):
@@ -539,7 +528,6 @@ async def test_a_last_notice_is_deleted_from_the_channel_it_was_posted_in_after_
     assert await _call_row(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OWN_CHANNEL)
 async def test_a_reserve_announcement_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
     tmp_path,
 ):

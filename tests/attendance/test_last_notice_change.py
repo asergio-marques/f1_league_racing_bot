@@ -51,10 +51,6 @@ MOVED = 608
 ROUND_3 = round_id(PRO, 3)
 LEWIS_MENTION, MAX_MENTION = "<@101>", "<@102>"
 
-NO_LAST_NOTICE_CHANGE = (
-    "#439: the last notice is posted by `run_rsvp_last_notice` at once, off the change queue"
-)
-
 
 async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 three hours off, its call standing and no
@@ -129,7 +125,6 @@ async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_
     assert "ask_check_in_last_notice(" in inspect.getsource(bot_module.main)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is_recorded_there(
     tmp_path,
 ):

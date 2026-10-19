@@ -339,6 +339,7 @@ def register_change_types(bot: LeagueBot) -> None:
     """
     from leaguebot.attendance.services.check_in_changes import (
         check_in_call_change,
+        check_in_clean_up_change,
         check_in_last_notice_change,
     )
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
@@ -421,6 +422,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         check_in_last_notice_change(bot.attendance_service, now=lambda: bot.change_queue.now())
     )
+    bot.change_queue.register(check_in_clean_up_change())
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
@@ -643,12 +645,10 @@ async def main() -> None:
         # Register RSVP attendance callbacks
         from leaguebot.attendance.services.check_in_changes import (
             ask_check_in_call,
+            ask_check_in_clean_up,
             ask_check_in_last_notice,
         )
-        from leaguebot.attendance.services.rsvp_service import (
-            run_rsvp_cleanup,
-            run_rsvp_deadline,
-        )
+        from leaguebot.attendance.services.rsvp_service import run_rsvp_deadline
         from leaguebot.core.models.change import ChangeOrigin
 
         async def _rsvp_notice_cb(round_id: int) -> None:
@@ -665,7 +665,9 @@ async def main() -> None:
             await run_rsvp_deadline(round_id, bot)
 
         async def _rsvp_cleanup_cb(round_id: int) -> None:
-            await run_rsvp_cleanup(round_id, bot)
+            await ask_check_in_clean_up(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
         bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
@@ -1296,7 +1298,8 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import forecasts_named
     from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
-    from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
+    from leaguebot.core.models.change import ChangeOrigin
     from leaguebot.core.services.scheduler_service import POST_RACE_CLEANUP_DELAY
 
     now = datetime.now(timezone.utc)
@@ -1363,7 +1366,9 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     for round_id in check_ins:
         log.info("_recover_missed_cleanups: taking down round %d's check-in", round_id)
         try:
-            await run_rsvp_cleanup(round_id, bot)
+            await ask_check_in_clean_up(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
         except Exception:
             log.exception(
                 "_recover_missed_cleanups: check-in cleanup failed for round %d", round_id

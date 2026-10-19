@@ -50,11 +50,6 @@ CALL, LAST_NOTICE, ANNOUNCEMENT = CALL_MESSAGES
 #: Round 4's call and last notice, standing in Pro's check-in channel beside round 3's.
 ROUND_4_CALL, ROUND_4_NOTICE = 7101, 7102
 
-NO_CLEAN_UP_CHANGE = (
-    "#439: the check-in clean-up is run by `run_rsvp_cleanup` at once, off the change queue, "
-    "a refused deletion logged and passed over"
-)
-
 
 async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 raced 25 hours ago, its call, last notice
@@ -95,7 +90,6 @@ async def _clean_up_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_message(tmp_path):
     """Nothing is deleted as the clean-up is asked. The queue runs `plan`, one `delete_message`
     for each of the call (7001), the last notice (7002) and the announcement (7003), and
@@ -121,7 +115,6 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
     assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.main)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it_for_deletion_by_hand(
     tmp_path,
 ):
@@ -148,7 +141,6 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it_for_delet
     assert await _cleared(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_a_message_already_gone_completes_its_delete(tmp_path):
     """The announcement (7003) was deleted by hand before the queue reached the clean-up: its
     deletion finds it gone and completes, the queue does not stop, and the call and last notice
@@ -165,7 +157,6 @@ async def test_a_message_already_gone_completes_its_delete(tmp_path):
     assert await _cleared(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_round_is_marked_cleared_after_its_deletes(tmp_path):
     """Discord refuses to delete the call (7001): the queue stops there with round 3's check-in
     not yet marked over. Discord then allows it and a league admin presses Retry: the call, the
@@ -187,7 +178,6 @@ async def test_the_round_is_marked_cleared_after_its_deletes(tmp_path):
     assert await _cleared(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     """The bot starts again with round 3's clean-up a day past and round 4's call standing for a
     race tomorrow. The restart asks the queue for round 3's clean-up and not round 4's, and
@@ -216,7 +206,6 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     assert _deleted(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_UP_CHANGE)
 async def test_the_clean_up_leaves_the_other_round_of_a_double_header_standing(tmp_path):
     """Round 4 races tomorrow, its call (7101) and last notice (7102) standing in Pro's check-in
     channel beside round 3's. Round 3's clean-up deletes round 3's three messages only: round 4's
