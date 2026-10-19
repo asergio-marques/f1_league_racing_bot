@@ -1227,3 +1227,104 @@ async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_
     assert moment is not None
     assert passed.await_args.kwargs["now"] == moment
 
+
+
+# ---------------------------------------------------------------------------
+# A past-dated round's check-in, advanced by hand on a real queue (attendance spec :221-222)
+# ---------------------------------------------------------------------------
+# Under test mode a restored save's rounds are dated in the past, and a restart posts no late
+# call for them. Advance posts each step in its turn instead, however late the round is: the
+# step carries `advanced` and is judged by no clock (test-mode.md :100).
+
+
+async def _ask_as_advance(league, kind: str, round_id: int, round_number: int) -> None:
+    """Ask the change queue for check-in step *kind* of *round_id* as advance does, through the
+    cog's own ask, with the league's real queue; the queue is not run."""
+    cog = _Cog.__new__(_Cog)
+    cog.bot = league.bot
+    entry = {"round_id": round_id, "round_number": round_number, "division_name": "Pro"}
+    await cog._ask_check_in(entry, kind, "advancing the check-in")
+
+
+async def test_advance_posts_a_past_dated_rounds_call_instead_of_giving_it_up(tmp_path):
+    """Round 4 was raced an hour ago, so its check-in deadline passed three hours ago and no call
+    was ever posted for it. Advance asks its call and the queue runs: the call is posted in
+    Pro's check-in channel and recorded, the round's check-in is left open, and no line says the
+    call was given up."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_check_in_call_change import (
+        ROUND_4,
+        _answers,
+        _call_league,
+        _call_record,
+        _round_4_in,
+        _sent,
+    )
+    from tests.support.change_queue import run_queue, stopped_job
+
+    league = await _call_league(tmp_path)
+    await _round_4_in(league, delta(hours=-1))
+
+    await _ask_as_advance(league, CHECK_IN_CALL, ROUND_4, 4)
+    await run_queue(league.bot)
+
+    assert len(_sent(league)) == 1
+    assert len(await _call_record(league)) == 1
+    [round_] = await league.rows("SELECT checkin_cleared FROM rounds WHERE id = ?", ROUND_4)
+    assert round_["checkin_cleared"] == 0
+    assert "could not be posted" not in league.log()
+    assert "counts nothing against anyone" not in league.log()
+    assert await stopped_job(league.db_path) is None
+    assert set((await _answers(league)).values()) == {"NO_RSVP"}
+
+
+async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_path):
+    """Round 3 is an hour off, so its two-hour deadline passed an hour ago, and its call stands
+    with no last notice. Advance asks the last notice and the queue runs: it is posted in Pro's
+    check-in channel, not dropped for the real clock."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_last_notice_change import ROUND_3, _call_row, _league, _sent
+    from tests.support.change_queue import run_queue, stopped_job
+
+    league = await _league(tmp_path)
+    when = league.clock.now + delta(hours=1)
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+
+    await _ask_as_advance(league, CHECK_IN_LAST_NOTICE, ROUND_3, 3)
+    await run_queue(league.bot)
+
+    [posted] = _sent(league)
+    assert (await _call_row(league))["last_notice_msg_id"] == str(posted)
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp_path):
+    """Round 3's deadline passed an hour ago. Rhea accepted half an hour before it and Sam ten
+    minutes after it. A timer's deadline places Rhea alone; advance's places both, Sam at least
+    on standby, whatever the real clock says."""
+    from datetime import timedelta as delta
+
+    from tests.attendance.test_deadline_change import (
+        FERRARI,
+        RHEA,
+        ROUND_3,
+        SAM,
+        _deadline,
+        _league,
+        _placement,
+        _reserves,
+    )
+    from tests.support.change_queue import run_queue
+
+    league = await _league(tmp_path)
+    deadline = _deadline(league)
+    await _reserves(league, rhea=deadline - delta(minutes=30), sam=deadline + delta(minutes=10))
+
+    await _ask_as_advance(league, CHECK_IN_DEADLINE, ROUND_3, 3)
+    await run_queue(league.bot)
+
+    assert await _placement(league, RHEA) == (FERRARI, 0)
+    assert await _placement(league, SAM) != (None, 0)
