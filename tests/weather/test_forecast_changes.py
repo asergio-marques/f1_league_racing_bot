@@ -468,8 +468,6 @@ async def test_a_mystery_round_s_phase_1_is_asked_as_its_notice_and_its_later_ph
 # the mystery round's notice names and notifies nobody.
 # ---------------------------------------------------------------------------
 
-NO_RECORDED_CHANNEL = "#439: a forecast is deleted from its division's current channel"
-
 
 def _sends(league: Any) -> list[Any]:
     """Every send the forecast channel was asked to make, refused ones included, in order."""
@@ -1054,7 +1052,6 @@ async def test_a_clean_up_for_a_round_that_is_not_there_asks_nothing(tmp_path):
     assert await _states(league, CLEAN_UP_KIND) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
 async def test_a_forecast_whose_division_channel_was_unset_is_still_deleted_from_its_own(
     tmp_path,
 ):
@@ -1092,7 +1089,6 @@ async def _move_forecast_channel(league: Any) -> None:
     await league.write("UPDATE divisions SET forecast_channel_id = ? WHERE id = ?", MOVED, PRO)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
 async def test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
     tmp_path,
 ):
@@ -1113,7 +1109,6 @@ async def test_a_forecast_is_deleted_from_the_channel_it_was_posted_in_after_the
     assert await _forecasts(league) == {2: second}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
 async def test_a_forecast_clean_up_after_a_channel_move_deletes_from_the_old_channel(tmp_path):
     """Pro's Phase 3 forecast of round 3 (9303) is recorded as posted in Pro's forecast channel
     (605); the forecast channel is then moved to 607. A day after the race the clean-up deletes
@@ -1131,7 +1126,6 @@ async def test_a_forecast_clean_up_after_a_channel_move_deletes_from_the_old_cha
     assert await _forecasts(league) == {}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORDED_CHANNEL)
 async def test_a_forecast_s_channel_is_saved_with_its_message(tmp_path):
     """Pro's Phase 1 forecast of round 3 is asked and posted: its record names the message and
     the channel it was posted in, Pro's forecast channel (605)."""

@@ -49,9 +49,14 @@ async def store_forecast_message_on(
     message_id: int,
     *,
     now: datetime,
+    channel_id: int | None = None,
 ) -> None:
     """Record *message_id* as the forecast of *phase_number* of *round_id*, on *db*, committing
     nothing: the post job's record writes it in the save that marks the post done.
+
+    *channel_id* is the channel it was posted in, which its deletion goes to even after
+    ``/weather channel`` has moved the division's forecasts elsewhere; a row without one is
+    deleted from the division's channel as it stands.
 
     Uses ``INSERT OR REPLACE`` so re-running a phase (e.g. after an amendment)
     transparently updates the stored ID without leaving stale rows.
@@ -59,10 +64,10 @@ async def store_forecast_message_on(
     await db.execute(
         """
         INSERT OR REPLACE INTO forecast_messages
-            (round_id, division_id, phase_number, message_id, posted_at)
-        VALUES (?, ?, ?, ?, ?)
+            (round_id, division_id, phase_number, message_id, posted_at, channel_id)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (round_id, division_id, phase_number, message_id, now.isoformat()),
+        (round_id, division_id, phase_number, message_id, now.isoformat(), channel_id),
     )
     log.debug(
         "Stored forecast message: round=%s div=%s phase=%s msg=%s",
