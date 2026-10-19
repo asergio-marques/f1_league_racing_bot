@@ -644,6 +644,42 @@ async def produce_session_results(
     return PostedTable([m.id for m in sent], previous)
 
 
+async def produce_cancelled_session_line(
+    db_path: str,
+    session_result: SessionResult,
+    results_channel: discord.TextChannel,
+    round_number: int,
+    is_sprint: bool,
+) -> PostedTable:
+    """Send the line saying a session was cancelled, in the place its table would stand.
+
+    The results channel carries a note to that effect in place of a table (results spec), posted
+    with the round's Provisional Results and again wherever the round's tables are. Like
+    :func:`produce_session_results` it saves and deletes nothing: the line's message is returned
+    as *new*, for the caller to record as the session's results message, and what stood before as
+    *old*, for the caller to take down once the new line stands.
+    """
+    session_type = SessionType(session_result.session_type)
+    session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
+    _season, division_name = await _get_heading_context(db_path, session_result.round_id)
+    async with get_connection(db_path) as db:
+        stored = await (
+            await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+                (session_result.id,),
+            )
+        ).fetchone()
+    previous: list[int] = []
+    if stored is not None and stored["results_message_id"] is not None:
+        previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+    sent = await _send_chunked(
+        results_channel,
+        f"🚫 **Round {round_number} — {session_label}** ({division_name}): "
+        "This session was cancelled.",
+    )
+    return PostedTable([m.id for m in sent], previous)
+
+
 # ---------------------------------------------------------------------------
 # Standings posting
 # ---------------------------------------------------------------------------

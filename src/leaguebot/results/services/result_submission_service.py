@@ -3586,10 +3586,6 @@ async def run_result_submission_job(
                     driver_rows=[],
                 )
                 await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
-                await results_channel.send(
-                    f"🚫 **Round {round_number} — {label}** ({division_name}): "
-                    "This session was cancelled."
-                )
                 cancelled_sessions.add(session_type)
                 break
 

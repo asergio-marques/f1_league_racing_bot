@@ -709,10 +709,6 @@ async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
     assert 8803 in league.channel(RESULTS_CHANNEL).messages
 
 
-NO_CANCELLED_LINE_WITH_THE_TABLES = (
-    "#439: a cancelled session's line is posted in the results channel when CANCELLED is typed, "
-    "never with the round's tables, and nothing records it"
-)
 OLD_CANCELLED_LINE = 8810
 
 
@@ -750,7 +746,6 @@ async def _qualifying_ids(db_path: str) -> tuple[int | None, list[int] | None]:
     return row["results_message_id"], ids
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
 async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provisional_results_and_recorded(
     tmp_path,
 ):
@@ -774,7 +769,6 @@ async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provi
     assert await _qualifying_ids(league.db_path) == (line, [line])
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
 async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_are_posted_at_the_appeals_stage(
     tmp_path,
 ):
@@ -797,7 +791,6 @@ async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_ar
         ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
 async def test_a_resubmission_s_cancelled_session_is_posted_with_the_amended_provisional_results(
     tmp_path,
 ):

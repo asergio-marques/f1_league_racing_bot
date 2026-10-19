@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 import aiosqlite
@@ -84,6 +85,7 @@ from leaguebot.results.services.results_post_service import (
     _sr_from_row,
     delete_round_channel,
     driver_standings_for_display,
+    produce_cancelled_session_line,
     produce_session_results,
     produce_standings,
     set_standings_message_id_on,
@@ -150,6 +152,13 @@ def posting_steps() -> dict[str, Step]:
 # ---------------------------------------------------------------------------
 
 
+def _in_running_order(sessions: Iterable[aiosqlite.Row]) -> list[aiosqlite.Row]:
+    """*sessions* in the order a round runs them, so that a cancelled session's line stands in
+    its place among the tables however late its row was written."""
+    order = list(SessionType)
+    return sorted(sessions, key=lambda session: order.index(SessionType(session["session_type"])))
+
+
 async def plan_posts(
     db: aiosqlite.Connection,
     round_id: int,
@@ -163,9 +172,9 @@ async def plan_posts(
 
     The notice that brackets them, where *notice* asks for one (``True`` for the default words,
     or the words themselves): the submission channel's, or *notice_channel_id* where the caller
-    posts it elsewhere (an amendment's channel). Then one results job for each ACTIVE session whose
-    division has a results channel; one standings job for the round where the division has a
-    standings channel; and, where *later_rounds*, one for each later round of the division that is
+    posts it elsewhere (an amendment's channel). Then one results job for each ACTIVE or CANCELLED
+    session (a cancelled one posts its line in the table's place) whose division has a results
+    channel; one standings job for the round where the division has a standings channel; and, where *later_rounds*, one for each later round of the division that is
     not cancelled and has standings posted, in round order, each under its own lifecycle label.
     A round with no ACTIVE session had nothing posted and plans none of its own.
 
@@ -210,13 +219,14 @@ async def plan_posts(
 
     sessions = await (
         await db.execute(
-            "SELECT id, session_type FROM session_results "
-            "WHERE round_id = ? AND status = 'ACTIVE' "
+            "SELECT id, session_type, status FROM session_results "
+            "WHERE round_id = ? AND status IN ('ACTIVE', 'CANCELLED') "
             "ORDER BY id",
             (round_id,),
         )
     ).fetchall()
-    if sessions:
+    sessions = _in_running_order(sessions)
+    if any(session["status"] == "ACTIVE" for session in sessions):
         if row["results_channel_id"]:
             for session in sessions:
                 planned.append(PlannedStep(POST_SESSION_RESULTS, {
@@ -319,11 +329,11 @@ async def plan_division_posts(
             sessions = await (
                 await db.execute(
                     "SELECT id, session_type FROM session_results "
-                    "WHERE round_id = ? AND status = 'ACTIVE' ORDER BY id",
+                    "WHERE round_id = ? AND status IN ('ACTIVE', 'CANCELLED') ORDER BY id",
                     (rnd["id"],),
                 )
             ).fetchall()
-            for session in sessions:
+            for session in _in_running_order(sessions):
                 results.append(PlannedStep(POST_SESSION_RESULTS, {
                     "session_id": int(session["id"]), "round_id": int(rnd["id"]), "label": label,
                     "round_number": rnd["round_number"],
@@ -568,9 +578,10 @@ def _session_name(session_type: str) -> str:
 
 
 async def _session_still_due(ctx: StepContext) -> bool:
-    """A session still ACTIVE, and its division still given a results channel."""
+    """A session still ACTIVE or CANCELLED (a cancelled one posts its line), and its division
+    still given a results channel."""
     row = await _session_row(ctx.db_path, ctx.step_payload["session_id"])
-    if row is None or row["status"] != "ACTIVE":
+    if row is None or row["status"] not in ("ACTIVE", "CANCELLED"):
         return False
     rnd = await _round_row(ctx.db_path, row["round_id"])
     return bool(rnd["results_channel_id"])
@@ -600,12 +611,30 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
     await _remove_kept(guild, ctx.kept)
 
     session_type = SessionType(row["session_type"])
+    is_sprint = str(await _round_format(ctx.db_path, row["round_id"])).upper() == "SPRINT"
+    what = f"round {rnd['round_number']}'s {_session_name(row['session_type'])} results"
+    if row["status"] == "CANCELLED":
+        # A cancelled session has no table: its line stands in its place (results spec :363).
+        try:
+            line = await produce_cancelled_session_line(
+                ctx.db_path, _sr_from_row(row), channel, rnd["round_number"], is_sprint,
+            )
+        except Exception as error:
+            kept = _stranded(error, channel_id)
+            if kept is not None:
+                raise StepFailedOnDiscord(
+                    "the results were posted in part and the rest was refused", result=kept
+                ) from error
+            raise
+        return StepResult(
+            result={"new": line.new, "old": line.old, "drawn": False, "channel_id": channel_id},
+            then=_deletes(channel_id, line.old, what),
+        )
     driver_rows = await _load_driver_rows(ctx.db_path, row["id"], session_type)
     points_map = {
         r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
         for r in driver_rows
     }
-    is_sprint = str(await _round_format(ctx.db_path, row["round_id"])).upper() == "SPRINT"
     try:
         posted = await produce_session_results(
             ctx.db_path, _sr_from_row(row), driver_rows, points_map, channel, guild,
@@ -624,7 +653,6 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
         "new": posted.new, "old": posted.old,
         "drawn": posted.drawn, "channel_id": channel_id,
     }
-    what = f"round {rnd['round_number']}'s {_session_name(row['session_type'])} results"
     return StepResult(result=result, then=_deletes(channel_id, posted.old, what))
 
 
