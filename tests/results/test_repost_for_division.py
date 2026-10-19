@@ -30,12 +30,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why the standings status tests fail until C21 builds `standings_repost_status`.
-NO_STANDINGS_STATUS = (
-    "#439: the standings sync's status is read by repost_standings_for_division as it reposts, "
-    "not by a standings_repost_status of its own"
-)
-
 SERVER_ID = 12508
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -190,7 +184,6 @@ async def test_a_division_that_does_not_exist_says_no_rounds(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
 async def test_a_division_with_no_standings_channel_says_so(tmp_path):
     db_path = await _make_db(tmp_path, name="standings_nochannel", standings_channel=None)
 
@@ -199,7 +192,6 @@ async def test_a_division_with_no_standings_channel_says_so(tmp_path):
     assert status == "no_channel"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
 async def test_a_deleted_standings_channel_says_no_channel(tmp_path):
     db_path = await _make_db(tmp_path, name="standings_chgone")
 
@@ -208,7 +200,6 @@ async def test_a_deleted_standings_channel_says_no_channel(tmp_path):
     assert status == "no_channel"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
 async def test_a_division_with_no_submitted_rounds_says_no_rounds(tmp_path):
     """Checked before the channel, unlike the results sync — a division with neither is
     told it has no rounds, which is the more actionable of the two."""
@@ -219,7 +210,6 @@ async def test_a_division_with_no_submitted_rounds_says_no_rounds(tmp_path):
     assert status == "no_rounds"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_STATUS)
 async def test_a_superseded_round_alone_counts_as_no_rounds(tmp_path):
     """Its results were replaced; there is no standings snapshot that describes it."""
     db_path = await _make_db(

@@ -54,8 +54,6 @@ KIND = "results.standings.sync"
 #: Round 4's standings, standing where a test posts them.
 OLD_LATER_STANDINGS = 8811
 
-NO_STANDINGS_SYNC_CHANGE = "#439: /results standings sync reposts at once, off the change queue"
-
 
 async def _league(tmp_path: Any) -> ReviewLeague:
     """`review_league`'s league with round 3 final, results switched on, and the real season
@@ -159,7 +157,6 @@ def _standings_events(league: ReviewLeague) -> list[tuple[str, int]]:
     return [(kind, mid) for kind, ch, mid in league.events if ch == STANDINGS_CHANNEL]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_standings_sync_is_acknowledged_and_updated_with_synced(tmp_path):
     """The manager Admin syncs Pro's standings: the command is answered at once with a "⏳"
     acknowledgement naming Pro, which the queue updates, once it has run, to today's success
@@ -184,7 +181,6 @@ async def test_a_standings_sync_is_acknowledged_and_updated_with_synced(tmp_path
     assert await _standings_id(league, ROUND_ID) == new
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_standings_sync_recomputes_every_round_s_standings_when_it_runs(tmp_path):
     """The queue is stopped ahead of the sync; meanwhile Max's 18 points in round 3's Feature
     Race are corrected to 37. Once the queue moves, the table posted shows the standings
@@ -207,7 +203,6 @@ async def test_a_standings_sync_recomputes_every_round_s_standings_when_it_runs(
     assert "37" in posted
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_standings_sync_deletes_each_old_table_after_its_new_one(tmp_path):
     """Rounds 3 and 4 each have standings standing (8801, 8811): round 3's are posted afresh
     before round 4's, each old table is deleted only after its replacement is posted, by a
@@ -238,7 +233,6 @@ async def test_a_standings_sync_deletes_each_old_table_after_its_new_one(tmp_pat
     assert deleted == [OLD_STANDINGS, OLD_LATER_STANDINGS]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_standings_sync_with_no_standings_channel_is_refused(tmp_path):
     """The queue is stopped ahead of the sync; meanwhile Pro's standings channel is unset. Once
     the queue moves, the sync is refused in the command's own words, "❌ Division 'Pro' has no
@@ -260,7 +254,6 @@ async def test_a_standings_sync_with_no_standings_channel_is_refused(tmp_path):
     assert await _sync_states(league) == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_standings_sync_while_an_amendment_is_open_is_refused_when_it_runs(tmp_path):
     """The queue is stopped ahead of the sync; meanwhile an amendment of round 3 opens in
     channel 705. Once the queue moves, the sync is refused in the command's own words, and
@@ -283,7 +276,6 @@ async def test_a_standings_sync_while_an_amendment_is_open_is_refused_when_it_ru
     assert await _sync_states(league) == ["REFUSED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_standings_sync_asked_twice_is_not_refused_as_a_repeat(tmp_path):
     """The queue is stopped; the manager syncs Pro's standings twice while it waits. Neither is
     refused as a repeat: both are queued, and both are carried out once the queue moves."""
@@ -303,7 +295,6 @@ async def test_a_standings_sync_asked_twice_is_not_refused_as_a_repeat(tmp_path)
         )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_a_refused_standings_post_stops_the_queue_and_a_discard_says_what_was_not_synced(
     tmp_path,
 ):

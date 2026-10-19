@@ -1731,6 +1731,36 @@ async def division_repost_status(
     return "ok" if found is not None else "no_rounds"
 
 
+async def standings_repost_status(
+    db_path: str, division_id: int, guild: discord.Guild | None
+) -> str:
+    """What a division's standings sync finds before it is asked: the read half of the sync, as
+    :func:`division_repost_status` is for the results.
+
+    One of ``"ok"`` (a standings channel set and on the server, and a round with results to
+    post), ``"no_rounds"`` (the division is gone, or no round of it has results) and
+    ``"no_channel"`` (no standings channel set, or one the server no longer holds). With no
+    *guild* to look in, a channel that is set is taken as on the server.
+    """
+    async with get_connection(db_path) as db:
+        found = await (await db.execute(
+            "SELECT drc.standings_channel_id FROM rounds r "
+            "JOIN session_results sr ON sr.round_id = r.id "
+            "LEFT JOIN division_results_config drc ON drc.division_id = r.division_id "
+            "WHERE r.division_id = ? AND sr.status = 'ACTIVE' LIMIT 1",
+            (division_id,),
+        )).fetchone()
+    if found is None:
+        return "no_rounds"
+    channel_id = found["standings_channel_id"]
+    if not channel_id:
+        return "no_channel"
+    if guild is not None and as_text_channel(guild.get_channel(int(channel_id))) is None:
+        log.warning("standings_repost_status: standings channel %s not found in guild", channel_id)
+        return "no_channel"
+    return "ok"
+
+
 async def repost_standings_for_division(
     db_path: str,
     division_id: int,

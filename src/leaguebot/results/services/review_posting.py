@@ -95,6 +95,7 @@ log = logging.getLogger(__name__)
 NAMES = "names"
 POST_SESSION_RESULTS = "post_session_results"
 POST_STANDINGS = "post_standings"
+POST_STANDINGS_AFRESH = "post_standings_afresh"
 DELETE_MESSAGE = "delete_message"
 POST_BATCH_NOTICE = "post_batch_notice"
 DELETE_BATCH_NOTICE = "delete_batch_notice"
@@ -120,6 +121,10 @@ def posting_steps() -> dict[str, Step]:
         ),
         POST_STANDINGS: Step(
             POST_STANDINGS, StepKind.ACT, _post_standings,
+            describe=_describe_standings_post, record=_record_standings_post,
+        ),
+        POST_STANDINGS_AFRESH: Step(
+            POST_STANDINGS_AFRESH, StepKind.ACT, _post_standings_afresh,
             describe=_describe_standings_post, record=_record_standings_post,
         ),
         DELETE_MESSAGE: Step(
@@ -248,7 +253,8 @@ async def plan_posts(
 
 
 def _standings_job(
-    round_id: int, round_number: int, label: str, pending: bool, *, fresh: bool = False
+    round_id: int, round_number: int, label: str, pending: bool, *, fresh: bool = False,
+    step: str = POST_STANDINGS,
 ) -> PlannedStep:
     payload: dict[str, Any] = {
         "round_id": round_id, "round_number": round_number, "label": label,
@@ -256,12 +262,12 @@ def _standings_job(
     }
     if fresh:
         payload["fresh"] = True
-    return PlannedStep(POST_STANDINGS, payload)
+    return PlannedStep(step, payload)
 
 
 async def plan_division_posts(
     db: aiosqlite.Connection, division_id: int, *, division_name: str | None = None,
-    results_only: bool = False,
+    results_only: bool = False, standings_only: bool = False,
 ) -> list[PlannedStep]:
     """The jobs that rebuild everything a division's results and standings channels show, read on
     *db*: every round's results in round order, then every round's standings in round order, each
@@ -277,6 +283,10 @@ async def plan_division_posts(
 
     With *results_only*, the standings jobs are left out: `/results rounds sync` reposts the
     results, and the standings are `/results standings sync`'s.
+
+    With *standings_only*, the results jobs are left out and each standings job is the one that
+    draws the round's standings again from its results when it runs (`post_standings_afresh`,
+    which `/results standings sync` plans), not the one that draws the stored snapshot.
     """
     config = await (
         await db.execute(
@@ -305,7 +315,7 @@ async def plan_division_posts(
     standings: list[PlannedStep] = []
     for rnd in rounds:
         label = _label_from_status(rnd["status"] or "")
-        if config["results_channel_id"]:
+        if config["results_channel_id"] and not standings_only:
             sessions = await (
                 await db.execute(
                     "SELECT id, session_type FROM session_results "
@@ -321,9 +331,10 @@ async def plan_division_posts(
                     "remedy": _AMEND if pending else _RESULTS_SYNC,
                 }))
         if config["standings_channel_id"] and not results_only:
-            standings.append(
-                _standings_job(int(rnd["id"]), rnd["round_number"], label, pending, fresh=True)
-            )
+            standings.append(_standings_job(
+                int(rnd["id"]), rnd["round_number"], label, pending, fresh=True,
+                step=POST_STANDINGS_AFRESH if standings_only else POST_STANDINGS,
+            ))
     planned = [*results, *standings]
     if division_name is not None:
         for step in planned:
@@ -368,14 +379,14 @@ def not_done(ctx: OutcomeContext, *, reposted: bool = False) -> list[str]:
                 f"⚠️ Round {payload.get('round_number', '?')}'s "
                 f"{payload.get('session', 'results')}{_in_division(payload)} were not posted."
             )
-        elif view.name == POST_STANDINGS:
+        elif view.name in (POST_STANDINGS, POST_STANDINGS_AFRESH):
             unposted = True
             pending = pending or payload["remedy"] == _AMEND
             lines.append(
                 f"⚠️ Round {payload.get('round_number', '?')}'s standings"
                 f"{_in_division(payload)} were not posted."
             )
-        if view.name in (POST_SESSION_RESULTS, POST_STANDINGS) and result.get("new"):
+        if view.name in (POST_SESSION_RESULTS, POST_STANDINGS, POST_STANDINGS_AFRESH) and result.get("new"):
             ids = ", ".join(str(i) for i in result["new"])
             lines.append(
                 f"⚠️ A part of it was posted before it stopped and stands in "
@@ -649,7 +660,9 @@ async def _describe_standings_post(ctx: StepContext) -> str:
     return f"posting round {rnd['round_number']}'s standings{where}"
 
 
-async def _post_standings(ctx: StepContext) -> StepResult:
+async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepResult:
+    """Post one round's standings, drawing the snapshots the round stores, or with *recompute*
+    the standings worked out again from the results as they stand when the job runs."""
     payload = ctx.step_payload
     round_id = payload["round_id"]
     rnd = await _round_row(ctx.db_path, round_id)
@@ -661,9 +674,17 @@ async def _post_standings(ctx: StepContext) -> StepResult:
     channel = _channel(guild, channel_id, "standings")
     await _remove_kept(guild, ctx.kept)
 
-    driver_snaps, team_snaps = await _stored_standings(
-        ctx.db_path, division_id, round_id, guild, ctx.bot
-    )
+    if recompute:
+        driver_snaps = await driver_standings_for_display(
+            ctx.db_path, division_id, round_id, guild, ctx.bot
+        )
+        team_snaps = await standings_service.compute_team_standings(
+            ctx.db_path, division_id, round_id
+        )
+    else:
+        driver_snaps, team_snaps = await _stored_standings(
+            ctx.db_path, division_id, round_id, guild, ctx.bot
+        )
     show_reserves = (
         bool(rnd["reserves_in_standings"]) if rnd["reserves_in_standings"] is not None else True
     )
@@ -700,6 +721,11 @@ async def _post_standings(ctx: StepContext) -> StepResult:
         "division_id": division_id, "round_id": round_id,
     }
     return StepResult(result=result, then=tuple(then))
+
+
+async def _post_standings_afresh(ctx: StepContext) -> StepResult:
+    """`/results standings sync`'s job: a round's standings recomputed, then posted anew."""
+    return await _post_standings(ctx, recompute=True)
 
 
 async def _stored_standings(
@@ -936,5 +962,5 @@ async def _record_channel_deleted(
 
 __all__ = [
     "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
-    "POST_SESSION_RESULTS", "POST_STANDINGS", "not_done", "plan_division_posts", "plan_posts", "posting_steps",
+    "POST_SESSION_RESULTS", "POST_STANDINGS", "POST_STANDINGS_AFRESH", "not_done", "plan_division_posts", "plan_posts", "posting_steps",
 ]

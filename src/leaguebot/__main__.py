@@ -376,6 +376,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
+    from leaguebot.results.services.standings_sync_change import standings_sync_change
     from leaguebot.results.services.review_open_change import (
         appeals_open_change,
         close_stale_change,
@@ -414,6 +415,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
+    bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))

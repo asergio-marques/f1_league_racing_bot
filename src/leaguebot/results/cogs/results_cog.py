@@ -2151,19 +2151,18 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
-        from leaguebot.results.services.results_post_service import repost_standings_for_division
-        status = await repost_standings_for_division(
-            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
-        )
+        from leaguebot.results.services.results_post_service import standings_repost_status
+        from leaguebot.results.services.standings_sync_change import STANDINGS_SYNC
+
+        # The channel and the rounds are read here to answer at once, as the command always has;
+        # the repost itself is a change on the queue, which checks them again when it runs.
+        status = await standings_repost_status(self.bot.db_path, div.id, guild_of(interaction))
 
         if status == "ok":
-            await interaction.followup.send(
-                f"\u2705 Standings for **{division}** synced to the standings channel.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results standings sync | Success\n"
-                f"  division: {division}",
+            await self.bot.change_queue.ask(
+                STANDINGS_SYNC, {"division_id": div.id, "division_name": div.name},
+                interaction=interaction, what="`/results standings sync`",
+                refusal_what=describe(interaction),
             )
         elif status == "no_rounds":
             await self._answer_nothing_changed(

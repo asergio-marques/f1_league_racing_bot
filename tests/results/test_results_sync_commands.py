@@ -206,13 +206,10 @@ SYNCS = [
     ("rounds", _rounds_sync),
 ]
 
-NO_STANDINGS_SYNC_CHANGE = "#439: /results standings sync reposts at once, off the change queue"
-
 #: The cases that hold once each sync is asked of the change queue (#439): the standings sync's
 #: fail until it is (6b).
 SYNCS_ON_THE_QUEUE = [
-    pytest.param("standings", _standings_sync, id="standings",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)),
+    pytest.param("standings", _standings_sync, id="standings"),
     ("rounds", _rounds_sync),
 ]
 
@@ -464,7 +461,6 @@ async def test_every_sync_and_toggle_refusal_is_recorded(tmp_path, command, run,
     assert await _reserves(db_path) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STANDINGS_SYNC_CHANGE)
 async def test_the_two_syncs_call_different_services(tmp_path):
     """They sit beside each other and read almost identically; one asking for the other's
     change would repost standings where a manager asked for results. Each asks the change
