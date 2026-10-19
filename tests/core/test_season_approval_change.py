@@ -1336,12 +1336,13 @@ async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monke
 
 @pytest.mark.xfail(strict=True, reason=NO_LINEUP_CHANNEL_STOP)
 async def test_the_approval_s_lineup_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
-    """Am's lineup channel was never set. The season is approved: Pro's lineup is posted, and the
-    queue stops at Am's, its stop line naming the command that sets the channel, rather than Am's
-    lineup completing having posted nothing."""
+    """Approve is pressed with every channel set, Am's lineup channel included. Am's lineup
+    channel is then cleared before the queue runs: Pro's lineup is posted, and the queue stops at
+    Am's, its stop line naming the command that sets the channel, rather than Am's lineup
+    completing having posted nothing."""
     league = await _league_for(tmp_path, monkeypatch)
-    await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", AM)
     await _pressed(league)
+    await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", AM)
 
     await run_queue(league.bot)
 
