@@ -136,7 +136,7 @@ class SettingChange:
 
 
 class RsvpOutcome(Enum):
-    """What `AttendanceService.answer_rsvp` did with one press of a check-in button."""
+    """What `AttendanceService.answer_rsvp_on` did with one press of a check-in button."""
 
     # a full-time driver, at the deadline (the round's start where it is 0)
     LOCKED_AT_DEADLINE = "locked at the deadline"
@@ -149,11 +149,38 @@ class RsvpOutcome(Enum):
 
 @dataclass(frozen=True)
 class RsvpAnswer:
-    """The result of `AttendanceService.answer_rsvp`: the *outcome*, and *found*, the answer
+    """The result of `AttendanceService.answer_rsvp_on`: the *outcome*, and *found*, the answer
     the driver held when it was decided (``NO_RSVP`` for a driver with no row)."""
 
     outcome: RsvpOutcome
     found: str
+
+
+def rsvp_lock(
+    found: str,
+    *,
+    is_reserve: bool,
+    now: datetime,
+    scheduled_at: datetime,
+    deadline_hours: int,
+) -> RsvpOutcome | None:
+    """The lock that bars an answer given at *now* to a call whose driver holds *found*, else None.
+
+    The lock rules (attendance specification, RSVPing), in the order they are applied, each before
+    the answer held is compared:
+
+    - a full-time driver is locked at the deadline (``LOCKED_AT_DEADLINE``);
+    - a reserve who has accepted is locked at the deadline (``LOCKED_ACCEPTED``);
+    - any other reserve is locked at the round's start (``LOCKED_AT_START``);
+    - a deadline of 0 puts the deadline at the round's start.
+    """
+    deadline_at = derive_checkin_deadline(scheduled_at, deadline_hours)
+    start = deadline_at + timedelta(hours=deadline_hours)
+    if not is_reserve:
+        return RsvpOutcome.LOCKED_AT_DEADLINE if now >= deadline_at else None
+    if found == "ACCEPTED":
+        return RsvpOutcome.LOCKED_ACCEPTED if now >= deadline_at else None
+    return RsvpOutcome.LOCKED_AT_START if now >= start else None
 
 
 class AttendanceService:
@@ -365,7 +392,7 @@ class AttendanceService:
         button was the one way they could ever get one.
 
         The insert belongs here rather than on the paths that place a driver. A press reaches the
-        same write through ``answer_rsvp`` (by way of ``_write_answer``), which has established
+        same write through ``answer_rsvp_on`` (by way of ``_write_answer``), which has established
         everything the row needs — the driver holds a confirmed placement in this division, the
         round exists, and the answer is inside the lock — so the fact arrives at the press and
         nowhere earlier; the test-mode bulk-set form is this method's caller.
@@ -398,7 +425,7 @@ class AttendanceService:
     ) -> bool:
         """Write one driver's answer on *db* without committing, and say whether a row holds it.
 
-        The one statement `upsert_rsvp_status` and `answer_rsvp` share, so the row an answer
+        The one statement `upsert_rsvp_status` and `answer_rsvp_on` share, so the row an answer
         opens and the `accepted_at` it carries are decided in one place. The caller commits.
         """
         cursor = await db.execute(
@@ -414,8 +441,9 @@ class AttendanceService:
         )
         return cursor.rowcount > 0
 
-    async def answer_rsvp(
-        self,
+    @staticmethod
+    async def answer_rsvp_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         driver_profile_id: int,
@@ -426,62 +454,42 @@ class AttendanceService:
         deadline_hours: int,
         is_reserve: bool,
     ) -> RsvpAnswer:
-        """Decide one press of a check-in button and, where it stands, write it (#482).
+        """Decide one press of a check-in button and, where it stands, write it, on *db*.
 
-        The answer the driver holds is read, the lock rules applied and the new answer written
-        in one ``BEGIN IMMEDIATE`` transaction on this method's own connection, so a second
-        press waits for the first and decides on the answer the first left. That is what makes
-        two quick presses of one button one answer and a "nothing changed" (F1), and what keeps
-        an accepted reserve locked at the deadline whatever presses follow (F2).
+        The answer the driver holds is read, the lock rules (`rsvp_lock`) applied against *now*,
+        the moment the button was pressed and not the moment the answer's turn comes (Constitution
+        XIII), and the new answer written, all on the caller's connection and commit: the answer's
+        job runs this in its save, one change at a time, so a second press waits for the first and
+        decides on the answer the first left (#482, F1). That is what keeps an accepted reserve
+        locked at the deadline whatever presses follow (F2).
 
-        The lock rules (attendance specification, RSVPing), in the order they are applied,
-        each before the answer held is compared:
-
-        - a full-time driver is locked at the deadline (``LOCKED_AT_DEADLINE``);
-        - a reserve who has accepted is locked at the deadline (``LOCKED_ACCEPTED``);
-        - any other reserve is locked at the round's start (``LOCKED_AT_START``);
-        - a deadline of 0 puts the deadline at the round's start.
-
-        Past the locks, an answer equal to *status* is ``UNCHANGED`` and nothing is written,
-        so a reserve's ``accepted_at`` stays as it was. Otherwise it is written, with
-        ``accepted_at`` set from *now* by `upsert_rsvp_status`'s rule, and ``RECORDED`` or, where
-        the write changed no row, ``NOT_RECORDED``.
-
-        It never calls `upsert_rsvp_status`: that opens a connection of its own, which would
-        wait on this one's write lock. Both write through `_write_answer`. Every Discord call
-        stays with the caller, after this returns, so the lock is held for the database alone.
+        Past the locks, an answer equal to *status* is ``UNCHANGED`` and nothing is written, so a
+        reserve's ``accepted_at`` stays as it was. Otherwise it is written, with ``accepted_at``
+        set from *now* by `upsert_rsvp_status_on`'s rule, and ``RECORDED`` or, where the write
+        changed no row, ``NOT_RECORDED``. Nothing is committed; every Discord call is the job's
+        after, so the lock is held for the database alone.
         """
-        deadline_at = derive_checkin_deadline(scheduled_at, deadline_hours)
-        start = deadline_at + timedelta(hours=deadline_hours)
-        async with get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                """
-                SELECT rsvp_status FROM driver_round_attendance
-                 WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
-                """,
-                (round_id, division_id, driver_profile_id),
-            )
-            row = await cursor.fetchone()
-            found: str = row["rsvp_status"] if row is not None else "NO_RSVP"
-
-            if not is_reserve:
-                if now >= deadline_at:
-                    return RsvpAnswer(RsvpOutcome.LOCKED_AT_DEADLINE, found)
-            elif found == "ACCEPTED":
-                if now >= deadline_at:
-                    return RsvpAnswer(RsvpOutcome.LOCKED_ACCEPTED, found)
-            elif now >= start:
-                return RsvpAnswer(RsvpOutcome.LOCKED_AT_START, found)
-
-            if found == status:
-                return RsvpAnswer(RsvpOutcome.UNCHANGED, found)
-
-            accepted_at = now.isoformat() if status == "ACCEPTED" else None
-            recorded = await self._write_answer(
-                db, round_id, division_id, driver_profile_id, status, accepted_at
-            )
-            await db.commit()
+        cursor = await db.execute(
+            """
+            SELECT rsvp_status FROM driver_round_attendance
+             WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
+            """,
+            (round_id, division_id, driver_profile_id),
+        )
+        row = await cursor.fetchone()
+        found: str = row["rsvp_status"] if row is not None else "NO_RSVP"
+        locked = rsvp_lock(
+            found, is_reserve=is_reserve, now=now, scheduled_at=scheduled_at,
+            deadline_hours=deadline_hours,
+        )
+        if locked is not None:
+            return RsvpAnswer(locked, found)
+        if found == status:
+            return RsvpAnswer(RsvpOutcome.UNCHANGED, found)
+        accepted_at = now.isoformat() if status == "ACCEPTED" else None
+        recorded = await AttendanceService._write_answer(
+            db, round_id, division_id, driver_profile_id, status, accepted_at
+        )
         return RsvpAnswer(
             RsvpOutcome.RECORDED if recorded else RsvpOutcome.NOT_RECORDED, found
         )

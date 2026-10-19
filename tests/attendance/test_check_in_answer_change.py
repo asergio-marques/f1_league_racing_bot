@@ -62,11 +62,6 @@ CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_3 = round_id(PRO, 3)
 CALL = CALL_MESSAGES[0]
 
-NO_ANSWER_CHANGE = (
-    "#439: a check-in answer is saved and the call redrawn at once by `handle_rsvp_button`, off "
-    "the change queue"
-)
-
 
 async def _league(tmp_path: Any, *, race_in: timedelta = timedelta(days=3)) -> SeasonLeague:
     """The league of the module docstring, round 3 raced *race_in* from now."""
@@ -109,7 +104,6 @@ async def _answer_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_an_answer_is_saved_and_the_call_redrawn_when_its_turn_comes(tmp_path):
     """Max presses Accept. Nothing is saved or redrawn as he presses; the queue saves his answer
     as accepted and then redraws the call (7001), in that order."""
@@ -129,7 +123,6 @@ async def test_an_answer_is_saved_and_the_call_redrawn_when_its_turn_comes(tmp_p
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_an_answer_pressed_before_the_lock_counts_though_it_runs_after(tmp_path):
     """Round 3 races in three hours, so its check-in locks in one. Max presses Decline now; the
     queue reaches it two hours later, past the lock. Nothing is saved as he presses; his answer is
@@ -162,7 +155,6 @@ async def test_an_answer_pressed_after_the_lock_is_refused(tmp_path):
     assert all(row["state"] != "QUEUED" for row in await _answer_changes(league))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_burst_of_answers_makes_one_redraw(tmp_path):
     """Max presses Accept, then Decline, and Lewis presses Tentative, all before the queue runs.
     Each answer is saved — Max's last one declined, Lewis tentative — and the call is redrawn
@@ -180,7 +172,6 @@ async def test_a_burst_of_answers_makes_one_redraw(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_refused_redraw_stops_the_queue_with_the_answer_saved(tmp_path):
     """Discord refuses every edit of the call (7001). Max presses Accept: his answer is saved,
     and the queue stops at the redraw."""
@@ -197,7 +188,6 @@ async def test_a_refused_redraw_stops_the_queue_with_the_answer_saved(tmp_path):
     assert stopped is not None and stopped["name"] == "redraw"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_call_gone_completes_the_redraw_with_a_line(tmp_path):
     """The call (7001) was deleted by hand. Max presses Accept: his answer is saved, the redraw
     finds the call gone and completes, and the queue does not stop."""
@@ -215,7 +205,6 @@ async def test_a_call_gone_completes_the_redraw_with_a_line(tmp_path):
     assert redraw["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_an_answer_is_acknowledged_privately_and_updated_and_kept_while_the_queue_is_stopped(
     tmp_path,
 ):

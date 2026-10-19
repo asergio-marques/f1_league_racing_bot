@@ -11,19 +11,17 @@ from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin
-from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.attendance.models.attendance import AttendanceConfig
+from leaguebot.attendance.services.check_in_answer_changes import ask_check_in_answer
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
 from leaguebot.attendance.services.attendance_service import (
-    RsvpOutcome,
     recalculation_faults,
     sync_attendance,
     validate_timing_invariant,
 )
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import as_text_channel, channel_refusal
-from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form
@@ -1260,14 +1258,6 @@ _ACTION_TO_STATUS = {
     "decline":  "DECLINED",
 }
 
-#: An answer as a log line gives it.
-_STATUS_WORDS = {
-    "ACCEPTED":  "accepted",
-    "TENTATIVE": "tentative",
-    "DECLINED":  "declined",
-    "NO_RSVP":   "no answer",
-}
-
 #: Each button's label as a log line names it, without its emoji.
 _ACTION_LABELS = {
     "accept":    "Accept",
@@ -1275,34 +1265,15 @@ _ACTION_LABELS = {
     "decline":   "Decline",
 }
 
-_STATUS_LABELS = {
-    "ACCEPTED":  "✅ Accepted",
-    "TENTATIVE": "❓ Tentative",
-    "DECLINED":  "❌ Declined",
-    "NO_RSVP":   "(no response)",
-}
-
-
-async def _call_stands(bot: LeagueBot, round_id: int, division_id: int) -> bool:
-    """Whether a check-in call for *round_id* is still recorded as standing.
-
-    The row goes when the call is taken down — by a cancellation, or by an amendment that
-    withdraws it — and it is written when one is posted, so its absence means there is no call
-    to answer even where the message itself could not be deleted.
-    """
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
-            (round_id, division_id),
-        )
-        return await cursor.fetchone() is not None
-
-
 async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -> None:
     """Handle an RSVP button press.
 
-    This function is called by _RsvpButton.callback in rsvp_service.py.
-    It performs all validation, locking, DB updates, and embed refresh.
+    This function is called by _RsvpButton.callback in rsvp_service.py. It reads the button and
+    asks the change queue for the answer (`attendance.check_in.answer`, #439), which saves it and
+    redraws the call when its turn comes. The press is acknowledged privately as under way and
+    the acknowledgement updated with what became of it; a press the locks, the round or the
+    driver's place bar is refused as it is asked, and again if it is barred as it comes to run.
+    The answer is judged at the moment the button was pressed (Constitution XIII).
 
     It carries its own module gate. The cog's slash commands get theirs from
     ``_module_gate``, but this is a module-level handler reached straight from a
@@ -1313,9 +1284,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     press is logged, each check-in answer included): a refusal as `refuse` writes it, and an
     answer given, an answer already held and an answer that could not be recorded in the success
     form. A line names the button and, once the round is read, the call it sits on: "the
-    “Accept” button of the check-in call for round 3 of Division 1". The round's number and its
-    division's name come from the query that reads the round, so naming the press costs no
-    query of its own.
+    “Accept” button of the check-in call for round 3 of Division 1".
     """
     # Parse action and round_id from custom_id: rsvp_{action}_r{round_id}
     try:
@@ -1338,10 +1307,8 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         )
         return
     button = f"the \u201c{_ACTION_LABELS[action]}\u201d button"
-    what = f"{button} of a check-in call"
 
     bot = bot_of(interaction)
-    discord_user_id = interaction.user.id
 
     # The module gate — see the docstring for why it sits here and not on the cog.
     if not await bot.module_service.is_attendance_enabled():
@@ -1349,209 +1316,11 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
             interaction,
             "❌ The Attendance module is switched off for this server, so check-in is "
             "no longer running. Your answer has not been recorded.",
-            what=what,
+            what=f"{button} of a check-in call",
         )
         return
 
-    # Look up driver profile by Discord user ID (FR-011). Any account the driver has held
-    # answers for them, a past one as well as the current (issue #243).
-    from leaguebot.core.services.driver_service import resolve_driver_profile_id
-
-    async with get_connection(bot.db_path) as db:
-        resolved_profile_id = await resolve_driver_profile_id(discord_user_id, db)
-
-        if resolved_profile_id is None:
-            await refuse(
-                interaction,
-                "❌ You are not registered as a driver in this server.",
-                what=what,
-            )
-            return
-        driver_profile_id: int = resolved_profile_id
-
-        # Get round info
-        cur = await db.execute(
-            """
-            SELECT r.division_id, r.scheduled_at, r.format, r.status,
-                   r.round_number, d.name AS division_name,
-                   ac.rsvp_deadline_hours
-              FROM rounds r
-              JOIN divisions d ON d.id = r.division_id
-              JOIN seasons s ON s.id = d.season_id
-              CROSS JOIN attendance_config ac
-             WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        round_row = await cur.fetchone()
-
-    if round_row is None:
-        await refuse(interaction, "❌ This round no longer exists.", what=what)
-        return
-    what = (
-        f"{button} of the check-in call for round {round_row['round_number']} "
-        f"of {round_row['division_name']}"
+    await ask_check_in_answer(
+        bot.change_queue, bot.db_path, interaction,
+        round_id=round_id, status=new_status, button=button,
     )
-
-    # A cancelled round's call is taken down with the cancellation (#175), so a press arriving
-    # here is one that raced it, or one on a call the bot was not allowed to delete. Either way
-    # there is nothing left to answer, and an answer recorded now would stand beside a round
-    # that is off.
-    #
-    # The withdrawal is read as well as the round's status, because the two are written apart:
-    # cancelling a season takes its calls down several steps before the cascade records its
-    # rounds cancelled, and a failure in between would leave a round still `NOT_RUN` whose call
-    # is gone. A call that no longer stands answers nobody, whatever the round says.
-    if round_row["status"] == RoundStatus.CANCELLED.value or not await _call_stands(
-        bot, round_id, round_row["division_id"]
-    ):
-        await refuse(
-            interaction,
-            "❌ This check-in is no longer open — the round has been cancelled, or its call "
-            "has been taken down. Your answer has not been recorded.",
-            what=what,
-        )
-        return
-
-    division_id: int = round_row["division_id"]
-
-    # Verify the driver holds a confirmed placement in this division (full-time or reserve)
-    # (FR-011). Only a driver with one may answer the call: an unconfirmed placement stands
-    # outside the championship until `/season placements-review` confirms it (issue #220), so
-    # it is called to no check-in and accrues no attendance. This is the one reader of the
-    # championship that walked the seats without `uncommitted_seat_excluded`, which went
-    # unnoticed while `upsert_rsvp_status` discarded every answer it had no row for; now that
-    # it opens rows, the predicate is what stops it opening one here (issue #209).
-    #
-    # No answer of its own: the refusal below is one message for every way of not being a
-    # driver of this division — an unconfirmed placement, a seat in another division, or no
-    # driver profile at all. A league manager who does not drive and presses a button out of
-    # curiosity is in the same position, and telling them apart would serve nobody.
-    async with get_connection(bot.db_path) as db:
-        cur = await db.execute(
-            f"""
-            SELECT ti.is_reserve
-              FROM driver_season_assignments dsa
-              JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
-              JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                    AND ti.division_id = dsa.division_id
-             WHERE dsa.driver_profile_id = ?
-               AND dsa.division_id = ?
-               AND {uncommitted_seat_excluded("ts")}
-            """,  # noqa: S608
-            (driver_profile_id, division_id),
-        )
-        assignment_row = await cur.fetchone()
-
-    if assignment_row is None:
-        await refuse(interaction, "❌ You are not a member of this division.", what=what)
-        return
-
-    is_reserve: bool = bool(assignment_row["is_reserve"])
-
-    # Parse scheduled_at and compute locking (FR-014 / FR-015 / FR-016 / FR-017)
-    scheduled_at_raw = round_row["scheduled_at"]
-    if isinstance(scheduled_at_raw, str):
-        scheduled_at = datetime.fromisoformat(scheduled_at_raw)
-    else:
-        scheduled_at = scheduled_at_raw
-    if scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
-    deadline_hours: int = round_row["rsvp_deadline_hours"] or 0
-    now = datetime.now(timezone.utc)
-
-    # The locks, the answer held and the write are decided in one transaction by the service
-    # (#482), so two quick presses cannot both decide on the answer the first is replacing, and
-    # an accepted reserve stays locked at the deadline whatever presses follow. The write is
-    # reported on rather than assumed: issue #209 was a success message standing over a write
-    # that changed nothing, and a driver told their answer was recorded has no way of
-    # discovering otherwise until the round is scored against them. The embed is not rebuilt
-    # either on a write that failed — it is a view of the answers, and redrawing it here would
-    # show the division a state the database does not hold.
-    answer = await bot.attendance_service.answer_rsvp(
-        round_id,
-        division_id,
-        driver_profile_id,
-        new_status,
-        now=now,
-        scheduled_at=scheduled_at,
-        deadline_hours=deadline_hours,
-        is_reserve=is_reserve,
-    )
-    outcome = answer.outcome
-    current_status = answer.found
-
-    # Locks (FR-014 / FR-015 / FR-016 / FR-017)
-    if outcome is RsvpOutcome.LOCKED_AT_DEADLINE:
-        await refuse(
-            interaction,
-            "❌ The RSVP deadline has passed. Your response cannot be changed.",
-            what=what,
-        )
-        return
-    if outcome is RsvpOutcome.LOCKED_ACCEPTED:
-        await refuse(
-            interaction,
-            "❌ You have already accepted and the RSVP deadline has passed. "
-            "Your response cannot be changed.",
-            what=what,
-        )
-        return
-    if outcome is RsvpOutcome.LOCKED_AT_START:
-        await refuse(
-            interaction,
-            "❌ The round has started. Your response cannot be changed.",
-            what=what,
-        )
-        return
-
-    # No-op check (FR-013)
-    if outcome is RsvpOutcome.UNCHANGED:
-        label = _STATUS_LABELS.get(new_status, new_status)
-        await interaction.response.send_message(
-            f"ℹ️ You are already marked as **{label}**.", ephemeral=True
-        )
-        await _record(
-            bot, interaction, what, "Nothing changed", f"answer: {_STATUS_WORDS[new_status]}"
-        )
-        return
-
-    if outcome is RsvpOutcome.NOT_RECORDED:
-        log.error(
-            "handle_rsvp_button: recorded no answer for driver %s on round %s / division %s",
-            driver_profile_id, round_id, division_id,
-        )
-        await interaction.response.send_message(
-            "❌ Your answer could not be recorded. Please tell a league manager, and do "
-            "not assume you are signed up for this round.",
-            ephemeral=True,
-        )
-        await _record_failed(
-            bot, interaction, what, f"answer: {_STATUS_WORDS[new_status]}", "not recorded"
-        )
-        return
-
-    # Rebuild and edit embed in-place (FR-010 / FR-012)
-    from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
-    redrawn = False
-    embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
-    if embed_row is not None:
-        channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
-        if channel is not None:
-            try:
-                msg = await channel.fetch_message(int(embed_row.message_id))
-                new_embed = await _rebuild_embed_for_round(round_id, division_id, bot)
-                await msg.edit(embed=new_embed, view=RsvpView(round_id=round_id))
-                redrawn = True
-            except discord.HTTPException as exc:
-                log.error("handle_rsvp_button: failed to edit embed: %s", exc)
-
-    label = _STATUS_LABELS.get(new_status, new_status)
-    await interaction.response.send_message(
-        f"✅ Your RSVP has been updated to **{label}**.", ephemeral=True
-    )
-    details = [f"answer: {_STATUS_WORDS[new_status]} (was: {_STATUS_WORDS.get(current_status, current_status)})"]
-    if not redrawn:
-        details.append("call not redrawn")
-    await _record(bot, interaction, what, "Success", *details)

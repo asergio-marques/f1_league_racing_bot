@@ -335,6 +335,7 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
     from leaguebot.attendance.services.check_in_changes import (
         check_in_call_change,
         check_in_clean_up_change,
@@ -425,6 +426,7 @@ def register_change_types(bot: LeagueBot) -> None:
         check_in_deadline_change(bot.attendance_service, now=lambda: bot.change_queue.now())
     )
     bot.change_queue.register(check_in_clean_up_change())
+    bot.change_queue.register(check_in_answer_change(bot.attendance_service))
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
