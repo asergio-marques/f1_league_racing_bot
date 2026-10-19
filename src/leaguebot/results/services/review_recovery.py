@@ -26,8 +26,10 @@ no change in hand is put back by the stage it was left at:
 Anything else is a first paste cut short and is not a review: :func:`recover_review` says so by
 returning ``False`` and the entry point deals with it, outside the queue (A5 of the plan).
 
-A resubmission a restart cut short is not carried by the change. Its collection lived in memory;
-recovery clears it through the *abandon* callable it is handed, then asks for the review plainly.
+A resubmission a restart cut short is ended by the review's opening itself. Its collection lived
+in memory; recovery asks ``results.review.open`` returning from a restart, whose own jobs clear the
+flag and the drafts, take the Cancel button down and tell the channel (and complete, posting
+nothing, where the channel is gone).
 The "penalties already applied" warning is gone with the column it read: the queue carries what was
 staged, so a penalty applied and unannounced cannot happen.
 
@@ -37,7 +39,6 @@ Nothing here raises: this runs inside start-up, and one round unrecoverable must
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiosqlite
@@ -48,6 +49,7 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.change_queue import ChangeQueue, ever_asked
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.log_lines import name_of_member
 from leaguebot.results.services import review_open_change
 from leaguebot.results.services.review_changes import round_in_hand
 
@@ -55,18 +57,12 @@ log = logging.getLogger(__name__)
 
 _BOT = ChangeOrigin.BOT
 
-__all__ = ["Abandon", "recover_review"]
-
-#: Clears a resubmission a restart cut short: the bot, the round, its channel (``None`` where it is
-#: gone), the Cancel announcement's id, who started it and the round's name in the log.
-Abandon = Callable[..., Awaitable[None]]
-
+__all__ = ["recover_review"]
 
 async def recover_review(
     bot: LeagueBot,
     row: aiosqlite.Row,
     guild: discord.Guild | None,
-    abandon: Abandon,
     *,
     queue: ChangeQueue,
 ) -> bool:
@@ -90,7 +86,7 @@ async def recover_review(
         stage = await _stage(bot.db_path, row)
         if stage is None:
             return False
-        await _put_back(bot, row, guild, abandon, stage, queue)
+        await _put_back(bot, row, guild, stage, queue)
     except Exception:
         log.exception("Recovery: failed to restore the review of round %s", round_id)
     return True
@@ -113,11 +109,24 @@ async def _stage(db_path: str, row: aiosqlite.Row) -> str | None:
     return None
 
 
+async def _restart_payload(bot: LeagueBot, row: aiosqlite.Row, round_label: str) -> dict[str, Any]:
+    """What the review's opening needs to end a resubmission a restart cut short: the round, the
+    announcement whose Cancel button comes down, and who started it (named now, as a save may
+    not wait on Discord) with the round's name, for the lapse line."""
+    return {
+        "round_id": int(row["round_id"]), "channel_id": int(row["channel_id"]),
+        "label": "Provisional Results", "publish": False, "returning": "restart",
+        "round_number": int(row["round_number"]), "division_name": row["division_name"],
+        "cancel_message_id": row["resubmit_prompt_message_id"],
+        "started_by_named": await name_of_member(bot, row["resubmit_started_by"]),
+        "round_label": round_label,
+    }
+
+
 async def _put_back(
     bot: LeagueBot,
     row: aiosqlite.Row,
     guild: discord.Guild | None,
-    abandon: Abandon,
     stage: str,
     queue: ChangeQueue,
 ) -> None:
@@ -139,10 +148,12 @@ async def _put_back(
             channel_id, round_id,
         )
         if resubmitting and stage == "report":
-            # The round must not stay stuck as resubmitting with its channel gone.
-            await abandon(
-                bot, round_id, None, row["resubmit_prompt_message_id"],
-                started_by=row["resubmit_started_by"], round_label=round_label,
+            # The round must not stay stuck as resubmitting with its channel gone: the review's
+            # opening ends the resubmission and records its lapse, posting nothing.
+            await queue.ask(
+                review_open_change.KIND,
+                {**await _restart_payload(bot, row, round_label), "channel_gone": True},
+                origin=_BOT, what=f"ending the resubmission of {round_label}",
             )
         return
 
@@ -167,16 +178,15 @@ async def _put_back(
             what=f"posting the appeals review of {round_label} again",
         )
     else:
-        if resubmitting:
-            await abandon(
-                bot, round_id, channel, row["resubmit_prompt_message_id"],
-                started_by=row["resubmit_started_by"], round_label=round_label,
-            )
         payload = {
             "round_id": round_id, "label": "Provisional Results",
             "publish": not row["results_posted"],
             "round_number": int(row["round_number"]), "division_name": row["division_name"],
         }
+        if resubmitting:
+            # The collection lived in memory and is gone: the opening ends the resubmission in
+            # its own jobs, publishing nothing, the round's results being posted already.
+            payload.update(await _restart_payload(bot, row, round_label), publish=False)
         if row["prompt_message_id"] is not None:
             payload["old_prompt_id"] = int(row["prompt_message_id"])
         await queue.ask(

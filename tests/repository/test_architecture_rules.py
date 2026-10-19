@@ -172,7 +172,6 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (4, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
@@ -900,7 +899,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (2, HANDLERS),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
     ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["signup"]),
@@ -1108,7 +1106,6 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (2, SLICE["6b"]),
     ("__main__.py", "_recover_expired_review_prompts"): (2, SLICE["6b"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (1, SLICE["6b"]),
     ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, SLICE["6b"]),
@@ -1819,7 +1816,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
@@ -2125,7 +2121,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
     # Results' pass
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (3, PASS["results"]),
     ("results/services/result_submission_service.py", "_apply_points_from_config"): (1, PASS["results"]),

@@ -55,8 +55,20 @@ no longer due in those cases and is dropped; only a channel missing or unusable 
 with the check's reason, since the manager can set it right and press Retry.
 
 The payload is ``round_id``, ``label``, ``publish`` (whether the interim results go out),
-``returning`` (``"cancelled"`` or ``"failed"`` for a resubmission's return),
-``cancel_message_id`` and ``old_prompt_id``.
+``returning`` (``"cancelled"`` or ``"failed"`` for a resubmission's return, ``"restart"`` for
+one a restart cut short), ``cancel_message_id`` and ``old_prompt_id``.
+
+**A restart that cut a resubmission short is ended in the opening's own jobs** (``returning`` =
+``"restart"``, the bot's request). The collection lived in memory, so before anything else
+**`abandon_resubmission`** clears the flag (the review channel's message guard is back in force
+before the prompt returns), the announcement's id and the drafts the resubmission held; the
+prompt's jobs then take the Cancel button down (`take_down_cancel`, the announcement named by
+``cancel_message_id``) and **`post_restart_notice`** tells the channel the sessions entered were
+lost and the earlier results stand. The closing line records the lapse, naming who started it
+(``started_by_named``, worked out when the request was made) and the round (``round_label``).
+Where the submission channel is gone (``channel_gone``) there is nowhere to take the button down,
+to post the notice or to put the prompt: the notice completes posting nothing, nothing else is
+opened, and the flag still comes down and the lapse is still recorded (results spec :417).
 
 **Two more kinds put a review back after a restart, as the bot.** `results.appeals.open` posts a
 round's appeals prompt again, replacing the old one once the new one stands; its `close` asks for
@@ -119,6 +131,7 @@ from leaguebot.results.services.review_posting import (
     posting_steps,
 )
 from leaguebot.results.services.standings_service import compute_and_persist_round_on
+from leaguebot.results.services.submission_steps import post_step
 
 __all__ = [
     "APPEALS_OPEN_KIND", "CLOSE_STALE_KIND", "KIND", "PROMPT_KIND", "appeals_open_change",
@@ -136,8 +149,16 @@ APPEALS_APPROVE = "results.appeals.approve"
 _OPEN = "open"
 _POST_REVIEW_PROMPT = "post_review_prompt"
 _TAKE_DOWN_CANCEL = "take_down_cancel"
+_ABANDON = "abandon_resubmission"
+_POST_RESTART_NOTICE = "post_restart_notice"
 _POST_CANCEL_LINE = "post_cancel_line"
 _CLOSE = "close"
+
+RESTART_NOTICE = (
+    "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
+    "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
+    "again to re-enter them."
+)
 
 #: Where a round may stand for its review to open: before it, or in the report stage already.
 _OPENABLE = ROUND_CANCELLABLE | {RoundStatus.AWAITING_REPORT_VERDICTS.value}
@@ -309,6 +330,8 @@ def prompt_steps(payload: dict[str, Any], channel_id: int) -> list[PlannedStep]:
         steps.append(PlannedStep(_TAKE_DOWN_CANCEL, {
             "channel_id": channel_id, "message_id": int(payload["cancel_message_id"]),
         }))
+    if payload.get("returning") == "restart":
+        steps.append(PlannedStep(_POST_RESTART_NOTICE, {"channel_id": channel_id}))
     if payload.get("returning") == "cancelled":
         steps.append(PlannedStep(_POST_CANCEL_LINE, {"channel_id": channel_id}))
     return steps
@@ -343,6 +366,14 @@ def _closing_lines(
     as `_not_done` gives it)."""
     returning = ctx.payload.get("returning")
     resubmission = f"the resubmission of round {number}{division}"
+    if returning == "restart" and not open_lost:
+        return (abandoned_line(
+            str(ctx.payload["started_by_named"]),
+            f"the “Resubmit Initial Results” button of {ctx.payload['round_label']}",
+            lapsed=True,
+            detail="The sessions entered were lost. The earlier results stand. "
+                   "Press Resubmit again to re-enter them.",
+        ),)
     if open_lost or (returning == "cancelled" and prompt_lost):
         return ()
     if returning == "cancelled":
@@ -396,7 +427,7 @@ async def _reopening(
         "division_name": payload.get("division_name"),
     }
     if carry_return:
-        for key in ("returning", "cancel_message_id"):
+        for key in ("returning", "cancel_message_id", "started_by_named", "round_label"):
             if payload.get(key) is not None:
                 again[key] = payload[key]
     if payload.get("mark") is not None:
@@ -482,6 +513,9 @@ def review_open_change() -> ChangeType:
         if guild is None:
             return no(_NO_SERVER)
         if as_text_channel(guild.get_channel(int(row["channel_id"]))) is None:
+            if ctx.payload.get("channel_gone"):
+                # A resubmission a restart cut short is still ended, its notice completing.
+                return Verdict.go()
             reason = (
                 f"The submission channel <#{row['channel_id']}> no longer exists or cannot be "
                 f"posted in. Set it right, then retry."
@@ -551,7 +585,10 @@ def review_open_change() -> ChangeType:
         division = "" if row is None else f" ({row['division_name']})"
         views = {view.name: view for view in ctx.steps}
         opened = views.get(_OPEN)
-        open_lost = opened is None or _discarded(opened.result) or _dropped(opened.result)
+        gone = bool(payload.get("channel_gone"))
+        open_lost = (opened is None and not gone) or (
+            opened is not None and (_discarded(opened.result) or _dropped(opened.result))
+        )
         prompt = views.get(_POST_REVIEW_PROMPT)
         prompt_lost = prompt is not None and _discarded(prompt.result)
 
@@ -587,13 +624,59 @@ def review_open_change() -> ChangeType:
     def outcome(ctx: OutcomeContext) -> str:
         done = {view.name: view for view in ctx.steps}
         opened = done.get(_OPEN)
+        if ctx.payload.get("channel_gone"):
+            return "The resubmission was ended. Its submission channel is gone."
         if opened is None or _discarded(opened.result) or _dropped(opened.result):
             return "Nothing was changed. The penalty review is being opened again."
         reply = f"✅ The penalty review is open (round {ctx.payload['round_id']})."
         return "\n".join([reply, *_not_done(ctx)])
 
+    async def abandon(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        round_id = int(ctx.payload["round_id"])
+        await db.execute(
+            "UPDATE round_submission_channels SET resubmitting = 0, "
+            "resubmit_prompt_message_id = NULL WHERE round_id = ?",
+            (round_id,),
+        )
+        await db.execute("DELETE FROM resubmission_drafts WHERE round_id = ?", (round_id,))
+        return StepResult(result={"abandoned": True})
+
+    async def describe_abandon(_ctx: StepContext) -> str:
+        return "ending the resubmission a restart cut short"
+
+    notice = post_step(
+        _POST_RESTART_NOTICE, describing="telling the channel the resubmission was lost"
+    )
+
+    async def post_restart_notice(ctx: StepContext) -> StepResult:
+        """Say the sessions entered were lost; completing, posting nothing, where the channel is
+        gone."""
+        guild = await _league_guild(ctx.bot)
+        if as_text_channel(guild.get_channel(int(ctx.step_payload["channel_id"]))) is None:
+            return StepResult(result={"posted": False})
+        return await notice.run(
+            replace(ctx, step_payload={**ctx.step_payload, "text": RESTART_NOTICE})
+        )
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        if payload.get("channel_gone"):
+            return (
+                PlannedStep(_ABANDON),
+                PlannedStep(_POST_RESTART_NOTICE, {"channel_id": int(payload["channel_id"])}),
+                PlannedStep(_CLOSE),
+            )
+        if payload.get("returning") == "restart":
+            return (
+                PlannedStep(NAMES), PlannedStep(_ABANDON), PlannedStep(_OPEN), PlannedStep(_CLOSE)
+            )
+        return (PlannedStep(NAMES), PlannedStep(_OPEN), PlannedStep(_CLOSE))
+
     steps: dict[str, Step] = {
         **{name: step for name, step in posting_steps().items()},
+        _ABANDON: Step(_ABANDON, StepKind.SAVE, abandon, describe=describe_abandon),
+        _POST_RESTART_NOTICE: Step(
+            _POST_RESTART_NOTICE, StepKind.ACT, post_restart_notice, describe=notice.describe,
+        ),
         _OPEN: Step(
             _OPEN, StepKind.SAVE, open_review, still_due=names_not_discarded,
             describe=describe_open,
@@ -614,6 +697,7 @@ def review_open_change() -> ChangeType:
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep(NAMES), PlannedStep(_OPEN), PlannedStep(_CLOSE)),
+        plan=plan,
         steps=steps,
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",

@@ -1295,66 +1295,6 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
                 )
 
 
-async def _abandon_interrupted_resubmission(
-    bot: LeagueBot,
-    round_id: int,
-    channel: discord.abc.Messageable | None,
-    announcement_id: int | None,
-    *,
-    started_by: int | None,
-    round_label: str,
-) -> None:
-    """Close out a resubmission a restart cut short, leaving the round's results as they were.
-
-    The collection ran in memory and is gone. The flag is cleared first, so the review
-    channel's message guard is back in force before the prompt returns, and the Cancel button
-    on the announcement is taken down because nothing is listening for it any more.
-
-    The lapse is recorded in the log channel as the Resubmit button's, naming who started it
-    (*started_by*, kept on the round's submission channel row when the press was made) and the
-    round (*round_label*); both come from the recovery's own read of that row, so this reads
-    nothing more. A row from before the column existed names nobody's id, and the line names
-    no member.
-
-    *channel* is ``None`` where the submission channel has since been deleted: there is then
-    nowhere to take the Cancel button down or post the notice, and both are skipped, but the
-    flag still comes down and the lapse is still recorded, so the round is not left stuck as
-    resubmitting.
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.utils.log_lines import record_abandoned
-
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET resubmitting = 0 WHERE round_id = ?",
-            (round_id,),
-        )
-        await db.commit()
-
-    if channel is not None:
-        if announcement_id is not None:
-            try:
-                announcement = await channel.fetch_message(announcement_id)
-                await announcement.edit(view=None)
-            except (discord.NotFound, discord.HTTPException):
-                pass  # Already gone; the notice below says what happened either way
-
-        await channel.send(
-            "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
-            "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
-            "again to re-enter them."
-        )
-    await record_abandoned(
-        bot, started_by,
-        what=f"the “Resubmit Initial Results” button of {round_label}",
-        lapsed=True,
-        detail=(
-            "The sessions entered were lost. The earlier results stand. "
-            "Press Resubmit again to re-enter them."
-        ),
-    )
-
-
 async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     """Take down what a round's cleanups would have, their moment passing while the bot was down.
 
@@ -1469,8 +1409,8 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
     Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
     change on the queue is carrying out to it, and otherwise asks the queue to put the review back
-    (#439). A resubmission a restart cut short is cleared first (`_abandon_interrupted_resubmission`),
-    its collection being lost though the round's results are not (issue #210).
+    (#439). A resubmission a restart cut short is ended by the review's opening, its collection being lost
+    though the round's results are not (issue #210).
     """
     from leaguebot.core.db.database import get_connection
 
@@ -1501,7 +1441,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         # A round that is a review is put back, or left to the change carrying it out, by the
         # results service (#439). What is left is a first paste cut short, which is no review.
         if await recover_review(
-            bot, row, guild, _abandon_interrupted_resubmission, queue=bot.change_queue,
+            bot, row, guild, queue=bot.change_queue,
         ):
             continue
 

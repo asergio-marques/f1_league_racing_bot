@@ -335,7 +335,6 @@ async def test_a_resubmission_s_drafts_survive_a_restart_until_it_is_abandoned(
     assert await _sessions(league) == [("FEATURE_RACE", "ACTIVE")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_restart_during_a_resubmission_abandons_it_in_the_review_s_own_jobs(
     tmp_path, monkeypatch,
 ):

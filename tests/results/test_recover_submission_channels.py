@@ -446,7 +446,7 @@ async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
         )
         row = await cursor.fetchone()
 
-    assert await recover_review(stub, row, stub._guild, AsyncMock(), queue=handed) is True
+    assert await recover_review(stub, row, stub._guild, queue=handed) is True
 
     handed.ask.assert_awaited_once()
     assert handed.ask.await_args.args[0] == "results.review.open"
@@ -566,11 +566,6 @@ async def test_an_appeals_round_whose_guild_is_missing_is_left_intact(tmp_path):
 # flag down and the drafts away (`abandon_resubmission`), take the Cancel button down
 # (`take_down_cancel`) and post the restart notice (`post_restart_notice`) — results spec :417.
 
-NO_ABANDON_IN_THE_REVIEW_S_JOBS = (
-    "#439: a restart abandons an interrupted resubmission in "
-    "`__main__._abandon_interrupted_resubmission`, off the queue, before it asks for the review, "
-    "rather than in the review opening's own jobs"
-)
 STARTER = 4242
 ANNOUNCEMENT = 6100
 
@@ -641,7 +636,6 @@ def _lapse_lines(league) -> list[str]:
     return [_plain(line) for line in league.bot.log_channel.sent if line.startswith("⌛")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
     """The bot restarts while round 3 is resubmitting. The round's results stay, its channel is
     not deleted, and its review is asked back without publishing, returning from a restart; once
@@ -665,7 +659,6 @@ async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_rev
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_clears_the_flag(tmp_path):
     """Left set, the review channel's guard would stay down and let messages through. The flag
     comes down in the save of the review opening's `abandon_resubmission` job."""
@@ -677,7 +670,6 @@ async def test_a_restart_mid_resubmission_clears_the_flag(tmp_path):
     assert await _resubmitting_flag(league.db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_path):
     """The manager was part-way through pasting; the prompt coming back unexplained would
     look as though the pastes had been accepted. The review opening's `post_restart_notice` job
@@ -693,7 +685,6 @@ async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_pat
                for text in _contents(league, SUBMISSION_CHANNEL))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro) and was part-way
     through pasting when the bot restarted. Once the queue has run the review's opening, one
@@ -717,7 +708,6 @@ async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path):
     """The view was not persistent, so after a restart pressing it would only fail. The review
     opening's `take_down_cancel` job edits the announcement (6100) without its button."""
@@ -731,7 +721,6 @@ async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path)
     assert league.channel(SUBMISSION_CHANNEL).messages[ANNOUNCEMENT].view is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recovery(tmp_path):
     """The announcement (6100) was deleted by hand before the restart. Its take-down completes,
     the queue does not stop, the flag comes down and the review is asked back once."""
@@ -746,7 +735,6 @@ async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recove
     assert await _resubmitting_flag(league.db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ABANDON_IN_THE_REVIEW_S_JOBS)
 async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_out(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro), and the bot
     restarted part-way through; meanwhile the submission channel was deleted. There is nowhere
