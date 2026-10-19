@@ -144,6 +144,23 @@ def create_channel_step(record: Record) -> Step:
     return Step(CREATE_CHANNEL, StepKind.ACT, run, describe=describe, record=record)
 
 
+@posts_in_a_job
+async def _send(
+    channel: discord.TextChannel, text: str, *, mentions: discord.AllowedMentions, refused: str
+) -> int:
+    """The one place a dialogue's line is sent: *text* to *channel*, notifying only what
+    *mentions* allows, and the id of the message posted.
+
+    Both posting steps below send through it, so the module has one posting step to list and
+    every post states who it may notify. Raises `StepFailedOnDiscord` with *refused* where
+    Discord refuses it."""
+    try:
+        message = await channel.send(text, allowed_mentions=mentions)
+    except discord.HTTPException as error:
+        raise StepFailedOnDiscord(refused) from error
+    return message.id
+
+
 def post_step(name: str = POST, *, describing: str = "posting a line in the dialogue's channel") -> Step:
     """The job that posts one line in a dialogue's channel, named *name* on the queue.
 
@@ -152,7 +169,6 @@ def post_step(name: str = POST, *, describing: str = "posting a line in the dial
     what a stop or a Discard says the job was doing.
     """
 
-    @posts_in_a_job
     async def post(ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
         guild = await _guild(ctx)
@@ -161,11 +177,10 @@ def post_step(name: str = POST, *, describing: str = "posting a line in the dial
             raise StepFailedOnDiscord("the dialogue's channel is not in the server")
         roles = [discord.Object(id=int(each)) for each in payload.get("mention_role_ids", ())]
         mentions = discord.AllowedMentions(everyone=False, users=False, roles=roles or False)
-        try:
-            message = await channel.send(str(payload["text"]), allowed_mentions=mentions)
-        except discord.HTTPException as error:
-            raise StepFailedOnDiscord("the line could not be posted") from error
-        return StepResult(result={"message_id": message.id})
+        message_id = await _send(
+            channel, str(payload["text"]), mentions=mentions, refused="the line could not be posted"
+        )
+        return StepResult(result={"message_id": message_id})
 
     async def describe(_ctx: StepContext) -> str:
         return describing
@@ -181,7 +196,6 @@ def post_prompt_step() -> Step:
     ``{"message_id": <id>}``.
     """
 
-    @posts_in_a_job
     async def post(ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
         guild = await _guild(ctx)
@@ -200,11 +214,11 @@ def post_prompt_step() -> Step:
             is_sprint=RoundFormat(row["format"]) is RoundFormat.SPRINT,
             override_fl=bool(payload.get("override_fl", False)),
         )
-        try:
-            message = await channel.send(text)
-        except discord.HTTPException as error:
-            raise StepFailedOnDiscord("the prompt could not be posted") from error
-        return StepResult(result={"message_id": message.id})
+        message_id = await _send(
+            channel, text, mentions=discord.AllowedMentions.none(),
+            refused="the prompt could not be posted",
+        )
+        return StepResult(result={"message_id": message_id})
 
     async def describe(_ctx: StepContext) -> str:
         return "posting the prompt for the next session"
