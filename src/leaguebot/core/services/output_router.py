@@ -95,7 +95,12 @@ class OutputRouter:
 
     @posts_in_a_job
     async def post_forecast(
-        self, division: ForecastTarget, content: str, *, mentions: discord.AllowedMentions
+        self,
+        division: ForecastTarget,
+        content: str,
+        *,
+        mentions: discord.AllowedMentions,
+        parts: "Optional[list[discord.Message]]" = None,
     ) -> "Optional[discord.Message]":
         """Post *content* to the division's forecast channel, letting *mentions* notify.
 
@@ -105,10 +110,13 @@ class OutputRouter:
         "Who it may mention, stated where it is sent").
 
         Returns the ``discord.Message`` sent (the last, where the text is split), or ``None``
-        where the division has no forecast channel set. A post Discord refuses, or to a channel
-        the bot cannot reach, raises `StepFailedOnDiscord` naming the channel: a forecast is a
-        job of the change queue, which stops on the failure and tries the text again itself, so
-        nothing is put on the old retry queue (#439).
+        where the division has no forecast channel set; a caller that records every part passes a
+        list as *parts*, which is given each message sent, in order. A post Discord refuses, or to
+        a channel the bot cannot reach, raises `StepFailedOnDiscord` naming the channel: a
+        forecast is a job of the change queue, which stops on the failure and tries the text
+        again itself, so nothing is put on the old retry queue (#439). Where the failure comes
+        after a part was sent, the exception keeps the parts sent (``new``, in ``channel_id``),
+        for the next try to remove before it posts the forecast afresh.
         """
         channel_id = division.forecast_channel_id
         if channel_id is None:
@@ -116,13 +124,20 @@ class OutputRouter:
             # channel with no id and logged the failure — less the request.
             log.error("post_forecast: the division has no forecast channel")
             return None
+        sent: list[discord.Message] = []
         message, reason, _retryable = await self._try_send(
-            channel_id, content, "forecast", False, mentions=mentions
+            channel_id, content, "forecast", False, mentions=mentions, sent=sent
         )
         if message is None:
             raise StepFailedOnDiscord(
-                f"the forecast could not be posted to <#{channel_id}>: {reason}"
+                f"the forecast could not be posted to <#{channel_id}>: {reason}",
+                result=(
+                    {"new": [each.id for each in sent], "channel_id": channel_id}
+                    if sent else None
+                ),
             )
+        if parts is not None:
+            parts.extend(sent)
         return message
 
     async def log_destination(self) -> "Optional[int]":
@@ -467,10 +482,14 @@ class OutputRouter:
         view: "Optional[discord.ui.View]" = None,
         mention_role: int | None = None,
         mentions: "Optional[discord.AllowedMentions]" = None,
+        sent: "Optional[list[discord.Message]]" = None,
     ) -> "tuple[Optional[discord.Message], str, bool]":
         """Send *content*, and say how it went: the message, or None with why and whether a
         retry could mend it (a refused or failed post can; a channel not found cannot).
-        Logs every failure and never raises."""
+        Logs every failure and never raises.
+
+        *sent*, where given, is added each message sent, in order, so that a caller finds what
+        stands in the channel when a later part is refused."""
         channel = self._bot.get_channel(channel_id)
         if channel is None:
             try:
@@ -503,6 +522,8 @@ class OutputRouter:
                     last_msg = await channel.send(chunk, allowed_mentions=allowed, view=view)
                 else:
                     last_msg = await channel.send(chunk, allowed_mentions=allowed)
+                if sent is not None:
+                    sent.append(last_msg)
                 if first_msg is None:
                     first_msg = last_msg
             return (first_msg if return_first else last_msg), "", False

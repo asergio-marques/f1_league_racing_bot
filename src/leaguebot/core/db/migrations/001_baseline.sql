@@ -59,7 +59,8 @@ CREATE TABLE "forecast_messages" (
     phase_number INTEGER NOT NULL CHECK (phase_number IN (0, 1, 2, 3)),
     message_id   INTEGER NOT NULL,
     posted_at    TEXT    NOT NULL,
-    channel_id   INTEGER
+    channel_id   INTEGER,
+    message_ids  TEXT
 );
 CREATE UNIQUE INDEX uq_forecast_messages_round_div_phase
     ON forecast_messages(round_id, division_id, phase_number);

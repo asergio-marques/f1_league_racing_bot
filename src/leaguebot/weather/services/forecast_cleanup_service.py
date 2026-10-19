@@ -16,6 +16,7 @@ Public API:
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -50,6 +51,7 @@ async def store_forecast_message_on(
     *,
     now: datetime,
     channel_id: int | None = None,
+    message_ids: Sequence[int] | None = None,
 ) -> None:
     """Record *message_id* as the forecast of *phase_number* of *round_id*, on *db*, committing
     nothing: the post job's record writes it in the save that marks the post done.
@@ -58,16 +60,21 @@ async def store_forecast_message_on(
     ``/weather channel`` has moved the division's forecasts elsewhere; a row without one is
     deleted from the division's channel as it stands.
 
+    A forecast too long for one message is posted in parts: *message_ids* is every part, in
+    order, and *message_id* the last, the one the next phase supersedes. Left out, the forecast
+    is the one message.
+
     Uses ``INSERT OR REPLACE`` so re-running a phase (e.g. after an amendment)
     transparently updates the stored ID without leaving stale rows.
     """
     await db.execute(
         """
         INSERT OR REPLACE INTO forecast_messages
-            (round_id, division_id, phase_number, message_id, posted_at, channel_id)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (round_id, division_id, phase_number, message_id, posted_at, channel_id, message_ids)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (round_id, division_id, phase_number, message_id, now.isoformat(), channel_id),
+        (round_id, division_id, phase_number, message_id, now.isoformat(), channel_id,
+         json.dumps([int(each) for each in (message_ids or [message_id])])),
     )
     log.debug(
         "Stored forecast message: round=%s div=%s phase=%s msg=%s",
@@ -194,7 +201,7 @@ async def post_phase_message(
     attachment=None,
     attachment_text: str = "",
     mentions: discord.AllowedMentions,
-) -> "discord.Message":
+) -> "list[discord.Message]":
     """Post one weather occasion, and nothing else: the job that calls it records the message and
     deletes the one it supersedes.
 
@@ -213,19 +220,24 @@ async def post_phase_message(
     besides, and for a mystery notice is empty. *mentions* is who either may notify, stated by the
     caller and sent with the text or the picture alike: the division's role for a forecast,
     nobody for a mystery notice.
+
+    Returns every message the occasion took, in order: a forecast too long for one message is
+    sent in parts, and every part is recorded and deleted with it. A part sent before a later one
+    is refused is kept on the exception, for the next try to remove.
     """
     if attachment is None:
         # The textual path, unchanged: the router chunks it, and raises where Discord refuses.
         from leaguebot.core.services.output_router import ForecastChannel
 
+        parts: list[discord.Message] = []
         msg = await bot.output_router.post_forecast(
-            ForecastChannel(channel_id), text, mentions=mentions
+            ForecastChannel(channel_id), text, mentions=mentions, parts=parts
         )
         if msg is None:
             raise StepFailedOnDiscord(
                 f"the Phase {phase_number} forecast has no channel to be posted to"
             )
-        return msg
+        return parts or [msg]
 
     # One `finally` around the whole graphic branch. Two of its three exits abandon the
     # picture *before* the send — an unfetchable channel and one that is not a text
@@ -250,11 +262,11 @@ async def post_phase_message(
             raise StepFailedOnDiscord(f"<#{channel_id}> is not a text channel")
 
         try:
-            return await channel.send(
+            return [await channel.send(
                 attachment_text,
                 file=attachment,
                 allowed_mentions=mentions,
-            )
+            )]
         except discord.HTTPException as exc:
             log.warning(
                 "post_phase_message: failed to post phase %s for division %s: %s",

@@ -250,7 +250,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             attachment = await image_weather_post.attach_forecast(
                 ctx.bot, round_id, 1 if phase == 0 else phase
             )
-        message = await forecast_cleanup_service.post_phase_message(
+        parts = await forecast_cleanup_service.post_phase_message(
             ctx.bot,
             division_id=row["division_id"],
             channel_id=int(row["forecast_channel_id"]),
@@ -261,7 +261,8 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             mentions=_forecast_mentions(phase, mention),
         )
         result = {
-            "new": message.id, "channel_id": int(row["forecast_channel_id"]), "phase": phase,
+            "new": [each.id for each in parts], "channel_id": int(row["forecast_channel_id"]),
+            "phase": phase,
             "old": earlier, "division_id": row["division_id"],
         }
         then: tuple[PlannedStep, ...] = ()
@@ -273,10 +274,11 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         return StepResult(result=result, then=then)
 
     async def record_post(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        parts = [int(each) for each in result.result["new"]]
         await forecast_cleanup_service.store_forecast_message_on(
             db, int(_value(ctx, "round_id")), int(result.result["division_id"]),
-            int(result.result["phase"]), int(result.result["new"]), now=now(),
-            channel_id=int(result.result["channel_id"]),
+            int(result.result["phase"]), parts[-1], now=now(),
+            channel_id=int(result.result["channel_id"]), message_ids=parts,
         )
 
     async def describe_post(ctx: StepContext) -> str:
@@ -300,7 +302,8 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 row = await _round_row(db, round_id)
                 division_id = None if row is None else row["division_id"]
             cursor = await db.execute(
-                "SELECT fm.message_id, COALESCE(fm.channel_id, d.forecast_channel_id) "
+                "SELECT fm.message_id, fm.message_ids, "
+                "COALESCE(fm.channel_id, d.forecast_channel_id) "
                 "AS forecast_channel_id FROM forecast_messages fm "
                 "JOIN divisions d ON d.id = fm.division_id "
                 "WHERE fm.round_id = ? AND fm.division_id = ? AND fm.phase_number = ?",
@@ -313,24 +316,35 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         message_id = int(found["message_id"])
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
-        try:
-            await forecast_cleanup_service._discord_delete(ctx.bot, int(channel_id), message_id)
-        except discord.NotFound:
-            raise
-        except discord.HTTPException as exc:
+        # A forecast posted in parts comes down whole, in one job: a part already gone counts as
+        # deleted, so a try after a refusal finds only what is left.
+        parts = json.loads(found["message_ids"]) if found["message_ids"] else [message_id]
+        refused: tuple[int, discord.HTTPException] | None = None
+        missing: list[discord.NotFound] = []
+        for part in parts:
+            try:
+                await forecast_cleanup_service._discord_delete(ctx.bot, int(channel_id), int(part))
+            except discord.NotFound as exc:
+                missing.append(exc)
+            except discord.HTTPException as exc:
+                refused = refused or (int(part), exc)
+        if refused is None and len(missing) == len(parts):
+            raise missing[0]
+        if refused is not None:
             from leaguebot.core.utils.league_server import league_guild
 
+            left, cause = refused
             kept: dict[str, Any] = {
-                "phase": phase, "channel_id": int(channel_id), "message_id": message_id,
+                "phase": phase, "channel_id": int(channel_id), "message_id": left,
             }
             guild = await league_guild(ctx.bot)
             if guild is not None:
                 kept["guild_id"] = guild.id
             raise StepFailedOnDiscord(
-                f"the Phase {phase} forecast message {message_id} in channel {channel_id}"
+                f"the Phase {phase} forecast message {left} in channel {channel_id}"
                 f" could not be deleted",
                 result=kept,
-            ) from exc
+            ) from cause
         return StepResult(result={"phase": phase, "message_id": message_id,
                                   "channel_id": int(channel_id)})
 

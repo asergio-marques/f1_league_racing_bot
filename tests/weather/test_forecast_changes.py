@@ -563,7 +563,6 @@ def test_a_forecast_with_no_division_role_writes_no_mention(phase, payload):
 # whole, and a part sent before a later part was refused is removed before the next try.
 # ---------------------------------------------------------------------------
 
-NO_PARTS_RECORDED = "#439: a forecast in more than one message records only its last"
 #: A track name long enough that Phase 2's forecast takes two messages.
 LONG_TRACK = TRACK + " " + "x" * 1850
 
@@ -575,7 +574,6 @@ async def _two_part_phase_2(league: Any) -> None:
     await league.write("UPDATE rounds SET track_name = ? WHERE id = ?", LONG_TRACK, ROUND)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PARTS_RECORDED)
 async def test_a_forecast_in_two_parts_records_both(tmp_path):
     """Round 3's track has a name of some 1,870 characters, and Phase 2 is asked after Phase 1:
     the Phase 2 forecast is posted in two messages, and its record keeps both, in order."""
@@ -592,7 +590,6 @@ async def test_a_forecast_in_two_parts_records_both(tmp_path):
     assert json.loads(row["message_ids"]) == parts
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PARTS_RECORDED)
 async def test_a_superseded_forecast_in_two_parts_is_deleted_whole(tmp_path):
     """Round 3's Phase 2 forecast was posted in two messages; Phase 3 is then asked. Once Phase 3
     is posted, both messages of Phase 2 are deleted from Pro's forecast channel, and no record of
@@ -612,7 +609,6 @@ async def test_a_superseded_forecast_in_two_parts_is_deleted_whole(tmp_path):
     assert 2 not in await _forecasts(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PARTS_RECORDED)
 async def test_a_forecast_failing_after_its_first_part_removes_it_before_its_next_try(tmp_path):
     """Round 3's Phase 2 forecast takes two messages; Discord accepts the first and refuses the
     second, so the queue stops at the post with the first part standing in Pro's forecast channel.
