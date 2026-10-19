@@ -863,18 +863,30 @@ async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind,
         else AppealsReviewView(state=state)
     )
     button = next(item for item in view.children if getattr(item, "label", None) == label)
-    interaction = _interaction()
+    # A removal is staged by a change on the round's lane (#439, C55), which the test runs and
+    # whose line reaches the log channel; the clear asks the approval, stubbed.
+    queued = kind == "review"
+    interaction = _staging_press(state) if queued else _interaction()
     p1, p2, p3, p4 = _finalisers()
 
     with _manager(True), p1, p2, p3, p4:
         await button.callback(interaction)
+        if queued:
+            await run_queue(state.bot)
 
     removed = ["<@101>", "<@102>"] if kind == "clear" else ["<@101>"]
     assert [p.driver_user_id for p in state.staged_appeals] == ([] if kind == "clear" else [102])
-    assert [kind for kind, _payload in _asked(interaction, state)] == (
-        ["results.appeals.approve"] if kind == "clear" else []
-    )
-    (line,) = _all_lines(interaction, state)
+    if queued:
+        (line,) = [
+            "\n".join(part for part in str(sent).splitlines() if part.strip("\u2015"))
+            .replace("`<@", "<@").replace(">`", ">")
+            for sent in state.bot.log_channel.sent
+        ]
+    else:
+        assert [kind for kind, _payload in _asked(interaction, state)] == [
+            "results.appeals.approve"
+        ]
+        (line,) = _all_lines(interaction, state)
     assert not line.startswith(("⛔", "↩️", "⌛")), line
     for fragment in ("Alex (<@77>)", label, "appeals review of round 3 (Pro)", "+5s", *removed):
         assert fragment in line, (fragment, line)

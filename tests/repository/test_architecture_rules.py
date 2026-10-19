@@ -1340,14 +1340,6 @@ KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 
-#: Why the queue check fails until the last view read it lists is made (C56).
-NO_VIEW_HANDS_THE_QUEUE = (
-    "#439: the penalty review's buttons and forms and the configuration picker do not yet each "
-    "read the queue once and ask their change (C9, C48, C51, C54-C56)"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_VIEW_HANDS_THE_QUEUE)
 def test_no_service_reaches_the_change_queue_through_the_bot():
     """A service or a helper is handed the change queue by whoever builds or calls it, and never
     looks it up on the bot (architecture.md, "How modules and core fit together": "Services stay

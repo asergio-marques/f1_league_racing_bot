@@ -279,6 +279,9 @@ CREATE TABLE round_submission_channels (
     -- appeals_prompt_message_id: the appeals review's prompt in the submission channel, saved with
     -- its post, so that a prompt put back after a restart takes the old one down (#439).
     appeals_prompt_message_id INTEGER,
+    -- approval_message_id: the report stage's approval question in the submission channel, saved
+    -- with its post, so that a staging on a review built afresh withdraws it (#439).
+    approval_message_id INTEGER,
     UNIQUE (round_id)
 );
 

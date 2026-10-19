@@ -56,6 +56,7 @@ from tests.support.change_queue import (
     league_double,
     member_interaction,
     run_queue,
+    seed_server,
     updated_reply,
 )
 
@@ -161,6 +162,7 @@ async def _on_the_queue(state: PenaltyReviewState, tmp_path) -> MagicMock:
     change or post the approval message (#439, slice 6b, C55–C56), which the tests run."""
     db_path = os.path.join(str(tmp_path), "review.db")
     await run_migrations(db_path)
+    await seed_server(db_path)
     bot = league_double(db_path)
     attach_queue(bot, db_path, now=PRESSED_AT)
     state.bot = bot
@@ -172,6 +174,9 @@ async def _on_the_queue(state: PenaltyReviewState, tmp_path) -> MagicMock:
     user.bot = False
     interaction = member_interaction(bot, user=user)
     interaction.channel_id = state.submission_channel_id
+    # The submission channel can be reached, as the approval question's change checks (a test
+    # that is about it not being reached says so with `_in_channel`).
+    _in_channel(state, MagicMock())
     return interaction
 
 
@@ -959,6 +964,8 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
     state.approval_message_id = _APPROVAL_MESSAGE if kind == "approval" else None
     channel = MagicMock()
     channel.send = AsyncMock(return_value=MagicMock(id=_APPROVAL_MESSAGE))
+    # The approval question Make Changes withdraws is a message the channel can fetch and delete.
+    channel.fetch_message = AsyncMock(return_value=MagicMock(delete=AsyncMock()))
     view = _view(kind, state)
     button = next(item for item in view.children if getattr(item, "label", None) == label)
     interaction = await _pressed_by_alex(state, channel, tmp_path)

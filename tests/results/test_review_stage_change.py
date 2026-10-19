@@ -26,7 +26,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock
 
-import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
@@ -62,15 +61,6 @@ KIND = "results.review.stage"
 CONFIRM_KIND = "results.review.confirm"
 LANE = f"channel:{SUBMISSION_CHANNEL}"
 APPEALS_PROMPT = 8902
-
-NO_STAGE_CHANGE = (
-    "#439: a staging is applied and the prompt redrawn at the press, not by "
-    "results.review.stage on the round's lane"
-)
-NO_CONFIRM_CHANGE = (
-    "#439: No Penalties / Confirm posts the approval message at the press, not by "
-    "results.review.confirm saving its id on the submission row"
-)
 
 
 def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = None,
@@ -327,7 +317,6 @@ async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     assert "Remove #1" in _labels(appeals, APPEALS_PROMPT)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STAGE_CHANGE)
 async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_path):
     """Round 3's review holds penalties for Lewis and Max, its approval message 8901 standing.
     Alex presses Make Changes on the approval message, then Remove #2 on the prompt, then clears
@@ -379,7 +368,6 @@ async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_
     assert all(_lane(change) == LANE for change in await changes_of(league.db_path, KIND))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONFIRM_CHANGE)
 async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_path):
     """Nothing is staged in round 3's review when Alex presses No Penalties / Confirm. He is
     answered at once and nothing is posted yet; the confirmation is a change on round 3's lane,
@@ -407,7 +395,6 @@ async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_
     assert await _approval_row(league.db_path) == posted
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONFIRM_CHANGE)
 async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     """Discord refuses the approval message Alex's No Penalties / Confirm posts in round 3's
     submission channel. Round 3's lane stops at that post, the league lane running on, and no id
@@ -435,7 +422,6 @@ async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     assert await _approval_row(league.db_path) is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CONFIRM_CHANGE)
 async def test_the_approval_message_s_id_is_saved_on_the_submission_row_and_read_by_a_later_staging(
     tmp_path,
 ):
