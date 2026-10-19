@@ -47,6 +47,7 @@ from leaguebot.core.utils.league_server import (
     LeagueModal,
     LeagueView,
     guild_of,
+    is_foreign_guild,
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -833,6 +834,32 @@ class _AmendSessionsView(LeagueView):
 class ResultsCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
+
+    # ------------------------------------------------------------------
+    # Guard: block messages while a round is in penalty review (T014)
+    # ------------------------------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot or not message.guild:
+            return
+        if await is_foreign_guild(self.bot, message.guild.id):
+            return
+        from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
+
+        if await is_channel_in_penalty_review(self.bot.db_path, message.channel.id):
+            try:
+                await message.delete()
+            except discord.HTTPException:
+                pass
+            try:
+                await message.channel.send(
+                    f"❌ **{message.author.display_name}** this channel is locked during penalty review."
+                    " Please use the buttons above.",
+                    delete_after=8,
+                )
+            except discord.HTTPException:
+                pass
 
     # ------------------------------------------------------------------
     # Gate helpers

@@ -88,7 +88,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
-from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
@@ -5500,32 +5500,6 @@ class SeasonCog(commands.Cog):
         )
         # None where the queue's own check refused the approval and saved nothing.
         return change_id is not None
-
-    # ------------------------------------------------------------------
-    # Guard: block messages while round is in penalty review (T014)
-    # ------------------------------------------------------------------
-
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message) -> None:
-        if message.author.bot or not message.guild:
-            return
-        if await is_foreign_guild(self.bot, message.guild.id):
-            return
-        from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
-
-        if await is_channel_in_penalty_review(self.bot.db_path, message.channel.id):
-            try:
-                await message.delete()
-            except discord.HTTPException:
-                pass
-            try:
-                await message.channel.send(
-                    f"❌ **{message.author.display_name}** this channel is locked during penalty review."
-                    " Please use the buttons above.",
-                    delete_after=8,
-                )
-            except discord.HTTPException:
-                pass
 
 
 # ---------------------------------------------------------------------------

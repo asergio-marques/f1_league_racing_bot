@@ -455,12 +455,6 @@ async def test_a_member_leaving_another_server_is_nothing_to_the_league():
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
-NO_RESULTS_LOCK_LISTENER = (
-    "#439: the penalty review's lock listens in the season cog, not the results cog"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_RESULTS_LOCK_LISTENER)
 async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
     """The lock is results' listener (#439, slice 6b, C39): a message typed in another server
     is never looked up, nor deleted."""
