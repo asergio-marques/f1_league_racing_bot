@@ -402,6 +402,39 @@ async def forget_check_in_call_on(
     )
 
 
+async def _forget_vanished_call(
+    ctx: StepContext,
+    service: AttendanceService,
+    row: aiosqlite.Row,
+    round_id: int,
+    division_id: int,
+) -> Callable[[aiosqlite.Connection], Awaitable[None]]:
+    """What a stop leaves of a check-in call nobody can see (its channel or its own message
+    gone): what is left of it is deleted now, and the record it returns drops the call's record in
+    the stop's save, queueing a line naming any message that could not be deleted, for deletion
+    by hand. Reporting never masks the stop."""
+    undeleted: list[str] = []
+    try:
+        await check_in_deletes(ctx.bot, service)(round_id, division_id)
+    except StepFailedOnDiscord as exc:
+        undeleted = [str(each) for each in (exc.result or {}).get("undeleted", [])]
+
+    async def forget(db: aiosqlite.Connection) -> None:
+        await forget_check_in_call_on(db, round_id, division_id)
+        if undeleted:
+            await ctx.bot.output_router.queue_log_on(
+                db,
+                f"ATTENDANCE | check-in call | NOT DELETED\n"
+                f"  division: {row['division_name']}\n"
+                f"  round: {row['round_number']}\n"
+                f"  messages: {', '.join(undeleted)}\n"
+                f"  note: Discord refused to delete them as the call was taken down; delete "
+                f"them by hand.",
+            )
+
+    return forget
+
+
 def given_up_text(row: aiosqlite.Row) -> str:
     """The log channel's line for a round whose call is given up, as the start-up has always
     worded it."""
@@ -511,11 +544,13 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
             reason: str, *, timed_out: bool = False, said: str | None = None
         ) -> StepFailedOnDiscord:
             """The stop this failure makes, saying what it leaves for the round. Where the earlier
-            call cannot be seen either, its record is dropped, what is left of it deleted or named
-            (`withdraw_rsvp_call`), its answers kept."""
+            call cannot be seen either, what is left of it is deleted and its record dropped in the
+            stop's own save (`StepFailedOnDiscord.record`), a message that cannot be deleted named
+            in the log channel for deletion by hand, its answers kept."""
             vanished = earlier is not None and await rsvp_service._call_vanished(ctx.bot, earlier)
+            forget: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None
             if vanished:
-                await rsvp_service.withdraw_rsvp_call(round_id, division_id, ctx.bot)
+                forget = await _forget_vanished_call(ctx, service, row, round_id, division_id)
             if answers_kept and not timed_out and not amending:
                 left = rsvp_service.ANSWERS_KEPT.format(
                     division=division, round=row["round_number"]
@@ -529,6 +564,7 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
                 result={"earlier_left": earlier is not None and not vanished,
                         "vanished": vanished},
                 notice=left if said is None else f"{left}; Discord said: {said}",
+                record=forget,
             )
 
         config = await service.get_division_config(division_id)
@@ -609,12 +645,20 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
         # which messages stand, and the reply names them for deletion by hand.
         then: tuple[PlannedStep, ...] = ()
         if earlier is not None and ctx.payload.get("replaces") is not None:
+            # The earlier call is read again now it has been replaced, as it stands just before the
+            # new call takes its record: a last notice or announcement posted while the repost was
+            # being sent was recorded on it, and comes down with it.
+            latest = await service.get_embed_message(round_id, division_id)
+            coming_down = (
+                latest if latest is not None and latest.message_id == earlier.message_id
+                else earlier
+            )
             then = tuple(
                 PlannedStep(DELETE_EARLIER, {
                     "channel_id": int(channel_id), "message_id": int(message_id),
                     "what": "check-in call", "division_name": division,
                 })
-                for message_id, channel_id in _earlier_messages(earlier)
+                for message_id, channel_id in _earlier_messages(coming_down)
             )
         lines: tuple[str, ...] = ()
         if ctx.actor_id is not None and ctx.kind == CHECK_IN_CALL:

@@ -211,12 +211,6 @@ async def _embed_rows(db_path: str) -> int:
 # the queue; a call that does not post stops it, and the stop notice in the log channel says
 # what is left for the round.
 
-NO_CALL_CHANGE = (
-    "#439: the check-in call is posted, and posted again in an earlier call's place, by "
-    "`run_rsvp_notice` and `repost_rsvp_call` at once, off the change queue, its failure "
-    "reported rather than stopping the queue"
-)
-
 #: A channel the earlier call stands in, other than the one the division is set to now.
 EARLIER_CHANNEL_ID = 770078
 
@@ -505,7 +499,6 @@ async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path)
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the_earlier_call(
     tmp_path,
 ):

@@ -11,7 +11,7 @@ to them by `tests/core/test_schema_rules.py`.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -144,15 +144,28 @@ class StepFailedOnDiscord(Exception):
     `notice` is a short clause a job adds to its stop notice, saying what its failure leaves: the
     amendment's check-in call says what is left for the round. The stop notice and the line of a
     Retry that fails again carry it after the kind of fault.
+
+    `record` is what the failure leaves to be written (it is handed an `aiosqlite.Connection`,
+    which a model does not import): the queue runs it on the connection of the
+    save that marks the job failed, and commits nothing itself, so that a record dropped because
+    of the failure goes with the stop and not apart from it (the amendment's check-in call drops
+    the record of an earlier call nobody can see). It runs again with each failed try, so it must
+    be safe to run twice.
     """
 
     def __init__(
-        self, reason: str, *, result: dict[str, Any] | None = None, notice: str | None = None,
+        self,
+        reason: str,
+        *,
+        result: dict[str, Any] | None = None,
+        notice: str | None = None,
+        record: Callable[[Any], Awaitable[None]] | None = None,
     ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.result = result
         self.notice = notice
+        self.record = record
 
 
 class GuildUnavailable(Exception):

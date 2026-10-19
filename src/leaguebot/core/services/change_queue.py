@@ -1689,7 +1689,8 @@ class ChangeQueue:
         stopped trying on its own, and leaves no try.
         A Retry's try that fails (`retry`) writes one line naming the presser and the kind of
         fault instead, and leaves the schedule as it stood. A partial result a failure carries
-        is kept on the job, as is the result of a step whose record raised (*partial*). *row* is the job, or for a check
+        is kept on the job, as is the result of a step whose record raised (*partial*); the record a
+        failure carries (`StepFailedOnDiscord.record`) is written in the same save. *row* is the job, or for a check
         that fails before the change starts, the change's first job not done; *job* names it,
         the change's own words where none is given.
 
@@ -1742,6 +1743,12 @@ class ChangeQueue:
                     line_id = await self._router.queue_log_on(db, line)
                     if line_id is not None:
                         ids.append(line_id)
+                if (
+                    cursor.rowcount == 1
+                    and isinstance(error, StepFailedOnDiscord)
+                    and error.record is not None
+                ):
+                    await error.record(db)
                 await db.commit()
             except BaseException:
                 await db.rollback()
