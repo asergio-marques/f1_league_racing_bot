@@ -348,6 +348,43 @@ async def test_a_discarded_call_says_post_check_in_is_the_way_to_post_it(tmp_pat
     assert "/attendance post-check-in" in league.log()[len(told_before):]
 
 
+async def test_a_hand_posted_call_an_admin_discards_tells_the_manager_it_was_discarded(tmp_path):
+    """A manager runs `/attendance post-check-in` for round 4, Discord refuses the call and a
+    league admin discards it: the manager's acknowledgement is updated to say the call was
+    discarded by an admin and not posted, naming `/attendance post-check-in` as the way to post
+    it, never that it was no longer owed (core spec, how a change is carried out)."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+    from tests.support.change_queue import member_interaction
+    from tests.support.undecorate import undecorate
+
+    league = await _call_league(tmp_path)
+    league.channel(CHECK_IN).send_fails = http_error(discord.Forbidden, status=403,
+                                                     text="Missing Permissions")
+    cog = AttendanceCog.__new__(AttendanceCog)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name="attendance post-check-in")
+    interaction.followup.send.return_value = MagicMock(edit=AsyncMock())
+
+    await undecorate(AttendanceCog.post_check_in)(cog, interaction, "Pro", 4)
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    await discard_job(league.bot)
+
+    edits = interaction.followup.send.return_value.edit.await_args_list
+    outcome = str(edits[-1].args[0] if edits[-1].args else edits[-1].kwargs.get("content", ""))
+    assert outcome.startswith("⛔ The check-in call for round 4 of **Pro** was not posted")
+    assert "a league admin discarded it" in outcome
+    assert "/attendance post-check-in" in outcome
+    assert "no longer owed" not in outcome
+    assert _sent(league) == []
+    assert await _call_record(league) == []
+
+
 # ---------------------------------------------------------------------------
 # The restart
 # ---------------------------------------------------------------------------
