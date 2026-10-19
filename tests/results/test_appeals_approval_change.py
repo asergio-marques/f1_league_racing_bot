@@ -374,9 +374,6 @@ async def test_the_manager_is_told_the_round_is_final(tmp_path):
     assert "APPEALS_REVIEW_APPROVED | Success" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: the appeals approval deletes the appeals prompt by a job of its own before the channel"
-))
 async def test_the_final_approval_deletes_the_channel_on_the_league_and_ends_the_conversation(
     tmp_path,
 ):

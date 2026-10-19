@@ -1499,10 +1499,6 @@ async def test_the_save_awaits_nothing_but_its_connection(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: the reports approval posts the appeals prompt itself on the league lane, not through "
-    "the round's lane"
-))
 async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
     """Round 3's reports are approved by Alex while Discord refuses the appeals prompt. The
     approval finishes on the league lane, the round moved on to its appeals; round 3's lane, not

@@ -23,8 +23,9 @@ of jobs the queue saves and resumes:
    of every later round, and **`delete_batch_notice`** (`review_posting`).
 4. **The verdicts** (`review_verdicts`): the heading, then one `announce_verdict` for each
    correction.
-5. **`delete_message`** for the appeals prompt, then **`delete_channel`** for the submission
-   channel, last, since every job above posts or deletes in it.
+5. **`delete_channel`** for the submission channel, last, since every job above posts or deletes
+   in it. The appeals prompt is not deleted on its own: it goes with the channel, the conversation's
+   end (C44b).
 6. **`close`**, **an opening job**, so that it runs last whatever was discarded before it. It
    writes `APPEALS_REVIEW_APPROVED | Success`, or `| Incomplete` naming every job a league admin
    discarded.
@@ -85,7 +86,6 @@ from leaguebot.results.services.result_submission_service import (
 )
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
-    DELETE_MESSAGE,
     NAMES,
     display_names,
     plan_posts,
@@ -222,11 +222,6 @@ def appeals_approval_change(
         then.extend(
             review_verdicts.plan_verdicts(round_id, round_number, "appeal_records", records)
         )
-        if payload.get("appeals_prompt_message_id") is not None:
-            then.append(PlannedStep(DELETE_MESSAGE, {
-                "channel_id": channel_id, "message_id": int(payload["appeals_prompt_message_id"]),
-                "what": "appeals review prompt",
-            }))
         then.append(PlannedStep(DELETE_CHANNEL, {
             "channel_id": channel_id, "round_id": round_id, "what": "submission channel",
         }))

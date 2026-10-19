@@ -128,6 +128,7 @@ KIND = "results.review.open"
 APPEALS_OPEN_KIND = "results.appeals.open"
 CLOSE_STALE_KIND = "results.review.close_stale"
 PROMPT_KIND = "results.review.prompt"
+APPEALS_STAGE = "appeals"
 REPORTS_APPROVE = "results.reports.approve"
 APPEALS_APPROVE = "results.appeals.approve"
 
@@ -309,6 +310,24 @@ def prompt_steps(payload: dict[str, Any], channel_id: int) -> list[PlannedStep]:
         }))
     if payload.get("returning") == "cancelled":
         steps.append(PlannedStep(_POST_CANCEL_LINE, {"channel_id": channel_id}))
+    return steps
+
+
+def appeals_stage_steps(payload: dict[str, Any]) -> list[PlannedStep]:
+    """The jobs that put the appeals stage up, in order: each message the stage-one review leaves
+    standing taken down (``takedowns``), then the appeals prompt."""
+    channel_id = int(payload["channel_id"])
+    steps = [
+        PlannedStep(DELETE_MESSAGE, {
+            "channel_id": channel_id, "message_id": int(down["message_id"]),
+            "what": down["what"],
+        })
+        for down in payload.get("takedowns", [])
+    ]
+    steps.append(PlannedStep(
+        review_verdicts.POST_APPEALS_PROMPT,
+        {"round_id": int(payload["round_id"]), "division_id": int(payload["division_id"])},
+    ))
     return steps
 
 
@@ -613,6 +632,13 @@ def review_prompt_change() -> ChangeType:
     ``cancel_message_id``, ``returning``) with ``channel_id`` (the lane), ``results_posted``,
     ``tables_discarded`` and the lines ``left`` and ``left_reposted`` the opening worded. The
     conversation still stands while the round's row names the channel and is not closed.
+
+    **The same change puts the appeals stage up** (C44b), where its payload has ``stage`` set to
+    `APPEALS_STAGE`: the reports approval, in its last save, asks it to take the stage-one prompt
+    and the approval message down (``takedowns``, each ``message_id`` and ``what``) and to post the
+    appeals prompt for ``round_id`` and ``division_id``, saving its id on the round's row. A
+    prompt whose post is discarded is asked for again by `results.appeals.open`, as the approval
+    did when the prompt was one of its own jobs.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -621,6 +647,10 @@ def review_prompt_change() -> ChangeType:
             int(row["channel_id"]) != int(ctx.payload["channel_id"])
         ):
             return Verdict.not_due("The round's submission channel is closed.")
+        if ctx.payload.get("stage") == APPEALS_STAGE and (
+            row["status"] != RoundStatus.AWAITING_APPEAL_VERDICTS.value
+        ):
+            return Verdict.not_due("The round is no longer awaiting its appeal verdicts.")
         return Verdict.go()
 
     async def conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
@@ -633,8 +663,33 @@ def review_prompt_change() -> ChangeType:
         ).fetchone()
         return row is not None
 
+    async def close_appeals_stage(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Where the appeals prompt's post was discarded, ask for it again, as the bot: the stage
+        stays open with no prompt otherwise ("Discard reopens the review")."""
+        if not any(
+            view.name == review_verdicts.POST_APPEALS_PROMPT and _discarded(view.result)
+            for view in ctx.steps
+        ):
+            return StepResult(result={"closed": True})
+        again = {
+            "round_id": int(ctx.payload["round_id"]),
+            "division_id": int(ctx.payload["division_id"]),
+            "old_prompt_id": None,
+            "round_number": ctx.payload.get("round_number"),
+            "division_name": ctx.payload.get("division_name"),
+        }
+        return StepResult(
+            result={"closed": True, "reopened": True},
+            follow_ons=(FollowOn(
+                APPEALS_OPEN_KIND, again,
+                "the appeals review prompt, posted again after its post was discarded",
+            ),),
+        )
+
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
+        if payload.get("stage") == APPEALS_STAGE:
+            return await close_appeals_stage(db, ctx)
         row = await (
             await db.execute(
                 "SELECT r.round_number, d.name AS division_name FROM rounds r "
@@ -668,10 +723,23 @@ def review_prompt_change() -> ChangeType:
         return "recording that the penalty review is open"
 
     def outcome(ctx: OutcomeContext) -> str:
+        if ctx.payload.get("stage") == APPEALS_STAGE:
+            left = review_posting.not_done(ctx)
+            if any(
+                view.name == review_verdicts.POST_APPEALS_PROMPT and _discarded(view.result)
+                for view in ctx.steps
+            ):
+                return "\n".join([
+                    "⚠️ The appeals review prompt was not posted. It is being posted again.", *left,
+                ])
+            return "\n".join([
+                f"✅ The appeals review prompt is up (round {ctx.payload['round_id']}).", *left,
+            ])
         return f"✅ The penalty review prompt is up (round {ctx.payload['round_id']})."
 
     steps: dict[str, Step] = {
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
+        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
         _POST_REVIEW_PROMPT: Step(
             _POST_REVIEW_PROMPT, StepKind.ACT, _post_review_prompt,
             describe=_describe_prompt, record=_record_prompt,
@@ -687,15 +755,26 @@ def review_prompt_change() -> ChangeType:
     }
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        if payload.get("stage") == APPEALS_STAGE:
+            return (*appeals_stage_steps(payload), PlannedStep(_CLOSE))
         return (*prompt_steps(payload, int(payload["channel_id"])), PlannedStep(_CLOSE))
+
+    def key(payload: dict[str, Any]) -> str:
+        stage = ":appeals" if payload.get("stage") == APPEALS_STAGE else ""
+        return f"{PROMPT_KIND}{stage}:{payload['round_id']}"
+
+    def doing(payload: dict[str, Any]) -> str:
+        if payload.get("stage") == APPEALS_STAGE:
+            return _naming("Putting up the appeals review prompt", payload)
+        return _naming("Putting up the penalty review prompt", payload)
 
     return ChangeType(
         kind=PROMPT_KIND,
         opening=(),
         steps=steps,
         check=check,
-        key=lambda payload: f"{PROMPT_KIND}:{payload['round_id']}",
-        doing=lambda payload: _naming("Putting up the penalty review prompt", payload),
+        key=key,
+        doing=doing,
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=conversation_open,
