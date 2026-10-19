@@ -60,7 +60,6 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.utils.batch_notice import delete_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 log = logging.getLogger(__name__)
@@ -526,41 +525,12 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
             f"round: {ctx.payload.get('round_number', '?')}`)"
         )
 
-    async def delete_earlier(ctx: StepContext) -> StepResult:
-        """Delete one message of the call this one replaced, from the channel it was posted in.
-        A channel no longer on the server completes the job (the message went with it); a message
-        already gone is completed by the queue; any other refusal stops the queue, keeping the
-        message's link for a Discard to name."""
-        payload = ctx.step_payload
-        channel = as_text_channel(ctx.bot.get_channel(int(payload["channel_id"])))
-        if channel is None:
-            return StepResult(result={"gone": True})
-        message = channel.get_partial_message(int(payload["message_id"]))
-        try:
-            await delete_notice(message)
-        except discord.NotFound:
-            raise
-        except discord.HTTPException as exc:
-            raise StepFailedOnDiscord(
-                "the earlier check-in call could not be deleted",
-                result={"link": message.jump_url},
-            ) from exc
-        return StepResult(result={"deleted": True})
-
-    async def describe_delete(ctx: StepContext) -> str:
-        payload = ctx.step_payload
-        return (
-            f"deleting the earlier check-in call message of "
-            f"**{payload.get('division_name', 'the division')}** in <#{payload['channel_id']}>"
-        )
-
     return {
         GIVE_UP: Step(GIVE_UP, StepKind.SAVE, give_up, still_due=still_due,
                       describe=describe_give_up),
         POST_CALL: Step(POST_CALL, StepKind.ACT, post, still_due=still_due,
                         describe=describe_post, record=record_call),
-        DELETE_EARLIER: Step(DELETE_EARLIER, StepKind.DELETE, delete_earlier,
-                             describe=describe_delete),
+        DELETE_EARLIER: standing_posts.delete_replaced_step(DELETE_EARLIER),
     }
 
 

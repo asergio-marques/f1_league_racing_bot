@@ -93,10 +93,12 @@ async def _describe_delete(ctx: StepContext) -> str:
     )
 
 
-def delete_replaced_step() -> Step:
-    """The `delete_replaced` job, for a change type's `steps`."""
+def delete_replaced_step(name: str = DELETE_REPLACED) -> Step:
+    """The `delete_replaced` job, for a change type's `steps`. A change type whose delete wears
+    another name in its job list (the check-in call's `delete_earlier`) builds the same step
+    under *name*, so that every standing message comes down through the one delete."""
     return Step(
-        DELETE_REPLACED, StepKind.DELETE, _delete_replaced, describe=_describe_delete,
+        name, StepKind.DELETE, _delete_replaced, describe=_describe_delete,
     )
 
 
