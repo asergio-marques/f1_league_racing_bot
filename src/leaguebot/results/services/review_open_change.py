@@ -737,6 +737,24 @@ def review_prompt_change() -> ChangeType:
             ])
         return f"✅ The penalty review prompt is up (round {ctx.payload['round_id']})."
 
+    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        """A discarded appeals prompt is named in the log, as the approval's own line named it
+        when the prompt was one of its jobs: the reply that approved the reports has long been
+        sent."""
+        if ctx.payload.get("stage") != APPEALS_STAGE:
+            return ()
+        prompt = next(
+            (v for v in ctx.steps if v.name == review_verdicts.POST_APPEALS_PROMPT), None
+        )
+        if prompt is None or not _discarded(prompt.result):
+            return ()
+        number = ctx.payload.get("round_number") or ctx.payload["round_id"]
+        return (
+            f"{ctx.named} | PENALTY_REVIEW_APPROVED | Incomplete\n"
+            f"  round: {number} ({ctx.payload.get('division_name', '?')})\n"
+            "  ⚠️ The appeals review prompt was not posted. It is being posted again.",
+        )
+
     steps: dict[str, Step] = {
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
         review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
@@ -780,6 +798,7 @@ def review_prompt_change() -> ChangeType:
         conversation_open=conversation_open,
         writes=("round_submission_channels",),
         plan=plan,
+        finished_lines=finished_lines,
     )
 
 

@@ -343,10 +343,6 @@ async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_pat
 
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: the amendment's report stage posts its appeals prompt itself on the league lane, not "
-    "through the amendment's lane"
-))
 async def test_a_stage_prompt_is_posted_on_the_amendment_s_lane(tmp_path):
     """Round 3 is under an amendment in channel 705, its report stage awaiting approval, and
     Discord refuses the amendment's appeals prompt. Alex approves the report stage: the approval

@@ -51,6 +51,7 @@ REVIEW_KINDS: tuple[str, ...] = (
     appeals_approval_change.KIND,
     amendment_stage_changes.REPORTS_KIND,
     amendment_stage_changes.APPEALS_KIND,
+    amendment_stage_changes.PROMPT_KIND,
 )
 
 

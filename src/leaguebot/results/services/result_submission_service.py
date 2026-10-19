@@ -1797,15 +1797,20 @@ async def next_submission_message(bot: LeagueBot, db_path: str, round_id: int, s
 
 
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
-    """Whether an approval of one of the amendment's stages is in hand on the change queue for
-    *round_id*, queued, running or stopped on a failure. Nothing overtakes it, so the sweep,
+    """Whether an approval of one of the amendment's stages, or the lane's putting up of the
+    appeals stage's prompt that the report stage's approval asks, is in hand on the change queue
+    for *round_id*, queued, running or stopped on a failure. Nothing overtakes it, so the sweep,
     Cancel and restart recovery leave the amendment alone while it is."""
     from leaguebot.core.services.change_queue import unfinished
-    from leaguebot.results.services.amendment_stage_changes import APPEALS_KIND, REPORTS_KIND
+    from leaguebot.results.services.amendment_stage_changes import (
+        APPEALS_KIND,
+        PROMPT_KIND,
+        REPORTS_KIND,
+    )
 
     return any(
         change.get("round_id") == round_id
-        for change in await unfinished(db_path, [REPORTS_KIND, APPEALS_KIND])
+        for change in await unfinished(db_path, [REPORTS_KIND, APPEALS_KIND, PROMPT_KIND])
     )
 
 
