@@ -87,7 +87,6 @@ async def _nothing_opened(league: SeasonLeague) -> bool:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_a_refused_call_s_stop_notice_names_the_division_the_round_and_the_refusal(tmp_path):
     """Discord answers 503: the queue stops at the call, and its notice names Pro, round 4 and
     what Discord said."""
@@ -103,7 +102,6 @@ async def test_a_refused_call_s_stop_notice_names_the_division_the_round_and_the
     assert "Service Unavailable" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_the_report_says_the_round_opened_no_attendance_rows(tmp_path):
     """The consequence is what staff need to know, not merely that a send failed: the stop notice
     says no attendance rows are open for the round until the call is posted."""
@@ -118,7 +116,6 @@ async def test_the_report_says_the_round_opened_no_attendance_rows(tmp_path):
     assert await _nothing_opened(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_a_failure_to_report_never_masks_the_original_failure(tmp_path):
     """The log channel refuses the stop notice as well: the call is still stopped at, with
     nothing recorded, for the queue to try again."""
@@ -133,7 +130,6 @@ async def test_a_failure_to_report_never_masks_the_original_failure(tmp_path):
     assert await _nothing_opened(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_both_failure_paths_of_the_notice_report_the_call(tmp_path):
     """A refused send stops the queue (the tests above); so does a check-in channel gone from the
     server, its notice saying what is left."""
@@ -148,7 +144,6 @@ async def test_both_failure_paths_of_the_notice_report_the_call(tmp_path):
     assert await _nothing_opened(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_the_report_is_reached_before_the_notice_returns_on_a_failed_send(tmp_path):
     """A failed send stops the call's change there: nothing after the post runs, so no record
     and no attendance rows are written, and the stop notice is posted."""
@@ -163,7 +158,6 @@ async def test_the_report_is_reached_before_the_notice_returns_on_a_failed_send(
     assert "Missing Permissions" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_the_report_consults_no_image_module_and_no_toggle(tmp_path):
     """FR-062 holds with images off: a refused call stops the queue with its notice all the
     same."""
@@ -177,7 +171,6 @@ async def test_the_report_consults_no_image_module_and_no_toggle(tmp_path):
     assert COUNTS_NOTHING in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_STOP)
 async def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites(tmp_path, monkeypatch):
     """Images on and the check-in graphic drawn: a refused call stops the queue with its notice
     as it does without one."""

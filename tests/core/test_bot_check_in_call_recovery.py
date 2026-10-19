@@ -47,10 +47,6 @@ ROUND_ID = 429
 CHANNEL_ID = 770001
 KIND = "attendance.check_in.call"
 
-NO_CALL_CHANGE = (
-    "#439: the restart posts a late check-in call itself, through `run_rsvp_notice`, and gives "
-    "up a call past its deadline itself, rather than asking the change queue for the call"
-)
 
 
 async def _make_db(
@@ -193,7 +189,6 @@ def _logged(bot: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_path):
     """Its moment went by while the bot was stopped, and the deadline has not: the restart asks
     the queue for the call and posts nothing itself; the queue posts it, and the division is
@@ -211,7 +206,6 @@ async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_pa
     assert await _call_stands(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
     """Staff learn the call went out late, and until when it can be answered: once the queue has
     posted it, the log channel says it was not posted when it fell due, with its deadline."""
@@ -226,7 +220,6 @@ async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
     assert f"<t:{int(deadline.timestamp())}:F>" in _logged(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
     """A deadline of zero closes the check-in at the round's own moment, as
     `/attendance post-check-in` reads it, so an hour before the round is still in time: the
@@ -321,7 +314,6 @@ async def _checkin_cleared(db_path: str) -> bool:
         return bool((await cursor.fetchone())["checkin_cleared"])
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tmp_path):
     """Decided 2026-09-24. A call nobody could answer would record every driver as not having
     answered, so none is posted: the restart asks for the call, and the call's change gives it
@@ -338,7 +330,6 @@ async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tm
     assert await _checkin_cleared(db_path), "a call given up is still owed"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
     """The round's check-in is over once given up, so the next start asks for nothing and has
     nothing to say."""
@@ -353,7 +344,6 @@ async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
     assert _logged(bot).count(_COUNTS_NOTHING) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_path):
     """The database refuses to close the round's check-in. The start goes on, having asked for
     the call; the queue stops at the give-up, the round's check-in still open, so that a Retry
@@ -375,7 +365,6 @@ async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_
     assert not await _checkin_cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
     """No call stands for the round and its deadline has passed, but answers are left for it, as
     a call taken down by an amendment that the bot restarted before posting again leaves them:
@@ -439,7 +428,6 @@ async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attend
     assert not await _checkin_cleared(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("status, cleared", [
     ("FINAL", False), ("AWAITING_REPORT_VERDICTS", False), ("NOT_RUN", True),
 ], ids=["results judged", "results entered", "check-in over"])

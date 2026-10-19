@@ -315,15 +315,28 @@ class AttendanceService:
     ) -> None:
         """Insert NO_RSVP rows for every driver in the list (ignore if already exists)."""
         async with get_connection(self._db_path) as db:
-            await db.executemany(
-                """
-                INSERT OR IGNORE INTO driver_round_attendance
-                    (round_id, division_id, driver_profile_id)
-                VALUES (?, ?, ?)
-                """,
-                [(round_id, division_id, dp_id) for dp_id in driver_profile_ids],
+            await self.bulk_insert_attendance_rows_on(
+                db, round_id, division_id, driver_profile_ids
             )
             await db.commit()
+
+    @staticmethod
+    async def bulk_insert_attendance_rows_on(
+        db: aiosqlite.Connection,
+        round_id: int,
+        division_id: int,
+        driver_profile_ids: list[int],
+    ) -> None:
+        """`bulk_insert_attendance_rows` on *db*, committing nothing: the call's record writes
+        its rows in the save that marks the posting job done."""
+        await db.executemany(
+            """
+            INSERT OR IGNORE INTO driver_round_attendance
+                (round_id, division_id, driver_profile_id)
+            VALUES (?, ?, ?)
+            """,
+            [(round_id, division_id, dp_id) for dp_id in driver_profile_ids],
+        )
 
     async def upsert_rsvp_status(
         self,
@@ -519,25 +532,41 @@ class AttendanceService:
         A call replacing one recorded for the pair takes its record in this one statement, its
         last notice and distribution announcement cleared: they were the earlier call's, and the
         new one has none yet (`run_rsvp_notice`'s *replacing*)."""
-        now_iso = datetime.now(timezone.utc).isoformat()
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, posted_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(round_id, division_id)
-                DO UPDATE SET message_id = excluded.message_id,
-                              channel_id = excluded.channel_id,
-                              posted_at  = excluded.posted_at,
-                              last_notice_msg_id = NULL,
-                              last_notice_channel_id = NULL,
-                              distribution_msg_id = NULL,
-                              distribution_channel_id = NULL,
-                              deadline_run_at = NULL
-                """,
-                (round_id, division_id, message_id, channel_id, now_iso),
+            await self.insert_embed_message_on(
+                db, round_id, division_id, message_id, channel_id,
+                posted_at=datetime.now(timezone.utc),
             )
             await db.commit()
+
+    @staticmethod
+    async def insert_embed_message_on(
+        db: aiosqlite.Connection,
+        round_id: int,
+        division_id: int,
+        message_id: str,
+        channel_id: str,
+        *,
+        posted_at: datetime,
+    ) -> None:
+        """`insert_embed_message` on *db*, committing nothing, the call posted at *posted_at*: the
+        call's record is saved with the mark of the job that posted it."""
+        await db.execute(
+            """
+            INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, posted_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(round_id, division_id)
+            DO UPDATE SET message_id = excluded.message_id,
+                          channel_id = excluded.channel_id,
+                          posted_at  = excluded.posted_at,
+                          last_notice_msg_id = NULL,
+                          last_notice_channel_id = NULL,
+                          distribution_msg_id = NULL,
+                          distribution_channel_id = NULL,
+                          deadline_run_at = NULL
+            """,
+            (round_id, division_id, message_id, channel_id, posted_at.isoformat()),
+        )
 
     async def get_embed_message(
         self,

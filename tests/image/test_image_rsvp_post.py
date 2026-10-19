@@ -219,7 +219,6 @@ async def _rows_opened(league: SeasonLeague) -> int:
         "SELECT 1 FROM driver_round_attendance WHERE round_id = ?", ROUND_4))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_generation_has_exactly_one_call_site_in_the_whole_module(
     tmp_path, monkeypatch,
 ):
@@ -233,7 +232,6 @@ async def test_the_generation_has_exactly_one_call_site_in_the_whole_module(
     assert league.channel(CHECK_IN).files[-1] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_one_call_site_is_the_initial_post(tmp_path, monkeypatch):
     """The graphic is drawn before the call is sent, and the send is what posts the call."""
     league = await _call_league(tmp_path)
@@ -245,7 +243,6 @@ async def test_the_one_call_site_is_the_initial_post(tmp_path, monkeypatch):
         ("send", CHECK_IN, posted))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_call_is_never_deleted_and_reposted_while_it_stands(tmp_path, monkeypatch):
     """Reposting would orphan the view re-armed against the stored message id: once posted, the
     call stands, nothing deleted in the check-in channel and nothing posted after it."""
@@ -259,7 +256,6 @@ async def test_the_call_is_never_deleted_and_reposted_while_it_stands(tmp_path, 
             if event[0] == "delete" and event[1] == CHECK_IN] == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_attachment_helper_never_raises(tmp_path, monkeypatch):
     """FR-055: a drawing that raises gates neither the call nor the round's attendance rows: the
     call is posted without a picture, its rows opened, and the queue does not stop."""
@@ -298,7 +294,6 @@ async def test_the_embed_and_the_view_are_built_before_and_regardless_of_the_gra
     assert plain.channel(CHECK_IN).files[-1] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("images", [True, False], ids=["graphic drawn", "images off"])
 async def test_the_attendance_rows_are_opened_after_the_post_either_way(
     tmp_path, monkeypatch, images,

@@ -239,7 +239,6 @@ async def _ask(bot: MagicMock, step: str) -> list[int]:
     return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_no_check_in_call_is_posted_while_attendance_is_disabled(tmp_path):
     """Attendance is off and the round's call is due: the call asked of the queue is dropped,
     nothing posted and no attendance row or call recorded, and the queue does not stop."""
@@ -255,7 +254,6 @@ async def test_no_check_in_call_is_posted_while_attendance_is_disabled(tmp_path)
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_check_in_call_is_posted_while_attendance_is_enabled(tmp_path):
     """Attendance is on: the queue posts the call in the check-in channel, recording it and an
     attendance row for each of the two drivers."""
@@ -548,7 +546,6 @@ async def _cancel_the_round(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_no_check_in_call_is_posted_for_a_cancelled_round(tmp_path):
     """The round is cancelled: the call asked of the queue is dropped, nothing posted or
     recorded."""

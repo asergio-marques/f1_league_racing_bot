@@ -269,7 +269,6 @@ def _logged(bot: MagicMock) -> str:
     return "\n".join(bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_keeps_every_answer_already_given(tmp_path):
     """The rule this file exists for. A driver who said they were racing has not unsaid it
     because the round moved; clearing the answers here would make every amendment look to
@@ -288,7 +287,6 @@ async def test_a_repost_keeps_every_answer_already_given(tmp_path):
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path):
     """The counterpart. The delete is "the ones no longer of the division", not "none" —
     a departed driver's name must not appear on the new call."""
@@ -306,7 +304,6 @@ async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path):
     assert await _answers(db_path) == {FULL_TIME_PROFILE: "ACCEPTED"}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path):
     """Nobody is seated in the division any more: every answer kept for the round goes."""
     db_path = await _make_db(tmp_path)
@@ -322,7 +319,6 @@ async def test_a_repost_with_an_empty_division_discards_every_answer(tmp_path):
     assert await _answers(db_path) == {}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_posts_the_call_again(tmp_path):
     """Round 1's call stands. Asked again in its place, the queue posts a new call, records it in
     the earlier one's place and does not stop."""
@@ -338,7 +334,6 @@ async def test_a_repost_posts_the_call_again(tmp_path):
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_path):
     """`/season amend` reaches here without knowing whether the call went out: asked in an
     earlier call's place where none stands, the call is posted all the same."""
@@ -370,7 +365,6 @@ PROBE_FAULTS = {
 TRANSPORT_FAULTS = list(PROBE_FAULTS)[2:]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", [
     "Discord refuses the post",
     "the channel is gone",
@@ -433,7 +427,6 @@ async def test_a_repost_that_fails_leaves_the_earlier_call_standing_and_says_so(
     assert "the earlier call still stands, and the answers given to it count" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_raising_repost_raises_with_what_it_left_and_reports_nothing(tmp_path, fault):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers, and is
@@ -467,7 +460,6 @@ async def test_a_raising_repost_raises_with_what_it_left_and_reports_nothing(tmp
     assert "the earlier call still stands, and the answers given to it count" in _logged(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_repost_that_lands_withdraws_the_earlier_call_after_it(tmp_path):
     """Round 1's call stands (900001, its last notice 900002), answered by both drivers. The call
     is posted again in its place and lands: only then does the earlier call come down, its
@@ -543,7 +535,6 @@ async def test_a_last_notice_recorded_while_a_repost_is_sent_comes_down_with_the
     assert stored.last_notice_msg_id is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", [
     pytest.param(OSError("network unreachable"), id="the network failing"),
     pytest.param(aiohttp.ClientConnectionError("connection reset"), id="the connection dropped"),

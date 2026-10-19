@@ -131,13 +131,6 @@ async def _calls_recorded(db_path: str) -> int:
         return (await cursor.fetchone())["n"]
 
 
-NO_CALL_CHANGE = (
-    "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, and "
-    "its failure reported rather than stopping the queue"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_two_calls_posted_at_once_for_one_round_post_one(tmp_path):
     """The scheduler's late run and the restart's late post both ask for the round's call before
     the queue runs: one change is asked, and one call posted and recorded."""
@@ -154,7 +147,6 @@ async def test_two_calls_posted_at_once_for_one_round_post_one(tmp_path):
     assert [row["kind"] for row in await change_rows(db_path)] == ["attendance.check_in.call"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_already_standing_is_not_posted_again(tmp_path):
     """A second call beside the first would divide the division's answers between them: the
     change finds the call standing when it runs, posts nothing and does not stop the queue."""

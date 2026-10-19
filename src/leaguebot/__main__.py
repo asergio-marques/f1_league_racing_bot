@@ -343,6 +343,7 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.attendance.services.check_in_changes import check_in_call_change
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
@@ -417,6 +418,9 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(
+        check_in_call_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+    )
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
@@ -637,15 +641,18 @@ async def main() -> None:
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 
         # Register RSVP attendance callbacks
+        from leaguebot.attendance.services.check_in_changes import ask_check_in_call
         from leaguebot.attendance.services.rsvp_service import (
             run_rsvp_cleanup,
             run_rsvp_deadline,
             run_rsvp_last_notice,
-            run_rsvp_notice,
         )
+        from leaguebot.core.models.change import ChangeOrigin
 
         async def _rsvp_notice_cb(round_id: int) -> None:
-            await run_rsvp_notice(round_id, bot)
+            await ask_check_in_call(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         async def _rsvp_last_notice_cb(round_id: int) -> None:
             await run_rsvp_last_notice(round_id, bot)
@@ -996,16 +1003,13 @@ async def _recover_missed_check_in_calls(
     passed. **Nothing is posted while test mode is on** (decided 2026-09-24): `/test-mode
     advance` posts a test season's calls in their turn.
 
-    Where the deadline has passed as well, no call is posted and the log channel is told —
-    see `_give_up_missed_check_in_call`, which also closes the round's check-in so that the
-    next start does not report it again.
-
-    The call is posted by `run_rsvp_notice`, which checks for a standing call under the round's
-    check-in lock — so the scheduler's own job, run late inside its misfire grace at this same
-    start, and this cannot both post one. A call posted late is written to the log channel; one
-    that fails to post is reported by `run_rsvp_notice` itself. Its last notice and its deadline
-    need no arming: the confirmation of placements armed them with the call, the job store
-    outlives a restart, and both are still ahead of a call posted in time to be answered.
+    The restart asks the change queue for each call owed, before the queue starts, and posts
+    nothing itself (#439, slice 6b): the call's change posts it, telling the log channel that it
+    went out late, or, where the deadline has passed as well, gives it up (`give_up`), closing the
+    round's check-in so that the next start does not ask again. A call already in hand on the queue
+    is not asked for twice. Its last notice and its deadline need no arming: the confirmation of
+    placements armed them with the call, the job store outlives a restart, and both are still
+    ahead of a call posted in time to be answered.
 
     Runs before `_recover_rsvp_views_and_deadlines` in `on_ready`, the call coming before its
     deadline. *now* is the wall clock unless a test pins it.
@@ -1015,7 +1019,8 @@ async def _recover_missed_check_in_calls(
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.round import ROUND_CANCELLABLE
     from leaguebot.core.models.season import ONGOING_STAGES
-    from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
+    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+    from leaguebot.core.models.change import ChangeOrigin
 
     moment = now or datetime.now(timezone.utc)
     ongoing = [stage.value for stage in ONGOING_STAGES]
@@ -1062,33 +1067,18 @@ async def _recover_missed_check_in_calls(
         if moment < due_at:
             continue
 
-        round_id: int = row["round_id"]
-        division_id: int = row["division_id"]
-        if moment >= deadline_at:
-            try:
-                await _give_up_missed_check_in_call(bot, row)
-            except Exception:
-                log.exception(
-                    "_recover_missed_check_in_calls: could not give up round %d's call", round_id
-                )
-            continue
-
-        log.info("_recover_missed_check_in_calls: posting round %d's call late", round_id)
+        # The change judges the deadline when it runs: it posts the call while the deadline is
+        # ahead, and gives it up, closing the round's check-in, once it has passed.
+        log.info("_recover_missed_check_in_calls: asking for round %d's call", row["round_id"])
         try:
-            await run_rsvp_notice(round_id, bot)
-            if await bot.attendance_service.get_embed_message(round_id, division_id) is None:
-                continue  # Not posted; run_rsvp_notice has said why in the log channel.
-            await bot.output_router.post_log(
-                f"ATTENDANCE | check-in call | POSTED LATE\n"
-                f"  season: {row['season_number']}\n"
-                f"  division: {row['division_name']} (id={division_id})\n"
-                f"  round: {row['round_number']}\n"
-                f"  reason: the call was not posted when it fell due\n"
-                f"  deadline: <t:{int(deadline_at.timestamp())}:F>",
+            await ask_check_in_call(
+                bot.change_queue, bot.db_path, row["round_id"], origin=ChangeOrigin.BOT,
+                late=moment < deadline_at,
             )
         except Exception:
             log.exception(
-                "_recover_missed_check_in_calls: late call failed for round %d", round_id
+                "_recover_missed_check_in_calls: could not ask for round %d's call",
+                row["round_id"],
             )
 
 

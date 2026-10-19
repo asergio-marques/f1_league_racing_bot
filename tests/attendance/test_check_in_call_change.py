@@ -64,10 +64,6 @@ COUNTS_NOTHING = "will count nothing against anyone"
 #: What the log channel is told of a round whose call is given up (attendance spec :121).
 COUNTS_NOTHING_GIVEN_UP = "the round counts nothing against anyone"
 
-NO_CALL_CHANGE = (
-    "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, and "
-    "its failure reported rather than stopping the queue"
-)
 
 
 async def _call_league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
@@ -128,7 +124,6 @@ async def _recover(league: SeasonLeague) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     """Nothing is posted as the call is asked; the queue posts it in Pro's check-in channel,
     pinging Pro's role. The check-in timer's callback asks the queue rather than posting."""
@@ -148,7 +143,6 @@ async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     assert "ask_check_in_call(" in inspect.getsource(bot_module.main)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its_mark(tmp_path):
     """The call's message and channel, and a NO_RSVP row for each of Pro's seated drivers, are
     saved with the posting job's mark."""
@@ -167,7 +161,6 @@ async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its
     assert post["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
     """Discord refuses the call: the queue stops at it, the stop notice saying that no call
     stands and no attendance rows are open, and nothing is recorded. Once Discord takes it, the
@@ -195,7 +188,6 @@ async def test_a_refused_call_stops_the_queue_saying_what_is_left(tmp_path):
     assert len(await _call_record(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_retried_call_is_posted_as_text(tmp_path, monkeypatch):
     """Images on, the check-in graphic drawn. The first try is refused; the try that posts it
     carries no picture (Constitution XIV r8)."""
@@ -225,7 +217,6 @@ async def test_a_retried_call_is_posted_as_text(tmp_path, monkeypatch):
     assert league.channel(CHECK_IN).files[-1] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_whose_rsvp_channel_is_unset_stops_the_queue_naming_the_command(tmp_path):
     """Pro's check-in channel is unset: the queue stops at the call, naming
     `/attendance channel rsvp`, rather than the log channel being told and the call skipped."""
@@ -243,7 +234,6 @@ async def test_a_call_whose_rsvp_channel_is_unset_stops_the_queue_naming_the_com
     assert await _call_record(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_whose_record_fails_removes_its_copy_before_the_next_try(tmp_path):
     """The call is posted but its record cannot be saved (the database refuses the row), so the
     queue stops with the message standing. On Retry, the copy is deleted before the call is
@@ -273,7 +263,6 @@ async def test_a_call_whose_record_fails_removes_its_copy_before_the_next_try(tm
     assert row["message_id"] == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_after_it(tmp_path):
     """Round 3's call stands (7001 to 7003, Lewis accepted). A call asked to replace it is posted
     first; then each of the earlier call's three messages is deleted by a job of its own. Lewis's
@@ -297,7 +286,6 @@ async def test_a_call_replacing_an_earlier_one_deletes_its_messages_as_jobs_afte
     assert (await _answers(league, ROUND_3))[profile_id(LEWIS)] == "ACCEPTED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_call_asked_past_its_deadline_gives_up_and_clears_the_answers(tmp_path):
     """Round 4 is an hour off, inside its two-hour deadline, and Lewis's answer to an earlier call
     is kept. The call is not posted: a job gives it up, closing the round's check-in, clearing
@@ -324,7 +312,6 @@ async def test_a_call_asked_past_its_deadline_gives_up_and_clears_the_answers(tm
     assert [step["name"] for step in await step_rows(league.db_path, change["id"])] == ["give_up"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("why", ["cancelled", "attendance off"])
 async def test_a_call_for_a_cancelled_round_or_with_attendance_off_is_dropped(tmp_path, why):
     """Round 4 is cancelled, or attendance switched off, once the call is asked: nothing is
@@ -344,7 +331,6 @@ async def test_a_call_for_a_cancelled_round_or_with_attendance_off_is_dropped(tm
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_a_discarded_call_says_post_check_in_is_the_way_to_post_it(tmp_path):
     """Discord refuses the call and a league admin discards it: no call stands, and the log
     channel's line says to post it with `/attendance post-check-in`."""
@@ -367,7 +353,6 @@ async def test_a_discarded_call_says_post_check_in_is_the_way_to_post_it(tmp_pat
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_start_up_asks_for_each_call_due_before_the_queue_starts(tmp_path):
     """Round 4's call fell due while the bot was down. The restart asks the queue for it and
     posts nothing itself; the queue then posts it."""
@@ -383,7 +368,6 @@ async def test_the_start_up_asks_for_each_call_due_before_the_queue_starts(tmp_p
     assert row["message_id"] == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_start_up_leaves_a_call_in_hand_on_the_queue_alone(tmp_path):
     """Round 4's call was asked of the queue before the bot stopped, and has not run. The restart
     asks nothing more, and one call is posted."""

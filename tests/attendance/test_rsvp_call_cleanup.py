@@ -207,18 +207,11 @@ async def _post_call(db_path: str, *, round_id: int = POSTED_ROUND) -> SimpleNam
                                     if kind == "delete" and cid == RSVP_CHANNEL_ID])
 
 
-NO_CALL_CHANGE = (
-    "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, "
-    "rather than by its own change"
-)
-
-
 # ---------------------------------------------------------------------------
 # Posting a call takes down no other
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize(
     ("scheduled_at", "division_id"),
     [

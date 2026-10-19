@@ -1649,7 +1649,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
         await _run_through(league, "take_down_call")
 
     await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
-    assert reposts.posted == [(R3, PRO)]
+    assert reposts.posted == []
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None

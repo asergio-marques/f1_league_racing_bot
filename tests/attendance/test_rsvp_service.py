@@ -668,7 +668,6 @@ async def _write(svc, db_path: str, writer: str, *args, **kwargs):
 
 
 class TestAttendanceServiceCrud:
-    @pytest.mark.xfail(strict=True, reason=NO_CALL_WRITERS_ON)
     @pytest.mark.asyncio
     async def test_bulk_insert_and_get(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
@@ -683,7 +682,6 @@ class TestAttendanceServiceCrud:
         assert len(rows) == 3
         assert all(r.rsvp_status == "NO_RSVP" for r in rows)
 
-    @pytest.mark.xfail(strict=True, reason=NO_CALL_WRITERS_ON)
     @pytest.mark.asyncio
     async def test_bulk_insert_idempotent(self, tmp_path):
         """INSERT OR IGNORE: calling twice should not raise or duplicate."""
