@@ -497,10 +497,6 @@ async def test_the_empty_approval_refusal_names_the_other_button():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: Resubmit starts `enter_resubmit_flow` at the press rather than asking the change "
-    "queue for `results.resubmission.start`"
-))
 async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     """Alex presses 🔄 Resubmit Initial Results on round 3's review with a penalty staged. The
     press asks the change queue for `results.resubmission.start` of round 3.

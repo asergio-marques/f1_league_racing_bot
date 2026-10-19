@@ -182,7 +182,6 @@ def _texts(league: ReviewLeague) -> list[str]:
             if mid in sub.messages]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_resubmit_is_acknowledged_and_takes_the_prompt_down_before_announcing(
     tmp_path, monkeypatch,
 ):
@@ -215,7 +214,6 @@ async def test_resubmit_is_acknowledged_and_takes_the_prompt_down_before_announc
     assert updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_the_announcement_s_id_is_saved_with_its_mark(tmp_path, monkeypatch):
     """Once the queue has run the press, the submission row records the announcement's id and
     the manager who started the resubmission, saved with the mark of the job that posted it."""

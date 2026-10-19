@@ -1755,9 +1755,9 @@ class PenaltyReviewView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
-        await interaction.response.defer(ephemeral=True)
-        from leaguebot.results.services.result_submission_service import enter_resubmit_flow
-        await enter_resubmit_flow(
+        from leaguebot.results.services.resubmission_changes import ask_resubmission_start
+
+        await ask_resubmission_start(
             interaction,
             self.state,
             queue=bot_of(interaction).change_queue,

@@ -190,12 +190,6 @@ def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
     )
 
 
-NOT_ON_THE_QUEUE = (
-    "#439: pressing Resubmit runs `enter_resubmit_flow` at once, deferring the press and "
-    "following it up, rather than asking `results.resubmission.start` of the change queue"
-)
-
-
 async def _press(tmp_path, monkeypatch, *, staged=(), pardons=(), approval: bool = False,
                  prompt_gone: bool = False, run: bool = True):
     """Round 3's review prompt standing, with *staged* penalties and *pardons* in its review and,
@@ -264,7 +258,6 @@ async def test_pressing_resubmit_keeps_the_round_s_results(tmp_path, monkeypatch
     assert await _sessions(league) == [("FEATURE_RACE", "ACTIVE")]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_resubmitting_flags_the_channel(tmp_path, monkeypatch):
     """The round is still in review with its results posted; `resubmitting` is what lets the
     pastes through the review channel's guard. Nothing is flagged until the queue runs the
@@ -491,7 +484,6 @@ async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(
     assert int((await _row(league))["resubmit_started_by"]) == MEMBER_ID
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_ON_THE_QUEUE)
 async def test_the_manager_is_told_privately_what_to_do_next(tmp_path, monkeypatch):
     """Alex is answered privately that the resubmission is under way, and once the queue has run
     the press the answer is updated to say it started."""
