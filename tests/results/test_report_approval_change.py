@@ -1198,10 +1198,20 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.services.placement_service import LineupPosted, PlacementService
     from tests.support.change_queue import attach_queue
-    from tests.support.review_league import NOW
+    from tests.support.review_league import NOW, channel
 
     league = await review_league(tmp_path, attendance=True)
     await _lewis_owed_an_autoreserve(league)
+    # Pro's attendance channel is set, as a missing one now stops the queue at the sheet.
+    league.channels[707] = channel(707, league.events)
+    league.channels[707].guild = league.guild
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, "707"),
+        )
+        await db.commit()
     league.bot.user = MagicMock(id=9000)
     league.bot.user.__str__.return_value = "LeagueBot"
     placement = PlacementService(league.db_path, league.bot)
