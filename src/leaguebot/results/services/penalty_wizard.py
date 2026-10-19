@@ -17,6 +17,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.channel_registry_service import as_text_channel
@@ -606,6 +607,65 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The review a staging is applied to
+# ---------------------------------------------------------------------------
+
+#: The review each round's stage is held in, by (round, appeals): what the form or press that
+#: stages hands over, for the staging change to apply its item to when its turn comes. Held for
+#: the change only; the review's views and forms hold it for the manager.
+_HELD_REVIEWS: dict[tuple[int, bool], "PenaltyReviewState"] = {}
+
+
+def hold_review(state: "PenaltyReviewState", *, appeals: bool) -> None:
+    """Hand the review a staging is asked for to the change that will apply it (#439, C54)."""
+    _HELD_REVIEWS[(state.round_id, appeals)] = state
+
+
+def held_review(round_id: int, *, appeals: bool) -> "PenaltyReviewState | None":
+    """The review last handed to `hold_review` for the round's stage, or None, as after a
+    restart."""
+    return _HELD_REVIEWS.get((round_id, appeals))
+
+
+async def _ask_stage(
+    interaction: discord.Interaction,
+    state: "PenaltyReviewState",
+    item: dict[str, Any],
+    *,
+    appeals: bool,
+    doing: str,
+    reply: str,
+    what: str,
+    log_what: str,
+    log_detail: list[str],
+) -> None:
+    """Ask the round's lane to stage *item* in the review (#439, C54), the member told it is under
+    way and then *reply* once it is staged. *log_what* and *log_detail* are the line the staging
+    leaves in the log channel, written when it has happened."""
+    from leaguebot.results.services.review_stage_change import KIND
+
+    hold_review(state, appeals=appeals)
+    await bot_of(interaction).change_queue.ask(
+        KIND,
+        {
+            "round_id": state.round_id,
+            "division_id": state.division_id,
+            "channel_id": state.submission_channel_id,
+            "appeals": appeals,
+            "prompt_message_id": (
+                state.appeals_prompt_message_id if appeals else state.prompt_message_id
+            ),
+            "item": item,
+            "doing": doing,
+            "reply": reply,
+            "log": {"what": log_what, "detail": log_detail},
+        },
+        interaction=interaction,
+        what=what,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Prompt refresh helper
 # ---------------------------------------------------------------------------
 
@@ -641,7 +701,12 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing prompt message to reflect the current staged list.
 
     Every change to the review comes through here, and **Make Changes** does too, so this is
-    where an approval message confirming the review as it stood is withdrawn (#402).
+    where an approval message confirming the review as it stood is withdrawn (#402). A staging
+    on the queue has withdrawn it as a job of its own already, and finds none here.
+
+    The edit is a job of the staging's change (#439): a message gone is logged and passed over,
+    and an edit Discord refuses raises `StepFailedOnDiscord`, for the queue to stop the round's
+    lane on and try again.
     """
     await _take_down_approval(state)
     if state.prompt_message_id is None:
@@ -655,8 +720,10 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
         new_view = PenaltyReviewView(state)
         await msg.edit(content=content, view=new_view)
         state.bot.add_view(new_view, message_id=state.prompt_message_id)
-    except (discord.NotFound, discord.HTTPException) as exc:
+    except discord.NotFound as exc:
         log.warning("_refresh_prompt: failed to edit prompt: %s", exc)
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord("the prompt could not be edited") from exc
 
 
 async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
@@ -694,7 +761,8 @@ async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
 
 
 async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
-    """Edit the existing appeals prompt message to reflect current staged_appeals."""
+    """Edit the existing appeals prompt message to reflect current staged_appeals. As
+    `_refresh_prompt`, a message gone is passed over and a refused edit raises."""
     if state.appeals_prompt_message_id is None:
         return
     ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
@@ -706,8 +774,10 @@ async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
         new_view = AppealsReviewView(state)
         await msg.edit(content=content, view=new_view)
         state.bot.add_view(new_view, message_id=state.appeals_prompt_message_id)
-    except (discord.NotFound, discord.HTTPException) as exc:
+    except discord.NotFound as exc:
         log.warning("_refresh_appeals_prompt: failed to edit appeals prompt: %s", exc)
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord("the appeals prompt could not be edited") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -810,7 +880,8 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         self.use_appeals_staging = use_appeals_staging
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+        # Not deferred for the queue to answer the form, as it says it is under way (#439, C54);
+        # a refusal below defers first, so that it is answered as it always was.
 
         # The review may have moved on while the form was open (#402), whichever it stages on:
         # the penalty review, or the appeals review the round moved on to (#482).
@@ -820,6 +891,7 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
             else await _review_moved_on(self.state)
         )
         if refusal is not None:
+            await interaction.response.defer(ephemeral=True)
             await refuse(interaction, refusal, what=describe_form(self))
             return
 
@@ -946,26 +1018,25 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         # Stage the penalty (with description and justification) and refresh.
         result.description = self.description_input.value.strip()
         result.justification = self.justification_input.value.strip()
-        staging_list.append(result)
-        if self.use_appeals_staging:
-            await _refresh_appeals_prompt(self.state)
-        else:
-            await _refresh_prompt(self.state)
 
         pl = _pen_label(result)
         sl = self.session_type.value.replace("_", " ").title()
         action = "Correction" if self.use_appeals_staging else "Penalty"
         review = "appeals" if self.use_appeals_staging else "penalty"
-        await _record_press(
+        await _ask_stage(
             interaction,
-            describe_form(self),
-            f"review: {review} review of round {self.state.round_number} "
-            f"({self.state.division_name})",
-            f"staged: {action} {pl} for <@{shown_user_id}> in {sl}",
-        )
-        await interaction.followup.send(
-            f"\u2705 Staged {action}: <@{shown_user_id}> | {sl} | **{pl}**",
-            ephemeral=True,
+            self.state,
+            {"op": "penalty", "penalty": result.to_payload()},
+            appeals=self.use_appeals_staging,
+            doing=f"Staging a {action.lower()} in the {review} review",
+            reply=f"\u2705 Staged {action}: <@{shown_user_id}> | {sl} | **{pl}**",
+            what=describe_form(self),
+            log_what=describe_form(self),
+            log_detail=[
+                f"review: {review} review of round {self.state.round_number} "
+                f"({self.state.division_name})",
+                f"staged: {action} {pl} for <@{shown_user_id}> in {sl}",
+            ],
         )
 
 
@@ -1004,11 +1075,13 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         self.state = state
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+        # Not deferred for the queue to answer the form, as it says it is under way (#439, C54);
+        # a refusal below defers first, so that it is answered as it always was.
 
         # --- The review may have moved on while the form was open (FR-011, #402) ---
         refusal = await _review_moved_on(self.state)
         if refusal is not None:
+            await interaction.response.defer(ephemeral=True)
             await refuse(
                 interaction, refusal, what=describe_form(self)
             )
@@ -1157,21 +1230,22 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             justification=justification,
             grantor_id=interaction.user.id,
         )
-        self.state.staged_pardons.append(pardon)
-
-        # --- Log justification to calc-log channel only (FR-010) ---
-        await self.state.bot.output_router.post_log(
-            f"{interaction_member(interaction)} | ATTENDANCE_PARDON_STAGED | Success\n"
-            f"  pardon: {pardon_type}\n"
-            f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
-            f"({self.state.division_name})\n"
-            f"  justification: {justification}",
-        )
-
-        await _refresh_prompt(self.state)
-        await interaction.followup.send(
-            f"✅ Pardon staged: <@{driver_user_id}> — **{pardon_type}**",
-            ephemeral=True,
+        # --- Ask the round's lane to stage it (FR-010: the justification goes to the log) ---
+        await _ask_stage(
+            interaction,
+            self.state,
+            {"op": "pardon", "pardon": pardon.to_payload()},
+            appeals=False,
+            doing="Staging an attendance pardon in the penalty review",
+            reply=f"\u2705 Pardon staged: <@{driver_user_id}> \u2014 **{pardon_type}**",
+            what=describe_form(self),
+            log_what="ATTENDANCE_PARDON_STAGED",
+            log_detail=[
+                f"pardon: {pardon_type}",
+                f"driver: <@{driver_user_id}> | round: {self.state.round_number} "
+                f"({self.state.division_name})",
+                f"justification: {justification}",
+            ],
         )
 
 

@@ -293,14 +293,6 @@ async def test_a_prompt_that_cannot_be_edited_does_not_stop_the_review(error, ca
     assert "failed to edit appeals prompt" in caplog.text
 
 
-#: The redraw of the appeals prompt today logs a refused edit and carries on (#439, slice 6b, C54).
-NO_REFUSED_REDRAW = (
-    "#439: a refused edit of the appeals prompt is logged and swallowed, not raised for the "
-    "queue to stop the round's lane and try the redraw again"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_REFUSED_REDRAW)
 async def test_a_prompt_discord_refuses_to_edit_raises_for_the_queue():
     """Round 3's appeals review in Division 1 has one correction staged, and Discord refuses the edit of
     its prompt (an HTTP error, not "not found"). The redraw is a job of the staging's change, so

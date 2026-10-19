@@ -418,6 +418,7 @@ def register_change_types(bot: LeagueBot) -> None:
         review_open_change,
         review_prompt_change,
     )
+    from leaguebot.results.services.review_stage_change import review_stage_change
 
     bot.change_queue.register(
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
@@ -452,6 +453,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())
+    bot.change_queue.register(review_stage_change())
     bot.change_queue.register(appeals_open_change())
     bot.change_queue.register(close_stale_change())
     # The review's change types stamp what they write with the queue's own clock, read when they

@@ -126,6 +126,11 @@ EXEMPT = {
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
     ("core/services/output_router.py", "_warned"),
+    # The penalty review a staging is handed on to its change, by (round, appeals): the review
+    # views and forms already hold in memory, replaced at each staging and read only by a change
+    # whose check finds the round's stage and prompt as the review has them, so a pack's or a
+    # reset's gone round finds it no longer due (#439, 6b, C54).
+    ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
 }
 
 
