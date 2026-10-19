@@ -835,9 +835,13 @@ async def test_an_answer_given_is_recorded_with_the_one_it_replaced(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _set_status(db_path, FULL_TIME_PROFILE, "TENTATIVE")
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-    # The call's channel alone is found: the log channel's lines are delivered through the bot's
-    # own record of it (`_make_interaction`), and a stub answering for every id would be sent them.
-    redrawable = _redrawable_channel()
+    # The call's channel alone is found, a text channel as Discord gives one: the log channel's
+    # lines are delivered through the bot's own record of it (`_make_interaction`), and a stub
+    # answering for every id would be sent them.
+    import discord
+
+    redrawable = MagicMock(spec=discord.TextChannel)
+    redrawable.fetch_message = _redrawable_channel().fetch_message
     interaction.client.get_channel = MagicMock(
         side_effect=lambda cid: redrawable if cid == RSVP_CHANNEL_ID else None
     )
