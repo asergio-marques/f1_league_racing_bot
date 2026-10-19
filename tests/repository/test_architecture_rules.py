@@ -2056,7 +2056,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The penalty and appeals approvals
     ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_set_standings_message_id"): (1, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "_record_banner"): (1, PASS["attendance"]),
     ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),

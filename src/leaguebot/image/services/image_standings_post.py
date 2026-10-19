@@ -1,8 +1,8 @@
 """Post a round's two championships as graphics, or stand aside (040).
 
 **One decision in one place**, as 039's results posting is. Every occasion that reposts the
-textual standings reaches ``results_post_service.post_standings`` — all seven of them, over
-five call sites — so the branch lives there and nowhere else.
+textual standings reaches ``results_post_service.produce_standings``, the posting jobs of
+`review_posting` among them — so the branch lives there and nowhere else.
 
 Two things make this module unlike the five before it.
 
