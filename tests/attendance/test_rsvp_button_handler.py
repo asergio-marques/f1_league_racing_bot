@@ -914,7 +914,13 @@ def _redrawable_channel(*, fails: bool = False) -> MagicMock:
     "channel", [None, _redrawable_channel(fails=True)], ids=["no-channel", "edit-fails"]
 )
 async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
-    """A18: the answer stands, and the line says the call still shows the old one."""
+    """A18: the answer stands. Where the call's channel cannot be found, the redraw completes
+    and the line says the call still shows the old answer. Where Discord answers the call's edit
+    with a 500, the redraw is refused, and a refused redraw stops the queue at it, the answer
+    saved, as any refusal does (#439, slice 6b, Q4): its Success line is written only once the
+    redraw completes, after a Retry."""
+    from tests.support.change_queue import stopped_job
+
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
     interaction.client.get_channel = MagicMock(return_value=channel)
@@ -927,8 +933,13 @@ async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     logged = _logged(interaction)
-    assert len(logged) == 1
-    assert logged[0].endswith("\n  call not redrawn")
+    if channel is None:
+        assert len(logged) == 1
+        assert logged[0].endswith("\n  call not redrawn")
+    else:
+        stopped = await stopped_job(db_path)
+        assert stopped is not None and stopped["name"] == "redraw"
+        assert not [line for line in logged if "| Success" in line]
 
 
 async def test_a_failed_line_that_cannot_be_posted_does_not_raise(tmp_path):
