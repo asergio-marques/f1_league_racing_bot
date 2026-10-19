@@ -58,12 +58,6 @@ CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
 CHECK_IN_DEADLINE = "attendance.check_in.deadline"
 CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 
-#: Why a check-in step's test fails until advance asks the change queue for the step.
-CHECK_IN_NOT_ASKED = (
-    "#439: /test-mode advance still runs the check-in step's runner itself rather than asking "
-    "the change queue for it"
-)
-
 #: The check-in runners advance called before #439, stubbed while they exist.
 _CHECK_IN_RUNNERS = ("run_rsvp_notice", "run_rsvp_last_notice", "run_rsvp_deadline", "run_rsvp_cleanup")
 
@@ -576,7 +570,6 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
 async def test_the_rsvp_notice_is_fired(tmp_path):
     """Round 3 of Division 1's check-in call is next. Advance asks the change queue for it (an
     `attendance.check_in.call` of the round), and its reply names the RSVP notice."""
@@ -590,7 +583,6 @@ async def test_the_rsvp_notice_is_fired(tmp_path):
     assert "RSVP notice" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
 async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
     """The change queue cannot save the check-in call's ask. The standard failure reply and one
     failure line name the RSVP notice, the division and the round (#482)."""
@@ -619,11 +611,9 @@ async def test_a_fired_rsvp_notice_is_logged_to_the_league(tmp_path):
     [
         pytest.param(
             6, CHECK_IN_LAST_NOTICE, "RSVP last-notice",
-            marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED),
         ),
         pytest.param(
             7, CHECK_IN_DEADLINE, "RSVP deadline",
-            marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED),
         ),
     ],
 )
@@ -663,10 +653,10 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
     "phase,phrase",
     [
         pytest.param(
-            6, "RSVP last-notice", marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
+            6, "RSVP last-notice"
         ),
         pytest.param(
-            7, "RSVP deadline", marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
+            7, "RSVP deadline"
         ),
     ],
 )
@@ -692,7 +682,6 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
-@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
 async def test_the_deadline_reply_does_not_say_reserves_were_distributed(tmp_path):
     """Round 3's deadline is advanced. Its reserves are distributed only once the change queue
     reaches it, so the reply says it is on the change queue and does not say the distribution
@@ -720,7 +709,7 @@ CLEANUPS = [
 #: The cleanups, each asked of the change queue: the check-in cleanup's once advance asks it.
 CLEANUPS_ASKED = [
     pytest.param(*CLEANUPS[0]),
-    pytest.param(*CLEANUPS[1], marks=pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)),
+    pytest.param(*CLEANUPS[1]),
 ]
 
 
@@ -794,7 +783,6 @@ CHECK_IN_STEPS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=CHECK_IN_NOT_ASKED)
 @pytest.mark.parametrize("phase,kind", CHECK_IN_STEPS)
 async def test_advancing_a_check_in_step_replies_on_the_change_queue(tmp_path, phase, kind):
     """Round 3 of Division 1's check-in call (5), last notice (6), deadline (7) or clean-up (9)

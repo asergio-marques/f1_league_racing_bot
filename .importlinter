@@ -101,7 +101,6 @@ ignore_imports =
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
     # #283: core reaches a module directly where it is to offer a hook the module signs up to
     # (architecture.md, "How modules and core fit together"). Attendance:
-    leaguebot.core.cogs.test_mode_cog -> leaguebot.attendance.services.rsvp_service
     leaguebot.core.services.cancellation_notice_service -> leaguebot.attendance.services.rsvp_service
     leaguebot.core.services.season_classification_service -> leaguebot.attendance.services.attendance_service
     # #283: image, which core is to ask for its graphics through a hook:

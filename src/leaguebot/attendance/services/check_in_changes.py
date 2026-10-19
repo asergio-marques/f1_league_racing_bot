@@ -67,6 +67,10 @@ from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
+    CHECK_IN_CALL,
+    CHECK_IN_CLEAN_UP,
+    CHECK_IN_DEADLINE,
+    CHECK_IN_LAST_NOTICE,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -90,18 +94,14 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 log = logging.getLogger(__name__)
 
-CHECK_IN_CALL = "attendance.check_in.call"
 GIVE_UP = "give_up"
 POST_CALL = "post_call"
 DELETE_EARLIER = "delete_earlier"
-CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
 POST_LAST_NOTICE = "post_last_notice"
-CHECK_IN_DEADLINE = "attendance.check_in.deadline"
 DISTRIBUTE = "distribute"
 CLOSE_WITHOUT_CALL = "close_without_call"
 LOCK_CALL = "lock_call"
 ANNOUNCE = "announce"
-CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 PLAN_CLEAN_UP = "plan"
 DELETE_MESSAGE = "delete_message"
 MARK_CLEARED = "mark_cleared"

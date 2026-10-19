@@ -171,6 +171,13 @@ FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 FORECAST_FLUSH = "weather.forecast.flush"
 
+#: The kinds of attendance's four check-in changes, named here so that core (test mode) asks for
+#: them without importing the module, as the forecast's are.
+CHECK_IN_CALL = "attendance.check_in.call"
+CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
+CHECK_IN_DEADLINE = "attendance.check_in.deadline"
+CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
+
 
 def forecasts_named(phases: Iterable[int]) -> str:
     """The forecasts a clean-up deletes, named by their phases as every text of the clean-up

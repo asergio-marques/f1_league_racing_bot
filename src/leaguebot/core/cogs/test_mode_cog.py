@@ -42,6 +42,10 @@ from leaguebot.core.services.test_mode_service import (
     standing_forecast_phases,
 )
 from leaguebot.core.models.change import (
+    CHECK_IN_CALL,
+    CHECK_IN_CLEAN_UP,
+    CHECK_IN_DEADLINE,
+    CHECK_IN_LAST_NOTICE,
     FORECAST,
     FORECAST_CLEAN_UP,
     FORECAST_FLUSH,
@@ -442,78 +446,38 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        # ── RSVP notice (phase_number=5) ─────────────────────────────────────────
-        if phase_number == 5:
-            from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
+        # ── The check-in's call, last notice and deadline (phase_number=5, 6 and 7) ────
+        if phase_number in (5, 6, 7):
+            kind, step, emoji, name = {
+                5: (CHECK_IN_CALL, "the RSVP notice", "📨", "RSVP notice"),
+                6: (CHECK_IN_LAST_NOTICE, "the RSVP last-notice", "⏰", "RSVP last-notice"),
+                7: (CHECK_IN_DEADLINE, "the RSVP deadline", "🏁", "RSVP deadline"),
+            }[phase_number]
             if entry["job_id"] is not None:
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
-                await run_rsvp_notice(entry["round_id"], self.bot)
+                asked = await self._ask_check_in(entry, kind, step)
             except Exception as exc:  # noqa: BLE001 — reported here, to name the round
                 await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the RSVP notice", entry)
+                    interaction, exc, what=self._advance_what(interaction, step, entry)
+                )
+                return
+            if asked is None:
+                await interaction.followup.send(
+                    f"{emoji} The **{name}** for **{entry['division_name']}** — "
+                    f"**Round {entry['round_number']}** was not due.",
+                    ephemeral=True,
                 )
                 return
             await interaction.followup.send(
-                f"📨 Fired **RSVP notice** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}** "
-                f"(**{entry['track_name']}**). Embed posted to the RSVP channel.",
+                f"{emoji} The **{name}** for **{entry['division_name']}** — "
+                f"**Round {entry['round_number']}** (**{entry['track_name']}**) is on the "
+                f"change queue: it goes to the RSVP channel as soon as the queue reaches it.",
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: rsvp_notice\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: {entry['round_number']}",
-            )
-            return
-
-        # ── RSVP last-notice (phase_number=6) ────────────────────────────────────
-        if phase_number == 6:
-            from leaguebot.attendance.services.rsvp_service import run_rsvp_last_notice
-            if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])
-            try:
-                await run_rsvp_last_notice(entry["round_id"], self.bot)
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the RSVP last-notice", entry)
-                )
-                return
-            await interaction.followup.send(
-                f"⏰ Fired **RSVP last-notice** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: rsvp_last_notice\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: {entry['round_number']}",
-            )
-            return
-
-        # ── RSVP deadline (phase_number=7) ────────────────────────────────────────
-        if phase_number == 7:
-            from leaguebot.attendance.services.rsvp_service import run_rsvp_deadline
-            if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])
-            try:
-                await run_rsvp_deadline(entry["round_id"], self.bot)
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the RSVP deadline", entry)
-                )
-                return
-            await interaction.followup.send(
-                f"🏁 Fired **RSVP deadline** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
-                f"Reserve distribution complete.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: rsvp_deadline\n"
+                f"  phase: {('rsvp_notice', 'rsvp_last_notice', 'rsvp_deadline')[phase_number - 5]}\n"
                 f"  division: {entry['division_name']}\n"
                 f"  round: {entry['round_number']}",
             )
@@ -521,8 +485,6 @@ class TestModeCog(commands.Cog):
 
         # ── The cleanups a day after the round (phase_number=8 and 9, #425) ─────
         if phase_number in (8, 9):
-            from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
-
             # By prefix rather than by the entry's job, which is None where the step was found
             # from database state; a job left queued would fire again at its own moment.
             prefix = "cleanup" if phase_number == 8 else "rsvp_cleanup"
@@ -534,8 +496,9 @@ class TestModeCog(commands.Cog):
                     standing = await standing_forecast_phases(self.bot.db_path, entry["round_id"])
                     asked = await self._ask_forecast_clean_up(entry, standing)
                 else:
-                    asked = True
-                    await run_rsvp_cleanup(entry["round_id"], self.bot)
+                    asked = await self._ask_check_in(
+                        entry, CHECK_IN_CLEAN_UP, "taking down the check-in a day after the round"
+                    )
             except Exception as exc:  # noqa: BLE001 — reported here, to name the round
                 await report_failure(
                     interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
@@ -544,7 +507,10 @@ class TestModeCog(commands.Cog):
             if asked is None:
                 await interaction.followup.send(
                     f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due: no forecast stands.",
+                    f"**Round {entry['round_number']}** was not due: no forecast stands."
+                    if phase_number == 8 else
+                    f"🧹 The **check-in cleanup** for **{entry['division_name']}** — "
+                    f"**Round {entry['round_number']}** was not due.",
                     ephemeral=True,
                 )
                 return
@@ -556,10 +522,10 @@ class TestModeCog(commands.Cog):
                 )
             else:
                 reply = (
-                    f"🧹 Fired the **check-in cleanup** for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
-                    f"Its check-in call, last notice and reserve distribution have been "
-                    f"taken down."
+                    f"🧹 The **check-in cleanup** for **{entry['division_name']}** — "
+                    f"**Round {entry['round_number']}** is on the change queue: it takes down "
+                    f"the check-in call, last notice and reserve announcement as soon as the "
+                    f"queue reaches it."
                 )
             await interaction.followup.send(reply, ephemeral=True)
             await self.bot.output_router.post_log(
@@ -628,6 +594,24 @@ class TestModeCog(commands.Cog):
                 "round_number": entry["round_number"],
             },
             what=what,
+            origin=ChangeOrigin.BOT,
+        )
+
+    async def _ask_check_in(self, entry: PhaseEntry, kind: str, what: str) -> int | None:
+        """Ask the change queue, as the bot's, for the check-in step *kind* of the entry's round,
+        standing in for the timer that `/test-mode advance` fires early. Returns the change's id,
+        or None where the step's check dropped it as not due."""
+        payload: dict[str, object] = {
+            "round_id": entry["round_id"],
+            "division_name": entry["division_name"],
+            "round_number": entry["round_number"],
+        }
+        if kind == CHECK_IN_CALL:
+            payload |= {"replaces": None, "late": False}
+        return await self.bot.change_queue.ask(
+            kind,
+            payload,
+            what=f"{what} of round {entry['round_number']} in **{entry['division_name']}**",
             origin=ChangeOrigin.BOT,
         )
 
