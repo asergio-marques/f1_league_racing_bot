@@ -212,12 +212,6 @@ async def _with_call(db_path, *, round_id=ROUND_ID) -> None:
         await db.commit()
 
 
-TAKE_DOWN_THROUGH_THE_HOOK = (
-    "#439: the cancellation's take-down deletes the call through `withdraw_rsvp_call`, not "
-    "through attendance's delete steps handed it as `check_in_deletes`"
-)
-
-
 def _check_in_deletes(*, refuse=None, wipe_db=None):
     """The `check_in_deletes` hook as attendance's delete steps answer it: called with the round
     and the division, it gives True where a call stood. With *refuse*, a Discord refusal, it
@@ -297,7 +291,6 @@ async def _audit(tmp_path, *, distribute=False, round_ids=(ROUND_ID,)):
     return NS(audit="".join(audits))
 
 
-@pytest.mark.xfail(strict=True, reason=TAKE_DOWN_THROUGH_THE_HOOK)
 async def test_the_audit_groups_the_drivers_by_their_answer(tmp_path):
     report = await _audit(tmp_path)
     assert report.audit == (
@@ -309,7 +302,6 @@ async def test_the_audit_groups_the_drivers_by_their_answer(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=TAKE_DOWN_THROUGH_THE_HOOK)
 async def test_the_audit_names_the_reserves_once_they_are_distributed(tmp_path):
     report = await _audit(tmp_path, distribute=True)
     assert "\n    accepted: <@101>, <@103> (Reserve 3), <@104> (Reserve 4)" in report.audit
@@ -318,13 +310,11 @@ async def test_the_audit_names_the_reserves_once_they_are_distributed(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=TAKE_DOWN_THROUGH_THE_HOOK)
 async def test_the_audit_says_nothing_of_reserves_before_a_distribution(tmp_path):
     report = await _audit(tmp_path)
     assert "reserves" not in report.audit
 
 
-@pytest.mark.xfail(strict=True, reason=TAKE_DOWN_THROUGH_THE_HOOK)
 async def test_a_round_whose_call_never_went_out_is_not_audited(tmp_path):
     report = await _audit(tmp_path, round_ids=(999,))
     assert report.audit == ""
@@ -407,7 +397,6 @@ async def test_a_raising_notice_names_a_channel_never_set(tmp_path):
     channels[FORECAST].send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=TAKE_DOWN_THROUGH_THE_HOOK)
 async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_path):
     """Round 3 (Monza) has its call standing, Lewis (101) accepted and Max (102) declined. The
     take-down reads that check-in first, then asks attendance's delete steps (the
@@ -425,7 +414,6 @@ async def test_the_take_down_reads_the_check_in_before_the_call_comes_down(tmp_p
     assert deletes.calls == [(ROUND_ID, DIVISION_ID)]
 
 
-@pytest.mark.xfail(strict=True, reason=TAKE_DOWN_THROUGH_THE_HOOK)
 async def test_a_take_down_discord_refuses_raises_keeping_the_audit_and_the_ids(tmp_path):
     """Round 3's call, its last notice and its distribution (9001-9003) stand, and attendance's
     delete steps report Discord refusing all three. The take-down raises StepFailedOnDiscord

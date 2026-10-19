@@ -177,6 +177,8 @@ class AmendHooks:
     deadline_steps: Mapping[str, Step]
     clean_up_steps: Mapping[str, Step]
     round_list: Callable[[list[Round]], str]
+    check_in_deletes: Callable[[int, int], Awaitable[bool]]
+    forget_check_in_on: Callable[[aiosqlite.Connection, int, int], Awaitable[None]]
 
 
 def payload_changes(amendments: Iterable[tuple[str, object]]) -> list[list[str]]:
@@ -736,8 +738,19 @@ def round_amend_change(
         division = await seasons.get_division(int(ctx.payload["division_id"]))
         if division is None:
             raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
-        taken = await notices.take_down_call(ctx.bot, division, int(ctx.payload["round_id"]))
+        taken = await notices.take_down_call(
+            ctx.bot, division, int(ctx.payload["round_id"]),
+            check_in_deletes=hooks.check_in_deletes,
+        )
         return StepResult(result={"taken_down": taken["taken_down"]})
+
+    async def forget_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """Drop the taken-down call's record, in the save that marks the job done. Its answers
+        stay: they are what the call posted again carries."""
+        if result.result.get("taken_down"):
+            await hooks.forget_check_in_on(
+                db, int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
+            )
 
     async def post_call(ctx: StepContext) -> StepResult:
         """Post the call, carrying every answer already given. Discord refusing it stops the queue
@@ -1048,7 +1061,7 @@ def round_amend_change(
             describe=named("arming the timed work of round {number} in **{division}** again"),
         ),
         TAKE_DOWN_CALL: Step(
-            TAKE_DOWN_CALL, StepKind.ACT, take_down_call, still_due=attendance_on,
+            TAKE_DOWN_CALL, StepKind.ACT, take_down_call, still_due=attendance_on, record=forget_call,
             describe=named("taking down the check-in call of round {number} in **{division}**"),
         ),
         POST_CALL: Step(

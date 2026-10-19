@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -95,6 +95,8 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.utils.batch_notice import delete_notice
+from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 log = logging.getLogger(__name__)
@@ -341,6 +343,63 @@ def _earlier_messages(call: RsvpEmbedMessage) -> list[tuple[str, str]]:
         )
         if message_id is not None
     ]
+
+
+def check_in_deletes(
+    bot: LeagueBot, service: AttendanceService
+) -> Callable[[int, int], Awaitable[bool]]:
+    """Attendance's delete of a round's check-in call, as a cancellation's take-down and an
+    amendment's ask it (`CancellationHooks.check_in_deletes`, `AmendHooks.check_in_deletes`).
+
+    Called with the round and the division it takes the call down with the last notice and the
+    reserve announcement beside it, each from the channel it was posted in (the last two go to the
+    division's check-in channel as it was when they were posted, which may not be the call's any
+    more), and gives True where a call stood, False where none did. A message already gone is as
+    good as deleted. Every message is tried; where any cannot be, it raises `StepFailedOnDiscord`
+    whose `result` is `{"undeleted": [ids]}`, `from` the last Discord failure (none where a
+    channel is gone), and leaves the call's record for the next try, which reads the ids again.
+    The record is not forgotten here but by the job's record (`forget_check_in_call_on`), in the
+    save that marks the job done. The answers are not touched: a repost carries them over.
+    """
+
+    async def deletes(round_id: int, division_id: int) -> bool:
+        stored = await service.get_embed_message(round_id, division_id)
+        if stored is None:
+            return False
+        left: list[str] = []
+        cause: discord.HTTPException | None = None
+        for message_id, channel_id in _earlier_messages(stored):
+            channel = as_text_channel(bot.get_channel(int(channel_id)))
+            if channel is None:
+                left.append(str(message_id))
+                continue
+            try:
+                await delete_notice(channel.get_partial_message(int(message_id)))
+            except discord.NotFound:
+                pass  # Already gone, which is what was asked.
+            except discord.HTTPException as exc:
+                left.append(str(message_id))
+                cause = exc
+        if left:
+            raise StepFailedOnDiscord(
+                f"{len(left)} message(s) of the check-in call for round {round_id} could not be"
+                f" deleted (ids {', '.join(left)})",
+                result={"undeleted": left},
+            ) from cause
+        return True
+
+    return deletes
+
+
+async def forget_check_in_call_on(
+    db: aiosqlite.Connection, round_id: int, division_id: int
+) -> None:
+    """Drop *round_id*'s check-in call record on *db*, committing nothing: the call, and with it
+    the record of its last notice and announcement, which cannot be taken down from it again."""
+    await db.execute(
+        "DELETE FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
+        (round_id, division_id),
+    )
 
 
 def given_up_text(row: aiosqlite.Row) -> str:

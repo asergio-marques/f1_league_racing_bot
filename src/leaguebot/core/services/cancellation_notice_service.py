@@ -27,6 +27,7 @@ Discord caused into `StepFailedOnDiscord` and letting a fault of the bot's own t
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import discord
@@ -262,21 +263,30 @@ async def _checkin_audit(bot: LeagueBot, division, round_id: int) -> str:
     return "".join(lines)
 
 
-async def take_down_call(bot: LeagueBot, division, round_id: int) -> dict:
+async def take_down_call(
+    bot: LeagueBot,
+    division,
+    round_id: int,
+    *,
+    check_in_deletes: Callable[[int, int], Awaitable[bool]],
+) -> dict:
     """Read *round_id*'s check-in, then take its call down, as a job on the change queue.
+
+    The call comes down through *check_in_deletes*, attendance's own delete steps as the builder
+    hands them (`CancellationHooks.check_in_deletes`), so that this module imports nothing of
+    attendance: called with the round and the division, it gives True where a call stood. Its
+    record is not forgotten here: the job's record does it, in the save that marks the job done.
 
     Returns `{"audit", "taken_down"}`: the log-channel record of the check-in (`_checkin_audit`),
     read **before** the call comes down, and whether a call stood. Where a message cannot be
     deleted it raises `StepFailedOnDiscord` whose `result` is `{"audit", "undeleted"}`, so the
     audit is kept on the job whether it goes through or is discarded, and the call's record
     stays for the next try, which reads the audit again. The raise is `from` the Discord failure
-    that caused it, as `withdraw_rsvp_call` raises it.
+    that caused it, as *check_in_deletes* raises it.
     """
-    from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
-
     audit = await _checkin_audit(bot, division, round_id)
     try:
-        taken_down = await withdraw_rsvp_call(round_id, division.id, bot, raise_on_failure=True)
+        taken_down = await check_in_deletes(round_id, division.id)
     except StepFailedOnDiscord as exc:
         undeleted = (exc.result or {}).get("undeleted", [])
         raise StepFailedOnDiscord(

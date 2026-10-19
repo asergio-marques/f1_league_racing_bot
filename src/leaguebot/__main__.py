@@ -19,7 +19,7 @@ from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, 
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.cancellation_changes import SubmissionHooks
+    from leaguebot.core.services.cancellation_changes import CancellationHooks, SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
     from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
@@ -281,6 +281,21 @@ def _submission_hooks() -> "SubmissionHooks":
     )
 
 
+def _cancellation_hooks(bot: LeagueBot) -> "CancellationHooks":
+    """What a cancellation needs of attendance's check-in call, handed it here so that core
+    imports nothing of attendance."""
+    from leaguebot.attendance.services.check_in_changes import (
+        check_in_deletes,
+        forget_check_in_call_on,
+    )
+    from leaguebot.core.services.cancellation_changes import CancellationHooks
+
+    return CancellationHooks(
+        check_in_deletes=check_in_deletes(bot, bot.attendance_service),
+        forget_check_in_on=forget_check_in_call_on,
+    )
+
+
 def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     """What `/round amend`'s change needs of weather and attendance, handed it here so that core
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
@@ -289,8 +304,10 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     from leaguebot.attendance.services.check_in_changes import (
         check_in_clean_up_steps,
         check_in_deadline_steps,
+        check_in_deletes,
         check_in_steps,
         close_check_in_on,
+        forget_check_in_call_on,
         give_up_text_for,
     )
     from leaguebot.core.models.change import PlannedStep
@@ -325,6 +342,8 @@ def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
         ),
         clean_up_steps=check_in_clean_up_steps(),
         round_list=format_round_list,
+        check_in_deletes=check_in_deletes(bot, bot.attendance_service),
+        forget_check_in_on=forget_check_in_call_on,
     )
 
 
@@ -456,6 +475,7 @@ def register_change_types(bot: LeagueBot) -> None:
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
             submissions=_submission_hooks(),
+            cancellation=_cancellation_hooks(bot),
             hooks=hooks,
             now=lambda: bot.change_queue.now(),
         )
@@ -501,6 +521,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             submissions=_submission_hooks(),
+            cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
@@ -511,6 +532,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             submissions=_submission_hooks(),
+            cancellation=_cancellation_hooks(bot),
             amendment_in_hand=lambda division_id: amendment_in_hand(bot.db_path, division_id),
             now=lambda: bot.change_queue.now(),
         )
