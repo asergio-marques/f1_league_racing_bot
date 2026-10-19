@@ -2068,7 +2068,9 @@ class PlacementService:
         *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
         (Constitution XIV, rule 8).
         """
-        return await self._refresh_lineup_post(guild, division_id, as_text=as_text)
+        return await self._refresh_lineup_post(
+            guild, division_id, as_text=as_text, require_channel=True
+        )
 
     @posts_in_a_job
     async def _refresh_lineup_post(
@@ -2077,10 +2079,13 @@ class PlacementService:
         division_id: int,
         *,
         as_text: bool = False,
+        require_channel: bool = False,
     ) -> LineupPosted | None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
 
-        *as_text* leaves the image path out altogether, whatever is configured.
+        *as_text* leaves the image path out altogether, whatever is configured. *require_channel*
+        raises for a division never given a lineup channel, as the post job of a change must;
+        without it such a division posts nothing, since configuring one is optional.
 
         **The image path is a guard clause in front of the textual body.** Where the images
         module is enabled, the `lineup` aspect is on and a valid template is configured,
@@ -2102,6 +2107,8 @@ class PlacementService:
         if div_row is None:
             return None
         if div_row["lineup_channel_id"] is None:
+            if not require_channel:
+                return None
             raise StepFailedOnDiscord(
                 f"{div_row['div_name'] or division_id} has no lineup channel set: set one with "
                 "/division lineup-channel, then press Retry"
