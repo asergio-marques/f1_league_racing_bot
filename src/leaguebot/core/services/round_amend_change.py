@@ -101,6 +101,10 @@ LOCK_CALL = "lock_call"
 ANNOUNCE = "announce"
 CLEAN_UP_FORECAST = "clean_up_forecast"
 CLEAN_UP_CHECK_IN = "clean_up_check_in"
+#: Attendance's own jobs of taking a check-in down, under the names attendance gives them.
+PLAN_CLEAN_UP = "plan"
+DELETE_MESSAGE = "delete_message"
+MARK_CLEARED = "mark_cleared"
 
 AMENDED = "✅ Round amended successfully."
 NOTHING_AMENDED = (
@@ -152,11 +156,11 @@ class AmendHooks:
     the placements made on them, and says whether it did; it raises where the close cannot be
     saved, so that the queue stops rather than report a give-up never made.
     *deadline_steps* are attendance's own jobs of a check-in deadline (placing the reserves, taking
-    the buttons off the call, posting the announcement), which the amendment plans as the timer
-    would for a moment that passed while it stood stopped, so that Discord refusing one stops the
-    queue. *clean_up_check_in* takes the check-in down as its timer would (its forecast,
-    whichever of Phases 1 to 3 stands, is deleted by a job planned through
-    *forecast_steps*). *round_list* formats
+    the buttons off the call, posting the announcement) and *clean_up_steps* its jobs of taking a
+    check-in down (the plan of the deletions, each deletion, the mark that it is over), which the
+    amendment plans as the timers would for a moment that passed while it stood stopped, so that
+    Discord refusing one stops the queue (its forecast, whichever of Phases 1 to 3 stands, is
+    deleted by a job planned through *forecast_steps*). *round_list* formats
     the division's rounds for the reply.
     """
 
@@ -171,7 +175,7 @@ class AmendHooks:
     give_up_text: Callable[[str, int], Awaitable[str | None]]
     give_up_on: Callable[[aiosqlite.Connection, int], Awaitable[bool]]
     deadline_steps: Mapping[str, Step]
-    clean_up_check_in: Callable[[int, Any], Awaitable[None]]
+    clean_up_steps: Mapping[str, Step]
     round_list: Callable[[list[Round]], str]
 
 
@@ -824,19 +828,6 @@ def round_amend_change(
             result={"phase": phase}, then=hooks.plan_phase(int(ctx.payload["round_id"]), phase)
         )
 
-    def catching_up(
-        hook: Callable[[int, Any], Awaitable[None]], done: str
-    ) -> Callable[[StepContext], Awaitable[StepResult]]:
-        """A job running *hook* for the round, as its timer would have: the deadline or a
-        clean-up whose moment passed while the amendment stood stopped. What Discord refuses goes
-        the way the timer's own run goes; a fault of the bot's own stops the queue."""
-
-        async def run(ctx: StepContext) -> StepResult:
-            await hook(int(ctx.payload["round_id"]), ctx.bot)
-            return StepResult(result={done: True})
-
-        return run
-
     async def close_due(ctx: StepContext) -> bool:
         """The close is due where the amendment was saved, and where a job before the save was
         discarded, to read the number the round bears then for the reply."""
@@ -994,6 +985,14 @@ def round_amend_change(
                     "the check-in was not taken down a day after the round, and a league admin "
                     "discarded it; it is taken down when the bot next starts",
                 ))
+            elif each.name == DELETE_MESSAGE:
+                failures.append(notices.NoticeFailure(
+                    division, "check-in call",
+                    f"the {each.payload.get('what', 'message')} could not be deleted a day "
+                    f"after the round, and a league admin discarded it; delete it by hand "
+                    f"(message {each.payload.get('message_id')} in "
+                    f"<#{each.payload.get('channel_id')}>)",
+                ))
             elif (weather := hooks.forecast_failure(each)) is not None:
                 failures.append(notices.NoticeFailure(division, *weather))
         if not failures:
@@ -1093,13 +1092,16 @@ def round_amend_change(
             still_due=weather_on,
             describe=describe_clean_up,
         ),
-        CLEAN_UP_CHECK_IN: Step(
-            CLEAN_UP_CHECK_IN, StepKind.ACT, catching_up(hooks.clean_up_check_in, "cleaned_up"),
-            still_due=attendance_on,
+        # Attendance's own jobs of a clean-up: its plan under the amendment's name for it, the
+        # deletions and the mark that the check-in is over.
+        CLEAN_UP_CHECK_IN: dataclasses.replace(
+            hooks.clean_up_steps[PLAN_CLEAN_UP], name=CLEAN_UP_CHECK_IN,
             describe=named(
-                "taking down the check-in of round {number} in **{division}** a day after it"
+                "finding what is left of the check-in of round {number} in **{division}**"
             ),
         ),
+        DELETE_MESSAGE: hooks.clean_up_steps[DELETE_MESSAGE],
+        MARK_CLEARED: hooks.clean_up_steps[MARK_CLEARED],
         CLOSE: Step(
             CLOSE, StepKind.ACT, close, still_due=close_due,
             describe=named("listing the rounds of **{division}** for the reply"),

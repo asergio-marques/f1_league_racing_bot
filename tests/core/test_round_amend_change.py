@@ -1313,13 +1313,6 @@ async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp
     assert _sent_in_check_in(league) == []
 
 
-NO_AMEND_CLEAN_UP_JOBS = (
-    "#439: the amendment's `clean_up_check_in` job runs `run_rsvp_cleanup` whole, which logs a "
-    "refused deletion and passes over it rather than stopping the queue"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_CLEAN_UP_JOBS)
 async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(tmp_path):
     """Attendance on. Pro's round 3 is thirty minutes out, its call standing (7001 to 7003). It
     is moved a day later; the save stops, and a day and forty minutes on, past the check-in's
