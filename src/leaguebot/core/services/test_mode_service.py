@@ -17,7 +17,14 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import FORECAST, FORECAST_CLEAN_UP
+from leaguebot.core.models.change import (
+    CHECK_IN_CALL,
+    CHECK_IN_CLEAN_UP,
+    CHECK_IN_DEADLINE,
+    CHECK_IN_LAST_NOTICE,
+    FORECAST,
+    FORECAST_CLEAN_UP,
+)
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -183,6 +190,28 @@ def _weather_entry(row: Any, phase: int) -> PhaseEntry:
     )
 
 
+#: The scheduler's event type of each check-in step, by the change that asks for it.
+_CHECK_IN_EVENTS = {
+    CHECK_IN_CALL: "rsvp_notice",
+    CHECK_IN_LAST_NOTICE: "rsvp_last_notice",
+    CHECK_IN_DEADLINE: "rsvp_deadline",
+    CHECK_IN_CLEAN_UP: "rsvp_cleanup",
+}
+
+
+async def _check_ins_in_hand(db_path: str) -> set[tuple[int, str]]:
+    """Each check-in step asked of the change queue and not yet run, as (round, scheduler event):
+    asked by an earlier advance, whose scheduler job it cancelled, so that the database alone
+    would offer the same step again."""
+    from leaguebot.core.services.change_queue import unfinished
+
+    return {
+        (int(payload["round_id"]), _CHECK_IN_EVENTS[kind])
+        for kind in _CHECK_IN_EVENTS
+        for payload in await unfinished(db_path, (kind,))
+    }
+
+
 def _deadline_has_run(rsvp: Any) -> bool:
     """Whether a round's RSVP deadline has run: it is marked (`deadline_run_at`, set in the save
     that records the distribution, before the announcement is posted) or its announcement stands.
@@ -233,7 +262,8 @@ async def get_next_pending_phase(
     A weather step whose forecast or clean-up is already in hand on the change queue (asked by
     an earlier advance, and not yet run) is passed over, so a second advance before the queue
     has run the first offers the next step and not the same one. The scheduler's own job was
-    cancelled by that first advance, so the database would otherwise offer the step again.
+    cancelled by that first advance, so the database would otherwise offer the step again. A
+    check-in step (call, last notice, deadline or clean-up) in hand is passed over alike.
 
     If there is no ACTIVE season for this server, returns None.
     """
@@ -248,6 +278,7 @@ async def get_next_pending_phase(
     clean_ups_in_hand: set[int] = {
         int(p["round_id"]) for p in await unfinished(db_path, (FORECAST_CLEAN_UP,))
     }
+    check_ins_in_hand = await _check_ins_in_hand(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -404,7 +435,10 @@ async def get_next_pending_phase(
         rid = row["round_id"]
         if phase in (None, 8) and rid in standing_forecasts and rid not in clean_ups_in_hand:
             return _make_entry(row, 8)
-        if phase in (None, 9) and attendance_module_enabled and rid in rsvp_state:
+        if (
+            phase in (None, 9) and attendance_module_enabled and rid in rsvp_state
+            and (rid, "rsvp_cleanup") not in check_ins_in_hand
+        ):
             return _make_entry(row, 9)
         return None
 
@@ -457,7 +491,10 @@ async def get_next_pending_phase(
         # ── Phase 5: RSVP notice ──────────────────────────────────────────
         # A round whose check-in has been taken down after it has no call recorded either, and
         # is not owed one (#425).
-        if attendance_module_enabled and rid not in rsvp_state and not row["checkin_cleared"]:
+        if (
+            attendance_module_enabled and rid not in rsvp_state and not row["checkin_cleared"]
+            and (rid, "rsvp_notice") not in check_ins_in_hand
+        ):
             return _make(5)
 
         # ── Phase 2: weather P2 (normal rounds only) ──────────────────────
@@ -468,7 +505,10 @@ async def get_next_pending_phase(
         # Not where the league has set it to 0: a live season sends none (#426).
         if attendance_module_enabled and last_notice_enabled:
             rsvp = rsvp_state.get(rid)
-            if rsvp is not None and not rsvp["last_notice_msg_id"]:
+            if (
+                rsvp is not None and not rsvp["last_notice_msg_id"]
+                and (rid, "rsvp_last_notice") not in check_ins_in_hand
+            ):
                 return _make(6)
 
         # ── Phase 3: weather P3 (normal rounds only) ──────────────────────
@@ -478,7 +518,10 @@ async def get_next_pending_phase(
         # ── Phase 7: RSVP deadline ────────────────────────────────────────
         if attendance_module_enabled:
             rsvp = rsvp_state.get(rid)
-            if rsvp is not None and not _deadline_has_run(rsvp):
+            if (
+                rsvp is not None and not _deadline_has_run(rsvp)
+                and (rid, "rsvp_deadline") not in check_ins_in_hand
+            ):
                 return _make(7)
 
         # ── Phase 4: result submission ────────────────────────────────────
@@ -808,6 +851,10 @@ async def build_review_summary(
         if scheduler_service is not None
         else None
     )
+    if queued is not None:
+        # A check-in step in hand on the change queue is pending, though its scheduler job was
+        # cancelled by the advance that asked for it.
+        queued |= await _check_ins_in_hand(db_path)
 
     # Group by division
     divisions: dict[str, list] = {}
