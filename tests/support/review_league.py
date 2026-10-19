@@ -337,6 +337,9 @@ class ReviewLeague:
     def sent_to(self, cid: int) -> list[int]:
         return [mid for kind, ch, mid in self.events if kind == "send" and ch == cid]
 
+    def deleted_in(self, cid: int) -> list[int]:
+        return [mid for kind, ch, mid in self.events if kind == "delete" and ch == cid]
+
     def log(self) -> str:
         return "\n".join(self.bot.log_channel.sent)
 

@@ -358,14 +358,9 @@ async def test_a_rounds_sync_with_a_discarded_table_says_what_was_not_synced(tmp
     assert line.startswith("Admin (`<@4242>`) | /results rounds sync | Incomplete")
 
 
-NO_CANCELLED_LINE_WITH_THE_TABLES = (
-    "#439: the round's tables are posted without a cancelled session's line, which nothing "
-    "records as that session's results message"
-)
 OLD_CANCELLED_LINE = 8820
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCELLED_LINE_WITH_THE_TABLES)
 async def test_a_rounds_sync_replaces_a_session_cancelled_line(tmp_path):
     """Round 3's Feature Qualifying was cancelled, its line standing in the results channel as
     message 8820, recorded as the qualifying's. `/results rounds sync` for Pro posts a new line in
