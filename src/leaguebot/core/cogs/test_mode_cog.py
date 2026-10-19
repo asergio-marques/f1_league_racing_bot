@@ -380,9 +380,7 @@ class TestModeCog(commands.Cog):
 
         # ── Result submission (phase_number=4) ───────────────────────────────────
         if phase_number == 4:
-            import asyncio
             from leaguebot.results.services.result_submission_service import (
-                run_result_submission_job,
                 is_submission_open,
             )
             from leaguebot.core.services.test_mode_service import round_result_status
@@ -427,16 +425,27 @@ class TestModeCog(commands.Cog):
             self.bot.scheduler_service.cancel_round(
                 entry["round_id"], only=frozenset({"results"})
             )
-            await interaction.followup.send(
-                f"⏩ Opening result submission wizard for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}** "
-                f"(**{entry['track_name']}**). A submission channel will appear shortly.",
-                ephemeral=True,
-            )
-            asyncio.create_task(
-                run_result_submission_job(
-                    entry["round_id"], self.bot, queue=self.bot.change_queue
+            try:
+                # Core names results' kind as a string and imports nothing of results.
+                await self.bot.change_queue.ask(
+                    "results.submission.open",
+                    {"round_id": entry["round_id"]},
+                    what=(
+                        f"opening round {entry['round_number']}'s results submission "
+                        f"in {entry['division_name']}"
+                    ),
+                    origin=ChangeOrigin.BOT,
                 )
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the round start", entry)
+                )
+                return
+            await interaction.followup.send(
+                f"⏩ The result submission of **{entry['division_name']}** — "
+                f"**Round {entry['round_number']}** (**{entry['track_name']}**) is on the change "
+                f"queue: its submission channel appears as soon as the queue reaches it.",
+                ephemeral=True,
             )
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"

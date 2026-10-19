@@ -140,7 +140,6 @@ async def _kinds(league: SeasonLeague) -> list[str]:
             if row["kind"] in (KIND, OPEN_KIND, TURN_KIND)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_first_paste_cut_short_is_cleared_and_reopened_as_jobs(tmp_path):
     """Round 3's submission was open in channel 690, one session accepted, when the bot stopped.
     At the restart the recovery asks the queue for the round's restart and does nothing itself:
@@ -192,7 +191,6 @@ async def test_a_submission_whose_turn_is_in_hand_is_left_alone_at_a_restart(tmp
     assert not _deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_refused_channel_deletion_at_a_restart_stops_the_queue(tmp_path):
     """Discord refuses to delete channel 690 (Missing Permissions). The queue stops at the
     restart's deletion, on the league lane, with round 3's sessions already cleared and no new
@@ -219,7 +217,6 @@ async def test_a_refused_channel_deletion_at_a_restart_stops_the_queue(tmp_path)
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_restart_s_reopening_of_a_submission_cannot_be_discarded(tmp_path):
     """Discord refuses to create round 3's new channel after the restart cleared the old one, so
     the queue stops at the reopening's channel creation. A league admin presses Discard: it is
@@ -246,7 +243,6 @@ async def test_a_restart_s_reopening_of_a_submission_cannot_be_discarded(tmp_pat
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_restart_s_clearing_ends_the_old_conversation_and_its_refused_deletion_stops_the_league(
     tmp_path,
 ):

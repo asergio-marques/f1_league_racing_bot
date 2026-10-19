@@ -178,7 +178,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
     ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (8, PASS["results"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (7, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
@@ -430,8 +430,6 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, BACKGROUND_FAILURES),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, BACKGROUND_FAILURES),
     ("results/services/result_submission_service.py", "enter_resubmit_flow"): (1, BACKGROUND_FAILURES),
     ("core/services/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, BACKGROUND_FAILURES),
@@ -904,7 +902,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (2, HANDLERS),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
     ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["signup"]),
     ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (6, PASS["results"]),
@@ -1115,7 +1112,6 @@ KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_abandon_interrupted_resubmission"): (2, SLICE["6b"]),
     ("__main__.py", "_recover_expired_review_prompts"): (2, SLICE["6b"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (1, SLICE["6b"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, SLICE["6b"]),
     ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, SLICE["6b"]),
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, SLICE["6b"]),
     ("core/cogs/module_cog.py", "execute_forced_close"): (2, SLICE["6b"]),
@@ -1827,7 +1823,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
@@ -2028,7 +2023,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The penalty and appeals approvals
-    ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),

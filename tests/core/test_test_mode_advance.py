@@ -384,14 +384,7 @@ async def test_a_failing_notice_is_not_marked_done(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-#: Why the round-start test is expected to fail until advance asks the queue for it.
-SUBMISSION_NOT_ASKED = (
-    "#439: advance opens a round's result submission by starting `run_result_submission_job` "
-    "itself rather than asking the change queue for `results.submission.open`"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=SUBMISSION_NOT_ASKED)
 async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
     """Round 3 of Division 1's result submission (4) is next, none open. Advance asks the change
     queue for `results.submission.open` of the round and replies that it is on the change queue,

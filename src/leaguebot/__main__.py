@@ -398,7 +398,10 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
-    from leaguebot.results.services.submission_changes import submission_open_change
+    from leaguebot.results.services.submission_changes import (
+        submission_open_change,
+        submission_restart_change,
+    )
     from leaguebot.results.services.review_open_change import (
         appeals_open_change,
         close_stale_change,
@@ -410,6 +413,7 @@ def register_change_types(bot: LeagueBot) -> None:
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(submission_restart_change())
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())
     bot.change_queue.register(appeals_open_change())
@@ -1432,18 +1436,16 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
 
 
 async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
-    """Close any submission channels left open by a previous bot process.
+    """Clear any submission channels left open by a previous bot process, through the queue.
 
-    When the bot restarts, any in-progress wait_for submission loops are
-    killed mid-flight.  The DB row remains closed=0 and the Discord channel
-    still exists, but nothing is listening.  We clean them up here.
+    When the bot restarts, the paste a submission was waiting for is lost: the row remains
+    closed=0 and the Discord channel still stands, but nothing is listening.
 
-    Mid-submission orphans (in_penalty_review=0):
-      - Delete the session_results rows for the round (so the round is not
-        mistakenly treated as complete by get_next_pending_phase).
-      - Delete the orphaned round_submission_channels row and Discord channel.
-      - Re-trigger run_result_submission_job so the wizard opens immediately
-        (production path — test mode uses /test-mode advance instead).
+    A mid-submission orphan (in_penalty_review=0) is asked of the queue as
+    `results.submission.restart`: it clears the round's sessions (so the round is not mistaken
+    for complete by get_next_pending_phase) and the submission row, deletes the channel, tells the
+    log channel to re-submit and opens the submission afresh. A paste whose turn is in hand on the
+    queue is left to it. This runs before the queue starts.
 
     Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
     change on the queue is carrying out to it, and otherwise asks the queue to put the review back
@@ -1483,72 +1485,22 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         ):
             continue
 
-        # ------------------------------------------------------------------
-        # Mid-submission orphan
-        # ------------------------------------------------------------------
-        # 1. Delete session_results so the round is not mistaken for complete
-        #    by get_next_pending_phase (new result tables cascade).
-        # 2. Delete the channel row and the Discord channel.
-        # 3. Re-trigger the submission wizard immediately (production path).
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "DELETE FROM session_results WHERE round_id = ?",
-                (round_id,),
-            )
-            await db.execute(
-                "DELETE FROM round_submission_channels WHERE round_id = ?",
-                (round_id,),
-            )
-            await db.commit()
+        # A first paste cut short is cleared, its channel deleted and its submission opened
+        # afresh by the change queue's `results.submission.restart`, before the queue starts. A
+        # paste whose turn is still in hand on the queue is left alone: the queue answers it.
+        from leaguebot.core.services.change_queue import unfinished
+        from leaguebot.results.services.submission_changes import ask_submission_restart
 
-        log.info(
-            "Recovery: cleared orphaned session_results and submission row for round %s",
-            round_id,
-        )
-
-        if guild is None:
-            log.warning(
-                "Recovery: the league's server is not in the cache for round %s — "
-                "submission row cleared but wizard not re-triggered",
-                round_id,
-            )
+        if any(
+            payload.get("round_id") == round_id
+            for payload in await unfinished(bot.db_path, ["results.submission.turn"])
+        ):
             continue
-
-        channel = as_text_channel(guild.get_channel(channel_id))
-        if channel is not None:
-            try:
-                await channel.delete(reason="Orphaned submission channel cleanup on restart")
-            except (discord.NotFound, discord.HTTPException):
-                pass
-
-        # Re-trigger the wizard so the round is not silently abandoned in
-        # production (where /test-mode advance is not used).
-        from leaguebot.results.services.result_submission_service import run_result_submission_job
-
-        log.info(
-            "Recovery: re-triggering result submission wizard for round %s", round_id
-        )
-        asyncio.create_task(
-            run_result_submission_job(round_id, bot, queue=bot.change_queue)
-        )
-
-        # Notify the log channel so the LM knows to re-submit any sessions
-        # that were in progress when the bot was terminated.
+        log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
         try:
-            async with get_connection(bot.db_path) as _rdb:
-                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
-                _rrow = await _rcur.fetchone()
-            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
-            await bot.output_router.post_log(
-                f"System | Bot restarted mid-result-submission | Notice\n"
-                f"  round: {_round_label}\n"
-                "  Sessions submitted before restart have been cleared. "
-                "Submission wizard re-opened — please re-submit all sessions.",
-            )
+            await ask_submission_restart(bot.change_queue, bot.db_path, round_id)
         except Exception:
-            log.exception(
-                "Recovery: failed to post log for mid-submission orphan round %s", round_id
-            )
+            log.exception("Recovery: could not ask for round %s's submission restart", round_id)
 
 
 async def _recover_expired_review_prompts(bot: LeagueBot) -> None:

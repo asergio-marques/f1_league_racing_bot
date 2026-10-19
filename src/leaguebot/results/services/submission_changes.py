@@ -22,6 +22,12 @@ after the channel is set goes through. The round has moved off NOT_RUN by then, 
 of the creation.
 
 The change runs on the league lane, whatever asked: a timer, the restart or test mode's advance.
+
+**`results.submission.restart`** is the start-up's own: a first paste a restart cut short is
+cleared (`clear`: the round's sessions and its submission row, which ends the old conversation), its
+channel deleted (`delete_channel`, whose refusal stops the league lane, the lane that asked) and
+`results.submission.open` asked afresh as a follow-on, whose channel creation cannot be discarded.
+The log line telling the league to re-submit is written in the clearing's save.
 """
 from __future__ import annotations
 
@@ -56,6 +62,7 @@ from leaguebot.core.services import season_service
 from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     expected_session_on,
@@ -76,7 +83,14 @@ POST_OPENING = "post_opening"
 #: Where the opening's mention goes, until the creation knows the role is on the server.
 _MENTION = "<<mention>>"
 
-__all__ = ["KIND", "ask_submission_open", "submission_open_change"]
+#: The restart's clearing of a submission a restart cut short.
+RESTART_KIND = "results.submission.restart"
+CLEAR = "clear"
+
+__all__ = [
+    "KIND", "RESTART_KIND", "ask_submission_open", "ask_submission_restart",
+    "submission_open_change", "submission_restart_change",
+]
 
 _ROUND = (
     "SELECT r.status, r.division_id, r.round_number, r.format, d.name AS division_name, "
@@ -294,5 +308,100 @@ async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -
     number = "a round" if row is None else f"round {row['round_number']}"
     await queue.ask(
         KIND, {"round_id": round_id}, what=f"opening {number}'s results submission",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+def submission_restart_change() -> ChangeType:
+    """The `results.submission.restart` change type, for the builder to register.
+
+    The payload is ``{"round_id": int}``. It is due while the round's submission row stands open
+    and in no review; a round cancelled or one whose row is gone is dropped.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT closed, in_penalty_review FROM round_submission_channels "
+                    "WHERE round_id = ?",
+                    (int(ctx.payload["round_id"]),),
+                )
+            ).fetchone()
+        if row is None or row["closed"] or row["in_penalty_review"]:
+            return Verdict.not_due("the round has no submission left open")
+        return Verdict.go()
+
+    async def clear(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        round_id = int(ctx.payload["round_id"])
+        row = await (
+            await db.execute(
+                "SELECT rsc.channel_id, r.round_number FROM round_submission_channels rsc "
+                "JOIN rounds r ON r.id = rsc.round_id WHERE rsc.round_id = ?",
+                (round_id,),
+            )
+        ).fetchone()
+        if row is None:
+            return StepResult(result={"cleared": False})
+        await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
+        await db.execute("DELETE FROM round_submission_channels WHERE round_id = ?", (round_id,))
+        line = (
+            "System | Bot restarted mid-result-submission | Notice\n"
+            f"  round: R{row['round_number']}\n"
+            "  Sessions submitted before restart have been cleared. "
+            "Submission wizard re-opened — please re-submit all sessions."
+        )
+        return StepResult(
+            result={"cleared": True},
+            lines=(line,),
+            then=(
+                PlannedStep(
+                    DELETE_CHANNEL,
+                    {
+                        "round_id": round_id,
+                        "channel_id": int(row["channel_id"]),
+                        "reason": "Orphaned submission channel cleanup on restart",
+                    },
+                ),
+            ),
+            follow_ons=(
+                FollowOn(
+                    KIND, {"round_id": round_id},
+                    f"Opening round {row['round_number']}'s results submission afresh",
+                ),
+            ),
+        )
+
+    async def describe_clear(_ctx: StepContext) -> str:
+        return "clearing the results submission a restart cut short"
+
+    def cleared(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=RESTART_KIND,
+        opening=(PlannedStep(CLEAR),),
+        steps={
+            CLEAR: Step(CLEAR, StepKind.SAVE, clear, describe=describe_clear),
+            DELETE_CHANNEL: posting_steps()[DELETE_CHANNEL],
+        },
+        check=check,
+        key=lambda payload: f"{RESTART_KIND}:{payload['round_id']}",
+        doing=lambda _payload: "clearing a results submission a restart cut short",
+        outcome=cleared,
+    )
+
+
+async def ask_submission_restart(queue: ChangeQueue, db_path: str, round_id: int) -> None:
+    """Ask the queue, as the bot, to clear *round_id*'s submission a restart cut short and open
+    it afresh. The round's number is read here to name the change."""
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+        ).fetchone()
+    number = "a round" if row is None else f"round {row['round_number']}"
+    await queue.ask(
+        RESTART_KIND, {"round_id": round_id},
+        what=f"clearing {number}'s results submission a restart cut short",
         origin=ChangeOrigin.BOT,
     )
