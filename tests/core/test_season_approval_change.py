@@ -1314,15 +1314,16 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
 
 @pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
 async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
-    """Attendance is on, and Am's attendance channel was never set. The season is approved: Pro's
-    opening sheet is posted, and the queue stops at Am's, its stop line naming the command that
-    sets the channel, rather than Am's sheet completing having posted nothing."""
+    """Attendance is on, and Approve is pressed with every channel set, Am's attendance channel
+    included. Am's attendance channel is then cleared before the queue runs: Pro's opening sheet
+    is posted, and the queue stops at Am's, its stop line naming the command that sets the
+    channel, rather than Am's sheet completing having posted nothing."""
     league = await _league_for(tmp_path, monkeypatch, attendance=True)
+    await _pressed(league)
     await league.write(
         "UPDATE attendance_division_config SET attendance_channel_id = NULL WHERE division_id = ?",
         AM,
     )
-    await _pressed(league)
 
     await run_queue(league.bot)
 
