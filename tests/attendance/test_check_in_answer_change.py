@@ -35,6 +35,7 @@ from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
     change_rows,
+    discard_job,
     http_error,
     member,
     member_interaction,
@@ -267,3 +268,95 @@ async def test_test_rsvp_s_entries_are_saved_and_the_call_redrawn_once(tmp_path)
     assert "Applied 2 update(s)" in replied
     assert "queue" in replied
     assert await stopped_job(league.db_path) is None
+
+
+def _success_lines(league: SeasonLeague) -> list[str]:
+    """The lines the log channel holds that record a success."""
+    return [line for line in league.bot.log_channel.sent if "| Success" in line]
+
+
+async def test_a_double_press_makes_one_redraw(tmp_path):
+    """Max presses Accept twice before the queue runs. His answer is accepted, and the call is
+    edited exactly once: the second press found nothing to change, and was left the drawing by
+    the first."""
+    league = await _league(tmp_path)
+
+    await _press(league, MAX, "accept")
+    await _press(league, MAX, "accept")
+    await run_queue(league.bot)
+
+    assert await _answer(league, MAX) == "ACCEPTED"
+    assert _redraws(league) == [CALL]
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_a_press_refused_at_the_save_still_draws_the_call_for_the_answer_before_it(tmp_path):
+    """Round 3 races in three hours, so its check-in locks in one. Max presses Accept twice, both
+    before the lock, and the queue runs. The call is edited once, and the log channel holds
+    exactly one success line, the first press's: the second press's own line, that nothing
+    changed, is not a success."""
+    league = await _league(tmp_path, race_in=timedelta(hours=3))
+
+    await _press(league, MAX, "accept")
+    await _press(league, MAX, "accept")
+    await run_queue(league.bot)
+
+    assert _redraws(league) == [CALL]
+    [line] = _success_lines(league)
+    assert "answer: accepted (was: no answer)" in line
+    assert "call not redrawn" not in line
+
+
+async def test_a_discarded_redraw_writes_the_answer_s_line_naming_the_call_as_not_redrawn(
+    tmp_path,
+):
+    """Discord refuses every edit of the call (7001). Max presses Accept; the queue stops at the
+    redraw and a league admin discards it. His answer is saved, and the log channel holds one
+    success line for it, ending that the call was not redrawn."""
+    league = await _league(tmp_path)
+    league.channel(CHECK_IN).messages[CALL].edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    await _press(league, MAX, "accept")
+    await run_queue(league.bot)
+    stopped = await stopped_job(league.db_path)
+    assert stopped is not None and stopped["name"] == "redraw"
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _answer(league, MAX) == "ACCEPTED"
+    [line] = _success_lines(league)
+    assert "answer: accepted (was: no answer)" in line
+    assert line.split("\n")[-2].strip() == "call not redrawn"
+
+
+async def test_a_discarded_redraw_of_a_paste_says_the_call_could_not_be_redrawn(tmp_path):
+    """As above, but a maintainer's `/attendance test rsvp` paste of Max's accept: the redraw is
+    refused and discarded, and the maintainer's reply says the call could not be redrawn because
+    its redraw was discarded; the log channel's success line ends by saying that it was not redrawn."""
+    from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
+
+    league = await _league(tmp_path)
+    await league.set_test_mode(True)
+    league.channel(CHECK_IN).messages[CALL].edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+    interaction = member_interaction(league.bot, user=member(77, "Maintainer"),
+                                     created_at=league.clock.now)
+    modal = _RsvpBulkSetModal(
+        division_name="Pro", division_id=PRO, round_id=ROUND_3,
+        embed_channel_id=CHECK_IN, embed_message_id=CALL, bot=league.bot,
+    )
+    modal.entries._value = f"{MAX}, accept"  # type: ignore[attr-defined]
+
+    await modal.on_submit(interaction)
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _answer(league, MAX) == "ACCEPTED"
+    assert "could not be redrawn: its redraw was discarded" in updated_reply(interaction)
+    [line] = _success_lines(league)
+    assert line.split("\n")[-2].strip() == "call not redrawn"
+
