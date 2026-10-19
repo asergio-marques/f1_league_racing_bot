@@ -64,9 +64,6 @@ FULL_TIME_A = 401
 FULL_TIME_B = 402
 RESERVE = 403
 
-NO_LAST_NOTICE_CHANGE = (
-    "#439: the last notice is posted by `run_rsvp_last_notice` at once, off the change queue"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +252,6 @@ async def _recorded_notice(db_path: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_silent_full_time_driver_is_mentioned(tmp_path):
     db_path = await _make_db(tmp_path)
     await _answer(db_path, FULL_TIME_B, "ACCEPTED")
@@ -268,7 +264,6 @@ async def test_a_silent_full_time_driver_is_mentioned(tmp_path):
     assert f"<@{FULL_TIME_A}>" in body
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_driver_who_has_answered_is_not_chased(tmp_path):
     """Being reminded to answer a question already answered is how a league learns to
     ignore the reminder."""
@@ -281,7 +276,6 @@ async def test_a_driver_who_has_answered_is_not_chased(tmp_path):
     assert f"<@{FULL_TIME_B}>" not in _posted(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 @pytest.mark.parametrize("status", ["ACCEPTED", "TENTATIVE", "DECLINED"])
 async def test_any_answer_at_all_counts_as_having_responded(tmp_path, status):
     """The reminder asks for a response, not for a yes. A driver who has declined has
@@ -296,7 +290,6 @@ async def test_any_answer_at_all_counts_as_having_responded(tmp_path, status):
     assert "All drivers have responded" in _posted(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_every_silent_driver_is_named_not_only_the_first(tmp_path):
     db_path = await _make_db(tmp_path)
     bot = _make_bot(db_path)
@@ -308,7 +301,6 @@ async def test_every_silent_driver_is_named_not_only_the_first(tmp_path):
     assert f"<@{FULL_TIME_B}>" in body
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_silent_reserve_is_not_named(tmp_path):
     """`ti.is_reserve = 0` in the query. A reserve is asked, not required, so chasing one
     publicly for not answering would be chasing a driver who owes the division nothing."""
@@ -324,7 +316,6 @@ async def test_a_silent_reserve_is_not_named(tmp_path):
     assert "All drivers have responded" in body
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_test_driver_s_display_name_is_carried_into_the_mention(tmp_path):
     """Test drivers all share one Discord account, so the mention alone cannot tell them
     apart — the display name is what makes the reminder legible in test mode."""
@@ -336,7 +327,6 @@ async def test_a_test_driver_s_display_name_is_carried_into_the_mention(tmp_path
     assert f"({'Driver %d' % FULL_TIME_A})" in _posted(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_driver_with_no_display_name_is_mentioned_plainly(tmp_path):
     """The other branch of the same mention. An empty pair of brackets would read as a
     missing name rather than as a real driver."""
@@ -355,7 +345,6 @@ async def test_a_driver_with_no_display_name_is_mentioned_plainly(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_division_that_has_all_answered_still_gets_a_notice(tmp_path):
     """"Always posts". The message goes to everyone because it is the division's notice
     that the deadline is near, not merely a chase — returning early when nobody is
@@ -371,7 +360,6 @@ async def test_a_division_that_has_all_answered_still_gets_a_notice(tmp_path):
     assert "All drivers have responded" in _posted(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
     """The relative timestamp is the whole point of the notice, and it is computed from the
     round rather than written by Discord, so it is the bot's to get right. Each shape is
@@ -399,7 +387,6 @@ async def test_both_shapes_of_notice_carry_the_race_time(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_round_that_no_longer_exists_posts_nothing(tmp_path):
     """Work no longer due is dropped: nothing is posted and the queue does not stop."""
     db_path = await _make_db(tmp_path)
@@ -411,7 +398,6 @@ async def test_a_round_that_no_longer_exists_posts_nothing(tmp_path):
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_division_with_no_rsvp_channel_configured_stops_the_queue_naming_the_command(
     tmp_path,
 ):
@@ -427,7 +413,6 @@ async def test_a_division_with_no_rsvp_channel_configured_stops_the_queue_naming
     assert "/attendance channel rsvp" in _logged(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_channel_the_bot_cannot_see_stops_the_queue_naming_the_command(tmp_path):
     db_path = await _make_db(tmp_path)
     bot = _make_bot(db_path, visible=False)
@@ -439,7 +424,6 @@ async def test_a_channel_the_bot_cannot_see_stops_the_queue_naming_the_command(t
     assert "/attendance channel rsvp" in _logged(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_refused_last_notice_stops_the_queue_recording_nothing(tmp_path):
     """The recorded id is what the round's cleanup, a day after it, deletes; one pointing at
     a message that was never sent would have it delete something else, or nothing. Discord
@@ -454,7 +438,6 @@ async def test_a_refused_last_notice_stops_the_queue_recording_nothing(tmp_path)
     assert await _recorded_notice(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
     db_path = await _make_db(tmp_path)
     bot = _make_bot(db_path)
@@ -478,10 +461,6 @@ async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
 # and its call (seeded in Pro's check-in channel, 603) is taken off the record, as though it was
 # never posted. The last notice is asked of the queue as its timer asks it, and the queue run.
 
-NO_CALL_NO_NOTICE = (
-    "#439: the last notice is not yet a change on the queue whose check drops it where no "
-    "check-in call stands"
-)
 
 
 async def _no_call_league(tmp_path):
@@ -509,7 +488,6 @@ async def _ask_last_notice(league) -> None:
     await run_queue(league.bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_NO_NOTICE)
 async def test_no_last_notice_is_posted_where_no_call_stands(tmp_path):
     from tests.support.change_queue import change_rows, stopped_job
     from tests.support.season_league import DIVISIONS, PRO
@@ -524,7 +502,6 @@ async def test_no_last_notice_is_posted_where_no_call_stands(tmp_path):
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_NO_NOTICE)
 async def test_a_last_notice_with_no_call_is_recorded_in_the_host_log(tmp_path, caplog):
     league = await _no_call_league(tmp_path)
 

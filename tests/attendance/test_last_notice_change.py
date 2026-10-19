@@ -106,7 +106,6 @@ async def _move_check_in_channel(league: SeasonLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_division_s_check_in_channel(
     tmp_path,
 ):
@@ -164,7 +163,6 @@ async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is
     assert posted not in league.channel(MOVED).messages
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_the_last_notice_s_id_and_channel_are_saved_with_its_mark(tmp_path):
     """The notice's message id and the channel it was posted in are saved on round 3's call, and
     the posting job is marked done."""
@@ -184,7 +182,6 @@ async def test_the_last_notice_s_id_and_channel_are_saved_with_its_mark(tmp_path
     assert post["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_refused_last_notice_stops_the_queue(tmp_path):
     """Discord refuses the notice: the queue stops at it and nothing is recorded. Once Discord
     takes it, the queue's next try posts and records it."""
@@ -208,7 +205,6 @@ async def test_a_refused_last_notice_stops_the_queue(tmp_path):
     assert (await _call_row(league))["last_notice_msg_id"] == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_last_notice_reached_after_the_deadline_is_dropped(tmp_path):
     """Q6: the notice is asked an hour before the deadline, but the queue reaches it only 70
     minutes on, past the deadline: nothing is posted or recorded, and the queue does not stop."""
@@ -224,7 +220,6 @@ async def test_a_last_notice_reached_after_the_deadline_is_dropped(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_last_notice_reached_late_before_the_deadline_is_posted(tmp_path):
     """Q6: the queue is stopped at another job when the notice is asked, and cleared 30 minutes
     on, with the deadline still half an hour ahead: the notice is posted late and recorded."""
@@ -243,7 +238,6 @@ async def test_a_last_notice_reached_late_before_the_deadline_is_posted(tmp_path
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_a_last_notice_with_no_call_standing_is_dropped(tmp_path):
     """Fault 8, held when the job runs: the notice is asked while round 3's call stands, and the
     call is taken off the record before the queue reaches it. Nothing is posted, and the queue

@@ -337,7 +337,10 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
-    from leaguebot.attendance.services.check_in_changes import check_in_call_change
+    from leaguebot.attendance.services.check_in_changes import (
+        check_in_call_change,
+        check_in_last_notice_change,
+    )
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
@@ -414,6 +417,9 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(
         check_in_call_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        check_in_last_notice_change(bot.attendance_service, now=lambda: bot.change_queue.now())
     )
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
@@ -635,11 +641,13 @@ async def main() -> None:
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 
         # Register RSVP attendance callbacks
-        from leaguebot.attendance.services.check_in_changes import ask_check_in_call
+        from leaguebot.attendance.services.check_in_changes import (
+            ask_check_in_call,
+            ask_check_in_last_notice,
+        )
         from leaguebot.attendance.services.rsvp_service import (
             run_rsvp_cleanup,
             run_rsvp_deadline,
-            run_rsvp_last_notice,
         )
         from leaguebot.core.models.change import ChangeOrigin
 
@@ -649,7 +657,9 @@ async def main() -> None:
             )
 
         async def _rsvp_last_notice_cb(round_id: int) -> None:
-            await run_rsvp_last_notice(round_id, bot)
+            await ask_check_in_last_notice(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         async def _rsvp_deadline_cb(round_id: int) -> None:
             await run_rsvp_deadline(round_id, bot)

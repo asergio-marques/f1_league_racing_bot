@@ -1205,6 +1205,53 @@ async def run_rsvp_cleanup(round_id: int, bot: LeagueBot, *, clear_answers: bool
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
 
 
+async def silent_full_time_drivers(
+    db_path: str, round_id: int, division_id: int
+) -> list[aiosqlite.Row]:
+    """The full-time drivers of *division_id* still at ``NO_RSVP`` for *round_id*, with their
+    Discord ids and any test display name. A reserve is asked, not required, so is never named."""
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            """
+            SELECT dp.discord_user_id, dp.test_display_name
+              FROM driver_round_attendance dra
+              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+              JOIN driver_season_assignments dsa
+                   ON dsa.driver_profile_id = dra.driver_profile_id
+                  AND dsa.division_id = dra.division_id
+              JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
+              JOIN team_instances ti ON ti.id = ts.team_instance_id
+                                    AND ti.division_id = dra.division_id
+             WHERE dra.round_id = ?
+               AND dra.division_id = ?
+               AND dra.rsvp_status = 'NO_RSVP'
+               AND ti.is_reserve = 0
+            """,
+            (round_id, division_id),
+        )
+        return list(await cur.fetchall())
+
+
+def last_notice_content(silent: list[aiosqlite.Row], unix_ts: int) -> str:
+    """The last notice's text: the reminder naming each of the *silent* drivers, or, where
+    everyone has answered, the visibility notice. *unix_ts* is the race, as Discord renders it."""
+    if not silent:
+        return (
+            f"✅ All drivers have responded. The race is <t:{unix_ts}:R> — "
+            f"please review your attendance if anything has changed."
+        )
+    mentions: list[str] = []
+    for r in silent:
+        if r["test_display_name"]:
+            mentions.append(f"<@{r['discord_user_id']}> ({r['test_display_name']})")
+        else:
+            mentions.append(f"<@{r['discord_user_id']}>")
+    return (
+        f"⏰ **RSVP Reminder** — the race is <t:{unix_ts}:R>. "
+        f"Please confirm your attendance:\n" + " ".join(mentions)
+    )
+
+
 async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
     """Post the last-notice ping for *round_id*.
 
@@ -1262,48 +1309,13 @@ async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
         log.error("run_rsvp_last_notice: RSVP channel not found for division %d", division_id)
         return
 
-    # Find full-time drivers still at NO_RSVP
-    async with get_connection(bot.db_path) as db:
-        cur = await db.execute(
-            """
-            SELECT dp.discord_user_id, dp.test_display_name
-              FROM driver_round_attendance dra
-              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-              JOIN driver_season_assignments dsa
-                   ON dsa.driver_profile_id = dra.driver_profile_id
-                  AND dsa.division_id = dra.division_id
-              JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
-              JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                    AND ti.division_id = dra.division_id
-             WHERE dra.round_id = ?
-               AND dra.division_id = ?
-               AND dra.rsvp_status = 'NO_RSVP'
-               AND ti.is_reserve = 0
-            """,
-            (round_id, division_id),
-        )
-        no_rsvp_rows = await cur.fetchall()
-
-    if no_rsvp_rows:
-        mentions: list[str] = []
-        for r in no_rsvp_rows:
-            if r["test_display_name"]:
-                mentions.append(f"<@{r['discord_user_id']}> ({r['test_display_name']})")
-            else:
-                mentions.append(f"<@{r['discord_user_id']}>")
-        content = (
-            f"⏰ **RSVP Reminder** — the race is <t:{unix_ts}:R>. "
-            f"Please confirm your attendance:\n" + " ".join(mentions)
-        )
-    else:
+    no_rsvp_rows = await silent_full_time_drivers(bot.db_path, round_id, division_id)
+    if not no_rsvp_rows:
         log.info(
             "run_rsvp_last_notice: all full-time drivers responded for round %d / division %d — posting visibility notice",
             round_id, division_id,
         )
-        content = (
-            f"✅ All drivers have responded. The race is <t:{unix_ts}:R> — "
-            f"please review your attendance if anything has changed."
-        )
+    content = last_notice_content(no_rsvp_rows, unix_ts)
 
     try:
         last_msg = await channel.send(content)

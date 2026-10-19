@@ -275,9 +275,6 @@ async def test_the_check_in_call_is_posted_while_attendance_is_enabled(tmp_path)
 # posted and the queue does not stop. The round's call stands (message 900900 in the check-in
 # channel), so the last notice is dropped for the gate alone and not for want of a call.
 
-NO_LAST_NOTICE_CHANGE = (
-    "#439: the last notice is posted by `run_rsvp_last_notice` at once, off the change queue"
-)
 
 
 def _queue_bot(db_path: str, *, attendance_enabled: bool) -> MagicMock:
@@ -314,7 +311,6 @@ async def _ask_last_notice(bot: MagicMock) -> list[int]:
     return [mid for kind, cid, mid in bot.events if kind == "send" and cid == RSVP_CHANNEL_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_no_reminder_is_posted_while_attendance_is_disabled(tmp_path):
     from tests.support.change_queue import stopped_job
 
@@ -327,7 +323,6 @@ async def test_no_reminder_is_posted_while_attendance_is_disabled(tmp_path):
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_the_reminder_is_posted_while_attendance_is_enabled(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)
@@ -559,7 +554,6 @@ async def test_no_check_in_call_is_posted_for_a_cancelled_round(tmp_path):
     assert embed_rows == 0, "a cancelled round recorded a check-in call as standing"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAST_NOTICE_CHANGE)
 async def test_no_reminder_is_posted_for_a_cancelled_round(tmp_path):
     from tests.support.change_queue import stopped_job
 
