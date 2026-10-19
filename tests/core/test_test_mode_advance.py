@@ -696,6 +696,37 @@ async def test_the_deadline_reply_does_not_say_reserves_were_distributed(tmp_pat
     assert "Reserve distribution complete" not in replied
 
 
+async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tmp_path):
+    """Test mode on, attendance and results on. Round 3's check-in deadline has run, its
+    distribution saved and marked (`deadline_run_at`), but Discord refused its announcement, so
+    none is recorded (`distribution_msg_id` NULL). The scheduler holds nothing more. The next
+    advance moves on to the round's results phase (4), not the deadline (7) again, which would
+    do nothing and hold every later step behind it (#439)."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at, last_notice_msg_id, distribution_msg_id, deadline_run_at) "
+            "VALUES (?, ?, 'call', 'ch1', '2026-05-27T00:00:00', 'last', NULL, "
+            "'2026-05-31T22:00:00')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    scheduler = MagicMock()
+    scheduler.get_pending_advance_jobs = MagicMock(return_value=[])
+
+    entry = await get_next_pending_phase(
+        db_path, scheduler, now=datetime(2026, 6, 2, tzinfo=timezone.utc),
+    )
+
+    assert entry is not None
+    assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 4)
+
+
 # ---------------------------------------------------------------------------
 # The cleanups a day after the round (#425)
 # ---------------------------------------------------------------------------
