@@ -30,6 +30,7 @@ import discord
 
 from leaguebot.core.models.change import StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.services.change_queue import ChangeType, Step, StepContext, unfinished
+from leaguebot.core.services.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
 
@@ -99,18 +100,5 @@ def clear_mark_step() -> Step:
 async def turn_away(message: discord.Message, note: str) -> None:
     """Turn *message* away at once, off the queue: post *note* (with `{member}` filled in) in its
     channel, mentioning the author alone, and delete the message. Each is tried once; a refusal is
-    logged and lost, and the note stays."""
-    try:
-        await message.channel.send(
-            note.format(member=message.author.mention),
-            allowed_mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[message.author]),
-        )
-    except discord.HTTPException:
-        log.warning("could not post the turn-away note in channel %s", message.channel.id,
-                    exc_info=True)
-    try:
-        await message.delete()
-    except discord.HTTPException:
-        log.warning("could not delete the turned-away message %s in channel %s", message.id,
-                    message.channel.id, exc_info=True)
+    logged and lost, and the note stays. The posting is `OutputRouter.turn_away`'s."""
+    await OutputRouter.turn_away(message, note)

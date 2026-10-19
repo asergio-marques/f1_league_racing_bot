@@ -943,7 +943,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "run_result_submission_job"): (14, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
-    ("core/services/typed_turns.py", "turn_away"): (2, HANDLERS),
     ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "run_rsvp_last_notice"): (1, PASS["attendance"]),
@@ -1063,7 +1062,7 @@ POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (
         "the factory reset's progress, the reply to the owner's own command"
     ),
-    ("core/services/typed_turns.py", "turn_away"): (
+    ("core/services/output_router.py", "OutputRouter.turn_away"): (
         "the turn-away's note and deletion, made at once while an earlier turn waits; a "
         "refusal of either is lost, not retried"
     ),

@@ -3,7 +3,7 @@
 It is **not** the way every post leaves the bot. A graphic, an embed, and every post the bot
 later replaces in place are sent by the module that makes them, so a forecast drawn as a
 graphic, a calendar or a results table never passes through here. The one message with buttons
-that does is the change queue's stop notice, sent to the log channel (`post_notice`). Which channels exist, and what each may carry, is Constitution Principle VII and
+that does is the change queue's stop notice, sent to the log channel (`post_notice`). The turn-away of a message typed while an earlier turn waits is also sent from here (`turn_away`), at once and off the queue. Which channels exist, and what each may carry, is Constitution Principle VII and
 `core/services/channel_registry_service.py`.
 
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
@@ -214,6 +214,33 @@ class OutputRouter:
         if message is None:
             await self._warn_member(channel_id, interaction)
         return message
+
+    @staticmethod
+    async def turn_away(message: discord.Message, note: str) -> None:
+        """Turn *message* away at once, off the queue: post *note* (with ``{member}`` filled in)
+        in its channel, mentioning the author alone, and delete the message.
+
+        Each is tried once. A refusal of either is logged on the host and lost, never retried, and
+        the note stays: this is a named exception to every post being a job (#439, decision 9),
+        made at once so the member is told while the earlier answer they typed still waits, where a
+        job would wait behind it. It is here, in the one file that posts directly, and not in the
+        turn's own module (`typed_turns.turn_away` asks it), so that the posting check needs no
+        line for it. A static method: it needs the message alone.
+        """
+        try:
+            await message.channel.send(
+                note.format(member=message.author.mention),
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=False, users=[message.author]),
+            )
+        except discord.HTTPException:
+            log.warning("could not post the turn-away note in channel %s", message.channel.id,
+                        exc_info=True)
+        try:
+            await message.delete()
+        except discord.HTTPException:
+            log.warning("could not delete the turned-away message %s in channel %s", message.id,
+                        message.channel.id, exc_info=True)
 
     async def strip_view(self, channel_id: int, message_id: int) -> None:
         """Take the buttons off the message *message_id* of channel *channel_id*.
