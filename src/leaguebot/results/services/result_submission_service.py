@@ -299,6 +299,100 @@ async def open_submissions(db_path: str, round_ids: Iterable[int]) -> list[OpenS
         return await open_submissions_on(db, round_ids)
 
 
+# ---------------------------------------------------------------------------
+# Which session each dialogue expects next (#439)
+#
+# A paste is a turn on the change queue, and nothing waits in a coroutine for the next one: a
+# turn reads the session its dialogue expects from what the dialogue has saved, and these are the
+# three readers. They read on the caller's connection and write nothing.
+# ---------------------------------------------------------------------------
+
+async def expected_session_on(db: aiosqlite.Connection, round_id: int) -> SessionType | None:
+    """The session a round's first submission expects next, or None once all are in.
+
+    The first of the round's sessions, in running order, with no ``session_results`` row. A
+    session typed CANCELLED has its row too, so it is not asked for again.
+    """
+    row = await (await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))).fetchone()
+    if row is None:
+        return None
+    saved = {
+        found["session_type"]
+        for found in await (
+            await db.execute(
+                "SELECT session_type FROM session_results WHERE round_id = ?", (round_id,)
+            )
+        ).fetchall()
+    }
+    for session in get_sessions_for_format(RoundFormat(row["format"])):
+        if session.value not in saved:
+            return session
+    return None
+
+
+async def expected_resubmitted_session_on(
+    db: aiosqlite.Connection, round_id: int
+) -> SessionType | None:
+    """The session a round's resubmission expects next, or None once every one is drafted.
+
+    The first session, in running order, with no complete draft: a resubmission holds its pastes
+    until the last swaps the results, so what the round's results already hold counts for
+    nothing. A draft whose configuration is still to be chosen (``config_name`` unset) is not
+    complete, and its session is expected again; one typed CANCELLED needs no configuration.
+    """
+    row = await (await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))).fetchone()
+    if row is None:
+        return None
+    drafted = {
+        found["session_type"]
+        for found in await (
+            await db.execute(
+                "SELECT session_type FROM resubmission_drafts "
+                "WHERE round_id = ? AND (config_name IS NOT NULL OR status = 'CANCELLED')",
+                (round_id,),
+            )
+        ).fetchall()
+    }
+    for session in get_sessions_for_format(RoundFormat(row["format"])):
+        if session.value not in drafted:
+            return session
+    return None
+
+
+async def expected_amended_session_on(
+    db: aiosqlite.Connection, amend_id: int
+) -> SessionType | None:
+    """The session an amendment expects next, or None once all it covers are drafted.
+
+    The first of the amendment's own ``session_types``, in the order its record lists them, with
+    no complete draft; never a session it does not cover. A draft whose configuration is still
+    to be chosen is not complete.
+    """
+    row = await (
+        await db.execute("SELECT session_types FROM round_amend_channels WHERE id = ?", (amend_id,))
+    ).fetchone()
+    if row is None or not row["session_types"]:
+        return None
+    try:
+        covered = list(_json.loads(row["session_types"]))
+    except (TypeError, ValueError):
+        return None
+    drafted = {
+        found["session_type"]
+        for found in await (
+            await db.execute(
+                "SELECT session_type FROM amend_drafts "
+                "WHERE amend_id = ? AND config_name IS NOT NULL",
+                (amend_id,),
+            )
+        ).fetchall()
+    }
+    for value in covered:
+        if value not in drafted:
+            return SessionType(value)
+    return None
+
+
 async def close_submissions_on(
     db: aiosqlite.Connection, round_ids: Iterable[int]
 ) -> list[tuple[int, int]]:

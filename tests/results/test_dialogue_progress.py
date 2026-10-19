@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 
@@ -30,10 +28,6 @@ ROUND_ID = 21
 AMEND_ID = 31
 SUBMISSION_CHANNEL = 702
 AMEND_CHANNEL = 705
-
-NO_DIALOGUE_PROGRESS = (
-    "#439: the results dialogues do not yet read the session they expect from the database"
-)
 
 
 async def _round(tmp_path, *, done: tuple[tuple[str, str], ...] = ()) -> str:
@@ -106,7 +100,6 @@ async def _amend_draft(db_path: str, session_type: str, *,
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DIALOGUE_PROGRESS)
 async def test_the_expected_session_of_a_first_submission_is_the_first_without_results(tmp_path):
     """Round 3 is a sprint round. With nothing saved its first paste is Sprint Qualifying; with
     Sprint Qualifying saved and Sprint Race typed CANCELLED, it is Feature Qualifying; with all
@@ -135,7 +128,6 @@ async def test_the_expected_session_of_a_first_submission_is_the_first_without_r
         assert await expected_session_on(db, ROUND_ID) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DIALOGUE_PROGRESS)
 async def test_the_expected_session_of_a_resubmission_is_the_first_without_a_draft(tmp_path):
     """Round 3's four sessions are all saved, and a resubmission of it has a draft for Sprint
     Qualifying alone: the resubmission expects Sprint Race, the round's saved results counting
@@ -163,7 +155,6 @@ async def test_the_expected_session_of_a_resubmission_is_the_first_without_a_dra
         assert await expected_resubmitted_session_on(db, ROUND_ID) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DIALOGUE_PROGRESS)
 async def test_the_expected_session_of_an_amendment_follows_its_session_types(tmp_path):
     """Round 3's four sessions are saved. An amendment re-enters its Sprint Race and Feature Race
     only: it expects Sprint Race first, then, with Sprint Race drafted, Feature Race — never a
@@ -189,7 +180,6 @@ async def test_the_expected_session_of_an_amendment_follows_its_session_types(tm
         assert await expected_amended_session_on(db, AMEND_ID) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DIALOGUE_PROGRESS)
 async def test_a_session_awaiting_its_configuration_is_expected_again(tmp_path):
     """A resubmission's Sprint Qualifying and an amendment's Sprint Race were each pasted, but
     their points configuration is still to be chosen (the draft's configuration unset). Each

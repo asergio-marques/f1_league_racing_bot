@@ -664,8 +664,41 @@ CREATE TABLE "round_amend_channels" (
     -- The stage's approval is a change on the queue, which keeps nothing in memory, so the row
     -- is what says the report stage is done and the pardons close with it.
     reports_approved_at TEXT,
+    -- prompt_posted_at: when the amendment's first prompt was shown in its channel (#439). The
+    -- amendment's five minutes run from it, not from when the paste was asked for, so a prompt
+    -- that waited behind other work on the queue does not use up the manager's time. NULL until
+    -- the prompt is up.
+    prompt_posted_at TEXT,
     -- One amendment of a round at a time; the command allows one per division besides.
     UNIQUE (round_id)
+);
+
+-- resubmission_drafts
+-- A resubmission's pastes, held until the last swaps the round's results (#439). Each paste is a
+-- turn on the change queue, which keeps nothing in memory, so the session the resubmission
+-- expects next is read from here: the first with no draft. status is ACTIVE, or CANCELLED where
+-- the paste said the session was cancelled. config_name is NULL while the points configuration
+-- is still to be chosen, and the session is then expected again.
+CREATE TABLE resubmission_drafts (
+    round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    session_type TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'ACTIVE',
+    rows_json    TEXT    NOT NULL,
+    config_name  TEXT,
+    submitted_by INTEGER,
+    PRIMARY KEY (round_id, session_type)
+);
+
+-- amend_drafts
+-- An amendment's pastes, held as a resubmission's are (#439), keyed by the amendment. The
+-- amendment expects the first of its own session_types with no draft; config_name is NULL while
+-- the points configuration is still to be chosen.
+CREATE TABLE amend_drafts (
+    amend_id     INTEGER NOT NULL REFERENCES round_amend_channels(id) ON DELETE CASCADE,
+    session_type TEXT    NOT NULL,
+    rows_json    TEXT    NOT NULL,
+    config_name  TEXT,
+    PRIMARY KEY (amend_id, session_type)
 );
 
 -- signup_module_settings
