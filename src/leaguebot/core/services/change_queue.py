@@ -437,9 +437,10 @@ class ChangeType:
     driver's press or a maintainer's paste of many), says from the payload which steps to open
     with, in place of *opening*; `opening_steps` is the one place either is read.
 
-    *finished_lines*, on a change no member waits on (a bot's), says from what became of it the
-    lines the log channel carries once it is done: what a league admin discarded and so left
-    undone, named for doing by hand. They are written in the save that marks the change done.
+    *finished_lines* says from what became of a change the lines the log channel carries once it
+    is done: what a league admin discarded and so left undone, named for doing by hand, on a change
+    no member waits on (a bot's); or the line of a job whose own was discarded with it. They are
+    written in the save that marks the change done.
     """
 
     kind: str

@@ -15,7 +15,11 @@ a reserve who has accepted.
 - `redraw` (an edit) draws the call again from every answer, with a fresh `RsvpView`, and writes the
   answer's success line, naming a call it could not redraw because it is gone. A burst of answers
   to one call makes one redraw: one whose turn comes with a later answer to the same call in hand
-  leaves the drawing to that one. A redraw Discord refuses stops the queue with the answer saved.
+  leaves the drawing to that one, and that one draws the call whatever became of its own answer
+  (an unchanged one, a refused one), since it was left the drawing and what it saved may be
+  nothing; it writes a success line only for an answer it recorded. A redraw Discord refuses stops
+  the queue with the answer saved; one a league admin discards leaves the answer's success line to
+  the change's close, naming the call as not redrawn.
 
 `/attendance test rsvp`'s form asks the same kind with every entry of a maintainer's paste
 (`ask_check_in_answers`): its `save_answers` job writes each entry through `upsert_rsvp_status_on`
@@ -26,6 +30,7 @@ drivers it cannot find) and passes those over; the save passes over an entry it 
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -239,6 +244,44 @@ def _success_line(ctx: OutcomeContext, *, not_redrawn: bool) -> str:
     return line + "\n  call not redrawn" if not_redrawn else line
 
 
+def _owes_a_line(ctx: OutcomeContext) -> bool:
+    """Whether the change recorded something, which its success line (written with the redraw)
+    tells: an answer saved as new, or a paste with an entry applied. An answer that changed nothing
+    or was refused wrote its own line at the save."""
+    saved = _saved(ctx) or {}
+    return saved.get("outcome") == RsvpOutcome.RECORDED.name or bool(saved.get("applied"))
+
+
+def _redraw_discarded(ctx: OutcomeContext) -> bool:
+    """Whether a league admin discarded the change's redraw."""
+    return any(
+        step.name == REDRAW and "discarded" in (step.result or {}) for step in ctx.steps
+    )
+
+
+async def _left_the_drawing(ctx: StepContext) -> bool:
+    """Whether the nearest earlier answer to this change's call left the drawing to a later one.
+
+    A redraw with a later answer to the same call in hand draws nothing and says so in its result
+    (`later`); the later answer is then owed the drawing. It is read from the earlier change's
+    redraw as it was saved, since the queue is durable and the earlier change is done by now.
+    """
+    round_id, division_id = int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
+    async with get_connection(ctx.db_path) as db:
+        cursor = await db.execute(
+            "SELECT c.payload, s.result FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id "
+            "WHERE c.kind = ? AND c.id < ? AND s.name = ? AND s.done_at IS NOT NULL "
+            "ORDER BY c.id DESC",
+            (CHECK_IN_ANSWER, ctx.change_id, REDRAW),
+        )
+        async for row in cursor:
+            earlier = json.loads(row["payload"])
+            if earlier["round_id"] == round_id and earlier["division_id"] == division_id:
+                return bool(json.loads(row["result"] or "{}").get("later"))
+    return False
+
+
 def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
     """The jobs of a check-in answer, *service* being attendance's."""
 
@@ -319,10 +362,22 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
         saved = _saved(ctx)
         if saved is None:
             return False
-        return saved.get("outcome") == RsvpOutcome.RECORDED.name or bool(saved.get("applied"))
+        if _owes_a_line(ctx):
+            return True
+        # An earlier answer to this call left the drawing to this one, whatever this one saved:
+        # drawn here, the call shows every answer of the burst.
+        return await _left_the_drawing(ctx)
 
     async def redraw(ctx: StepContext) -> StepResult:
         round_id, division_id = int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
+        # Only a change that recorded something writes a success line; one drawing the call for
+        # an earlier answer it was left (an unchanged answer, a refused one) wrote its own at the
+        # save.
+        owes = _owes_a_line(ctx)
+
+        def line(*, not_redrawn: bool) -> tuple[str, ...]:
+            return (_success_line(ctx, not_redrawn=not_redrawn),) if owes else ()
+
         async with get_connection(ctx.db_path) as db:
             cursor = await db.execute(
                 "SELECT message_id, channel_id FROM rsvp_embed_messages "
@@ -330,18 +385,14 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
                 (round_id, division_id),
             )
             standing = await cursor.fetchone()
-        gone = StepResult(
-            result={"gone": True}, lines=(_success_line(ctx, not_redrawn=True),)
-        )
+        gone = StepResult(result={"gone": True}, lines=line(not_redrawn=True))
         if standing is None:
             return gone
         # A later answer to this call in hand draws it again from every answer, this one's
         # included, so a burst of presses makes one redraw.
         for payload, _job in await in_hand(ctx.db_path, [CHECK_IN_ANSWER], excluding=ctx.change_id):
             if payload["round_id"] == round_id and payload["division_id"] == division_id:
-                return StepResult(
-                    result={"later": True}, lines=(_success_line(ctx, not_redrawn=False),)
-                )
+                return StepResult(result={"later": True}, lines=line(not_redrawn=False))
         channel = as_text_channel(ctx.bot.get_channel(int(standing["channel_id"])))
         if channel is None:
             return gone
@@ -352,14 +403,14 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
                 message, embed=embed, view=rsvp_service.RsvpView(round_id=round_id)
             )
         except discord.NotFound:
-            raise
+            if owes:
+                raise
+            return gone
         except (discord.HTTPException, aiohttp.ClientError, OSError) as exc:
             raise StepFailedOnDiscord(
                 f"the check-in call could not be redrawn: {str(exc) or type(exc).__name__}"
             ) from exc
-        return StepResult(
-            result={"redrawn": True}, lines=(_success_line(ctx, not_redrawn=False),)
-        )
+        return StepResult(result={"redrawn": True}, lines=line(not_redrawn=False))
 
     async def describe_redraw(ctx: StepContext) -> str:
         if _is_bulk(ctx.payload):
@@ -391,12 +442,15 @@ def _bulk_outcome(ctx: OutcomeContext, saved: dict[str, Any]) -> str:
         )
         redrawn = any(
             step.name == REDRAW and step.result and step.result.get("gone") is None
+            and "discarded" not in step.result
             for step in ctx.steps
         )
-        lines.append(
-            "🔄 The check-in call is redrawn on the change queue." if redrawn
-            else "ℹ️ The check-in call could not be redrawn: it is no longer there."
-        )
+        if redrawn:
+            lines.append("🔄 The check-in call is redrawn on the change queue.")
+        elif _redraw_discarded(ctx):
+            lines.append("ℹ️ The check-in call could not be redrawn: its redraw was discarded.")
+        else:
+            lines.append("ℹ️ The check-in call could not be redrawn: it is no longer there.")
     if errors:
         lines.append("⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors))
     return "\n".join(lines)
@@ -431,6 +485,13 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
         )
         return Verdict.go() if locked is None else Verdict.refuse(LOCK_REPLIES[locked])
 
+    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        # A redraw a league admin discarded wrote no success line, and the answer it tells is
+        # saved: the line is written as the change closes, naming the call as not redrawn.
+        if _redraw_discarded(ctx) and _owes_a_line(ctx):
+            return (_success_line(ctx, not_redrawn=True),)
+        return ()
+
     def outcome(ctx: OutcomeContext) -> str:
         saved = _saved(ctx)
         if saved is None:
@@ -464,6 +525,7 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
         doing=_doing,
         outcome=outcome,
         repeatable=True,
+        finished_lines=finished_lines,
     )
 
 
