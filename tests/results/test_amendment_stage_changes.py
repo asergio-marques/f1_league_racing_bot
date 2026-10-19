@@ -327,18 +327,21 @@ async def test_a_discarded_report_stage_apply_leaves_its_prompt_to_approve_again
 
 
 async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_path):
+    """The amendment's appeals prompt is the amendment's lane's, so Alex's reply to the approval
+    cannot hear of its discard: the log channel carries the warning instead."""
     league = await _amend_league(tmp_path)
     league.channel(AMEND_CHANNEL).fail_when = is_appeals_prompt
-    interaction = await _approve_reports(league)
+    await _approve_reports(league)
     await run_queue(league.bot)
     assert await stopped_at(league) == "post_appeals_prompt"
 
     await discard_job(league.bot)
 
-    reply = updated_reply(interaction)
-    assert "⚠️" in reply
-    assert "appeals" in reply.lower()
-    assert "/results rounds amend" in reply
+    log = league.log()
+    assert "AMEND_STAGE_2 | Incomplete" in log
+    assert "⚠️" in log
+    assert "appeals" in log.lower()
+    assert "/results rounds amend" in log
     assert _amend_appeals_prompts(league) == []
 
 
