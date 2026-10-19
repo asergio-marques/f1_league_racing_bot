@@ -1140,9 +1140,13 @@ async def post_attendance_sheet(
 
     if row is None or not row["attendance_channel_id"]:
         log.warning("post_attendance_sheet: no attendance_channel_id configured for division %s", division_id)
+        async with get_connection(db_path) as db:
+            named = await (
+                await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+            ).fetchone()
         raise StepFailedOnDiscord(
-            f"division {division_id} has no attendance channel: set one with "
-            "/attendance channel attendance, then press Retry"
+            f"**{named['name'] if named else 'the division'}** has no attendance channel set: "
+            "set one with `/attendance channel attendance`, then press Retry."
         )
 
     # A round recorded as cancelled distributes no attendance points and produces no sheet,
