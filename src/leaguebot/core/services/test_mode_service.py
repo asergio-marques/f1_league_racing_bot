@@ -183,6 +183,14 @@ def _weather_entry(row: Any, phase: int) -> PhaseEntry:
     )
 
 
+def _deadline_has_run(rsvp: Any) -> bool:
+    """Whether a round's RSVP deadline has run: it is marked (`deadline_run_at`, set in the save
+    that records the distribution, before the announcement is posted) or its announcement stands.
+    The mark is what the deadline's own job reads, so a deadline whose announcement was refused
+    is not run again by advance; the announcement alone covers a row written before the mark."""
+    return bool(rsvp["deadline_run_at"] or rsvp["distribution_msg_id"])
+
+
 def _race_run(scheduled_at: str, now: datetime) -> bool:
     """Whether a round scheduled at *scheduled_at* (naive means UTC) has been raced by *now*."""
     moment = datetime.fromisoformat(scheduled_at)
@@ -342,7 +350,8 @@ async def get_next_pending_phase(
         if attendance_module_enabled:
             rsvp_cursor = await db.execute(
                 """
-                SELECT rem.round_id, rem.last_notice_msg_id, rem.distribution_msg_id
+                SELECT rem.round_id, rem.last_notice_msg_id, rem.distribution_msg_id,
+                       rem.deadline_run_at
                 FROM rsvp_embed_messages rem
                 JOIN rounds r ON r.id = rem.round_id
                 JOIN divisions d ON d.id = r.division_id
@@ -469,7 +478,7 @@ async def get_next_pending_phase(
         # ── Phase 7: RSVP deadline ────────────────────────────────────────
         if attendance_module_enabled:
             rsvp = rsvp_state.get(rid)
-            if rsvp is not None and not rsvp["distribution_msg_id"]:
+            if rsvp is not None and not _deadline_has_run(rsvp):
                 return _make(7)
 
         # ── Phase 4: result submission ────────────────────────────────────
@@ -774,7 +783,8 @@ async def build_review_summary(
         rsvp_cursor = await db.execute(
             """
             SELECT rem.round_id, rem.division_id,
-                   rem.message_id, rem.last_notice_msg_id, rem.distribution_msg_id
+                   rem.message_id, rem.last_notice_msg_id, rem.distribution_msg_id,
+                   rem.deadline_run_at
             FROM rsvp_embed_messages rem
             JOIN rounds r ON r.id = rem.round_id
             JOIN divisions d ON d.id = r.division_id
@@ -874,7 +884,7 @@ async def build_review_summary(
                          else _phase_status(False, (rid, "rsvp_notice"), queued)),
                         ("Last", "✅" if (rsvp and rsvp["last_notice_msg_id"])
                          else _phase_status(False, (rid, "rsvp_last_notice"), queued)),
-                        ("Deadline", "✅" if (rsvp and rsvp["distribution_msg_id"])
+                        ("Deadline", "✅" if (rsvp and _deadline_has_run(rsvp))
                          else _phase_status(False, (rid, "rsvp_deadline"), queued)),
                         ("Cleared", _phase_status(False, (rid, "rsvp_cleanup"), queued)),
                     ]

@@ -520,7 +520,7 @@ def round_amend_change(
                 "SELECT d.tier, s.season_number, r.checkin_cleared, EXISTS ("
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id) AS called, EXISTS ("
                 "SELECT 1 FROM rsvp_embed_messages m WHERE m.round_id = r.id "
-                "AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
+                "AND m.deadline_run_at IS NULL AND m.distribution_msg_id IS NULL) AS undistributed, EXISTS ("
                 "SELECT 1 FROM forecast_messages f WHERE f.round_id = r.id "
                 "AND f.phase_number IN (1, 2, 3)) AS forecast_posted, ("
                 "SELECT group_concat(f.phase_number) FROM forecast_messages f "
