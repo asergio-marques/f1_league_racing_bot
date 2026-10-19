@@ -644,11 +644,6 @@ async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(t
 # at the deadline. Each test moves round 1 to an hour off, so its two-hour check-in deadline
 # passed an hour ago, asks the queue for the deadline as its timer does, and runs it.
 
-NO_DEADLINE_CHANGE = (
-    "#439: the check-in deadline is run by `run_rsvp_deadline` at once, off the change queue, "
-    "its announcement skipped or logged rather than stopping the queue"
-)
-
 #: A second reserve, accepting after the deadline.
 LATE_PROFILE = 204
 
@@ -729,7 +724,6 @@ async def _distribution_recorded(db_path: str) -> Any:
         return (await cursor.fetchone())["distribution_msg_id"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_no_reserve_notice_is_posted_and_recorded(tmp_path):
     """Recording the message id is what lets the round's cleanup take it down."""
     db_path = await _make_db(tmp_path)
@@ -746,7 +740,6 @@ async def test_the_no_reserve_notice_is_posted_and_recorded(tmp_path):
     assert await _distribution_recorded(db_path) == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_with_no_check_in_channel_configured_stops_the_queue_naming_the_command(
     tmp_path,
 ):
@@ -764,7 +757,6 @@ async def test_a_deadline_with_no_check_in_channel_configured_stops_the_queue_na
     assert "/attendance channel rsvp" in _logged(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_whose_check_in_channel_the_bot_cannot_see_stops_the_queue(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
@@ -778,7 +770,6 @@ async def test_a_deadline_whose_check_in_channel_the_bot_cannot_see_stops_the_qu
     assert await _distribution_recorded(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_refused_no_reserve_notice_stops_the_queue_recording_nothing(tmp_path):
     """A message id pointing at nothing would have the round's cleanup delete something else,
     or nothing: Discord refusing the notice stops the queue with nothing recorded."""
@@ -795,7 +786,6 @@ async def test_a_refused_no_reserve_notice_stops_the_queue_recording_nothing(tmp
     assert await _distribution_recorded(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_full_time_driver_s_acceptance_is_not_a_distribution(tmp_path):
     """Only reserves are distributed. Were every driver who said yes announced, they would
     read as though they had been placed: the deadline posts the no-reserve notice, naming
@@ -813,7 +803,6 @@ async def test_a_full_time_driver_s_acceptance_is_not_a_distribution(tmp_path):
     assert "Full Timer" not in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_placed_reserve_is_announced_with_their_team(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
@@ -830,7 +819,6 @@ async def test_a_placed_reserve_is_announced_with_their_team(tmp_path):
     assert "Stand In" in body
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_standby_reserve_is_announced_as_standby(tmp_path):
     """A reserve beyond the available vacancies. Announcing them as placed would send a
     driver to a race they have no seat in."""
@@ -850,7 +838,6 @@ async def test_a_standby_reserve_is_announced_as_standby(tmp_path):
     assert "Standby" in body
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_reserve_who_accepted_after_the_deadline_is_announced_as_unassigned(tmp_path):
     """The reserves are placed on the answers as they stood at the deadline (Q7): a reserve
     who accepted after it is neither seated nor on standby, and the announcement says so."""
@@ -870,7 +857,6 @@ async def test_a_reserve_who_accepted_after_the_deadline_is_announced_as_unassig
     assert "no assignment" in late
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_refused_announcement_stops_the_queue_recording_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)

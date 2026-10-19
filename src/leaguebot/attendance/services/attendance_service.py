@@ -658,12 +658,24 @@ class AttendanceService:
     ) -> None:
         """Store the Discord message ID of the reserve distribution announcement."""
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE rsvp_embed_messages SET distribution_msg_id = ?, distribution_channel_id = ?"
-                " WHERE round_id = ? AND division_id = ?",
-                (msg_id, channel_id, round_id, division_id),
-            )
+            await self.update_embed_distribution_msg_on(db, round_id, division_id, msg_id, channel_id)
             await db.commit()
+
+    @staticmethod
+    async def update_embed_distribution_msg_on(
+        db: aiosqlite.Connection,
+        round_id: int,
+        division_id: int,
+        msg_id: str,
+        channel_id: str | None = None,
+    ) -> None:
+        """`update_embed_distribution_msg` on *db*, committing nothing: the announcement's record
+        is saved with the mark of the job that posted it."""
+        await db.execute(
+            "UPDATE rsvp_embed_messages SET distribution_msg_id = ?, distribution_channel_id = ?"
+            " WHERE round_id = ? AND division_id = ?",
+            (msg_id, channel_id, round_id, division_id),
+        )
 
 
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────

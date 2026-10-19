@@ -454,11 +454,6 @@ CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_3 = round_id(PRO, 3)
 CALL, LAST_NOTICE, ANNOUNCEMENT = CALL_MESSAGES
 
-NO_OWN_CHANNEL = (
-    "#439: a check-in message is not yet recorded with the channel it was posted in, nor "
-    "posted and taken down by the check-in's own jobs on the change queue"
-)
-
 
 async def _moved_league(tmp_path) -> object:
     """The league above, with Pro's check-in channel moved to `MOVED`, and the queue rebuilt
@@ -547,7 +542,6 @@ async def test_a_reserve_announcement_is_deleted_from_the_channel_it_was_posted_
     assert await _call_row(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OWN_CHANNEL)
 async def test_each_check_in_message_s_channel_is_saved_with_it(tmp_path):
     """Round 3 is three hours off, its call standing in 603 with no last notice or announcement
     yet. The last notice, late but before the two-hour deadline, and then the deadline's

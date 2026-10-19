@@ -337,7 +337,6 @@ async def test_the_reminder_is_posted_while_attendance_is_enabled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_deadline_distributes_nobody_while_attendance_is_disabled(tmp_path):
     """Attendance is off, the call stands with the reserve's acceptance, and the deadline has
     passed: the deadline asked of the queue is dropped, no reserve placed and nothing posted,
@@ -567,7 +566,6 @@ async def test_no_reminder_is_posted_for_a_cancelled_round(tmp_path):
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHECK_IN_CHANGE)
 async def test_the_deadline_distributes_nobody_for_a_cancelled_round(tmp_path):
     """The round is cancelled after its call: the deadline asked of the queue is dropped, no
     reserve placed and nothing posted."""

@@ -1463,95 +1463,97 @@ async def _close_check_in_without_a_call(round_id: int, bot: LeagueBot) -> bool:
     return True
 
 
-async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:
-    """Compute and write reserve-to-team distribution for *round_id* in *division_id*.
+def _answered_by(answered_at: object, moment: datetime) -> bool:
+    """Whether an answer given at *answered_at* (as stored) was given by *moment*. An answer with
+    no time recorded counts: nothing says it came late."""
+    if answered_at is None:
+        return True
+    given = datetime.fromisoformat(str(answered_at))
+    if given.tzinfo is None:
+        given = given.replace(tzinfo=timezone.utc)
+    return given <= moment
 
-    Algorithm (FR-018 – FR-024):
-    1. Collect accepted reserves ordered by accepted_at ASC.
-    2. Rank non-Reserve candidate teams by priority tier (FR-020), then tie-break (FR-021).
-    3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
 
-    Produces nothing while the attendance module is disabled — see the module gate above.
-    Its only caller today is ``run_rsvp_deadline``, which is gated as well; the gate is
-    repeated here so a later caller cannot reach the seat writes around it.
+async def reserve_distribution_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    *,
+    answered_by: datetime | None = None,
+) -> tuple[list[tuple[int, int]], list[int]]:
+    """Work out the reserve placements of *round_id* in *division_id*: the (answer, team) pairs
+    placed and the answers put on standby. Reads on *db*, writes nothing.
 
-    **Each run is the whole answer** (#429). A round's distribution can run more than once —
-    again after an amendment posts its call again, and again at a restart where its
-    announcement never posted — and the answers, the roster or both may have moved in between.
-    `_write_distribution` clears every placement of the round in the division before it writes
-    the new ones, the run finding no reserve accepted included, so a reserve the last run
-    seated and this one does not holds no team. Every reader takes a team to mean the reserve
-    was sent to race, and scoring would charge one left on standby as a no-show.
+    With *answered_by*, only an answer given by that moment is placed (a check-in's deadline
+    places the reserves on the answers as they stood at the deadline: an answer saved after it,
+    its turn on the change queue having waited, is left out). The attendance module's gate is the
+    caller's, as it is for the whole of a deadline. See `run_reserve_distribution` for the
+    algorithm.
     """
-    if not await _attendance_enabled_for_division(division_id, bot):
-        log.info(
-            "run_reserve_distribution: attendance module disabled for division %d — "
-            "no reserves distributed for round %d",
-            division_id, round_id,
-        )
-        return False
+    # Accepted reserves ordered by accepted_at ASC (FR-022 / FR-019)
+    cur = await db.execute(
+        """
+        SELECT dra.id         AS dra_id,
+               dra.driver_profile_id,
+               dra.accepted_at
+          FROM driver_round_attendance dra
+          JOIN team_seats ts ON ts.driver_profile_id = dra.driver_profile_id
+          JOIN team_instances ti ON ti.id = ts.team_instance_id
+                                AND ti.division_id = dra.division_id
+         WHERE dra.round_id = ?
+           AND dra.division_id = ?
+           AND dra.rsvp_status = 'ACCEPTED'
+           AND ti.is_reserve = 1
+         ORDER BY dra.accepted_at ASC
+        """,
+        (round_id, division_id),
+    )
+    accepted_reserves = await cur.fetchall()
 
-    async with get_connection(bot.db_path) as db:
-        # Accepted reserves ordered by accepted_at ASC (FR-022 / FR-019)
-        cur = await db.execute(
-            """
-            SELECT dra.id         AS dra_id,
-                   dra.driver_profile_id,
-                   dra.accepted_at
-              FROM driver_round_attendance dra
-              JOIN team_seats ts ON ts.driver_profile_id = dra.driver_profile_id
-              JOIN team_instances ti ON ti.id = ts.team_instance_id
-                                    AND ti.division_id = dra.division_id
-             WHERE dra.round_id = ?
-               AND dra.division_id = ?
-               AND dra.rsvp_status = 'ACCEPTED'
-               AND ti.is_reserve = 1
-             ORDER BY dra.accepted_at ASC
-            """,
-            (round_id, division_id),
-        )
-        accepted_reserves = await cur.fetchall()
+    if answered_by is not None:
+        accepted_reserves = [
+            each for each in accepted_reserves if _answered_by(each["accepted_at"], answered_by)
+        ]
 
     if not accepted_reserves:
         log.info("run_reserve_distribution: no accepted reserves for round %d / division %d", round_id, division_id)
-        # Still written: an earlier run of this round may have seated a reserve since withdrawn.
-        await _write_distribution(bot.db_path, round_id, division_id, [], [])
-        return False
+        # Still written by the caller: an earlier run of this round may have seated a reserve
+        # since withdrawn.
+        return [], []
 
-    async with get_connection(bot.db_path) as db:
-        # Candidate teams: non-Reserve teams in division (FR-020).
-        # Tiering and tie-breaks are applied below in _static_tier / _current_sort_key.
-        # LEFT JOINs so teams with zero FT drivers still appear.
-        cur = await db.execute(
-            """
-            SELECT ti.id                AS team_id,
-                   ti.full_name         AS team_name,
-                   ti.max_seats,
-                   COUNT(CASE WHEN dra.rsvp_status = 'NO_RSVP'   THEN 1 END) AS no_rsvp_count,
-                   COUNT(CASE WHEN dra.rsvp_status = 'DECLINED'  THEN 1 END) AS declined_count,
-                   COUNT(CASE WHEN dra.rsvp_status = 'TENTATIVE' THEN 1 END) AS tentative_count,
-                   COUNT(CASE WHEN dra.rsvp_status = 'ACCEPTED'  THEN 1 END) AS accepted_count,
-                   COUNT(dra.id) AS total_drivers,
-                   MIN(tss.standing_position) AS standing_position
-              FROM team_instances ti
-         LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
-         LEFT JOIN driver_round_attendance dra
-                   ON dra.driver_profile_id = ts.driver_profile_id
-                  AND dra.round_id = ?
-                  AND dra.division_id = ?
-              LEFT JOIN team_standings_snapshots tss
-                   ON tss.team_instance_id = ti.id
-                  AND tss.round_id = (
-                      SELECT MAX(r2.id) FROM rounds r2
-                       WHERE r2.division_id = ? AND r2.id < ?
-                  )
-             WHERE ti.division_id = ?
-               AND ti.is_reserve = 0
-             GROUP BY ti.id, ti.full_name, ti.max_seats
-            """,
-            (round_id, division_id, division_id, round_id, division_id),
-        )
-        team_rows = await cur.fetchall()
+    # Candidate teams: non-Reserve teams in division (FR-020).
+    # Tiering and tie-breaks are applied below in _static_tier / _current_sort_key.
+    # LEFT JOINs so teams with zero FT drivers still appear.
+    cur = await db.execute(
+        """
+        SELECT ti.id                AS team_id,
+               ti.full_name         AS team_name,
+               ti.max_seats,
+               COUNT(CASE WHEN dra.rsvp_status = 'NO_RSVP'   THEN 1 END) AS no_rsvp_count,
+               COUNT(CASE WHEN dra.rsvp_status = 'DECLINED'  THEN 1 END) AS declined_count,
+               COUNT(CASE WHEN dra.rsvp_status = 'TENTATIVE' THEN 1 END) AS tentative_count,
+               COUNT(CASE WHEN dra.rsvp_status = 'ACCEPTED'  THEN 1 END) AS accepted_count,
+               COUNT(dra.id) AS total_drivers,
+               MIN(tss.standing_position) AS standing_position
+          FROM team_instances ti
+     LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
+     LEFT JOIN driver_round_attendance dra
+               ON dra.driver_profile_id = ts.driver_profile_id
+              AND dra.round_id = ?
+              AND dra.division_id = ?
+          LEFT JOIN team_standings_snapshots tss
+               ON tss.team_instance_id = ti.id
+              AND tss.round_id = (
+                  SELECT MAX(r2.id) FROM rounds r2
+                   WHERE r2.division_id = ? AND r2.id < ?
+              )
+         WHERE ti.division_id = ?
+           AND ti.is_reserve = 0
+         GROUP BY ti.id, ti.full_name, ti.max_seats
+        """,
+        (round_id, division_id, division_id, round_id, division_id),
+    )
+    team_rows = await cur.fetchall()
 
     def _static_tier(t) -> int:
         """Tier based solely on RSVP/seat state, used for eligibility filtering."""
@@ -1622,6 +1624,40 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
         team_vacancy[team_id] -= 1
         reserves_assigned[team_id] += 1
 
+
+    return assignments, standby_ids
+
+
+async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:
+    """Compute and write reserve-to-team distribution for *round_id* in *division_id*.
+
+    Algorithm (FR-018 – FR-024):
+    1. Collect accepted reserves ordered by accepted_at ASC.
+    2. Rank non-Reserve candidate teams by priority tier (FR-020), then tie-break (FR-021).
+    3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
+
+    Produces nothing while the attendance module is disabled — see the module gate above.
+    Its only caller today is ``run_rsvp_deadline``, which is gated as well; the gate is
+    repeated here so a later caller cannot reach the seat writes around it.
+
+    **Each run is the whole answer** (#429). A round's distribution can run more than once —
+    again after an amendment posts its call again, and again at a restart where its
+    announcement never posted — and the answers, the roster or both may have moved in between.
+    `_write_distribution` clears every placement of the round in the division before it writes
+    the new ones, the run finding no reserve accepted included, so a reserve the last run
+    seated and this one does not holds no team. Every reader takes a team to mean the reserve
+    was sent to race, and scoring would charge one left on standby as a no-show.
+    """
+    if not await _attendance_enabled_for_division(division_id, bot):
+        log.info(
+            "run_reserve_distribution: attendance module disabled for division %d — "
+            "no reserves distributed for round %d",
+            division_id, round_id,
+        )
+        return False
+
+    async with get_connection(bot.db_path) as db:
+        assignments, standby_ids = await reserve_distribution_on(db, round_id, division_id)
     await _write_distribution(bot.db_path, round_id, division_id, assignments, standby_ids)
 
     log.info(
@@ -1631,6 +1667,45 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
     return bool(assignments or standby_ids)
 
 
+async def write_distribution_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    assignments: list[tuple[int, int]],
+    standby_ids: list[int],
+    *,
+    at: datetime | None = None,
+) -> None:
+    """Replace the round's placements in *division_id* with *assignments* and *standby_ids* on
+    *db*, committing nothing.
+
+    Every placement of the round in the division is cleared, then the new ones written, so no
+    reader ever sees a reserve holding both a team and a standby place, or a team from a run that
+    no longer stands. The call is marked as run (`deadline_run_at`, at *at*, else now) in the same
+    write. See `run_reserve_distribution`.
+    """
+    await db.execute(
+        "UPDATE driver_round_attendance SET assigned_team_id = NULL, is_standby = 0 "
+        "WHERE round_id = ? AND division_id = ?",
+        (round_id, division_id),
+    )
+    await db.execute(
+        "UPDATE rsvp_embed_messages SET deadline_run_at = ? "
+        "WHERE round_id = ? AND division_id = ?",
+        ((at or datetime.now(timezone.utc)).isoformat(), round_id, division_id),
+    )
+    for dra_id, team_id in assignments:
+        await db.execute(
+            "UPDATE driver_round_attendance SET assigned_team_id = ?, is_standby = 0 WHERE id = ?",
+            (team_id, dra_id),
+        )
+    for dra_id in standby_ids:
+        await db.execute(
+            "UPDATE driver_round_attendance SET is_standby = 1 WHERE id = ?",
+            (dra_id,),
+        )
+
+
 async def _write_distribution(
     db_path: str,
     round_id: int,
@@ -1638,34 +1713,9 @@ async def _write_distribution(
     assignments: list[tuple[int, int]],
     standby_ids: list[int],
 ) -> None:
-    """Replace the round's placements in *division_id* with *assignments* and *standby_ids*.
-
-    One transaction: every placement of the round in the division is cleared, then the new
-    ones written, so no reader ever sees a reserve holding both a team and a standby place, or
-    a team from a run that no longer stands. The call is marked as run (`deadline_run_at`) in the
-    same transaction. See `run_reserve_distribution`.
-    """
+    """`write_distribution_on` in one transaction of its own."""
     async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE driver_round_attendance SET assigned_team_id = NULL, is_standby = 0 "
-            "WHERE round_id = ? AND division_id = ?",
-            (round_id, division_id),
-        )
-        await db.execute(
-            "UPDATE rsvp_embed_messages SET deadline_run_at = ? "
-            "WHERE round_id = ? AND division_id = ?",
-            (datetime.now(timezone.utc).isoformat(), round_id, division_id),
-        )
-        for dra_id, team_id in assignments:
-            await db.execute(
-                "UPDATE driver_round_attendance SET assigned_team_id = ?, is_standby = 0 WHERE id = ?",
-                (team_id, dra_id),
-            )
-        for dra_id in standby_ids:
-            await db.execute(
-                "UPDATE driver_round_attendance SET is_standby = 1 WHERE id = ?",
-                (dra_id,),
-            )
+        await write_distribution_on(db, round_id, division_id, assignments, standby_ids)
         await db.commit()
 
 
@@ -1748,9 +1798,7 @@ async def _post_no_reserve_notice(round_id: int, division_id: int, bot: LeagueBo
         return
 
     try:
-        dist_msg = await channel.send(
-            "✅ **Reserve Distribution** — No reserves were placed; all seats are filled."
-        )
+        dist_msg = await channel.send(NO_RESERVE_NOTICE)
     except discord.HTTPException as exc:
         log.error("_post_no_reserve_notice: failed for division %d: %s", division_id, exc)
         return
@@ -1763,9 +1811,17 @@ async def _post_no_reserve_notice(round_id: int, division_id: int, bot: LeagueBo
     )
 
 
-async def _post_distribution_announcement(round_id: int, division_id: int, bot: LeagueBot) -> None:
-    """Post the reserve distribution assignment announcement (FR-025 / FR-026)."""
-    async with get_connection(bot.db_path) as db:
+NO_RESERVE_NOTICE = "✅ **Reserve Distribution** — No reserves were placed; all seats are filled."
+
+
+async def distribution_announcement(
+    db_path: str, round_id: int, division_id: int
+) -> tuple[str, list[int]] | None:
+    """The reserve distribution announcement of *round_id* (FR-025 / FR-026) and the Discord ids
+    of the drivers it names, or None where no reserve accepted (no announcement then).
+
+    Composed from the placements as they stand when it is posted."""
+    async with get_connection(db_path) as db:
         cur = await db.execute(
             """
             SELECT dra.assigned_team_id,
@@ -1790,11 +1846,31 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot: 
 
     if not eligible_rows:
         log.info(
-            "_post_distribution_announcement: no eligible accepted reserves for "
-            "round %d / division %d — skipping announcement (FR-026)",
+            "distribution_announcement: no eligible accepted reserves for "
+            "round %d / division %d — no announcement (FR-026)",
             round_id, division_id,
         )
-        return  # FR-026: no announcement if no eligible reserves
+        return None  # FR-026: no announcement if no eligible reserves
+
+    lines = ["📋 **Reserve Distribution Results**"]
+    for row in eligible_rows:
+        driver_str = f"<@{row['discord_user_id']}> ({row['test_display_name']})" if row["test_display_name"] else f"<@{row['discord_user_id']}>"
+        if row["is_standby"]:
+            lines.append(f"  {driver_str} — **Standby** (no vacancy available)")
+        elif row["assigned_team_id"] is not None:
+            lines.append(f"  {driver_str} → **{row['team_name']}**")
+        else:
+            lines.append(f"  {driver_str} — no assignment")
+
+    return "\n".join(lines), [int(row["discord_user_id"]) for row in eligible_rows]
+
+
+async def _post_distribution_announcement(round_id: int, division_id: int, bot: LeagueBot) -> None:
+    """Post the reserve distribution assignment announcement (FR-025 / FR-026)."""
+    composed = await distribution_announcement(bot.db_path, round_id, division_id)
+    if composed is None:
+        return
+    text, _named = composed
 
     att_div_cfg = await bot.attendance_service.get_division_config(division_id)
     if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
@@ -1814,18 +1890,8 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot: 
         )
         return
 
-    lines = ["📋 **Reserve Distribution Results**"]
-    for row in eligible_rows:
-        driver_str = f"<@{row['discord_user_id']}> ({row['test_display_name']})" if row["test_display_name"] else f"<@{row['discord_user_id']}>"
-        if row["is_standby"]:
-            lines.append(f"  {driver_str} — **Standby** (no vacancy available)")
-        elif row["assigned_team_id"] is not None:
-            lines.append(f"  {driver_str} → **{row['team_name']}**")
-        else:
-            lines.append(f"  {driver_str} — no assignment")
-
     try:
-        dist_msg = await channel.send("\n".join(lines))
+        dist_msg = await channel.send(text)
     except discord.HTTPException as exc:
         log.error("_post_distribution_announcement: failed for division %d: %s", division_id, exc)
         return

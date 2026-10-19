@@ -340,6 +340,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.attendance.services.check_in_changes import (
         check_in_call_change,
         check_in_clean_up_change,
+        check_in_deadline_change,
         check_in_last_notice_change,
     )
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
@@ -421,6 +422,9 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         check_in_last_notice_change(bot.attendance_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        check_in_deadline_change(bot.attendance_service, now=lambda: bot.change_queue.now())
     )
     bot.change_queue.register(check_in_clean_up_change())
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
@@ -646,9 +650,9 @@ async def main() -> None:
         from leaguebot.attendance.services.check_in_changes import (
             ask_check_in_call,
             ask_check_in_clean_up,
+            ask_check_in_deadline,
             ask_check_in_last_notice,
         )
-        from leaguebot.attendance.services.rsvp_service import run_rsvp_deadline
         from leaguebot.core.models.change import ChangeOrigin
 
         async def _rsvp_notice_cb(round_id: int) -> None:
@@ -662,7 +666,9 @@ async def main() -> None:
             )
 
         async def _rsvp_deadline_cb(round_id: int) -> None:
-            await run_rsvp_deadline(round_id, bot)
+            await ask_check_in_deadline(
+                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+            )
 
         async def _rsvp_cleanup_cb(round_id: int) -> None:
             await ask_check_in_clean_up(
@@ -1095,7 +1101,7 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     button interactions survive bot restarts (FR-007).
 
     T019: For any call whose rsvp_deadline fire time has already passed and which carries no
-    mark of its deadline having run, run run_rsvp_deadline immediately (FR-027).
+    mark of its deadline having run, ask the change queue for the deadline (FR-027).
 
     **The call's own mark decides, never the drivers' placements** (#429). A deadline writes its
     distribution and marks the call (`deadline_run_at`) in one save, before it posts its
@@ -1114,8 +1120,14 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     would revive check-in for a league that had turned it off, and the missed-deadline
     catch-up would distribute its reserves into seats hours after the fact.
     """
-    from leaguebot.attendance.services.rsvp_service import RsvpView, run_rsvp_deadline
+    from leaguebot.attendance.services.check_in_changes import (
+        CHECK_IN_DEADLINE,
+        ask_check_in_deadline,
+    )
+    from leaguebot.attendance.services.rsvp_service import RsvpView
     from leaguebot.core.db.database import get_connection as _gc
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.change_queue import unfinished
     from datetime import datetime as _dt, timezone as _tz
 
     # Re-arm all embed views by message_id so persistent buttons survive restarts
@@ -1182,6 +1194,12 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
         log.exception("_recover_rsvp_views_and_deadlines: failed to fetch rounds for deadline check")
         return
 
+    try:
+        in_hand = {int(each["round_id"]) for each in await unfinished(bot.db_path, [CHECK_IN_DEADLINE])}
+    except Exception:
+        log.exception("_recover_rsvp_views_and_deadlines: failed to read the deadlines in hand")
+        return
+
     for rrow in round_rows:
         scheduled_at_raw = rrow["scheduled_at"]
         try:
@@ -1202,12 +1220,16 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
             # Deadline has passed and the call records no message from it, so it has not run.
             round_id = rrow["round_id"]
             division_id = rrow["division_id"]
+            if round_id in in_hand:
+                continue  # already on the queue: its jobs are in hand
             log.info(
-                "_recover_rsvp_views_and_deadlines: running missed deadline for round %d / division %d",
+                "_recover_rsvp_views_and_deadlines: asking for missed deadline of round %d / division %d",
                 round_id, division_id,
             )
             try:
-                await run_rsvp_deadline(round_id, bot)
+                await ask_check_in_deadline(
+                    bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
+                )
             except Exception:
                 log.exception(
                     "_recover_rsvp_views_and_deadlines: deadline run failed for round %d",

@@ -27,10 +27,6 @@ NO_DEADLINE_CHANGE = (
 # with its last notice 7002. The deadline is asked of the queue as its timer asks it, and the
 # queue run.
 
-NO_DEADLINE_MARK = (
-    "#439: the deadline has no mark of its own yet, and is not yet a change on the queue"
-)
-
 
 async def _league_past_its_deadline(tmp_path, *, marked: bool, announced: bool):
     from tests.support.change_queue import attach_queue
@@ -79,7 +75,6 @@ async def _call(league) -> dict:
     return row
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 async def test_a_deadline_whose_mark_is_set_does_nothing(tmp_path):
     """It has run, and its announcement stands. The call is not locked again and nothing is
     posted."""
@@ -93,7 +88,6 @@ async def test_a_deadline_whose_mark_is_set_does_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 async def test_a_deadline_marked_run_is_not_run_again_whatever_became_of_its_announcement(
     tmp_path,
 ):
@@ -110,7 +104,6 @@ async def test_a_deadline_marked_run_is_not_run_again_whatever_became_of_its_ann
     assert (await _call(league))["distribution_msg_id"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 async def test_a_deadline_whose_message_never_posted_is_run_again(tmp_path):
     """No mark and no message: the deadline has not run, so it locks the call, posts its
     announcement, and records both the message and the mark."""
@@ -173,7 +166,6 @@ def _sent(league) -> list[int]:
     return [mid for kind, mid in _check_in_events(league) if kind == "send"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_two_deadline_runs_at_once_post_one_announcement(tmp_path):
     """The scheduler's late run and the restart's catch-up both ask round 3's deadline before
     the queue reaches it: the queue holds one change for it, and one announcement is posted and
@@ -193,7 +185,6 @@ async def test_two_deadline_runs_at_once_post_one_announcement(tmp_path):
     assert (await _call(league))["distribution_msg_id"] == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_with_no_call_standing_posts_nothing(tmp_path):
     """A deadline closes the call standing, and with none there is nothing to close: it posts no
     announcement, which no call would record and nothing would take down a day after the round,
@@ -208,7 +199,6 @@ async def test_a_deadline_with_no_call_standing_posts_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says_so(tmp_path):
     """No call stands for round 3, its earlier call having been taken down, but the answers to it
     are kept. The deadline is asked and run, the bot running throughout: the answers are
@@ -224,7 +214,6 @@ async def test_a_deadline_with_no_call_standing_clears_the_answers_kept_and_says
     assert _sent(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_with_a_call_standing_keeps_its_answers(tmp_path):
     """With round 3's call standing, the deadline runs as it always has: the answers given to it
     are kept, its check-in is not marked over, and nothing says the round counts nothing."""
@@ -259,7 +248,6 @@ async def test_a_deadline_and_a_give_up_closing_one_check_in_report_it_once(tmp_
     assert league.log().count("nothing against anyone") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_call_waiting_to_post_when_the_deadline_closes_the_check_in_posts_nothing(
     tmp_path,
 ):

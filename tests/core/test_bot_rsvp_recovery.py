@@ -154,16 +154,6 @@ async def _make_db(
 
 DEADLINE = "attendance.check_in.deadline"
 
-NO_DEADLINE_MARK = (
-    "#439: the restart does not yet read the deadline's own mark, nor ask the queue for the "
-    "deadline"
-)
-
-
-NO_DEADLINE_ASK = (
-    "#439: the restart runs a missed check-in deadline itself, through `run_rsvp_deadline`, "
-    "rather than asking the change queue for it"
-)
 
 
 def _bot(db_path: str, *, embed_error: Exception | None = None):
@@ -255,7 +245,6 @@ async def test_a_view_that_cannot_be_re_armed_does_not_stop_the_rest(tmp_path, c
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_ASK)
 async def test_a_deadline_that_passed_while_the_bot_was_down_is_run(tmp_path):
     """The deadline is what moves reserve drivers into seats; missing it leaves a division
     a driver short on race day. The restart asks the queue for it, once, and runs nothing
@@ -275,7 +264,6 @@ async def test_a_deadline_still_ahead_is_not_run_early(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_ASK)
 async def test_a_deadline_exactly_now_is_run(tmp_path):
     """The comparison is `<=`, so a deadline reached at the moment of the restart counts
     as missed rather than as pending: it is asked of the queue."""
@@ -321,7 +309,6 @@ async def test_a_deadline_that_placed_no_reserves_is_not_run_again(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_ASK)
 async def test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say(
     tmp_path,
 ):
@@ -353,7 +340,6 @@ def _check_in_bot(db_path: str) -> tuple:
     return bot, check_in
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_ASK)
 async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_notice(tmp_path):
     """Issue #429, end to end. Division 1's round is an hour off, its six-hour deadline passed
     while the bot was down, and no reserve is there to place. The first start asks the queue
@@ -407,7 +393,6 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_ASK)
 async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog):
     """The recovery runs before the bot is ready; an exception here would leave the league
     with no bot at all rather than one missing a distribution. Asking the queue for the
@@ -427,7 +412,6 @@ async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_ASK)
 async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     """Rows written before the timestamps carried a zone still exist; read as local time
     the deadline would move by the host's offset."""
@@ -483,7 +467,6 @@ async def _asked(bot) -> list[int]:
     return asked
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 @pytest.mark.parametrize(("marked", "asked"), [(True, []), (False, [ROUND_ID])],
                          ids=["marked-run", "not-marked"])
 async def test_a_restart_reads_the_deadline_s_own_mark(tmp_path, marked, asked):

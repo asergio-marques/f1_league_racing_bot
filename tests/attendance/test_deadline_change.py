@@ -61,10 +61,6 @@ RESERVE_TEAM = 39
 RHEA, SAM = 105, 106
 FERRARI = 31
 
-NO_DEADLINE_CHANGE = (
-    "#439: the check-in deadline is run by `run_rsvp_deadline` at once, off the change queue"
-)
-
 
 async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 an hour off, its deadline passed and not
@@ -175,7 +171,6 @@ async def _restart_asks(league: SeasonLeague) -> list[int]:
     return asked
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_and_announces(
     tmp_path,
 ):
@@ -204,7 +199,6 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
     assert "ask_check_in_deadline(" in inspect.getsource(bot_module.main)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(tmp_path):
     """Q7: Rhea accepted half an hour before the deadline; Sam's acceptance was saved ten minutes
     after it, before the queue reached the deadline. Rhea is placed at Ferrari, which has a seat
@@ -222,7 +216,6 @@ async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_refused_lock_stops_the_queue_with_the_reserves_placed(tmp_path):
     """Rhea accepted before the deadline. Discord refuses to edit the call: the queue stops at
     `lock_call`, Rhea already placed at Ferrari and the deadline marked as run, and nothing is
@@ -242,7 +235,6 @@ async def test_a_refused_lock_stops_the_queue_with_the_reserves_placed(tmp_path)
     assert _sent(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_refused_announcement_stops_the_queue_and_a_discard_names_it_leaving_the_placements(
     tmp_path,
 ):
@@ -274,7 +266,6 @@ async def test_a_refused_announcement_stops_the_queue_and_a_discard_names_it_lea
     assert row["deadline_run_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_discarded_announcement_is_not_run_again_at_a_restart(tmp_path):
     """Discord refuses the announcement and a league admin discards it. The bot then starts
     again with the deadline past and no announcement recorded: the restart asks no deadline of
@@ -290,7 +281,6 @@ async def test_a_discarded_announcement_is_not_run_again_at_a_restart(tmp_path):
     assert ROUND_3 not in await _restart_asks(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_call_gone_completes_its_lock_with_a_line(tmp_path):
     """The call (7001) was deleted by hand before the queue reached the deadline: the lock
     finds it gone and completes, the queue does not stop, and the announcement is posted and
@@ -310,7 +300,6 @@ async def test_a_call_gone_completes_its_lock_with_a_line(tmp_path):
     assert (await _call_row(league))["distribution_msg_id"] == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_a_deadline_with_no_call_closes_the_check_in_and_asks_the_clean_up(tmp_path):
     """Round 3's call is off the record when the deadline is asked; its answers (Lewis
     accepted, Max not answered) are kept from it. The queue posts nothing in the check-in
@@ -333,7 +322,6 @@ async def test_a_deadline_with_no_call_closes_the_check_in_and_asks_the_clean_up
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_start_up_leaves_a_deadline_in_hand_alone(tmp_path):
     """Round 3's deadline is asked of the queue and has not yet run when the bot starts again:
     the restart asks no second deadline for it, and the queue then runs the first, once."""
@@ -347,7 +335,6 @@ async def test_the_start_up_leaves_a_deadline_in_hand_alone(tmp_path):
     assert len(_sent(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_announcement_goes_to_the_division_s_current_check_in_channel_and_is_recorded_with_it(
     tmp_path,
 ):

@@ -936,6 +936,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "run_result_submission_job"): (14, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
+    ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),

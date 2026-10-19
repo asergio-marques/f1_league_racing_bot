@@ -318,11 +318,6 @@ async def test_the_attendance_rows_are_opened_after_the_post_either_way(
 
 # ── The deadline's jobs (#439, slice 6b) ───────────────────────────────────
 
-NO_DEADLINE_CHANGE = (
-    "#439: the check-in deadline is run by `run_rsvp_deadline` at once, off the change queue, "
-    "rather than by its own jobs"
-)
-
 
 async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeague, AsyncMock]:
     """Pro's round 3 an hour off, so its two-hour check-in deadline passed an hour ago, its call
@@ -349,7 +344,6 @@ async def _run_the_deadline(league: SeasonLeague) -> None:
     await run_queue(league.bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_deadline_s_jobs_never_redraw_the_graphic(tmp_path, monkeypatch):
     """XIV.17: the deadline locks the call by editing it in place. Its jobs draw nothing, and
     the edit that takes the buttons off carries no picture of its own, so the graphic the call
@@ -365,7 +359,6 @@ async def test_the_deadline_s_jobs_never_redraw_the_graphic(tmp_path, monkeypatc
         assert name not in call.edit.await_args.kwargs
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_CHANGE)
 async def test_the_notices_that_stay_text_carry_no_graphic(tmp_path, monkeypatch):  # FR-053
     """The deadline's announcement, or its notice that no reserves were placed, is text: posted
     with no file, and nothing drawn for it."""
