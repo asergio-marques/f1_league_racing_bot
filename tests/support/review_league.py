@@ -76,9 +76,8 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
 
     `send_fails`, an exception, refuses every send; `fail_when(content, kwargs)`, where it returns
     True, refuses that send alone; `delete_fails` refuses the channel's own deletion, recorded as
-    a `delete_channel` event, after which the channel holds no message. `messages` maps an id to
-    the message standing, with its `content` and `view`; `seed(id, content)` places one as though
-    posted earlier.
+    a `delete_channel` event. `messages` maps an id to the message standing, with its
+    `content` and `view`; `seed(id, content)` places one as though posted earlier.
     """
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
@@ -141,8 +140,6 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
         if channel.delete_fails is not None:
             raise channel.delete_fails
         events.append(("delete_channel", channel_id, channel_id))
-        # A channel that is deleted holds no message any more, whatever job took none down.
-        channel.messages.clear()
 
     channel.seed = seed
     channel.delete = AsyncMock(side_effect=_delete_channel)
