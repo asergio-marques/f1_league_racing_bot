@@ -70,16 +70,6 @@ NO_SUBMISSION_OPEN_CHANGE = (
     "#439: a round's submission is opened by `run_result_submission_job` at its start, off the "
     "change queue, rather than by a `results.submission.open` change"
 )
-
-
-NO_SHEET_CHANNEL_STOP = (
-    "#439: the opening sheet of a division with no attendance channel completes posting "
-    "nothing, rather than stopping the queue naming /attendance channel attendance"
-)
-NO_LINEUP_CHANNEL_STOP = (
-    "#439: the approval's lineup of a division with no lineup channel completes posting nothing, "
-    "rather than stopping the queue naming /division lineup-channel"
-)
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
 NOT_EVERYTHING = "⚠️ **Not everything could be done**"
@@ -1312,14 +1302,15 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
     assert league.texts(AM_CH.standings) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SHEET_CHANNEL_STOP)
 async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
     """Attendance is on, and Approve is pressed with every channel set, Am's attendance channel
-    included. Am's attendance channel is then cleared before the queue runs: Pro's opening sheet
-    is posted, and the queue stops at Am's, its stop line naming the command that sets the
-    channel, rather than Am's sheet completing having posted nothing."""
+    included, and the season is saved. Am's attendance channel is then cleared before the rest of
+    the queue runs: Pro's opening sheet is posted, and the queue stops at Am's, its stop line
+    naming the command that sets the channel, rather than Am's sheet completing having posted
+    nothing."""
     league = await _league_for(tmp_path, monkeypatch, attendance=True)
     await _pressed(league)
+    await _run_through(league, "apply")
     await league.write(
         "UPDATE attendance_division_config SET attendance_channel_id = NULL WHERE division_id = ?",
         AM,
@@ -1334,14 +1325,14 @@ async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monke
     assert "/attendance channel attendance" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LINEUP_CHANNEL_STOP)
 async def test_the_approval_s_lineup_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
     """Approve is pressed with every channel set, Am's lineup channel included. Am's lineup
-    channel is then cleared before the queue runs: Pro's lineup is posted, and the queue stops at
-    Am's, its stop line naming the command that sets the channel, rather than Am's lineup
-    completing having posted nothing."""
+    channel is cleared once the season is saved, before the rest of the queue runs: Pro's lineup
+    is posted, and the queue stops at Am's, its stop line naming the command that sets the
+    channel, rather than Am's lineup completing having posted nothing."""
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
+    await _run_through(league, "apply")
     await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", AM)
 
     await run_queue(league.bot)
