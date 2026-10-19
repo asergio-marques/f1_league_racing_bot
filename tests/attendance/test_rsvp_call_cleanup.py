@@ -150,7 +150,8 @@ async def _add_call(
         await db.execute(
             "INSERT INTO rsvp_embed_messages "
             "(round_id, division_id, message_id, channel_id, posted_at, "
-            " last_notice_msg_id, distribution_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " last_notice_msg_id, distribution_msg_id, deadline_run_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 round_id,
                 division_id,
@@ -159,6 +160,7 @@ async def _add_call(
                 (scheduled_at - timedelta(days=NOTICE_DAYS)).isoformat(),
                 last_notice,
                 distribution if distributed else None,
+                scheduled_at.isoformat() if distributed else None,
             ),
         )
         await db.commit()

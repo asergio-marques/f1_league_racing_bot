@@ -1176,18 +1176,16 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     button interactions survive bot restarts (FR-007).
 
     T019: For any call whose rsvp_deadline fire time has already passed and which carries no
-    distribution message, run run_rsvp_deadline immediately (FR-027).
+    mark of its deadline having run, run run_rsvp_deadline immediately (FR-027).
 
-    **The call's own record decides, never the drivers' placements** (#429). A deadline posts
-    its distribution announcement, or its no-reserve notice, and records it on the call; that
-    is how `/test-mode advance` and `AttendanceService.get_current_embed_message` tell a
-    deadline that has run as well, and the three must agree. The placements cannot: a deadline
-    with no reserve to place writes none, so it was run again at every start and its notice
-    posted again, and a call posted again after an amendment carries over the placements of the
-    call it replaced, so its own deadline was never caught up. A deadline whose message never
-    posted is run again at the next start, until the round's cleanup takes the call down — the
-    distribution is recomputed and the announcement retried.
-    `test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say` pins it.
+    **The call's own mark decides, never the drivers' placements** (#429). A deadline writes its
+    distribution and marks the call (`deadline_run_at`) in one save, before it posts its
+    announcement or its no-reserve notice; that is how `AttendanceService.get_current_embed_message`
+    tells a deadline that has run as well, and the two must agree. The placements cannot: a
+    deadline with no reserve to place writes none, so it was run again at every start and its
+    notice posted again, and a call posted again after an amendment carries over the placements
+    of the call it replaced, so its own deadline was never caught up. The announcement's id cannot
+    either: a discarded announcement leaves none, and the deadline has run all the same.
 
     T023: For any round whose rsvp_last_notice fire time has already passed,
     silently skip — do NOT fire retroactively (FR-029 edge case).
@@ -1257,7 +1255,7 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
                  WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
                    AND ac.module_enabled = 1
-                   AND rem.distribution_msg_id IS NULL
+                   AND rem.deadline_run_at IS NULL
                 """
             )
             round_rows = await cur.fetchall()

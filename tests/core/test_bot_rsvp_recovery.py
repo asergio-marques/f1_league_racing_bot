@@ -296,7 +296,6 @@ async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 async def test_a_deadline_that_placed_reserves_is_not_run_again(tmp_path):
     """A second run would redistribute seats the division has already been told about. The
     deadline that ran is marked as run on the call, its announcement recorded beside the mark:
@@ -309,7 +308,6 @@ async def test_a_deadline_that_placed_reserves_is_not_run_again(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DEADLINE_MARK)
 async def test_a_deadline_that_placed_no_reserves_is_not_run_again(tmp_path):
     """Issue #429. A deadline with no reserve to place writes nothing onto a driver, but it
     marks the call as run like any other — and that is what says it ran. Judged by the

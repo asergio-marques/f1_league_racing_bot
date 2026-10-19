@@ -532,7 +532,8 @@ class AttendanceService:
                               last_notice_msg_id = NULL,
                               last_notice_channel_id = NULL,
                               distribution_msg_id = NULL,
-                              distribution_channel_id = NULL
+                              distribution_channel_id = NULL,
+                              deadline_run_at = NULL
                 """,
                 (round_id, division_id, message_id, channel_id, now_iso),
             )
@@ -566,9 +567,9 @@ class AttendanceService:
         """The call *division_id*'s check-in is at: the earliest whose deadline has not run.
 
         Where every standing call's deadline has run, the latest of them; where none stands,
-        None. A deadline records its distribution message on the call, which is how
-        `/test-mode advance` and the restart's catch-up of a missed deadline tell the same thing
-        (#429), and the three must agree.
+        None. A deadline marks its call (`deadline_run_at`) when it writes its distribution, whatever
+        becomes of its announcement; the restart's catch-up of a missed deadline reads the same
+        mark (#429), and the two must agree.
 
         A division can hold more than one call. Each stands until 24 hours after its own round
         (#425), so two rounds close together — a double-header — stand side by side, and "the
@@ -586,7 +587,7 @@ class AttendanceService:
                 (division_id,),
             )
             calls = [_rem_from_row(r) for r in await cursor.fetchall()]
-        still_open = [call for call in calls if call.distribution_msg_id is None]
+        still_open = [call for call in calls if call.deadline_run_at is None]
         if still_open:
             return still_open[0]
         return calls[-1] if calls else None
@@ -655,6 +656,7 @@ def _rem_from_row(row: aiosqlite.Row) -> RsvpEmbedMessage:
         distribution_msg_id=row["distribution_msg_id"],
         last_notice_channel_id=row["last_notice_channel_id"],
         distribution_channel_id=row["distribution_channel_id"],
+        deadline_run_at=row["deadline_run_at"],
     )
 
 

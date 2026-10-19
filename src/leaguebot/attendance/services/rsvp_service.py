@@ -1336,8 +1336,8 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
     division_id: int = row["division_id"]
 
     # One run of a round's deadline at a time, and each run reads the call afresh once it has
-    # the lock: a deadline that has recorded its message has run (#429). One whose message never
-    # posted has not, and runs again — which is how a failed announcement is retried.
+    # the lock: a deadline whose distribution is written, and so marks its call, has run (#429),
+    # whatever became of its announcement.
     async with _check_in_lock(round_id):
         stored = await bot.attendance_service.get_embed_message(round_id, division_id)
         if stored is None:
@@ -1351,7 +1351,7 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
                     round_id,
                 )
             return
-        if stored.distribution_msg_id is not None:
+        if stored.deadline_run_at is not None:
             log.info(
                 "run_rsvp_deadline: round %d's deadline has already run — nothing done",
                 round_id,
@@ -1607,13 +1607,19 @@ async def _write_distribution(
 
     One transaction: every placement of the round in the division is cleared, then the new
     ones written, so no reader ever sees a reserve holding both a team and a standby place, or
-    a team from a run that no longer stands. See `run_reserve_distribution`.
+    a team from a run that no longer stands. The call is marked as run (`deadline_run_at`) in the
+    same transaction. See `run_reserve_distribution`.
     """
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE driver_round_attendance SET assigned_team_id = NULL, is_standby = 0 "
             "WHERE round_id = ? AND division_id = ?",
             (round_id, division_id),
+        )
+        await db.execute(
+            "UPDATE rsvp_embed_messages SET deadline_run_at = ? "
+            "WHERE round_id = ? AND division_id = ?",
+            (datetime.now(timezone.utc).isoformat(), round_id, division_id),
         )
         for dra_id, team_id in assignments:
             await db.execute(
