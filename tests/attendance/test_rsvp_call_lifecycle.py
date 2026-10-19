@@ -227,10 +227,16 @@ NOTHING_LEFT = "no attendance rows are open for this round until this call is po
 COUNTS_NOTHING = "will count nothing against anyone"
 
 
+#: The log channel `_make_db` sets in the server's config, where the queue writes its lines.
+DB_LOG_CHANNEL_ID = 300
+
+
 def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
     """The league's bot double with its change queue, attendance on and images off, the server
     holding *channel_ids*, each recording its sends and deletes in `bot.events`; the earlier
-    call's messages (900001, 900002) stand in each."""
+    call's messages (900001, 900002) stand in each. The log channel the database names
+    (`DB_LOG_CHANNEL_ID`) is the double's own log channel, so every line the queue writes there,
+    a Discard's among them, reaches `bot.log_channel.sent`."""
     from tests.support.review_league import channel as recording_channel
 
     bot = league_double(db_path)
@@ -243,6 +249,7 @@ def _queue_bot(db_path: str, *channel_ids: int) -> MagicMock:
         chan.seed(int(CALL_MSG_ID), "the earlier call")
         chan.seed(int(LAST_NOTICE_MSG_ID), "the earlier last notice")
     known = {bot.log_channel.id: bot.log_channel,
+             DB_LOG_CHANNEL_ID: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(
         side_effect=lambda cid: bot.channels.get(int(cid)) or known.get(int(cid)))
@@ -569,7 +576,6 @@ async def test_a_call_whose_send_fails_on_the_connection_is_reported_as_not_post
         assert "TimeoutError" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, fault):
     """No call stands for round 1, but answers to an earlier call are kept for it (both drivers
@@ -604,7 +610,6 @@ async def test_a_call_that_fails_beside_answers_kept_says_they_count(tmp_path, f
     assert "/attendance post-check-in" in _logged(bot)[len(notice):]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 @pytest.mark.parametrize("fault", ["Discord refuses the post", "the channel is gone"])
 async def test_a_call_that_fails_with_no_answers_kept_says_no_rows_were_opened(tmp_path, fault):
     """No call and no answers for round 1: a post that fails stops the queue, its notice saying,
