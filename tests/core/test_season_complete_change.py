@@ -2028,6 +2028,63 @@ async def test_a_forecast_that_will_not_delete_stops_the_completion_and_once_dis
     assert INCOMPLETE in line and named in line and "9401" in line
 
 
+async def _forecast_in_two_parts(tmp_path: Any) -> Any:
+    """A season pending completion under test mode, with Pro's Phase 1 forecast of round 4 posted
+    in two messages: 9400, then 9401, the last, which its record names."""
+    from tests.support.season_league import _refusing_delete
+
+    league = await pending_completion_league(tmp_path, test_mode=True)
+    await posted_forecast(league, round_id(PRO, 4), 1, 9401)
+    forecast = league.channel(PRO_CH.forecast)
+    forecast.seed(9400, "Phase 1 forecast, first part")
+    _refusing_delete(league, forecast.messages[9400])
+    await league.write("UPDATE forecast_messages SET message_ids = ? WHERE message_id = ?",
+                       "[9400, 9401]", 9401)
+    return league
+
+
+async def test_a_forecast_posted_in_two_parts_is_deleted_whole_when_the_season_is_completed(
+    tmp_path,
+):
+    """Pro's Phase 1 forecast of round 4 stands as two messages. Admin 77 completes the season
+    and the queue runs: both parts are deleted, the season is completed and the queue does not
+    stop."""
+    league = await _forecast_in_two_parts(tmp_path)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert await _status(league) == "COMPLETED"
+    assert not {9400, 9401} & set(league.channel(PRO_CH.forecast).messages)
+    assert await league.rows("SELECT * FROM forecast_messages") == []
+
+
+async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_its_link(tmp_path):
+    """As above, but Discord refuses to delete the first part (9400). The queue stops at the
+    deletion of that part; a league admin discards it. The season is completed, and the reply and
+    the closing line (Incomplete) name the earlier Phase 1 forecast as to be deleted by hand,
+    with the message's link."""
+    league = await _forecast_in_two_parts(tmp_path)
+    league.undeletable.add(9400)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == ("delete_replaced", None)
+    assert 9400 in league.channel(PRO_CH.forecast).messages
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    named = "its earlier Phase 1 forecast could not be deleted ("
+    [entry] = [line for line in _not_done(reply(interaction)) if named in line]
+    assert "9400" in entry and "delete it by hand" in entry
+    [line] = _closing_lines(league)
+    assert INCOMPLETE in line and named in line and "9400" in line
+
+
 # ── A refused standings picture: its text in the same try (owner, 2026-10-13) ──────────────
 
 

@@ -119,6 +119,71 @@ ALREADY = (
 )
 
 
+# ── A forecast posted in two messages ───────────────────────────────────────────────
+
+
+async def _forecast_in_two_parts(tmp_path: Any) -> Any:
+    """A season being set up under test mode, with Pro's Phase 1 forecast of round 4 posted in
+    two messages: 9400, then 9401, the last, which its record names."""
+    from tests.support.season_league import (
+        DIVISIONS,
+        PRO,
+        _refusing_delete,
+        posted_forecast,
+        round_id,
+    )
+
+    league = await setup_league(tmp_path, test_mode=True)
+    await posted_forecast(league, round_id(PRO, 4), 1, 9401)
+    forecast = league.channel(DIVISIONS[PRO][3].forecast)
+    forecast.seed(9400, "Phase 1 forecast, first part")
+    _refusing_delete(league, forecast.messages[9400])
+    await league.write("UPDATE forecast_messages SET message_ids = ? WHERE message_id = ?",
+                       "[9400, 9401]", 9401)
+    return league
+
+
+async def test_a_forecast_posted_in_two_parts_is_deleted_whole_when_the_season_is_aborted(
+    tmp_path,
+):
+    """Pro's Phase 1 forecast of round 4 stands as two messages. Admin 77 aborts the season and
+    the queue runs: both parts are deleted and the queue does not stop."""
+    from tests.support.season_league import DIVISIONS, PRO
+
+    league = await _forecast_in_two_parts(tmp_path)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert not await _season_stands(league)
+    assert not {9400, 9401} & set(league.channel(DIVISIONS[PRO][3].forecast).messages)
+
+
+async def test_a_discarded_deletion_of_a_forecast_s_earlier_part_is_named_with_its_link(tmp_path):
+    """As above, but Discord refuses to delete the first part (9400). The queue stops at the
+    deletion of that part; a league admin discards it. The abort goes on, and the reply names the
+    earlier Phase 1 forecast as to be deleted by hand, with the message's link."""
+    from tests.support.season_league import DIVISIONS, PRO
+
+    league = await _forecast_in_two_parts(tmp_path)
+    league.undeletable.add(9400)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) == ("delete_replaced", None)
+    assert 9400 in league.channel(DIVISIONS[PRO][3].forecast).messages
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert not await _season_stands(league)
+    named = "its earlier Phase 1 forecast could not be deleted ("
+    [entry] = [line for line in _not_done(reply(interaction)) if named in line]
+    assert "9400" in entry and "delete it by hand" in entry
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
