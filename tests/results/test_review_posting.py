@@ -1509,7 +1509,6 @@ async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
     return row["standings_message_id"], row["constructor_standings_message_id"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PICTURE_DELETE_JOB)
 async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(tmp_path):
     """Round 3's standings stand as text, message 8801; they are posted again, both
     championships drawn as pictures. Once `post_standings` is done the two pictures stand and
@@ -1580,7 +1579,6 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     assert DRIVERS_GRAPHIC in standings.messages
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PICTURE_DELETE_JOB)
 async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     """Round 3's standings are drawn as two pictures. Their ids are saved by `post_standings`'
     own record, with its done mark: the job's result names both pictures, and the standings'
@@ -1602,7 +1600,6 @@ async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     assert {drivers, constructors} <= set(post["result"]["new"])
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PICTURE_DELETE_JOB)
 async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_try(tmp_path):
     """Round 3's standings are posted again: the drivers' championship draws as a picture and
     the constructors' falls back to a text table, which Discord refuses. The queue stops at

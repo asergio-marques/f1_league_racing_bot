@@ -14,7 +14,7 @@ here.
 
 **Standings postings need no slot bookkeeping, and this enum deliberately offers none.** A
 standings message id is keyed by round, on the top-ranked driver's snapshot row
-(``results_post_service._get_standings_message_id``), so a division's standings channel
+(``results_post_service.get_standings_message_id``), so a division's standings channel
 accumulates one message per round rather than keeping a single live one. Neither season-boundary
 occasion has a round, so neither collides with a slot, neither has anywhere to record an id, and
 neither needs to: nothing will ever repost them. ``/results standings sync`` walks the rounds

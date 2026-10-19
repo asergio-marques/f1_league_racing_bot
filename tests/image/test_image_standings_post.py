@@ -390,12 +390,6 @@ async def test_no_bot_no_guild_and_no_channel_each_stand_the_flow_aside():
 # ── Ordering, identity and delivery ───────────────────────────────────────
 
 
-NO_REPLACES = (
-    "#439: the standings picture deletes and saves for itself, reporting nothing it replaces"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tmp_path):
     """FR-048. A render that fails must leave the league the standings it had.
 
@@ -420,7 +414,6 @@ async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tm
     assert outcome.constructors.replaces == [222]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
     """**Without a list, deleting a graphic walked forward over the bot's own messages** (#345).
 
@@ -445,7 +438,6 @@ async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
     assert [outcome.drivers.message_id, outcome.constructors.message_id] == [1001, 1002]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_the_two_message_ids_are_persisted_to_their_own_columns(tmp_path):
     """Each championship's id is handed back under its own name for the change queue's job to
     save to its own column (#439 6b); the poster writes neither."""
@@ -1124,7 +1116,6 @@ async def test_the_image_path_raising_never_costs_the_league_its_standings(tmp_p
     assert "Team Standings" in captured[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_each_picture_is_reported_as_a_table_with_the_message_it_replaces(tmp_path):
     """Round 3's standings are drawn as two pictures, the drivers' as message 7701 replacing
     4321, the constructors' as 7702 replacing 4322. `produce_standings` posts no text and
@@ -1591,7 +1582,6 @@ async def test_a_boundary_posting_neither_reads_nor_writes_the_round_s_slot(
     assert len(sent) == 2, "and must delete nothing it did not post"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REPLACES)
 async def test_an_ordinary_posting_still_replaces_its_predecessor(tmp_path):
     """A round's posting reports the predecessor it replaces, for the change queue's job to
     delete once the new picture stands (#439 6b); it saves nothing itself."""

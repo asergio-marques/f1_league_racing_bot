@@ -672,7 +672,10 @@ async def _post_standings(ctx: StepContext) -> StepResult:
             ctx.db_path, division_id, round_id, rnd["round_number"], rnd["track_name"] or "Unknown",
             channel, driver_snaps, team_snaps, guild, show_reserves, payload["label"],
             bot=ctx.bot if ctx.tries == 0 else None,
-            fresh=bool(payload.get("fresh")),
+            # A retry after a part-posted try posts afresh: the earlier try went down the
+            # picture path, whose tables replace what stood rather than edit it, and what it
+            # sent has just been removed.
+            fresh=bool(payload.get("fresh")) or bool(ctx.kept),
         )
     except Exception as error:
         kept = _stranded(error, channel_id)

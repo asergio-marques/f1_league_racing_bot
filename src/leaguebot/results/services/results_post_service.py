@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from typing import NamedTuple
 
 import aiosqlite
@@ -717,15 +718,14 @@ async def produce_standings(
     the channel and the whole of what stood is handed back to be taken down, as a rebuild of a
     division (an amendment's) needs, a repost being a new message.
 
-    Returns the tables put up (:class:`PostedTable`), one for each message the text flow
-    sent or edited (none where the picture drew every championship, which saved and replaced
-    for itself), each with the messages it replaces left standing. The caller saves the ids
-    and takes the old messages down once the new ones stand.
+    Returns the tables put up (:class:`PostedTable`), one for each picture posted and each
+    message the text flow sent or edited, each with the messages it replaces left standing.
+    The caller saves the ids and takes the old messages down once the new ones stand.
 
     **The image path is a guard clause in front of an untouched body** (040). Where the
     images module is enabled, the `standings` aspect is on and a template is valid,
     ``image_standings_post.try_post`` produces the two PNGs, posts each under the heading
-    and the lifecycle label, replaces the previous messages and persists their ids. The
+    and the lifecycle label and names the messages each replaces. The
     textual message below is then composed of whichever championships did *not* draw — one
     section, or neither, or both.
 
@@ -811,10 +811,23 @@ async def produce_standings(
                 # A commanded posting that would not draw posts nothing at all (XIV.7).
                 return []
             if outcome.applicable:
+                # Each picture is a table of its own, with the message it replaces left
+                # standing, as a text table is: the caller saves the new id and takes the
+                # old message down once the picture stands.
+                pictures = [
+                    PostedTable(
+                        [each.message_id], list(each.replaces), drawn=True, championship=name
+                    )
+                    for name, each in (
+                        (STANDINGS_DRIVERS, outcome.drivers),
+                        (STANDINGS_CONSTRUCTORS, outcome.constructors),
+                    )
+                    if each.posted and each.message_id is not None
+                ]
                 championships = outcome.fallback_championships
                 if not championships:
-                    return []
-                return await _produce_standings_sections(
+                    return pictures
+                return pictures + await _produce_standings_sections(
                     db_path,
                     division_id,
                     round_id,
@@ -824,6 +837,7 @@ async def produce_standings(
                     sections={
                         name: sections_by_championship[name] for name in championships
                     },
+                    already_sent=[each for table in pictures for each in table.new],
                 )
 
     content = compose_standings_message(
@@ -833,19 +847,19 @@ async def produce_standings(
     )
 
     # Look for existing standings message (stored in the top-ranked driver snapshot)
-    existing_msg_id = await _get_standings_message_id(db_path, division_id, round_id)
+    existing_msg_id = await get_standings_message_id(db_path, division_id, round_id)
 
     # **A text table posted over standings that also stand as a constructors message** (a graphic
     # per championship, or a text table per championship) is posted afresh, and takes both
     # down: an edit in place would leave the drivers' picture attached to the full table, and
     # the constructors message standing with its id still recorded.
-    constructors_id = await _get_standings_message_id(
+    constructors_id = await get_standings_message_id(
         db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
     )
     constructors_old: list[int] = []
     if constructors_id is not None:
         constructors_old = list(
-            await _get_standings_message_ids(
+            await get_standings_message_ids(
                 db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
             )
             or [constructors_id]
@@ -856,7 +870,7 @@ async def produce_standings(
     stale: list[int] = []
     if existing_msg_id is not None and fresh:
         stale = list(
-            await _get_standings_message_ids(db_path, division_id, round_id, STANDINGS_DRIVERS)
+            await get_standings_message_ids(db_path, division_id, round_id, STANDINGS_DRIVERS)
             or [existing_msg_id]
         )
     elif existing_msg_id is not None:
@@ -874,7 +888,7 @@ async def produce_standings(
                 stale = [
                     message_id
                     for message_id in (
-                        await _get_standings_message_ids(
+                        await get_standings_message_ids(
                             db_path, division_id, round_id, STANDINGS_DRIVERS
                         )
                         or []
@@ -886,7 +900,7 @@ async def produce_standings(
                 # its first message left two-thirds of a superseded standings table below the
                 # current one, and the row was then overwritten so nothing could reach them.
                 stale = list(
-                    await _get_standings_message_ids(
+                    await get_standings_message_ids(
                         db_path, division_id, round_id, STANDINGS_DRIVERS
                     )
                     or [existing_msg_id]
@@ -922,7 +936,7 @@ async def _forget_standings_messages(
     """
     found: list[tuple[str, int, list[int] | None]] = []
     for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
-        existing_id = await _get_standings_message_id(
+        existing_id = await get_standings_message_id(
             db_path, division_id, round_id, championship
         )
         if existing_id is None:
@@ -931,7 +945,7 @@ async def _forget_standings_messages(
             (
                 championship,
                 existing_id,
-                await _get_standings_message_ids(
+                await get_standings_message_ids(
                     db_path, division_id, round_id, championship
                 ),
             )
@@ -962,13 +976,13 @@ async def _clear_standings_messages(
     removed = 0
     left_standing: list[int] = []
     for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
-        existing_id = await _get_standings_message_id(
+        existing_id = await get_standings_message_id(
             db_path, division_id, round_id, championship
         )
         if existing_id is None:
             continue
         if channel is not None:
-            existing_ids = await _get_standings_message_ids(
+            existing_ids = await get_standings_message_ids(
                 db_path, division_id, round_id, championship
             )
             left = await _delete_posting(
@@ -1013,6 +1027,7 @@ async def _produce_standings_sections(
     heading: str,
     label: str,
     sections: dict[str, str],
+    already_sent: Sequence[int] = (),
 ) -> list[PostedTable]:
     """Post a textual section for each championship whose graphic did not draw, saving nothing.
 
@@ -1023,16 +1038,20 @@ async def _produce_standings_sections(
     **Produce before destroying** (FR-048): the replacement is sent and the message it
     replaces is left standing, its ids handed back for the caller to take down once every
     replacement is up, so the channel is never without that championship's standings.
+
+    *already_sent* names the pictures the job posted before these tables: a table refused
+    after them carries their ids with its own on ``left_standing``, so the queue's job removes
+    them before its next try.
     """
     posted: list[PostedTable] = []
     for championship, body in sections.items():
         content = compose_standings_message(
             heading, label, [standings_section(championship, body)]
         )
-        previous_id = await _get_standings_message_id(
+        previous_id = await get_standings_message_id(
             db_path, division_id, round_id, championship
         )
-        previous_ids = await _get_standings_message_ids(
+        previous_ids = await get_standings_message_ids(
             db_path, division_id, round_id, championship
         )
         try:
@@ -1041,7 +1060,7 @@ async def _produce_standings_sections(
             # The tables already sent stand, recorded nowhere: handed on the failure with what
             # this one could not take down, so that the queue's job removes them before its
             # next try and a legacy caller can take them down.
-            earlier = [message_id for table in posted for message_id in table.new]
+            earlier = [*already_sent, *(message_id for table in posted for message_id in table.new)]
             if earlier:
                 setattr(
                     failure, "left_standing",
@@ -1180,7 +1199,7 @@ _STANDINGS_IDS_COLUMNS = {
 }
 
 
-async def _get_standings_message_id(
+async def get_standings_message_id(
     db_path: str,
     division_id: int,
     round_id: int,
@@ -1214,7 +1233,7 @@ async def _get_standings_message_id(
     return row["message_id"] if row and row["message_id"] else None
 
 
-async def _get_standings_message_ids(
+async def get_standings_message_ids(
     db_path: str,
     division_id: int,
     round_id: int,
@@ -1265,7 +1284,7 @@ async def set_standings_message_id_on(
     **The round's other rows are cleared first**, so exactly one row of it names the posting. A
     recomputation that changes the leader reorders the rows without moving the id, and one left
     behind on a row that is no longer top would be read as the round's current posting by
-    :func:`_get_standings_message_id` long after it had been replaced (#345).
+    :func:`get_standings_message_id` long after it had been replaced (#345).
 
     It writes on the connection it is handed, so that the change queue saves a post's id in the
     save that marks the post done.
