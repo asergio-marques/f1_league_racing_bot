@@ -628,9 +628,16 @@ def turn_steps(
     }
 
 
-def _checking(resubmission: bool) -> Callable[[CheckContext], Awaitable[Verdict]]:
+def _checking(
+    resubmission: bool, *, turn: bool = False
+) -> Callable[[CheckContext], Awaitable[Verdict]]:
     """The check of a turn or its configuration: due while the round's submission stands, and,
-    for a resubmission's, while the round is still being resubmitted."""
+    for a resubmission's configuration, while the round is still being resubmitted.
+
+    A resubmission's *turn* is due while the submission stands: its judge finds a round no longer
+    resubmitting and clears the paste's mark, which a check that dropped the change would leave
+    on the message with no one to answer it.
+    """
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
@@ -642,7 +649,7 @@ def _checking(resubmission: bool) -> Callable[[CheckContext], Awaitable[Verdict]
             ).fetchone()
         if row is None:
             return Verdict.not_due("the round's submission is gone")
-        if resubmission and not row["resubmitting"]:
+        if resubmission and not turn and not row["resubmitting"]:
             return Verdict.not_due("the resubmission has ended")
         return Verdict.go()
 
@@ -669,7 +676,7 @@ def submission_turn_change(
         kind=kind,
         opening=(PlannedStep(JUDGE),),
         steps=turn_steps(queue, server_config, resubmission=resubmission),
-        check=_checking(resubmission),
+        check=_checking(resubmission, turn=True),
         key=lambda payload: f"{kind}:{payload['message_id']}",
         doing=lambda _payload: (
             "Taking a resubmitted results paste" if resubmission else "Taking a results paste"

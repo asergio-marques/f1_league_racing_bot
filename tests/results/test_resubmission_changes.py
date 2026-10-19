@@ -247,6 +247,30 @@ async def test_each_resubmitted_paste_is_a_draft_saved_by_its_turn(tmp_path, mon
     assert MARK not in message.marks
 
 
+async def test_a_paste_whose_resubmission_ended_before_its_turn_loses_its_mark(
+    tmp_path, monkeypatch,
+):
+    """Alex types Qualifying while the resubmission stands, and the resubmission ends (Cancel
+    ran) before the paste's turn does. The turn finds nothing to take and clears the paste's ⏳
+    mark, rather than being refused with the mark left on the message for good; nothing is held."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    message = await _type(league, "CANCELLED", run=False)
+    assert MARK in message.marks
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET resubmitting = 0, "
+            "resubmit_prompt_message_id = NULL WHERE round_id = ?", (ROUND_ID,),
+        )
+        await db.commit()
+
+    await run_queue(league.bot)
+
+    assert MARK not in message.marks
+    assert await _drafts(league) == []
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_resubmitted_paste_while_its_turn_waits_is_turned_away_and_logged(
     tmp_path, monkeypatch,
 ):
