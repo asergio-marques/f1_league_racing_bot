@@ -2765,3 +2765,71 @@ async def test_a_notice_after_a_reason_that_is_a_sentence_follows_it_as_a_senten
     posted = [m.content for m in env.bot.log_channel.posted]
     assert [m for m in posted if m.startswith(stop)], posted
     assert not [m for m in posted if "Retry.; " in m], posted
+
+
+# ---------------------------------------------------------------------------
+# What a failure leaves to be written, in the stop's own save (#439, slice 6b)
+# ---------------------------------------------------------------------------
+
+
+async def _step_marks(env) -> list[tuple[int, str | None]]:
+    """The tries and last failure each job of the queue carries."""
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT tries, last_failure FROM queued_change_steps ORDER BY id")
+        return [(row["tries"], row["last_failure"]) for row in await cursor.fetchall()]
+
+
+async def test_a_failure_s_record_is_written_in_the_save_that_marks_the_job_failed(env):
+    """A job's step raises its failure carrying a record that writes a row. The queue stops at
+    the job: the row is saved with the failure mark, and a second failed try, which runs the
+    record again, leaves the one row (a record is safe to run twice) and marks the second try."""
+    api = _api()
+
+    async def _write(db):
+        await db.execute(
+            "INSERT INTO scratch (v) SELECT 'dropped' "
+            "WHERE NOT EXISTS (SELECT 1 FROM scratch WHERE v = 'dropped')"
+        )
+
+    async def _post(_ctx):
+        raise api.StepFailedOnDiscord("Discord refused", record=_write)
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    assert await _scratch(env) == ["dropped"]
+    assert (await _step_marks(env))[0][0] == 1
+
+    await _try_at(env, 1)
+
+    assert await _scratch(env) == ["dropped"]
+    assert (await _step_marks(env))[0][0] == 2
+    assert await stopped_job(env.db_path) is not None
+
+
+async def test_a_failure_s_record_that_raises_leaves_neither_its_row_nor_the_failure_mark(env):
+    """As above, but the record writes its row and then raises. The save is rolled back: no row
+    is left, and the job carries no failure mark, so the failure is recorded when the job is
+    tried again. The worker's catch-all, which logs the fault, is the test runner's raise."""
+    api = _api()
+
+    async def _write(db):
+        await db.execute("INSERT INTO scratch (v) VALUES ('dropped')")
+        raise RuntimeError("the record could not be written")
+
+    async def _post(_ctx):
+        raise api.StepFailedOnDiscord("Discord refused", record=_write)
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    with pytest.raises(RuntimeError, match="could not be written"):
+        await run_queue(env.bot)
+
+    assert await _scratch(env) == []
+    assert (await _step_marks(env))[0] == (0, None)
+    assert await stopped_job(env.db_path) is None
