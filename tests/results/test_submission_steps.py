@@ -116,7 +116,6 @@ def _create_payload() -> dict[str, Any]:
     return {"name": CHANNEL_NAME, "beside_channel_id": RESULTS_CHANNEL}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_STEPS)
 async def test_a_channel_created_is_saved_with_its_mark(tmp_path):
     """The job creates `pro-round-3-results` in the results channel's category, and the
     dialogue's record saves its id on round 3's submission row in the same save as the job's
@@ -137,7 +136,6 @@ async def test_a_channel_created_is_saved_with_its_mark(tmp_path):
     assert job["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_STEPS)
 async def test_a_channel_created_whose_save_failed_is_deleted_before_the_next_try(tmp_path):
     """The channel is created but the database refuses its row, so the queue stops with the
     channel standing. On Retry the first channel is deleted before a second is created, and the
@@ -171,7 +169,6 @@ async def test_a_channel_created_whose_save_failed_is_deleted_before_the_next_tr
     assert await _submission_channel(league.db_path) == second
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_STEPS)
 async def test_a_refused_channel_creation_stops_the_queue_naming_the_permission(tmp_path):
     """Discord refuses to create the channel (the bot lacks Manage Channels). The queue stops at
     the job, its failure naming the permission, and no row is saved."""
