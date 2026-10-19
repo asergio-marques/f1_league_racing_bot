@@ -923,7 +923,11 @@ async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
-    interaction.client.get_channel = MagicMock(return_value=channel)
+    # The call's channel alone is found: the log channel's lines are delivered through the bot's
+    # own record of it (`_make_interaction`), so that the lines checked are the lines written.
+    interaction.client.get_channel = MagicMock(
+        side_effect=lambda cid: channel if cid == RSVP_CHANNEL_ID else None
+    )
 
     with patch(
         "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
@@ -939,6 +943,7 @@ async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
     else:
         stopped = await stopped_job(db_path)
         assert stopped is not None and stopped["name"] == "redraw"
+        assert [line for line in logged if "The queue is stopped at job #" in line]
         assert not [line for line in logged if "| Success" in line]
 
 
