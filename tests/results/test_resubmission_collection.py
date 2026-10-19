@@ -373,6 +373,27 @@ async def test_cancelling_the_resubmission_keeps_the_earlier_results(tmp_path, m
     assert (await _row(league))["resubmitting"] == 0
 
 
+async def test_a_resubmission_started_again_after_a_cancel_asks_for_the_first_session(
+    tmp_path, monkeypatch,
+):
+    """Alex presses Resubmit, pastes Qualifying, then presses Cancel. The attempt's draft is gone
+    with it. Pressed again, Resubmit asks for Qualifying afresh and holds no draft."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    await _type(league, QUALI_PASTE)
+    assert await _drafts(league) != []
+    await _press_cancel(league)
+
+    assert await _drafts(league) == []
+    asked = sum("Submit **" in text for text in _texts(league))
+
+    await _press_resubmit(league)
+
+    assert await _drafts(league) == []
+    assert sum("Submit **Qualifying" in text for text in _texts(league)) >= 2
+    assert sum("Submit **" in text for text in _texts(league)) > asked
+
+
 async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(
     tmp_path, monkeypatch,
 ):

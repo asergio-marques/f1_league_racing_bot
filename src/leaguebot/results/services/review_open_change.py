@@ -547,6 +547,10 @@ def review_open_change() -> ChangeType:
             + " WHERE round_id = ?",
             (round_id,),
         )
+        if returning:
+            # A resubmission that ends without its swap leaves nothing of its attempt behind, so
+            # the next Resubmit asks for the first session again.
+            await db.execute("DELETE FROM resubmission_drafts WHERE round_id = ?", (round_id,))
         # The results are in, so the round now waits on report verdicts and can no longer be
         # cancelled: the drivers have reports and appeals to lodge. Written in the save that
         # sets the flag, so the round and its channel never contradict each other.

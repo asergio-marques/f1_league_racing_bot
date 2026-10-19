@@ -180,6 +180,10 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
             "WHERE round_id = ?",
             (int(payload["started_by"]), int(payload["round_id"])),
         )
+        # A resubmission starts from nothing, whatever an earlier attempt left.
+        await db.execute(
+            "DELETE FROM resubmission_drafts WHERE round_id = ?", (int(payload["round_id"]),)
+        )
         return StepResult(result={"marked": True}, lines=(_started_line(ctx.named, payload),))
 
     async def first_prompt(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -252,7 +256,7 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
         outcome=outcome,
         lane=_lane,
         conversation_open=_conversation_open,
-        writes=("round_submission_channels",),
+        writes=("round_submission_channels", "resubmission_drafts"),
     )
 
 
