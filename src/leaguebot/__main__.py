@@ -402,12 +402,14 @@ def register_change_types(bot: LeagueBot) -> None:
         appeals_open_change,
         close_stale_change,
         review_open_change,
+        review_prompt_change,
     )
 
     bot.change_queue.register(
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
     )
     bot.change_queue.register(review_open_change())
+    bot.change_queue.register(review_prompt_change())
     bot.change_queue.register(appeals_open_change())
     bot.change_queue.register(close_stale_change())
     # The review's change types stamp what they write with the queue's own clock, read when they

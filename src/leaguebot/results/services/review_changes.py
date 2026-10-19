@@ -46,6 +46,7 @@ REVIEW_KINDS: tuple[str, ...] = (
     review_open_change.KIND,
     review_open_change.APPEALS_OPEN_KIND,
     review_open_change.CLOSE_STALE_KIND,
+    review_open_change.PROMPT_KIND,
     report_approval_change.KIND,
     appeals_approval_change.KIND,
     amendment_stage_changes.REPORTS_KIND,

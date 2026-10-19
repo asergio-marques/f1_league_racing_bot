@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from leaguebot.core.models.round import RoundStatus
 from tests.results.test_review_open_change import (
     KIND,
@@ -40,11 +38,6 @@ from tests.support.review_league import PROMPT, changes_of
 PROMPT_KIND = "results.review.prompt"
 ROUND_LANE = f"channel:{SUBMISSION_CHANNEL}"
 
-NO_PROMPT_CHANGE = (
-    "#439: the review's prompt is posted by results.review.open on the league lane, not asked of "
-    "the round's lane"
-)
-
 
 def _lane(change: dict[str, Any]) -> str:
     """The lane a change was saved on; one saved with none is the league's."""
@@ -62,7 +55,6 @@ async def _kind_of(db_path: str, change_id: int) -> str:
     return change["kind"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PROMPT_CHANGE)
 async def test_a_review_opened_from_a_last_paste_posts_its_prompt_on_the_round_s_lane(tmp_path):
     """Round 3 awaits its results; the league manager Alex's last paste asks for its review. The
     review opens on the league lane, and its prompt is asked of round 3's lane, which posts it in
@@ -80,7 +72,6 @@ async def test_a_review_opened_from_a_last_paste_posts_its_prompt_on_the_round_s
     assert (await _channel_row(league.db_path))["prompt_message_id"] == prompt
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PROMPT_CHANGE)
 async def test_a_refused_prompt_stops_only_the_round_s_lane(tmp_path):
     """Discord refuses round 3's review prompt. Round 3's lane stops at the prompt's post; the
     league lane is not stopped and the review's opening there has finished. Retry on the round's
@@ -106,7 +97,6 @@ async def test_a_refused_prompt_stops_only_the_round_s_lane(tmp_path):
     assert (await _channel_row(league.db_path))["prompt_message_id"] == prompt
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PROMPT_CHANGE)
 async def test_a_discarded_prompt_asks_the_review_again(tmp_path):
     """Discord refuses round 3's review prompt and a league admin discards it on the round's lane.
     The review is asked for again, as the bot, and once Discord takes posts again the fresh request

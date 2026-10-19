@@ -280,7 +280,6 @@ async def test_a_refused_prompt_stops_the_queue_with_the_session_saved(tmp_path,
     assert await stopped_job(league.db_path, "league") is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 @pytest.mark.parametrize("why", ["closed by a cancellation", "held by an amendment"])
 async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancellation_is_refused_when_it_runs(
     tmp_path, monkeypatch, why,
@@ -307,7 +306,6 @@ async def test_a_paste_in_a_channel_held_by_an_amendment_or_closed_by_a_cancella
     assert "📋 Submit" not in _said(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_TURN)
 async def test_a_message_by_someone_other_than_a_league_manager_is_ignored(tmp_path, monkeypatch):
     """Lewis, a driver without the league managers' role, types in the submission channel. The
     message is not marked, no turn is asked and nothing is posted."""

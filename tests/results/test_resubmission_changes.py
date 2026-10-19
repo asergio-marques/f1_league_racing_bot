@@ -383,7 +383,6 @@ async def test_a_refused_cancel_take_down_after_the_swap_stops_the_queue(tmp_pat
     assert (await _row(league))["resubmitting"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESUBMISSION_ON_THE_QUEUE)
 async def test_a_restart_notice_whose_channel_is_gone_completes_and_the_resubmission_still_ends(
     tmp_path, monkeypatch,
 ):

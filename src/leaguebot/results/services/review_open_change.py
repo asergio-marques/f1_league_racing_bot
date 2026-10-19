@@ -37,6 +37,17 @@ It is now a list of jobs the queue saves and resumes:
    nothing, so the request it asks for carries the return (``returning`` and
    ``cancel_message_id``) on; so does a cancel whose prompt was discarded, its line still owed.
 
+**Where a conversation handed the review over, the round's lane puts the prompt up.** A request made
+for a member (a last paste, a resubmission's swap or Cancel) opens the review on the league lane
+without the jobs 4 and 5 above: its `close` asks `results.review.prompt` (`review_prompt_change`),
+which runs on the round's lane (`channel:<id>`) and carries out jobs 4 and 5 and the closing line
+itself, so a prompt Discord refuses stops that round's lane alone. The opening hands it what only it
+knows (whether the tables stand, and the lines naming those a league admin discarded). A request made
+by the bot alone (a restart's recovery, which has no member) keeps all the jobs on the league
+lane. Discarding the prompt's post asks the review again, as before, for the same member. The
+choice is read from the actor, not the origin: the review asked for again is the bot's, though made
+for a member, and the member's conversation is still waiting on its prompt.
+
 **The check refuses a member and drops the bot.** A member's request is refused where the round
 cannot enter a review, its submission channel's row is closed or the channel is gone, or the
 round's reports are already being approved. The bot's request (a lapse, a failure, a restart) is
@@ -109,13 +120,14 @@ from leaguebot.results.services.review_posting import (
 from leaguebot.results.services.standings_service import compute_and_persist_round_on
 
 __all__ = [
-    "APPEALS_OPEN_KIND", "CLOSE_STALE_KIND", "KIND", "appeals_open_change", "close_stale_change",
-    "review_open_change",
+    "APPEALS_OPEN_KIND", "CLOSE_STALE_KIND", "KIND", "PROMPT_KIND", "appeals_open_change",
+    "close_stale_change", "review_open_change", "review_prompt_change",
 ]
 
 KIND = "results.review.open"
 APPEALS_OPEN_KIND = "results.appeals.open"
 CLOSE_STALE_KIND = "results.review.close_stale"
+PROMPT_KIND = "results.review.prompt"
 REPORTS_APPROVE = "results.reports.approve"
 APPEALS_APPROVE = "results.appeals.approve"
 
@@ -192,6 +204,220 @@ async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | Non
                 (round_id,),
             )
         ).fetchone()
+
+
+async def _post_review_prompt(ctx: StepContext) -> StepResult:
+    round_id = int(ctx.payload["round_id"])
+    row = await _round_and_channel(ctx.db_path, round_id)
+    if row is None or row["channel_id"] is None:
+        raise LookupError(f"round {round_id} has no submission channel to post the prompt in")
+    guild = await _league_guild(ctx.bot)
+    channel = _channel(guild, int(row["channel_id"]), "submission")
+    # A try that posted the prompt and failed to save its id left the message standing.
+    kept = (ctx.kept or {}).get("message_id")
+    if kept is not None:
+        await _delete_posting(channel, int(kept), [int(kept)], label="penalty review prompt",
+                              failures=[])
+    state = await _build_penalty_review_state(
+        ctx.bot, round_id, int(row["division_id"]), channel.id
+    )
+    message = await send_review_prompt(ctx.bot, channel, state)
+    return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+
+
+async def _record_prompt(
+    db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+) -> None:
+    """Save the prompt's id, so the next restart can replace it, and `results_posted` where
+    the interim results went out and no job posting them was discarded."""
+    if "results_posted" in ctx.payload:
+        # Asked of the round's lane: the opening on the league lane said what it posted.
+        posted = bool(ctx.payload["results_posted"])
+    else:
+        discarded = any(
+            "discarded" in (view.result or {})
+            for view in ctx.steps
+            if view.name in (POST_SESSION_RESULTS, POST_STANDINGS)
+        )
+        posted = bool(ctx.payload.get("publish", True)) and not discarded
+    await db.execute(
+        "UPDATE round_submission_channels SET prompt_message_id = ?, "
+        "results_posted = CASE WHEN ? THEN 1 ELSE results_posted END WHERE round_id = ?",
+        (result.result["message_id"], int(posted), int(ctx.payload["round_id"])),
+    )
+
+
+async def _take_down_cancel_job(ctx: StepContext) -> StepResult:
+    guild = await _league_guild(ctx.bot)
+    channel = as_text_channel(guild.get_channel(int(ctx.step_payload["channel_id"])))
+    if channel is not None:
+        await take_down_cancel_message(
+            channel.get_partial_message(int(ctx.step_payload["message_id"]))
+        )
+    return StepResult()
+
+
+async def _prompt_not_discarded(ctx: StepContext) -> bool:
+    """The cancel's line follows the prompt: where a league admin discarded the prompt's post,
+    the review asked for again carries the cancel on and posts it once its own prompt stands."""
+    return not any(
+        view.name == _POST_REVIEW_PROMPT and _discarded(view.result) for view in ctx.steps
+    )
+
+
+async def _post_cancel_line_job(ctx: StepContext) -> StepResult:
+    guild = await _league_guild(ctx.bot)
+    channel = _channel(guild, int(ctx.step_payload["channel_id"]), "submission")
+    await send_cancelled_line(channel)
+    return StepResult()
+
+
+async def _describe_prompt(ctx: StepContext) -> str:
+    row = await _round_and_channel(ctx.db_path, int(ctx.payload["round_id"]))
+    where = "" if row is None or row["channel_id"] is None else f" in <#{row['channel_id']}>"
+    return f"posting the penalty review prompt{where}"
+
+
+async def _describe_take_down(ctx: StepContext) -> str:
+    return f"taking the Cancel button off the resubmission in <#{ctx.step_payload['channel_id']}>"
+
+
+async def _describe_cancel_line(ctx: StepContext) -> str:
+    return f"posting that the resubmission was cancelled in <#{ctx.step_payload['channel_id']}>"
+
+def _tables_discarded(ctx: OutcomeContext) -> bool:
+    """Whether a league admin discarded a job that posts the interim results."""
+    return any(
+        _discarded(view.result) for view in ctx.steps
+        if view.name in (POST_SESSION_RESULTS, POST_STANDINGS)
+    )
+
+
+def prompt_steps(payload: dict[str, Any], channel_id: int) -> list[PlannedStep]:
+    """The jobs that put the review's prompt up, in order: the prompt, the old prompt's deletion
+    once the new one stands, the resubmission's Cancel button taken down, and for a cancel its
+    line."""
+    steps = [PlannedStep(_POST_REVIEW_PROMPT)]
+    if payload.get("old_prompt_id") is not None:
+        steps.append(PlannedStep(DELETE_MESSAGE, {
+            "channel_id": channel_id, "message_id": int(payload["old_prompt_id"]),
+            "what": "penalty review prompt",
+        }))
+    if payload.get("cancel_message_id") is not None:
+        steps.append(PlannedStep(_TAKE_DOWN_CANCEL, {
+            "channel_id": channel_id, "message_id": int(payload["cancel_message_id"]),
+        }))
+    if payload.get("returning") == "cancelled":
+        steps.append(PlannedStep(_POST_CANCEL_LINE, {"channel_id": channel_id}))
+    return steps
+
+
+def _closing_lines(
+    ctx: OutcomeContext, number: Any, division: str, *, open_lost: bool, prompt_lost: bool,
+    left: list[str] | None,
+) -> tuple[str, ...]:
+    """The line the log carries once the review is open (or back): none where the opening was
+    discarded, none for a cancel whose prompt was discarded (the review asked for again records
+    it once its own prompt stands), the cancel's or the failure's line for a return, else the
+    manager's line, `Incomplete` where a table or the prompt was discarded, naming each (*left*,
+    as `_not_done` gives it)."""
+    returning = ctx.payload.get("returning")
+    resubmission = f"the resubmission of round {number}{division}"
+    if open_lost or (returning == "cancelled" and prompt_lost):
+        return ()
+    if returning == "cancelled":
+        return (abandoned_line(
+            ctx.named, resubmission, lapsed=False,
+            detail="The earlier results stand.\nPress 🔄 Resubmit Initial Results to start again.",
+        ),)
+    if returning == "failed":
+        return (
+            f"❌ {resubmission} failed before the earlier results were replaced\n"
+            "  The earlier results stand.\n"
+            "  Press 🔄 Resubmit Initial Results to start again.",
+        )
+    if ctx.actor_id is not None:
+        # A table or the prompt a league admin discarded is named, with the commands that post a
+        # table, as the approvals' lines name theirs: the review is open, but the league's
+        # channels are not as a Success would say.
+        left = left or []
+        return (f"{ctx.named} | Penalty review opened | "
+                f"{'Incomplete' if left else 'Success'}\n"
+                f"  round {number}{division}"
+                + "".join(f"\n  {text}" for text in left),)
+    return ()
+
+
+async def _reopening(
+    db: aiosqlite.Connection, payload: dict[str, Any], number: Any, *, prompt_lost: bool,
+    tables_discarded: bool, carry_return: bool,
+) -> FollowOn:
+    """The request for the review again that follows a Discard ("Discard reopens the review"):
+    a fresh prompt replaces the dead one, and the interim results are not posted twice where they
+    already stand."""
+    round_id = int(payload["round_id"])
+    if prompt_lost and bool(payload.get("publish", True)) and not tables_discarded:
+        await db.execute(
+            "UPDATE round_submission_channels SET results_posted = 1 WHERE round_id = ?",
+            (round_id,),
+        )
+    stored = await (
+        await db.execute(
+            "SELECT results_posted FROM round_submission_channels WHERE round_id = ?",
+            (round_id,),
+        )
+    ).fetchone()
+    again: dict[str, Any] = {
+        "round_id": round_id,
+        "label": payload.get("label") or "Provisional Results",
+        "publish": not (stored is not None and stored["results_posted"]),
+        "old_prompt_id": payload.get("old_prompt_id"),
+        "round_number": payload.get("round_number"),
+        "division_name": payload.get("division_name"),
+    }
+    if carry_return:
+        for key in ("returning", "cancel_message_id"):
+            if payload.get(key) is not None:
+                again[key] = payload[key]
+    return FollowOn(
+        KIND, again,
+        f"the penalty review of round {number}, opened again after a job of it was discarded",
+    )
+
+
+def _hand_the_prompt_over(ctx: StepContext, channel_id: int) -> StepResult:
+    """Ask the round's lane, in the opening's last save, to put the prompt up (C44a).
+
+    The prompt is the submission channel's own post, so the round's lane posts it (R2(c)); the
+    league's opening has put the interim results out by now, as the prompt waits for them. What the
+    opening knows and the lane's change cannot read from its own steps goes in the payload: whether
+    the results stand, and the lines naming what a league admin discarded, worded for a prompt that
+    stood and for one that is posted again.
+    """
+    payload = ctx.payload
+    tables_discarded = _tables_discarded(ctx)
+    asked = {
+        "round_id": int(payload["round_id"]),
+        "channel_id": channel_id,
+        "label": payload.get("label") or "Provisional Results",
+        "publish": bool(payload.get("publish", True)),
+        "round_number": payload.get("round_number"),
+        "division_name": payload.get("division_name"),
+        "old_prompt_id": payload.get("old_prompt_id"),
+        "cancel_message_id": payload.get("cancel_message_id"),
+        "returning": payload.get("returning"),
+        "tables_discarded": tables_discarded,
+        "results_posted": bool(payload.get("publish", True)) and not tables_discarded,
+        "left": review_posting.not_done(ctx, reposted=False),
+        "left_reposted": review_posting.not_done(ctx, reposted=True),
+    }
+    return StepResult(
+        result={"closed": True},
+        follow_ons=(FollowOn(
+            PROMPT_KIND, asked,
+            f"the penalty review prompt of round {payload.get('round_number') or payload['round_id']}",
+        ),),
+    )
 
 
 def review_open_change() -> ChangeType:
@@ -275,18 +501,8 @@ def review_open_change() -> ChangeType:
         then: list[PlannedStep] = []
         if publish:
             then.extend(await plan_posts(db, round_id, label=label))
-        then.append(PlannedStep(_POST_REVIEW_PROMPT))
-        if payload.get("old_prompt_id") is not None:
-            then.append(PlannedStep(DELETE_MESSAGE, {
-                "channel_id": channel_id, "message_id": int(payload["old_prompt_id"]),
-                "what": "penalty review prompt",
-            }))
-        if payload.get("cancel_message_id") is not None:
-            then.append(PlannedStep(_TAKE_DOWN_CANCEL, {
-                "channel_id": channel_id, "message_id": int(payload["cancel_message_id"]),
-            }))
-        if returning == "cancelled":
-            then.append(PlannedStep(_POST_CANCEL_LINE, {"channel_id": channel_id}))
+        if ctx.actor_id is None:
+            then.extend(prompt_steps(payload, channel_id))
         return StepResult(result={"opened": True}, then=tuple(then))
 
     async def names_not_discarded(ctx: StepContext) -> bool:
@@ -296,70 +512,15 @@ def review_open_change() -> ChangeType:
             return True
         return not any(view.name == NAMES and _discarded(view.result) for view in ctx.steps)
 
-    async def post_review_prompt(ctx: StepContext) -> StepResult:
-        round_id = int(ctx.payload["round_id"])
-        row = await _round_and_channel(ctx.db_path, round_id)
-        if row is None or row["channel_id"] is None:
-            raise LookupError(f"round {round_id} has no submission channel to post the prompt in")
-        guild = await _league_guild(ctx.bot)
-        channel = _channel(guild, int(row["channel_id"]), "submission")
-        # A try that posted the prompt and failed to save its id left the message standing.
-        kept = (ctx.kept or {}).get("message_id")
-        if kept is not None:
-            await _delete_posting(channel, int(kept), [int(kept)], label="penalty review prompt",
-                                  failures=[])
-        state = await _build_penalty_review_state(
-            ctx.bot, round_id, int(row["division_id"]), channel.id
-        )
-        message = await send_review_prompt(ctx.bot, channel, state)
-        return StepResult(result={"message_id": message.id, "channel_id": channel.id})
-
-    async def record_prompt(
-        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
-    ) -> None:
-        """Save the prompt's id, so the next restart can replace it, and `results_posted` where
-        the interim results went out and no job posting them was discarded."""
-        discarded = any(
-            "discarded" in (view.result or {})
-            for view in ctx.steps
-            if view.name in (POST_SESSION_RESULTS, POST_STANDINGS)
-        )
-        posted = bool(ctx.payload.get("publish", True)) and not discarded
-        await db.execute(
-            "UPDATE round_submission_channels SET prompt_message_id = ?, "
-            "results_posted = CASE WHEN ? THEN 1 ELSE results_posted END WHERE round_id = ?",
-            (result.result["message_id"], int(posted), int(ctx.payload["round_id"])),
-        )
-
-    async def take_down_cancel(ctx: StepContext) -> StepResult:
-        guild = await _league_guild(ctx.bot)
-        channel = as_text_channel(guild.get_channel(int(ctx.step_payload["channel_id"])))
-        if channel is not None:
-            await take_down_cancel_message(
-                channel.get_partial_message(int(ctx.step_payload["message_id"]))
-            )
-        return StepResult()
-
-    async def prompt_not_discarded(ctx: StepContext) -> bool:
-        """The cancel's line follows the prompt: where a league admin discarded the prompt's post,
-        the review asked for again carries the cancel on and posts it once its own prompt stands."""
-        return not any(
-            view.name == _POST_REVIEW_PROMPT and _discarded(view.result) for view in ctx.steps
-        )
-
-    async def post_cancel_line(ctx: StepContext) -> StepResult:
-        guild = await _league_guild(ctx.bot)
-        channel = _channel(guild, int(ctx.step_payload["channel_id"]), "submission")
-        await send_cancelled_line(channel)
-        return StepResult()
-
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
         round_id = int(payload["round_id"])
         row = await (
             await db.execute(
-                "SELECT r.round_number, d.name AS division_name FROM rounds r "
-                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                "SELECT r.round_number, d.name AS division_name, rsc.channel_id "
+                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+                "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
+                "WHERE r.id = ?",
                 (round_id,),
             )
         ).fetchone()
@@ -371,91 +532,31 @@ def review_open_change() -> ChangeType:
         prompt = views.get(_POST_REVIEW_PROMPT)
         prompt_lost = prompt is not None and _discarded(prompt.result)
 
+        if not open_lost and ctx.actor_id is not None and row is not None and row["channel_id"]:
+            return _hand_the_prompt_over(ctx, int(row["channel_id"]))
+
         returning = payload.get("returning")
-        resubmission = f"the resubmission of round {number}{division}"
-        lines: tuple[str, ...] = ()
-        if open_lost:
-            # Nothing was changed: the Discard's own line records it.
-            pass
-        elif returning == "cancelled" and prompt_lost:
-            # The cancel is recorded once the prompt is back, by the review asked for again below.
-            pass
-        elif returning == "cancelled":
-            lines = (abandoned_line(
-                ctx.named, resubmission, lapsed=False,
-                detail="The earlier results stand.\nPress 🔄 Resubmit Initial Results to start again.",
-            ),)
-        elif returning == "failed":
-            lines = (
-                f"❌ {resubmission} failed before the earlier results were replaced\n"
-                "  The earlier results stand.\n"
-                "  Press 🔄 Resubmit Initial Results to start again.",
-            )
-        elif ctx.actor_id is not None:
-            # A table or the prompt a league admin discarded is named, with the commands that post
-            # a table, as the approvals' lines name theirs: the review is open, but the league's
-            # channels are not as a Success would say.
-            left = _not_done(ctx)
-            lines = (f"{ctx.named} | Penalty review opened | "
-                     f"{'Incomplete' if left else 'Success'}\n"
-                     f"  round {number}{division}"
-                     + "".join(f"\n  {text}" for text in left),)
+        lines = _closing_lines(
+            ctx, number, division, open_lost=open_lost, prompt_lost=prompt_lost,
+            left=None if open_lost else _not_done(ctx),
+        )
         if not (open_lost or prompt_lost):
             return StepResult(result={"closed": True}, lines=lines)
 
-        # "Discard reopens the review": a fresh prompt replaces the dead one, and the interim
-        # results are not posted twice where they already stand.
-        if prompt_lost and bool(payload.get("publish", True)) and not any(
-            _discarded(view.result) for view in ctx.steps
-            if view.name in (POST_SESSION_RESULTS, POST_STANDINGS)
-        ):
-            await db.execute(
-                "UPDATE round_submission_channels SET results_posted = 1 WHERE round_id = ?",
-                (round_id,),
-            )
-        stored = await (
-            await db.execute(
-                "SELECT results_posted FROM round_submission_channels WHERE round_id = ?",
-                (round_id,),
-            )
-        ).fetchone()
-        again: dict[str, Any] = {
-            "round_id": round_id,
-            "label": payload.get("label") or "Provisional Results",
-            "publish": not (stored is not None and stored["results_posted"]),
-            "old_prompt_id": payload.get("old_prompt_id"),
-            "round_number": payload.get("round_number"),
-            "division_name": payload.get("division_name"),
-        }
         # A discarded `open` wrote nothing, so the return is carried on; so is a cancel whose
         # prompt was discarded, its line still owed until a prompt stands.
-        if open_lost or returning == "cancelled":
-            for key in ("returning", "cancel_message_id"):
-                if payload.get(key) is not None:
-                    again[key] = payload[key]
         return StepResult(
             result={"closed": True, "reopened": True},
             lines=lines,
-            follow_ons=(FollowOn(
-                KIND, again,
-                f"the penalty review of round {number}, opened again after a job of it was "
-                "discarded",
+            follow_ons=(await _reopening(
+                db, payload, number, prompt_lost=prompt_lost,
+                tables_discarded=_tables_discarded(ctx),
+                carry_return=open_lost or returning == "cancelled",
             ),),
         )
 
     async def describe_open(_ctx: StepContext) -> str:
         return "opening the penalty review"
-
-    async def describe_prompt(ctx: StepContext) -> str:
-        row = await _round_and_channel(ctx.db_path, int(ctx.payload["round_id"]))
-        where = "" if row is None or row["channel_id"] is None else f" in <#{row['channel_id']}>"
-        return f"posting the penalty review prompt{where}"
-
-    async def describe_take_down(ctx: StepContext) -> str:
-        return f"taking the Cancel button off the resubmission in <#{ctx.step_payload['channel_id']}>"
-
-    async def describe_cancel_line(ctx: StepContext) -> str:
-        return f"posting that the resubmission was cancelled in <#{ctx.step_payload['channel_id']}>"
 
     async def describe_close(_ctx: StepContext) -> str:
         return "recording that the penalty review is open"
@@ -475,15 +576,15 @@ def review_open_change() -> ChangeType:
             describe=describe_open,
         ),
         _POST_REVIEW_PROMPT: Step(
-            _POST_REVIEW_PROMPT, StepKind.ACT, post_review_prompt,
-            describe=describe_prompt, record=record_prompt,
+            _POST_REVIEW_PROMPT, StepKind.ACT, _post_review_prompt,
+            describe=_describe_prompt, record=_record_prompt,
         ),
         _TAKE_DOWN_CANCEL: Step(
-            _TAKE_DOWN_CANCEL, StepKind.EDIT, take_down_cancel, describe=describe_take_down,
+            _TAKE_DOWN_CANCEL, StepKind.EDIT, _take_down_cancel_job, describe=_describe_take_down,
         ),
         _POST_CANCEL_LINE: Step(
-            _POST_CANCEL_LINE, StepKind.ACT, post_cancel_line, still_due=prompt_not_discarded,
-            describe=describe_cancel_line,
+            _POST_CANCEL_LINE, StepKind.ACT, _post_cancel_line_job, still_due=_prompt_not_discarded,
+            describe=_describe_cancel_line,
         ),
         _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
@@ -495,6 +596,111 @@ def review_open_change() -> ChangeType:
         key=lambda payload: f"{KIND}:{payload['round_id']}",
         doing=lambda payload: _naming("Opening the penalty review", payload),
         outcome=outcome,
+    )
+
+
+def review_prompt_change() -> ChangeType:
+    """The change that puts a round's penalty review prompt up, on the round's lane (C44a).
+
+    Asked by `results.review.open` in its last save where a conversation handed the review over (a
+    last paste, a resubmission's swap or Cancel): it posts the stage prompt in the submission
+    channel, deletes the old one once the new stands, takes a resubmission's Cancel button down and
+    posts the cancel line, and records the prompt's id on the round's row. A refusal stops the
+    round's lane alone. Where the prompt's post is discarded its `close` asks the review again, as
+    the opening did when the prompt was one of its own jobs, and writes the opening's line.
+
+    The payload is the opening's own (``round_id``, ``label``, ``publish``, ``old_prompt_id``,
+    ``cancel_message_id``, ``returning``) with ``channel_id`` (the lane), ``results_posted``,
+    ``tables_discarded`` and the lines ``left`` and ``left_reposted`` the opening worded. The
+    conversation still stands while the round's row names the channel and is not closed.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        row = await _round_and_channel(ctx.db_path, int(ctx.payload["round_id"]))
+        if row is None or row["channel_id"] is None or row["closed"] or (
+            int(row["channel_id"]) != int(ctx.payload["channel_id"])
+        ):
+            return Verdict.not_due("The round's submission channel is closed.")
+        return Verdict.go()
+
+    async def conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+        row = await (
+            await db.execute(
+                "SELECT 1 FROM round_submission_channels WHERE round_id = ? AND channel_id = ? "
+                "AND closed = 0",
+                (int(payload["round_id"]), int(payload["channel_id"])),
+            )
+        ).fetchone()
+        return row is not None
+
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        payload = ctx.payload
+        row = await (
+            await db.execute(
+                "SELECT r.round_number, d.name AS division_name FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                (int(payload["round_id"]),),
+            )
+        ).fetchone()
+        number = "?" if row is None else row["round_number"]
+        division = "" if row is None else f" ({row['division_name']})"
+        prompt = next((view for view in ctx.steps if view.name == _POST_REVIEW_PROMPT), None)
+        prompt_lost = prompt is not None and _discarded(prompt.result)
+        left = list(payload["left_reposted" if prompt_lost else "left"])
+        if prompt_lost:
+            left.append("⚠️ The penalty review prompt was not posted. It is being posted again.")
+        lines = _closing_lines(
+            ctx, number, division, open_lost=False, prompt_lost=prompt_lost, left=left,
+        )
+        if not prompt_lost:
+            return StepResult(result={"closed": True}, lines=lines)
+        return StepResult(
+            result={"closed": True, "reopened": True},
+            lines=lines,
+            follow_ons=(await _reopening(
+                db, payload, number, prompt_lost=True,
+                tables_discarded=bool(payload["tables_discarded"]),
+                carry_return=payload.get("returning") == "cancelled",
+            ),),
+        )
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording that the penalty review is open"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        return f"✅ The penalty review prompt is up (round {ctx.payload['round_id']})."
+
+    steps: dict[str, Step] = {
+        DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
+        _POST_REVIEW_PROMPT: Step(
+            _POST_REVIEW_PROMPT, StepKind.ACT, _post_review_prompt,
+            describe=_describe_prompt, record=_record_prompt,
+        ),
+        _TAKE_DOWN_CANCEL: Step(
+            _TAKE_DOWN_CANCEL, StepKind.EDIT, _take_down_cancel_job, describe=_describe_take_down,
+        ),
+        _POST_CANCEL_LINE: Step(
+            _POST_CANCEL_LINE, StepKind.ACT, _post_cancel_line_job,
+            still_due=_prompt_not_discarded, describe=_describe_cancel_line,
+        ),
+        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+    }
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (*prompt_steps(payload, int(payload["channel_id"])), PlannedStep(_CLOSE))
+
+    return ChangeType(
+        kind=PROMPT_KIND,
+        opening=(),
+        steps=steps,
+        check=check,
+        key=lambda payload: f"{PROMPT_KIND}:{payload['round_id']}",
+        doing=lambda payload: _naming("Putting up the penalty review prompt", payload),
+        outcome=outcome,
+        lane=lambda payload: f"channel:{int(payload['channel_id'])}",
+        conversation_open=conversation_open,
+        writes=("round_submission_channels",),
+        plan=plan,
     )
 
 
