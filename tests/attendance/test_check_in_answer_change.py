@@ -232,13 +232,6 @@ async def test_an_answer_is_acknowledged_privately_and_updated_and_kept_while_th
     assert "Accepted" in updated_reply(interaction)
 
 
-NO_TEST_RSVP_CHANGE = (
-    "#439: /attendance test rsvp saves its entries and redraws the call at once, off the change "
-    "queue"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_TEST_RSVP_CHANGE)
 async def test_test_rsvp_s_entries_are_saved_and_the_call_redrawn_once(tmp_path):
     """Test mode is on. A maintainer (77) submits `/attendance test rsvp`'s form for Pro's round 3
     with two entries: Lewis declines and Max accepts. Nothing is saved or redrawn as the form is

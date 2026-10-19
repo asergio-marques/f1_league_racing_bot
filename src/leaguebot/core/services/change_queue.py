@@ -432,6 +432,10 @@ class ChangeType:
     *turn_channel*, on a change that answers a message typed into a channel, says from the payload
     which channel: the channel then waits (`typed_turns.turn_waiting`) while the change is in hand,
     and a message typed there meanwhile is turned away. A change that is not a turn declares none.
+
+    *plan*, on a kind whose first steps depend on what it was asked (a check-in answer is one
+    driver's press or a maintainer's paste of many), says from the payload which steps to open
+    with, in place of *opening*; `opening_steps` is the one place either is read.
     """
 
     kind: str
@@ -448,6 +452,12 @@ class ChangeType:
     conversation_open: Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[bool]] | None = None
     writes: tuple[str, ...] | None = None
     turn_channel: Callable[[dict[str, Any]], int | None] | None = None
+    plan: Callable[[dict[str, Any]], tuple[PlannedStep, ...]] | None = None
+
+    def opening_steps(self, payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        """The steps saved when the change is asked for with *payload*: *opening*, or where the
+        kind opens by what it was asked (*plan*), what *plan* says of the payload."""
+        return self.opening if self.plan is None else self.plan(payload)
 
 
 class ChangeRefused(Exception):
@@ -646,7 +656,7 @@ class ChangeQueue:
                         ),
                     )
                     change_id = inserted_id(cursor)
-                    for position, planned in enumerate(change_type.opening):
+                    for position, planned in enumerate(change_type.opening_steps(payload)):
                         cursor = await db.execute(
                             "INSERT INTO queued_change_steps (change_id, position, name, payload) "
                             "VALUES (?, ?, ?, ?)",
@@ -2228,7 +2238,7 @@ class ChangeQueue:
             ),
         )
         change_id = inserted_id(cursor)
-        for position, planned in enumerate(change_type.opening):
+        for position, planned in enumerate(change_type.opening_steps(follow_on.payload)):
             await db.execute(
                 "INSERT INTO queued_change_steps (change_id, position, name, payload) "
                 "VALUES (?, ?, ?, ?)",

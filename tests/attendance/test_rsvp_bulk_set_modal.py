@@ -42,6 +42,7 @@ It is recorded as a refusal instead, naming each entry turned away (#482).
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -73,12 +74,6 @@ EMBED_MESSAGE = 800
 
 #: discord_user_id -> driver_profile_id, for the two drivers the fixture seeds.
 DRIVERS = {900000001: 31, 900000002: 32}
-
-NO_REDRAW_STOP = (
-    "#439: the form redraws the call at once, off the change queue, and a redraw Discord refuses "
-    "is only named in the line"
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -194,13 +189,30 @@ async def _bot(db_path: str, *, attendance_rows=None, channel=_STANDING, saved=N
     bot.attendance_service = AttendanceService(db_path)
     bot.config_service.get_server_config.return_value.test_mode_active = True
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    # The lines the queue writes reach the log channel the database names (101), whose sends are
+    # the router's `post_log` record, where the tests read them with the refusals' (#439), as the
+    # direct posts wrote them.
+    log_channel = MagicMock(spec=discord.TextChannel)
+
+    async def _send(content=None, **_kwargs):
+        # The queue's delivery names the member in code format and ends a line with a rule.
+        line = re.sub(r"`(<@!?&?\d+>)`", r"\1", content).split("\n\u2015")[0]
+        await bot.output_router.post_log(line)
+        return MagicMock(id=1)
+
+    log_channel.send = _send
+
     known = bot.get_channel.side_effect
     bot.get_channel = MagicMock(
-        side_effect=lambda cid: channel if cid == EMBED_CHANNEL else known(cid)
+        side_effect=lambda cid: (
+            channel if cid == EMBED_CHANNEL else log_channel if cid == 101 else known(cid)
+        )
     )
     found = bot.fetch_channel.side_effect
 
     async def _fetch_channel(cid: int):
+        if cid == 101:
+            return log_channel
         if cid != EMBED_CHANNEL:
             return found(cid)
         if channel is None:
@@ -515,7 +527,6 @@ async def test_nothing_applied_rebuilds_nothing(tmp_path):
     channel._message.edit.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REDRAW_STOP)
 async def test_a_failed_rebuild_does_not_fail_the_updates(tmp_path):
     """The statuses are already written by then; the embed is a view of them. Discord refuses
     every edit of the call (800): the answer is saved all the same, and the queue stops at the

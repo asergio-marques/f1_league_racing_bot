@@ -365,8 +365,9 @@ class AttendanceService:
             [(round_id, division_id, dp_id) for dp_id in driver_profile_ids],
         )
 
-    async def upsert_rsvp_status(
-        self,
+    @staticmethod
+    async def upsert_rsvp_status_on(
+        db: aiosqlite.Connection,
         round_id: int,
         division_id: int,
         driver_profile_id: int,
@@ -374,7 +375,10 @@ class AttendanceService:
         *,
         now: datetime,
     ) -> bool:
-        """Record *status* for one driver of one round, and manage accepted_at with it.
+        """Record *status* for one driver of one round on *db*, and manage accepted_at with it.
+
+        Nothing is committed: the bulk-set change's save writes every entry of a paste and commits
+        them once.
 
         - Transitioning TO 'ACCEPTED': set accepted_at to *now*.
         - Re-accepting after a non-ACCEPTED status: reset accepted_at to *now*.
@@ -407,12 +411,9 @@ class AttendanceService:
         Every other column takes the same default ``bulk_insert_attendance_rows`` gives it.
         """
         accepted_at = now.isoformat() if status == "ACCEPTED" else None
-        async with get_connection(self._db_path) as db:
-            recorded = await self._write_answer(
-                db, round_id, division_id, driver_profile_id, status, accepted_at
-            )
-            await db.commit()
-        return recorded
+        return await AttendanceService._write_answer(
+            db, round_id, division_id, driver_profile_id, status, accepted_at
+        )
 
     @staticmethod
     async def _write_answer(
@@ -425,7 +426,7 @@ class AttendanceService:
     ) -> bool:
         """Write one driver's answer on *db* without committing, and say whether a row holds it.
 
-        The one statement `upsert_rsvp_status` and `answer_rsvp_on` share, so the row an answer
+        The one statement `upsert_rsvp_status_on` and `answer_rsvp_on` share, so the row an answer
         opens and the `accepted_at` it carries are decided in one place. The caller commits.
         """
         cursor = await db.execute(
@@ -507,6 +508,20 @@ class AttendanceService:
             )
             rows = await cursor.fetchall()
         return [_dra_from_row(r) for r in rows]
+
+    async def driver_profile_id_for_account(self, discord_user_id: int) -> int | None:
+        """The id of the driver profile whose current account is *discord_user_id*, or None.
+
+        What the test-mode bulk-set form reads an entry's id by; a profile is matched on its
+        number so that an id stored as text still finds it.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM driver_profiles WHERE CAST(discord_user_id AS INTEGER) = ?",
+                (discord_user_id,),
+            )
+            row = await cursor.fetchone()
+        return int(row["id"]) if row is not None else None
 
     async def get_attendance_row_for_driver(
         self,

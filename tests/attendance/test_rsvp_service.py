@@ -651,10 +651,6 @@ NO_CALL_WRITERS_ON = (
     "#439: the call's record is written by the attendance service's committing writers, with no "
     "form taking the queue's save (`insert_embed_message_on`, `bulk_insert_attendance_rows_on`)"
 )
-NO_ANSWER_WRITER_ON = (
-    "#439: an answer is written by `upsert_rsvp_status` on its own connection, with no form "
-    "taking the queue's save (`upsert_rsvp_status_on`)"
-)
 
 
 async def _write(svc, db_path: str, writer: str, *args, **kwargs):
@@ -694,7 +690,6 @@ class TestAttendanceServiceCrud:
         rows = await svc.get_attendance_rows(round_id=1, division_id=10)
         assert len(rows) == 2
 
-    @pytest.mark.xfail(strict=True, reason=NO_ANSWER_WRITER_ON)
     @pytest.mark.asyncio
     async def test_upsert_sets_accepted_at_for_accepted(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
@@ -708,7 +703,6 @@ class TestAttendanceServiceCrud:
         assert row.rsvp_status == "ACCEPTED"
         assert row.accepted_at == _NOW.isoformat()
 
-    @pytest.mark.xfail(strict=True, reason=NO_ANSWER_WRITER_ON)
     @pytest.mark.asyncio
     async def test_upsert_clears_accepted_at_for_declined(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
@@ -723,7 +717,6 @@ class TestAttendanceServiceCrud:
         assert row.rsvp_status == "DECLINED"
         assert row.accepted_at is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_ANSWER_WRITER_ON)
     @pytest.mark.asyncio
     async def test_upsert_creates_the_row_when_none_exists(self, tmp_path):
         """No `bulk_insert_attendance_rows_on` first, which is issue #209 exactly: only
@@ -740,7 +733,6 @@ class TestAttendanceServiceCrud:
         assert row.rsvp_status == "ACCEPTED"
         assert row.accepted_at == _NOW.isoformat()
 
-    @pytest.mark.xfail(strict=True, reason=NO_ANSWER_WRITER_ON)
     @pytest.mark.asyncio
     async def test_upsert_creating_a_declined_row_leaves_accepted_at_null(self, tmp_path):
         """A row created at answer time takes the ordinary `accepted_at` rule, not a special
@@ -756,7 +748,6 @@ class TestAttendanceServiceCrud:
         assert row.rsvp_status == "DECLINED"
         assert row.accepted_at is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_ANSWER_WRITER_ON)
     @pytest.mark.asyncio
     async def test_upsert_reports_whether_it_wrote(self, tmp_path):
         """Both paths report True. The return value exists so the bulk-set form lists as applied

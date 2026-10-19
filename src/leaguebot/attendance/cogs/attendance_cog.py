@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import discord
 from discord import app_commands
@@ -13,7 +14,10 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.attendance.models.attendance import AttendanceConfig
-from leaguebot.attendance.services.check_in_answer_changes import ask_check_in_answer
+from leaguebot.attendance.services.check_in_answer_changes import (
+    ask_check_in_answer,
+    ask_check_in_answers,
+)
 from leaguebot.attendance.services.check_in_changes import ask_check_in_call, judge_hand_post
 from leaguebot.attendance.services.attendance_service import (
     recalculation_faults,
@@ -1091,7 +1095,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         self._bot = bot
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Apply the pasted answers, and record the outcome in the log channel.
+        """Ask the change queue to set the pasted answers, and record what is turned away here.
 
         **Test mode, the module and the call are checked again here** (#482, decided
         2026-10-01). `/attendance test rsvp` checked all three when it opened the form, and a
@@ -1100,16 +1104,12 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         double-header, once its deadline passes the next call is), and the answers would land
         on a state the command would have refused. Each is refused, with nothing set.
 
-        A paste with nothing applied is a refusal, its rejected entries the reason; a paste of
-        blank lines asks nothing and records that nothing changed; and a paste with anything
-        applied is a success, naming every entry passed over and a call that could not be
-        redrawn.
+        The lines are read here, and every one that cannot be used is named by its number. What
+        can be is asked of the queue as one `attendance.check_in.answer` (#439, slice 6b): its
+        save writes every answer and its redraw draws the call once, and the reply, updated, says
+        what was applied. A paste with nothing usable is a refusal, its rejected entries the
+        reason; a paste of blank lines asks nothing and records that nothing changed.
         """
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.db.database import get_connection as _gc
-        from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
-
         form = f"{describe_form(self)} for {self._division_name}"
         config = await self._bot.config_service.get_server_config()
         if config is None or not config.test_mode_active:
@@ -1138,7 +1138,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
             return
 
         now = datetime.now(timezone.utc)
-        applied: list[str] = []
+        entries: list[dict[str, Any]] = []
         errors: list[str] = []
 
         for line_no, raw_line in enumerate(self.entries.value.splitlines(), start=1):
@@ -1162,18 +1162,12 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 )
                 continue
 
-            async with _gc(self._bot.db_path) as db:
-                cur = await db.execute(
-                    "SELECT id FROM driver_profiles "
-                    "WHERE CAST(discord_user_id AS INTEGER) = ?",
-                    (discord_uid,),
-                )
-                profile_row = await cur.fetchone()
-
-            if profile_row is None:
+            driver_profile_id = await self._bot.attendance_service.driver_profile_id_for_account(
+                discord_uid
+            )
+            if driver_profile_id is None:
                 errors.append(f"Line {line_no}: no driver profile for ID `{id_str}`")
                 continue
-            driver_profile_id: int = profile_row["id"]
 
             dra = await self._bot.attendance_service.get_attendance_row_for_driver(
                 round_id=self._round_id,
@@ -1185,68 +1179,28 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                     f"Line {line_no}: driver `{id_str}` has no attendance row for this round"
                 )
                 continue
+            entries.append({
+                "line": line_no, "shown": id_str, "driver_profile_id": driver_profile_id,
+                "status": new_status,
+            })
 
-            saved = await self._bot.attendance_service.upsert_rsvp_status(
-                round_id=self._round_id,
-                division_id=self._division_id,
-                driver_profile_id=driver_profile_id,
-                status=new_status,
-                now=now,
-            )
-            if not saved:
-                errors.append(f"Line {line_no}: the answer for `{id_str}` could not be saved")
-                continue
-            applied.append(f"`{id_str}` → {new_status.lower()}")
-
-        # Rebuild embed once after all updates
-        redrawn = True
-        if applied:
-            channel = as_text_channel(self._bot.get_channel(self._embed_channel_id))
-            if channel is None:
-                redrawn = False
-            else:
-                try:
-                    msg = await channel.fetch_message(self._embed_message_id)
-                    new_embed = await _rebuild_embed_for_round(
-                        self._round_id, self._division_id, self._bot
-                    )
-                    await msg.edit(embed=new_embed, view=RsvpView(round_id=self._round_id))
-                except Exception as exc:
-                    redrawn = False
-                    log.warning("_RsvpBulkSetModal: failed to edit embed: %s", exc, exc_info=True)
-
-        lines: list[str] = []
-        if applied:
-            lines.append(
-                f"✅ Applied {len(applied)} update(s) in **{self._division_name}**:\n"
-                + "\n".join(f"  {a}" for a in applied)
-            )
-        if errors:
-            lines.append("⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors))
-
-        if not applied and errors:
-            await refuse(interaction, "\n".join(lines), what=form, reason="\n".join(errors))
-            return
-        await interaction.followup.send("\n".join(lines) or "No valid entries.", ephemeral=True)
-
-        command = "/attendance test rsvp"
-        if not applied:
+        if not entries:
+            if errors:
+                lines = "⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors)
+                await refuse(interaction, lines, what=form, reason="\n".join(errors))
+                return
+            await interaction.response.send_message("No valid entries.", ephemeral=True)
             await _record(
-                self._bot, interaction, command, "Nothing changed",
+                self._bot, interaction, "/attendance test rsvp", "Nothing changed",
                 f"division: {self._division_name}", "no entries given",
             )
             return
-        details = [
-            f"division: {self._division_name}",
-            f"round_id: {self._round_id}",
-            f"updates: {len(applied)}",
-            f"changes: {', '.join(applied)}",
-        ]
-        if errors:
-            details.append("passed over: " + "; ".join(errors))
-        if not redrawn:
-            details.append("call not redrawn")
-        await _record(self._bot, interaction, command, "Success", *details)
+        await ask_check_in_answers(
+            self._bot.change_queue, interaction, form=form,
+            division_name=self._division_name, division_id=self._division_id,
+            round_id=self._round_id, embed_message_id=self._embed_message_id,
+            entries=entries, passed_over=errors, pressed_at=now,
+        )
 
 
 # ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────

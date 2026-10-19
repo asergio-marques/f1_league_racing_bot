@@ -16,6 +16,12 @@ a reserve who has accepted.
   answer's success line, naming a call it could not redraw because it is gone. A burst of answers
   to one call makes one redraw: one whose turn comes with a later answer to the same call in hand
   leaves the drawing to that one. A redraw Discord refuses stops the queue with the answer saved.
+
+`/attendance test rsvp`'s form asks the same kind with every entry of a maintainer's paste
+(`ask_check_in_answers`): its `save_answers` job writes each entry through `upsert_rsvp_status_on`
+in one save, with no lock judged (a rehearsal sets any state), and the same `redraw` draws the call
+once for the lot. The form judges what it can as it is submitted (the lines it cannot read, the
+drivers it cannot find) and passes those over; the save passes over an entry it could not write.
 """
 
 from __future__ import annotations
@@ -65,7 +71,11 @@ log = logging.getLogger(__name__)
 CHECK_IN_ANSWER = "attendance.check_in.answer"
 
 SAVE_ANSWER = "save_answer"
+SAVE_ANSWERS = "save_answers"
 REDRAW = "redraw"
+
+#: What the maintainer's paste is called in the log, in the success line.
+BULK_COMMAND = "/attendance test rsvp"
 
 #: An answer as a log line gives it.
 STATUS_WORDS = {
@@ -100,6 +110,10 @@ _CLOSED = (
 _NOT_REGISTERED = "❌ You are not registered as a driver in this server."
 _ROUND_GONE = "❌ This round no longer exists."
 _NOT_A_MEMBER = "❌ You are not a member of this division."
+_BULK_STALE = (
+    "❌ The check-in call this form was opened on is no longer the division's open call. "
+    "Nothing was set. Run `/attendance test rsvp` again."
+)
 _NOT_RECORDED = (
     "❌ Your answer could not be recorded. Please tell a league manager, and do not assume you "
     "are signed up for this round."
@@ -175,7 +189,17 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
     )
 
 
+def _is_bulk(payload: dict[str, Any]) -> bool:
+    """Whether the change is a maintainer's paste of many answers, not one driver's press."""
+    return "entries" in payload
+
+
 def _doing(payload: dict[str, Any]) -> str:
+    if _is_bulk(payload):
+        return (
+            f"setting {len(payload['entries'])} test RSVP answer(s) on the check-in call of "
+            f"**{payload.get('division_name', '?')}**"
+        )
     return (
         f"saving your answer to the check-in call of round {payload.get('round_number', '?')} "
         f"of **{payload.get('division_name', '?')}**"
@@ -184,12 +208,30 @@ def _doing(payload: dict[str, Any]) -> str:
 
 def _saved(ctx: OutcomeContext) -> dict[str, Any] | None:
     for step in ctx.steps:
-        if step.name == SAVE_ANSWER:
+        if step.name in (SAVE_ANSWER, SAVE_ANSWERS):
             return step.result
     return None
 
 
+def _bulk_success_line(ctx: OutcomeContext, *, not_redrawn: bool) -> str:
+    saved = _saved(ctx) or {}
+    applied, errors = saved.get("applied", []), saved.get("errors", [])
+    details = [
+        f"division: {ctx.payload['division_name']}",
+        f"round_id: {ctx.payload['round_id']}",
+        f"updates: {len(applied)}",
+        f"changes: {', '.join(applied)}",
+    ]
+    if errors:
+        details.append("passed over: " + "; ".join(errors))
+    if not_redrawn:
+        details.append("call not redrawn")
+    return f"{ctx.named} | {ctx.what} | Success" + "".join(f"\n  {detail}" for detail in details)
+
+
 def _success_line(ctx: OutcomeContext, *, not_redrawn: bool) -> str:
+    if _is_bulk(ctx.payload):
+        return _bulk_success_line(ctx, not_redrawn=not_redrawn)
     saved = _saved(ctx) or {}
     status = ctx.payload["status"]
     was = STATUS_WORDS.get(saved.get("found", "NO_RSVP"), saved.get("found", "NO_RSVP"))
@@ -244,12 +286,40 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
             )
         return StepResult(result=result)
 
+    async def save_answers(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        payload = ctx.payload
+        now = _aware(payload["pressed_at"])
+        applied: list[str] = []
+        errors: list[str] = list(payload["passed_over"])
+        for entry in payload["entries"]:
+            saved = await service.upsert_rsvp_status_on(
+                db, int(payload["round_id"]), int(payload["division_id"]),
+                int(entry["driver_profile_id"]), entry["status"], now=now,
+            )
+            if saved:
+                applied.append(f"`{entry['shown']}` → {entry['status'].lower()}")
+            else:
+                errors.append(
+                    f"Line {entry['line']}: the answer for `{entry['shown']}` could not be saved"
+                )
+        result: dict[str, Any] = {"applied": applied, "errors": errors}
+        if applied:
+            return StepResult(result=result)
+        # Nothing was written: the paste is refused as a paste with nothing applied is, and the
+        # call is not drawn again.
+        return StepResult(
+            result=result,
+            lines=(refusal_line(ctx.named, payload["form"], "\n".join(errors)),),
+        )
+
     async def describe_save(ctx: StepContext) -> str:
         return _doing(ctx.payload)
 
     async def redraw_due(ctx: StepContext) -> bool:
         saved = _saved(ctx)
-        return saved is not None and saved.get("outcome") == RsvpOutcome.RECORDED.name
+        if saved is None:
+            return False
+        return saved.get("outcome") == RsvpOutcome.RECORDED.name or bool(saved.get("applied"))
 
     async def redraw(ctx: StepContext) -> StepResult:
         round_id, division_id = int(ctx.payload["round_id"]), int(ctx.payload["division_id"])
@@ -292,6 +362,8 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
         )
 
     async def describe_redraw(ctx: StepContext) -> str:
+        if _is_bulk(ctx.payload):
+            return f"redrawing the check-in call of **{ctx.payload.get('division_name', '?')}**"
         return (
             f"redrawing the check-in call of round {ctx.payload.get('round_number', '?')} of "
             f"**{ctx.payload.get('division_name', '?')}**"
@@ -299,11 +371,35 @@ def check_in_answer_steps(service: AttendanceService) -> dict[str, Step]:
 
     return {
         SAVE_ANSWER: Step(SAVE_ANSWER, StepKind.SAVE, save_answer, describe=describe_save),
+        SAVE_ANSWERS: Step(SAVE_ANSWERS, StepKind.SAVE, save_answers, describe=describe_save),
         REDRAW: Step(
             REDRAW, StepKind.EDIT, redraw, still_due=redraw_due, describe=describe_redraw,
             gone_line=lambda ctx: _success_line(ctx, not_redrawn=True),
         ),
     }
+
+
+def _bulk_outcome(ctx: OutcomeContext, saved: dict[str, Any]) -> str:
+    """What the maintainer is told of a paste: the entries applied, those passed over, and the
+    call drawn again on the queue."""
+    applied, errors = saved.get("applied", []), saved.get("errors", [])
+    lines: list[str] = []
+    if applied:
+        lines.append(
+            f"✅ Applied {len(applied)} update(s) in **{ctx.payload['division_name']}**:\n"
+            + "\n".join(f"  {entry}" for entry in applied)
+        )
+        redrawn = any(
+            step.name == REDRAW and step.result and step.result.get("gone") is None
+            for step in ctx.steps
+        )
+        lines.append(
+            "🔄 The check-in call is redrawn on the change queue." if redrawn
+            else "ℹ️ The check-in call could not be redrawn: it is no longer there."
+        )
+    if errors:
+        lines.append("⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+    return "\n".join(lines)
 
 
 def check_in_answer_change(service: AttendanceService) -> ChangeType:
@@ -312,6 +408,19 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
+        if _is_bulk(payload):
+            # The form judged test mode and the module as it was submitted; the call is judged
+            # again here, since the paste was written against that call.
+            async with get_connection(ctx.db_path) as db:
+                cursor = await db.execute(
+                    "SELECT message_id FROM rsvp_embed_messages "
+                    "WHERE round_id = ? AND division_id = ?",
+                    (int(payload["round_id"]), int(payload["division_id"])),
+                )
+                standing = await cursor.fetchone()
+            if standing is None or int(standing["message_id"]) != int(payload["embed_message_id"]):
+                return Verdict.refuse(_BULK_STALE)
+            return Verdict.go()
         async with get_connection(ctx.db_path) as db:
             facts = await _facts(db, payload)
         if isinstance(facts, str):
@@ -325,7 +434,11 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
     def outcome(ctx: OutcomeContext) -> str:
         saved = _saved(ctx)
         if saved is None:
+            if _is_bulk(ctx.payload):
+                return "⛔ Nothing was set: the paste was no longer owed when it came to run."
             return "⛔ Your answer was not recorded: it was no longer owed when it came to run."
+        if _is_bulk(ctx.payload):
+            return _bulk_outcome(ctx, saved)
         if "reply" in saved:
             return str(saved["reply"])
         label = STATUS_LABELS.get(ctx.payload["status"], ctx.payload["status"])
@@ -340,7 +453,14 @@ def check_in_answer_change(service: AttendanceService) -> ChangeType:
         opening=(PlannedStep(SAVE_ANSWER), PlannedStep(REDRAW)),
         steps=check_in_answer_steps(service),
         check=check,
-        key=lambda payload: f"{CHECK_IN_ANSWER}:{payload['round_id']}:{payload['driver_profile_id']}",
+        key=lambda payload: (
+            f"{CHECK_IN_ANSWER}:{payload['round_id']}:"
+            f"{'paste' if _is_bulk(payload) else payload['driver_profile_id']}"
+        ),
+        plan=lambda payload: (
+            (PlannedStep(SAVE_ANSWERS), PlannedStep(REDRAW)) if _is_bulk(payload)
+            else (PlannedStep(SAVE_ANSWER), PlannedStep(REDRAW))
+        ),
         doing=_doing,
         outcome=outcome,
         repeatable=True,
@@ -390,4 +510,36 @@ async def ask_check_in_answer(
     )
     await queue.ask(
         CHECK_IN_ANSWER, payload, interaction=interaction, what=what, origin=ChangeOrigin.MEMBER
+    )
+
+
+async def ask_check_in_answers(
+    queue: ChangeQueue,
+    interaction: discord.Interaction,
+    *,
+    form: str,
+    division_name: str,
+    division_id: int,
+    round_id: int,
+    embed_message_id: int,
+    entries: list[dict[str, Any]],
+    passed_over: list[str],
+    pressed_at: datetime,
+) -> None:
+    """Ask the queue to set every one of *entries* on *round_id*'s call and redraw it once.
+
+    Each entry is `{"line", "shown", "driver_profile_id", "status"}`: the line of the paste it was
+    on, the id as typed, and the driver and answer it gives. *passed_over* are the lines the form
+    could not use, worded as the reply lists them. *form* names the form for a refusal's line;
+    the change is "/attendance test rsvp" in every other. *pressed_at* is the one moment every
+    answer is saved at, as the form read it.
+    """
+    payload: dict[str, Any] = {
+        "round_id": round_id, "division_id": division_id, "division_name": division_name,
+        "embed_message_id": embed_message_id, "entries": entries, "passed_over": passed_over,
+        "pressed_at": _aware(pressed_at).isoformat(), "form": form,
+    }
+    await queue.ask(
+        CHECK_IN_ANSWER, payload, interaction=interaction, what=BULK_COMMAND,
+        refusal_what=form, origin=ChangeOrigin.MEMBER,
     )
