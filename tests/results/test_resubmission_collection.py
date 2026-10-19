@@ -60,6 +60,7 @@ from tests.support.change_queue import (
     member_interaction,
     run_queue,
     tier_member,
+    updated_reply,
 )
 from tests.support.review_league import ReviewLeague
 from tests.support.teams import seed_team_instances
@@ -414,6 +415,23 @@ async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(
     assert int(back["actor_id"]) == MEMBER_ID
     assert back.get("label") != AMENDED
     assert len(_prompts(league)) == 1
+
+
+async def test_cancelling_the_resubmission_tells_the_manager_the_earlier_results_stand(
+    tmp_path, monkeypatch,
+):
+    """Alex presses Cancel on round 3's resubmission. His private acknowledgement is updated to
+    say the resubmission of round 3 was cancelled and the earlier results stand, naming the
+    round by its number and not by the database's id (results :410)."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+
+    interaction = await _press_cancel(league)
+
+    reply = updated_reply(interaction)
+    assert "Resubmission of round 3" in reply
+    assert "cancelled. The earlier results stand." in reply
+    assert "penalty review is open" not in reply
 
 
 async def test_cancel_refuses_somebody_without_the_tier(tmp_path, monkeypatch):

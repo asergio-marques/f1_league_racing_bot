@@ -632,7 +632,16 @@ def review_open_change() -> ChangeType:
             return "The resubmission was ended. Its submission channel is gone."
         if opened is None or _discarded(opened.result) or _dropped(opened.result):
             return "Nothing was changed. The penalty review is being opened again."
-        reply = f"✅ The penalty review is open (round {ctx.payload['round_id']})."
+        number = ctx.payload.get("round_number") or ctx.payload["round_id"]
+        division = ctx.payload.get("division_name")
+        named = f"round {number}" + (f" ({division})" if division else "")
+        if ctx.payload.get("returning") == "cancelled":
+            # What the Cancel press was told before the review was asked for (results :410).
+            return "\n".join([
+                f"↩️ Resubmission of {named} cancelled. The earlier results stand.",
+                *_not_done(ctx),
+            ])
+        reply = f"✅ The penalty review is open ({named})."
         return "\n".join([reply, *_not_done(ctx)])
 
     async def abandon(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
