@@ -563,6 +563,12 @@ def check_in_call_change(service: AttendanceService, *, now: Callable[[], dateti
         posted = steps.get(POST_CALL)
         if posted is not None and posted.done and (posted.result or {}).get("new"):
             return f"✅ Check-in call posted for round {number} of **{name}**."
+        if posted is not None and posted.done and "discarded" in (posted.result or {}):
+            return (
+                f"⛔ The check-in call for round {number} of **{name}** was not posted: a league "
+                f"admin discarded it. Post it with `/attendance post-check-in division: {name} "
+                f"round: {number}` once the cause is cleared."
+            )
         return (
             f"⛔ The check-in call for round {number} of **{name}** was not posted: it was "
             f"no longer owed when it came to run."
