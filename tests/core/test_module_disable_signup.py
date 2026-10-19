@@ -96,9 +96,6 @@ NO_MODULE_OFF_CHANGE = (
     "#439: /module disable signup turns the module off itself, off the queue, with no "
     "module.off:signup change"
 )
-NO_DISARM = (
-    "#439: the scheduler service has no disarm, and a wizard's timers are cancelled by job id"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +515,6 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DISARM)
 async def test_a_job_that_has_already_fired_is_stepped_over():
     """APScheduler raises for a job it does not hold, and a wizard whose timeout fired an hour
     ago is ordinary. Driver 101's two timers have both fired: disarming each, as the switch-off
