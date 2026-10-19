@@ -14,7 +14,8 @@ and 3 nothing. The change's jobs are:
   plans the deletion of the forecast it supersedes (phase 2 supersedes 1, 3 supersedes 2). A
   forecast Discord refuses, or whose forecast channel is unset, stops the queue (XIV.8).
 - `delete_forecast`: the deletion of one recorded forecast, whose record carries the forgetting
-  of the row; a refusal stops the queue and keeps the row.
+  of the row; a refusal stops the queue and keeps the row. It deletes the part the row names, and
+  plans a shared `delete_replaced` job for each earlier part of a forecast posted in more than one.
 - `plan_forecast_deletes`: finds the forecasts a clean-up (whichever of a round's Phase 1 to 3
   forecasts still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
   `delete_forecast` for each, so that each deletion is a job of its own.
@@ -302,7 +303,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
                 row = await _round_row(db, round_id)
                 division_id = None if row is None else row["division_id"]
             cursor = await db.execute(
-                "SELECT fm.message_id, fm.message_ids, "
+                "SELECT fm.message_id, fm.message_ids, d.name AS division_name, "
                 "COALESCE(fm.channel_id, d.forecast_channel_id) "
                 "AS forecast_channel_id FROM forecast_messages fm "
                 "JOIN divisions d ON d.id = fm.division_id "
@@ -316,37 +317,42 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
         message_id = int(found["message_id"])
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
-        # A forecast posted in parts comes down whole, in one job: a part already gone counts as
-        # deleted, so a try after a refusal finds only what is left.
+        # A forecast posted in parts comes down whole: this job deletes the part the row names (the
+        # last), and plans a `delete_replaced` job for each part before it, so that a refusal of
+        # one part stops the queue naming that part and a Discard names it for deletion by hand.
+        # A part already gone counts as deleted.
         parts = json.loads(found["message_ids"]) if found["message_ids"] else [message_id]
-        refused: tuple[int, discord.HTTPException] | None = None
-        missing: list[discord.NotFound] = []
-        for part in parts:
-            try:
-                await forecast_cleanup_service._discord_delete(ctx.bot, int(channel_id), int(part))
-            except discord.NotFound as exc:
-                missing.append(exc)
-            except discord.HTTPException as exc:
-                refused = refused or (int(part), exc)
-        if refused is None and len(missing) == len(parts):
-            raise missing[0]
-        if refused is not None:
+        try:
+            await forecast_cleanup_service._discord_delete(ctx.bot, int(channel_id), message_id)
+        except discord.NotFound:
+            pass
+        except discord.HTTPException as exc:
             from leaguebot.core.utils.league_server import league_guild
 
-            left, cause = refused
             kept: dict[str, Any] = {
-                "phase": phase, "channel_id": int(channel_id), "message_id": left,
+                "phase": phase, "channel_id": int(channel_id), "message_id": message_id,
             }
             guild = await league_guild(ctx.bot)
             if guild is not None:
                 kept["guild_id"] = guild.id
             raise StepFailedOnDiscord(
-                f"the Phase {phase} forecast message {left} in channel {channel_id}"
+                f"the Phase {phase} forecast message {message_id} in channel {channel_id}"
                 f" could not be deleted",
                 result=kept,
-            ) from cause
-        return StepResult(result={"phase": phase, "message_id": message_id,
-                                  "channel_id": int(channel_id)})
+            ) from exc
+        then = tuple(
+            step
+            for part in parts
+            if int(part) != message_id
+            for step in standing_posts.replaced(
+                int(channel_id), int(part), None, what=f"Phase {phase} forecast",
+                division_name=found["division_name"],
+            )
+        )
+        return StepResult(
+            result={"phase": phase, "message_id": message_id, "channel_id": int(channel_id)},
+            then=then,
+        )
 
     async def record_delete(
         db: aiosqlite.Connection, ctx: StepContext, result: StepResult
@@ -405,6 +411,7 @@ def forecast_steps(*, now: Callable[[], datetime]) -> dict[str, Step]:
             DELETE_FORECAST, StepKind.DELETE, delete, describe=describe_delete,
             record=record_delete,
         ),
+        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         PLAN_FORECAST_DELETES: Step(
             PLAN_FORECAST_DELETES, StepKind.ACT, plan_deletes, describe=describe_plan,
         ),
@@ -689,4 +696,10 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
             where = f"message {message} in <#{result.get('channel_id')}>"
         return ("forecast channel", f"the Phase {phase} forecast could not be deleted, and a "
                 f"league admin discarded it; delete it by hand ({where})")
+    if view.name == standing_posts.DELETE_REPLACED and "forecast" in str(
+        view.payload.get("what", "")
+    ):
+        link = (view.result or {}).get("link") or f"in <#{view.payload['channel_id']}>"
+        return ("forecast channel", f"a part of the {view.payload['what']} could not be "
+                f"deleted, and a league admin discarded it; delete it by hand ({link})")
     return None
