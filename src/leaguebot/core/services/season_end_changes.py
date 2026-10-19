@@ -66,7 +66,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services import approval_checks, season_classification_service
+from leaguebot.core.services import approval_checks, season_classification_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -399,6 +399,12 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
             lines.append(FORECASTS_KEPT)
         elif view.name == DELETE_FORECAST:
             lines.append(_forecast_kept(view))
+        elif view.name == standing_posts.DELETE_REPLACED:
+            # A calendar's earlier post is named by the cancellation's own outcome; here only a
+            # part of a forecast posted in parts.
+            part = standing_posts.not_deleted(view)
+            if part is not None and "forecast" in str(each.get("what", "")):
+                lines.append(part)
         elif view.name == SIGNUP_NOTICE:
             if str(each["user_id"]) in closed:
                 lines.append(
