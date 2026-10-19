@@ -20,8 +20,9 @@ it: a restart leaves it dead, and the restart's own recovery clears a first past
 the channel told with the number of its first job (results spec :382). Its ⏳ stays: the review's
 prompt change clears it once the prompt appears, the member seeing nothing else meanwhile.
 
-**Every session cancelled** says so and deletes the channel, closing the round's row with the
-deletion; a refusal stops the round's lane.
+**Every session cancelled** hands `results.submission.all_cancelled` to the league (a follow-on of
+the save), which posts each session's cancelled line in the results channel and asks the channel's
+closing back of the round's lane (see `submission_changes`).
 
 **A conversation that has ended drops its turns.** The conversation is the round's submission row;
 a restart's clearing deletes it. A row closed by a cancellation still stands, so that the paste
@@ -54,10 +55,7 @@ from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services import review_open_change, season_points_service
-from leaguebot.results.services.review_posting import (
-    DELETE_CHANNEL,
-    posting_steps,
-)
+from leaguebot.results.services.submission_changes import ALL_CANCELLED_KIND
 from leaguebot.results.services.submission_steps import (
     POST,
     POST_PROMPT,
@@ -378,24 +376,35 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
                 {"channel_id": channel_id, "round_id": round_id, "session_type": upcoming.value},
             ))
             return StepResult(result={"saved": True}, lines=lines, then=tuple(then))
-        statuses = [
-            found["status"]
-            for found in await (
-                await db.execute(
-                    "SELECT status FROM session_results WHERE round_id = ?", (round_id,)
-                )
-            ).fetchall()
-        ]
-        if all(status == "CANCELLED" for status in statuses):
-            then.append(_say(
-                channel_id,
-                "⏭️ All sessions for this round were cancelled — no penalty review required.",
-            ))
-            then.append(PlannedStep(DELETE_CHANNEL, {
-                "channel_id": channel_id, "round_id": round_id, "what": "submission channel",
-                "reason": "Results submission complete",
-            }))
-            return StepResult(result={"saved": True}, lines=lines, then=tuple(then))
+        entered = await (
+            await db.execute(
+                "SELECT id, session_type, status FROM session_results WHERE round_id = ?",
+                (round_id,),
+            )
+        ).fetchall()
+        if all(found["status"] == "CANCELLED" for found in entered):
+            # No tables to carry the sessions' notes and no review: the league posts them in the
+            # results channel and asks the channel's closing back of this lane (results :363, :379).
+            order = list(SessionType)
+            cancelled = sorted(
+                ((found["session_type"], int(found["id"])) for found in entered),
+                key=lambda pair: order.index(SessionType(pair[0])),
+            )
+            return StepResult(
+                result={"saved": True, "all_cancelled": True}, lines=lines, then=tuple(then),
+                follow_ons=(FollowOn(
+                    ALL_CANCELLED_KIND,
+                    {
+                        "round_id": round_id, "channel_id": channel_id,
+                        "round_number": int(payload["round_number"]),
+                        "sessions": [
+                            {"session_id": session_id, "session_type": session_type}
+                            for session_type, session_id in cancelled
+                        ],
+                    },
+                    f"posting round {payload['round_number']}'s cancelled sessions",
+                ),),
+            )
         then.append(PlannedStep(POST_OPENING_REVIEW, {"channel_id": channel_id, "round_id": round_id}))
         asked: dict[str, Any] = {
             "round_id": round_id,
@@ -472,17 +481,6 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
             for view in ctx.steps
         )
 
-    async def record_closed(
-        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
-    ) -> None:
-        """Mark the round's submission closed with the channel's deletion, so a channel that
-        could not be deleted keeps its row for the retry. A first submission has no amendment
-        record to forget."""
-        await db.execute(
-            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?",
-            (int(ctx.step_payload["round_id"]),),
-        )
-
     return {
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
         SETTLE: Step(SETTLE, StepKind.ACT, settle, describe=describe_settle),
@@ -496,7 +494,6 @@ def _steps(queue: ChangeQueue, server_config: ServerConfig) -> dict[str, Step]:
             POST_OPENING_REVIEW, StepKind.ACT, post_opening_review,
             describe=describe_opening_review,
         ),
-        DELETE_CHANNEL: dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=record_closed),
         typed_turns.CLEAR_MARK: dataclasses.replace(
             typed_turns.clear_mark_step(), still_due=still_marked
         ),

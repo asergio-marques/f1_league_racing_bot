@@ -399,6 +399,8 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
     from leaguebot.results.services.submission_changes import (
+        submission_all_cancelled_change,
+        submission_close_change,
         submission_open_change,
         submission_restart_change,
     )
@@ -418,6 +420,8 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(submission_restart_change())
+    bot.change_queue.register(submission_all_cancelled_change())
+    bot.change_queue.register(submission_close_change())
     bot.change_queue.register(
         submission_turn_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config

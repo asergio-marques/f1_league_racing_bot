@@ -19,8 +19,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format
 from leaguebot.results.utils import results_formatter
@@ -54,13 +52,6 @@ QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
     for session in get_sessions_for_format(RoundFormat.NORMAL)[:2]
 )
-
-NO_ALL_CANCELLED = (
-    "#439: a round whose every session is cancelled closes its submission channel inside the "
-    "submission coroutine, posting no cancelled line in the results channel, rather than handing "
-    "`results.submission.all_cancelled` to the league and closing the channel on the round's lane"
-)
-
 
 async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring, the race not yet entered."""
@@ -103,7 +94,6 @@ async def _closed(league: SeasonLeague) -> bool:
     return bool(row["closed"])
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ALL_CANCELLED)
 async def test_every_session_cancelled_posts_each_line_recorded_before_the_channel_closes(
     tmp_path,
 ):
@@ -147,7 +137,6 @@ async def test_every_session_cancelled_posts_each_line_recorded_before_the_chann
     assert await _closed(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ALL_CANCELLED)
 async def test_a_refused_deletion_of_an_all_cancelled_channel_stops_only_the_round_s_lane(
     tmp_path,
 ):

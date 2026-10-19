@@ -28,6 +28,15 @@ cleared (`clear`: the round's sessions and its submission row, which ends the ol
 channel deleted (`delete_channel`, whose refusal stops the league lane, the lane that asked) and
 `results.submission.open` asked afresh as a follow-on, whose channel creation cannot be discarded.
 The log line telling the league to re-submit is written in the clearing's save.
+
+**`results.submission.all_cancelled`** is what a submission whose every session was entered as
+cancelled hands the league (results spec :363, :379): there are no Provisional Results to carry
+the sessions' notes, so it posts each session's "This session was cancelled." line in the
+division's results channel, in running order, each recorded as that session's results message
+(the posting job the review's tables use), and then asks **`results.submission.close_channel`**
+on the round's own lane. That says "⏭️" in the submission channel and deletes it, closing the
+round's row with the deletion: the conversation ending itself, so a refusal stops the round's lane
+alone and the channel keeps its row for the retry.
 """
 from __future__ import annotations
 
@@ -62,7 +71,11 @@ from leaguebot.core.services import season_service
 from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
+from leaguebot.results.services.review_posting import (
+    DELETE_CHANNEL,
+    POST_SESSION_RESULTS,
+    posting_steps,
+)
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     expected_session_on,
@@ -70,6 +83,7 @@ from leaguebot.results.services.result_submission_service import (
 )
 from leaguebot.results.services.submission_steps import (
     CREATE_CHANNEL,
+    POST,
     POST_PROMPT,
     create_channel_step,
     post_prompt_step,
@@ -87,8 +101,14 @@ _MENTION = "<<mention>>"
 RESTART_KIND = "results.submission.restart"
 CLEAR = "clear"
 
+#: A submission whose every session was cancelled: the league's notes, then the lane's closing.
+ALL_CANCELLED_KIND = "results.submission.all_cancelled"
+CLOSE_KIND = "results.submission.close_channel"
+ASK_CLOSE = "ask_close"
+
 __all__ = [
-    "KIND", "RESTART_KIND", "ask_submission_open", "ask_submission_restart",
+    "ALL_CANCELLED_KIND", "CLOSE_KIND", "KIND", "RESTART_KIND", "ask_submission_open",
+    "ask_submission_restart", "submission_all_cancelled_change", "submission_close_change",
     "submission_open_change", "submission_restart_change",
 ]
 
@@ -415,4 +435,130 @@ async def ask_submission_restart(queue: ChangeQueue, db_path: str, round_id: int
         RESTART_KIND, {"round_id": round_id},
         what=f"clearing {number}'s results submission a restart cut short",
         origin=ChangeOrigin.BOT,
+    )
+
+
+async def _submission_standing(ctx: CheckContext) -> Verdict:
+    async with get_connection(ctx.db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT 1 FROM round_submission_channels WHERE round_id = ? AND channel_id = ?",
+                (int(ctx.payload["round_id"]), int(ctx.payload["channel_id"])),
+            )
+        ).fetchone()
+    return Verdict.go() if row is not None else Verdict.not_due("the round's submission is gone")
+
+
+def submission_all_cancelled_change() -> ChangeType:
+    """The `results.submission.all_cancelled` change type, for the builder to register, on the
+    league lane.
+
+    The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
+    ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
+    running order. Its jobs are one posting job for each (the line, in the results channel, saved
+    as the session's results message; a division with no results channel has none to post) and
+    ``ask_close``, which asks the closing of the channel of the round's lane in its own save. A
+    discarded line leaves the others and the closing to go on.
+    """
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        posts = tuple(
+            PlannedStep(POST_SESSION_RESULTS, {
+                "session_id": int(session["session_id"]), "round_id": int(payload["round_id"]),
+                "label": "Provisional Results", "round_number": payload["round_number"],
+                "session": f"{str(session['session_type']).replace('_', ' ').title()} results",
+                "remedy": "/results rounds sync",
+            })
+            for session in payload["sessions"]
+        )
+        return (*posts, PlannedStep(ASK_CLOSE))
+
+    async def ask_close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        payload = ctx.payload
+        asked = {"round_id": int(payload["round_id"]), "channel_id": int(payload["channel_id"])}
+        return StepResult(
+            result={"asked": True},
+            follow_ons=(FollowOn(
+                CLOSE_KIND, asked,
+                f"closing round {payload['round_number']}'s submission channel",
+            ),),
+        )
+
+    async def describe_ask_close(_ctx: StepContext) -> str:
+        return "asking for the submission channel to be closed"
+
+    return ChangeType(
+        kind=ALL_CANCELLED_KIND,
+        opening=(),
+        plan=plan,
+        steps={
+            POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
+            ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
+        },
+        check=_submission_standing,
+        key=lambda payload: f"{ALL_CANCELLED_KIND}:{payload['round_id']}",
+        doing=lambda payload: f"posting round {payload['round_number']}'s cancelled sessions",
+        outcome=lambda _ctx: "",
+    )
+
+
+def submission_close_change() -> ChangeType:
+    """The `results.submission.close_channel` change type, for the builder to register, on the
+    round's own lane (``channel:<submission channel>``).
+
+    The payload is ``round_id`` and ``channel_id``. It says "⏭️" in the channel and deletes it;
+    the deletion's record closes the round's row, so a channel that could not be deleted keeps it
+    for the retry. The conversation stands while the row names the channel.
+    """
+
+    def lane(payload: dict[str, Any]) -> str:
+        return f"channel:{int(payload['channel_id'])}"
+
+    async def conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+        row = await (
+            await db.execute(
+                "SELECT 1 FROM round_submission_channels WHERE round_id = ? AND channel_id = ?",
+                (int(payload["round_id"]), int(payload["channel_id"])),
+            )
+        ).fetchone()
+        return row is not None
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        channel_id = int(payload["channel_id"])
+        return (
+            PlannedStep(POST, {
+                "channel_id": channel_id,
+                "text": "⏭️ All sessions for this round were cancelled — no penalty review required.",
+            }),
+            PlannedStep(DELETE_CHANNEL, {
+                "channel_id": channel_id, "round_id": int(payload["round_id"]),
+                "what": "submission channel", "reason": "Results submission complete",
+            }),
+        )
+
+    async def record_closed(
+        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
+    ) -> None:
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?",
+            (int(ctx.step_payload["round_id"]),),
+        )
+
+    return ChangeType(
+        kind=CLOSE_KIND,
+        opening=(),
+        plan=plan,
+        steps={
+            POST: post_step(describing="posting the closing line in the submission channel"),
+            DELETE_CHANNEL: dataclasses.replace(
+                posting_steps()[DELETE_CHANNEL], record=record_closed
+            ),
+        },
+        check=_submission_standing,
+        key=lambda payload: f"{CLOSE_KIND}:{payload['round_id']}",
+        doing=lambda _payload: "closing a round's submission channel",
+        outcome=lambda _ctx: "",
+        lane=lane,
+        conversation_open=conversation_open,
+        writes=("round_submission_channels",),
     )
