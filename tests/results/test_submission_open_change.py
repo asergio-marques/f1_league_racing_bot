@@ -23,6 +23,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format

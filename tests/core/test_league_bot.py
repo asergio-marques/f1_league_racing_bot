@@ -14,6 +14,8 @@ import inspect
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from leaguebot.__main__ import create_bot
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 

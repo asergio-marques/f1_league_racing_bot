@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from leaguebot.core.models.round import RoundStatus
 from tests.results.test_review_open_change import (
     KIND,
