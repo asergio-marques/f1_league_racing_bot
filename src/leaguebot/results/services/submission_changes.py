@@ -1,0 +1,298 @@
+"""`results.submission.open`: opening a round's results submission on the change queue (#439, 6b).
+
+A round's start timer asks the queue, as the bot, for this change. Its jobs move the round off
+NOT_RUN (`start_round`, written through core's season service so that results writes no `rounds`
+row itself), create the round's submission channel beside the interaction channel and record it
+(`create_channel`, results spec :244), post the opening that pings the league managers' role and
+the first session's prompt. Where results are off, the round has nothing to wait for: it ends
+FINAL and the change asks the season's wind-down, creating no channel.
+
+**The channel's creation cannot be discarded.** Without it the round would never have its results
+submitted, so Discard on that job is refused and only Retry clears it (core spec :130). The channel's
+posts are planned by the creation itself, which knows the channel they go in.
+
+**A round whose start falls while the queue is stopped** is asked for all the same and waits its
+turn: it stays NOT_RUN, and so cancellable, until the queue reaches the opening (Q17). A round
+cancelled before then is found no longer due and the opening is dropped.
+
+**No results channel stops the queue**, the stop naming `/results channel results`: the creation
+job finds, as it runs, that the division's results channel is unset or gone from the server, and
+stops rather than passing over the round. It reads the channel then, from the database, so a Retry
+after the channel is set goes through. The round has moved off NOT_RUN by then, as for any refusal
+of the creation.
+
+The change runs on the league lane, whatever asked: a timer, the restart or test mode's advance.
+"""
+from __future__ import annotations
+
+import dataclasses
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
+
+import aiosqlite
+
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import (
+    ChangeOrigin,
+    FollowOn,
+    GuildUnavailable,
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    Verdict,
+)
+from leaguebot.core.models.round import RoundFormat, RoundStatus
+from leaguebot.core.services.change_queue import (
+    ChangeQueue,
+    ChangeType,
+    CheckContext,
+    OutcomeContext,
+    Step,
+    StepContext,
+)
+from leaguebot.core.services import season_service
+from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.utils.league_server import league_guild
+from leaguebot.results.services.result_submission_service import (
+    _make_slug,
+    expected_session_on,
+    get_sessions_for_format,
+)
+from leaguebot.results.services.submission_steps import (
+    CREATE_CHANNEL,
+    POST_PROMPT,
+    create_channel_step,
+    post_prompt_step,
+    post_step,
+)
+from leaguebot.results.utils import results_formatter
+
+KIND = "results.submission.open"
+START_ROUND = "start_round"
+POST_OPENING = "post_opening"
+#: Where the opening's mention goes, until the creation knows the role is on the server.
+_MENTION = "<<mention>>"
+
+__all__ = ["KIND", "ask_submission_open", "submission_open_change"]
+
+_ROUND = (
+    "SELECT r.status, r.division_id, r.round_number, r.format, d.name AS division_name, "
+    "s.season_number, c.results_channel_id "
+    "FROM rounds r JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
+    "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?"
+)
+
+
+async def _results_enabled(db: aiosqlite.Connection) -> bool:
+    row = await (await db.execute("SELECT module_enabled FROM results_module_config")).fetchone()
+    return bool(row is not None and row["module_enabled"])
+
+
+def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
+    """The `results.submission.open` change type, for the builder to register.
+
+    *now* is the queue's clock, read when the channel's row is written. The payload is
+    ``{"round_id": int}``.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await (await db.execute(_ROUND, (int(ctx.payload["round_id"]),))).fetchone()
+        if row is None:
+            return Verdict.not_due("the round is gone")
+        if row["status"] == RoundStatus.CANCELLED.value:
+            return Verdict.not_due("the round was cancelled")
+        return Verdict.go()
+
+    async def not_cancelled(ctx: StepContext) -> bool:
+        async with get_connection(ctx.db_path) as db:
+            row = await (
+                await db.execute("SELECT status FROM rounds WHERE id = ?", (int(ctx.payload["round_id"]),))
+            ).fetchone()
+        return row is not None and row["status"] != RoundStatus.CANCELLED.value
+
+    async def start_round(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        round_id = int(ctx.payload["round_id"])
+        row = await (await db.execute(_ROUND, (round_id,))).fetchone()
+        if row is None:
+            raise LookupError(f"round {round_id} is not there to start")
+        if not await _results_enabled(db):
+            # Nobody will ever enter a result, so the round ends here; the division finishing may
+            # have been the season's last, which the wind-down judges (the queue drops it if not).
+            await set_round_status_on(
+                db, round_id, RoundStatus.FINAL, only_from=(RoundStatus.NOT_RUN.value,)
+            )
+            await season_service.refresh_division_status_on(db, int(row["division_id"]))
+            return StepResult(
+                result={"results": False},
+                follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
+            )
+        await set_round_status_on(
+            db, round_id, RoundStatus.AWAITING_RESULTS, only_from=(RoundStatus.NOT_RUN.value,)
+        )
+        server = await (
+            await db.execute(
+                "SELECT interaction_role_id, interaction_channel_id, league_admin_role_id "
+                "FROM server_configs WHERE server_id IS NOT NULL"
+            )
+        ).fetchone()
+        interaction_role = None if server is None else server["interaction_role_id"]
+        admin_role = None if server is None else server["league_admin_role_id"]
+        fmt = RoundFormat(row["format"])
+        is_sprint = fmt is RoundFormat.SPRINT
+        sessions = ", ".join(
+            results_formatter.format_session_label(each, is_sprint=is_sprint)
+            for each in get_sessions_for_format(fmt)
+        )
+        opening = (
+            f"✅ Results submission open for **Round {row['round_number']}** "
+            f"({row['division_name']}) - {fmt.label}. Sessions: {sessions}.{_MENTION}\n\n"
+            "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a "
+            "session."
+        )
+        first = await expected_session_on(db, round_id)
+        slug = _make_slug(row["division_name"])
+        create: dict[str, Any] = {
+            "name": f"S{row['season_number']}-{slug}-R{row['round_number']}-results",
+            "beside_channel_id": None if server is None else server["interaction_channel_id"],
+            "role_ids": [each for each in (interaction_role, admin_role) if each],
+            "round_number": row["round_number"],
+            "division_id": row["division_id"],
+            "division_name": row["division_name"],
+            "opening": opening,
+            "interaction_role_id": interaction_role,
+            "first_session": None if first is None else first.value,
+        }
+        return StepResult(result={"results": True}, then=(PlannedStep(CREATE_CHANNEL, create),))
+
+    async def record_channel(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        """Replace the round's row (a prior closed submission or an orphan of a restart would hit
+        the UNIQUE constraint) with the channel just made, in the save that marks the job done."""
+        round_id = int(ctx.payload["round_id"])
+        await db.execute("DELETE FROM round_submission_channels WHERE round_id = ?", (round_id,))
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
+            "VALUES (?, ?, ?, 0)",
+            (round_id, int(result.result["channel_id"]), now().isoformat()),
+        )
+
+    shared_create = create_channel_step(record_channel)
+
+    async def create(ctx: StepContext) -> StepResult:
+        """Create the channel, and plan its opening and first prompt, which know where they go.
+
+        The division's results channel must be set and on the server, as the results are posted
+        there once they are in: else the queue stops here, naming the command that sets it. It is
+        read as the job runs, so a Retry after it is set goes through.
+        """
+        payload = ctx.step_payload
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise GuildUnavailable("the league's server is not in the cache")
+        async with get_connection(ctx.db_path) as db:
+            configured = await (
+                await db.execute(
+                    "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
+                    (int(payload["division_id"]),),
+                )
+            ).fetchone()
+        results_channel = None if configured is None else configured["results_channel_id"]
+        if results_channel is None or guild.get_channel(int(results_channel)) is None:
+            raise StepFailedOnDiscord(
+                f"**{payload['division_name']}** has no results channel on the server, so round "
+                f"{payload['round_number']}'s results submission cannot open: set one with "
+                "`/results channel results`, then press Retry"
+            )
+        made = await shared_create.run(ctx)
+        channel_id = made.result["channel_id"]
+        # The league managers enter the results, so they are the ones pinged, where their role is
+        # on the server; the division's role cannot see this channel (#136).
+        role_id = payload.get("interaction_role_id")
+        pinged = [int(role_id)] if role_id and guild.get_role(int(role_id)) is not None else []
+        planned = [
+            PlannedStep(
+                POST_OPENING,
+                {
+                    "channel_id": channel_id,
+                    "text": payload["opening"].replace(
+                        _MENTION, f" <@&{pinged[0]}>" if pinged else ""
+                    ),
+                    "mention_role_ids": pinged,
+                },
+            )
+        ]
+        if payload.get("first_session") is not None:
+            planned.append(
+                PlannedStep(
+                    POST_PROMPT,
+                    {
+                        "channel_id": channel_id,
+                        "round_id": int(ctx.payload["round_id"]),
+                        "session_type": payload["first_session"],
+                    },
+                )
+            )
+        return dataclasses.replace(made, then=tuple(planned))
+
+    async def would_never_have_results(ctx: StepContext) -> str:
+        payload = ctx.step_payload
+        return (
+            f"round {payload['round_number']} in **{payload['division_name']}** "
+            "would never have its results submitted"
+        )
+
+    async def describe_create(ctx: StepContext) -> str:
+        payload = ctx.step_payload
+        return (
+            f"creating the results submission channel of round {payload['round_number']} in "
+            f"**{payload['division_name']}**"
+        )
+
+    async def describe_start(_ctx: StepContext) -> str:
+        return "starting the round"
+
+    def opened(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=KIND,
+        opening=(PlannedStep(START_ROUND),),
+        steps={
+            START_ROUND: Step(
+                START_ROUND, StepKind.SAVE, start_round, still_due=not_cancelled,
+                describe=describe_start,
+            ),
+            CREATE_CHANNEL: dataclasses.replace(
+                shared_create, run=create, still_due=not_cancelled, describe=describe_create,
+                undiscardable=would_never_have_results,
+            ),
+            POST_OPENING: dataclasses.replace(
+                post_step(POST_OPENING, describing="posting the results submission's opening"),
+                still_due=not_cancelled,
+            ),
+            POST_PROMPT: dataclasses.replace(post_prompt_step(), still_due=not_cancelled),
+        },
+        check=check,
+        key=lambda payload: f"{KIND}:{payload['round_id']}",
+        doing=lambda _payload: "opening a round's results submission",
+        outcome=opened,
+    )
+
+
+async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -> None:
+    """Ask the queue, as the bot, to open *round_id*'s results submission.
+
+    The round's number is read here, on a connection of its own, to name the change.
+    """
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+        ).fetchone()
+    number = "a round" if row is None else f"round {row['round_number']}"
+    await queue.ask(
+        KIND, {"round_id": round_id}, what=f"opening {number}'s results submission",
+        origin=ChangeOrigin.BOT,
+    )

@@ -163,7 +163,6 @@ def _opening(league: SeasonLeague) -> str:
     return league.texts(made)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_round_starts_waiting_for_results(tmp_path):
     """Round 3 starts with results on: once the queue opens its submission, round 3 awaits
     results."""
@@ -174,7 +173,6 @@ async def test_the_round_starts_waiting_for_results(tmp_path):
     assert await _status_of(league) == "AWAITING_RESULTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_with_results_off_the_round_ends_at_its_start(tmp_path):
     """#154: nobody will ever enter a result, so the round would otherwise stay outstanding
     for ever and the season could never be completed. Pro's rounds 1–3 are final and round 4,
@@ -193,7 +191,6 @@ async def test_with_results_off_the_round_ends_at_its_start(tmp_path):
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_round_already_moved_on_is_not_moved_back(tmp_path):
     """The move is guarded to NOT_RUN, so an opening asked late for round 2, already awaiting its
     report verdicts, cannot reset it."""
@@ -204,7 +201,6 @@ async def test_a_round_already_moved_on_is_not_moved_back(tmp_path):
     assert await _status_of(league, round_id(PRO, 2)) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_cancelled_round_opens_nothing(tmp_path):
     """Round 3 is cancelled when its start asks for the submission: the opening is dropped as no
     longer due, the queue does not stop, no channel is created, and round 3 stays CANCELLED."""
@@ -218,7 +214,6 @@ async def test_a_cancelled_round_opens_nothing(tmp_path):
     assert await _status_of(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
     """An opening asked for a round id the league has none of (9999) is dropped: the queue does
     not stop and no channel is created."""
@@ -236,7 +231,6 @@ async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     """The bot is no longer in the league's server when round 3 starts: no channel is created
     and no submission recorded."""
@@ -249,7 +243,6 @@ async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     assert await _submissions(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_division_without_a_results_channel_opens_nothing(tmp_path):
     """Pro has no results channel set when round 3 starts: the queue stops, its notice naming
     `/results channel results`, and no channel is created."""
@@ -265,7 +258,6 @@ async def test_a_division_without_a_results_channel_opens_nothing(tmp_path):
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
     """Pro's results channel (606) is set but has been deleted from the server when round 3
     starts: the queue stops, its notice naming `/results channel results`, and no channel is
@@ -295,7 +287,6 @@ async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
     assert await _opened(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
     """The channel round 3's opening creates admits the league managers' role (900) and the
     league admins' role (901)."""
@@ -313,7 +304,6 @@ async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
     """The opening the queue posts in round 3's new channel names Round 3, Pro, and its
     sessions, Qualifying and Race."""
@@ -327,7 +317,6 @@ async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
     assert "Qualifying" in opening and "Race" in opening
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 @pytest.mark.parametrize(
     ("fmt", "label"),
     [("NORMAL", "Normal"), ("SPRINT", "Sprint"), ("MYSTERY", "Mystery"), ("ENDURANCE", "Endurance")],
@@ -347,7 +336,6 @@ async def test_the_opening_message_names_the_format_as_a_league_reads_it(tmp_pat
     assert fmt not in opening
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_message_pings_the_interaction_role_and_not_the_division(tmp_path):
     """Issue #136. The channel is closed to the division's role, so a ping for it reached
     nobody and the league managers who enter the results were never told. Round 3's opening
@@ -362,7 +350,6 @@ async def test_the_opening_message_pings_the_interaction_role_and_not_the_divisi
     assert f"<@&{ADMIN_ROLE_ID}>" not in opening
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_message_pings_nobody_when_the_interaction_role_is_gone(tmp_path):
     """The league managers' role (900) has been deleted from the server: round 3's opening
     mentions no role at all."""

@@ -14,8 +14,6 @@ import inspect
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from leaguebot.__main__ import create_bot
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
@@ -159,14 +157,6 @@ def test_the_season_s_end_is_registered():
         "season.complete", "season.cancel", "season.abort", "season.wind_down")
 
 
-#: Why the opening of a round's submission is not yet among the undiscardable jobs.
-NO_UNDISCARDABLE_SUBMISSION_OPEN = (
-    "#439: no `results.submission.open` change creates a round's submission channel, so its "
-    "creation is not marked undiscardable"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_UNDISCARDABLE_SUBMISSION_OPEN)
 def test_only_the_armings_and_a_submission_s_channel_are_undiscardable():
     """Over every change type the builder registers, the jobs marked as never to be discarded
     are exactly three: the arming of an approved season's timed work ("season.approve", its

@@ -398,6 +398,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
+    from leaguebot.results.services.submission_changes import submission_open_change
     from leaguebot.results.services.review_open_change import (
         appeals_open_change,
         close_stale_change,
@@ -408,6 +409,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
     )
+    bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())
     bot.change_queue.register(appeals_open_change())
@@ -671,10 +673,10 @@ async def main() -> None:
         bot.scheduler_service.register_forecast_cleanup_callback(callbacks.clean_up)
 
         # Register result submission callback
-        from leaguebot.results.services.result_submission_service import run_result_submission_job
+        from leaguebot.results.services.submission_changes import ask_submission_open
 
         async def _result_submission_cb(round_id: int) -> None:
-            await run_result_submission_job(round_id, bot, queue=bot.change_queue)
+            await ask_submission_open(bot.change_queue, bot.db_path, round_id)
 
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 

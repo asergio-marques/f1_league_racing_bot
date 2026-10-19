@@ -12,6 +12,9 @@ queue saves and resumes them.
   it creates another, so a retry leaves no second channel. A creation Discord refuses stops the
   queue, naming the permission the bot lacks. Deleting a dialogue's channel is
   `review_posting.DELETE_CHANNEL`, reused.
+- **`post_step(name)`** is an `ACT`: it posts one line in the dialogue's channel, mentioning the
+  roles its payload names and nobody else; a refusal stops the queue. A dialogue's opening, its
+  acknowledgements and its refusals are posted through it.
 - **`post_prompt_step()`** is an `ACT`: it posts the prompt asking for one session's results, with
   its format hint, in the dialogue's channel; a refusal stops the queue.
 
@@ -39,6 +42,7 @@ from leaguebot.results.services.results_post_service import delete_round_channel
 from leaguebot.results.utils import results_formatter
 
 CREATE_CHANNEL = "create_channel"
+POST = "post"
 POST_PROMPT = "post_prompt"
 
 Record = Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]]
@@ -140,6 +144,35 @@ def create_channel_step(record: Record) -> Step:
     return Step(CREATE_CHANNEL, StepKind.ACT, run, describe=describe, record=record)
 
 
+def post_step(name: str = POST, *, describing: str = "posting a line in the dialogue's channel") -> Step:
+    """The job that posts one line in a dialogue's channel, named *name* on the queue.
+
+    The payload is ``channel_id``, ``text`` and, optionally, ``mention_role_ids``: the only roles
+    the line may notify (none where absent). It returns ``{"message_id": <id>}``. *describing* is
+    what a stop or a Discard says the job was doing.
+    """
+
+    @posts_in_a_job
+    async def post(ctx: StepContext) -> StepResult:
+        payload = ctx.step_payload
+        guild = await _guild(ctx)
+        channel = guild.get_channel(int(payload["channel_id"]))
+        if not isinstance(channel, discord.TextChannel):
+            raise StepFailedOnDiscord("the dialogue's channel is not in the server")
+        roles = [discord.Object(id=int(each)) for each in payload.get("mention_role_ids", ())]
+        mentions = discord.AllowedMentions(everyone=False, users=False, roles=roles or False)
+        try:
+            message = await channel.send(str(payload["text"]), allowed_mentions=mentions)
+        except discord.HTTPException as error:
+            raise StepFailedOnDiscord("the line could not be posted") from error
+        return StepResult(result={"message_id": message.id})
+
+    async def describe(_ctx: StepContext) -> str:
+        return describing
+
+    return Step(name, StepKind.ACT, post, describe=describe)
+
+
 def post_prompt_step() -> Step:
     """The job that posts the prompt for one session in a dialogue's channel.
 
@@ -179,4 +212,12 @@ def post_prompt_step() -> Step:
     return Step(POST_PROMPT, StepKind.ACT, post, describe=describe)
 
 
-__all__ = ["CREATE_CHANNEL", "POST_PROMPT", "create_channel_step", "post_prompt_step", "session_prompt"]
+__all__ = [
+    "CREATE_CHANNEL",
+    "POST",
+    "POST_PROMPT",
+    "create_channel_step",
+    "post_prompt_step",
+    "post_step",
+    "session_prompt",
+]

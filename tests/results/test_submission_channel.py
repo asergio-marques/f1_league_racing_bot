@@ -62,11 +62,6 @@ ROUND_ID = 5
 CHANNEL_ID = 771001
 PRO_ROUND_3 = round_id(PRO, 3)
 
-NO_SUBMISSION_OPEN_CHANGE = (
-    "#439: a round's submission channel is created by `create_submission_channel` off the "
-    "change queue, rather than by the jobs of a `results.submission.open` change"
-)
-
 _created_ids = itertools.count(7700)
 
 
@@ -184,7 +179,6 @@ def test_the_channel_name_carries_the_season_division_and_round():
     assert _make_slug("Division 1")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_division_is_slugged_into_the_name(tmp_path):
     """Season 3's Pro round 3 opens: its channel is named `S3-pro-R3-results`, the season,
     the division slugged and the round."""
@@ -200,7 +194,6 @@ async def test_the_division_is_slugged_into_the_name(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_everyone_is_denied(tmp_path):
     """The channel carries unpublished results and staged penalties — a division reading
     its own penalties before the verdicts are posted is what the review exists to prevent."""
@@ -212,7 +205,6 @@ async def test_everyone_is_denied(tmp_path):
     assert overwrites[league.guild.default_role].read_messages is False
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_bot_may_manage_its_own_messages(tmp_path):
     """It edits the review prompt on every staged penalty and deletes it at the end."""
     league = await _opening_league(tmp_path)
@@ -223,7 +215,6 @@ async def test_the_bot_may_manage_its_own_messages(tmp_path):
     assert overwrites[league.guild.me].manage_messages is True
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_league_with_only_one_role_configured_still_gets_a_channel(tmp_path):
     """A league whose admin role cannot be found must not be blocked from running a round:
     the channel is created, admitting the league managers' role."""
@@ -237,7 +228,6 @@ async def test_a_league_with_only_one_role_configured_still_gets_a_channel(tmp_p
     assert ADMIN_ROLE_ID not in admitted
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_guild_the_bot_is_not_a_member_of_still_gets_a_channel(tmp_path):
     """`guild.me` can be absent before the cache fills; the channel is still made and the
     bot's own access comes from its permissions rather than an overwrite."""
@@ -255,7 +245,6 @@ async def test_a_guild_the_bot_is_not_a_member_of_still_gets_a_channel(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_command_channel_with_no_category_still_works(tmp_path):
     """The interaction channel stands in no category: round 3's channel is created in none."""
     league = await _opening_league(tmp_path)
@@ -266,7 +255,6 @@ async def test_a_command_channel_with_no_category_still_works(tmp_path):
     assert _created_with(league)["category"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_league_with_no_command_channel_configured_still_works(tmp_path):
     """The league has no interaction channel set: round 3's channel is still created, in no
     category."""
@@ -285,7 +273,6 @@ async def test_a_league_with_no_command_channel_configured_still_works(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_previous_row_is_replaced_rather_than_colliding(tmp_path):
     """A closed submission or a row orphaned by a restart would hit the UNIQUE constraint
     — and the channel would already exist in Discord, leaving one nobody could close. Round 3

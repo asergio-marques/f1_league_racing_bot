@@ -23,7 +23,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
-import pytest
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format
@@ -50,11 +49,6 @@ from tests.support.season_league import (
 KIND = "results.submission.open"
 ROUND_3 = round_id(PRO, 3)
 RESULTS = DIVISIONS[PRO][3].results
-
-NO_SUBMISSION_OPEN_CHANGE = (
-    "#439: a round's submission is opened by `run_result_submission_job` at its start, off the "
-    "change queue, rather than by a `results.submission.open` change"
-)
 
 _new_ids = itertools.count(7600)
 
@@ -115,7 +109,6 @@ async def _open_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_opening_and_first_prompt(
     tmp_path,
 ):
@@ -143,7 +136,6 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     assert "run_result_submission_job" not in inspect.getsource(bot_module.main)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
     """Discord refuses to create round 3's channel (Missing Permissions). The queue stops at the
     channel's creation, and round 3 is already awaiting results: its move off NOT_RUN was saved
@@ -164,7 +156,6 @@ async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_round_starting_while_the_queue_is_stopped_opens_when_it_clears_and_is_cancellable_till_then(
     tmp_path,
 ):
@@ -191,7 +182,6 @@ async def test_a_round_starting_while_the_queue_is_stopped_opens_when_it_clears_
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_round_with_results_off_asks_the_wind_down(tmp_path):
     """The results module is off when round 3 starts. The queue makes round 3 FINAL, creates no
     channel, and asks for the season's wind-down, as the bot."""
@@ -209,7 +199,6 @@ async def test_a_round_with_results_off_asks_the_wind_down(tmp_path):
     assert WIND_DOWN in [row["kind"] for row in await change_rows(league.db_path)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_a_cancelled_round_s_open_is_dropped(tmp_path):
     """Round 3 was cancelled before the queue reached its opening. The opening is dropped as no
     longer due: the queue does not stop, no channel is created, and round 3 stays CANCELLED."""
@@ -225,7 +214,6 @@ async def test_a_cancelled_round_s_open_is_dropped(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_command(tmp_path):
     """Pro has no results channel set when round 3 starts. The queue stops rather than passing
     over it, its stop notice in the log channel naming `/results channel results`, and no
@@ -243,7 +231,6 @@ async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_comman
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_OPEN_CHANGE)
 async def test_the_opening_of_a_submission_cannot_be_discarded(tmp_path):
     """Discord refuses to create round 3's channel, so the queue stops at its creation. A league
     admin presses Discard: it is refused, privately, saying round 3 in Pro would never have its
