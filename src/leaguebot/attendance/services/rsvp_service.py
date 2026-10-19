@@ -988,33 +988,36 @@ async def withdraw_rsvp_call(
     if stored is None:
         return False
 
+    # Each message is deleted from the channel it was posted in: the last notice and the
+    # announcement go to the division's check-in channel as it is when they are posted, which
+    # may not be the call's any more. A message with no channel recorded is the call's.
     posted = [
-        message_id
-        for message_id in (
-            stored.message_id,
-            stored.last_notice_msg_id,
-            stored.distribution_msg_id,
+        (message_id, channel_id or stored.channel_id)
+        for message_id, channel_id in (
+            (stored.message_id, stored.channel_id),
+            (stored.last_notice_msg_id, stored.last_notice_channel_id),
+            (stored.distribution_msg_id, stored.distribution_channel_id),
         )
         if message_id is not None
     ]
     left: list[str] = []
     refused: list[str] = []
     cause: discord.HTTPException | None = None
-    channel = as_text_channel(bot.get_channel(int(stored.channel_id)))
-    if channel is None:
-        left.extend(str(m) for m in posted)
-    else:
-        for message_id in posted:
-            try:
-                message = await channel.fetch_message(int(message_id))
-                await message.delete()
-            except discord.NotFound:
-                pass  # Already gone — which is what was asked.
-            except discord.HTTPException as exc:
-                # No permission, or Discord failing. The quiet form drops the row either way.
-                left.append(str(message_id))
-                refused.append(str(message_id))
-                cause = exc
+    for message_id, channel_id in posted:
+        channel = as_text_channel(bot.get_channel(int(channel_id)))
+        if channel is None:
+            left.append(str(message_id))
+            continue
+        try:
+            message = await channel.fetch_message(int(message_id))
+            await message.delete()
+        except discord.NotFound:
+            pass  # Already gone — which is what was asked.
+        except discord.HTTPException as exc:
+            # No permission, or Discord failing. The quiet form drops the row either way.
+            left.append(str(message_id))
+            refused.append(str(message_id))
+            cause = exc
     if undeleted is not None:
         undeleted.extend(left)
     if raise_on_failure and left:
@@ -1290,6 +1293,7 @@ async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
         round_id=round_id,
         division_id=division_id,
         msg_id=str(last_msg.id),
+        channel_id=str(channel.id),
     )
 
 
@@ -1714,6 +1718,7 @@ async def _post_no_reserve_notice(round_id: int, division_id: int, bot: LeagueBo
         round_id=round_id,
         division_id=division_id,
         msg_id=str(dist_msg.id),
+        channel_id=str(channel.id),
     )
 
 
@@ -1789,4 +1794,5 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot: 
         round_id=round_id,
         division_id=division_id,
         msg_id=str(dist_msg.id),
+        channel_id=str(channel.id),
     )

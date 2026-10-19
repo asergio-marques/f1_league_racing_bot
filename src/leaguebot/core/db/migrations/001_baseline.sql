@@ -324,6 +324,7 @@ CREATE TABLE rsvp_embed_messages (
     message_id  TEXT    NOT NULL,
     channel_id  TEXT    NOT NULL,
     posted_at   TEXT    NOT NULL, last_notice_msg_id TEXT, distribution_msg_id TEXT,
+    last_notice_channel_id TEXT, distribution_channel_id TEXT,
     UNIQUE (round_id, division_id)
 );
 

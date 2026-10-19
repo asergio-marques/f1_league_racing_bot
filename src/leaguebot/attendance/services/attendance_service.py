@@ -530,7 +530,9 @@ class AttendanceService:
                               channel_id = excluded.channel_id,
                               posted_at  = excluded.posted_at,
                               last_notice_msg_id = NULL,
-                              distribution_msg_id = NULL
+                              last_notice_channel_id = NULL,
+                              distribution_msg_id = NULL,
+                              distribution_channel_id = NULL
                 """,
                 (round_id, division_id, message_id, channel_id, now_iso),
             )
@@ -594,13 +596,14 @@ class AttendanceService:
         round_id: int,
         division_id: int,
         msg_id: str,
+        channel_id: str | None = None,
     ) -> None:
         """Store the Discord message ID of the last-notice ping for this round."""
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE rsvp_embed_messages SET last_notice_msg_id = ?"
+                "UPDATE rsvp_embed_messages SET last_notice_msg_id = ?, last_notice_channel_id = ?"
                 " WHERE round_id = ? AND division_id = ?",
-                (msg_id, round_id, division_id),
+                (msg_id, channel_id, round_id, division_id),
             )
             await db.commit()
 
@@ -609,13 +612,14 @@ class AttendanceService:
         round_id: int,
         division_id: int,
         msg_id: str,
+        channel_id: str | None = None,
     ) -> None:
         """Store the Discord message ID of the reserve distribution announcement."""
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE rsvp_embed_messages SET distribution_msg_id = ?"
+                "UPDATE rsvp_embed_messages SET distribution_msg_id = ?, distribution_channel_id = ?"
                 " WHERE round_id = ? AND division_id = ?",
-                (msg_id, round_id, division_id),
+                (msg_id, channel_id, round_id, division_id),
             )
             await db.commit()
 
@@ -649,6 +653,8 @@ def _rem_from_row(row: aiosqlite.Row) -> RsvpEmbedMessage:
         posted_at=row["posted_at"],
         last_notice_msg_id=row["last_notice_msg_id"],
         distribution_msg_id=row["distribution_msg_id"],
+        last_notice_channel_id=row["last_notice_channel_id"],
+        distribution_channel_id=row["distribution_channel_id"],
     )
 
 
