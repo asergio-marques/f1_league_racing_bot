@@ -100,6 +100,9 @@ ARRIVING_EXEMPT = {
 EXEMPT = {
     # The phase callables bound at start-up: the bot's wiring, not the league's data.
     ("core/services/scheduler_service.py", "_phase_callbacks"),
+    # The timer kinds' callables the builder registers at start-up: the bot's wiring, not the
+    # league's data (#439).
+    ("core/services/scheduler_service.py", "_timer_callbacks"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),
