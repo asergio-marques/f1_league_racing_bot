@@ -175,8 +175,8 @@ async def delete_round_channel(
 ) -> None:
     """Delete a round's submission or amendment channel.
 
-    The one place one is deleted, which `close_submission_channel` (through
-    `_close_amend_channel_record`) and the queue's `delete_channel` job both call. Raises
+    The one place one is deleted, which the queue's `delete_channel` job and a results switch-off's
+    take-down both call. Raises
     `discord.NotFound` where the channel is already gone and `discord.HTTPException` where
     Discord refuses; each caller says what either means for it.
     """
@@ -383,9 +383,8 @@ async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
     **It works on the caller's connection and commits nothing**, so the amendment's new tables
     and the points they give land together or not at all: a failure part-way leaves every
     session as it stood once the caller's transaction is abandoned. It catches nothing for the
-    same reason — unlike the penalty path's `_recompute_session_points`, which logs a failed
-    session and moves on, a rescoring that skipped a session would publish a championship
-    scored under two tables.
+    same reason — a rescoring that logged a failed session and moved on would publish a
+    championship scored under two tables.
 
     **The scoring is `result_submission_service._apply_points_in_tx`**, reached through its
     module rather than bound by name, and every write is its own: this only chooses the

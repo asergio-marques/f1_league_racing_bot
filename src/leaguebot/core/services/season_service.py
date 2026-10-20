@@ -1507,7 +1507,7 @@ async def end_rounds_awaiting_results_on(
     that nobody was expected to turn up.
 
     A NOT_RUN round is left where it is. It waits on the clock rather than on results, and
-    ``run_result_submission_job`` closes it as FINAL at its own moment with the module off.
+    the round's start closes it as FINAL at its own moment with the module off.
 
     Everything is written on *db*, the rounds, their former drivers, the ``round.status``
     audit and each division the closing finishes, with the season it was the last of; nothing

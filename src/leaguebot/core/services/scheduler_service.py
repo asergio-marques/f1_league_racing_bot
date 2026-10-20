@@ -813,7 +813,7 @@ class SchedulerService:
         Only the four jobs in ``_WEATHER_JOB_PREFIXES`` are taken. The other five a round
         carries belong to modules that are still switched on and must survive:
 
-        * ``results`` is not only the results module's. ``run_result_submission_job`` is
+        * ``results`` is not only the results module's. the round's start (``results.submission.open``) is
           the round's one clock-driven status transition, and it runs for every round
           whatever the modules — with results off it simply closes the round as FINAL.
           Cancelled, the round never leaves NOT_RUN, its division never finishes and its

@@ -13,15 +13,12 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import ChangeOrigin, StepFailedOnDiscord
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
+from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
-from leaguebot.core.services.change_queue import ChangeQueue
-from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.team_service import resolve_team_reference
-from leaguebot.results.utils import results_formatter
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import (
     USER_MENTION,
@@ -37,8 +34,7 @@ from leaguebot.image.utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
-from leaguebot.core.utils.interaction_errors import report_failure
-from leaguebot.core.utils.league_server import CallbackButton, LeagueView, league_guild
+from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 
@@ -90,158 +86,6 @@ def get_sessions_for_format(round_format: RoundFormat) -> list[SessionType]:
 # DB helpers
 # ---------------------------------------------------------------------------
 
-async def create_submission_channel(
-    guild: discord.Guild,
-    division_name: str,
-    season_number: int,
-    round_number: int,
-    round_id: int,
-    db_path: str,
-    *,
-    bot_cmd_channel_id: int | None = None,
-    interaction_role: discord.Role | None = None,
-    league_admin_role: discord.Role | None = None,
-) -> discord.TextChannel:
-    """Create a transient text channel for result submission.
-
-    The channel is named S{season_number}-{slug}-R{round_number}-results, placed in the bot
-    command channel's category, and opened to both tiers of the league — the interaction
-    role and the league admin role. Every button of the penalty and appeals reviews lives in
-    here, so a league admin who does not also hold the interaction role would otherwise be
-    shut out of a round they are entitled to judge (issue #116).
-    """
-    slug = _make_slug(division_name)
-    name = f"S{season_number}-{slug}-R{round_number}-results"
-
-    # Determine category from the bot command channel (if available)
-    category: discord.CategoryChannel | None = None
-    if bot_cmd_channel_id is not None:
-        cmd_channel = guild.get_channel(bot_cmd_channel_id)
-        if cmd_channel is not None:
-            category = getattr(cmd_channel, "category", None)
-
-    # Deny @everyone; grant the bot itself and both of the league's tiers
-    overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-    }
-    bot_member = guild.me
-    if bot_member is not None:
-        overwrites[bot_member] = discord.PermissionOverwrite(
-            read_messages=True, send_messages=True, manage_messages=True
-        )
-    for role in (interaction_role, league_admin_role):
-        if role is not None:
-            overwrites[role] = discord.PermissionOverwrite(
-                read_messages=True, send_messages=True
-            )
-
-    channel = await guild.create_text_channel(
-        name=name,
-        category=category,
-        overwrites=overwrites,
-        reason="Results submission channel created by bot",
-    )
-    created_at = datetime.now(timezone.utc).isoformat()
-    async with get_connection(db_path) as db:
-        # Remove any previous row for this round (e.g. a prior closed submission or
-        # an orphaned row from a bot restart) so the INSERT never hits the UNIQUE constraint.
-        await db.execute(
-            "DELETE FROM round_submission_channels WHERE round_id = ?",
-            (round_id,),
-        )
-        await db.execute(
-            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
-            "VALUES (?, ?, ?, 0)",
-            (round_id, channel.id, created_at),
-        )
-        await db.commit()
-    return channel
-
-
-async def close_submission_channel(
-    channel_id: int,
-    round_id: int,
-    guild: discord.Guild,
-    db_path: str,
-) -> bool:
-    """Mark the submission channel closed in the DB then delete it from Discord.
-
-    Returns whether the channel is gone, as `_close_amend_channel_record` does.
-
-    **Both channel tables are cleared** (#345). A first pass through review runs in a
-    submission channel, recorded in ``round_submission_channels``; an amendment replays the
-    same stages in an amend channel, recorded in ``round_amend_channels``. This closes either,
-    because the appeals stage reaches it by the same path whichever it was — and a row left
-    behind for a channel that no longer exists would have restart recovery announce an
-    abandoned amendment that in fact completed.
-    """
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?",
-            (round_id,),
-        )
-        await db.commit()
-
-    # **The amendment's record goes only once its channel has** (#345); see
-    # `_close_amend_channel_record`. A first pass has no such record, and its channel is simply
-    # deleted.
-    channel = guild.get_channel(channel_id) if guild is not None else None
-    return await _close_amend_channel_record(
-        db_path, round_id, channel_id, channel, reason="Results submission complete"
-    )
-
-
-async def _close_amend_channel_record(
-    db_path: str, round_id: int, channel_id: int, channel, *, reason: str
-) -> bool:
-    """Close an amendment's record, delete its channel, and forget the record once it is gone.
-
-    **Marked closed first, forgotten only once the channel is gone** (#345). Closed, the record
-    holds nothing — no division, no deadline — and restart recovery still finds the channel by
-    it. Forgotten first, a channel out of cache, one the bot may no longer delete, or a crash
-    between the two left a private channel with its stage prompts standing and nothing anywhere
-    naming it.
-
-    **Scoped by the channel as well as the round.** A closed record no longer holds the round,
-    so a fresh amendment of it may take its place while this channel's delete is still awaited;
-    matching on the round alone would then forget the fresh one.
-
-    *channel* is None where it could not be reached; the record is then kept, closed. A channel
-    with no amendment record — a first pass's — is deleted just the same.
-
-    Returns whether the channel is gone: True where it was deleted or was already gone
-    (`NotFound`), False where it could not be reached or could not be deleted, so a caller can
-    tell a failure from a success.
-    """
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_amend_channels SET closed_at = ? WHERE round_id = ? AND channel_id = ?",
-            (datetime.now(timezone.utc).isoformat(), round_id, channel_id),
-        )
-        await db.commit()
-    if channel is None:
-        log.warning(
-            "channel %s of round %s is unreachable; any amendment record naming it is kept, "
-            "closed, for restart recovery", channel_id, round_id,
-        )
-        return False
-    from leaguebot.results.services.results_post_service import delete_round_channel
-
-    try:
-        await delete_round_channel(channel, reason=reason)
-    except discord.NotFound:
-        pass
-    except discord.HTTPException:
-        log.exception("could not delete channel %s of round %s", channel_id, round_id)
-        return False
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
-            (round_id, channel_id),
-        )
-        await db.commit()
-    return True
-
 
 async def is_submission_open(db_path: str, round_id: int) -> bool:
     """Return True if a submission channel for this round exists and is not yet closed."""
@@ -269,7 +113,7 @@ async def open_submissions_on(
     """Each open submission among *round_ids*, in round order, read on the connection handed.
 
     **Accepted means any session saved** (#439): the wizard saves each session as it accepts it
-    (`save_session_result`), with ``status`` ``ACTIVE`` for results and ``CANCELLED`` for a
+    (`_save_session_result_in_tx`), with ``status`` ``ACTIVE`` for results and ``CANCELLED`` for a
     session entered as not held, so any `session_results` row of the round, of either status,
     while the submission stands open, is data a cancellation would lose. A round in its review
     keeps its submission open with its sessions accepted, so it counts. Fixed SQL, one round at
@@ -400,7 +244,7 @@ async def close_submissions_on(
     nothing, and give ``(round_id, channel_id)`` for each so that its channel can be deleted.
 
     The channel's deletion is a job of its own after the save (`delete_channel`); this is the
-    save's half of `close_submission_channel`.
+    save's half of a submission's closing.
     """
     closed = [(each.round_id, each.channel_id) for each in await open_submissions_on(db, round_ids)]
     for round_id, _channel_id in closed:
@@ -750,44 +594,16 @@ _ACTIVE_SESSIONS_OF_ROUND_SQL = """
 """
 
 
-async def _recompute_session_points(db_path: str, round_id: int) -> None:
-    """Re-run ``_apply_points_from_config`` for every ACTIVE session in *round_id*
-    so that ``points_awarded`` and ``fastest_lap_bonus`` reflect any position changes
-    caused by penalties applied to the new result tables.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(_ACTIVE_SESSIONS_OF_ROUND_SQL, (round_id,))
-        sessions = await cursor.fetchall()
-
-    for row in sessions:
-        if row["config_name"] is None:
-            continue  # no config attached — skip points recompute
-        try:
-            await _apply_points_from_config(
-                db_path,
-                row["session_result_id"],
-                row["season_id"],
-                row["config_name"],
-                SessionType(row["session_type"]),
-            )
-        except Exception:
-            log.exception(
-                "_recompute_session_points: error for session_result %s",
-                row["session_result_id"],
-            )
-
-
 async def _recompute_session_points_on(db: aiosqlite.Connection, round_id: int) -> None:
     """Re-score every ACTIVE session of *round_id* on the save *db* belongs to, committing nothing.
 
-    What `_recompute_session_points` does, written on the connection it is handed through
-    `_apply_points_in_tx` so that the points are part of the approval's one save, and **raising
-    on the first session that cannot be scored** (issue #439, defect 3). The old form logged a
-    failure to the host and went on, so a round was published as approved with its old points;
-    here the failure rolls the whole save back and stops the change.
+    Written on the connection it is handed through `_apply_points_in_tx` so that the points are
+    part of the approval's one save, and **raising on the first session that cannot be scored**
+    (issue #439, defect 3): a round must not be published as approved with its old points, so
+    the failure rolls the whole save back and stops the change.
 
     A session with no points configuration is not a failure: it is skipped, its rows keeping
-    the points they have, as the old form did.
+    the points they have.
     """
     cursor = await db.execute(_ACTIVE_SESSIONS_OF_ROUND_SQL, (round_id,))
     for row in await cursor.fetchall():
@@ -874,27 +690,6 @@ async def _snapshot_staged_drivers_on(
     return result
 
 
-async def save_session_result(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    session_type: SessionType,
-    status: str,
-    config_name: str | None,
-    submitted_by: int | None,
-    driver_rows: list[dict],
-    fl_driver_override: int | None = None,
-) -> int:
-    """INSERT session_results + new result tables; return session_result_id."""
-    async with get_connection(db_path) as db:
-        session_result_id = await _save_session_result_in_tx(
-            db, round_id, division_id, session_type, status, config_name,
-            submitted_by, driver_rows, fl_driver_override,
-        )
-        await db.commit()
-    return session_result_id
-
-
 async def _save_session_result_in_tx(
     db,
     round_id: int,
@@ -906,10 +701,10 @@ async def _save_session_result_in_tx(
     driver_rows: list[dict],
     fl_driver_override: int | None = None,
 ) -> int:
-    """Do what `save_session_result` does on the caller's connection, without committing.
+    """Save one session's results with its driver rows on the caller's connection, committing nothing.
 
-    Split out for `replace_round_results`, which has to write every session of a round in the
-    same transaction as the delete of the results they replace.
+    A resubmission's swap writes every session of a round in the same transaction as the delete
+    of the results they replace.
     """
     from leaguebot.core.services.season_service import SeasonImmutableError
     from leaguebot.core.services.driver_service import resolve_driver_profile_id
@@ -1665,58 +1460,6 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
 #: How long one listener for a paste is given before the submission is read again. Long enough to
 #: cost nothing, short enough that a wizard whose channel was deleted does not wait on for days.
 SUBMISSION_WAIT_RECHECK_SECONDS = 300
-
-
-async def next_submission_message(bot: LeagueBot, db_path: str, round_id: int, sub_channel):
-    """The next message pasted into *sub_channel*, or None once its submission is closed (#439).
-
-    **The wait ends when a cancellation closes the submission and deletes its channel**, which
-    no message will ever follow: `bot.wait_for` has no end of its own, and the wizard would wait
-    in memory until the next restart. So each listener is given a time
-    (`SUBMISSION_WAIT_RECHECK_SECONDS`), and when one runs out the submission is read again
-    (`closed_by_cancellation`): closed, the wizard is told so with None; not, it waits on.
-
-    **The wizard never stops listening to do it** (decided 2026-10-09): a paste sent while the
-    submission was being read would otherwise be heard by nobody, and the manager would have to
-    paste it again. Two listeners are kept, the second begun half a time after the first, and a
-    replacement is registered the moment one runs out, before the read. A paste is therefore
-    always heard by at least one listener; where it reaches two, they hold the same message.
-    """
-    def listen() -> asyncio.Future:
-        return asyncio.ensure_future(
-            bot.wait_for(
-                "message",
-                check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
-                timeout=SUBMISSION_WAIT_RECHECK_SECONDS,
-            )
-        )
-
-    live = {listen()}
-    try:
-        while True:
-            done, _ = await asyncio.wait(
-                live, timeout=SUBMISSION_WAIT_RECHECK_SECONDS / 2,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if not done:
-                if len(live) < 2:
-                    live.add(listen())
-                continue
-            expired = False
-            for task in done:
-                live.discard(task)
-                try:
-                    return task.result()
-                except asyncio.TimeoutError:
-                    expired = True
-            if expired:
-                live.add(listen())
-                if await closed_by_cancellation(db_path, round_id) is not None:
-                    return None
-    finally:
-        for task in live:
-            task.cancel()
-        await asyncio.gather(*live, return_exceptions=True)
 
 
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
@@ -2771,31 +2514,6 @@ class _ConfigSelectView(LeagueView):
 # Private helpers
 # ---------------------------------------------------------------------------
 
-async def _get_round_context(db_path: str, round_id: int) -> dict:
-    """Return season_id, season_number, round_number, round_format and
-    division_name for a round.
-
-    `_resubmit_collection_task` reads `season_id` and `round_format`, and neither was selected
-    until issue #210: the task raised `KeyError` on its first line, inside a background task
-    nobody awaited, so a resubmission never collected anything.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT s.id AS season_id, s.season_number, r.round_number,
-                   r.format AS round_format, d.name AS division_name
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        raise ValueError(f"Round {round_id} not found or has no season")
-    return dict(row)
-
 
 class DivisionValidationData(NamedTuple):
     """What a division's seats say a submission may record, as ``validate_submission_block``
@@ -2941,26 +2659,8 @@ def _make_slug(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Points computation — applied after save_session_result
+# Points computation — applied after a session is saved
 # ---------------------------------------------------------------------------
-
-async def _apply_points_from_config(
-    db_path: str,
-    session_result_id: int,
-    season_id: int,
-    config_name: str,
-    session_type: SessionType,
-) -> None:
-    """Load season config entries, compute points for each driver row, and UPDATE the DB.
-
-    This is called after save_session_result so that the new result tables have
-    points_awarded and fastest_lap_bonus populated from the chosen points configuration.
-    """
-    async with get_connection(db_path) as db:
-        if await _apply_points_from_config_on(
-            db, session_result_id, season_id, config_name, session_type
-        ):
-            await db.commit()
 
 
 async def _apply_points_from_config_on(
@@ -2970,8 +2670,9 @@ async def _apply_points_from_config_on(
     config_name: str,
     session_type: SessionType,
 ) -> bool:
-    """`_apply_points_from_config` on the connection handed, committing nothing (stage one's
-    save, #439). Gives whether anything was written."""
+    """Load the season's config entries, compute points for each driver row and UPDATE them on the
+    connection handed, committing nothing (stage one's save, #439). Gives whether anything was
+    written."""
     return await _apply_points_in_tx(db, session_result_id, season_id, config_name, session_type)
 
 
@@ -2982,11 +2683,11 @@ async def _apply_points_in_tx(
     config_name: str,
     session_type: SessionType,
 ) -> bool:
-    """Do what `_apply_points_from_config` does on the caller's connection, without committing.
+    """Score a session on the caller's connection, without committing.
 
-    Returns whether anything was written. Split out for `replace_round_results`, which scores
-    the sessions it inserts in the same transaction, so a crash can never leave a round's new
-    results in place with no points on them.
+    Returns whether anything was written. A resubmission's swap scores the sessions it inserts in
+    the same transaction, so a crash can never leave a round's new results in place with no
+    points on them.
     """
     from leaguebot.results.services.standings_service import compute_points_for_session  # lazy import
 
@@ -3242,490 +2943,6 @@ async def _insert_new_tables_in_tx(
 # Main wizard
 # ---------------------------------------------------------------------------
 
-async def run_result_submission_job(
-    round_id: int, bot: LeagueBot, *, queue: ChangeQueue
-) -> None:
-    """APScheduler job entry point — runs the full submission wizard for a round.
-
-    Triggered at each round's scheduled start time. Creates a transient submission
-    channel, collects results session by session with validation, prompts for config
-    selection, persists everything, and then closes the channel.
-
-    *queue* is the change queue, handed by whoever starts the job: the timer, the start-up
-    recovery and test mode's advance.
-    """
-    db_path: str = bot.db_path
-
-    # ------------------------------------------------------------------
-    # 1. Load round context
-    # ------------------------------------------------------------------
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT r.id           AS round_id,
-                   r.division_id,
-                   r.round_number,
-                   r.format       AS round_format,
-                   r.status       AS round_status,
-                   d.name         AS division_name,
-                   drc.results_channel_id,
-                   s.id           AS season_id,
-                   s.season_number
-            FROM rounds r
-            JOIN divisions d   ON d.id = r.division_id
-            JOIN seasons s     ON s.id = d.season_id
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        ctx = await cursor.fetchone()
-
-    if ctx is None:
-        log.warning(
-            "run_result_submission_job: round %s not found — skipping", round_id
-        )
-        return
-
-    if ctx["round_status"] == "CANCELLED":
-        log.info(
-            "run_result_submission_job: round %s is CANCELLED — skipping", round_id
-        )
-        return
-
-    division_id: int = ctx["division_id"]
-    division_name: str = ctx["division_name"]
-    round_number: int = ctx["round_number"]
-    season_id: int = ctx["season_id"]
-    season_number: int = ctx["season_number"]
-    round_format = RoundFormat(ctx["round_format"])
-    results_channel_id: int | None = ctx["results_channel_id"]
-
-    # ------------------------------------------------------------------
-    # 2. The round's date has arrived — move it off NOT_RUN, and the module guard
-    # ------------------------------------------------------------------
-    # This job fires at the round's scheduled time for every round, whatever the format and
-    # whatever the modules, so it is where the one clock-driven transition belongs.
-    #
-    # Where results are enabled the round begins waiting for them. Where they are not, nobody
-    # will ever enter a result, so the round has nothing to wait for and ends here — otherwise
-    # it would sit outstanding for ever and its season could never be completed, which is issue
-    # #154 over again for every league that does not run the results module.
-    results_enabled = await bot.module_service.is_results_enabled()
-    arrived_at = (
-        RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
-    )
-    from leaguebot.core.services.season_service import refresh_division_status_on
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET status = ? WHERE id = ? AND status = ?",
-            (arrived_at, round_id, RoundStatus.NOT_RUN.value),
-        )
-        if not results_enabled:
-            # The round just reached a terminal state, so its division may now be finished: the
-            # move and the refresh are one save, a refresh that fails leaving the round as it was
-            # (#439).
-            await refresh_division_status_on(db, division_id)
-        await db.commit()
-
-    if not results_enabled:
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion (#220). That needs
-        # Discord, so the bot asks the change queue for it; the queue drops the request where
-        # the season is not yet done (#439).
-        from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
-
-        await queue.ask(
-            WIND_DOWN, {}, origin=ChangeOrigin.BOT, what="winding the season down"
-        )
-        log.info(
-            "run_result_submission_job: results module disabled — round %s "
-            "closed without results",
-            round_id,
-        )
-        return
-
-    # ------------------------------------------------------------------
-    # 3. Get guild + results channel
-    # ------------------------------------------------------------------
-    guild = await league_guild(bot)
-    if guild is None:
-        log.error(
-            "run_result_submission_job: the league's server is not in the cache for round %s",
-            round_id,
-        )
-        return
-
-    if results_channel_id is None:
-        log.error(
-            "run_result_submission_job: no results_channel_id for division %s (round %s)",
-            division_id,
-            round_id,
-        )
-        return
-
-    results_channel = as_text_channel(guild.get_channel(results_channel_id))
-    if results_channel is None:
-        log.error(
-            "run_result_submission_job: results channel %s not found (round %s)",
-            results_channel_id,
-            round_id,
-        )
-        return
-
-    # ------------------------------------------------------------------
-    # 4. Load validation data
-    # ------------------------------------------------------------------
-    try:
-        (
-            division_driver_ids,
-            team_of_role,
-            reserve_team_role_id,
-            driver_team_map,
-            reserve_driver_ids,
-            team_names,
-            team_of_shorthand,
-        ) = await _build_division_validation_data(division_id, bot)
-    except Exception:
-        log.exception(
-            "run_result_submission_job: failed to build validation data for round %s",
-            round_id,
-        )
-        return
-
-    # ------------------------------------------------------------------
-    # 5. Create submission channel
-    # ------------------------------------------------------------------
-    # Look up both of the league's roles and the bot-command channel for channel setup
-    server_cfg = await bot.config_service.get_server_config()
-    interaction_role: discord.Role | None = None
-    league_admin_role: discord.Role | None = None
-    bot_cmd_channel_id: int | None = None
-    if server_cfg is not None:
-        bot_cmd_channel_id = server_cfg.interaction_channel_id
-        if server_cfg.interaction_role_id:
-            interaction_role = guild.get_role(server_cfg.interaction_role_id)
-        if server_cfg.league_admin_role_id:
-            league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
-
-    try:
-        sub_channel = await create_submission_channel(
-            guild,
-            division_name,
-            season_number,
-            round_number,
-            round_id,
-            db_path,
-            bot_cmd_channel_id=bot_cmd_channel_id,
-            interaction_role=interaction_role,
-            league_admin_role=league_admin_role,
-        )
-    except discord.HTTPException:
-        log.exception(
-            "run_result_submission_job: failed to create submission channel for round %s",
-            round_id,
-        )
-        return
-
-    # ------------------------------------------------------------------
-    # 6. Opening message
-    # ------------------------------------------------------------------
-    sessions = get_sessions_for_format(round_format)
-    is_sprint = round_format is RoundFormat.SPRINT
-    session_list_str = ", ".join(
-        results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
-    )
-    # The league managers enter the results, so they are the ones pinged. The division's role
-    # cannot see this channel, and a mention there notified nobody (#136).
-    mention_str = f" <@&{interaction_role.id}>" if interaction_role is not None else ""
-    await sub_channel.send(
-        f"✅ Results submission open for **Round {round_number}** ({division_name})"
-        f" - {round_format.label}."
-        f" Sessions: {session_list_str}.{mention_str}\n\n"
-        "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a session."
-    )
-
-    # ------------------------------------------------------------------
-    # 7. Load attached config names for this season
-    # ------------------------------------------------------------------
-    from leaguebot.results.services import season_points_service  # lazy import to avoid circular
-
-    config_names = await season_points_service.get_attached_config_names(db_path, season_id)
-
-    # ------------------------------------------------------------------
-    # 8. Per-session collection loop
-    # ------------------------------------------------------------------
-    cancelled_sessions: set[SessionType] = set()
-    last_author: discord.abc.User | None = None
-    for session_type in sessions:
-        label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
-
-        if session_type.is_qualifying:
-            format_hint = (
-                "Format: `Position, @Driver, Team, Tyre, BestLap, Gap`\n"
-                "Team: its shorthand.\n"
-                f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
-            )
-        else:
-            format_hint = (
-                "Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`\n"
-                "Team: its shorthand.\n"
-                "Optional first line: `FL: @Driver` to designate the fastest-lap holder "
-                "(use when two drivers share the same lap time)."
-            )
-
-        await sub_channel.send(
-            f"📋 Submit **{label}** results (one driver per line), or type `CANCELLED`.\n"
-            f"{format_hint}"
-        )
-
-        while True:
-            msg = await next_submission_message(bot, db_path, round_id, sub_channel)
-            if msg is None:
-                return
-
-            last_author = msg.author
-            content = msg.content.strip()
-
-            if content.upper() == "CANCELLED":
-                closed = await closed_by_cancellation(db_path, round_id)
-                held = closed or await held_by_amendment(
-                    db_path, round_id, division_id,
-                    then=f"Type `CANCELLED` for **{label}** again then.",
-                )
-                if held:
-                    await sub_channel.send(held)
-                    if closed:
-                        return
-                    continue
-                await save_session_result(
-                    db_path=db_path,
-                    round_id=round_id,
-                    division_id=division_id,
-                    session_type=session_type,
-                    status="CANCELLED",
-                    config_name=None,
-                    submitted_by=msg.author.id,
-                    driver_rows=[],
-                )
-                await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
-                cancelled_sessions.add(session_type)
-                break
-
-            # Validate the block
-            lines = content.splitlines()
-            current_of = await current_accounts(db_path)
-            fl_override, lines = extract_current_fl_override(lines, session_type, current_of)
-            other_assignments = await other_active_team_assignments(
-                db_path, round_id, session_type
-            )
-            result = validate_submission_block(
-                lines,
-                session_type,
-                division_driver_ids,
-                team_of_role,
-                reserve_team_role_id,
-                driver_team_map,
-                reserve_driver_ids,
-                other_active_assignments=other_assignments,
-                current_of=current_of,
-                team_names=team_names,
-                team_of_shorthand=team_of_shorthand,
-            )
-
-            validation_errors, parsed_rows = split_validation(result)
-            if validation_errors:
-                error_list = "\n".join(f"• {e}" for e in validation_errors)
-                await bot.output_router.post_log(
-                    f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_REJECTED | \n"
-                    f"  season: {season_number}, division: {division_name!r}\n"
-                    f"  round: {round_number}, session: {session_type.value}\n"
-                    f"  input:\n```\n{content[:500]}\n```",
-                )
-                await sub_channel.send(
-                    f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit."
-                )
-                continue
-
-            # Validate FL override references a driver in the submitted results
-            if fl_override is not None:
-                submitted_driver_ids = {r.driver_user_id for r in parsed_rows}
-                if fl_override not in submitted_driver_ids:
-                    await sub_channel.send(
-                        f"❌ FL override <@{fl_override}> is not in the submitted results. "
-                        "Please correct and resubmit."
-                    )
-                    continue
-
-            # Config selection
-            selected_config: str | None = None
-            if len(config_names) == 1:
-                selected_config = config_names[0]
-                await sub_channel.send(
-                    f"✅ Auto-selected config **{selected_config}** (only one attached)."
-                )
-            elif len(config_names) > 1:
-                view = _ConfigSelectView(
-                    config_names,
-                    server_cfg,
-                    session=f"the {label} of round {round_number} ({division_name})",
-                )
-                config_msg = await sub_channel.send(
-                    "🔧 Select the points configuration for this session:",
-                    view=view,
-                )
-                await view.wait()
-                selected_config = view.selected
-                try:
-                    await config_msg.edit(
-                        content=f"🔧 Config selected: **{selected_config}**", view=None
-                    )
-                except discord.HTTPException:
-                    pass
-            else:
-                # No configs attached — this should have been caught at approval but handle gracefully
-                log.warning(
-                    "run_result_submission_job: no configs attached to season %s", season_id
-                )
-                await sub_channel.send(
-                    "⚠️ No points configuration attached to this season. "
-                    "Results will be saved without a config."
-                )
-
-            closed = await closed_by_cancellation(db_path, round_id)
-            held = closed or await held_by_amendment(
-                db_path, round_id, division_id, then=f"Paste **{label}** again then."
-            )
-            if held:
-                await sub_channel.send(held)
-                if closed:
-                    return
-                continue
-
-            # Log accepted input (with raw content for auditability)
-            await bot.output_router.post_log(
-                f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
-                f"  season: {season_number}, division: {division_name!r}\n"
-                f"  round: {round_number}, session: {session_type.value}\n"
-                f"  input:\n```\n{content[:500]}\n```",
-            )
-
-            # Convert parsed rows to dicts for DB insertion
-            if session_type.is_qualifying:
-                driver_rows_data = [
-                    _row_dict_from_qualifying(r)
-                    for r in _rows_of_kind(parsed_rows, ParsedQualifyingRow)
-                ]
-            else:
-                driver_rows_data = [
-                    _row_dict_from_race(r)
-                    for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
-                ]
-
-            await save_session_result(
-                db_path=db_path,
-                round_id=round_id,
-                division_id=division_id,
-                session_type=session_type,
-                status="ACTIVE",
-                config_name=selected_config,
-                submitted_by=msg.author.id,
-                driver_rows=driver_rows_data,
-                fl_driver_override=fl_override,
-            )
-
-            # Compute and store points_awarded / fastest_lap_bonus from the chosen config
-            if selected_config is not None:
-                # Reload the session_result_id we just inserted
-                async with get_connection(db_path) as _db:
-                    _cur = await _db.execute(
-                        "SELECT id FROM session_results WHERE round_id = ? AND session_type = ?",
-                        (round_id, session_type.value),
-                    )
-                    _sr = await _cur.fetchone()
-                if _sr is not None:
-                    await _apply_points_from_config(
-                        db_path, _sr["id"], season_id, selected_config, session_type
-                    )
-
-            await sub_channel.send(f"✅ **{label}** results saved.")
-            break  # advance to next session
-
-    # ------------------------------------------------------------------
-    # 9+10. Enter penalty-review state (posts interim results/standings,
-    #       keeps channel open, posts penalty review prompt).
-    #       Skip entirely if every session was cancelled — nothing to review.
-    # ------------------------------------------------------------------
-    if cancelled_sessions == set(sessions):
-        await sub_channel.send(
-            "⏭️ All sessions for this round were cancelled — no penalty review required."
-        )
-        await close_submission_channel(sub_channel.id, round_id, guild, db_path)
-        return
-    # The review opens as a change on the queue, `results.review.open`, which posts the interim
-    # results and then the review's prompt (#439).
-    await ask_review_open(
-        bot, sub_channel, round_id, round_number,
-        {"label": "Provisional Results", "publish": True}, actor=last_author, say=True,
-        queue=queue,
-    )
-
-
-async def ask_review_open(
-    bot: LeagueBot,
-    sub_channel: discord.TextChannel,
-    round_id: int,
-    round_number: int,
-    payload: Mapping[str, Any],
-    *,
-    queue: ChangeQueue,
-    actor: Any = None,
-    origin: ChangeOrigin = ChangeOrigin.MEMBER,
-    say: bool = False,
-) -> None:
-    """Ask the queue to open round *round_id*'s penalty review, with *payload*'s keys beside the
-    round's (`results.review.open`), in the name of *actor*, the member who pasted the last
-    session or pressed Cancel; the bot's own request (a failure) names none.
-
-    A paste answers no interaction, so with *say* the channel is told that the review is being
-    opened, with its job number, and where the queue is stopped, at which job. Where the request
-    is refused or no longer due, the channel is told the round is kept as it is and the review is
-    put back when the bot next starts. The one place a round's review is asked for from a
-    submission, for the first one and for a resubmission's return (#439).
-    """
-    async with get_connection(bot.db_path) as db:
-        row = await (await db.execute(
-            "SELECT d.name FROM rounds r JOIN divisions d ON d.id = r.division_id "
-            "WHERE r.id = ?", (round_id,),
-        )).fetchone()
-    change_id = await queue.ask(
-        "results.review.open",
-        {
-            "round_id": round_id, "round_number": round_number,
-            "division_name": None if row is None else row["name"], **payload,
-        },
-        actor=actor,
-        origin=origin,
-        what=f"the penalty review of round {round_number}",
-    )
-    if change_id is None:
-        line = (
-            f"⚠️ The penalty review of round {round_number} could not be asked for. The results "
-            "are saved; the review is put back when the bot next starts."
-        )
-    elif say:
-        first_job, stopped_at = await queue.job_numbers(change_id)
-        line = f"⏳ The penalty review is being opened (job #{first_job})."
-        if stopped_at is not None:
-            line += (
-                f" The queue is stopped at job #{stopped_at}, so it opens once that job is "
-                "cleared."
-            )
-    else:
-        return
-    await sub_channel.send(line)
-
 
 # ---------------------------------------------------------------------------
 # Resubmission flow — triggered by the 🔄 Resubmit Initial Results button
@@ -3743,37 +2960,6 @@ class CollectedSession:
     fl_driver_override: int | None = None
 
 
-async def replace_round_results(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    season_id: int,
-    collected: list[CollectedSession],
-) -> None:
-    """Replace every session of a round with a resubmission's, in one transaction.
-
-    A resubmission supersedes the round's results: the ones already submitted stand, published
-    and counted, until every session has been entered again (issue #210). So nothing is written
-    while the manager pastes, and this is the one write at the end. The delete of the old
-    results, the insert of the new, their points and the clearing of the channel's
-    `resubmitting` flag either all land or none do — a crash part-way cannot leave a round
-    holding some of each, or new results with no points on them.
-
-    `results_posted` is cleared in the same transaction. The round is still in penalty review,
-    so a crash after the commit is recovered as a review whose results were never posted, and
-    the new ones go out then.
-
-    Raises `SeasonImmutableError` for an archived season, with the old results untouched.
-    """
-    async with get_connection(db_path) as db:
-        try:
-            await replace_round_results_on(db, round_id, division_id, season_id, collected)
-            await db.commit()
-        except BaseException:
-            await db.rollback()
-            raise
-
-
 async def replace_round_results_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -3781,8 +2967,15 @@ async def replace_round_results_on(
     season_id: int,
     collected: list[CollectedSession],
 ) -> None:
-    """`replace_round_results` on the connection handed, committing nothing: the resubmission's
-    swap does it in a save of its own (#439)."""
+    """Replace every session of a round with a resubmission's on the connection handed, committing
+    nothing: the resubmission's swap does it in a save of its own (#439).
+
+    A resubmission supersedes the round's results: the ones already submitted stand, published and
+    counted, until every session has been entered again (issue #210), so the delete of the old
+    results, the insert of the new, their points and the clearing of the channel's `resubmitting`
+    flag land together or not at all. `results_posted` is cleared with them: the round is still in
+    penalty review, so the new results go out then. Raises `SeasonImmutableError` for an archived
+    season, with the old results untouched."""
     await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
     for session in collected:
         session_result_id = await _save_session_result_in_tx(
@@ -3909,56 +3102,14 @@ class ResubmissionCancelView(LeagueView):
             self.stop()
 
 
-async def _next_paste(bot: LeagueBot, sub_channel, cancel_view: ResubmissionCancelView | None):
-    """The next message pasted into *sub_channel*, or None if Cancel was pressed first.
-
-    Races the paste against the button, as the amend channel does. Where both land together
-    the cancel wins: the manager has said to stop.
-    """
-    import asyncio
-
-    paste = asyncio.ensure_future(
-        bot.wait_for(
-            "message",
-            check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
-        )
-    )
-    if cancel_view is None:
-        return await paste
-    if cancel_view.cancelled:
-        paste.cancel()
-        return None
-    pressed = asyncio.ensure_future(cancel_view.pressed.wait())
-    await asyncio.wait({paste, pressed}, return_when=asyncio.FIRST_COMPLETED)
-    for pending in (paste, pressed):
-        if not pending.done():
-            pending.cancel()
-    if cancel_view.cancelled or not paste.done() or paste.cancelled():
-        return None
-    return paste.result()
-
-
 CANCELLED_LINE = "↩️ **Resubmission cancelled.** The earlier results stand."
-
-
-async def _take_down_cancel_button(cancel_view: ResubmissionCancelView | None) -> None:
-    if cancel_view is None:
-        return
-    cancel_view.stop()
-    if cancel_view.message is None:
-        return
-    try:
-        await take_down_cancel_message(cancel_view.message)
-    except StepFailedOnDiscord:
-        pass  # Off the queue a refused edit leaves the button standing, as it always has.
 
 
 async def take_down_cancel_message(message: discord.Message | discord.PartialMessage) -> None:
     """Take the Cancel button off the resubmission's announcement; one already gone is no fault.
 
-    Called by `_take_down_cancel_button` and by the review's job doing the same (#439). An edit
-    Discord refuses otherwise raises `StepFailedOnDiscord`, for the job to stop the queue on; the
-    off-queue caller passes over it.
+    Called by the review's job (#439). An edit
+    Discord refuses otherwise raises `StepFailedOnDiscord`, for the job to stop the queue on.
     """
     try:
         await message.edit(view=None)
@@ -3973,194 +3124,8 @@ async def take_down_cancel_message(message: discord.Message | discord.PartialMes
 @posts_in_a_job
 async def send_cancelled_line(sub_channel: discord.TextChannel) -> None:
     """Tell the submission channel that a resubmission was cancelled and the earlier results
-    stand. The one place it is sent, for `_resubmit_collection_task` and the review's job."""
+    stand. The one place it is sent, for the review's job."""
     await sub_channel.send(CANCELLED_LINE)
-
-
-def _member_of(guild: discord.Guild, user_id: int | None) -> discord.abc.Snowflake | None:
-    """The member *user_id* on *guild*, or a bare reference to them where they have left, so
-    that a change asked in their name records who they were; nobody for no id."""
-    if user_id is None:
-        return None
-    return guild.get_member(user_id) or discord.Object(id=user_id)
-
-
-async def _ask_return_to_review(
-    bot: LeagueBot,
-    sub_channel: discord.TextChannel,
-    round_id: int,
-    round_number: int,
-    cancel_view: ResubmissionCancelView | None,
-    *,
-    queue: ChangeQueue,
-    returning: str,
-    actor: Any = None,
-    origin: ChangeOrigin = ChangeOrigin.BOT,
-) -> None:
-    """End a resubmission without replacing anything, and ask for the penalty review back.
-
-    Used when the manager cancels (*returning* ``"cancelled"``, in their name) and when the
-    resubmission fails before the swap (``"failed"``, the bot's). Either way the round's results
-    are the ones it held before Resubmit was pressed, and they are already posted, so the review
-    is asked for with nothing published. What becomes of the request is `results.review.open`'s:
-    it clears `resubmitting`, takes the Cancel button off the message named in the request, and
-    puts the prompt back before it writes the cancel's line in the channel and the log (#439).
-    """
-    message_id = None
-    if cancel_view is not None:
-        cancel_view.stop()
-        if cancel_view.message is not None:
-            message_id = cancel_view.message.id
-    await ask_review_open(
-        bot, sub_channel, round_id, round_number,
-        {"publish": False, "returning": returning, "cancel_message_id": message_id,
-         "while_resubmitting": True},
-        queue=queue, actor=actor, origin=origin,
-    )
-
-
-async def enter_resubmit_flow(
-    interaction: discord.Interaction,
-    state,
-    *,
-    queue: ChangeQueue,
-    what: str | None = None,
-) -> None:
-    """Discard staged penalties and pardons and restart collection over the round's existing results.
-
-    Called from the pw_resubmit button callback in PenaltyReviewView.
-
-    Nothing is deleted here. A resubmission supersedes the round's results: they stand until
-    every session has been entered again, and `replace_round_results` swaps them out then
-    (issue #210). What changes now is the channel. `resubmitting` is set, which lets the
-    manager's pastes through the review channel's message guard and tells a restart what was
-    lost, and the penalty review prompt and any approval message are taken down, so that nobody
-    can approve the results being replaced or press Resubmit a second time and start a second
-    collector. Both would refuse if pressed regardless, as the review has moved on (#402).
-
-    A submission channel that cannot be found refuses the resubmission before anything is
-    discarded: with nowhere to collect in, the review is all the round has. The refusal is
-    recorded as *what* refused — the Resubmit button and its review, named by the button that
-    calls this. A call without one names the button from *state*, which only a test makes.
-    """
-    import asyncio
-    import json as _json
-    from leaguebot.results.services.penalty_wizard import (
-        _button,
-        _delete_review_message,
-        _take_down_approval,
-    )
-
-    bot = state.bot
-    db_path: str = bot.db_path
-    round_id = state.round_id
-    division_id = state.division_id
-    sub_channel = bot.get_channel(state.submission_channel_id)
-    if sub_channel is None:
-        await refuse(
-            interaction,
-            "❌ The submission channel could not be found, so the results cannot be resubmitted.",
-            what=what or _button("🔄 Resubmit Initial Results", state),
-        )
-        return
-
-    discarded_count = len(state.staged)
-    discarded_detail = [
-        {
-            "driver_user_id": sp.driver_user_id,
-            "session_type": sp.session_type.value,
-            "penalty_type": sp.penalty_type,
-            "penalty_seconds": sp.penalty_seconds,
-        }
-        for sp in state.staged
-    ]
-    # The pardons go with them, and went unrecorded until #356. The justification is logged
-    # as it was when the pardon was staged: the log channel is the one place it may appear.
-    discarded_pardons = [
-        {
-            "driver_user_id": sp.driver_user_id,
-            "pardon_type": sp.pardon_type,
-            "justification": sp.justification,
-        }
-        for sp in state.staged_pardons
-    ]
-
-    # One line for the press, written before anything is discarded: once they are gone there
-    # is no other record of what was staged. It names the penalties and the pardons both.
-    try:
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                (division_id,),
-            )
-            srv_row = await cursor.fetchone()
-        if srv_row:
-            await bot.output_router.post_log(
-                f"{interaction_member(interaction)} | RESULTS_RESUBMISSION | Started\n"
-                f"  round_id: {round_id} ({state.division_name})\n"
-                f"  discarded_count: {discarded_count}\n"
-                f"  discarded: {_json.dumps(discarded_detail)}\n"
-                f"  discarded_pardons_count: {len(discarded_pardons)}\n"
-                f"  discarded_pardons: {_json.dumps(discarded_pardons)}",
-            )
-    except Exception:
-        log.exception("enter_resubmit_flow: error writing resubmission audit log (round %s)", round_id)
-
-    state.staged.clear()
-    state.staged_pardons.clear()
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET resubmitting = 1, resubmit_started_by = ? "
-            "WHERE round_id = ?",
-            (interaction.user.id, round_id),
-        )
-        await db.commit()
-
-    # The prompt and any approval message go together: the approval message outlived the prompt
-    # once, and its Approve finalised the round on the results being replaced (#402). The
-    # collection depends on neither.
-    await _delete_review_message(state, state.prompt_message_id)
-    await _take_down_approval(state)
-
-    cancel_view = ResubmissionCancelView(state)
-    announcement = await sub_channel.send(
-        "⚠️ **Results resubmission started.** "
-        "The results already submitted stand until every session has been entered again. "
-        "Press **Cancel** to stop and keep them.",
-        view=cancel_view,
-    )
-    cancel_view.message = announcement
-    try:
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE round_submission_channels SET resubmit_prompt_message_id = ? "
-                "WHERE round_id = ?",
-                (announcement.id, round_id),
-            )
-            await db.commit()
-    except Exception:
-        # Only the restart sweep reads it, to take the button down.
-        log.exception("enter_resubmit_flow: could not record the announcement (round %s)", round_id)
-
-    asyncio.create_task(
-        _resubmit_collection_task(
-            round_id,
-            division_id,
-            bot,
-            sub_channel,
-            cancel_view,
-            queue=queue,
-            interaction=interaction,
-            what=what,
-        ),
-        name=f"resubmit_r{round_id}",
-    )
-
-    await interaction.followup.send(
-        "🔄 Resubmission started. Please re-enter the session results in the submission channel.",
-        ephemeral=True,
-    )
 
 
 def collected_team_assignments(
@@ -4181,298 +3146,6 @@ def collected_team_assignments(
                 row["driver_user_id"], (row["team_instance_id"], session.session_type.value)
             )
     return result
-
-
-async def _resubmit_collection_task(
-    round_id: int,
-    division_id: int,
-    bot: LeagueBot,
-    sub_channel: discord.TextChannel | None,
-    cancel_view: ResubmissionCancelView | None = None,
-    *,
-    queue: ChangeQueue,
-    interaction: discord.Interaction | None = None,
-    what: str | None = None,
-) -> None:
-    """Re-run the session collection loop against an existing submission channel.
-
-    Mirrors run_result_submission_job but skips channel creation, and writes nothing until
-    the last session is in: each validated session is held as a `CollectedSession`, and
-    `replace_round_results` swaps the lot for the round's existing results in one transaction.
-    The earlier results stand until then (issue #210). On completion asks the queue for
-    `results.review.open`, publishing the new results as "Provisional Results (amended)".
-
-    *cancel_view* is the announcement's Cancel button. Pressed, or where the resubmission fails
-    before the swap, the review is asked for back (`_ask_return_to_review`) with the results the
-    round had.
-
-    *interaction* is the Resubmit press that started this, and *what* names its button and
-    review, as the press's refusals do; without one the button alone is named. A resubmission
-    that fails before any paste (the round is gone, or the division's data cannot be read) is
-    recorded as that button's failure, through `report_failure`, naming who pressed it and
-    saying the earlier results stand (#482). The notices to the submission channel stay.
-    Without an *interaction*, which only a test makes, nothing is recorded.
-    """
-    import asyncio
-
-    async def _record_failure(error: BaseException) -> None:
-        if interaction is not None:
-            await report_failure(
-                interaction,
-                error,
-                what=what or "the “🔄 Resubmit Initial Results” button",
-                outcome="The earlier results stand.",
-            )
-
-    if sub_channel is None:
-        log.error("_resubmit_collection_task: sub_channel not found for round %s", round_id)
-        return
-
-    db_path: str = bot.db_path
-    # `_get_round_context` raises rather than returning None. Uncaught, that is one more
-    # exception inside a background task nobody awaits, and the manager who has just been told
-    # to paste the results again would be left pasting into a channel nothing reads.
-    try:
-        ctx = await _get_round_context(db_path, round_id)
-    except ValueError as exc:
-        log.exception("_resubmit_collection_task: round %s not found", round_id)
-        await sub_channel.send("❌ Resubmission failed: this round could not be found.")
-        await _record_failure(exc)
-        return
-
-    season_id: int = ctx["season_id"]
-    division_name: str = ctx["division_name"]
-    round_number: int = ctx["round_number"]
-    round_format = RoundFormat(ctx["round_format"])
-
-    # Read for `_ConfigSelectView`, which asks the league manager tier of whoever presses it.
-    server_cfg = await bot.config_service.get_server_config()
-
-    guild = await league_guild(bot)
-    if guild is None:
-        log.error("_resubmit_collection_task: the league's server was not found for round %s", round_id)
-        return
-
-    async def _cancelled() -> None:
-        await _ask_return_to_review(
-            bot, sub_channel, round_id, round_number, cancel_view,
-            queue=queue, returning="cancelled",
-            actor=_member_of(guild, cancel_view.cancelled_by if cancel_view is not None else None),
-            origin=ChangeOrigin.MEMBER,
-        )
-
-    try:
-        (
-            division_driver_ids,
-            team_of_role,
-            reserve_team_role_id,
-            driver_team_map,
-            reserve_driver_ids,
-            team_names,
-            team_of_shorthand,
-        ) = await _build_division_validation_data(division_id, bot)
-    except Exception as exc:
-        log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
-        await sub_channel.send(
-            "❌ Resubmission failed: could not load division data. The earlier results still stand."
-        )
-        await _record_failure(exc)
-        await _ask_return_to_review(
-            bot, sub_channel, round_id, round_number, cancel_view,
-            queue=queue, returning="failed"
-        )
-        return
-
-    from leaguebot.results.services import season_points_service
-    config_names = await season_points_service.get_attached_config_names(db_path, season_id)
-
-    sessions = get_sessions_for_format(round_format)
-    is_sprint = round_format is RoundFormat.SPRINT
-    session_list_str = ", ".join(
-        results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
-    )
-    await sub_channel.send(
-        f"🔄 Resubmitting results for **Round {round_number}** ({division_name})."
-        f" Sessions: {session_list_str}.\n\n"
-        "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a session."
-    )
-
-    cancelled_sessions: set[SessionType] = set()
-    collected: list[CollectedSession] = []
-    last_author_id: int | None = None
-    for session_type in sessions:
-        label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
-        if session_type.is_qualifying:
-            format_hint = (
-                "Format: `Position, @Driver, Team, Tyre, BestLap, Gap`\n"
-                "Team: its shorthand.\n"
-                f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
-            )
-        else:
-            format_hint = (
-                "Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`\n"
-                "Team: its shorthand.\n"
-                "Optional first line: `FL: @Driver` to override fastest-lap holder."
-            )
-
-        await sub_channel.send(
-            f"📋 Submit **{label}** results (one driver per line), or type `CANCELLED`.\n{format_hint}"
-        )
-
-        while True:
-            msg = await _next_paste(bot, sub_channel, cancel_view)
-            if msg is None:
-                await _cancelled()
-                return
-            content = msg.content.strip()
-
-            if content.upper() == "CANCELLED":
-                held = await held_by_amendment(
-                    db_path, round_id, division_id,
-                    then=f"Type `CANCELLED` for **{label}** again then.",
-                )
-                if held:
-                    await sub_channel.send(held)
-                    continue
-                last_author_id = msg.author.id
-                collected.append(
-                    CollectedSession(session_type, "CANCELLED", None, msg.author.id)
-                )
-                await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
-                cancelled_sessions.add(session_type)
-                break
-
-            lines = content.splitlines()
-            current_of = await current_accounts(db_path)
-            fl_override, lines = extract_current_fl_override(lines, session_type, current_of)
-            # Checked against the sessions of this resubmission, not the round's stored
-            # results: those are the ones being replaced, and may be wrong in exactly the way
-            # that made the manager resubmit.
-            other_assignments = collected_team_assignments(collected, session_type)
-            result = validate_submission_block(
-                lines, session_type, division_driver_ids, team_of_role,
-                reserve_team_role_id, driver_team_map, reserve_driver_ids,
-                other_active_assignments=other_assignments,
-                current_of=current_of,
-                team_names=team_names,
-                team_of_shorthand=team_of_shorthand,
-            )
-
-            validation_errors, parsed_rows = split_validation(result)
-            if validation_errors:
-                error_list = "\n".join(f"• {e}" for e in validation_errors)
-                await sub_channel.send(f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit.")
-                continue
-
-            if fl_override is not None:
-                submitted_ids = {r.driver_user_id for r in parsed_rows}
-                if fl_override not in submitted_ids:
-                    await sub_channel.send(
-                        f"❌ FL override <@{fl_override}> is not in the submitted results. Please correct and resubmit."
-                    )
-                    continue
-
-            selected_config: str | None = None
-            if len(config_names) == 1:
-                selected_config = config_names[0]
-                await sub_channel.send(f"✅ Auto-selected config **{selected_config}**.")
-            elif len(config_names) > 1:
-                view = _ConfigSelectView(
-                    config_names,
-                    server_cfg,
-                    session=f"the {label} of round {round_number} ({division_name})",
-                )
-                config_msg = await sub_channel.send("🔧 Select the points configuration for this session:", view=view)
-                # **Raced against Cancel**, as the amendment's choice is. Waited on alone, a
-                # Cancel pressed here was answered "cancelled" while the resubmission sat on
-                # a choice nobody would make. Both waits are held by name and the one left
-                # pending is cancelled; where both land together the cancel wins.
-                choice_wait = asyncio.ensure_future(view.wait())
-                cancel_wait = (
-                    asyncio.ensure_future(cancel_view.pressed.wait())
-                    if cancel_view is not None
-                    else None
-                )
-                waits = {choice_wait} if cancel_wait is None else {choice_wait, cancel_wait}
-                await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
-                for pending in waits:
-                    if not pending.done():
-                        pending.cancel()
-                stopped = cancel_view is not None and cancel_view.cancelled
-                selected_config = None if stopped else view.selected
-                try:
-                    await config_msg.edit(
-                        content=(
-                            "🔧 Resubmission cancelled."
-                            if stopped
-                            else f"🔧 Config selected: **{selected_config}**"
-                        ),
-                        view=None,
-                    )
-                except discord.HTTPException:
-                    pass
-                if stopped:
-                    await _cancelled()
-                    return
-
-            held = await held_by_amendment(
-                db_path, round_id, division_id, then=f"Paste **{label}** again then."
-            )
-            if held:
-                await sub_channel.send(held)
-                continue
-
-            if session_type.is_qualifying:
-                driver_rows_data = [
-                    _row_dict_from_qualifying(r)
-                    for r in _rows_of_kind(parsed_rows, ParsedQualifyingRow)
-                ]
-            else:
-                driver_rows_data = [
-                    _row_dict_from_race(r) for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
-                ]
-
-            last_author_id = msg.author.id
-            collected.append(
-                CollectedSession(
-                    session_type, "ACTIVE", selected_config, msg.author.id,
-                    driver_rows_data, fl_override,
-                )
-            )
-            await sub_channel.send(f"✅ **{label}** results received.")
-            break
-
-    # The points configuration may have been chosen while Cancel was pressed.
-    if cancel_view is not None and cancel_view.cancelled:
-        await _cancelled()
-        return
-
-    try:
-        await replace_round_results(db_path, round_id, division_id, season_id, collected)
-    except Exception:
-        log.exception("_resubmit_collection_task: failed to replace results for round %s", round_id)
-        await sub_channel.send(
-            "❌ Resubmission failed: the new results could not be saved. "
-            "The earlier results still stand."
-        )
-        await _ask_return_to_review(
-            bot, sub_channel, round_id, round_number, cancel_view,
-            queue=queue, returning="failed"
-        )
-        return
-    await _take_down_cancel_button(cancel_view)
-
-    if cancelled_sessions == set(sessions):
-        await sub_channel.send("⏭️ All sessions were cancelled — no penalty review required.")
-        await close_submission_channel(sub_channel.id, round_id, guild, db_path)
-        return
-
-    await ask_review_open(
-        bot, sub_channel, round_id, round_number,
-        {"label": "Provisional Results (amended)", "publish": True},
-        queue=queue, actor=_member_of(guild, last_author_id), say=True,
-    )
-
 
 
 async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = None) -> int:

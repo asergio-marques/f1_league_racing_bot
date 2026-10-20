@@ -967,7 +967,7 @@ async def _delete_channel(ctx: StepContext) -> StepResult:
     """Delete a round's submission or amendment channel: a channel already gone completes the job.
 
     The job's `record` forgets the amendment record that names the channel, as
-    `close_submission_channel` does once the channel has gone, so a channel that could not be
+    the closing of a submission has always done once the channel has gone, so a channel that could not be
     deleted keeps it for the retry.
     """
     payload = ctx.step_payload

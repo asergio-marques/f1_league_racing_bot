@@ -25,7 +25,7 @@ that is a choice only they can make.
 league running neither weather nor attendance offered none at all — and a season every round
 of which was already in the past was approved in silence. Nothing recovered it: a round's
 result submission is armed against the round's own moment, a job that far behind is thrown
-away by the scheduler's 300-second misfire grace rather than run, `run_result_submission_job`
+away by the scheduler's 300-second misfire grace rather than run, the round's start (`results.submission.open`)
 is the only route to a submission channel, and that job is the round's one clock-driven
 transition. Every round stayed at *not run* for good. `/round amend` refuses a backwards move
 on the same reasoning and in the same words (#182), so the two doors agree.
