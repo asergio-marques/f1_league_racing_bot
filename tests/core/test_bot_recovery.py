@@ -29,18 +29,11 @@ import pytest
 from leaguebot.__main__ import _recover_orphaned_amend_channels, _recover_portrait_refresh_job
 from leaguebot.core.db.database import get_connection, run_migrations
 
-NO_AMEND_LAPSE_AT_RESTART = (
-    "#439: the restart deletes each abandoned amendment's channel and writes its line itself, off "
-    "the change queue, rather than asking the queue for `results.amend.lapse` as the bot"
-)
-
-
 # ---------------------------------------------------------------------------
 # The sweep
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_each_orphan_is_reported_separately(tmp_path):
     """Two abandoned amendments are two commands to re-run, and a single summary would leave a
     manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:

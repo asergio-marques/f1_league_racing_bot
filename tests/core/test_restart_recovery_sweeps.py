@@ -471,12 +471,6 @@ async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
 # starts; the queue's jobs put the round back, delete the channel, close the row and write the
 # restart's line.
 
-NO_AMEND_LAPSE_AT_RESTART = (
-    "#439: the restart deletes an abandoned amendment's channel, puts its round back and writes "
-    "its line itself, off the change queue, rather than asking the queue for "
-    "`results.amend.lapse` as the bot"
-)
-
 
 async def _amend_league(tmp_path, *, amended: bool = False):
     """The league above with Alex's amendment open. *amended*: stage one was recorded, the round
@@ -586,7 +580,6 @@ def test_amendments_are_reverted_before_submission_channels_resume():
     assert amend < submission
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     """The bot stops again before the queue has run the lapse the first restart asked for. The
     second restart finds that lapse in hand and asks no other (core :133): one lapse, one line."""
@@ -663,7 +656,6 @@ async def test_an_amendment_cannot_outlive_its_round(tmp_path):
     assert _amend_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_a_channel_already_deleted_still_clears_the_row(tmp_path):
     """Someone deleted the amendment channel by hand while the bot was down. The lapse's
     deletion finds it gone and completes: the queue does not stop, the row is closed and the
@@ -698,7 +690,6 @@ async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     assert _amend_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     """Stage one commits, so abandoning an amendment is not a no-op (#345).
 
@@ -779,7 +770,6 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
     assert "run /results rounds sync and /results standings sync" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path):
     """**The snapshot is the only way back, so a failed revert keeps it** (#345).
 
@@ -807,7 +797,6 @@ async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path
     assert await _winner(league) == MAX
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_LAPSE_AT_RESTART)
 async def test_nothing_to_put_back_is_not_reported_as_a_revert(tmp_path):
     """The log must not claim a round was put back when nothing was reverted.
 

@@ -894,7 +894,6 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     assert row["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_queue_starts(
     tmp_path, monkeypatch,
 ):

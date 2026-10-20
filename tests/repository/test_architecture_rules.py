@@ -176,7 +176,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
     ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (8, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
@@ -948,7 +948,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, PASS["signup"]),
     ("core/utils/batch_notice.py", "delete_notice"): (1, HANDLERS),
     ("core/utils/batch_notice.py", "send_notice"): (1, HANDLERS),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (1, PASS["results"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (1, HANDLERS),
     ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, HANDLERS),
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, HANDLERS),
@@ -1104,7 +1103,6 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 
 KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_expired_review_prompts"): (2, SLICE["6b"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (1, SLICE["6b"]),
     ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, SLICE["6b"]),
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, SLICE["6b"]),
     ("core/cogs/module_cog.py", "execute_forced_close"): (2, SLICE["6b"]),
@@ -1802,7 +1800,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
@@ -2106,7 +2103,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
     # Results' pass
-    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "_apply_points_from_config"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_claim_amendment"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_close_amend_channel_record"): (2, PASS["results"]),
