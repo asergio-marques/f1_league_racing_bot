@@ -699,9 +699,9 @@ as its specification asks; a failure always is. A command that asks for a change
   carried out"), and to the log channel as the change's specification asks.
 - **Commands, buttons and forms** go through `report_failure` (`core/utils/interaction_errors.py`),
   called by the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes. What the member
-  and the log channel are told is the core specification's "When a command fails". The one
-  exception is a results amendment, which reports its own failure itself, saying what became of
-  the round (the first place a catch-all is allowed, below).
+  and the log channel are told is the core specification's "When a command fails". A results
+  amendment is no exception: it runs as changes on the queue, and a fault in one stops its lane
+  and is reported as any change's is, by the queue.
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler on the bot.
 - **Background tasks** go through the helper that starts them.
@@ -742,12 +742,7 @@ to it would switch off the one failure path for every command.
    context to `what` (the round a `/round amend` confirmation was amending) or stating
    `outcome` (what became of a change it undid, in place of "may have been partly done"), and
    then returns. One failure still makes one line, and the base classes are spared a second
-   report. A results amendment is not a form of these but a failure path of its own, the
-   exception named above:
-   where it has written anything it first tries to put the round back, then reports its own
-   failure and says what became of the round, for example that it was put back as it was, that
-   it is not put back yet, or that there was nothing to put back. Its reply may name the kind of fault in plain words (`describe_fault`), which the standard reply
-   never does, as the core specification's "When a command fails" allows an amendment alone. The change queue's worker is a failure path too, and the
+   report. The change queue's worker is a failure path too, and the
    fallback where a stop cannot be recorded: its catch-all (`ChangeQueue._work`) puts the error
    in the host's log, the worker pauses and looks again, and the job runs again, so that its
    failure is recorded then. The hook a change type may give for a Discard of a change before it
