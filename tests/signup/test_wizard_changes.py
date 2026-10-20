@@ -867,24 +867,6 @@ async def test_a_timer_that_fires_before_the_24_hours_since_the_last_answer_ends
     assert _armed(league, DELETE_TIMER) == []
 
 
-async def test_an_answer_moves_the_one_inactivity_timer_and_a_cancel_takes_it_away(tmp_path):
-    """The wizard arms the driver's 24 hours as the `signup_inactivity` timer, the one timer
-    there is (arming it again replaces it, so no answer leaves an earlier one to fire), and
-    takes that timer away when the signup moves to a manager."""
-    from datetime import datetime, timezone
-
-    league = await _league(tmp_path)
-    wizards = _wizards(league)
-    at = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
-
-    await wizards._arm_inactivity_job(str(SIGNING_UP), at)
-    await wizards._cancel_inactivity_job(str(SIGNING_UP))
-
-    assert _armed(league, INACTIVITY_TIMER) == [(INACTIVITY_TIMER, str(SIGNING_UP), at)]
-    disarmed = [call.args for call in league.bot.scheduler_service.disarm.call_args_list]
-    assert (INACTIVITY_TIMER, str(SIGNING_UP)) in disarmed
-
-
 async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
     """The bot starts again. Kimi was last active 25 hours ago, a second driver (115) an hour
     ago, both part-way through signing up. Recovering the wizards (the wizard service built with

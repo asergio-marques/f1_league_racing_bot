@@ -10,21 +10,11 @@ from __future__ import annotations
 
 import os
 
-import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.image_verdict_post import _driver_nationality
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
-
-#: A signup's record and its wizard are saved, approved and deleted only inside a save the caller
-#: holds: the signup jobs' records (#439, slice 6b, C83, C84, C88); the committing forms go (C88).
-NO_SIGNUP_SAVES_ON = (
-    "#439: a signup's record and its wizard are saved, approved and deleted only by committing "
-    "forms that hold their own connection, with no save_record_on, save_wizard_on, "
-    "mark_approved_on or delete_wizard_on taking the caller's save"
-)
-
 
 async def _mark_approved(svc, db_path, discord_user_id):
     """Mark the driver's latest signup approved in a save of the test's own, as Approve's does."""
@@ -109,7 +99,6 @@ async def _newer_rejected_signup_on_b(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     """The usual merge: A's signup approved, B's later one rejected. A's is the driver's."""
     db_path, _ = await _make_db(tmp_path)
@@ -122,7 +111,6 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
     db_path, profile_id = await _make_db(tmp_path)
     service = SignupModuleService(db_path)
@@ -137,7 +125,6 @@ async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_approval_marks_only_the_latest_signup_of_the_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

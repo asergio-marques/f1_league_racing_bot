@@ -523,18 +523,6 @@ class SignupModuleService:
             rows = await cursor.fetchall()
         return [self._row_to_signup_record(row) for row in rows]
 
-    async def save_record(self, record: SignupRecord) -> int:
-        """Store *record*, returning its id, in a save of its own (`save_record_on`'s, committed).
-
-        A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
-        the season and window it names or, where it names none, under the server's active
-        season and that season's latest window. A stored record is updated in place.
-        """
-        async with get_connection(self._db_path) as db:
-            stored = await self.save_record_on(db, record)
-            await db.commit()
-        return stored
-
     async def save_record_on(self, db: aiosqlite.Connection, record: SignupRecord) -> int:
         """Store *record* on the connection handed, returning its id; commits nothing.
 
@@ -668,8 +656,11 @@ class SignupModuleService:
             return None
         return self._row_to_wizard_record(row)
 
-    async def save_wizard(self, wizard: SignupWizardRecord, *, starting: bool = False) -> None:
-        """Save the wizard's record in a save of its own (`save_wizard_on`'s, committed).
+    async def save_wizard_on(
+        self, db: aiosqlite.Connection, wizard: SignupWizardRecord, *, starting: bool = False
+    ) -> None:
+        """Save the wizard's record on the connection handed, inserting it or updating the one
+        the driver holds; commits nothing: the caller's save does.
 
         *starting* is the save of a signup just begun (Sign Up pressed). It alone clears any
         closing notice a past close of the window still owes the driver (`end_wizard_on`): a mark
@@ -678,15 +669,6 @@ class SignupModuleService:
         Every other save, a step of the signup, leaves the mark as it is, so that a step saved
         just after a close marked the driver never takes the mark away from that close.
         """
-        async with get_connection(self._db_path) as db:
-            await self.save_wizard_on(db, wizard, starting=starting)
-            await db.commit()
-
-    async def save_wizard_on(
-        self, db: aiosqlite.Connection, wizard: SignupWizardRecord, *, starting: bool = False
-    ) -> None:
-        """Save the wizard's record on the connection handed, inserting it or updating the one
-        the driver holds; commits nothing. *starting* is as in `save_wizard`."""
         snapshot_json = (
             json.dumps(self._snapshot_to_dict(wizard.config_snapshot))
             if wizard.config_snapshot else None
@@ -715,10 +697,10 @@ class SignupModuleService:
     ) -> None:
         """Insert or update a driver's wizard row on the connection handed; commits nothing.
 
-        What `save_wizard` writes, for a change that saves the row in the same save as a job's
+        What `save_wizard_on` writes, for a change that saves the row in the same save as a job's
         mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
         encoded, so that a job which made it can hand it on in its result. *starting* is as in
-        `save_wizard`.
+        `save_wizard_on`.
         """
         await db.execute(
             """
@@ -748,19 +730,9 @@ class SignupModuleService:
             ),
         )
 
-    async def mark_approved(self, discord_user_id: str) -> None:
-        """Mark the latest signup of *discord_user_id* as approved — the one just reviewed.
-
-        Read wherever "the driver's signup" is chosen: an approved signup outranks a later one
-        that was not (issue #243, `driver_service.SIGNUP_PRECEDENCE_SQL`).
-        """
-        async with get_connection(self._db_path) as db:
-            await self.mark_approved_on(db, discord_user_id)
-            await db.commit()
-
     async def mark_approved_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
         """Mark the latest signup of *discord_user_id* approved on the connection handed;
-        commits nothing. What `mark_approved` does, for the approval's save."""
+        commits nothing: the approval's save does."""
         await db.execute(
             "UPDATE signup_records SET approved = 1 WHERE id = ("
             "  SELECT id FROM signup_records WHERE discord_user_id = ?"
@@ -813,9 +785,12 @@ class SignupModuleService:
         """Move a wizard record to another account of the same driver (issue #243).
 
         A wizard record is the transient state of one signup and its channel, not a record of
-        the league's, so it follows the driver to their new current account.
+        the league's, so it follows the driver to their new current account. An abandoned
+        draft the new account holds (a signup never begun) is deleted in the same save, which
+        it would otherwise collide with.
         """
         async with get_connection(self._db_path) as db:
+            await self.delete_wizard_on(db, to_account)
             await db.execute(
                 "UPDATE signup_wizard_records SET discord_user_id = ? "
                 "WHERE discord_user_id = ?",
@@ -823,16 +798,11 @@ class SignupModuleService:
             )
             await db.commit()
 
-    async def delete_wizard(self, discord_user_id: str) -> None:
-        async with get_connection(self._db_path) as db:
-            await self.delete_wizard_on(db, discord_user_id)
-            await db.commit()
-
     async def delete_wizard_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
         """Delete a driver's wizard record on the connection handed; commits nothing.
 
-        What `delete_wizard` does, for a change whose job records the deletion of the driver's
-        channel in the save that marks the job done.
+        For a change whose job records the deletion of the driver's channel in the save that
+        marks the job done, and for `rekey_wizard`, which clears the account a record moves to.
         """
         await db.execute(
             "DELETE FROM signup_wizard_records WHERE discord_user_id = ?",

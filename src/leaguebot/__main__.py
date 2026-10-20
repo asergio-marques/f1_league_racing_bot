@@ -574,7 +574,7 @@ def register_change_types(bot: LeagueBot) -> None:
         start_change(
             modules=bot.module_service, config=bot.config_service,
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            teams=lambda: bot.team_service, wizard=lambda: bot.wizard_service,
+            teams=lambda: bot.team_service,
             queue_of=lambda: bot.change_queue, closing_kinds=(CLOSE_KIND, OFF_KIND),
             cancel_timers=_cancel_wizard_timers(bot),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
@@ -583,7 +583,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         end_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            cancel_timers=_cancel_wizard_timers(bot), wizard=lambda: bot.wizard_service,
+            cancel_timers=_cancel_wizard_timers(bot),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )

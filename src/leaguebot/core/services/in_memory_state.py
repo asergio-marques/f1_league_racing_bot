@@ -2,7 +2,7 @@
 
 `/bot pack` and `/bot factory-reset` (issue #247) change the database underneath a running
 process, and a store in memory that outlived them would act on a league the database no
-longer holds — a season setup resumed after a factory reset, a signup correction timing out
+longer holds — a season setup resumed after a factory reset, a signup's timer firing
 into a wizard that has gone. So both commands call `clear_in_memory_state`, and it names
 every such store.
 
@@ -46,13 +46,6 @@ def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
     from leaguebot.signup.services.signup_views import clear_pending_reasons
 
     clear_pending_reasons()
-
-    # A correction-parameter timeout, which would otherwise fire into a wizard that has gone.
-    wizard_service = getattr(bot, "wizard_service", None)
-    if wizard_service is not None:
-        for task in wizard_service._correction_tasks.values():
-            task.cancel()
-        wizard_service._correction_tasks.clear()
 
     # The interactions held to update a change's reply: the changes they belong to are deleted
     # with the pack or reset, so nothing is left to update.

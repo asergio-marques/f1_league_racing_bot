@@ -444,7 +444,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        # The driver role is granted at every approval, and `wizard_service.approve_signup`
+        # The driver role is granted at every approval, and the `signup.approve` change
         # only logs a grant Discord refuses (#374). The base role is granted by the league.
         if column == "driver_role_id":
             refusal = role_grant_refusal(

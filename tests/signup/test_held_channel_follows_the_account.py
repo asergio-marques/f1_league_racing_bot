@@ -235,3 +235,25 @@ async def test_the_new_job_is_armed_before_the_record_moves(tmp_path, scheduler)
     await service.move_held_channel(OLD, NEW, _guild({}))
 
     assert order == [f"arm {NEW}", "re-key", f"disarm {OLD}"]
+
+
+async def test_a_draft_the_new_account_abandoned_goes_in_the_same_save_as_the_move(
+    tmp_path, scheduler
+):
+    """The new account holds a wizard record that never got a channel (a signup never begun).
+    The reassign moves the held channel's record onto it: the draft is replaced, not collided
+    with, and the account then holds the old account's channel."""
+    service, _queue = await _service(tmp_path, scheduler, held={OLD: OLD_CHANNEL})
+    async with get_connection(service._db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+            "signup_channel_id) VALUES (?, 'UNENGAGED', NULL)",
+            (NEW,),
+        )
+        await db.commit()
+
+    problems = await service.move_held_channel(OLD, NEW, _guild({}))
+
+    assert problems == []
+    assert await _channel_of(service, NEW) == OLD_CHANNEL
+    assert await _channel_of(service, OLD) is None

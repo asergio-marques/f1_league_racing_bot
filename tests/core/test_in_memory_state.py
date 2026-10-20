@@ -189,13 +189,6 @@ def _pending_reasons() -> dict:
     raise AssertionError("no module holds the pending reasons")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#439: the clear still reaches the wizard service's private correction timeouts, which "
-        "C88 deletes with the wizard's posting handlers, and looks the change queue up on the bot"
-    ),
-)
 async def test_the_clear_empties_every_store():
     """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
     so none fires after a pack or a factory reset (#482). The wizards hold no correction

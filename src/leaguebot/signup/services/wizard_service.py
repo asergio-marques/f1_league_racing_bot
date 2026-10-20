@@ -1,34 +1,28 @@
-"""WizardService — signup wizard state machine and lifecycle management.
+"""WizardService — what the signup wizard keeps of a driver's signup channel and its words.
 
-Handles the per-driver signup channel lifecycle, sequential parameter
-collection, inactivity timeouts, correction cycles, and admin review.
-
-All Discord channel mutations (create/delete/hold) are coordinated here.
-APScheduler jobs delegate back via module-level callables using the
-_GLOBAL_WIZARD_SERVICE sentinel (same pattern as SchedulerService).
+The wizard itself runs as changes on the change queue (`wizard_changes`, `wizard_answers`,
+`review_changes`, `closing_steps`), each answer a turn on the driver's lane. What is left here is
+what those changes and the commands outside signup still reach: the channel's making, its lock
+and its move to a driver's new account, the prompts and the review panel's text, the views a
+question carries, and the restart's recovery of the timers.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import discord
-from apscheduler.triggers.date import DateTrigger
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
-from leaguebot.core.utils.log_lines import record_abandoned, record_refusal
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.core.utils.input_validator import parse_nationality, parse_time
 from leaguebot.results.utils.results_formatter import render_lap_time
 from leaguebot.signup.services.closing_steps import (
     DELETE_TIMER,
@@ -52,10 +46,9 @@ log = logging.getLogger(__name__)
 #: everybody where the driver does not.
 _REVIEW_PANEL_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
-# Module-level sentinel so APScheduler picklable jobs can reach the service.
-_GLOBAL_WIZARD_SERVICE: "WizardService | None" = None
-
-# APScheduler job-ID prefixes.
+# The ids a wizard's two timers had as APScheduler jobs, before they became the scheduler
+# service's `signup_inactivity` and `signup_channel_delete` timers. Nothing arms a job under
+# them; the closing of a window and the switching off of signup still cancel by them.
 _INACTIVITY_JOB_PREFIX = "wizard_inactivity"
 _CHANNEL_DELETE_JOB_PREFIX = "wizard_channel_delete"
 
@@ -70,32 +63,10 @@ def channel_delete_job_id(discord_user_id: str) -> str:
     return f"{_CHANNEL_DELETE_JOB_PREFIX}_{discord_user_id}"
 
 
-# ---------------------------------------------------------------------------
-# Module-level APScheduler callables (must be picklable — no closures)
-# ---------------------------------------------------------------------------
-
-
-async def _wizard_channel_delete_job(discord_user_id: str) -> None:
-    """APScheduler callable for post-hold channel deletion: asks the queue, as the bot, to delete
-    the held channel on the driver's own lane (`signup.channel.delete`)."""
-    if _GLOBAL_WIZARD_SERVICE is None:
-        log.warning(
-            "_wizard_channel_delete_job fired but _GLOBAL_WIZARD_SERVICE is None "
-            "(user=%s) — skipping",
-            discord_user_id,
-        )
-        return
-    await ask_channel_delete(
-        _GLOBAL_WIZARD_SERVICE._change_queue, _GLOBAL_WIZARD_SERVICE._db_path, discord_user_id,
-        own_lane=True,
-    )
-
-
-#: What a button press is told where the wizard it belongs to is gone, where the step it
-#: answers has been answered, and where the wizard's channel is not to be found.
+#: What a button press is told where the wizard it belongs to is gone, and where the step it
+#: answers has been answered.
 _NO_WIZARD = "Wizard session not found."
 _STEP_ANSWERED = "That step has already been answered."
-_NO_WIZARD_CHANNEL = "Wizard channel not found."
 _TEAM_PICKED = "That team has already been picked."
 
 
@@ -167,10 +138,6 @@ _CORRECTION_LABELS: dict[str, str] = {
     "notes":                "Notes",
 }
 
-#: What `WizardService.select_correction_parameter` returns where the request has ended (D2).
-_CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
-
-
 @dataclass(frozen=True)
 class HoldOutcome:
     """What `WizardService.trigger_channel_hold` did, for a caller to name in its own line.
@@ -184,22 +151,6 @@ class HoldOutcome:
     posted: bool = False
     locked: bool = False
     reason: str | None = None
-
-
-def _channel_kept(held: HoldOutcome) -> str | None:
-    """The `not done:` line a signup's own flow gains where its closing notice was refused, or
-    None where it went out (or there was no channel to hold).
-
-    The channel is kept, readable with the driver's typing locked and no deletion armed, so a
-    league manager must delete it by hand (signup specification: the closing notice).
-    """
-    if not isinstance(held, HoldOutcome) or held.channel_id is None or held.posted:
-        return None
-    return (
-        f"  not done: the closing notice could not be posted in <#{held.channel_id}>"
-        f" ({held.reason}); the channel is kept, readable but locked, and will not delete"
-        " itself: delete it by hand"
-    )
 
 
 class WizardService:
@@ -222,6 +173,9 @@ class WizardService:
     ) -> None:
         self._db_path = db_path
         self._scheduler = scheduler_service
+        # The one way a held channel's deletion is armed (the `signup_channel_delete` timer, a
+        # one-off with no lateness limit), for a lock the season's end asks.
+        self._arm_deletion = scheduler_service.arm_once
         self._output_router = output_router
         # Handed the change queue when it is built, for the views it makes and the changes it asks
         # (docs/design/architecture.md, "Services stay attached to the bot, and are built in one place").
@@ -230,54 +184,19 @@ class WizardService:
         # Late-bound after bot is ready; set via set_bot().
         self._bot: "LeagueBot | None" = None
 
-        # In-memory asyncio task references for correction-parameter timeouts,
-        # keyed by discord_user_id.
-        self._correction_tasks: dict[str, asyncio.Task] = {}
-
-        # Register as the global singleton so APScheduler jobs can reach us.
-        global _GLOBAL_WIZARD_SERVICE
-        _GLOBAL_WIZARD_SERVICE = self
-
     def set_bot(self, bot: "LeagueBot") -> None:
         """Bind the bot instance for Discord API and service access."""
         self._bot = bot
 
-    @property
-    def _league_bot(self) -> "LeagueBot":
-        assert self._bot is not None, "WizardService.set_bot() not called"
-        return self._bot
-
-    async def _get_track_name_map(self) -> dict[str, str]:
-        """Return {str(id): name} for all tracks from the database."""
-        from leaguebot.core.services import track_service
-        async with get_connection(self._db_path) as db:
-            return await track_service.get_track_name_map(db)
 
     # ------------------------------------------------------------------
     # Convenience accessors (safe after set_bot is called)
     # ------------------------------------------------------------------
 
     @property
-    def _driver_service(self):
-        assert self._bot is not None, "WizardService.set_bot() not called"
-        return self._bot.driver_service
-
-    @property
     def _signup_svc(self):
         assert self._bot is not None, "WizardService.set_bot() not called"
         return self._bot.signup_module_service
-
-    @property
-    def _module_svc(self):
-        assert self._bot is not None, "WizardService.set_bot() not called"
-        return self._bot.module_service
-
-    async def _get_guild(self) -> discord.Guild | None:
-        """The league's server, the one a wizard's channel lives in."""
-        assert self._bot is not None, "WizardService.set_bot() not called"
-        from leaguebot.core.utils.league_server import league_guild
-
-        return await league_guild(self._bot)
 
     # ------------------------------------------------------------------
     # Channel helpers
@@ -342,80 +261,17 @@ class WizardService:
             reason="Signup wizard channel hold",
         )
 
-    async def _grant_driver_write(
-        self,
-        channel: discord.TextChannel,
-        member: discord.Member,
-    ) -> None:
-        """Restore driver's send_messages permission after a button-only step."""
-        await channel.set_permissions(
-            member,
-            view_channel=True,
-            send_messages=True,
-            reason="Signup wizard button step answered",
-        )
 
     # ------------------------------------------------------------------
     # Inactivity / channel-delete job helpers
     # ------------------------------------------------------------------
 
-    def _forget_correction(self, discord_user_id: str) -> None:
-        """Cancel the correction timeout an earlier signup of the driver left running."""
-        task = self._correction_tasks.pop(discord_user_id, None)
-        if task is not None:
-            task.cancel()
 
-    def _inactivity_job_id(self, discord_user_id: str) -> str:
-        return inactivity_job_id(discord_user_id)
 
-    def _channel_delete_job_id(self, discord_user_id: str) -> str:
-        return channel_delete_job_id(discord_user_id)
 
-    async def _arm_inactivity_job(
-        self,
-        discord_user_id: str,
-        fire_at: datetime,
-    ) -> None:
-        """Arm (or move) the driver's 24-hour inactivity timer, the one `signup_inactivity`
-        timer there is: it asks the queue for the signup's expiry (`signup.end`) when it fires,
-        and arming it again replaces the earlier, so that no answer leaves a timer behind."""
-        if fire_at.tzinfo is None:
-            fire_at = fire_at.replace(tzinfo=timezone.utc)
-        self._scheduler.arm_once(INACTIVITY_TIMER, discord_user_id, fire_at)
-        log.debug("Armed the inactivity timer for %s → %s", discord_user_id, fire_at.isoformat())
 
-    async def _cancel_inactivity_job(
-        self, discord_user_id: str
-    ) -> None:
-        """Take away the driver's inactivity timer if it stands."""
-        scheduler = self._scheduler
-        scheduler.cancel_job(self._inactivity_job_id(discord_user_id))
-        scheduler.disarm(INACTIVITY_TIMER, discord_user_id)
 
-    async def _arm_channel_delete_job(
-        self,
-        discord_user_id: str,
-        fire_at: datetime,
-    ) -> None:
-        """Schedule the 24-h post-hold channel deletion APScheduler job."""
-        job_id = self._channel_delete_job_id(discord_user_id)
-        if fire_at.tzinfo is None:
-            fire_at = fire_at.replace(tzinfo=timezone.utc)
-        self._scheduler._scheduler.add_job(
-            _wizard_channel_delete_job,
-            trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-            id=job_id,
-            replace_existing=True,
-            name=f"Wizard channel delete {discord_user_id}",
-            kwargs={"discord_user_id": discord_user_id},
-        )
-        log.debug("Armed channel-delete job %s → %s", job_id, fire_at.isoformat())
 
-    async def _cancel_channel_delete_job(
-        self, discord_user_id: str
-    ) -> None:
-        """Remove the channel-delete APScheduler job if it exists."""
-        self._scheduler.cancel_job(self._channel_delete_job_id(discord_user_id))
 
     # ------------------------------------------------------------------
     # A held channel follows the driver's current account (issue #243)
@@ -458,22 +314,17 @@ class WizardService:
             # never left with nothing to delete it.
             await ask_channel_delete(self._change_queue, self._db_path, from_account, own_lane=False)
             scheduler.disarm(DELETE_TIMER, from_account)
-            await self._cancel_channel_delete_job(from_account)
             return problems
 
         fire_at = (
             scheduler.timer_due(DELETE_TIMER, from_account)
-            or scheduler.job_due(self._channel_delete_job_id(from_account))
             or (datetime.now(timezone.utc) + timedelta(hours=24))
         )
-        if theirs is not None:
-            # An abandoned draft on the new account: the transient state of a signup never
-            # begun, which would otherwise collide with the record moving in.
-            await svc.delete_wizard(to_account)
         scheduler.arm_once(DELETE_TIMER, to_account, fire_at)
+        # An abandoned draft on the new account (the transient state of a signup never begun)
+        # goes in the same save as the move, which it would otherwise collide with.
         await svc.rekey_wizard(from_account, to_account)
         scheduler.disarm(DELETE_TIMER, from_account)
-        await self._cancel_channel_delete_job(from_account)
 
         channel = as_text_channel(guild.get_channel(held.signup_channel_id))
         if channel is None:
@@ -495,351 +346,11 @@ class WizardService:
     # Public API stubs (implementations in T020–T049)
     # ------------------------------------------------------------------
 
-    async def handle_message(
-        self,
-        wizard,  # SignupWizardRecord
-        message: discord.Message,
-    ) -> None:
-        """Route an incoming message to the correct per-step handler."""
-        _HANDLERS = {
-            WizardState.COLLECTING_NATIONALITY:        self._handle_nationality,
-            WizardState.COLLECTING_PLATFORM:           self._handle_platform,
-            WizardState.COLLECTING_PLATFORM_ID:        self._handle_platform_id,
-            WizardState.COLLECTING_AVAILABILITY:       self._handle_availability,
-            WizardState.COLLECTING_DRIVER_TYPE:        self._handle_driver_type,
-            WizardState.COLLECTING_PREFERRED_TEAMS:    self._handle_preferred_teams,
-            WizardState.COLLECTING_PREFERRED_TEAMMATE: self._handle_preferred_teammate,
-            WizardState.COLLECTING_LAP_TIME:           self._handle_lap_time,
-            WizardState.COLLECTING_NOTES:              self._handle_notes,
-        }
-        handler = _HANDLERS.get(wizard.wizard_state)
-        if handler is None:
-            return  # UNENGAGED or unknown state — ignore
-        await handler(wizard, message)
 
-    async def commit_wizard(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-    ) -> None:
-        """Commit draft answers to SignupRecord and post admin review panel."""
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None:
-            return
 
-        prior_profile = await self._driver_service.get_profile(discord_user_id)
-        is_correction = (
-            prior_profile is not None
-            and prior_profile.current_state == DriverState.PENDING_DRIVER_CORRECTION
-        )
 
-        d = wizard.draft_answers
-        record = SignupRecord(
-            id=-1,
-            discord_user_id=discord_user_id,
-            discord_username=d.get("discord_username"),
-            server_display_name=d.get("server_display_name"),
-            nationality=d.get("nationality"),
-            platform=d.get("platform"),
-            platform_id=d.get("platform_id"),
-            availability_slot_ids=d.get("availability_slot_ids", []),
-            driver_type=d.get("driver_type"),
-            preferred_teams=d.get("preferred_teams", []),
-            preferred_teammate=d.get("preferred_teammate"),
-            lap_times=d.get("lap_times", {}),
-            notes=d.get("notes"),
-            signup_channel_id=wizard.signup_channel_id,
-        )
-        if is_correction:
-            # A correction amends the signup it was asked of, and makes no new one (#220).
-            existing = await self._signup_svc.get_record(discord_user_id)
-            if existing is not None:
-                record.id = existing.id
-        await self._signup_svc.save_record(record)
 
-        # Transition driver
-        await self._driver_service.transition(
-            discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
-        )
 
-        # Set wizard state to UNENGAGED
-        wizard.wizard_state = WizardState.UNENGAGED
-        wizard.draft_answers = {}
-        await self._signup_svc.save_wizard(wizard)
-
-        # Revoke driver write permission (FR-024)
-        if wizard.signup_channel_id:
-            channel = guild.get_channel(wizard.signup_channel_id)
-            member = guild.get_member(int(discord_user_id))
-            if channel and isinstance(channel, discord.TextChannel) and member:
-                await self._revoke_driver_write(channel, member)
-
-        # Cancel inactivity job (driver is now waiting for admin review)
-        await self._cancel_inactivity_job(discord_user_id)
-
-        # Post admin review panel in channel
-        if wizard.signup_channel_id:
-            channel = guild.get_channel(wizard.signup_channel_id)
-            if channel and isinstance(channel, discord.TextChannel):
-                from leaguebot.signup.services.signup_views import AdminReviewView
-                track_map = await self._get_track_name_map()
-                slot_labels = {
-                    s.slot_id: s.display_label
-                    for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
-                }
-                panel_text = self._format_review_panel(record, slot_labels, track_name_map=track_map)
-                await channel.send(
-                    panel_text,
-                    view=AdminReviewView(discord_user_id, change_queue=self._change_queue),
-                    allowed_mentions=_REVIEW_PANEL_MENTIONS,
-                )
-
-        # A correction is committed by `_commit_correction`, which writes its own line.
-        await self._record_signup_line(discord_user_id, guild, "Submitted")
-
-    async def approve_signup(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-        actor: discord.Member,
-    ) -> str | None:
-        """Admin approves the signup (T032).
-
-        Grants the driver role, transitions driver to UNASSIGNED,
-        and holds the channel for 24 hours before deletion.
-        FR-040. The driver role is the league's, read from core (issue #276).
-
-        Returns None where the driver role was given, or none is configured, and otherwise one
-        sentence saying it could not be: the role is gone, the driver has left the server, or
-        Discord refused it. The approval stands, as the core specification's role rules have it.
-        The Approve button tells the manager the sentence, and it is written beneath the
-        Approved line, where it is not left to the host log (#482).
-        """
-        signup_cfg = await self._signup_svc.get_config()
-        if signup_cfg is None:
-            return None
-
-        # Grant the driver role
-        server_cfg = await self._league_bot.config_service.get_server_config()
-        driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
-        member = guild.get_member(int(discord_user_id))
-        role_note: str | None = None
-        if driver_role_id:
-            role = guild.get_role(driver_role_id)
-            if member is None:
-                role_note = "The driver role could not be granted: the driver is no longer on the server."
-            elif role is None:
-                role_note = "The driver role could not be granted: the role no longer exists on the server."
-            else:
-                try:
-                    await member.add_roles(role, reason="Signup approved")
-                except discord.HTTPException:
-                    log.warning(
-                        "approve_signup: could not add the driver role for %s",
-                        discord_user_id,
-                        exc_info=True,
-                    )
-                    role_note = "The driver role could not be granted: Discord refused it."
-
-        # Compute and persist total_lap_ms before transitioning state
-        signup_record = await self._signup_svc.get_record(discord_user_id)
-        if signup_record is not None and signup_record.lap_times:
-            await self._league_bot.placement_service.store_total_lap_ms(
-                discord_user_id, signup_record.lap_times
-            )
-
-        # Transition driver to UNASSIGNED
-        await self._driver_service.transition(
-            discord_user_id, DriverState.UNASSIGNED
-        )
-        await self._signup_svc.mark_approved(discord_user_id)
-
-        await self._cancel_inactivity_job(discord_user_id)
-
-        held = await self.trigger_channel_hold(
-            discord_user_id, guild,
-            f"✅ Your signup has been approved by **{actor.display_name}**! "
-            "You are now an Unassigned driver. "
-            "This channel will be automatically deleted in 24 hours.",
-        )
-
-        driver_named = self._member_named_in(guild, discord_user_id)
-        line = (
-            f"{actor.display_name} (<@{actor.id}>) | Signup | Approved\n"
-            f"  driver: {driver_named}"
-        )
-        if role_note is not None:
-            line += f"\n  {role_note}"
-        if (kept := _channel_kept(held)) is not None:
-            line += f"\n{kept}"
-        await self._output_router.post_log(line)
-        return role_note
-
-    async def _not_awaiting_review(self, discord_user_id: str) -> str | None:
-        """Why a reason typed for *discord_user_id* cannot be acted on, or None where it can.
-
-        A manager's Reject or Request Changes is completed by a reason typed afterwards, and the
-        signup may have moved on between the two: approved by another manager, withdrawn,
-        rejected, or already sent back for a correction. The two services act only on a driver
-        still awaiting review, so a late reason cannot undo what has since been decided (#492).
-        """
-        profile = await self._driver_service.get_profile(discord_user_id)
-        if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
-            return "This signup is no longer awaiting review."
-        return None
-
-    async def request_changes(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-        actor: discord.Member,
-        reason: str = "",
-    ) -> str | None:
-        """Admin requests correction (T036).
-
-        Transitions driver to AWAITING_CORRECTION_PARAMETER, posts
-        CorrectionParameterView, and arms a 5-minute asyncio timeout.
-        FR-042, FR-043.
-
-        Acts only while the driver is awaiting review, as a rejection does (#492): where
-        they are not, it changes nothing and returns why. None where it acted.
-        """
-        if (refused := await self._not_awaiting_review(discord_user_id)) is not None:
-            return refused
-
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None:
-            return None
-
-        await self._driver_service.transition(
-            discord_user_id, DriverState.AWAITING_CORRECTION_PARAMETER
-        )
-
-        # Post CorrectionParameterView in the wizard channel
-        channel = (
-            guild.get_channel(wizard.signup_channel_id)
-            if wizard.signup_channel_id else None
-        )
-        # Remember who asked. The actor is only a Discord object here, and the window can
-        # outlive the process, so the ID is written down rather than held — it is what
-        # lets _correction_timeout_callback mention the manager when the window lapses.
-        # The reason is saved alongside it, and appears only when the driver is prompted
-        # to re-submit.
-        wizard.draft_answers["_correction_requested_by"] = str(actor.id)
-        if reason:
-            wizard.draft_answers["_correction_reason"] = reason
-        await self._signup_svc.save_wizard(wizard)
-
-        if isinstance(channel, discord.TextChannel):
-            driver_member = guild.get_member(int(discord_user_id))
-            mention = driver_member.mention if driver_member else f"<@{discord_user_id}>"
-            from leaguebot.signup.services.signup_views import CorrectionParameterView
-            await channel.send(
-                f"{mention} **{actor.display_name}** has requested a correction.\n"
-                "Please select the parameter to correct (5-minute window):",
-                view=CorrectionParameterView(discord_user_id, change_queue=self._change_queue),
-            )
-
-        # Arm 5-minute correction selection timeout
-        ckey = discord_user_id
-        if ckey in self._correction_tasks:
-            self._correction_tasks[ckey].cancel()
-        self._correction_tasks[ckey] = asyncio.create_task(
-            self._correction_timeout_after_delay(discord_user_id)
-        )
-
-        driver_named = self._member_named_in(guild, discord_user_id)
-        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Correction requested\n  driver: {driver_named}"
-        if reason:
-            msg += f"\n  reason: {reason}"
-        await self._output_router.post_log(msg)
-        return None
-
-    async def select_correction_parameter(
-        self,
-        discord_user_id: str,
-        parameter: str,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Admin selects the parameter to re-collect (T037).
-
-        Cancels the 5-minute asyncio timeout, transitions driver to
-        PENDING_DRIVER_CORRECTION, sets WizardState to the target step,
-        and posts the re-collection prompt.
-        FR-044.
-
-        Acts only while the driver is awaiting a correction parameter (D2): where the request
-        has ended — its five minutes lapsed, another parameter was chosen, the signup was
-        approved or rejected, or the wizard is gone — it changes nothing and returns why, which
-        the review panel's button turns into a refusal. None where it acted (or where the
-        parameter is not one the wizard knows, which a stale button from an older bot may carry).
-        """
-        target_state = _CORRECTION_PARAMETER_STATES.get(parameter)
-        if target_state is None:
-            log.warning("select_correction_parameter: unknown parameter %r", parameter)
-            return None
-
-        profile = await self._driver_service.get_profile(discord_user_id)
-        if profile is None or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER:
-            return _CORRECTION_ENDED
-
-        # Cancel the 5-minute selection timeout
-        ckey = discord_user_id
-        if ckey in self._correction_tasks:
-            self._correction_tasks.pop(ckey).cancel()
-
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None:
-            return _CORRECTION_ENDED
-
-        # Transition driver to PENDING_DRIVER_CORRECTION. The state check above can be raced
-        # (the five minutes lapsing, or a second press, between it and here); the transition
-        # is the check that cannot, and a refused one means the request has ended all the same.
-        try:
-            await self._driver_service.transition(
-                discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
-            )
-        except ValueError:
-            return _CORRECTION_ENDED
-
-        # Configure wizard for single-field re-collection
-        correction_reason = wizard.draft_answers.pop("_correction_reason", "")
-        wizard.wizard_state = target_state
-        wizard.draft_answers["_is_correction"] = True
-        if target_state == WizardState.COLLECTING_LAP_TIME:
-            wizard.current_lap_track_index = 0
-        if target_state == WizardState.COLLECTING_PREFERRED_TEAMS:
-            wizard.draft_answers.pop("_pref_teams_step", None)
-            wizard.draft_answers["preferred_teams"] = []
-        wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
-        await self._signup_svc.save_wizard(wizard)
-
-        # Arm inactivity job for PENDING_DRIVER_CORRECTION (T045)
-        fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        await self._arm_inactivity_job(discord_user_id, fire_at)
-
-        # Post re-collection prompt with step-appropriate view
-        channel = (
-            guild.get_channel(wizard.signup_channel_id)
-            if wizard.signup_channel_id else None
-        )
-        if isinstance(channel, discord.TextChannel):
-            member = guild.get_member(int(discord_user_id))
-            mention = member.mention if member else f"<@{discord_user_id}>"
-            # Correct write permissions for the target step type
-            if target_state in WizardService._BUTTON_ONLY_STATES and member:
-                await self._revoke_driver_write(channel, member)
-            elif member:
-                await self._grant_driver_write(channel, member)
-            team_names = wizard.config_snapshot.team_names if wizard.config_snapshot else []
-            reason_line = f"\n**Reason:** {correction_reason}" if correction_reason else ""
-            track_map = await self._get_track_name_map()
-            await channel.send(
-                f"{mention} Please re-submit your **{parameter.replace('_', ' ')}**:{reason_line}\n"
-                + self._prompt_for_state(target_state, wizard.config_snapshot, wizard, track_name_map=track_map),
-                view=self._build_step_view(target_state, discord_user_id, team_names),
-            )
-        return None
 
     async def trigger_channel_hold(
         self,
@@ -906,8 +417,9 @@ class WizardService:
         if member is not None:
             await self._revoke_driver_write(channel, member)
         if arm_deletion:
-            fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
-            await self._arm_channel_delete_job(discord_user_id, fire_at)
+            self._arm_deletion(
+                DELETE_TIMER, discord_user_id, datetime.now(timezone.utc) + timedelta(hours=24)
+            )
 
     async def lock_signup_channel(self, discord_user_id: str, guild: discord.Guild) -> None:
         """Lock a driver's signup channel and arm its deletion 24 hours on, posting nothing.
@@ -929,88 +441,6 @@ class WizardService:
                 f"the signup channel {channel.id} could not be locked"
             ) from exc
 
-    async def handle_member_remove(
-        self, discord_user_id: str, guild: discord.Guild
-    ) -> None:
-        """Member left the server while an active driver state requires cleanup (T047).
-
-        Handles:
-          - COLLECTING_* states (wizard active)
-          - PENDING_ADMIN_APPROVAL / AWAITING_CORRECTION_PARAMETER (wizard UNENGAGED
-            but driver still has an active state with a signup channel to clean up)
-
-        Cancels jobs/tasks, transitions driver to NOT_SIGNED_UP, deletes the
-        signup channel immediately, and posts a log notification.
-        FR-027.
-        """
-        _ACTIVE_STATES_UNENGAGED_WIZARD = {
-            DriverState.PENDING_ADMIN_APPROVAL,
-            DriverState.AWAITING_CORRECTION_PARAMETER,
-        }
-
-        # The state label is captured before cleanup, from whichever of the two is active.
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is not None and wizard.wizard_state != WizardState.UNENGAGED:
-            state_label = wizard.wizard_state.value
-        else:
-            driver = await self._driver_service.get_profile(discord_user_id)
-            if driver is None or driver.current_state not in _ACTIVE_STATES_UNENGAGED_WIZARD:
-                return
-            state_label = driver.current_state.value
-
-        # Cancel all jobs and tasks
-        ckey = discord_user_id
-        if ckey in self._correction_tasks:
-            self._correction_tasks.pop(ckey).cancel()
-        await self._cancel_inactivity_job(discord_user_id)
-        await self._cancel_channel_delete_job(discord_user_id)
-
-        # Transition driver to NOT_SIGNED_UP
-        try:
-            await self._driver_service.transition(
-                discord_user_id, DriverState.NOT_SIGNED_UP
-            )
-        except ValueError:
-            # A driver who has already moved on: the rest of the cleanup still runs. Any other
-            # error is not swallowed (#457).
-            log.info(
-                "handle_member_remove: %s has already moved on; cleaning up the channel",
-                discord_user_id,
-            )
-
-        # Delete channel immediately (no hold)
-        if wizard is not None and wizard.signup_channel_id is not None:
-            channel = guild.get_channel(wizard.signup_channel_id)
-            if channel is not None:
-                try:
-                    await channel.delete(reason="Driver left the server")
-                except discord.HTTPException:
-                    log.warning(
-                        "handle_member_remove: could not delete channel %s",
-                        wizard.signup_channel_id,
-                    )
-
-        if wizard is not None:
-            await self._signup_svc.delete_wizard(discord_user_id)
-
-        # Post log notification
-        try:
-            signup_record = await self._signup_svc.get_record(discord_user_id)
-            display_name = (
-                (signup_record.server_display_name or signup_record.discord_username or discord_user_id)
-                if signup_record is not None
-                else discord_user_id
-            )
-        except Exception:  # noqa: BLE001 — the line is posted under the member's id instead
-            log.warning(
-                "handle_member_remove: could not read the signup record of %s", discord_user_id,
-                exc_info=True,
-            )
-            display_name = discord_user_id
-
-        await self._output_router.post_log(
-            f"Driver left server: **{display_name}** (<@{discord_user_id}>) | state: {state_label}",
-        )
 
     async def recover_wizards(self) -> None:
         """Called in on_ready: re-arm inactivity jobs for non-UNENGAGED wizards.
@@ -1114,118 +544,15 @@ class WizardService:
         """Accept nationality adjective, country name, or 'other'; return canonical Title-Case string."""
         return parse_nationality(raw)
 
-    _PLATFORMS = ["Steam", "EA", "Xbox", "PlayStation"]
-    _DRIVER_TYPES = ["Full-Time Driver", "Reserve Driver"]
+    #: The wizard steps answered by pressing a button, where typing is not an answer.
     _BUTTON_ONLY_STATES = frozenset({
         WizardState.COLLECTING_PLATFORM,
         WizardState.COLLECTING_DRIVER_TYPE,
         WizardState.COLLECTING_PREFERRED_TEAMS,
     })
 
-    async def _advance_wizard(
-        self,
-        wizard: SignupWizardRecord,
-        message: discord.Message,
-    ) -> None:
-        """Determine and move to the next collection state; commit when done."""
-        assert isinstance(message.channel, discord.TextChannel)
-        assert message.guild is not None
-        await self._advance_wizard_in_channel(wizard, message.channel, message.guild)
 
-    async def _advance_wizard_in_channel(
-        self,
-        wizard: SignupWizardRecord,
-        channel: discord.TextChannel,
-        guild: discord.Guild,
-    ) -> None:
-        """Core wizard advancement — move to the next state within a known channel."""
-        snapshot = wizard.config_snapshot
-        assert snapshot is not None
 
-        track_map = await self._get_track_name_map()
-        state = wizard.wizard_state
-        _SEQUENCE = [
-            WizardState.COLLECTING_NATIONALITY,
-            WizardState.COLLECTING_PLATFORM,
-            WizardState.COLLECTING_PLATFORM_ID,
-            WizardState.COLLECTING_AVAILABILITY,
-            WizardState.COLLECTING_DRIVER_TYPE,
-            WizardState.COLLECTING_PREFERRED_TEAMS,
-            WizardState.COLLECTING_PREFERRED_TEAMMATE,
-            WizardState.COLLECTING_LAP_TIME,
-            WizardState.COLLECTING_NOTES,
-        ]
-
-        idx = _SEQUENCE.index(state)
-
-        def _peek_next(i: int) -> WizardState | None:
-            for j in range(i + 1, len(_SEQUENCE)):
-                ns = _SEQUENCE[j]
-                if ns == WizardState.COLLECTING_NATIONALITY and not snapshot.nationality_required:
-                    continue
-                if ns == WizardState.COLLECTING_PREFERRED_TEAMS:
-                    if wizard.draft_answers.get("driver_type") == "Reserve Driver":
-                        continue
-                if ns == WizardState.COLLECTING_LAP_TIME:
-                    if wizard.current_lap_track_index < len(snapshot.selected_track_ids):
-                        return ns  # still tracks to collect
-                    else:
-                        continue  # skip lap time entirely
-                return ns
-            return None
-
-        # Exiting a button-only state: restore send_messages for next text step
-        if state in WizardService._BUTTON_ONLY_STATES:
-            member = guild.get_member(int(wizard.discord_user_id))
-            if member:
-                await self._grant_driver_write(channel, member)
-
-        # For COLLECTING_LAP_TIME: check if more tracks remain
-        if state == WizardState.COLLECTING_LAP_TIME:
-            track_ids = snapshot.selected_track_ids
-            next_idx = wizard.current_lap_track_index  # already advanced by handler
-            if next_idx < len(track_ids):
-                # More tracks: stay in LAP_TIME state but for next track
-                wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
-                await self._signup_svc.save_wizard(wizard)
-                await channel.send(
-                    self._prompt_for_state(state, snapshot, wizard, track_name_map=track_map),
-                    view=self._build_step_view(state, wizard.discord_user_id, snapshot.team_names),
-                )
-                await self._reset_inactivity_job(wizard.discord_user_id)
-                return
-
-        # T039: correction mode — commit correction instead of advancing
-        if wizard.draft_answers.pop("_is_correction", False):
-            await self._commit_correction(wizard, guild)
-            return
-
-        next_state = _peek_next(idx)
-        if next_state is None:
-            # All steps complete — persist final draft answers before commit reads them back
-            await self._signup_svc.save_wizard(wizard)
-            await self.commit_wizard(wizard.discord_user_id, guild)
-            return
-
-        wizard.wizard_state = next_state
-        wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
-        await self._signup_svc.save_wizard(wizard)
-        await self._reset_inactivity_job(wizard.discord_user_id)
-
-        # Entering a button-only state: revoke send_messages
-        if next_state in WizardService._BUTTON_ONLY_STATES:
-            member = guild.get_member(int(wizard.discord_user_id))
-            if member:
-                await self._revoke_driver_write(channel, member)
-
-        await channel.send(
-            self._prompt_for_state(next_state, snapshot, wizard, track_name_map=track_map),
-            view=self._build_step_view(next_state, wizard.discord_user_id, snapshot.team_names),
-        )
-
-    async def _reset_inactivity_job(self, discord_user_id: str) -> None:
-        fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        await self._arm_inactivity_job(discord_user_id, fire_at)
 
     def _build_step_view(
         self,
@@ -1236,461 +563,25 @@ class WizardService:
         """Return the appropriate view for the given wizard state."""
         return build_step_view(self._change_queue, state, discord_user_id, team_names)
 
-    async def handle_platform_button(
-        self,
-        discord_user_id: str,
-        platform: str,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Handle a platform button press in Step 2.
 
-        **The `handle_*` button handlers share one contract.** Each returns None where it acted,
-        and otherwise why it did nothing, as a sentence: the wizard is gone, the step has
-        already been answered, or its channel is not to be found. It answers nobody itself; the
-        view turns the sentence into the refusal, which answers the driver and is recorded
-        (#482).
-        """
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PLATFORM:
-            return _wizard_gone_or_answered(wizard)
-        wizard.draft_answers["platform"] = platform
-        channel = self._wizard_channel(wizard, guild)
-        if channel is None:
-            return _NO_WIZARD_CHANNEL
-        await self._record_button_step(wizard, guild, f"Platform: {platform}")
-        await self._advance_wizard_in_channel(wizard, channel, guild)
-        return None
 
-    async def handle_driver_type_button(
-        self,
-        discord_user_id: str,
-        driver_type: str,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Handle a driver-type button press in Step 5."""
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_DRIVER_TYPE:
-            return _wizard_gone_or_answered(wizard)
-        wizard.draft_answers["driver_type"] = driver_type
-        channel = self._wizard_channel(wizard, guild)
-        if channel is None:
-            return _NO_WIZARD_CHANNEL
-        await self._record_button_step(wizard, guild, f"Driver type: {driver_type}")
-        await self._advance_wizard_in_channel(wizard, channel, guild)
-        return None
 
-    async def handle_preferred_teams_button(
-        self,
-        discord_user_id: str,
-        team_name: str | None,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps).
 
-        *team_name* is the team the pressed button's own label names (#482, D3), or None for No
-        Preference. A team the driver has already picked is refused, changing nothing: a button
-        on an earlier sub-step's message still offers it.
-        """
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMS:
-            return _wizard_gone_or_answered(wizard)
-        channel = self._wizard_channel(wizard, guild)
-        if channel is None:
-            return _NO_WIZARD_CHANNEL
 
-        current_step: int = wizard.draft_answers.get("_pref_teams_step", 0)
-        current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
 
-        if team_name is not None and team_name in current_picks:
-            return _TEAM_PICKED
 
-        if team_name is None:
-            # No Preference — finalise with however many picks accumulated so far
-            wizard.draft_answers["preferred_teams"] = current_picks
-            wizard.draft_answers.pop("_pref_teams_step", None)
-            await self._record_button_step(
-                wizard, guild, "Preferred team: no preference"
-            )
-            await self._advance_wizard_in_channel(wizard, channel, guild)
-            return None
 
-        # Record this pick
-        current_picks.append(team_name)
-        wizard.draft_answers["preferred_teams"] = current_picks
-        next_step = current_step + 1
 
-        snapshot = wizard.config_snapshot
-        team_names: list[str] = snapshot.team_names if snapshot else []
-        remaining = [t for t in team_names if t not in current_picks]
 
-        done = next_step >= 3 or not remaining
-        await self._record_button_step(
-            wizard, guild, f"Preferred team: {team_name}", ends_step=done
-        )
 
-        if done:
-            # Done — all 3 picks taken or no teams left
-            wizard.draft_answers.pop("_pref_teams_step", None)
-            await self._advance_wizard_in_channel(wizard, channel, guild)
-            return None
 
-        # More sub-steps to go — save and send next sub-step prompt
-        wizard.draft_answers["_pref_teams_step"] = next_step
-        wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
-        await self._signup_svc.save_wizard(wizard)
-        await self._reset_inactivity_job(discord_user_id)
 
-        _ORDINALS = ["1st", "2nd", "3rd"]
-        ordinal = _ORDINALS[next_step]
-        picks_str = ", ".join(current_picks)
-        prompt = (
-            f"**Step 6 — {ordinal} Preferred Team** *(so far: {picks_str})*\n"
-            f"Select your {ordinal} preferred team, or press **No Preference** to finish."
-        )
-        from leaguebot.signup.services.signup_views import PreferredTeamsButtonView  # lazy import
-        await channel.send(
-            prompt,
-            view=PreferredTeamsButtonView(
-                discord_user_id, self._change_queue, team_names, excluded=current_picks
-            ),
-        )
-        return None
 
-    async def handle_no_preference_teammate(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Handle the No Preference button press in Step 7."""
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMMATE:
-            return _wizard_gone_or_answered(wizard)
-        wizard.draft_answers["preferred_teammate"] = None
-        channel = self._wizard_channel(wizard, guild)
-        if channel is None:
-            return _NO_WIZARD_CHANNEL
-        await self._record_button_step(wizard, guild, "Preferred teammate: no preference")
-        await self._advance_wizard_in_channel(wizard, channel, guild)
-        return None
 
-    async def _record_button_step(
-        self,
-        wizard: SignupWizardRecord,
-        guild: discord.Guild,
-        answer: str,
-        *,
-        ends_step: bool = True,
-    ) -> None:
-        """Write the one line a wizard button answer leaves in the log channel, carrying the answer.
 
-        **One line per action** (#482): a button answer that ends a correction writes none
-        (*ends_step*: the step is finished), since `_commit_correction` writes "Correction
-        submitted" for it, and the press that submits a first signup is No Notes, which
-        `commit_wizard` records as "Submitted". A correction's Preferred Teams pick that
-        leaves more picks to come is not an end, and is recorded. A typed
-        answer is a message, not a button, and records only its refusal.
-        """
-        if ends_step and wizard.draft_answers.get("_is_correction"):
-            return
-        await self._record_signup_line(wizard.discord_user_id, guild, answer)
 
-    @staticmethod
-    def _member_named_in(guild: discord.Guild, discord_user_id: str) -> str:
-        """The driver as the log channel names a member: "Alex (<@id>)", or the mention alone
-        once they have left the server."""
-        member = guild.get_member(int(discord_user_id))
-        return member_named(getattr(member, "display_name", None), int(discord_user_id))
 
-    async def _record_signup_line(
-        self, discord_user_id: str, guild: discord.Guild, text: str
-    ) -> None:
-        """Write "Name (<@id>) | Signup | <text>", the wizard's line family (S5-A1).
 
-        The driver is named by display name and mention, and by mention alone once they have left.
-        """
-        named = self._member_named_in(guild, discord_user_id)
-        await self._output_router.post_log(f"{named} | Signup | {text}")
-
-    @staticmethod
-    def _wizard_channel(
-        wizard: SignupWizardRecord, guild: discord.Guild
-    ) -> discord.TextChannel | None:
-        """The text channel the wizard runs in, or None where it has none or it is gone."""
-        if wizard.signup_channel_id is None:
-            return None
-        channel = guild.get_channel(wizard.signup_channel_id)
-        return channel if isinstance(channel, discord.TextChannel) else None
-
-    async def _handle_nationality(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        val = self._validate_nationality(message.content)
-        if val is None:
-            reply = (
-                "❌ Invalid nationality. Please enter your full nationality (e.g. `British`) "
-                "or country name (e.g. `United Kingdom`), or type `other`."
-            )
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Nationality", reply)
-            return
-        wizard.draft_answers["nationality"] = val
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_platform(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        raw = message.content.strip()
-        # Case-insensitive match
-        match = next(
-            (p for p in self._PLATFORMS if p.lower() == raw.lower()), None
-        )
-        if match is None:
-            opts = " / ".join(self._PLATFORMS)
-            reply = f"❌ Invalid platform. Please choose one of: {opts}"
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Platform", reply)
-            return
-        wizard.draft_answers["platform"] = match
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_platform_id(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        raw = message.content.strip()
-        if not raw:
-            reply = "❌ Platform ID cannot be empty."
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Platform ID", reply)
-            return
-        if not await self._answer_stands(message, "Platform ID", "platform ID", raw):
-            return
-        wizard.draft_answers["platform_id"] = raw
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_availability(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        """Accept the display numbers the driver was shown, store the durable slot IDs.
-
-        The numbers are chronological positions and shift whenever the slot list
-        changes, so they are converted here, at the input boundary, and never
-        persisted (issue #126). Every message back to the driver keeps quoting the
-        numbers they typed — the stored form is not theirs to read.
-        """
-        snapshot = wizard.config_snapshot
-        assert snapshot is not None
-        raw = message.content.strip()
-        parts = re.split(r"[,\s]+", raw)
-        try:
-            selected_ids = [int(p) for p in parts if p]
-        except ValueError:
-            reply = "❌ Please enter slot IDs as numbers (e.g. `1 3`)."
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Availability", reply)
-            return
-        by_display_number = {s.slot_sequence_id: s for s in snapshot.slots}
-        bad = [str(i) for i in selected_ids if i not in by_display_number]
-        if bad:
-            reply = (
-                f"❌ Unknown slot ID(s): {', '.join(bad)}. "
-                f"Valid IDs: {', '.join(str(i) for i in sorted(by_display_number))}"
-            )
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Availability", reply)
-            return
-        if not selected_ids:
-            reply = "❌ Please select at least one time slot."
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Availability", reply)
-            return
-        wizard.draft_answers["availability_slot_ids"] = [
-            by_display_number[i].slot_id for i in selected_ids
-        ]
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_driver_type(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        raw = message.content.strip()
-        match = next(
-            (t for t in self._DRIVER_TYPES if t.lower() == raw.lower()), None
-        )
-        if match is None:
-            opts = " / ".join(self._DRIVER_TYPES)
-            reply = f"❌ Please choose one of: {opts}"
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Driver Type", reply)
-            return
-        wizard.draft_answers["driver_type"] = match
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_preferred_teams(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        assert self._bot is not None
-        raw = message.content.strip()
-        if raw.lower() == "no preference":
-            wizard.draft_answers["preferred_teams"] = []
-            await self._advance_wizard(wizard, message)
-            return
-        # Load non-reserve teams. A driver may type either name — the full name they were
-        # offered, or the league's shorthand — and what is recorded is the full name, which is
-        # what every review and export shows (#381).
-        teams = await self._bot.team_service.get_default_teams(
-
-        )
-        non_reserve = [t for t in teams if not t.is_reserve]
-        by_typed = {t.full_name.casefold(): t.full_name for t in non_reserve}
-        by_typed.update({t.name.casefold(): t.full_name for t in non_reserve})
-        # Parse comma/newline-separated list
-        parts = [p.strip() for p in re.split(r"[,\n]+", raw) if p.strip()]
-        if len(parts) > 3:
-            reply = "❌ Please select up to 3 teams."
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Preferred Teams", reply)
-            return
-        bad = [p for p in parts if p.casefold() not in by_typed]
-        if bad:
-            bad_list = ", ".join(f"`{b}`" for b in bad)
-            valid = ", ".join(f"`{t.full_name}`" for t in non_reserve)
-            reply = f"❌ Unknown team(s): {bad_list}.\nValid teams: {valid}"
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Preferred Teams", reply)
-            return
-        wizard.draft_answers["preferred_teams"] = [by_typed[p.casefold()] for p in parts]
-        await self._advance_wizard(wizard, message)
-
-    async def _record_typed_refusal(
-        self, message: discord.Message, step: str, reply: str
-    ) -> None:
-        """Record a typed answer the wizard refused, in the log channel, without answering again.
-
-        A typed answer is a message, not a command, button or form, so an accepted one records
-        nothing and only its refusal does (#482). The reply has already gone to the driver's
-        channel; the line names the driver and the *step* (as the review's correction buttons
-        name it) and gives the reply's first line as the reason. Never raises, as
-        `record_refusal` never does: a message without an author, or a service without a bot,
-        leaves the typed-answer handler unharmed.
-        """
-        try:
-            author = message.author
-            name = getattr(author, "display_name", None)
-            owner = f"{name}'s" if isinstance(name, str) and name else f"<@{author.id}>'s"
-            first = reply.strip().splitlines()[0] if reply.strip() else ""
-            await record_refusal(
-                self._bot,
-                author,
-                what=f"the {step} step of {owner} signup wizard",
-                reason=first.removeprefix("❌").strip(),
-            )
-        except Exception:  # noqa: BLE001 — the driver has been answered; the record never harms the step
-            log.warning("could not record the refusal of the %s step", step, exc_info=True)
-
-    async def _answer_stands(
-        self, message: discord.Message, step: str, field_label: str, raw: str
-    ) -> bool:
-        """Whether a driver's free-text answer may be kept, telling them why where not (#362).
-
-        The review panel quotes the answer to the channel, and a role mention, ``@everyone`` or
-        ``@here`` in it would notify everybody who can see it — through the bot's own permission
-        to mention them, which the driver does not normally hold. An emoji or markup reads as
-        the driver meant it there, and is kept.
-        """
-        refusal = SIGNUP_ANSWER.check(field_label, raw).refusal
-        if refusal is None:
-            return True
-        reply = f"❌ {refusal}"
-        await message.channel.send(reply)
-        await self._record_typed_refusal(message, step, reply)
-        return False
-
-    async def _handle_preferred_teammate(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        raw = message.content.strip()
-        if not await self._answer_stands(
-            message, "Preferred Teammate", "preferred teammate", raw
-        ):
-            return
-        wizard.draft_answers["preferred_teammate"] = (
-            None if raw.lower() == "no preference" else raw
-        )
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_lap_time(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        snapshot = wizard.config_snapshot
-        assert snapshot is not None
-        idx = wizard.current_lap_track_index
-        if idx >= len(snapshot.selected_track_ids):
-            # Shouldn't happen, but skip safely
-            await self._advance_wizard(wizard, message)
-            return
-
-        # Check image requirement
-        if snapshot.time_image_required and not message.attachments:
-            reply = (
-                "❌ A screenshot of your lap time is required. "
-                "Please attach an image along with your time."
-            )
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Lap Times", reply)
-            return
-
-        normalised = self._normalise_lap_time(message.content)
-        if normalised is None:
-            label = (
-                "Time Trial" if snapshot.time_type == "TIME_TRIAL" else "Short Qualification"
-            )
-            reply = f"❌ Invalid {label} time. Use format `M:ss.mmm` (e.g. `1:23.456`)."
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Lap Times", reply)
-            return
-
-        track_id = snapshot.selected_track_ids[idx]
-        lap_times: dict = wizard.draft_answers.get("lap_times", {})
-        lap_times[track_id] = normalised
-        wizard.draft_answers["lap_times"] = lap_times
-        wizard.current_lap_track_index = idx + 1
-        await self._advance_wizard(wizard, message)
-
-    async def _handle_notes(
-        self, wizard: SignupWizardRecord, message: discord.Message
-    ) -> None:
-        raw = message.content.strip()
-        if raw.lower() == "no notes":
-            wizard.draft_answers["notes"] = None
-        elif len(raw) > 50:
-            reply = "❌ Notes must be 50 characters or fewer."
-            await message.channel.send(reply)
-            await self._record_typed_refusal(message, "Notes", reply)
-            return
-        elif not await self._answer_stands(message, "Notes", "notes", raw):
-            return
-        else:
-            wizard.draft_answers["notes"] = raw
-        await self._advance_wizard(wizard, message)
-
-    async def handle_no_notes(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Handle the 'No Notes' button press in Step 9."""
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.wizard_state != WizardState.COLLECTING_NOTES:
-            return _wizard_gone_or_answered(wizard)
-
-        is_correction = wizard.draft_answers.pop("_is_correction", False)
-        wizard.draft_answers["notes"] = None
-
-        if is_correction:
-            await self._commit_correction(wizard, guild)
-        else:
-            await self._signup_svc.save_wizard(wizard)
-            await self.commit_wizard(discord_user_id, guild)
-        return None
 
     # ------------------------------------------------------------------
     # Prompt builder helpers
@@ -1809,218 +700,6 @@ class WizardService:
     # Internal correction-timeout helpers (T036, T038)
     # ------------------------------------------------------------------
 
-    async def _correction_timeout_after_delay(
-        self, discord_user_id: str
-    ) -> None:
-        """Wait 5 minutes then fire the correction timeout callback."""
-        await asyncio.sleep(300)  # 5 minutes
-        await self._correction_timeout_callback(discord_user_id)
 
-    async def _correction_timeout_callback(
-        self, discord_user_id: str, *, after_restart: bool = False
-    ) -> None:
-        """Auto-revert AWAITING_CORRECTION_PARAMETER → PENDING_ADMIN_APPROVAL (T038).
 
-        Reached two ways: the five-minute selection window lapsing, and a restart, which
-        releases every parked driver unconditionally (issue #129). ``after_restart`` picks
-        the wording and nothing else — the revert is identical, because a driver parked
-        here is waiting on a manager either way.
 
-        The manager who pressed Request Changes is mentioned in the driver's signup
-        channel. That is the only place a ping reaches them: :meth:`OutputRouter.post_log`
-        wraps mentions in backticks by design, so a log entry names a manager without
-        telling them. The driver reads that channel too, and seeing the review go back to
-        an admin is intended (decided 2026-09-15).
-        FR-043.
-        """
-        # Clear the task entry
-        ckey = discord_user_id
-        self._correction_tasks.pop(ckey, None)
-
-        # A league that has switched the module off gets no driver moved and no panel
-        # posted into a channel it has stopped using. The restart sweep makes this
-        # reachable in a way the in-memory task never really was, so the guard lands with
-        # it rather than after it.
-        if not await self._module_svc.is_signup_enabled():
-            log.debug(
-                "_correction_timeout_callback: signup module disabled; leaving %s parked",
-                discord_user_id,
-            )
-            return
-
-        # Transition driver back to PENDING_ADMIN_APPROVAL. A driver who has moved on in the
-        # meantime (`ValueError`, the transition's refusal) has no window left to lapse: nothing
-        # is posted and no lapse recorded. Any other error is not swallowed (#457).
-        try:
-            await self._driver_service.transition(
-                discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
-            )
-        except ValueError:
-            log.warning(
-                "_correction_timeout_callback: transition refused for %s",
-                discord_user_id, exc_info=True,
-            )
-            return
-
-        # Set wizard state back to UNENGAGED
-        wizard = await self._signup_svc.get_wizard(discord_user_id)
-        guild = await self._get_guild()
-        if wizard is None or guild is None:
-            await self._record_correction_lapse(discord_user_id, guild, None, panel=False)
-            return
-
-        # Read who asked before clearing it — the mention below is the last use.
-        requested_by = wizard.draft_answers.get("_correction_requested_by")
-
-        wizard.wizard_state = WizardState.UNENGAGED
-        # The reason goes with the rest of the correction state. select_correction_parameter
-        # already pops it on the path that succeeds; leaving it behind on the path that
-        # lapses let a stale reason resurface on the manager's next correction.
-        for key in ("_is_correction", "_correction_reason", "_correction_requested_by"):
-            wizard.draft_answers.pop(key, None)
-        await self._signup_svc.save_wizard(wizard)
-
-        # Re-post admin review panel
-        panel_posted = False
-        if wizard.signup_channel_id is not None:
-            channel = guild.get_channel(wizard.signup_channel_id)
-            if isinstance(channel, discord.TextChannel):
-                record = await self._signup_svc.get_record(discord_user_id)
-                if record is not None:
-                    from leaguebot.signup.services.signup_views import AdminReviewView
-                    track_map = await self._get_track_name_map()
-                    slot_labels = {
-                        s.slot_id: s.display_label
-                        for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
-                    }
-                    driver_member = guild.get_member(int(discord_user_id))
-                    driver_name = (
-                        driver_member.display_name if driver_member else discord_user_id
-                    )
-                    lapse = (
-                        "the bot restarted before a correction parameter was chosen"
-                        if after_restart
-                        else "nobody chose a correction parameter in time"
-                    )
-                    # No mention where the window was opened before the requesting manager
-                    # was recorded — that is exactly the driver stranded by issue #129,
-                    # and they are released here like any other.
-                    opening = f"<@{requested_by}> — {lapse}" if requested_by else lapse.capitalize()
-                    await channel.send(
-                        f"⏰ {opening}. **{driver_name}** is back in the approval queue.",
-                    )
-                    await channel.send(
-                        self._format_review_panel(record, slot_labels, track_name_map=track_map),
-                        view=AdminReviewView(discord_user_id, change_queue=self._change_queue),
-                        allowed_mentions=_REVIEW_PANEL_MENTIONS,
-                    )
-                    panel_posted = True
-        await self._record_correction_lapse(
-            discord_user_id, guild, requested_by, panel=panel_posted
-        )
-
-    async def _record_correction_lapse(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild | None,
-        requested_by: str | None,
-        *,
-        panel: bool,
-    ) -> None:
-        """Record a correction request that lapsed unconfirmed, naming the manager who asked.
-
-        The line is `record_abandoned`'s: "⌛ the correction request for Lewis's signup lapsed
-        unconfirmed (started by Toto (<@id>))", with the driver's return to the approval queue
-        beneath, and a fresh review panel in their channel where one was posted (*panel*). A
-        manager recorded nowhere, for a window opened before the requester was kept, is "a
-        member". The five minutes and the restart sweep both reach it.
-        """
-        member = guild.get_member(int(discord_user_id)) if guild is not None else None
-        driver = getattr(member, "display_name", None)
-        if not isinstance(driver, str):
-            driver = f"<@{discord_user_id}>"
-        await record_abandoned(
-            self._league_bot,
-            int(requested_by) if requested_by else None,
-            what=f"the correction request for {driver}'s signup",
-            lapsed=True,
-            detail=(
-                f"{driver} is back in the approval queue"
-                + ("; a fresh review panel is in their channel." if panel else ".")
-            ),
-        )
-
-    async def _commit_correction(
-        self,
-        wizard: SignupWizardRecord,
-        guild: discord.Guild,
-    ) -> None:
-        """Commit a single-field correction and return driver to PENDING_ADMIN_APPROVAL.
-
-        Used by _advance_wizard_in_channel when the _is_correction flag is set in
-        draft_answers.  Updates the existing SignupRecord with the corrected
-        field(s), transitions driver state, writes the "Correction submitted" line naming the
-        parameter re-collected (the wizard step it stands at) by its review button's label, and posts a fresh AdminReviewView.
-        """
-        discord_user_id = wizard.discord_user_id
-
-        # Load existing signup record and apply corrections from draft_answers
-        record = await self._signup_svc.get_record(discord_user_id)
-        if record is None:
-            log.warning("_commit_correction: no SignupRecord found for %s", discord_user_id)
-            return
-
-        d = wizard.draft_answers
-        if "nationality"         in d: record.nationality        = d["nationality"]
-        if "platform"            in d: record.platform           = d["platform"]
-        if "platform_id"         in d: record.platform_id        = d["platform_id"]
-        if "availability_slot_ids" in d: record.availability_slot_ids = d["availability_slot_ids"]
-        if "driver_type"         in d: record.driver_type        = d["driver_type"]
-        if "preferred_teams"     in d: record.preferred_teams    = d["preferred_teams"]
-        if "preferred_teammate"  in d: record.preferred_teammate = d["preferred_teammate"]
-        if "lap_times"           in d: record.lap_times          = d["lap_times"]
-        if "notes"               in d: record.notes              = d["notes"]
-
-        await self._signup_svc.save_record(record)
-
-        # Cancel PDC inactivity job
-        await self._cancel_inactivity_job(discord_user_id)
-
-        # Transition driver back to PENDING_ADMIN_APPROVAL
-        await self._driver_service.transition(
-            discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
-        )
-
-        # Clear correction state from wizard record
-        corrected = next(
-            (
-                key for key, state in _CORRECTION_PARAMETER_STATES.items()
-                if state == wizard.wizard_state
-            ),
-            None,
-        )
-        wizard.wizard_state = WizardState.UNENGAGED
-        wizard.draft_answers = {}
-        await self._signup_svc.save_wizard(wizard)
-
-        await self._record_signup_line(
-            discord_user_id, guild,
-            "Correction submitted" if corrected is None
-            else f"Correction submitted: {_CORRECTION_LABELS[corrected]}",
-        )
-
-        # Post fresh admin review panel
-        if wizard.signup_channel_id is not None:
-            channel = guild.get_channel(wizard.signup_channel_id)
-            if isinstance(channel, discord.TextChannel):
-                from leaguebot.signup.services.signup_views import AdminReviewView
-                track_map = await self._get_track_name_map()
-                slot_labels = {
-                    s.slot_id: s.display_label
-                    for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
-                }
-                await channel.send(
-                    self._format_review_panel(record, slot_labels, track_name_map=track_map),
-                    view=AdminReviewView(discord_user_id, change_queue=self._change_queue),
-                    allowed_mentions=_REVIEW_PANEL_MENTIONS,
-                )

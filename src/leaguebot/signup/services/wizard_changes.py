@@ -163,7 +163,6 @@ def start_change(
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
     teams: Callable[[], "TeamService"],
-    wizard: Callable[[], WizardService],
     queue_of: Callable[[], "ChangeQueue"],
     closing_kinds: tuple[str, ...],
     cancel_timers: Callable[[str], None],
@@ -174,8 +173,8 @@ def start_change(
 
     The payload is ``user_id`` (the driver's account, as text). *closing_kinds* are the kinds of
     the changes that close the window, one of which waiting on the queue refuses a Sign Up.
-    *cancel_timers* takes away a driver's timers, *wizard* is the service whose prompt the welcome is
-    made of and *queue_of* the change queue the welcome's buttons are handed.
+    *cancel_timers* takes away a driver's timers and *queue_of* is the change queue the welcome's buttons
+    are handed.
 
     The driver's status moves only where the channel was made: `start`, like the 24 hours and the
     welcome, is not due where a Discard dropped `create_channel`, so that the driver is left able
@@ -345,7 +344,6 @@ def start_change(
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
         cancel_timers(user_id)
-        wizard()._forget_correction(user_id)
         await drivers().transition_on(db, user_id, DriverState.PENDING_SIGNUP_COMPLETION)
         return StepResult(result={})
 
@@ -475,7 +473,6 @@ def end_change(
     signup: Callable[[], "SignupModuleService"],
     drivers: Callable[[], "DriverService"],
     cancel_timers: Callable[[str], None],
-    wizard: Callable[[], WizardService],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
@@ -488,7 +485,7 @@ def end_change(
     asked by the timer or at a restart, with the signup channel's id as ``channel_id``). Its job
     `end` is a save, after `name_driver`, which finds the driver's name for the line (the lookup
     uses a connection of its own, which a save must not wait on): the driver is moved to Not
-    Signed Up and the wizard ended in the same save, the correction timeout and the timers taken
+    Signed Up and the wizard ended in the same save, the timers taken
     away and the line written ("Withdrawn", "Rejected" with the manager and the reason, or the
     lapse).
 
@@ -504,7 +501,7 @@ def end_change(
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
     mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
     on the driver's lane (the time typed counts, Q22). *cancel_timers* takes away a driver's
-    timers, *wizard* is the service whose correction timeout is forgotten, and *now* and
+    timers, and *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer, for the deletion.
     """
     #: The states from which a wizard still collecting answers can expire.
@@ -594,7 +591,6 @@ def end_change(
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
         cancel_timers(user_id)
-        wizard()._forget_correction(user_id)
         named = member_named(None, int(user_id))
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
