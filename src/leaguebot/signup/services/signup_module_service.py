@@ -661,9 +661,7 @@ class SignupModuleService:
                     draft_answers_json       = excluded.draft_answers_json,
                     current_lap_track_index  = excluded.current_lap_track_index,
                     last_activity_at         = excluded.last_activity_at,
-                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END,
-                    closing_window_message_id = CASE WHEN ? THEN NULL
-                                                     ELSE closing_window_message_id END
+                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
                 """,
                 (
                     wizard.discord_user_id,
@@ -673,7 +671,6 @@ class SignupModuleService:
                     json.dumps(wizard.draft_answers),
                     wizard.current_lap_track_index,
                     wizard.last_activity_at,
-                    int(starting),
                     int(starting),
                 ),
             )
@@ -786,8 +783,8 @@ class SignupModuleService:
         connection handed; commits nothing."""
         for account in accounts:
             await db.execute(
-                "UPDATE signup_wizard_records SET closing_notice_owed = 0, "
-                "closing_window_message_id = NULL WHERE discord_user_id = ?",
+                "UPDATE signup_wizard_records SET closing_notice_owed = 0 "
+                "WHERE discord_user_id = ?",
                 (str(account),),
             )
 
