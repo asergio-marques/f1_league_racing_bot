@@ -121,6 +121,16 @@ async def _run_through(league: Any, name: str) -> None:
     raise AssertionError(f"the approval's job {name} never finished: {await _jobs(league)}")
 
 
+async def _run_take_down(league: Any) -> None:
+    """Run the queue a job at a time until the review's take-down, which the press asked ahead
+    of the approval, has taken the review down and forgotten its row."""
+    for _ in range(100):
+        if not await league.rows("SELECT * FROM season_review_prompts"):
+            return
+        await run_queue(league.bot, steps=1)
+    raise AssertionError("the review was never taken down")
+
+
 async def _stopped_at(league: Any) -> str | None:
     job = await stopped_job(league.db_path)
     return job["name"] if job else None
@@ -251,7 +261,7 @@ async def test_a_stop_after_the_season_is_saved_finishes_its_roles_lineups_calen
 ):
     league = await _league_for(tmp_path, monkeypatch, attendance=True)
     await _pressed(league)
-    await run_queue(league.bot, steps=1)
+    await _run_through(league, "apply")
     assert [job["name"] for job in await _jobs(league) if job["done_at"]] == ["apply"]
 
     await league.restart()
@@ -432,11 +442,13 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     assert league.armed == []
     assert await _stopped_at(league) is None
     from leaguebot.core.services.season_approval_change import TELL_KIND
+    from leaguebot.core.services.season_review_changes import TAKE_DOWN
 
     # Past the 14 minutes, the approval asks the change that tells the review's channel (2.1b).
     told = [TELL_KIND] if change == "a date passed" else []
+    # The review came down ahead of the approval, and stays down whatever became of it.
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
-        (await _approval(league))["kind"], *told
+        TAKE_DOWN, (await _approval(league))["kind"], *told
     ]
 
 
@@ -564,7 +576,7 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
         return await real_sessions(*args, **kwargs)
 
     with _everywhere("create_sessions_for_round_on", _first_write):
-        await run_queue(league.bot, steps=1)
+        await _run_through(league, "apply")
     reading["forbidden"] = False
 
     apply = (await _jobs(league))[0]
@@ -1538,6 +1550,7 @@ async def test_the_review_is_cleared_and_its_prompt_forgotten_once_the_approval_
 
     assert (await _approval(league))["state"] == "QUEUED"
     assert (await league.season())["stage"] == "PLACEMENTS"
+    await _run_take_down(league)
     assert await league.rows("SELECT * FROM season_review_prompts") == []
     for message in [*review.report, review.prompt]:
         assert ("delete", REVIEW_CHANNEL, message.id) in league.events

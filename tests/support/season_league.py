@@ -623,16 +623,25 @@ class Review:
 
 
 async def post_review(league: SeasonLeague) -> Review:
-    """Post a review's report and its ✅ Approve prompt, the season's fingerprint taken as the
-    report describes it, and the prompt recorded as the review command records it."""
+    """Post a review's report and its ✅ Approve prompt, and record the prompt as the review's
+    post job records it: its row, with the report's ids and the evidence the season's fingerprint
+    gives, posted now."""
     from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_prompts import store_review_prompt
 
     view = _ApproveView(league.cog, ADMIN_ID)
     report = [await league.review_channel.send("📋 Season 3 placements review")]
-    view.carries(report)
-    await view.record_fingerprint(SEASON_ID)
     prompt = await league.review_channel.send("Approve these placements?", view=view)
-    await view.bind(prompt)
+    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
+            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            report_message_ids=[message.id for message in report], evidence=evidence,
+            verb="approved",
+        )
+        await db.commit()
     return Review(view=view, prompt=prompt, report=report)
 
 
