@@ -12,16 +12,7 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
 
-NO_OFF_QUEUE_CLOSE_GONE = (
-    "#439: the start-up still finishes an off-queue close (_recover_off_queue_closing_notices, "
-    "signup.close.finish) and moves on a season a close left behind "
-    "(_recover_season_left_by_a_closed_window)"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_OFF_QUEUE_CLOSE_GONE)
 def test_the_start_up_runs_no_step_for_an_off_queue_close():
     """The bot's start-up names neither the finish of an off-queue close nor the move of a
     season a close left behind, the bot's module defines neither, and no change type finishing

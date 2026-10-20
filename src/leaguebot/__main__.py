@@ -923,9 +923,6 @@ async def main() -> None:
 
         await _recover_signup_close_timers()
 
-        # A season a window's close left in the window's stage, the move cut off or failed.
-        await _recover_season_left_by_a_closed_window(bot)
-
         # Close any results-amend channels left open by a previous run.
         #
         # **Before the submission channels, not after** (#345). An amendment open at the restart
@@ -1722,31 +1719,6 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
             await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
         except Exception:
             log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
-
-
-async def _recover_season_left_by_a_closed_window(bot: LeagueBot) -> None:
-    """Move on a season a signup window's close left in the window's stage, no window being open
-    (`season_lifecycle_service.move_on_a_season_left_by_a_closed_window`). Signup's window is read
-    here, where the modules meet, so that core reads no table of signup's. A failure is logged,
-    and the start goes on: the next start tries again."""
-    from leaguebot.core.services.season_lifecycle_service import (
-        move_on_a_season_left_by_a_closed_window,
-    )
-
-    try:
-        config = await bot.signup_module_service.get_config()
-        window_open = (
-            await bot.module_service.is_signup_enabled()
-            and config is not None
-            and bool(config.signups_open)
-        )
-        moved = await move_on_a_season_left_by_a_closed_window(
-            bot.db_path, window_open=window_open
-        )
-        if moved is not None:
-            log.info("on_ready: moved the season on to %s, its signup window closed", moved.value)
-    except Exception:
-        log.exception("Could not move on a season its signup window's close left behind")
 
 
 async def _recover_pending_setups(bot: LeagueBot) -> None:
