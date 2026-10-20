@@ -627,6 +627,12 @@ def held_review(round_id: int, *, appeals: bool) -> "PenaltyReviewState | None":
     return _HELD_REVIEWS.get((round_id, appeals))
 
 
+def clear_held_reviews() -> None:
+    """Drop every review handed to a staging change, as `/bot pack` and `/bot factory-reset` do
+    with the rest of what the bot holds in memory (`clear_in_memory_state`)."""
+    _HELD_REVIEWS.clear()
+
+
 async def _ask_stage(
     queue: ChangeQueue,
     interaction: discord.Interaction,

@@ -51,6 +51,10 @@ CLEARED = {
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
     ("core/services/change_queue.py", "_notice_tried"),
     ("core/services/change_queue.py", "_retrying"),
+    # The penalty review a staging is handed on to its change, by (round, appeals): dropped by
+    # results' cog, found by name, so a pack's or a reset's gone round holds no review (#439, 6b,
+    # C54).
+    ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
 }
 
 #: Stores the plan deletes, and the commit that deletes them: accounted for while they stand,
@@ -126,11 +130,6 @@ EXEMPT = {
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
     ("core/services/output_router.py", "_warned"),
-    # The penalty review a staging is handed on to its change, by (round, appeals): the review
-    # views and forms already hold in memory, replaced at each staging and read only by a change
-    # whose check finds the round's stage and prompt as the review has them, so a pack's or a
-    # reset's gone round finds it no longer due (#439, 6b, C54).
-    ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
 }
 
 
@@ -219,6 +218,24 @@ async def test_the_clear_empties_every_store():
     season_cog.clear_pending.assert_called_once_with()
     assert pending == {}
     assert lapse.cancelled()
+
+
+async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_staging():
+    """A review handed on to a staging change is gone after the clear, so a factory reset leaves
+    no review of a round that no longer exists (#439, 6b, C54)."""
+    from leaguebot.results.cogs.results_cog import ResultsCog
+    from leaguebot.results.services.penalty_wizard import held_review, hold_review
+
+    review: Any = SimpleNamespace(round_id=7)
+    hold_review(review, appeals=False)
+    hold_review(review, appeals=True)
+    cog = ResultsCog(MagicMock())
+    bot = SimpleNamespace(get_cog=lambda name: cog if name == "ResultsCog" else None)
+
+    clear_in_memory_state(bot, queue=MagicMock())
+
+    assert held_review(7, appeals=False) is None
+    assert held_review(7, appeals=True) is None
 
 
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):

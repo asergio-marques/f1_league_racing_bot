@@ -35,6 +35,12 @@ def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
     if season_cog is not None:
         season_cog.clear_pending()
 
+    # The penalty reviews handed to staging changes, which results' cog drops: found by name,
+    # core importing nothing of a module.
+    clear_held = getattr(bot.get_cog("ResultsCog"), "clear_held_reviews", None)
+    if clear_held is not None:
+        clear_held()
+
     # A reason being awaited from an admin, keyed by the channel it is awaited in, and the
     # five-minute lapse that would otherwise fire into a league that has changed.
     from leaguebot.signup.cogs.admin_review_cog import clear_pending_reasons
