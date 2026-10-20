@@ -66,9 +66,13 @@ log = logging.getLogger(__name__)
 _BOT = ChangeOrigin.BOT
 
 #: Every kind of change that carries out part of a round's submission: a paste's turn, the
-#: cancelled sessions' lines and the closing of a channel they leave, a resubmission and its swap.
-#: A payload names its round, or only the channel it was typed in.
+#: cancelled sessions' lines and the closing of a channel they leave, a resubmission and its swap,
+#: and the opening of the submission and its clearing at a restart (the row of an opening whose
+#: prompt is still to be posted already stands open). A payload names its round, or only the
+#: channel it was typed in.
 SUBMISSION_KINDS: tuple[str, ...] = (
+    submission_changes.KIND,
+    submission_changes.RESTART_KIND,
     submission_turn_change.KIND,
     submission_turn_change.CONFIG_KIND,
     submission_turn_change.RESUBMISSION_KIND,

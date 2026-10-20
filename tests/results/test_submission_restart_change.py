@@ -210,6 +210,42 @@ async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_a
     assert not _deleted(league)
 
 
+async def test_a_round_whose_opening_is_stopped_is_not_taken_for_a_first_paste_at_a_restart(
+    tmp_path,
+):
+    """Round 3's opening created its channel and recorded its row, then Discord refused the
+    opening message and the league lane stopped there: `results.submission.open` is in hand, the
+    submission row open. At the restart the recovery leaves round 3 alone: it asks no restart of
+    it, which would delete the new channel and its row, say the sessions were lost and open the
+    submission afresh behind the stopped opening."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    league = await _league(tmp_path)
+    await league.write("DELETE FROM round_submission_channels WHERE round_id = ?", ROUND_3)
+    making = league.guild.create_text_channel.side_effect
+
+    async def refusing(name: str, **kwargs: Any) -> Any:
+        made = await making(name, **kwargs)
+        made.send_fails = http_error(status=403, text="Missing Access")
+        return made
+
+    league.guild.create_text_channel.side_effect = refusing
+    await league.bot.change_queue.ask(
+        OPEN_KIND, {"round_id": ROUND_3}, origin=ChangeOrigin.BOT,
+        what="opening round 3's results submission",
+    )
+    await run_queue(league.bot)
+    [made] = league.created
+    assert (await stopped_job(league.db_path, "league"))["name"] == "post_opening"
+
+    await _restart(league, run=False)
+
+    assert await _kinds(league) == [OPEN_KIND]
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+    assert not _deleted(league, made)
+    assert await _sessions(league) == 1
+
+
 async def test_a_resubmission_whose_swap_is_in_hand_is_not_ended_at_a_restart(tmp_path):
     """Round 3 is being resubmitted, its review open, when the last resubmitted paste hands the
     league the swap and the league lane stops before it runs. At the restart the recovery leaves
