@@ -38,7 +38,11 @@ of a stage's prompt among them (results specification :491: "Leave it while stuc
 finds stage one already written (the half-hour sweep has the amendment then) or finds a later prompt
 has replaced the one it was armed for, and where a paste or a choice typed in time waits on the
 amendment's lane (Q18): "in time" is typed before the five minutes ran out, from when the prompt
-appeared, however long its turn then waits. A request not due is dropped, as the check says.
+appeared, however long its turn then waits (the turn itself finds a paste or a choice typed after
+the five minutes no longer due, so the lapse has the amendment). Nor is it due where the same lapse
+is already in hand: the check says so, for the queue's own repeat rule would take a lapse still
+waiting for an earlier prompt for a repeat of the next prompt's, and the amendment would be left
+without a timer. A request not due is dropped, as the check says.
 
 **The manager is told.** The lapse asked by the timer updates the reply of the manager who opened the
 amendment, which the queue keeps for it (`ChangeQueue.keep_reply`, armed by the opening's `arm_lapse`
@@ -320,10 +324,23 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
                 if int(waiting["channel_id"]) != int(row["channel_id"]):
                     continue
                 typed = waiting.get("typed_at")
-                # A choice carries no time of its own: it was pressed on a prompt still standing.
+                # A choice carries the time it was pressed; one with none (a press whose time
+                # Discord did not give) was pressed on a prompt still standing.
                 if typed is None or deadline is None or datetime.fromisoformat(typed) <= deadline:
                     return True
         return False
+
+    async def _already_asked(ctx: CheckContext) -> bool:
+        """Whether a lapse of this amendment for the same prompt (a timer's ``armed_for``; the
+        sweep's and a restart's have none) is in hand ahead of this one. Not the queue's repeat
+        rule, which would take a lapse still waiting for an earlier prompt for a repeat of the next
+        prompt's and swallow it: the amendment would then be left with no timer."""
+        payload = ctx.payload
+        return any(
+            int(each["amend_id"]) == int(payload["amend_id"])
+            and each.get("armed_for") == payload.get("armed_for")
+            for each in await unfinished(ctx.db_path, [LAPSE_KIND], before=ctx.change_id)
+        )
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -338,6 +355,8 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
             return Verdict.not_due("the amendment has ended")
         if await submissions.stage_in_hand(ctx.db_path, int(row["round_id"])):
             return Verdict.not_due("a stage of the amendment is in hand on the change queue")
+        if await _already_asked(ctx):
+            return Verdict.not_due("the same lapse is already in hand")
         if payload["cause"] == TIMER:
             if row["pre_amendment_state"] is not None:
                 return Verdict.not_due("stage one is recorded, so the half-hour has the amendment")
@@ -475,6 +494,7 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
         },
         check=check,
         key=lambda payload: lapse_key(int(payload["amend_id"])),
+        repeatable=True,
         doing=lambda _payload: "Ending an amendment nobody answered",
         outcome=outcome,
     )

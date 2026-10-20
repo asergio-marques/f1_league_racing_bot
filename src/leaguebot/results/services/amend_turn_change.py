@@ -55,6 +55,7 @@ from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services.amend_changes import (
     ARM_LAPSE,
     COMMAND,
+    WAIT,
     label_of,
     prompt_steps,
     record_prompt_posted,
@@ -446,12 +447,20 @@ async def _amendment_standing(ctx: CheckContext) -> Verdict:
     async with get_connection(ctx.db_path) as db:
         row = await (
             await db.execute(
-                "SELECT closed_at FROM round_amend_channels WHERE channel_id = ?",
+                "SELECT closed_at, prompt_posted_at FROM round_amend_channels "
+                "WHERE channel_id = ?",
                 (int(ctx.payload["channel_id"]),),
             )
         ).fetchone()
     if row is None or row["closed_at"] is not None:
         return Verdict.not_due("the amendment has ended")
+    typed, shown = ctx.payload.get("typed_at"), row["prompt_posted_at"]
+    if typed is not None and shown is not None and (
+        datetime.fromisoformat(typed) > datetime.fromisoformat(shown) + WAIT
+    ):
+        # Results :460, Q18: an answer counts only if typed within the five minutes of the prompt
+        # it answers, however long its turn waited. The lapse has the amendment.
+        return Verdict.not_due("it was typed after the prompt's five minutes ran out")
     return Verdict.go()
 
 
@@ -467,7 +476,7 @@ def amend_turn_change(
     presser against, *now* is the queue's clock and *arm_once* the scheduler service's, handed
     here so that no job looks the scheduler up on the bot. The payload is ``channel_id``,
     ``message_id``, ``author_id``, ``content``, ``attachments`` and ``typed_at`` of the pasted
-    message.
+    message, which counts only if typed within the five minutes of the prompt it answers.
     """
     return ChangeType(
         kind=KIND,

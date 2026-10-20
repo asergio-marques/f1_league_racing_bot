@@ -2437,6 +2437,7 @@ class _ConfigSelectView(LeagueView):
                     # press's own response (#439).
                     kind, asked = self._ask
                     queue = bot_of(interaction).change_queue
+                    pressed = interaction.created_at
                     await interaction.response.edit_message(
                         content=f"🔧 Config selected: **{_name}**", view=None
                     )
@@ -2444,6 +2445,11 @@ class _ConfigSelectView(LeagueView):
                         kind,
                         {
                             **asked, "config_name": _name,
+                            # When it was pressed, which an amendment's five minutes are judged by
+                            # however long the choice's turn waits.
+                            "typed_at": (
+                                pressed.isoformat() if isinstance(pressed, datetime) else None
+                            ),
                             "choice_line": (
                                 f"{interaction_member(interaction)} | {what} | Success\n"
                                 f"  configuration: {_name}"

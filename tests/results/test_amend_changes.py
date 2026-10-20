@@ -135,7 +135,7 @@ async def _league(
         if qualifying:
             await db.execute(
                 "INSERT INTO session_results (round_id, division_id, session_type, status, "
-                "config_name) VALUES (?, ?, 'QUALIFYING', 'ACTIVE', ?)",
+                "config_name) VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE', ?)",
                 (ROUND_ID, DIVISION_ID, configs[0]),
             )
         await db.commit()
@@ -365,7 +365,6 @@ async def test_an_amendment_refused_when_it_runs_says_why(tmp_path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
     tmp_path, monkeypatch,
 ):
@@ -374,7 +373,7 @@ async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
     turn runs, his paste is deleted, the Qualifying is saved as a draft of the amendment, the
     round's own results are untouched, and the Feature Race's prompt follows."""
     league = await _league(tmp_path, monkeypatch, qualifying=True)
-    await _ask_open(league, sessions=("QUALIFYING", "FEATURE_RACE"))
+    await _ask_open(league, sessions=("FEATURE_QUALIFYING", "FEATURE_RACE"))
 
     message = await _type(league, QUALI_PASTE, run=False)
 
@@ -387,7 +386,7 @@ async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
 
     assert await stopped_job(league.db_path) is None
     assert message.gone
-    assert await _drafts(league) == ["QUALIFYING"]
+    assert await _drafts(league) == ["FEATURE_QUALIFYING"]
     assert await _winner(league) == LEWIS
     assert "Feature Race" in _texts(league)[-1]
 
@@ -416,7 +415,6 @@ async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, mo
     assert f"<@{MEMBER_ID}>" in line and "Round 3" in line and "Feature Race" in line, line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_refused_amended_paste_ends_the_whole_amendment_writing_nothing(
     tmp_path, monkeypatch,
 ):
@@ -425,7 +423,7 @@ async def test_a_refused_amended_paste_ends_the_whole_amendment_writing_nothing(
     amendment ends (results spec :459): the drafts are dropped, the refusal is said, the channel is
     deleted and its row closed, and the round's results stand as they were."""
     league = await _league(tmp_path, monkeypatch, qualifying=True)
-    await _ask_open(league, sessions=("QUALIFYING", "FEATURE_RACE"))
+    await _ask_open(league, sessions=("FEATURE_QUALIFYING", "FEATURE_RACE"))
     await _type(league, QUALI_PASTE)
 
     await _type(league, "1, <@103>, FER, 1:30:00.000, 1:20.000, N/A")
@@ -905,6 +903,85 @@ async def test_a_paste_typed_in_time_holds_the_lapse_though_its_turn_waits(tmp_p
     assert not _deleted(league)
     [row] = await _amend_rows(league)
     assert row["closed_at"] is None
+
+
+async def test_a_paste_typed_after_the_five_minutes_is_not_taken(tmp_path, monkeypatch):
+    """Alex pastes the Feature Race six minutes after the prompt appeared, before the timer's lapse
+    has run (results :460, Q18: an answer counts only if typed within the five minutes). His turn
+    finds it no longer due: nothing is saved, the round is untouched and no next prompt follows.
+    The lapse then ends the amendment."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    sent_before = len(league.sent_to(AMEND_CHANNEL))
+
+    await _type(league, after=timedelta(minutes=6))
+
+    assert await _drafts(league) == []
+    assert await _winner(league) == LEWIS
+    assert len(league.sent_to(AMEND_CHANNEL)) == sent_before
+    assert not _deleted(league)
+
+    await _fire(league)
+    await run_queue(league.bot)
+
+    assert _deleted(league)
+    [row] = await _amend_rows(league)
+    assert row["closed_at"] is not None
+    assert await _winner(league) == LEWIS
+
+
+async def test_a_late_choice_of_configuration_is_not_taken(tmp_path, monkeypatch):
+    """The season has Standard and Heavy attached, and Alex pastes the Feature Race at once: the
+    picker appears. He presses Heavy six minutes later, before the lapse has run. The press is
+    judged by when it was pressed: its turn finds it no longer due, nothing is held, and the lapse
+    ends the amendment."""
+    league = await _league(tmp_path, monkeypatch, configs=("Standard", HEAVY))
+    await _ask_open(league)
+    await _type(league)
+    [picker] = [message for message in league.channel(AMEND_CHANNEL).messages.values()
+                if message.view is not None
+                and "Select the points configuration" in str(message.content)]
+    button = next(item for item in picker.view.children if item.label == HEAVY)
+    interaction = member_interaction(
+        league.bot, user=_alex(), created_at=NOW + timedelta(minutes=6)
+    )
+    interaction.guild = league.guild
+    interaction.channel_id = AMEND_CHANNEL
+    interaction.message = picker
+    interaction.response.edit_message = AsyncMock()
+
+    await button.callback(interaction)
+    await run_queue(league.bot)
+
+    assert await _drafts(league) == []
+    assert not _deleted(league)
+
+    await _fire(league)
+    await run_queue(league.bot)
+
+    assert _deleted(league)
+    assert await _winner(league) == LEWIS
+
+
+async def test_a_lapse_queued_for_an_earlier_prompt_does_not_swallow_the_next_prompt_s(
+    tmp_path, monkeypatch,
+):
+    """Alex amends the Qualifying and the Feature Race. The league lane is stopped, and the first
+    prompt's five minutes run out: its lapse is asked and waits. Just before they ran out Alex
+    pasted the Qualifying, whose turn ran on the amendment's lane at once; the Feature Race's prompt
+    appeared and armed five minutes of its own. When that timer fires its lapse is asked as well,
+    not taken for a repeat of the one still waiting: two lapses are on the queue."""
+    league = await _league(tmp_path, monkeypatch, qualifying=True)
+    await _ask_open(league, sessions=("FEATURE_QUALIFYING", "FEATURE_RACE"))
+    await block_queue(league)
+    await _fire(league)
+    getattr(league.bot, "_change_queue_test_setup").clock.advance(minutes=4)
+    await _type(league, QUALI_PASTE, after=timedelta(minutes=4))
+    assert await _drafts(league) == ["FEATURE_QUALIFYING"]
+
+    await _fire(league)
+
+    assert len(await _changes(league, LAPSE)) == 2
 
 
 async def test_a_lapse_reads_a_paste_typed_in_time_on_the_amendment_s_lane(tmp_path, monkeypatch):
