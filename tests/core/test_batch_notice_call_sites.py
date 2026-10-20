@@ -70,15 +70,9 @@ def _calls_within(node: ast.AST) -> set[str]:
 # `test_season_review_changes.py` (the drawing notice before the drawing, deleted after); what is read
 # here is that the commands no longer draw under a notice of their own.
 
-NO_DRAWING_ON_THE_QUEUE = (
-    "#439: the season review still draws its pictures under a batch notice in the command; "
-    "C93-C95 move the drawing and its notice into season.review.post's jobs"
-)
-
 _REVIEW_CHANGES = "core/services/season_review_changes.py"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRAWING_ON_THE_QUEUE)
 def test_the_review_command_draws_nothing_under_a_notice_of_its_own():
     """`/season placements-review`, in both its forms, wraps nothing in a batch notice and draws
     no picture itself: the drawing and its notice are jobs of the review's change, the notice

@@ -77,7 +77,6 @@ from leaguebot.core.services.season_service import (
     validate_division_tier,
 )
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
-from leaguebot.core.utils.batch_notice import batch_notice
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.channel_guard import (
     is_league_admin,
@@ -491,19 +490,6 @@ async def _overflow_for(cog, _division_name: str, would_hold: int):
 # ---------------------------------------------------------------------------
 
 
-#: What a graphic did in `/season placements-review`, and what the text around it must therefore do.
-#:
-#: The review shows a manager what their league will actually see, so a graphic
-#: **replaces** the section's text rather than standing beside it. Three states and not
-#: two: an aspect switched off is the league conveying that section as text and nothing is
-#: wrong, whereas a graphic that was wanted and could not be drawn is a fault the manager
-#: has to fix — the text still stands in, so the review stays a complete picture of the
-#: season, but the approve button is withheld until the module draws.
-REVIEW_IMAGE_DREW = "DREW"
-REVIEW_IMAGE_TEXT = "TEXT"
-REVIEW_IMAGE_FAULT = "FAULT"
-
-
 #: The key a setup recovered after a restart is held under. No user began it in this
 #: process, and no Discord id is 0.
 _RECOVERED = 0
@@ -840,121 +826,6 @@ class SeasonCog(commands.Cog):
             log.error("season: team name check failed: %s", exc, exc_info=True)
             return []
         return problems
-
-    #: How many bytes of pre-rendered graphics a review may hold at once.
-    #:
-    #: The bot runs on a Raspberry Pi 4 whose ``/tmp`` is a **tmpfs**, so a picture waiting
-    #: to be posted costs RAM and not disk. A review draws two graphics per division and
-    #: `MAX_ATTACHMENT_BYTES` lets a single one reach 25 MB, so an unbounded pre-render on
-    #: a large league could take the host's memory rather than merely its time. Past this
-    #: figure the remaining divisions fall back to drawing at the moment they are posted,
-    #: which is what the review did in full before pre-rendering existed — so the guard
-    #: costs speed and never correctness.
-    #:
-    #: 64 MB holds roughly twenty typical graphics, which covers a ten-division league
-    #: outright, while leaving the tmpfs room for everything else the host puts there.
-    REVIEW_PRERENDER_BUDGET_BYTES = 64 * 1024 * 1024
-
-    async def _safe_render(self, render, *args, **kwargs):
-        """Call one render, returning None rather than letting it break the review."""
-        try:
-            return await render(*args, **kwargs)
-        except Exception as exc:  # noqa: BLE001 — the posting helper will draw it again
-            log.error("season review: pre-render failed: %s", exc, exc_info=True)
-            return None
-
-    @staticmethod
-    def _hold(prepared: dict, key, outcome) -> int:
-        """Keep *outcome* if it drew, and report what holding it costs in bytes."""
-        path = getattr(outcome, "png_path", None) if outcome is not None else None
-        if path is None:
-            return 0
-        prepared[key] = outcome
-        try:
-            return path.stat().st_size
-        except OSError:
-            # The file is there — the render returned it — so a stat that fails says
-            # nothing useful about the budget. Charge nothing rather than guess.
-            return 0
-
-    @staticmethod
-    def _discard_prepared_review_images(prepared: dict) -> None:
-        """Delete every graphic still held, whatever ended the review.
-
-        The posting loop pops each key as it posts it, so what remains here is what was
-        drawn and never sent — a division the loop never reached, or all of them where it
-        raised. On a tmpfs that is memory, and nothing else will ever look at these files.
-        """
-        from leaguebot.image.services.image_render_service import discard_render
-
-        for outcome in prepared.values():
-            discard_render(getattr(outcome, "png_path", None))
-        prepared.clear()
-
-    async def _post_review_lineup_image(
-        self, poster: _ReviewPoster, division, *, prepared=None, include_uncommitted: bool = False
-    ) -> str:
-        """Post the lineup graphic for `/season placements-review`, **in place of** the text lineup.
-
-        Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
-        :data:`REVIEW_IMAGE_FAULT`, which is what tells the caller whether to post the
-        textual lineup and whether to offer the approve button.
-
-        These images are command output and not the lineup of record (038 FR-028): no
-        ``lineup_message_id`` is written and the lineup channel is untouched.
-
-        *prepared* is the outcome the pre-render already produced for
-        this division. Where it is given the render is not repeated; where it is None the
-        graphic is drawn here, which is both the budget-exceeded fallback and what every
-        other caller of this method gets.
-
-        *include_uncommitted* draws the placements not yet confirmed mid-season, so the
-        review shows the lineup confirming will post (#374).
-
-        Every lineup the review draws, here and in both pre-renders, obtains first the
-        portrait of any driver who has none, whichever update trigger the league chose
-        (#407): the review is judged on its drawing, and a driver seated since the last daily
-        update would otherwise be judged as the placeholder.
-        """
-        try:
-            import discord as _discord
-
-            from leaguebot.image.services.image_lineup_post import lineup_enabled, render_for_command
-            from leaguebot.image.services.image_render_service import discard_attachment, discard_render
-
-            if not await lineup_enabled(self.bot):
-                return REVIEW_IMAGE_TEXT
-
-            outcome = prepared
-            if outcome is None:
-                outcome = await render_for_command(
-                    self.bot,
-                    poster.interaction.guild,
-                    division.id,
-                    include_uncommitted=include_uncommitted,
-                    obtain_missing_portraits=True,
-                )
-            if outcome.png_path is None:
-                # A commanded render that would not draw. The manager is told what is at
-                # fault; the textual lineup still stands in so the review is complete.
-                if outcome.message:
-                    await poster.reply(outcome.message, ephemeral=True)
-                return REVIEW_IMAGE_FAULT
-
-            attachment = _discord.File(
-                str(outcome.png_path), filename=outcome.png_path.name
-            )
-            try:
-                await poster.reply(
-                    "\U0001f3ce\ufe0f **Lineup**", file=attachment, ephemeral=False
-                )
-            finally:
-                discard_attachment(attachment)
-                discard_render(outcome.png_path)
-            return REVIEW_IMAGE_DREW
-        except Exception as exc:  # noqa: BLE001 — never break a review on this
-            log.error("season review: lineup image failed: %s", exc, exc_info=True)
-            return REVIEW_IMAGE_FAULT
 
     async def _record_review_posted(self, interaction: discord.Interaction, command: str) -> None:
         """Write the one line that says who ran *command* and that its question is standing.
@@ -2285,149 +2156,94 @@ class SeasonCog(commands.Cog):
         the league will receive; the confirmation does not draw it again, the fingerprint
         proving nothing it is drawn from has changed since.
         """
-        await interaction.response.defer(ephemeral=False)
+        await interaction.response.defer(ephemeral=True)
         poster = _ReviewPoster(interaction)
-        prepared: dict = {}
-        try:
-            placements = await self.bot.placement_service.uncommitted_placements(season.id)
-            lines = [
-                f"**Placements Review (Season #{season.season_number}) — mid-season**",
-                "",
-            ]
-            if placements:
-                lines.append("**Drivers to confirm**")
-                for p in placements:
-                    who = p["test_display_name"] or f"<@{p['discord_user_id']}>"
-                    lines.append(
-                        f"  {who} → **{p['team_full_name'] or p['team_name']}** "
-                        f"in **{p['division_name']}**"
-                    )
+        report: list[str] = []
+        pictures: list[dict[str, Any]] = []
+        placements = await self.bot.placement_service.uncommitted_placements(season.id)
+        lines = [
+            f"**Placements Review (Season #{season.season_number}) — mid-season**",
+            "",
+        ]
+        if placements:
+            lines.append("**Drivers to confirm**")
+            for p in placements:
+                who = p["test_display_name"] or f"<@{p['discord_user_id']}>"
+                lines.append(
+                    f"  {who} → **{p['team_full_name'] or p['team_name']}** "
+                    f"in **{p['division_name']}**"
+                )
+        else:
+            lines.append("*No new placement to confirm.*")
+        lines.append("")
+        report.extend(chunk_message("\n".join(lines)))
+
+        divisions = [
+            division
+            for division in await self.bot.season_service.get_divisions(season.id)
+            if division.status != "CANCELLED"
+        ]
+        # The divisions whose lineup confirming posts: those holding a new driver. Where the
+        # league conveys its lineup as a picture, theirs is asked of the queue, drawn with the
+        # new drivers in it, the section's text carried to stand in for it.
+        posted = {p["division_id"] for p in placements}
+        _, draws_lineup = await self._review_picture_gates()
+        for division in divisions:
+            teams = await self.bot.team_service.get_division_teams(division.id)
+            block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
+            for team in teams:
+                seated = [
+                    f"<@{seat['discord_user_id']}>"
+                    for seat in team["seats"]
+                    if seat["discord_user_id"] is not None
+                ]
+                block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
+            if draws_lineup and division.id in posted:
+                pictures.append({
+                    "name": f"{division.name} lineup", "division_id": division.id,
+                    "kind": "lineup", "text": "\n".join(block), "include_uncommitted": True,
+                })
             else:
-                lines.append("*No new placement to confirm.*")
-            lines.append("")
-            for chunk in chunk_message("\n".join(lines)):
-                await poster.reply(chunk, ephemeral=False)
+                report.extend(chunk_message("\n".join(block)))
 
-            divisions = [
-                division
-                for division in await self.bot.season_service.get_divisions(season.id)
-                if division.status != "CANCELLED"
-            ]
-            # The divisions whose lineup confirming posts: those holding a new driver.
-            posted = {p["division_id"] for p in placements}
-            await self._prerender_mid_season_lineups(
-                interaction, [d for d in divisions if d.id in posted], prepared
+        unsettled, channel_faults = await self._placement_confirmation_faults(
+            season.id, interaction.guild
+        )
+        configuration_faults = await self._mid_season_configuration_faults()
+        if unsettled:
+            report.extend(chunk_message(
+                "⚠️ **Unsettled signups** — each is to be placed with "
+                "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
+                + "\n".join(f"• {line}" for line in unsettled)
+            ))
+            await poster.reply(
+                "⛔ **Every signup must be settled before placements are confirmed.** "
+                f"{len(unsettled)} signup(s) are not, each named in the review above. "
+                "Settle them, then run `/season placements-review` again.",
+                ephemeral=True,
             )
-
-            lineup_faulted = False
-            for division in divisions:
-                if division.id in posted:
-                    state = await self._post_review_lineup_image(
-                        poster,
-                        division,
-                        prepared=prepared.pop(division.id, None),
-                        include_uncommitted=True,
-                    )
-                    lineup_faulted = lineup_faulted or state == REVIEW_IMAGE_FAULT
-                    if state == REVIEW_IMAGE_DREW:
-                        continue
-                teams = await self.bot.team_service.get_division_teams(division.id)
-                block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
-                for team in teams:
-                    seated = [
-                        f"<@{seat['discord_user_id']}>"
-                        for seat in team["seats"]
-                        if seat["discord_user_id"] is not None
-                    ]
-                    block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
-                for chunk in chunk_message("\n".join(block)):
-                    await poster.reply(chunk, ephemeral=False)
-
-            unsettled, channel_faults = await self._placement_confirmation_faults(
-                season.id, interaction.guild
-            )
-            configuration_faults = await self._mid_season_configuration_faults()
-            if unsettled:
-                for chunk in chunk_message(
-                    "⚠️ **Unsettled signups** — each is to be placed with "
-                    "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
-                    + "\n".join(f"• {line}" for line in unsettled)
-                ):
-                    await poster.reply(chunk, ephemeral=False)
-                await poster.reply(
-                    "⛔ **Every signup must be settled before placements are confirmed.** "
-                    f"{len(unsettled)} signup(s) are not, each named in the review above. "
-                    "Settle them, then run `/season placements-review` again.",
-                    ephemeral=True,
-                )
-            if channel_faults:
-                await self._send_channel_faults(poster, channel_faults)
-            if configuration_faults:
-                body = "\n".join(f"• {fault}" for fault in configuration_faults)
-                for chunk in chunk_message(
-                    "⛔ **The image module is not correctly configured.**\n"
-                    f"{body}\n"
-                    "The placements are **not** offered for confirmation while that stands. "
-                    "Put it right, then run `/season placements-review` again."
-                ):
-                    await poster.reply(chunk, ephemeral=True)
-            if lineup_faulted:
-                await poster.reply(
-                    "⛔ **A lineup confirming would post could not be drawn** with its new "
-                    "drivers in it. The fault is reported above, and the lineup was shown as "
-                    "text instead. Correct the template or the assets it names, then run "
-                    "`/season placements-review` again.",
-                    ephemeral=True,
-                )
-            if unsettled or channel_faults or configuration_faults or lineup_faulted:
-                return
-
-            view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)
-            await view.record_fingerprint(season.id)
-            message = await poster.reply(
+        if channel_faults:
+            await self._send_channel_faults(poster, channel_faults)
+        if configuration_faults:
+            body = "\n".join(f"• {fault}" for fault in configuration_faults)
+            for chunk in chunk_message(
+                "⛔ **The image module is not correctly configured.**\n"
+                f"{body}\n"
+                "The placements are **not** offered for confirmation while that stands. "
+                "Put it right, then run `/season placements-review` again."
+            ):
+                await poster.reply(chunk, ephemeral=True)
+        await self._ask_review(
+            interaction, "/season placements-review", season.id, report, pictures,
+            offered=not (unsettled or channel_faults or configuration_faults),
+            view="mid_season",
+            question=(
                 "\U0001f4cb **Do you confirm these placements?**\n"
                 f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
                 f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Confirming "
-                "grants the new drivers their roles and posts each affected lineup.",
-                view=view,
-                ephemeral=False,
-            )
-            view.carries(poster.posted)
-            await view.bind(message)
-            await self._record_review_posted(interaction, "/season placements-review")
-        finally:
-            self._discard_prepared_review_images(prepared)
-
-    async def _prerender_mid_season_lineups(self, interaction, divisions, prepared: dict) -> None:
-        """Draw, before posting any, the lineup of each division confirming will post (#374).
-
-        Draws the mid-season review's lineups before it posts any of them, on these terms:
-        each outcome that drew is kept in *prepared* under the division's id, a render that
-        failed is left for the posting helper to draw and report, and the batch announces
-        itself. Nothing is drawn, nor announced, where the lineup graphic is not wanted.
-        """
-        from leaguebot.image.services.image_lineup_post import lineup_enabled
-        from leaguebot.image.services.image_lineup_post import render_for_command as render_lineup
-
-        if not divisions or not await lineup_enabled(self.bot):
-            return
-        async with batch_notice(
-            interaction.channel,
-            "\U0001f3a8 Drawing the graphics for this review — one moment.",
-        ):
-            for division in divisions:
-                self._hold(
-                    prepared,
-                    division.id,
-                    await self._safe_render(
-                        render_lineup,
-                        self.bot,
-                        interaction.guild,
-                        division.id,
-                        include_uncommitted=True,
-                        obtain_missing_portraits=True,
-                    ),
-                )
+                "grants the new drivers their roles and posts each affected lineup."
+            ),
+        )
 
     async def _do_confirm_mid_season_placements(
         self, interaction: discord.Interaction, *, what: str | None = None
