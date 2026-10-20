@@ -375,6 +375,9 @@ def turn_steps(
         payload = ctx.step_payload
         amend_id = int(payload["amend_id"])
         channel_id = int(payload["channel_id"])
+        closing: dict[str, Any] = {"channel_id": channel_id, "round_id": payload.get("round_id")}
+        if payload.get("farewell"):
+            closing["farewell"] = payload["farewell"]
         await db.execute("DELETE FROM amend_drafts WHERE amend_id = ?", (amend_id,))
         await db.execute(
             "UPDATE round_amend_channels SET closed_at = ? WHERE id = ? AND closed_at IS NULL",
@@ -382,10 +385,7 @@ def turn_steps(
         )
         return StepResult(
             result={"ended": True},
-            follow_ons=(FollowOn(
-                CLOSE_KIND, {"channel_id": channel_id, "round_id": payload.get("round_id")},
-                "deleting a refused amendment's channel",
-            ),),
+            follow_ons=(FollowOn(CLOSE_KIND, closing, "deleting a refused amendment's channel"),),
         )
 
     async def choice_view(ctx: StepContext) -> discord.ui.View:
@@ -561,8 +561,9 @@ def amend_stage_one_change(
     stage-two prompt (`results.amend.prompt`). Nothing is published (#345).
 
     A driver carrying a verdict missing from a corrected classification refuses the amendment
-    (`AmendmentWouldOrphanVerdictError`): the save is undone to where it began, the refusal is said
-    in the channel and logged, and the whole amendment ends as a refused paste ends it. Any other
+    (`AmendmentWouldOrphanVerdictError`): the save is undone to where it began, the refusal is logged and
+    said in the channel (by the amendment's lane, ahead of the channel's deletion), and the whole
+    amendment ends as a refused paste ends it. Any other
     fault leaves the save unwritten and stops the league's queue; the drafts stay, so a Retry
     records them. The drafts are kept once recorded: the amendment expects its next session by
     them.
@@ -625,9 +626,9 @@ def amend_stage_one_change(
                 result={"refused": str(exc)},
                 lines=(refusal_line(ctx.named, what, str(exc)),),
                 then=(
-                    PlannedStep(POST, {"channel_id": channel_id, "text": f"❌ {exc}"}),
                     PlannedStep(END_AMENDMENT, {
                         "channel_id": channel_id, "amend_id": amend_id, "round_id": round_id,
+                        "farewell": f"❌ {exc}",
                     }),
                 ),
             )
@@ -692,7 +693,9 @@ def amend_close_change() -> ChangeType:
     lane (``channel:<amendment channel>``): the deletion of the channel of an amendment that ended
     itself.
 
-    The payload is ``channel_id`` and ``round_id``. The amendment's row stays, closed, which is
+    The payload is ``channel_id`` and ``round_id``, and a ``farewell`` where the ending has a
+    line to say first (stage one's refusal): posted ahead of the deletion, so a refusal of that post
+    stops this lane and not the league's. The amendment's row stays, closed, which is
     what restart recovery and the next amendment of the round look for. The conversation stands
     while the row names the channel, closed or not: the deletion is the ending's own, and needs
     only its channel to stand.
@@ -708,10 +711,16 @@ def amend_close_change() -> ChangeType:
         return row is not None
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
-        return (PlannedStep(DELETE_CHANNEL, {
+        farewell = (
+            (PlannedStep(POST, {
+                "channel_id": int(payload["channel_id"]), "text": str(payload["farewell"]),
+            }),)
+            if payload.get("farewell") else ()
+        )
+        return (*farewell, PlannedStep(DELETE_CHANNEL, {
             "channel_id": int(payload["channel_id"]), "round_id": payload.get("round_id"),
             "what": "amendment channel", "reason": "Results amend complete",
-        }),)
+        }))
 
     async def standing(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
@@ -730,7 +739,10 @@ def amend_close_change() -> ChangeType:
         kind=CLOSE_KIND,
         opening=(),
         plan=plan,
-        steps={DELETE_CHANNEL: dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=None)},
+        steps={
+            POST: post_step(describing="posting a line in the amendment channel"),
+            DELETE_CHANNEL: dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=None),
+        },
         check=standing,
         key=lambda payload: f"{CLOSE_KIND}:{payload['channel_id']}",
         doing=lambda _payload: "deleting an ended amendment's channel",

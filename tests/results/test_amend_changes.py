@@ -660,6 +660,41 @@ async def test_a_stage_one_leaving_out_a_driver_with_a_verdict_is_refused_and_en
     assert await _rows(league, "SELECT id FROM penalty_records") != []
 
 
+async def test_a_refused_post_of_stage_one_s_refusal_stops_only_the_amendment_s_lane(
+    tmp_path, monkeypatch,
+):
+    """Max carries a penalty in round 3's Feature Race and Alex pastes a classification with Lewis
+    alone, so stage one is refused; Discord refuses the refusal's post into the amendment channel.
+    The refusal is the amendment's lane's to post (decision 23): that lane stops with the post and
+    the channel standing, and the league lane, which recorded the ending, does not."""
+    league = await _league(tmp_path, monkeypatch)
+    async with get_connection(league.db_path) as db:
+        [max_row] = await (await db.execute(
+            "SELECT id FROM race_session_results WHERE driver_user_id = ?", (MAX,)
+        )).fetchall()
+        await db.execute(
+            "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+            "description, justification, applied_by, applied_at) "
+            "VALUES (?, 'TIME', 5, 'Contact at turn 1', 'Wholly at fault', '9001', "
+            "'2026-02-02T00:00:00+00:00')",
+            (max_row["id"],),
+        )
+        await db.commit()
+    await _ask_open(league)
+    league.channel(AMEND_CHANNEL).fail_when = lambda content, _kwargs: "leaves out" in str(content)
+
+    await _type(league, "1, <@101>, FER, 1:30:00.000, 1:20.000, N/A")
+
+    assert await stopped_job(league.db_path, "league") is None
+    assert await stopped_job(league.db_path, LANE) is not None
+    [stage_one] = await _changes(league, STAGE_ONE)
+    assert stage_one["state"] == "DONE"
+    [row] = await _amend_rows(league)
+    assert row["closed_at"] is not None
+    assert not _deleted(league)
+    assert not any("leaves out" in text for text in _texts(league))
+
+
 # ---------------------------------------------------------------------------
 # Cancel Amendment (C62)
 # ---------------------------------------------------------------------------
