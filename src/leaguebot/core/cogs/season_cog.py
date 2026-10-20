@@ -39,11 +39,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
+from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
+from leaguebot.core.services.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.cancellation_changes import (
     DIVISION_CANCEL,
     ROUND_CANCEL,
@@ -519,7 +521,8 @@ async def _confirm_privately(
     `/results rounds amend` sends its own (#345): the interaction's token lapses after fifteen
     minutes, which an approval that waited on the backup question and then drew on the Pi can
     outlast. Where the reply is refused, the channel the interaction came from is told
-    *fallback* instead, through the bot's own token, which does not lapse. *fallback* points
+    *fallback* instead, by a `channel.tell` change asked of the queue as the bot's (an interaction
+    only ever arises in a channel a member can write in, #228). *fallback* points
     at the log channel, which the caller makes carry all that *text* said (decided
     2026-09-22).
     """
@@ -533,14 +536,21 @@ async def _confirm_privately(
         log.warning("could not send a confirmation privately", exc_info=True)
         if interaction.channel is None:
             return
-        # An interaction only ever arises in a channel a member can write in — a forum's
-        # posts are threads, and a category hosts nothing — so the one it came from takes a
-        # message (#228).
-        channel = cast("discord.abc.Messageable", interaction.channel)
+        # The line goes on the queue, as the bot's: a refusal of it stops the queue with Retry and
+        # Discard, and the confirmation, already committed, stands whatever becomes of it.
         try:
-            await channel.send(fallback)
+            await bot_of(interaction).change_queue.ask(
+                CHANNEL_TELL,
+                {
+                    "channel_id": interaction.channel.id,
+                    "text": fallback,
+                    "mention": interaction.user.id,
+                },
+                what="telling the channel what the confirmation said",
+                origin=ChangeOrigin.BOT,
+            )
         except Exception:  # noqa: BLE001
-            log.exception("could not tell the channel what the confirmation said")
+            log.exception("could not ask the queue to tell the channel what the confirmation said")
 
 
 async def _take_the_review_down(bot: LeagueBot, interaction: discord.Interaction) -> int | None:

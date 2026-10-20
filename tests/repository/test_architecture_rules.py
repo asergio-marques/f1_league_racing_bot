@@ -886,7 +886,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
-    ("core/cogs/season_cog.py", "_confirm_privately"): (1, HANDLERS),
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
     ("core/services/calendar_post_service.py", "replace_calendar_message"): (2, HANDLERS),
     ("core/services/cancellation_notice_service.py", "_send"): (1, HANDLERS),
@@ -1062,7 +1061,6 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 
 KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, SLICE["6b"]),
-    ("core/cogs/season_cog.py", "_confirm_privately"): (1, SLICE["6b"]),
     ("core/utils/batch_notice.py", "delete_notice"): (1, SLICE["6b"]),
     ("core/utils/batch_notice.py", "send_notice"): (1, SLICE["6b"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, SLICE["6b"]),

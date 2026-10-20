@@ -710,13 +710,6 @@ async def test_a_review_expired_twice_at_once_posts_one_notice(
     assert len(lapses) <= 1, _queue_lines(env)
 
 
-NO_CONFIRMATION_TELL = (
-    "#439: a confirmation that cannot be sent privately tells its channel the fallback directly, "
-    "off the queue, with no channel.tell change asked"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_CONFIRMATION_TELL)
 async def test_a_private_confirmation_that_fails_asks_the_channel_to_be_told(tmp_path):
     """A mid-season confirmation is committed, and its private confirmation to the reviewer is
     refused (the interaction's token has lapsed). Nothing is posted in the channel at once: a

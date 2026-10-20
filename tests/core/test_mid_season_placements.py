@@ -841,13 +841,6 @@ async def test_a_clean_confirmation_reports_nothing_undone(db_path):
     assert "not done" not in _logged(cog)
 
 
-NO_CONFIRMATION_TELL = (
-    "#439: a confirmation that cannot be sent privately tells its channel the fallback directly, "
-    "off the queue, with no channel.tell change asked"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_CONFIRMATION_TELL)
 async def test_a_refused_confirmation_is_told_in_the_channel_instead(db_path):
     """As at approval (decided 2026-09-22): one line in the review's channel, pointing at the
     log channel. Since #439 (C99) that line is a `channel.tell` change asked of the queue as the
