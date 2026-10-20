@@ -28,6 +28,7 @@ import discord
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, StepResult, Verdict
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.audit_service import record_system_change_on
+from leaguebot.core.services.season_lifecycle_service import advance_on_window_close_on
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -171,8 +172,11 @@ def window_close_steps(
     `delete_button` takes the Sign Up button down (a button already gone completes it). `post_closed`
     posts "Signups are now closed" in the signup channel, and in the save that marks it done its
     record closes the window with the post's id (so the next opening deletes the notice), audits
-    the close and has the queue write the "Signups closed" line: no window is ever recorded
-    closed without its notice up, and a refused post stops the queue with signups still open.
+    the close and has the queue write the "Signups closed" line, where the payload gives a
+    ``head`` for it (a close a member ran writes its own line in its last job), and moves the
+    season on where it says ``advance_season`` (a season's end moves its own): no window is ever
+    recorded closed without its notice up, and a refused post stops the queue with signups still
+    open.
     Where its try posted and the record then failed, the message is kept for the next try to remove
     before it posts again. A window already closed by another hand is not closed twice.
     *signup_module_service* is a getter, so that the service is the one the bot holds when the job runs.
@@ -191,10 +195,12 @@ def window_close_steps(
             refused=f"the closed notice could not be posted in channel {found.id}",
         )
         payload = ctx.step_payload
-        line = f"{payload['head']}\n  drivers_returned_to_not_signed_up: {payload['returned']}"
-        return StepResult(
-            result={"new": message_id, "channel_id": found.id}, lines=(line,)
-        )
+        lines: tuple[str, ...] = ()
+        if "head" in payload:
+            lines = (
+                f"{payload['head']}\n  drivers_returned_to_not_signed_up: {payload['returned']}",
+            )
+        return StepResult(result={"new": message_id, "channel_id": found.id}, lines=lines)
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         await signup_module_service().set_window_closed_on(
@@ -204,6 +210,8 @@ def window_close_steps(
             db, change_type=str(ctx.step_payload["audit_action"]), old_value="open",
             new_value="closed", now=now(),
         )
+        if ctx.step_payload.get("advance_season"):
+            await advance_on_window_close_on(db)
 
     async def window_stands(_ctx: StepContext) -> bool:
         return await signup_module_service().get_window_state()

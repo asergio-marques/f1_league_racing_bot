@@ -452,7 +452,6 @@ def _lane_of(change: dict[str, Any]) -> str:
     return change.get("lane") or "league"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_signup_close_returns_drivers_deletes_the_button_posts_the_notice_and_tells_each_as_jobs(
     tmp_path,
 ):
@@ -488,7 +487,6 @@ async def test_signup_close_returns_drivers_deletes_the_button_posts_the_notice_
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_a_close_s_window_and_season_move_are_saved_together(tmp_path):
     """Nobody is signing up. Manager 77 runs `/signup close`; until the queue runs the window
     stays open, the season at Signups and no close audited. When it runs, `post_closed`'s record
@@ -530,7 +528,6 @@ async def test_a_close_s_window_and_season_move_are_saved_together(tmp_path):
     assert await _close_audits(refused) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_a_failed_close_step_stops_the_queue_and_a_discard_names_it(tmp_path):
     """Kimi is still filling in the wizard, and Discord refuses every post in his signup channel.
     Manager 77 confirms the close and the queue runs: Kimi is returned to Not Signed Up, the
@@ -560,7 +557,6 @@ async def test_a_failed_close_step_stops_the_queue_and_a_discard_names_it(tmp_pa
     assert f"<@{SIGNING_UP}>" in said
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_path):
     """Kimi is still filling in the wizard. Manager 77 runs `/signup close` and presses Confirm
     Close; before the queue reaches it, signups are reopened on another Sign Up message (7777).
@@ -664,7 +660,6 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     assert await league.rows("SELECT * FROM signup_module_config") == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):
     """Kimi and a second driver are still filling in the wizard; Discord refuses posts in Kimi's
     signup channel alone. Manager 77 confirms the close and the queue runs: the close is one

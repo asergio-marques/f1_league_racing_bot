@@ -105,14 +105,19 @@ async def live_season_stage_on(db: aiosqlite.Connection) -> tuple[int, SeasonSta
 
 async def count_unsettled_signups(db_path: str) -> int:
     """How many drivers hold a signup not yet placed or turned down."""
-    placeholders = ",".join("?" for _ in UNSETTLED_STATES)
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT COUNT(*) AS n FROM driver_profiles "
-            f"WHERE current_state IN ({placeholders})",
-            (*UNSETTLED_STATES,),
-        )
-        row = await cursor.fetchone()
+        return await count_unsettled_signups_on(db)
+
+
+async def count_unsettled_signups_on(db: aiosqlite.Connection) -> int:
+    """`count_unsettled_signups` read on the caller's connection."""
+    placeholders = ",".join("?" for _ in UNSETTLED_STATES)
+    cursor = await db.execute(
+        f"SELECT COUNT(*) AS n FROM driver_profiles "
+        f"WHERE current_state IN ({placeholders})",
+        (*UNSETTLED_STATES,),
+    )
+    row = await cursor.fetchone()
     return int(row["n"]) if row is not None else 0
 
 
@@ -169,12 +174,10 @@ async def advance_on_window_open_on(db: aiosqlite.Connection) -> SeasonStage | N
 
 
 async def advance_on_window_close(db_path: str) -> SeasonStage | None:
-    """Move the active season on for a signup window just closed.
+    """Move the active season on for a signup window just closed, committing the move.
 
-    Signups becomes Placements. Ongoing, signups open becomes Ongoing, placements where any
-    signup remains unsettled, and Ongoing where none does. Returns the new stage, or None
-    where the season stood in neither and nothing was moved — a window force-closed by
-    disabling the module, for one, belongs to no stage.
+    The close off the queue's form of `advance_on_window_close_on`, which the queue's close uses
+    in the save that records the window closed; this one goes with the last close off the queue.
     """
     found = await live_season_stage(db_path)
     if found is None:
@@ -190,6 +193,33 @@ async def advance_on_window_close(db_path: str) -> SeasonStage | None:
     await _move(db_path, season_id, stage, target)
     if target is SeasonStage.ONGOING:
         await advance_to_pending_completion(db_path, season_id)
+    return target
+
+
+async def advance_on_window_close_on(db: aiosqlite.Connection) -> SeasonStage | None:
+    """Move the active season on for a signup window just closed, on the caller's connection.
+
+    Commits nothing, so that the season's move is saved with the window's close and no window is
+    ever recorded closed with its season left behind. Signups becomes Placements. Ongoing,
+    signups open becomes Ongoing, placements where any signup remains unsettled, and Ongoing
+    where none does. Returns the new stage, or None where the season stood in neither and
+    nothing was moved: a window force-closed by disabling the module, for one, belongs to no
+    stage.
+    """
+    found = await live_season_stage_on(db)
+    if found is None:
+        return None
+    season_id, stage = found
+    if stage is SeasonStage.SIGNUPS:
+        target = SeasonStage.PLACEMENTS
+    elif stage is SeasonStage.ONGOING_SIGNUPS:
+        unsettled = await count_unsettled_signups_on(db)
+        target = SeasonStage.ONGOING_PLACEMENTS if unsettled else SeasonStage.ONGOING
+    else:
+        return None
+    await _move_on(db, season_id, stage, target)
+    if target is SeasonStage.ONGOING:
+        await advance_to_pending_completion_on(db, season_id)
     return target
 
 

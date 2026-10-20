@@ -31,17 +31,16 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.cogs.module_cog import (
-    RETURNED_BY_CLOSE,
-    armed_close_refusal,
-    execute_forced_close,
-    failed_steps_lines,
-    failed_steps_reply,
-)
+from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.window_changes import (
+    AUDIT_CLOSE,
+    AUDIT_FORCE_CLOSE,
+    armed_close_refusal,
+)
 from leaguebot.core.services import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -50,7 +49,6 @@ from leaguebot.core.utils.channel_guard import league_manager_only, league_role_
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.messages import chunk_message
 from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -215,29 +213,21 @@ class ConfirmCloseView(LeagueView):
     ) -> None:
         self.confirmed = True
         self.stop()
-        await interaction.response.defer(ephemeral=True)
         # The count is the close's own, not the confirmation's: a driver may have finished
-        # signing up, or started, in the five minutes the buttons stand (issue #128).
-        outcome = await execute_forced_close(
-            self._bot, audit_action="SIGNUP_FORCE_CLOSE", window=self._window
-        )
-        if outcome.refused is not None:
-            await refuse(
-                interaction,
-                f"⛔ {outcome.refused}",
-                what=f"the “Confirm Close” button of {self._WHAT}",
-                reason=outcome.refused,
-            )
-            return
-        returned = outcome.returned
-        for part in chunk_message(
-            f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
-            "Not Signed Up." + failed_steps_reply(outcome)
-        ):
-            await interaction.followup.send(part, ephemeral=True)
-        await self._bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
-            f"  drivers_returned_to_not_signed_up: {returned}" + failed_steps_lines(outcome),
+        # signing up, or started, in the five minutes the buttons stand (issue #128). The close
+        # is judged again as it comes up to run, and refused where the window is no longer this
+        # one (#491).
+        await self._bot.change_queue.ask(
+            "signup.close",
+            {
+                "cause": "command",
+                "window": self._window,
+                "confirmed": True,
+                "audit_action": AUDIT_FORCE_CLOSE,
+            },
+            interaction=interaction,
+            what="Closing signups",
+            refusal_what=f"the “Confirm Close” button of {self._WHAT}",
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -1217,14 +1207,18 @@ class SignupCog(commands.Cog):
             rows = await cursor.fetchall()
 
         if not rows:
-            # No in-progress drivers — immediate close
-            await interaction.response.defer(ephemeral=True)
-            outcome = await execute_forced_close(self.bot, audit_action="SIGNUP_CLOSE")
-            for part in chunk_message("✅ Signups closed." + failed_steps_reply(outcome)):
-                await interaction.followup.send(part, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success"
-                + failed_steps_lines(outcome),
+            # No in-progress drivers — nothing to confirm, so the close is asked at once.
+            await self.bot.change_queue.ask(
+                "signup.close",
+                {
+                    "cause": "command",
+                    "window": cfg.signup_button_message_id,
+                    "confirmed": False,
+                    "audit_action": AUDIT_CLOSE,
+                },
+                interaction=interaction,
+                what="Closing signups",
+                refusal_what=describe(interaction),
             )
             return
 

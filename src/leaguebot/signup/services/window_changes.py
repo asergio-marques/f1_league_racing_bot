@@ -1,4 +1,4 @@
-"""The signup window's opening on the change queue (#439, slice 6b).
+"""The signup window's opening and closing on the change queue (#439, slice 6b).
 
 `/signup open` asks `signup.open`, whose check holds every refusal the command has always made
 (the module, test mode, the configuration, the season's stage, the league's roles, the slots) and
@@ -16,19 +16,39 @@ is posted. Its jobs are three:
 
 The command reads the close time and the tracks it was given, which are its own input, and the
 signup channel and the notice standing in it, which the plan of the jobs reads from the payload.
+
+`signup.close` closes it again, for `/signup close` (and its Confirm Close), the close timer and
+the restart past the close time. Its jobs, in order, are:
+
+- `return_drivers` (a save) returns each driver still filling in the wizard to Not Signed Up, ends
+  their wizard, cancels their timers and plans every job that follows, so that a driver returned
+  is never left without their notice;
+- `delete_button` takes the Sign Up button down, and `post_closed` posts "Signups are now closed"
+  and, in the save that marks it done, records the window closed, moves the season on and audits
+  the close: no window is ever recorded closed with its season left behind, and a post Discord
+  refuses stops the queue with signups still open;
+- per returned driver, `signup_notice`, `close_signup` and `arm_deletion` (signup's closing jobs);
+- `close` (a save) writes the one line, and names what a Discard left undone.
+
+A job that fails stops the queue (core specification, "How a change is carried out"). A close a
+member asked for is judged again as it comes up to run: a window closed since, reopened on
+another button, or given a close time is refused, and nothing is closed. A close the bot asked
+for finds a window no longer the one it was asked about no longer due.
 """
 
 from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from datetime import datetime
+from collections.abc import Collection
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.change import (
     AuditRecord,
     PlannedStep,
@@ -38,20 +58,32 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services import standing_posts, track_service
+from leaguebot.core.services.driver_service import write_transition
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
+    StepView,
 )
 from leaguebot.core.services.season_lifecycle_service import (
+    WINDOW_CLOSED_NOTICE,
     WINDOW_OPENS_FROM,
     advance_on_window_open_on,
     live_season_stage,
 )
 from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.signup.services.closing_steps import (
+    ARM_DELETION,
+    CLOSE_SIGNUP,
+    DELETE_BUTTON,
+    POST_CLOSED,
+    SIGNUP_NOTICE,
+    closing_steps,
+    window_close_steps,
+)
 from leaguebot.signup.services.signup_posting import post
 from leaguebot.signup.services.signup_views import SignupButtonView
 
@@ -69,9 +101,42 @@ MODULE_OFF = "⛔ Signup module is not enabled. Use `/module enable signup` firs
 #: What the bot needs on the signup channel to post the Sign Up button.
 NEEDED = "**View Channel**, **Send Messages** and **Embed Links**"
 
+CLOSE = "signup.close"
+RETURN_DRIVERS = "return_drivers"
+CLOSE_LINE = "close"
+#: How a close is audited, by who asked for it.
+AUDIT_CLOSE = "SIGNUP_CLOSE"
+AUDIT_FORCE_CLOSE = "SIGNUP_FORCE_CLOSE"
+AUDIT_AUTO_CLOSE = "SIGNUP_AUTO_CLOSE"
+#: What a close the bot ran is headed with, by its cause.
+AUTO_CLOSE_HEAD = "🔒 Signups closed automatically at their set time"
+#: What a close that failed a step leaves, one sentence each, for the reply and the line.
+BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup channel."
+NOT_RETURNED = "The drivers still signing up could not be returned to Not Signed Up."
+
 __all__ = [
-    "ARM_CLOSE", "DELETE_CLOSED", "OPEN", "POST_INFO", "window_open_change",
+    "ARM_CLOSE", "AUDIT_AUTO_CLOSE", "AUDIT_CLOSE", "AUDIT_FORCE_CLOSE", "CLOSE", "CLOSE_LINE",
+    "DELETE_CLOSED", "OPEN", "POST_INFO", "RETURN_DRIVERS", "armed_close_refusal",
+    "window_close_change", "window_open_change",
 ]
+
+
+def armed_close_refusal(close_at: str) -> str:
+    """Why signups may not be closed by hand while a close time is armed, without its mark.
+
+    It states the armed time and names the command that clears it, as the signup
+    specification requires of ``/signup close``. ``/signup close`` and the Confirm Close it
+    asks with both refuse with it, so the two cannot word it differently.
+    """
+    armed = datetime.fromisoformat(close_at)
+    if armed.tzinfo is None:
+        armed = armed.replace(tzinfo=timezone.utc)
+    return (
+        f"Signups will auto-close at {discord.utils.format_dt(armed, 'F')} "
+        f"({discord.utils.format_dt(armed, 'R')}). "
+        "Clear the timer with `/signup close-time cancel` if you need to close manually, or "
+        "move it with `/signup close-time modify`."
+    )
 
 
 def _stamp(moment: datetime, fmt: Literal["F", "R"] = "F") -> str:
@@ -287,5 +352,227 @@ def window_open_change(
         check=check,
         key=lambda payload: OPEN,
         doing=lambda payload: "Opening signups",
+        outcome=outcome,
+    )
+
+
+def _discarded(view: StepView | None) -> bool:
+    return view is not None and "discarded" in (view.result or {})
+
+
+def _failed_steps(steps: tuple[StepView, ...]) -> list[str]:
+    """One plain sentence for each job of a close a league admin discarded, in the order they ran."""
+    failed: list[str] = []
+    for view in steps:
+        if not _discarded(view):
+            continue
+        who = f"<@{view.payload.get('user_id')}>"
+        if view.name == RETURN_DRIVERS:
+            failed.append(NOT_RETURNED)
+        elif view.name == DELETE_BUTTON:
+            failed.append(BUTTON_NOT_REMOVED)
+        elif view.name == SIGNUP_NOTICE:
+            failed.append(f"{who} was not told signups had closed.")
+        elif view.name == CLOSE_SIGNUP:
+            failed.append(
+                f"{who}'s signup channel could not be locked and will not delete itself: "
+                "delete it by hand."
+            )
+        elif view.name == ARM_DELETION:
+            failed.append(f"{who}'s signup channel will not delete itself: delete it by hand.")
+    return failed
+
+
+def _returned(steps: tuple[StepView, ...]) -> int:
+    """How many drivers the close returned to Not Signed Up."""
+    for view in steps:
+        if view.name == RETURN_DRIVERS and not _discarded(view):
+            return len((view.result or {}).get("returned", ()))
+    return 0
+
+
+def _window_closed(steps: tuple[StepView, ...]) -> bool:
+    """Whether the window was recorded closed: its post stood, was not discarded and ran."""
+    return any(
+        view.name == POST_CLOSED and view.done and not _discarded(view) for view in steps
+    ) and not any(view.name == RETURN_DRIVERS and _discarded(view) for view in steps)
+
+
+def window_close_change(
+    *,
+    signup_module_service: Callable[[], "SignupModuleService"],
+    returned_by_close: Collection[DriverState],
+    cancel_timers: Callable[[str], None],
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, str, datetime], None],
+) -> ChangeType:
+    """The `signup.close` change type, for the builder to register.
+
+    The payload is ``cause`` (``"command"`` for a member's, ``"timer"`` or ``"restart"`` for the
+    bot's), ``window`` (the Sign Up button message of the window asked about), ``confirmed``
+    (whether a manager was shown the drivers it returns and pressed Confirm Close),
+    ``audit_action`` and, for the bot's, ``close_at`` (the time it was set to close). The window
+    is judged again as the change comes up to run. *signup_module_service* is a getter, so that the
+    service is the one the bot holds when the job runs. *returned_by_close* are the states it turns
+    away, *cancel_timers* removes one driver's inactivity and deletion timers, and *now* and
+    *arm_once* are the queue's clock and the scheduler service's one-off timer.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        payload = ctx.payload
+        command = payload["cause"] == "command"
+        cfg = await signup_module_service().get_config()
+        if cfg is None or not cfg.signups_open:
+            if command:
+                return Verdict.refuse("⛔ Signups are no longer open. Nothing was closed.")
+            return Verdict.not_due("the signup window is not open")
+        if cfg.signup_button_message_id != payload["window"]:
+            if command:
+                return Verdict.refuse(
+                    "⛔ Signups were reopened since this was asked. Nothing was closed. "
+                    "Run `/signup close` again."
+                )
+            return Verdict.not_due("the signup window is not the one this close was asked about")
+        if command and cfg.close_at is not None:
+            return Verdict.refuse(f"⛔ {armed_close_refusal(cfg.close_at)}")
+        return Verdict.go()
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (
+            PlannedStep(RETURN_DRIVERS, {"audit_action": payload["audit_action"]}),
+            PlannedStep(CLOSE_LINE),
+        )
+
+    async def return_drivers(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        states = [state.value for state in returned_by_close]
+        cursor = await db.execute(
+            "SELECT id, discord_user_id, current_state FROM driver_profiles "
+            f"WHERE current_state IN ({','.join('?' for _ in states)}) ORDER BY id",  # noqa: S608
+            states,
+        )
+        rows = await cursor.fetchall()
+        cursor = await db.execute(
+            "SELECT signup_channel_id, signup_button_message_id FROM signup_module_config WHERE id = 1"
+        )
+        config = await cursor.fetchone()
+        channel_id = None if config is None else config["signup_channel_id"]
+        button_id = None if config is None else config["signup_button_message_id"]
+        returned: list[str] = []
+        told: list[PlannedStep] = []
+        for row in rows:
+            account = str(row["discord_user_id"])
+            try:
+                await write_transition(
+                    db, int(row["id"]), DriverState(row["current_state"]), DriverState.NOT_SIGNED_UP
+                )
+            except ValueError:
+                continue  # the state machine's refusal: the driver moved on since they were read
+            await signup_module_service().end_wizard_on(db, account)
+            returned.append(account)
+            cursor = await db.execute(
+                "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+                (account,),
+            )
+            wizard = await cursor.fetchone()
+            if wizard is not None and wizard["signup_channel_id"] is not None:
+                shared = {"user_id": account, "channel_id": int(wizard["signup_channel_id"])}
+                told += [
+                    PlannedStep(SIGNUP_NOTICE, {**shared, "notice": WINDOW_CLOSED_NOTICE}),
+                    PlannedStep(CLOSE_SIGNUP, shared),
+                    PlannedStep(ARM_DELETION, shared),
+                ]
+        planned: list[PlannedStep] = []
+        if button_id is not None and channel_id is not None:
+            planned.append(PlannedStep(DELETE_BUTTON, {
+                "channel_id": int(channel_id), "message_id": int(button_id),
+                "what": "Sign Up button", "division_name": "signups",
+            }))
+        planned.append(PlannedStep(POST_CLOSED, {
+            "channel_id": None if channel_id is None else int(channel_id),
+            "audit_action": str(ctx.step_payload["audit_action"]), "advance_season": True,
+        }))
+        for account in returned:
+            cancel_timers(account)
+        return StepResult(result={"returned": returned}, then=(*planned, *told))
+
+    def _head(ctx: StepContext) -> str:
+        """What the line is headed with: the member who ran the close, or the cause of the bot's."""
+        payload = ctx.payload
+        if payload["cause"] == "command":
+            return f"{ctx.named} | /signup close"
+        head = AUTO_CLOSE_HEAD
+        if payload.get("close_at"):
+            armed = datetime.fromisoformat(str(payload["close_at"]))
+            if armed.tzinfo is None:
+                armed = armed.replace(tzinfo=timezone.utc)
+            head += f" ({discord.utils.format_dt(armed, 'F')})"
+        if payload["cause"] == "restart":
+            head += ", at start-up"
+        return head
+
+    async def close_line(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Write the one line that records the close: what it did, and beneath it each job a
+        league admin discarded."""
+        closed = _window_closed(ctx.steps)
+        head = _head(ctx)
+        command = ctx.payload["cause"] == "command"
+        if command:
+            head += " | Success" if closed else " | Incomplete"
+        elif not closed:
+            head = f"System | Signups auto-close | Incomplete ({head})"
+        failed = _failed_steps(ctx.steps)
+        if not closed and not any(step == NOT_RETURNED for step in failed):
+            failed.append(
+                "The signup window could not be closed. Close it with `/signup close`."
+            )
+        line = (
+            f"{head}\n  drivers_returned_to_not_signed_up: {_returned(ctx.steps)}"
+            + "".join(f"\n  failed_step: {step}" for step in failed)
+        )
+        return StepResult(result={}, lines=(line,))
+
+    def outcome(ctx: OutcomeContext) -> str:
+        failed = _failed_steps(ctx.steps)
+        if not _window_closed(ctx.steps):
+            text = (
+                "⚠️ Signups were not closed: a job of the close could not be done and was "
+                "discarded. Run `/signup close` again."
+            )
+            return text + "".join(f"\n• {step}" for step in failed)
+        text = "✅ Signups closed."
+        if ctx.payload["confirmed"]:
+            text += (
+                f" {_returned(ctx.steps)} driver(s) still signing up were returned to "
+                "Not Signed Up."
+            )
+        if failed:
+            text += (
+                "\n⚠️ The window is closed, but not every step succeeded:\n"
+                + "\n".join(f"• {step}" for step in failed)
+            )
+        return text
+
+    async def describe_return(_ctx: StepContext) -> str:
+        return "returning the drivers still signing up to Not Signed Up"
+
+    async def describe_line(_ctx: StepContext) -> str:
+        return "recording the close of the signup window"
+
+    steps: dict[str, Step] = {
+        **closing_steps(now=now, arm_once=arm_once),
+        **window_close_steps(signup_module_service=signup_module_service, now=now),
+        RETURN_DRIVERS: Step(
+            RETURN_DRIVERS, StepKind.SAVE, return_drivers, describe=describe_return
+        ),
+        CLOSE_LINE: Step(CLOSE_LINE, StepKind.SAVE, close_line, describe=describe_line),
+    }
+    return ChangeType(
+        kind=CLOSE,
+        opening=(),
+        plan=plan,
+        steps=steps,
+        check=check,
+        key=lambda payload: CLOSE,
+        doing=lambda payload: "Closing signups",
         outcome=outcome,
     )

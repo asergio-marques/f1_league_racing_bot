@@ -150,10 +150,6 @@ async def _audit_types(db_path) -> list[str]:
 # ── The close, on the league's queue ──────────────────────────────────────
 
 CLOSE_KIND = "signup.close"
-NO_CLOSE_CHANGE = (
-    "#439: /signup close closes the window by execute_forced_close off the queue, asking no "
-    "signup.close change"
-)
 
 
 async def _close_league(tmp_path, *, close_at: str | None) -> Any:
@@ -231,7 +227,6 @@ class TestTheCloseRefusal:
         assert "`/signup close-time cancel`" in _reply(interaction)
         assert await _close_changes(league) == []
 
-    @pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
     async def test_cancel_unblocks_a_manual_close(self, tmp_path):
         """The whole point of the fix: after a cancel, closing by hand actually closes. The
         window is open with its close time armed; manager 77 cancels the close time, then runs

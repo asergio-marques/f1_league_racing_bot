@@ -69,11 +69,6 @@ from tests.support.review_league import channel as recording_channel
 from tests.support.season_league import SIGNUP_CHANNEL_BASE, setup_league, signing_up
 from tests.support.undecorate import undecorate
 
-#: Why a test of the queue's form of a command fails until the build puts it on the queue.
-NO_CLOSE_CHANGE = (
-    "#439: /signup close and its Confirm Close close the window by execute_forced_close off "
-    "the queue, asking no signup.close change"
-)
 CHANNEL_ID = 777001
 BASE_ROLE_ID = 555001
 DRIVER_ROLE_ID = 555002
@@ -736,7 +731,6 @@ async def _league_close(league):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_an_empty_window_closes_without_asking(tmp_path):
     """Nobody is mid-signup, so there is nothing to confirm: manager 77's `/signup close` asks
     the close of the queue at once, and once the queue has run the window is closed and his
@@ -1003,7 +997,6 @@ def _pressed(cog):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     """The reply and the log say what the close did, not what the confirmation feared. The log
     used to record `in_progress_drivers_discarded: true` whoever was waiting (issue #128).
