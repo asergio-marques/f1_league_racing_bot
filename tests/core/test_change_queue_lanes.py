@@ -913,6 +913,36 @@ async def test_a_conversation_s_waiting_change_is_dropped_once_the_league_has_en
     assert await _open_changes(env) == []
 
 
+async def test_a_turn_whose_check_fails_after_the_league_ended_its_conversation_is_dropped(env):
+    """The league is asked to end the conversation in channel 7, and a member's turn there is
+    asked behind it, a turn whose check refuses once the conversation is over. When the turn's
+    turn comes it is dropped as no longer due, with a line saying so, and not refused: no refusal
+    line, no answer written, nothing left open."""
+    await _conversations(env)
+    api = _api()
+
+    async def _check(_ctx):
+        return api.Verdict.go() if await _is_open(env, 7) else api.Verdict.refuse("⚠️ Gone.")
+
+    kind = dataclasses.replace(
+        _type("turn", steps=[_saving("answer", "Max")], lane=_in_channel, check=_check),
+        conversation_open=_still_running,
+    )
+    _queue(env, _ender(), kind)
+
+    await _ask(env, "end", {"channel": 7})
+    await _ask(env, "turn", {"channel": 7})
+    await run_queue(env.bot)
+
+    assert await _answers(env) == []
+    assert [row["state"] for row in await change_rows(env.db_path) if row["kind"] == "turn"] == [
+        "DROPPED"
+    ]
+    assert any("no longer due" in line for line in env.bot.log_channel.sent)
+    assert not any("Gone" in line for line in env.bot.log_channel.sent)
+    assert await _open_changes(env) == []
+
+
 async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_notice(env):
     """A turn in channel 7 stops at a post Discord refuses. The league then ends that conversation,
     and Discord would now take the post. The bot carries on past the job's scheduled tries, an

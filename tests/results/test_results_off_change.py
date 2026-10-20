@@ -1144,13 +1144,7 @@ async def test_an_open_amendment_is_forgotten_with_the_season_and_its_channel_ta
 # their rows with the season's; each lane's waiting turns are then found no longer due when they
 # come, and dropped.
 
-NO_RESULTS_OFF_ENDS_THE_CONVERSATIONS = (
-    "#439: a submission and an amendment have no lane of their own, their pastes taken off the "
-    "change queue, so turning results off leaves no turn of theirs to find no longer due"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=NO_RESULTS_OFF_ENDS_THE_CONVERSATIONS)
 async def test_turning_results_off_ends_every_submission_and_amendment(tmp_path):
     """Division 1's round 1 waits for its results, its submission open in channel 8000; its
     round 2 is final and being amended in channel 9100. The admin confirms `/module disable
