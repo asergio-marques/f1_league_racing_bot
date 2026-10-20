@@ -373,11 +373,6 @@ async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_a
 # What a press does once it passes the guard, on the change queue
 # ---------------------------------------------------------------------------
 
-NO_BUTTON_TURN = (
-    "#439: the wizard's buttons are not handed the change queue, and a button answer is saved "
-    "at once off the queue by the wizard service, with no signup.answer change"
-)
-
 #: Every view that offers Cancel Signup, and the button on it.
 CANCELS = [
     ("WithdrawButtonView", "withdraw_button"),
@@ -445,7 +440,6 @@ def _one_refusal(league: SeasonLeague, label: str, reason: str) -> None:
     assert reason in lines[0], lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 @pytest.mark.parametrize(
     "button,platform",
     [("steam", "Steam"), ("ea", "EA"), ("xbox", "Xbox"), ("playstation", "PlayStation")],
@@ -464,7 +458,6 @@ async def test_each_platform_button_reports_its_own_platform(tmp_path, button, p
     assert (await _draft(league))["platform"] == platform
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 async def test_a_view_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """The view is re-registered at start with no stored driver — the process that knew has
     gone — and only the change queue, so the owner is found by looking the wizard up by
@@ -478,7 +471,6 @@ async def test_a_view_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     assert (await _draft(league))["platform"] == "Steam"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 @pytest.mark.parametrize(
     "button,driver_type",
     [("full_time", "Full-Time Driver"), ("reserve", "Reserve Driver")],
@@ -495,7 +487,6 @@ async def test_each_driver_type_button_reports_its_own_type(tmp_path, button, dr
     assert (await _draft(league))["driver_type"] == driver_type
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 async def test_no_preference_finishes_the_team_step(tmp_path):
     """Kimi, at the team question with no picks, presses No Preference; once the queue runs his
     wizard has moved on to the teammate question."""
@@ -507,7 +498,6 @@ async def test_no_preference_finishes_the_team_step(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 async def test_no_preference_answers_the_teammate_question(tmp_path):
     """Kimi, at the teammate question, presses No Preference: the press asks signup.answer on
     the lane of his signup channel, and once the queue runs his wizard has moved past the
@@ -539,7 +529,6 @@ async def test_cancelling_from_any_step_withdraws_the_signup(tmp_path, view_name
     assert await _driver_state(league) == "NOT_SIGNED_UP"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_TURN)
 @pytest.mark.parametrize(
     "view_name, button, label",
     [

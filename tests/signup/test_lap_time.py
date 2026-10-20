@@ -16,12 +16,6 @@ from types import SimpleNamespace
 
 import pytest
 
-NO_JUDGE_ANSWER = (
-    "#439: a typed lap time is judged inside the wizard service's handler, which saves it or "
-    "posts its refusal at once; there is no pure judge_answer giving the answers to save or the "
-    "refusal"
-)
-
 
 def _judge(raw: str):
     """A wizard asking for its one Time Trial lap (track 01), no screenshot asked and nothing
@@ -52,7 +46,6 @@ def _judge(raw: str):
     return judge_answer(wizard, SimpleNamespace(content=raw, attachments=[]))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
     "typed, stored",
     [
@@ -71,7 +64,6 @@ def test_a_lap_time_in_the_strict_form_is_stored_as_m_ss_mmm(typed, stored):
     assert judged.answers["lap_times"] == {"01": stored}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
     "typed",
     [

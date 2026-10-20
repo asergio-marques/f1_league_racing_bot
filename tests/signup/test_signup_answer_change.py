@@ -67,21 +67,6 @@ ANSWERED_TO_NOTES = {
     "lap_times": {},
 }
 
-NO_ANSWER_CHANGE = (
-    "#439: a typed signup answer is judged, saved and followed by the next question at once off "
-    "the queue by the wizard service, with no ⏳ mark and no signup.answer turn on the lane of "
-    "the driver's signup channel"
-)
-NO_BUTTON_ANSWER_CHANGE = (
-    "#439: the wizard's buttons are not handed the change queue, and a button answer is saved "
-    "and the next question posted at once off the queue, with no signup.answer change"
-)
-NO_SUBMIT_CHANGE = (
-    "#439: the last signup answer commits the signup and posts the review panel at once off the "
-    "queue, with no signup.answer turn handing signup.submit to the league and no signup.panel "
-    "asked back on the driver's lane"
-)
-
 
 async def _league(tmp_path: Any, *, state: str = "COLLECTING_NATIONALITY",
                   draft: dict[str, Any] | None = None,
@@ -217,7 +202,6 @@ def _revoked(league: SeasonLeague) -> bool:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_typed_answer_is_marked_and_saved_with_the_next_question_when_its_turn_comes(
     tmp_path,
 ):
@@ -243,7 +227,6 @@ async def test_a_typed_answer_is_marked_and_saved_with_the_next_question_when_it
     assert MARK not in message.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_typed_answer_while_its_turn_waits_is_turned_away_with_a_note_and_a_line(
     tmp_path,
 ):
@@ -266,7 +249,6 @@ async def test_a_typed_answer_while_its_turn_waits_is_turned_away_with_a_note_an
     assert (await _draft(league))["nationality"] == "British"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_typed_answer_refused_is_answered_by_its_job_and_recorded(tmp_path):
     """Kimi types "Klingon" at the nationality question. Nothing is posted at once. When the
     queue runs, the job answers in his channel that the nationality is invalid, the refusal is
@@ -287,7 +269,6 @@ async def test_a_typed_answer_refused_is_answered_by_its_job_and_recorded(tmp_pa
     assert MARK not in message.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_typed_answer_to_a_question_the_wizard_has_moved_past_is_refused_naming_the_step(
     tmp_path,
 ):
@@ -310,7 +291,6 @@ async def test_a_typed_answer_to_a_question_the_wizard_has_moved_past_is_refused
     assert "nationality" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_refused_next_question_stops_the_queue_with_the_answer_saved(tmp_path):
     """Kimi types "British", and Discord refuses every post in his channel. When the queue runs
     his nationality is saved and his wizard moves to the platform question, but the turns in his
@@ -332,7 +312,6 @@ async def test_a_refused_next_question_stops_the_queue_with_the_answer_saved(tmp
     assert MARK in message.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_button_only_step_revokes_typing_in_the_job_that_posts_it(tmp_path):
     """Kimi types "British"; the next question, his platform, is answered by buttons alone. At
     once his typing is left as it is. When the queue runs, the `show_next` job revokes his typing
@@ -354,7 +333,6 @@ async def test_a_button_only_step_revokes_typing_in_the_job_that_posts_it(tmp_pa
     assert not any("permission" in name or "typing" in name for name in names)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_an_answer_is_taken_while_the_league_is_stopped(tmp_path):
     """The league lane is stopped at a job Discord refuses. Kimi types "British": his answer runs
     on his own lane regardless. His nationality is saved and the platform question posted, and
@@ -372,7 +350,6 @@ async def test_an_answer_is_taken_while_the_league_is_stopped(tmp_path):
     assert await stopped_job(league.db_path, "league") is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_CHANGE)
 async def test_a_driver_s_answer_writes_only_the_wizard_row(tmp_path):
     """Kimi types "British" and the queue runs. His wizard's row has changed; his driver profile
     and the signup records are exactly as they were (decision 22: every change of a driver's
@@ -395,7 +372,6 @@ async def test_a_driver_s_answer_writes_only_the_wizard_row(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_ANSWER_CHANGE)
 async def test_a_wizard_button_answer_is_a_turn_acknowledged_privately_and_updated(tmp_path):
     """Kimi's wizard asks his platform, and he presses Steam. At once he is answered privately
     that it is under way, and nothing is saved. When the queue runs his platform is saved as
@@ -416,7 +392,6 @@ async def test_a_wizard_button_answer_is_a_turn_acknowledged_privately_and_updat
     assert updated_reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BUTTON_ANSWER_CHANGE)
 async def test_a_button_answer_s_line_records_the_answer(tmp_path):
     """Kimi presses Steam at the platform question and the queue runs. A line in the log channel
     records his answer, "Platform: Steam"."""
@@ -433,7 +408,6 @@ async def test_a_button_answer_s_line_records_the_answer(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_CHANGE)
 async def test_the_last_answer_commits_the_record_and_posts_the_review_panel_as_jobs(tmp_path):
     """Kimi has answered every question but his notes, and types "Happy to race anywhere". At
     once nothing is saved and no panel posted. When the queue runs his signup is saved with
@@ -462,7 +436,6 @@ async def test_the_last_answer_commits_the_record_and_posts_the_review_panel_as_
     assert MARK not in message.marks
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_CHANGE)
 async def test_the_last_answer_hands_the_submission_to_the_league_and_the_panel_comes_back_on_the_lane(
     tmp_path,
 ):
@@ -486,7 +459,6 @@ async def test_the_last_answer_hands_the_submission_to_the_league_and_the_panel_
     assert panel_jobs[-1] == "clear_mark"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_CHANGE)
 async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel(tmp_path):
     """A league manager asked Kimi to correct his platform ID: he is Pending Driver Correction,
     his signup already saved with "kimi7", his wizard asking the platform ID again. He types
@@ -517,11 +489,6 @@ async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel
     assert len(_panels(league)) == 1
 
 
-NO_JUDGE_ANSWER = (
-    "#439: a typed signup answer is judged inside the wizard service's handlers, which post their "
-    "refusal at once; there is no pure judge_answer for signup.answer's check to call"
-)
-
 #: For each step, what Kimi types, and the refusal and step name the wizard gives him today.
 _REFUSED = [
     pytest.param("COLLECTING_NATIONALITY", "Atlantis", "Nationality",
@@ -547,7 +514,6 @@ _REFUSED = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(("state", "typed", "step", "refusal"), _REFUSED)
 def test_judge_answer_holds_each_step_s_rules(state, typed, step, refusal):
     """Kimi's wizard is at *state*: Time Trial times, one track to time, no screenshot asked,

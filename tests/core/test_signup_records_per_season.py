@@ -13,14 +13,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.signup.models.signup_module import SignupRecord
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 
-#: A signup's record and its wizard are saved, approved and deleted only inside a save the caller
-#: holds: the signup jobs' records (#439, slice 6b, C83, C84, C88); the committing forms go (C88).
-NO_SIGNUP_SAVES_ON = (
-    "#439: a signup's record and its wizard are saved, approved and deleted only by committing "
-    "forms that hold their own connection, with no save_record_on, save_wizard_on, "
-    "mark_approved_on or delete_wizard_on taking the caller's save"
-)
-
 
 async def _save_record(svc, db_path, record):
     """Save *record* in a save of the test's own, as the submission's record does; gives its id."""
@@ -32,12 +24,6 @@ async def _save_record(svc, db_path, record):
 
 SERVER_ID = 22050
 USER = "4242"
-
-#: The window is opened and closed only inside a save the caller holds (#439, slice 6b, C66, C68).
-NO_WINDOW_ON = (
-    "#439: the signup window is opened and closed only by committing forms that hold their "
-    "own connection, with no set_window_open_on or set_window_closed_on taking the caller's save"
-)
 
 
 def _record(platform: str = "Steam") -> SignupRecord:
@@ -93,7 +79,6 @@ async def _archive(db_path, season_id: int):
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
 async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -111,7 +96,6 @@ async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_pa
     assert stored.window_id == window_id
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -124,7 +108,6 @@ async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     assert (await svc.get_record(USER)).platform == "PSN"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_new_season_does_not_overwrite_the_last(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
@@ -140,7 +123,6 @@ async def test_a_new_season_does_not_overwrite_the_last(db_path):
     assert (await svc.get_record(USER)).platform == "Xbox"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_season_deleted_takes_its_signups_with_it(db_path):
     """What an aborted season asks for: it leaves nothing, its signups included."""
     svc = SignupModuleService(db_path)
@@ -154,7 +136,6 @@ async def test_a_season_deleted_takes_its_signups_with_it(db_path):
     assert await svc.get_record(USER) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     """Signups are keyed by the Discord account, and survive the driver whatever becomes of
     the profile — deleted at the season's end where they never raced."""

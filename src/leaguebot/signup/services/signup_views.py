@@ -474,6 +474,37 @@ async def _withdraw(
     )
 
 
+async def _answer(
+    interaction: discord.Interaction,
+    queue: ChangeQueue | None,
+    owner_id: str,
+    label: str,
+    button: str,
+    value: str | None,
+) -> None:
+    """Ask the queue to take the answer a wizard button names (`signup.answer`): the press is
+    acknowledged privately and the acknowledgement updated with what became of it. The answer is
+    judged, by the change's check, when the queue reaches it: a step already answered, a team
+    already picked, and a wizard gone are refused then, the line naming the button and the
+    driver's signup wizard. *queue* is the change queue the view was handed when it was built;
+    *button* is the kind `wizard_answers.judge_button` knows and *value* what the button names."""
+    if queue is None:
+        raise RuntimeError("a signup view was built with no change queue to ask")
+    named = f"the “{label}” button of {_wizard_owner(interaction, owner_id)} signup wizard"
+    await queue.ask(
+        "signup.answer",
+        {
+            "user_id": owner_id,
+            "channel_id": channel_id_of(interaction),
+            "button": button,
+            "value": value,
+        },
+        interaction=interaction,
+        what=named,
+        refusal_what=named,
+    )
+
+
 #: The states a driver may stand in when they press Sign Up having already got a profile,
 #: split by the refusal each earns. Between them they cover every state that is not
 #: ``NOT_SIGNED_UP``, which is what lets the callback below use a bare ``else`` for the
@@ -595,10 +626,7 @@ class NoNotesButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "No Notes")
             return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_no_notes(_user_id, interaction.guild)
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, "No Notes", f"⛔ {reason}")
+        await _answer(interaction, self._queue, _user_id, "No Notes", "notes", None)
 
     @discord.ui.button(
         label="Cancel Signup",
@@ -636,12 +664,7 @@ class PlatformButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, platform)
             return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_platform_button(
-            _user_id, platform, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, platform, f"⛔ {reason}")
+        await _answer(interaction, self._queue, _user_id, platform, "platform", platform)
 
     @discord.ui.button(label="Steam", style=discord.ButtonStyle.secondary, custom_id="plat_steam")
     async def steam(self, i: discord.Interaction, b: discord.ui.Button) -> None:
@@ -689,12 +712,7 @@ class DriverTypeButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, driver_type)
             return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_driver_type_button(
-            _user_id, driver_type, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, driver_type, f"⛔ {reason}")
+        await _answer(interaction, self._queue, _user_id, driver_type, "driver_type", driver_type)
 
     @discord.ui.button(label="Full-Time Driver", style=discord.ButtonStyle.primary, custom_id="dtype_fulltime")
     async def full_time(self, i: discord.Interaction, b: discord.ui.Button) -> None:
@@ -798,12 +816,7 @@ class PreferredTeamsButtonView(LeagueView):
                     interaction, _user_id, label, "⛔ That option is no longer available."
                 )
                 return
-            await interaction.response.defer(ephemeral=True)
-            reason = await _bot.wizard_service.handle_preferred_teams_button(
-                _user_id, named, interaction.guild
-            )
-            if reason is not None:
-                await _refuse_wizard_button(interaction, _user_id, label, f"⛔ {reason}")
+            await _answer(interaction, self._queue, _user_id, label, "team", named)
         return callback
 
     async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
@@ -813,12 +826,7 @@ class PreferredTeamsButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "No Preference")
             return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_preferred_teams_button(
-            _user_id, None, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, "No Preference", f"⛔ {reason}")
+        await _answer(interaction, self._queue, _user_id, "No Preference", "team", None)
 
     async def _cancel_callback(self, interaction: discord.Interaction) -> None:
         _bot, _user_id = await _resolve_view_context(
@@ -850,12 +858,7 @@ class NoPreferenceTeammateView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "No Preference")
             return
-        await interaction.response.defer(ephemeral=True)
-        reason = await _bot.wizard_service.handle_no_preference_teammate(
-            _user_id, interaction.guild
-        )
-        if reason is not None:
-            await _refuse_wizard_button(interaction, _user_id, "No Preference", f"⛔ {reason}")
+        await _answer(interaction, self._queue, _user_id, "No Preference", "teammate", None)
 
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:

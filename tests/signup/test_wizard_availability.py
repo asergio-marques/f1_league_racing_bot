@@ -16,12 +16,6 @@ from types import SimpleNamespace
 
 import pytest
 
-NO_JUDGE_ANSWER = (
-    "#439: a typed availability answer is judged inside the wizard service's handler, which "
-    "saves it or posts its refusal at once; there is no pure judge_answer giving the answers "
-    "to save or the refusal"
-)
-
 
 def _typed(content: str):
     """A message the driver typed: its text, and no attachment."""
@@ -85,7 +79,6 @@ def _judge(wizard, content: str):
 
 
 class TestAvailabilityConversion:
-    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
     def test_typed_display_numbers_stored_as_durable_ids(self, wizard):
         from leaguebot.signup.services.wizard_changes import Accepted
 
@@ -94,12 +87,10 @@ class TestAvailabilityConversion:
         assert judged.answers["availability_slot_ids"] == ["Fri_21_00"]
         assert wizard.draft_answers == {}, "judging saves nothing: its job does"
 
-    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
     def test_multiple_numbers_converted_in_the_order_given(self, wizard):
         judged = _judge(wizard, "3, 1")
         assert judged.answers["availability_slot_ids"] == ["Fri_21_00", "Mon_19_00"]
 
-    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
     def test_no_display_ordinal_is_ever_stored(self, wizard):
         """The stored answer must not be the position — that is the whole defect."""
         stored = _judge(wizard, "1 2 3").answers["availability_slot_ids"]
@@ -108,7 +99,6 @@ class TestAvailabilityConversion:
 
 
 class TestAvailabilityRejection:
-    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
     def test_unknown_display_number_rejected_quoting_display_numbers(self, wizard):
         from leaguebot.signup.services.wizard_changes import Refused
 
@@ -119,7 +109,6 @@ class TestAvailabilityRejection:
         assert "_" not in judged.reply, "the storage form must not leak into a driver's reply"
         assert wizard.draft_answers == {}
 
-    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
     def test_non_numeric_rejected(self, wizard):
         from leaguebot.signup.services.wizard_changes import Refused
 
@@ -127,7 +116,6 @@ class TestAvailabilityRejection:
         assert isinstance(judged, Refused)
         assert "numbers" in judged.reply
 
-    @pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
     def test_empty_selection_rejected(self, wizard):
         from leaguebot.signup.services.wizard_changes import Refused
 

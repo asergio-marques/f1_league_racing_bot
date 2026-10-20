@@ -31,12 +31,6 @@ from types import SimpleNamespace
 
 import pytest
 
-NO_JUDGE_ANSWER = (
-    "#439: a typed signup answer is judged inside the wizard service's handlers, which save it "
-    "or post its refusal at once; there is no pure judge_answer giving the answers to save or "
-    "the refusal and its step"
-)
-
 # The league's teams as the wizard froze them at Sign Up: the full names a driver is offered,
 # and each team's shorthand, which a league manager types and a driver may type too (#381).
 FULL_NAMES = ["Alpha Racing", "Beta Racing", "Gamma Racing", "Delta Racing"]
@@ -124,7 +118,6 @@ def _refused(judged) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_nationality_is_stored_as_its_adjective(wizard):
     """A driver may type either the country or the adjective; one form is stored, so the
     signup list does not read as a mixture of "Germany" and "German"."""
@@ -132,7 +125,6 @@ def test_a_nationality_is_stored_as_its_adjective(wizard):
     assert wizard.draft_answers == {}, "judging saves nothing: its job does"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_an_unknown_nationality_is_refused_with_examples(wizard):
     assert "British" in _refused(_judge(wizard, "NATIONALITY", "xyzzy"))
 
@@ -142,7 +134,6 @@ def test_an_unknown_nationality_is_refused_with_examples(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize("typed", ["Steam", "steam", "STEAM"])
 def test_a_platform_is_matched_regardless_of_case(wizard, typed):
     """Stored in the bot's own casing, so the signup list is consistent however it was
@@ -150,7 +141,6 @@ def test_a_platform_is_matched_regardless_of_case(wizard, typed):
     assert _accepted(_judge(wizard, "PLATFORM", typed))["platform"] == "Steam"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_an_unknown_platform_is_refused_listing_the_choices(wizard):
     reply = _refused(_judge(wizard, "PLATFORM", "Dreamcast"))
     for option in ("Steam", "EA", "Xbox", "PlayStation"):
@@ -162,12 +152,10 @@ def test_an_unknown_platform_is_refused_listing_the_choices(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_platform_id_is_stored_trimmed(wizard):
     assert _accepted(_judge(wizard, "PLATFORM_ID", "  lh44  "))["platform_id"] == "lh44"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_an_empty_platform_id_is_refused(wizard):
     """Whitespace only. The ID is how a league finds the driver in-game, so an empty one
     is worse than no answer — it looks answered."""
@@ -179,7 +167,6 @@ def test_an_empty_platform_id_is_refused(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
     "typed,stored",
     [
@@ -193,7 +180,6 @@ def test_a_driver_type_is_matched_regardless_of_case(wizard, typed, stored):
     assert _accepted(_judge(wizard, "DRIVER_TYPE", typed))["driver_type"] == stored
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_an_unknown_driver_type_is_refused_listing_the_choices(wizard):
     reply = _refused(_judge(wizard, "DRIVER_TYPE", "Test Driver"))
     assert "Full-Time Driver" in reply
@@ -205,7 +191,6 @@ def test_an_unknown_driver_type_is_refused_listing_the_choices(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_preferred_teams_are_stored_in_the_order_given(wizard):
     """The order is the driver's preference order, which the placement reads, so it is not
     the bot's to sort."""
@@ -213,34 +198,29 @@ def test_preferred_teams_are_stored_in_the_order_given(wizard):
     assert answers["preferred_teams"] == ["Gamma Racing", "Alpha Racing"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_preferred_teams_may_be_separated_by_newlines(wizard):
     """A driver reading a list of teams will often paste them one per line."""
     answers = _accepted(_judge(wizard, "PREFERRED_TEAMS", "Alpha Racing\nBeta Racing"))
     assert answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_no_preference_for_teams_is_an_answer_not_an_absence(wizard):
     """It gives an empty list to save. Treating it as empty input would ask the question again
     and the driver would have no way past it."""
     assert _accepted(_judge(wizard, "PREFERRED_TEAMS", "no preference"))["preferred_teams"] == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_more_than_three_preferred_teams_is_refused(wizard):
     reply = _refused(_judge(wizard, "PREFERRED_TEAMS", "Alpha, Beta, Gamma, Delta"))
     assert "up to 3" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_an_unknown_team_is_refused_listing_the_valid_ones(wizard):
     reply = _refused(_judge(wizard, "PREFERRED_TEAMS", "Alpha Racing, Ferrari"))
     assert "Ferrari" in reply
     assert "Alpha Racing" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_the_reserve_team_is_not_offered_as_a_preference(wizard):
     """A driver does not choose to be a reserve by naming the Reserve team — that is what
     the driver-type step is for. The wizard froze only the teams a driver may prefer, so the
@@ -248,7 +228,6 @@ def test_the_reserve_team_is_not_offered_as_a_preference(wizard):
     _refused(_judge(wizard, "PREFERRED_TEAMS", "Reserve"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_typed(wizard):
     """A driver is offered the full names and answers with one, but a shorthand they have seen
     a league manager type is taken too, in any case. What is recorded is the full name, which
@@ -262,14 +241,12 @@ def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_typed(wiza
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_preferred_teammate_is_stored_as_typed(wizard):
     """Free text — the driver names someone who may not have signed up yet, so it cannot
     be validated against anything."""
     assert _accepted(_judge(wizard, "PREFERRED_TEAMMATE", "Lewis"))["preferred_teammate"] == "Lewis"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_no_preference_for_a_teammate_stores_nothing(wizard):
     answers = _accepted(_judge(wizard, "PREFERRED_TEAMMATE", "No Preference"))
     assert answers["preferred_teammate"] is None
@@ -280,12 +257,10 @@ def test_no_preference_for_a_teammate_stores_nothing(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_lap_time_is_stored_against_the_current_track(wizard):
     assert _accepted(_judge(wizard, "LAP_TIME", "1:23.456"))["lap_times"] == {"1": "1:23.456"}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_each_lap_time_advances_to_the_next_track(wizard):
     """The index is what decides which track a time belongs to. With the first track timed and
     the wizard moved on to the second, the next time is given against track 2, not track 1,
@@ -298,19 +273,16 @@ def test_each_lap_time_advances_to_the_next_track(wizard):
     assert answers["lap_times"] == {"1": "1:23.456", "2": "1:24.000"}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_malformed_lap_time_is_refused_with_the_format(wizard):
     assert "M:ss.mmm" in _refused(_judge(wizard, "LAP_TIME", "about a minute and a half"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_rejected_lap_time_does_not_move_to_the_next_track(wizard):
     """Otherwise a typo would silently cost the driver that track's time."""
     _refused(_judge(wizard, "LAP_TIME", "nonsense"))
     assert wizard.current_lap_track_index == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_required_screenshot_is_demanded_before_the_time_is_read(wizard):
     """The image check runs first deliberately. A driver who typed a perfectly good time
     with no screenshot must be told about the screenshot — being told their time was
@@ -319,14 +291,12 @@ def test_a_required_screenshot_is_demanded_before_the_time_is_read(wizard):
     assert "screenshot" in _refused(_judge(wizard, "LAP_TIME", "1:23.456"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_lap_time_with_its_screenshot_is_accepted(wizard):
     wizard.config_snapshot.time_image_required = True
     answers = _accepted(_judge(wizard, "LAP_TIME", "1:23.456", attachments=[object()]))
     assert answers["lap_times"] == {"1": "1:23.456"}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_the_rejection_names_the_kind_of_time_being_asked_for(wizard):
     """A league may ask for a time trial or a short qualification, and the driver sets
     them in different places in the game."""
@@ -334,7 +304,6 @@ def test_the_rejection_names_the_kind_of_time_being_asked_for(wizard):
     assert "Short Qualification" in _refused(_judge(wizard, "LAP_TIME", "nonsense"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_lap_time_past_the_last_track_advances_rather_than_storing(wizard):
     """Defensive: the index should never be past the end, and if it is, the answer is
     accepted so the wizard moves on, with no time stored, rather than raising an IndexError
@@ -348,25 +317,21 @@ def test_a_lap_time_past_the_last_track_advances_rather_than_storing(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_note_is_stored(wizard):
     answers = _accepted(_judge(wizard, "NOTES", "Prefer not to race Mondays"))
     assert answers["notes"] == "Prefer not to race Mondays"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_no_notes_stores_nothing(wizard):
     assert _accepted(_judge(wizard, "NOTES", "No Notes"))["notes"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_note_over_fifty_characters_is_refused(wizard):
     """Fifty characters is the limit the signup specification sets for a note, which is
     quoted as text in the review panel and the unassigned list."""
     assert "50 characters" in _refused(_judge(wizard, "NOTES", "x" * 51))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_note_of_exactly_fifty_characters_is_accepted(wizard):
     """Sits the other side of the bound from the test above."""
     assert _accepted(_judge(wizard, "NOTES", "x" * 50))["notes"] == "x" * 50
@@ -377,24 +342,20 @@ def test_a_note_of_exactly_fifty_characters_is_accepted(wizard):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_signup_note_mentioning_everyone_is_refused(wizard):
     """The review panel quotes the note to the channel, where the bot's own permission to
     mention everybody would carry the ping."""
     assert "notes" in _refused(_judge(wizard, "NOTES", "@everyone please check"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_preferred_teammate_given_as_a_role_mention_is_refused(wizard):
     _refused(_judge(wizard, "PREFERRED_TEAMMATE", "<@&987654321098765432>"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_platform_id_holding_here_is_refused(wizard):
     _refused(_judge(wizard, "PLATFORM_ID", "@here"))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 def test_a_signup_note_with_an_emoji_is_kept(wizard):
     """Shown only as text, where an emoji reads as the driver meant it."""
     answers = _accepted(_judge(wizard, "NOTES", "Happy to race \U0001F600"))
@@ -426,7 +387,6 @@ _REFUSED_ANSWERS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
     "state,step,typed,screenshot_required",
     _REFUSED_ANSWERS,
@@ -465,7 +425,6 @@ _ACCEPTED_ANSWERS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_JUDGE_ANSWER)
 @pytest.mark.parametrize(
     "state,typed",
     _ACCEPTED_ANSWERS,

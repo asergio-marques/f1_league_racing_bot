@@ -101,6 +101,9 @@ class ConfigSnapshot:
     selected_track_ids: list[str]
     slots: list[AvailabilitySlot]
     team_names: list[str] = field(default_factory=list)
+    #: Each team's shorthand and the full name it stands for, so that a typed answer may name a
+    #: team either way and is judged without a lookup (#381).
+    team_shorthands: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

@@ -500,6 +500,18 @@ class SignupModuleService:
             return None
         return self._row_to_signup_record(row)
 
+    async def get_record_on(
+        self, db: aiosqlite.Connection, discord_user_id: str
+    ) -> SignupRecord | None:
+        """The driver's latest signup, read on the connection handed (a save's)."""
+        cursor = await db.execute(
+            f"SELECT {self._RECORD_COLUMNS} FROM signup_records WHERE discord_user_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (discord_user_id,),
+        )
+        row = await cursor.fetchone()
+        return None if row is None else self._row_to_signup_record(row)
+
     async def get_records(self, season_id: int) -> list[SignupRecord]:
         """Every signup kept under *season_id*, oldest first."""
         async with get_connection(self._db_path) as db:
@@ -512,7 +524,19 @@ class SignupModuleService:
         return [self._row_to_signup_record(row) for row in rows]
 
     async def save_record(self, record: SignupRecord) -> int:
-        """Store *record*, returning its id.
+        """Store *record*, returning its id, in a save of its own (`save_record_on`'s, committed).
+
+        A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
+        the season and window it names or, where it names none, under the server's active
+        season and that season's latest window. A stored record is updated in place.
+        """
+        async with get_connection(self._db_path) as db:
+            stored = await self.save_record_on(db, record)
+            await db.commit()
+        return stored
+
+    async def save_record_on(self, db: aiosqlite.Connection, record: SignupRecord) -> int:
+        """Store *record* on the connection handed, returning its id; commits nothing.
 
         A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
         the season and window it names or, where it names none, under the server's active
@@ -532,47 +556,44 @@ class SignupModuleService:
             record.notes,
             record.signup_channel_id,
         )
-        async with get_connection(self._db_path) as db:
-            if record.id is not None and record.id > 0:
-                await db.execute(
-                    """
-                    UPDATE signup_records SET
-                        discord_username = ?, server_display_name = ?, nationality = ?,
-                        platform = ?, platform_id = ?, availability_slot_ids = ?,
-                        driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
-                        lap_times_json = ?, notes = ?, signup_channel_id = ?,
-                        updated_at = datetime('now')
-                    WHERE id = ?
-                    """,
-                    (*fields, record.id),
-                )
-                await db.commit()
-                return record.id
-
-            season_id = record.season_id
-            if season_id is None:
-                season_id = await self._live_season_id(db)
-            window_id = record.window_id
-            if window_id is None and season_id is not None:
-                cursor = await db.execute(
-                    "SELECT MAX(id) AS id FROM signup_windows WHERE season_id = ?",
-                    (season_id,),
-                )
-                row = await cursor.fetchone()
-                window_id = row["id"] if row is not None else None
-            cursor = await db.execute(
+        if record.id is not None and record.id > 0:
+            await db.execute(
                 """
-                INSERT INTO signup_records
-                    (season_id, window_id, discord_user_id, discord_username,
-                     server_display_name, nationality, platform, platform_id,
-                     availability_slot_ids, driver_type, preferred_teams,
-                     preferred_teammate, lap_times_json, notes, signup_channel_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE signup_records SET
+                    discord_username = ?, server_display_name = ?, nationality = ?,
+                    platform = ?, platform_id = ?, availability_slot_ids = ?,
+                    driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
+                    lap_times_json = ?, notes = ?, signup_channel_id = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
                 """,
-                (season_id, window_id, record.discord_user_id, *fields),
+                (*fields, record.id),
             )
-            await db.commit()
-            new_id = inserted_id(cursor)
+            return record.id
+
+        season_id = record.season_id
+        if season_id is None:
+            season_id = await self._live_season_id(db)
+        window_id = record.window_id
+        if window_id is None and season_id is not None:
+            cursor = await db.execute(
+                "SELECT MAX(id) AS id FROM signup_windows WHERE season_id = ?",
+                (season_id,),
+            )
+            row = await cursor.fetchone()
+            window_id = row["id"] if row is not None else None
+        cursor = await db.execute(
+            """
+            INSERT INTO signup_records
+                (season_id, window_id, discord_user_id, discord_username,
+                 server_display_name, nationality, platform, platform_id,
+                 availability_slot_ids, driver_type, preferred_teams,
+                 preferred_teammate, lap_times_json, notes, signup_channel_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (season_id, window_id, record.discord_user_id, *fields),
+        )
+        new_id = inserted_id(cursor)
         record.id, record.season_id, record.window_id = new_id, season_id, window_id
         return new_id
 
@@ -616,6 +637,20 @@ class SignupModuleService:
             return None
         return self._row_to_wizard_record(row)
 
+    async def get_wizard_on(
+        self, db: aiosqlite.Connection, discord_user_id: str
+    ) -> SignupWizardRecord | None:
+        """The driver's wizard, read on the connection handed (a save's)."""
+        cursor = await db.execute(
+            "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
+            "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
+            "       last_activity_at "
+            "FROM signup_wizard_records WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
+        row = await cursor.fetchone()
+        return None if row is None else self._row_to_wizard_record(row)
+
     async def get_wizard_by_channel(
         self, channel_id: int
     ) -> SignupWizardRecord | None:
@@ -634,7 +669,7 @@ class SignupModuleService:
         return self._row_to_wizard_record(row)
 
     async def save_wizard(self, wizard: SignupWizardRecord, *, starting: bool = False) -> None:
-        """Save the wizard's record, inserting it or updating the one the driver holds.
+        """Save the wizard's record in a save of its own (`save_wizard_on`'s, committed).
 
         *starting* is the save of a signup just begun (Sign Up pressed). It alone clears any
         closing notice a past close of the window still owes the driver (`end_wizard_on`): a mark
@@ -643,20 +678,27 @@ class SignupModuleService:
         Every other save, a step of the signup, leaves the mark as it is, so that a step saved
         just after a close marked the driver never takes the mark away from that close.
         """
+        async with get_connection(self._db_path) as db:
+            await self.save_wizard_on(db, wizard, starting=starting)
+            await db.commit()
+
+    async def save_wizard_on(
+        self, db: aiosqlite.Connection, wizard: SignupWizardRecord, *, starting: bool = False
+    ) -> None:
+        """Save the wizard's record on the connection handed, inserting it or updating the one
+        the driver holds; commits nothing. *starting* is as in `save_wizard`."""
         snapshot_json = (
             json.dumps(self._snapshot_to_dict(wizard.config_snapshot))
             if wizard.config_snapshot else None
         )
-        async with get_connection(self._db_path) as db:
-            await self.save_wizard_row_on(
-                db, discord_user_id=wizard.discord_user_id,
-                wizard_state=wizard.wizard_state.value,
-                signup_channel_id=wizard.signup_channel_id, snapshot_json=snapshot_json,
-                draft_answers=wizard.draft_answers,
-                current_lap_track_index=wizard.current_lap_track_index,
-                last_activity_at=wizard.last_activity_at, starting=starting,
-            )
-            await db.commit()
+        await self.save_wizard_row_on(
+            db, discord_user_id=wizard.discord_user_id,
+            wizard_state=wizard.wizard_state.value,
+            signup_channel_id=wizard.signup_channel_id, snapshot_json=snapshot_json,
+            draft_answers=wizard.draft_answers,
+            current_lap_track_index=wizard.current_lap_track_index,
+            last_activity_at=wizard.last_activity_at, starting=starting,
+        )
 
     async def save_wizard_row_on(
         self,
@@ -902,6 +944,7 @@ class SignupModuleService:
                 selected_track_ids=d["selected_track_ids"],
                 slots=slots,
                 team_names=d.get("team_names", []),
+                team_shorthands=d.get("team_shorthands", {}),
             )
         return SignupWizardRecord(
             id=row["id"],
@@ -943,6 +986,7 @@ class SignupModuleService:
             "time_image_required": snapshot.time_image_required,
             "selected_track_ids": snapshot.selected_track_ids,
             "team_names": snapshot.team_names,
+            "team_shorthands": snapshot.team_shorthands,
             "slots": [
                 {
                     "id": s.id,

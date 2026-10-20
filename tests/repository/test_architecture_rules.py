@@ -2101,7 +2101,7 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.rekey_wizard"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.save_record"): (2, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_record"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_selected_tracks"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_wizard"): (1, PASS["signup"]),

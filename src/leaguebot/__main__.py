@@ -423,6 +423,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
+    from leaguebot.signup.services.wizard_answers import answer_change, panel_change, submit_change
     from leaguebot.signup.services.wizard_changes import channel_delete_change, end_change, start_change
     from leaguebot.signup.services.closing_steps import (
         DELETE_TIMER,
@@ -569,6 +570,19 @@ def register_change_types(bot: LeagueBot) -> None:
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
+    bot.change_queue.register(
+        answer_change(
+            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        submit_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            cancel_timers=_cancel_wizard_timers(bot),
+        )
+    )
+    bot.change_queue.register(panel_change(signup=lambda: bot.signup_module_service))
     # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
     # the bot.
     bot.scheduler_service.register_timer(

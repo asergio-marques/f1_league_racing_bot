@@ -66,11 +66,6 @@ NO_WIZARD_CHANNEL = 6499
 #: A member who is not Kimi.
 SOMEONE_ELSE = 9999
 
-NO_TEAM_TURN = (
-    "#439: the team buttons are not handed the change queue, and a pick is saved at once off "
-    "the queue by the wizard service, with no signup.answer change"
-)
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -265,7 +260,6 @@ async def test_a_restarted_view_offers_stub_buttons_for_every_slot():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_a_button_records_the_team_its_label_names(tmp_path):
     """Kimi, with no picks yet, presses the second button, labelled Mercedes. At once he is
     answered privately that it is under way and nothing is saved; once the queue runs, Mercedes
@@ -280,7 +274,6 @@ async def test_a_button_records_the_team_its_label_names(tmp_path):
     assert await _picks(league) == ["Mercedes"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_a_press_on_an_earlier_message_records_the_team_its_label_names(tmp_path):
     """Kimi picked Ferrari, scrolled up to the first sub-step's message, where Ferrari,
     Mercedes and McLaren are all still shown, and pressed Mercedes. Once the queue runs his
@@ -294,7 +287,6 @@ async def test_a_press_on_an_earlier_message_records_the_team_its_label_names(tm
     assert await _picks(league) == ["Ferrari", "Mercedes"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorded(tmp_path):
     """Kimi picked Ferrari, scrolled up to the first sub-step's message and pressed Ferrari
     again. The pick is judged when the queue reaches it: Kimi is told "That team has already
@@ -355,7 +347,6 @@ async def test_a_wizard_with_no_snapshot_is_answered(tmp_path):
     assert await _changes(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded(tmp_path):
     """Kimi has moved on to the teammate question and presses a team button left above. The
     pick is judged when the queue reaches it: it changes nothing, Kimi is told "That step has
@@ -371,7 +362,6 @@ async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded
     assert await _picks(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_a_driver_with_no_picks_yet_sees_the_whole_list(tmp_path):
     """Kimi, with no picks, presses the third button: once the queue runs McLaren is his
     pick."""
@@ -411,7 +401,6 @@ async def test_only_the_driver_whose_wizard_it_is_may_press(tmp_path, press):
     assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_after_a_restart_the_owner_is_found_by_channel(tmp_path):
     """The view is re-registered at start with no account, only the change queue, so the
     channel is the only thing tying the buttons to a person: Kimi presses Ferrari on it, the
@@ -443,7 +432,6 @@ async def test_a_restarted_view_in_a_channel_with_no_wizard_refuses(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_no_preference_is_recorded_as_an_answer(tmp_path):
     """Not a skip: Kimi presses No Preference with no picks, and once the queue runs his picks
     are recorded as none and his wizard moves on to the teammate question."""
@@ -456,7 +444,6 @@ async def test_no_preference_is_recorded_as_an_answer(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)
 async def test_no_preference_advances_the_wizard_the_same_way_a_team_does(tmp_path):
     """In two leagues Kimi presses Ferrari in one and No Preference in the other. Each asks the
     same change, signup.answer, on the lane of his signup channel — so a later change to how a
@@ -488,8 +475,8 @@ async def test_cancelling_withdraws_the_signup(tmp_path):
 
 
 @pytest.mark.parametrize("press", [
-    pytest.param("team", marks=pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)),
-    pytest.param("no_preference", marks=pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)),
+    pytest.param("team"),
+    pytest.param("no_preference"),
     "cancel",
 ])
 async def test_every_press_is_acknowledged_privately_as_under_way(tmp_path, press):

@@ -6,14 +6,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 
-#: A signup's record and its wizard are saved, approved and deleted only inside a save the caller
-#: holds: the signup jobs' records (#439, slice 6b, C83, C84, C88); the committing forms go (C88).
-NO_SIGNUP_SAVES_ON = (
-    "#439: a signup's record and its wizard are saved, approved and deleted only by committing "
-    "forms that hold their own connection, with no save_record_on, save_wizard_on, "
-    "mark_approved_on or delete_wizard_on taking the caller's save"
-)
-
 
 async def _delete_wizard(svc, db_path, discord_user_id):
     """Delete the driver's wizard in a save of the test's own, as the channel's deletion does."""
@@ -273,7 +265,6 @@ class TestSnapshotStoresTheDurableIdentity:
         ))
         return svc
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_no_display_ordinal_is_persisted(self, db_path):
         import json
 
@@ -296,7 +287,6 @@ class TestSnapshotStoresTheDurableIdentity:
         ]
         assert all("slot_sequence_id" not in s for s in stored["slots"])
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_display_ordinals_rebuilt_on_read(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
 
@@ -311,7 +301,6 @@ class TestSnapshotStoresTheDurableIdentity:
             "Mon_19_00", "Wed_20_00", "Fri_21_00",
         ]
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_ordinals_rebuilt_chronologically_however_stored(self, db_path):
         """Order in the stored JSON must not decide the numbers a driver was shown."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -430,7 +419,6 @@ def _make_record(user_id: str = "u1") -> "SignupRecord":
 class TestSignupRecordCRUD:
     """T053: SignupRecord save/get/clear lifecycle."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_save_and_get_roundtrip(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
@@ -448,7 +436,6 @@ class TestSignupRecordCRUD:
         svc = SignupModuleService(db_path)
         assert await svc.get_record("ghost") is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_a_second_signup_is_kept_beside_the_first(self, db_path):
         """Records are never overwritten (issue #220): the latest is what a review reads."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -468,7 +455,6 @@ class TestSignupRecordCRUD:
             )
             assert (await cursor.fetchone())["n"] == 2
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_saving_a_stored_record_updates_it_in_place(self, db_path):
         """A correction amends the signup it was asked of."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -505,7 +491,6 @@ def _make_wizard(user_id: str = "w1") -> "SignupWizardRecord":
 class TestSignupWizardRecordCRUD:
     """T053: SignupWizardRecord save/get/delete/get_by_channel lifecycle."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_save_and_get_roundtrip(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         from leaguebot.signup.models.signup_module import WizardState
@@ -523,7 +508,6 @@ class TestSignupWizardRecordCRUD:
         svc = SignupModuleService(db_path)
         assert await svc.get_wizard("ghost") is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_get_by_channel(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
@@ -532,14 +516,12 @@ class TestSignupWizardRecordCRUD:
         assert fetched is not None
         assert fetched.discord_user_id == "w1"
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_get_by_channel_wrong_channel_returns_none(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await _save_wizard(svc, db_path, _make_wizard())
         assert await svc.get_wizard_by_channel(9999) is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_delete_wizard(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
@@ -547,7 +529,6 @@ class TestSignupWizardRecordCRUD:
         await _delete_wizard(svc, db_path, "w1")
         assert await svc.get_wizard("w1") is None
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_get_all_active_wizards_excludes_unengaged(self, db_path):
         from leaguebot.signup.services.signup_module_service import SignupModuleService
         from leaguebot.signup.models.signup_module import SignupWizardRecord, WizardState
@@ -575,7 +556,6 @@ class TestSignupWizardRecordCRUD:
 class TestConfigSnapshotIsolation:
     """T053: config_snapshot in wizard is independent of live config."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
     async def test_snapshot_isolated_from_config_changes(self, db_path):
         """Changing live settings does not affect an already-saved snapshot."""
         from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -635,7 +615,6 @@ async def _wizard_row(db_path, user_id: str) -> dict:
     return dict(row)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_wizard_owes_no_closing_notice_by_default(db_path):
     """A wizard saved as the wizard saves it owes no closing notice: the mark is set only by the
     change queue's close of the signup window, never by the wizard itself."""
@@ -648,7 +627,6 @@ async def test_a_wizard_owes_no_closing_notice_by_default(db_path):
     assert await svc.owed_closing_notices() == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_channel(db_path):
     """`end_wizard_on` writes on the connection it is handed and commits nothing: rolled back,
     the wizard is as it was. Committed by the caller, the wizard is unengaged, owes its closing
@@ -678,7 +656,6 @@ async def test_ending_a_wizard_on_the_save_handed_commits_nothing_and_keeps_its_
     assert await svc.get_wizard("ghost") is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed(db_path):
     """Three wizards saved in the order 203, 201, 202, so that their record ids run 203, 201,
     202 while their accounts sort 201, 202, 203; 201 and then 203 are marked owed, 202 is ended
@@ -718,7 +695,6 @@ async def test_the_owed_notices_are_read_in_order_and_cleared_on_the_save_handed
     assert (await _wizard_row(db_path, "203"))["wizard_state"] == "UNENGAGED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SIGNUP_SAVES_ON)
 async def test_a_mark_is_cleared_by_the_save_that_starts_a_signup_and_by_no_other(db_path):
     """Wizard 401's signup was ended by a close that owes them their notice, and the mark was
     never cleared. Saving the wizard as a step of a signup does not touch the mark; saving it as

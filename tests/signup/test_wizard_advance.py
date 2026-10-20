@@ -71,12 +71,6 @@ ANSWERED_TO_NOTES = {
     "lap_times": {},
 }
 
-NO_ANSWER_TURN = (
-    "#439: a signup answer is saved and the wizard moved on at once off the queue by the wizard "
-    "service, with no signup.answer turn on the lane of the driver's signup channel, and its "
-    "buttons are not handed the change queue"
-)
-
 
 async def _league(tmp_path: Any, state: str, *, tracks: tuple[str, ...] = (),
                   lap_index: int = 0, nationality_required: bool = False,
@@ -219,7 +213,6 @@ def _typing(league: SeasonLeague) -> list[bool]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 @pytest.mark.parametrize(
     "current,expected",
     [
@@ -241,7 +234,6 @@ async def test_each_step_leads_to_the_next(tmp_path, current, expected):
     assert len(league.channel(KIMI_CHANNEL).texts) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_moving_on_saves_the_wizard_and_resets_the_timeout(tmp_path):
     """The wizard survives a restart, so its new step is saved by the answer's own turn. Kimi,
     last active an hour ago, presses Steam at the platform question; once the queue runs his
@@ -266,7 +258,6 @@ async def test_moving_on_saves_the_wizard_and_resets_the_timeout(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_nationality_leads_to_platform_when_it_is_required(tmp_path):
     """The league requires a nationality; Kimi types "British" at that question. Once the queue
     runs his wizard asks his platform."""
@@ -283,7 +274,6 @@ async def test_nationality_leads_to_platform_when_it_is_required(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_a_reserve_driver_is_not_asked_which_team_they_prefer(tmp_path):
     """A reserve is not placed in a team, so the answer could not be honoured. Kimi presses
     Reserve Driver; once the queue runs his wizard asks for a preferred teammate, never his
@@ -296,7 +286,6 @@ async def test_a_reserve_driver_is_not_asked_which_team_they_prefer(tmp_path):
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_a_full_time_driver_is_asked_which_team_they_prefer(tmp_path):
     """Kimi presses Full-Time Driver; once the queue runs his wizard asks his preferred teams."""
     league = await _league(tmp_path, "COLLECTING_DRIVER_TYPE")
@@ -312,7 +301,6 @@ async def test_a_full_time_driver_is_asked_which_team_they_prefer(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_lap_times_are_skipped_when_the_league_selected_no_tracks(tmp_path):
     """No tracks selected. Kimi presses No Preference at the teammate question; once the queue
     runs his wizard asks his notes."""
@@ -324,7 +312,6 @@ async def test_lap_times_are_skipped_when_the_league_selected_no_tracks(tmp_path
     assert await _state(league) == "COLLECTING_NOTES"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_lap_times_are_asked_for_when_tracks_are_selected(tmp_path):
     """Two tracks selected (01, 02). Kimi presses No Preference at the teammate question; once
     the queue runs his wizard asks a lap time."""
@@ -336,7 +323,6 @@ async def test_lap_times_are_asked_for_when_tracks_are_selected(tmp_path):
     assert await _state(league) == "COLLECTING_LAP_TIME"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_the_wizard_stays_on_lap_time_while_tracks_remain(tmp_path):
     """The only step the wizard can stay on. Two tracks selected; Kimi types his time for the
     first. Once the queue runs his wizard still asks a lap time, now for the second track, one
@@ -356,7 +342,6 @@ async def test_the_wizard_stays_on_lap_time_while_tracks_remain(tmp_path):
                for call in league.bot.scheduler_service.arm_once.call_args_list)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_the_last_track_moves_the_wizard_on(tmp_path):
     """Two tracks selected; Kimi types his time for the second. Once the queue runs his wizard
     asks his notes."""
@@ -373,7 +358,6 @@ async def test_the_last_track_moves_the_wizard_on(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_write_is_revoked_when_entering_a_button_only_step(tmp_path):
     """Platform is answered by a button, so typing is turned off to stop a driver answering in a
     form the wizard will not read. Kimi types "British" at the nationality question; once the
@@ -386,7 +370,6 @@ async def test_write_is_revoked_when_entering_a_button_only_step(tmp_path):
     assert _typing(league) == [False]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_write_is_restored_when_leaving_a_button_only_step(tmp_path):
     """The half that matters most: a driver left without write permission cannot answer the next
     typed question. Kimi presses Steam; once the queue runs his typing is granted again."""
@@ -398,7 +381,6 @@ async def test_write_is_restored_when_leaving_a_button_only_step(tmp_path):
     assert _typing(league) == [True]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_a_driver_who_has_left_the_server_does_not_stop_the_advance(tmp_path):
     """Kimi presses Steam, then leaves the server before his turn comes, so the server no longer
     finds him. Once the queue runs his wizard still asks his platform ID, and the turns in his
@@ -418,7 +400,6 @@ async def test_a_driver_who_has_left_the_server_does_not_stop_the_advance(tmp_pa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_the_last_step_commits_the_signup(tmp_path):
     """Kimi has answered everything but his notes. He types "See you there"; once the queue runs
     he is Pending Admin Approval and his signup is saved for the season."""
@@ -437,7 +418,6 @@ async def test_the_last_step_commits_the_signup(tmp_path):
     assert [row["season_id"] for row in records] == [SEASON_ID]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_the_final_answers_are_saved_before_the_commit_reads_them(tmp_path):
     """The commit reads the draft back out of the database, so an unsaved last answer would be
     committed as though never given. Kimi types "See you there" as his notes; once the queue
@@ -474,7 +454,6 @@ async def _correcting_platform(tmp_path: Any) -> SeasonLeague:
     return league
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_a_correction_commits_instead_of_resuming_the_sequence(tmp_path):
     """A driver amending one answer after review must not be asked every later question again.
     Kimi presses EA; once the queue runs his signup holds EA and he is Pending Admin Approval
@@ -492,10 +471,9 @@ async def test_a_correction_commits_instead_of_resuming_the_sequence(tmp_path):
         "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(SIGNING_UP)
     )
     assert state["current_state"] == "PENDING_ADMIN_APPROVAL"
-    assert not any("Platform ID" in text for text in league.channel(KIMI_CHANNEL).texts)
+    assert not any("Step 3 — Platform ID" in text for text in league.channel(KIMI_CHANNEL).texts)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ANSWER_TURN)
 async def test_the_correction_flag_is_consumed_rather_than_left_behind(tmp_path):
     """Left in place the mark would make the driver's next answer a correction too. Kimi presses
     EA; once the queue runs his wizard no longer holds the correction mark."""

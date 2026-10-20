@@ -67,12 +67,6 @@ FULL_DRAFT = {
     "lap_times": {"1": "1:23.456"},
 }
 
-NO_SUBMIT_TURN = (
-    "#439: the last signup answer commits the signup and posts the review panel at once off the "
-    "queue, with no signup.answer turn handing signup.submit to the league and no signup.panel "
-    "asked back on the driver's lane"
-)
-
 
 async def _league(tmp_path: Any, *, state: str = "COLLECTING_NOTES",
                   draft: dict[str, Any] | None = None,
@@ -201,7 +195,6 @@ def _signup_lines(league: SeasonLeague) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_every_answer_reaches_the_record(tmp_path):
     """Kimi has answered everything but his notes. He types "See you there"; once the queue runs
     his signup record holds every answer, his notes and his signup channel."""
@@ -226,7 +219,6 @@ async def test_every_answer_reaches_the_record(tmp_path):
     assert record.signup_channel_id == KIMI_CHANNEL
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_an_unanswered_question_arrives_as_its_empty_form(tmp_path):
     """Kimi's wizard holds no answer at all when he types "no notes" at the last question. Once
     the queue runs his record's collections arrive empty rather than `None` — everything
@@ -245,7 +237,6 @@ async def test_an_unanswered_question_arrives_as_its_empty_form(tmp_path):
     assert record.notes is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_committed_signup_awaits_admin_approval(tmp_path):
     """Kimi types his notes; once the queue runs he is Pending Admin Approval."""
     league = await _league(tmp_path)
@@ -256,7 +247,6 @@ async def test_a_committed_signup_awaits_admin_approval(tmp_path):
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_driver_with_no_wizard_commits_nothing(tmp_path):
     """Kimi types his notes, and before the turn comes his wizard is gone. Once the queue runs
     no signup is saved and he is still Pending Signup Completion: the turn is no longer due."""
@@ -278,7 +268,6 @@ async def test_a_driver_with_no_wizard_commits_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_wizard_is_parked_and_its_draft_cleared(tmp_path):
     """Left populated, a later answer would commit the same answers again and the league would
     see two signups for one driver. Kimi types his notes; once the queue runs his wizard is
@@ -296,7 +285,6 @@ async def test_the_wizard_is_parked_and_its_draft_cleared(tmp_path):
     assert json.loads(wizard["draft_answers_json"] or "{}") == {}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_record_is_saved_before_the_draft_is_cleared(tmp_path):
     """The record is built from the draft, so clearing first would save an empty one. Once the
     queue runs Kimi's record holds his platform."""
@@ -309,7 +297,6 @@ async def test_the_record_is_saved_before_the_draft_is_cleared(tmp_path):
     assert record is not None and record.platform == "Steam"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_driver_loses_write_permission(tmp_path):
     """The channel now holds a review panel rather than a question. Once the queue runs Kimi's
     typing in his channel is revoked."""
@@ -322,7 +309,6 @@ async def test_the_driver_loses_write_permission(tmp_path):
                for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_inactivity_timeout_is_cancelled(tmp_path):
     """Kimi is waiting on a manager now, and cannot be timed out for it. Once the queue runs his
     24-hour inactivity timer is disarmed."""
@@ -340,7 +326,6 @@ async def test_the_inactivity_timeout_is_cancelled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_review_panel_is_posted_to_the_signup_channel(tmp_path):
     """Once the queue runs one review panel, with its buttons, is posted in Kimi's channel."""
     league = await _league(tmp_path)
@@ -351,7 +336,6 @@ async def test_the_review_panel_is_posted_to_the_signup_channel(tmp_path):
     assert len(_panels(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_review_panel_notifies_no_group(tmp_path):
     """It quotes the driver's own answers, and the bot's permission to mention everybody must
     not carry a group mention in one of them (#362). The panel posted allows users alone."""
@@ -365,7 +349,6 @@ async def test_the_review_panel_notifies_no_group(tmp_path):
     assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_missing_channel_still_commits_the_record(tmp_path):
     """A channel deleted by hand must not cost the driver their signup. Kimi types his notes,
     and his channel is deleted before the turn's panel is posted. Once the queue runs his
@@ -387,7 +370,6 @@ async def test_a_missing_channel_still_commits_the_record(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_first_submission_is_logged_as_submitted(tmp_path):
     """Kimi types his notes; once the queue runs the log channel holds a "Submitted" line."""
     league = await _league(tmp_path)
@@ -398,7 +380,6 @@ async def test_a_first_submission_is_logged_as_submitted(tmp_path):
     assert any(line.endswith("| Signup | Submitted") for line in _signup_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_correction_is_logged_as_a_correction(tmp_path):
     """How a manager tells "this driver has just signed up" from "this driver has fixed the
     thing I asked about". Kimi was asked to correct his nationality and types "German". Once the
@@ -414,7 +395,6 @@ async def test_a_correction_is_logged_as_a_correction(tmp_path):
     assert lines[0].endswith("| Signup | Correction submitted: Nationality"), lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_no_notes_on_the_first_pass_writes_only_submitted(tmp_path):
     """Kimi reaches the notes step on his first pass and presses No Notes. That ends the wizard,
     and the "Submitted" line is the press's one line: No Notes writes no step line of its own."""
@@ -428,7 +408,6 @@ async def test_no_notes_on_the_first_pass_writes_only_submitted(tmp_path):
     assert lines[0].endswith("| Signup | Submitted"), lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_button_answer_that_ends_a_correction_writes_only_correction_submitted(tmp_path):
     """Kimi was asked to correct his platform and presses EA. That press ends the correction:
     once the queue runs it has written one line, "Correction submitted", and no "Platform: EA"
@@ -444,7 +423,6 @@ async def test_a_button_answer_that_ends_a_correction_writes_only_correction_sub
     assert "Platform: EA" not in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_correction_amends_the_signup_it_was_asked_of(tmp_path):
     """Issue #220: signups are kept, never overwritten, so a correction must amend the record it
     was asked of, not be stored as a second signup. Kimi was asked to correct his platform and
@@ -464,7 +442,6 @@ async def test_a_correction_amends_the_signup_it_was_asked_of(tmp_path):
     assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, True)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_correction_changes_only_the_corrected_answer_and_hands_the_signup_back(tmp_path):
     """A correction changes only what was corrected, and hands the signup straight back to the
     manager who asked for it. Kimi's saved signup is British, Steam, ID kimi7; he was asked to
@@ -497,7 +474,6 @@ async def test_a_correction_changes_only_the_corrected_answer_and_hands_the_sign
     assert len(_panels(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_first_submission_is_a_new_signup(tmp_path):
     """Kimi has no signup saved yet; once his notes' turn has run he has exactly one."""
     league = await _league(tmp_path)
@@ -509,7 +485,6 @@ async def test_a_first_submission_is_a_new_signup(tmp_path):
     assert len(await _records(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_the_prior_state_is_read_before_anything_is_written(tmp_path):
     """Read after the move to Pending Admin Approval, Kimi's state would always look like a first
     submission, and his correction would be saved as a second signup. Kimi, Pending Driver
@@ -526,7 +501,6 @@ async def test_the_prior_state_is_read_before_anything_is_written(tmp_path):
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMIT_TURN)
 async def test_a_driver_who_has_left_is_logged_by_id(tmp_path):
     """The log must still name somebody once a driver has left: by mention alone, as every line
     names a member no longer on the server (core specification, "The record of what changed"),
@@ -538,4 +512,4 @@ async def test_a_driver_who_has_left_is_logged_by_id(tmp_path):
     league.absent.add(SIGNING_UP)
     await run_queue(league.bot)
 
-    assert f"<@{SIGNING_UP}> | Signup | Submitted" in _signup_lines(league)
+    assert f"`<@{SIGNING_UP}>` | Signup | Submitted" in _signup_lines(league)  # the log's mentions are in backticks

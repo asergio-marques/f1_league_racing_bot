@@ -91,6 +91,13 @@ from leaguebot.signup.services.closing_steps import (
 )
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
+from leaguebot.signup.services.wizard_answers import (
+    ANSWER,
+    INACTIVITY,
+    Accepted,
+    Refused,
+    judge_answer,
+)
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
 
 if TYPE_CHECKING:
@@ -102,8 +109,6 @@ if TYPE_CHECKING:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 START = "signup.start"
-#: The kind of the typed answer a signup's driver gives, which an expiry waits behind (Q22).
-ANSWER = "signup.answer"
 DELETE_OLD_CHANNEL = "delete_old_channel"
 CREATE_CHANNEL = "create_channel"
 START_JOB = "start"
@@ -131,12 +136,11 @@ SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 WITHDRAWN_NOTICE = (
     "❌ You have withdrawn your signup. This channel will be automatically deleted in 24 hours."
 )
-#: How long a driver has to answer before their signup lapses.
-INACTIVITY = timedelta(hours=24)
 #: The most channels Discord lets a category hold.
 CATEGORY_LIMIT = 50
 
 __all__ = [
+    "ANSWER", "Accepted", "Refused", "judge_answer",
     "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
     "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
@@ -304,6 +308,7 @@ def start_change(
         snapshot = await signup().capture_config_snapshot()
         default_teams = await teams().get_default_teams()
         snapshot.team_names = [t.full_name for t in default_teams if not t.is_reserve]
+        snapshot.team_shorthands = {t.name: t.full_name for t in default_teams if not t.is_reserve}
         first_state = (
             WizardState.COLLECTING_NATIONALITY
             if snapshot.nationality_required

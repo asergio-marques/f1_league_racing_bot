@@ -35,6 +35,7 @@ from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
 from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
+from leaguebot.signup.services.wizard_answers import take_typed_answer
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
     AUDIT_FORCE_CLOSE,
@@ -305,7 +306,7 @@ class SignupCog(commands.Cog):
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
-        await self.bot.wizard_service.handle_message(wizard, message)
+        await take_typed_answer(self.bot, message, wizard, queue=self.bot.change_queue)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
