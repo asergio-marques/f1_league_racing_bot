@@ -32,7 +32,8 @@ cannot say whether the corrections were never entered or had been approved), and
 already closed, kept only because its channel could not be deleted, which a restart finishes by
 deleting the channel and forgetting the row, saying nothing.
 
-**The lapse is not due** where the amendment has ended (but a restart, finishing a closed row), where
+**The lapse is not due** where the amendment has ended (but a restart, finishing a closed row whose channel's deletion is not in hand on the amendment's
+own lane, which retries it), where
 a stage of it is in hand on the queue, stopped included, the recording of stage one and the putting up
 of a stage's prompt among them (results specification :491: "Leave it while stuck"), where a timer
 finds stage one already written (the half-hour sweep has the amendment then) or finds a later prompt
@@ -75,7 +76,11 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
-from leaguebot.results.services.amend_turn_change import CONFIG_KIND, KIND as TURN_KIND
+from leaguebot.results.services.amend_turn_change import (
+    CLOSE_KIND,
+    CONFIG_KIND,
+    KIND as TURN_KIND,
+)
 from leaguebot.results.services.amend_views import CANCEL_KIND
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
@@ -349,8 +354,14 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
         if row is None:
             return Verdict.not_due("the amendment is gone")
         if row["closed_at"] is not None:
-            # Kept only because its channel could not be deleted: a restart finishes that.
+            # Kept only because its channel could not be deleted: a restart finishes that, unless
+            # the amendment's own lane still holds the deletion, which is that lane's to retry.
             if payload["cause"] == RESTART:
+                if any(
+                    int(each["channel_id"]) == int(row["channel_id"])
+                    for each in await unfinished(ctx.db_path, [CLOSE_KIND])
+                ):
+                    return Verdict.not_due("its channel's deletion is in hand on its own lane")
                 return Verdict.go()
             return Verdict.not_due("the amendment has ended")
         if await submissions.stage_in_hand(ctx.db_path, int(row["round_id"])):
