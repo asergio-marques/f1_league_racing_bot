@@ -376,6 +376,12 @@ def _confirm_view(env, *, goes_through: bool = True):
     return view, cog
 
 
+def asking_the_take_down(env, cog, helper: str) -> None:
+    from tests.core.test_review_outcomes_recorded import asking_the_take_down as asking
+
+    asking(env, cog, helper)
+
+
 def _press(env, user_id: int = REVIEWER, name: str = "Alex", *, question=None):
     """A press of the button on *question* (Alex's Q unless given), in channel 700, by *name*."""
     from tests.core.test_review_outcomes_recorded import _press_on
@@ -530,6 +536,7 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
         await db.commit()
     await _team_list_since_the_review(env, monkeypatch)
     view, cog = _confirm_view(env)
+    asking_the_take_down(env, cog, "_do_confirm_configuration")
     await _ConfirmConfigurationView.approve(view, _press(env, question=newer), MagicMock())
     await run_queue(env.bot)
     assert [m.id for m in channel.deleted] == [newer.id]
@@ -922,6 +929,7 @@ async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(
     channel = env.channel
     await _team_list_since_the_review(env, monkeypatch)
     view, cog = _confirm_view(env)
+    asking_the_take_down(env, cog, "_do_confirm_configuration")
     interaction = _press(env)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())

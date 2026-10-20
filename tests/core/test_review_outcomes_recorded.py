@@ -178,6 +178,22 @@ def _view_on(env, view_class, helper: str):
     return view_class(cog, REVIEWER), cog
 
 
+def asking_the_take_down(env, cog, helper: str, *, then=None) -> None:
+    """Make *helper* ask the review's take-down, ending confirmed, as the real approval (or
+    confirmation) does once its gates pass, ahead of its work; then run *then*, if given, and go
+    through. The button asks none itself."""
+    from leaguebot.core.services.season_review_changes import CONFIRMED, take_review_down
+
+    async def _worked(interaction, **_kwargs):
+        await take_review_down(env.bot.change_queue, env.bot.db_path, interaction.message.id,
+                               CONFIRMED)
+        if then is not None:
+            await then()
+        return True
+
+    setattr(cog, helper, AsyncMock(side_effect=_worked))
+
+
 def _press_on(env, user_id: int = REVIEWER, name: str = "Alex"):
     """A press of the button on Alex's question Q, in channel 700, by *name*."""
     from tests.support.change_queue import member_interaction
@@ -506,13 +522,12 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
     view, cog = _view_on(env, view_class, helper)
     seen: dict = {}
 
-    async def _worked(*_args, **_kwargs):
+    async def _timer_fires():
         await _expiry_callback(env)(channel.q.id)
         seen["deleted"], seen["sent"] = list(channel.deleted), list(channel.sent)
-        # A press that went through: the approval was asked of the change queue.
-        return True
 
-    setattr(cog, helper, AsyncMock(side_effect=_worked))
+    # A press that went through: the review's take-down is asked first, as the approval does.
+    asking_the_take_down(env, cog, helper, then=_timer_fires)
 
     await view_class.approve(view, _press_on(env), MagicMock())
     await run_queue(env.bot)
@@ -598,6 +613,7 @@ async def test_the_timer_firing_while_a_finished_press_clears_the_review_records
     channel = env.channel
     await _season_since_the_review(env, monkeypatch)
     view, cog = _view_on(env, view_class, helper)
+    asking_the_take_down(env, cog, helper)
 
     await view_class.approve(view, _press_on(env), MagicMock())
     await _expiry_callback(env)(channel.q.id)

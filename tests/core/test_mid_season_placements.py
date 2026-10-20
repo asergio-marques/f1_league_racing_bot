@@ -1012,11 +1012,7 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
         interaction, what=_review_button("Confirm placements", "/season placements-review")
     )
     assert env.channel.deleted == []
-    # The button deletes nothing itself. The confirmation here is a double that asks nothing, so the
-    # button asks the take-down for the press that went through; the real confirmation has asked it
-    # already, and the button then asks nothing more.
-    [payload] = await _take_downs(env)
-    assert (payload["ending"], payload["question_id"]) == ("confirmed", env.channel.q.id)
+    assert await _take_downs(env) == []
 
 
 async def test_another_league_manager_may_not_confirm_the_mid_season_placements(tmp_path):

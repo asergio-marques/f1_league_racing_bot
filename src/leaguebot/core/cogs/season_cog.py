@@ -5434,8 +5434,9 @@ class _ApproveView(LeagueView):
         if current is None or current.press == TAKING_DOWN:
             return
         if press.went_through:
-            await take_review_down(bot.change_queue, bot.db_path, review.question_id, CONFIRMED)
-        elif press.leave_standing:
+            # The confirmation asked the review's take-down itself, ahead of its own work.
+            return
+        if press.leave_standing:
             await mark_press(bot.db_path, review.question_id, None)
         elif current.press == TIMER_FIRED or datetime.now(timezone.utc) >= current.deadline:
             await take_review_down(bot.change_queue, bot.db_path, review.question_id, EXPIRED)
