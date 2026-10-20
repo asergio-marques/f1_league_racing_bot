@@ -122,7 +122,6 @@ def _admitted(league: Any) -> set[Any]:
             if ow.read_messages}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_amendment_channel_is_named_for_the_round(tmp_path, monkeypatch):
     """Alex amends round 3 of Pro in season 1. When the queue runs, the amendment channel is
     created as "amend-S1-pro-R3", in the command channel's category."""
@@ -135,7 +134,6 @@ async def test_the_amendment_channel_is_named_for_the_round(tmp_path, monkeypatc
     assert league.guild.create_text_channel.await_args.kwargs["category"] == "Staff"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_channel_is_hidden_from_everyone_else(tmp_path, monkeypatch):
     """When the queue opens Alex's amendment, everyone is denied sight of its channel."""
     league = await _league(tmp_path, monkeypatch)
@@ -146,7 +144,6 @@ async def test_the_channel_is_hidden_from_everyone_else(tmp_path, monkeypatch):
     assert _overwrites(league)[league.guild.default_role].read_messages is False
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_bot_and_both_staff_roles_are_let_in(tmp_path, monkeypatch):
     """#116: a league admin holds the manager tier within their own, and a channel opened
     to one role and not the other would leave them unable to see an amendment they may
@@ -176,7 +173,6 @@ async def test_a_league_with_no_league_admin_role_opens_it_to_the_interaction_ro
     assert ADMIN_ROLE_ID not in admitted
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_channel_is_recorded_before_anything_is_waited_for(tmp_path, monkeypatch):
     """The row is how a restart finds the channel. Discord refuses the amendment's opening
     message: the queue stops at it, and the channel it created already stands recorded against
@@ -194,7 +190,6 @@ async def test_the_channel_is_recorded_before_anything_is_waited_for(tmp_path, m
     assert row["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_manager_is_pointed_at_the_channel(tmp_path, monkeypatch):
     """Once the queue opens Alex's amendment of round 3's Feature Race, his acknowledgement is
     updated to name the amendment channel, and the opening there names the round, its division
@@ -240,7 +235,6 @@ async def test_a_valid_paste_is_written(tmp_path, monkeypatch):
     assert (await _active_race(league))["config_name"] == "Standard"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(
     tmp_path, monkeypatch,
 ):
@@ -270,7 +264,6 @@ async def test_recording_stage_one_logs_no_success(tmp_path, monkeypatch):
     assert "AMEND_SUCCESS" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_sessions_existing_configuration_is_kept_where_still_attached(
     tmp_path, monkeypatch,
 ):
@@ -588,7 +581,6 @@ async def test_cancelling_while_a_stage_is_being_approved_says_so_and_puts_nothi
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_stale_channel_that_will_not_delete_stops_the_queue_keeping_its_row(
     tmp_path, monkeypatch,
 ):
@@ -642,7 +634,6 @@ async def _open_elsewhere(league: Any, *, division_id: int) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_amendment_open_elsewhere_in_the_division_refuses_another(tmp_path, monkeypatch):
     """**The last stage reposts the whole division from the database**, so a second amendment open
     beside it would have its unapproved classification published by the first. Round 4 of Pro is
@@ -660,7 +651,6 @@ async def test_an_amendment_open_elsewhere_in_the_division_refuses_another(tmp_p
     assert await _amendment_rows(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_amendment_open_in_another_division_is_no_obstacle(tmp_path, monkeypatch):
     """A round of another division is being amended in channel 5151. Alex asks to amend round 3 of
     Pro: once the queue runs, its amendment channel is created and recorded as usual."""
@@ -685,7 +675,6 @@ AMEND_REFUSALS = [
 
 
 @pytest.mark.parametrize("case, said", AMEND_REFUSALS)
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(
     tmp_path, monkeypatch, case, said,
 ):
@@ -973,7 +962,6 @@ async def _cancel_by_a_non_manager(tmp_path: Any, monkeypatch: Any) -> tuple[Any
         pytest.param(
             "cancel-by-a-non-manager", "⛔ Only league managers can cancel.",
             "Driver (`<@88>`)", id="cancel-by-a-non-manager",
-            marks=pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE),
         ),
     ],
 )

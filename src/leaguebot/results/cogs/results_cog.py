@@ -21,6 +21,7 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.amend_changes import amendment_open_refusal as _amendment_open_refusal
 from leaguebot.results.services.amend_views import AmendCancelView, log_amend_failed
 from leaguebot.results.services.points_config_service import (
     ConfigAlreadyExistsError,
@@ -738,26 +739,6 @@ class _OpenedAmendment:
     round_number: int | None = None
     cancel_view: Any = None
     stage_one_started: bool = False
-
-
-def _amendment_open_refusal(division_name: str, open_row) -> str:
-    """Why `/results rounds amend` was refused: another amendment is open in the division."""
-    channel_id = open_row["channel_id"] if open_row else None
-    if channel_id is None:
-        return (
-            f"\u274c {division_name} already has an amendment open. Finish or cancel it first."
-        )
-    try:
-        sessions = ", ".join(
-            str(st).replace("_", " ").title() for st in json.loads(open_row["session_types"])
-        )
-    except (TypeError, ValueError):
-        sessions = "its sessions"
-    return (
-        f"\u274c {division_name} already has an amendment open — round "
-        f"{open_row['round_number']}, {sessions} — in <#{channel_id}>. Finish or cancel it "
-        "there first: one amendment is open in a division at a time."
-    )
 
 
 class _AmendSessionsView(LeagueView):
@@ -2312,16 +2293,108 @@ class ResultsCog(commands.Cog):
         the record standing and the division held until a restart. Nothing has been written by
         then, so the record and the channel simply go.
         """
-        opened = _OpenedAmendment()
-        try:
-            await self._amend_round_results(
-                interaction, division_name, round_number, session, opened
+        from leaguebot.core.models.change import VerdictKind
+        from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
+        from leaguebot.results.models.points_config import SessionType
+        from leaguebot.results.services.amend_changes import (
+            COMMAND,
+            KIND,
+            amendable_sessions,
+            label_of,
+        )
+
+        if not await self.bot.module_service.is_results_enabled():
+            await refuse(
+                interaction,
+                "\u274c The Results & Standings module is not enabled.",
+                what=describe(interaction),
             )
-        except Exception as exc:
-            if opened.round_id is None or opened.stage_one_started:
-                raise
-            log.exception("amend: round %s failed before anything was written", opened.round_id)
-            await self._let_go_of_unwritten_amendment(interaction, opened, exc)
+            return
+
+        # The live season, not the most recent one (issue #224): amending a completed or
+        # cancelled season's results is what the archive rule forbids. Pending completion is
+        # named deliberately: amending a final round's results is one of the three things still
+        # open there (decided 2026-09-20).
+        season = await season_for_command(
+            interaction, self.bot.season_service, COMMAND, stages=LIVE_STAGES
+        )
+        if season is None:
+            return
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
+        if div is None:
+            await refuse(
+                interaction, f"\u274c Division `{division_name}` not found.",
+                what=describe(interaction),
+            )
+            return
+        rounds = await self.bot.season_service.get_division_rounds(div.id)
+        rnd = next((r for r in rounds if r.round_number == round_number), None)
+        if rnd is None:
+            await refuse(
+                interaction, f"\u274c Round {round_number} not found.", what=describe(interaction)
+            )
+            return
+
+        # Everything else the command refuses is the change's check, judged here and again when
+        # the change runs, so an amendment waiting behind a stopped queue is refused as it would
+        # be now. A request asked with no sessions is refused for any reason but the choice.
+        queue = self.bot.change_queue
+        what = f"/results rounds amend {div.name} {rnd.round_number}"
+        what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
+        asked = {"round_id": rnd.id, "division_id": div.id}
+        if session is not None:
+            chosen = [session.value]
+        else:
+            probe = {**asked, "session_types": []}
+            if (await queue.check(KIND, probe)).kind is not VerdictKind.GO:
+                await queue.ask(
+                    KIND, probe, interaction=interaction, what=what,
+                    refusal_what=describe(interaction),
+                )
+                return
+            await interaction.response.defer(ephemeral=True)
+            order = list(SessionType)
+            present = await amendable_sessions(self.bot.db_path, rnd.id)
+            # **Several sessions in one amendment** (#345, decided 2026-09-21). A round's
+            # reports and appeals are reviewed together, so the sessions being corrected are
+            # re-entered one after another and their decisions reviewed in one pass, with the
+            # division rebuilt once at the end.
+            sv = _AmendSessionsView(
+                [(each.value, label_of(each)) for each in present], what=what_amended
+            )
+            await interaction.followup.send(
+                "\U0001f4cb Select the sessions to amend. Each is re-entered in turn, and their "
+                "reports and appeals are then reviewed together.",
+                view=sv,
+                ephemeral=True,
+            )
+            if await sv.wait():
+                await record_abandoned(
+                    self.bot, interaction.user, what=what_amended, lapsed=True,
+                    detail=_PICKER_ENDED,
+                )
+                await interaction.followup.send(
+                    "\u231b The choice of sessions lapsed, so nothing was amended. Run "
+                    "`/results rounds amend` again to amend a round.",
+                    ephemeral=True,
+                )
+                return
+            if sv.cancelled or not sv.selected:
+                await record_abandoned(
+                    self.bot, sv.cancelled_by or interaction.user, what=what_amended,
+                    lapsed=False, detail=_PICKER_ENDED,
+                )
+                await interaction.followup.send("ℹ️ Amendment cancelled.", ephemeral=True)
+                return
+            chosen = [
+                each.value
+                for each in sorted((SessionType(v) for v in sv.selected), key=order.index)
+            ]
+        await queue.ask(
+            KIND, {**asked, "session_types": chosen}, interaction=interaction, what=what,
+            refusal_what=describe(interaction),
+        )
 
     async def _let_go_of_unwritten_amendment(
         self, interaction: discord.Interaction, opened: _OpenedAmendment, error: BaseException

@@ -263,7 +263,6 @@ def _stage_two(content: str, _kwargs: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_amendment_is_acknowledged_and_opens_its_channel_with_the_first_prompt(
     tmp_path, monkeypatch,
 ):
@@ -310,7 +309,6 @@ async def test_an_amendment_is_acknowledged_and_opens_its_channel_with_the_first
     assert updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_stale_or_duplicate_channel_is_deleted_as_a_job_first(tmp_path, monkeypatch):
     """An earlier amendment of round 3 has finished, but its channel (706) survived with its row.
     Alex amends round 3 again: once the queue runs, the stale channel is deleted by a job of the
@@ -338,7 +336,6 @@ async def test_a_stale_or_duplicate_channel_is_deleted_as_a_job_first(tmp_path, 
     assert stale["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_amendment_refused_when_it_runs_says_why(tmp_path, monkeypatch):
     """Alex asks to amend round 3; before the queue reaches it, an amendment of round 4 of the
     same division is opened in channel 706. When the amendment runs it is refused: no channel is
@@ -649,7 +646,6 @@ async def test_cancel_amendment_runs_on_the_league_and_ends_the_conversation(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_five_minutes_start_when_the_prompt_appears(tmp_path, monkeypatch):
     """Alex asks for the amendment, but the queue reaches it four minutes later. The prompt's
     time is recorded as when it appeared, and the five minutes are armed from then, nine minutes
