@@ -918,7 +918,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/utils/batch_notice.py", "delete_notice"): (1, HANDLERS),
     ("core/utils/batch_notice.py", "send_notice"): (1, HANDLERS),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (1, HANDLERS),
-    ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, HANDLERS),
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, HANDLERS),
     ("core/cogs/season_cog.py", "_ApproveView._clear_report"): (1, HANDLERS),
     ("core/services/factory_reset_service.py", "_delete_own_messages"): (3, HANDLERS),
@@ -1069,7 +1068,6 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 
 KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_expired_review_prompts"): (2, SLICE["6b"]),
-    ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, SLICE["6b"]),
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, SLICE["6b"]),
     ("core/cogs/season_cog.py", "_ApproveView._clear_report"): (1, SLICE["6b"]),
     ("core/cogs/season_cog.py", "_ApproveView.on_timeout"): (3, SLICE["6b"]),

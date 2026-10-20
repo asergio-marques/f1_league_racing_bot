@@ -46,7 +46,7 @@ bot.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Awaitable, Callable
 
 import aiosqlite
@@ -69,7 +69,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.standing_posts import remove_kept
+from leaguebot.core.services.standing_posts import delete_replaced_step, remove_kept
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, league_guild
@@ -302,6 +302,7 @@ async def refresh_panel(
 #: The kind of the change that refreshes the panel.
 HUB_REFRESH = "hub.refresh"
 _REFRESH_STEP = "refresh"
+DELETE_OLD = "delete_old"
 
 
 def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
@@ -311,6 +312,9 @@ def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
     refreshed as a change of its own, after the steps of the change that asked for it. The payload's
     ``command`` names what caused it. A hub not set is not due. The panel is refreshed by one job,
     `refresh_panel`, which a refusal stops the queue at; *queue* is handed to the panel's buttons.
+    A hub that has moved names the panel it left, ``old_channel_id`` and ``old_message_id``: the old
+    panel is deleted by a job of its own after the new is posted, by the shared delete step, so
+    that the league is never left without one and a refused deletion stops the queue.
     Not repeatable: a refresh asked for a second time before the first starts is dropped, since the
     first will draw the panel as it stands then.
     """
@@ -325,7 +329,15 @@ def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
 
     async def refresh(ctx: StepContext) -> StepResult:
         posted = await refresh_panel(ctx.bot, queue, ctx.kept)
-        return StepResult() if posted is None else StepResult(result=posted)
+        if posted is None:
+            return StepResult()
+        old_channel, old_message = ctx.payload.get("old_channel_id"), ctx.payload.get("old_message_id")
+        if old_channel is None or old_message is None:
+            return StepResult(result=posted)
+        # A hub moved: the new panel is up, so the old comes down after it and never before.
+        return StepResult(result=posted, then=(PlannedStep(DELETE_OLD, {
+            "channel_id": int(old_channel), "message_id": int(old_message), "what": "hub panel",
+        }),))
 
     async def record(db: aiosqlite.Connection, _ctx: StepContext, result: StepResult) -> None:
         new = result.result.get("new")
@@ -335,16 +347,22 @@ def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
     async def describe(_ctx: StepContext) -> str:
         return "refreshing the hub panel"
 
+    async def describe_old(ctx: StepContext) -> str:
+        return f"deleting the old hub panel in <#{ctx.step_payload['channel_id']}>"
+
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
     return ChangeType(
         kind=HUB_REFRESH,
         opening=(PlannedStep(_REFRESH_STEP),),
-        steps={_REFRESH_STEP: Step(
-            _REFRESH_STEP, StepKind.ACT, refresh, still_due=still_due, describe=describe,
-            record=record,
-        )},
+        steps={
+            _REFRESH_STEP: Step(
+                _REFRESH_STEP, StepKind.ACT, refresh, still_due=still_due, describe=describe,
+                record=record,
+            ),
+            DELETE_OLD: replace(delete_replaced_step(DELETE_OLD), describe=describe_old),
+        },
         check=check,
         key=lambda payload: f"{HUB_REFRESH}|{payload.get('command', '')}",
         doing=lambda _payload: "Refreshing the hub panel",

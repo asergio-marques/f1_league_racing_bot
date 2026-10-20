@@ -44,10 +44,6 @@ OLD_PANEL = 7930
 NEW_PANEL = 7931
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
-NO_HUB_MOVE_ON_THE_QUEUE = (
-    "#439: /bot hub-channel deletes the old panel and posts the new one at once, off the change "
-    "queue, reporting a refused one rather than stopping the queue"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -103,6 +99,8 @@ def _channel(channel_id, *, manage=True, send_raises=None):
     partial = MagicMock()
     partial.edit = AsyncMock()
     partial.delete = AsyncMock()
+    # A message's link is text: a refused deletion keeps it on the stopped job, as JSON.
+    partial.jump_url = f"https://discord.test/channels/{SERVER_ID}/{channel_id}/message"
     channel.get_partial_message = MagicMock(return_value=partial)
     channel._partial = partial
     return channel
@@ -303,7 +301,6 @@ async def test_an_old_hub_channel_deleted_from_the_server_is_stepped_over(db_pat
     new.send.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_MOVE_ON_THE_QUEUE)
 async def test_moving_the_hub_posts_the_new_panel_before_deleting_the_old(db_path):
     """The hub moves from 7921, whose panel stands, to 7920. The new panel is posted first and
     the old one deleted after, as a job of its own, so the league is never left without one."""
@@ -320,7 +317,6 @@ async def test_moving_the_hub_posts_the_new_panel_before_deleting_the_old(db_pat
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_MOVE_ON_THE_QUEUE)
 async def test_a_refused_deletion_of_the_old_panel_stops_the_queue(db_path):
     """Discord refuses to delete the panel in the old hub 7921: the new panel stands in 7920
     and is kept, and the queue stops at the old panel's deletion rather than reporting it."""

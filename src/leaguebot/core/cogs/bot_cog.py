@@ -647,15 +647,20 @@ class BotCog(commands.Cog):
         await self.bot.config_service.set_core_setting("hub_message_id", None)
 
         faults: list[str] = []
-        if old_channel_id is not None and old_channel_id != channel.id:
-            faults += await _stand_down_old_hub(guild, old_channel_id, old_message_id)
+        moved = old_channel_id is not None and old_channel_id != channel.id
+        if old_channel_id is not None and moved:
+            faults += await _stand_down_old_hub(guild, old_channel_id)
         fault = await hub_service.apply_hub_permissions(self.bot, guild, channel)
         if fault is not None:
             faults.append(fault)
         # The panel is posted by the change queue, which stops for a refusal.
         await self.bot.change_queue.ask(
             hub_service.HUB_REFRESH,
-            {"command": describe(interaction)},
+            {"command": describe(interaction)}
+            | (
+                {"old_channel_id": old_channel_id, "old_message_id": old_message_id}
+                if moved and old_message_id is not None else {}
+            ),
             actor=interaction.user,
             what="posting the hub panel",
             origin=ChangeOrigin.BOT,
@@ -961,30 +966,20 @@ async def _reapply_hub_permissions(
         await bot.output_router.post_log(f"{who}Hub permissions not updated: {fault}")
 
 
-async def _stand_down_old_hub(
-    guild: discord.Guild, channel_id: int, message_id: int | None
-) -> list[str]:
-    """Delete the panel from the hub's old channel and clear what the bot set there.
+async def _stand_down_old_hub(guild: discord.Guild, channel_id: int) -> list[str]:
+    """Clear what the bot set on the hub's old channel: its permission overwrites.
 
-    A panel already deleted, or a channel already gone, is not a fault: there is nothing
-    left to stand down.
+    The old panel is not deleted here: the refresh deletes it as a job of its own, once the new one
+    is up. A channel already gone is not a fault: there is nothing left to stand down.
     """
     old = guild.get_channel(channel_id)
     if not isinstance(old, discord.TextChannel):
         return []
-    faults: list[str] = []
-    if message_id is not None:
-        try:
-            await old.get_partial_message(message_id).delete()
-        except discord.NotFound:
-            pass
-        except discord.HTTPException as exc:
-            faults.append(f"The old hub panel in <#{channel_id}> could not be deleted: {exc}")
     try:
         await old.edit(overwrites={})
     except discord.HTTPException as exc:
-        faults.append(f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}")
-    return faults
+        return [f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}"]
+    return []
 
 
 async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
