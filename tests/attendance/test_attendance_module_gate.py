@@ -327,7 +327,7 @@ async def test_the_reminder_is_posted_while_attendance_is_enabled(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# run_rsvp_deadline and run_reserve_distribution — the seats
+# The deadline — the seats
 # ---------------------------------------------------------------------------
 
 
@@ -357,31 +357,6 @@ async def test_the_deadline_distributes_reserves_while_attendance_is_enabled(tmp
 
     await _ask(bot, "deadline")
 
-    _, _, distributed = await _counts(db_path)
-    assert distributed == 1
-
-
-async def test_distribution_writes_no_seats_while_attendance_is_disabled(tmp_path):
-    """The gate is repeated on the distribution itself, beneath its only caller."""
-    db_path = await _make_db(tmp_path, attendance_enabled=False)
-    await _seed_rsvp_rows(db_path)
-    bot = _make_bot(db_path, attendance_enabled=False)
-
-    placed = await rsvp_service.run_reserve_distribution(ROUND_ID, DIVISION_ID, bot)
-
-    assert placed is False
-    _, _, distributed = await _counts(db_path)
-    assert distributed == 0
-
-
-async def test_distribution_writes_seats_while_attendance_is_enabled(tmp_path):
-    db_path = await _make_db(tmp_path, attendance_enabled=True)
-    await _seed_rsvp_rows(db_path)
-    bot = _make_bot(db_path, attendance_enabled=True)
-
-    placed = await rsvp_service.run_reserve_distribution(ROUND_ID, DIVISION_ID, bot)
-
-    assert placed is True
     _, _, distributed = await _counts(db_path)
     assert distributed == 1
 

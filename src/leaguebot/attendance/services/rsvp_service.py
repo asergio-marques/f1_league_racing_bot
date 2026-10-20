@@ -170,24 +170,6 @@ class _RsvpButton(discord.ui.Button):
 # this gate's, and nothing here should try to compensate for it.
 
 
-async def _attendance_enabled_for_division(division_id: int, bot: LeagueBot) -> bool:
-    """Return True when *division_id* exists and the league has the attendance module enabled."""
-    async with get_connection(bot.db_path) as db:
-        cur = await db.execute(
-            """
-            SELECT 1
-              FROM divisions d
-              JOIN seasons s ON s.id = d.season_id
-             WHERE d.id = ?
-            """,
-            (division_id,),
-        )
-        row = await cur.fetchone()
-    if row is None:
-        return False
-    return await bot.module_service.is_attendance_enabled()
-
-
 # ── Roster query helper ───────────────────────────────────────────────────────
 
 
@@ -581,8 +563,12 @@ async def reserve_distribution_on(
     With *answered_by*, only an answer given by that moment is placed (a check-in's deadline
     places the reserves on the answers as they stood at the deadline: an answer saved after it,
     its turn on the change queue having waited, is left out). The attendance module's gate is the
-    caller's, as it is for the whole of a deadline. See `run_reserve_distribution` for the
-    algorithm.
+    caller's, as it is for the whole of a deadline.
+
+    Algorithm (FR-018 – FR-024):
+    1. Collect accepted reserves ordered by accepted_at ASC.
+    2. Rank non-Reserve candidate teams by priority tier (FR-020), then tie-break (FR-021).
+    3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
     """
     # Accepted reserves ordered by accepted_at ASC (FR-022 / FR-019)
     cur = await db.execute(
@@ -610,7 +596,7 @@ async def reserve_distribution_on(
         ]
 
     if not accepted_reserves:
-        log.info("run_reserve_distribution: no accepted reserves for round %d / division %d", round_id, division_id)
+        log.info("reserve_distribution_on: no accepted reserves for round %d / division %d", round_id, division_id)
         # Still written by the caller: an earlier run of this round may have seated a reserve
         # since withdrawn.
         return [], []
@@ -722,46 +708,6 @@ async def reserve_distribution_on(
     return assignments, standby_ids
 
 
-async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:
-    """Compute and write reserve-to-team distribution for *round_id* in *division_id*.
-
-    Algorithm (FR-018 – FR-024):
-    1. Collect accepted reserves ordered by accepted_at ASC.
-    2. Rank non-Reserve candidate teams by priority tier (FR-020), then tie-break (FR-021).
-    3. Assign reserves to vacancies one-by-one; remaining reserves become standby.
-
-    Produces nothing while the attendance module is disabled — see the module gate above.
-    The deadline's own job places the reserves in a save of the change queue's
-    (`write_distribution_on`); this form saves for itself and is the one a caller outside a
-    change reaches the seat writes by, so it keeps the gate.
-
-    **Each run is the whole answer** (#429). A round's distribution can run more than once —
-    again after an amendment posts its call again, and again at a restart where its
-    announcement never posted — and the answers, the roster or both may have moved in between.
-    `_write_distribution` clears every placement of the round in the division before it writes
-    the new ones, the run finding no reserve accepted included, so a reserve the last run
-    seated and this one does not holds no team. Every reader takes a team to mean the reserve
-    was sent to race, and scoring would charge one left on standby as a no-show.
-    """
-    if not await _attendance_enabled_for_division(division_id, bot):
-        log.info(
-            "run_reserve_distribution: attendance module disabled for division %d — "
-            "no reserves distributed for round %d",
-            division_id, round_id,
-        )
-        return False
-
-    async with get_connection(bot.db_path) as db:
-        assignments, standby_ids = await reserve_distribution_on(db, round_id, division_id)
-    await _write_distribution(bot.db_path, round_id, division_id, assignments, standby_ids)
-
-    log.info(
-        "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
-        round_id, division_id, len(assignments), len(standby_ids),
-    )
-    return bool(assignments or standby_ids)
-
-
 async def write_distribution_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -777,7 +723,15 @@ async def write_distribution_on(
     Every placement of the round in the division is cleared, then the new ones written, so no
     reader ever sees a reserve holding both a team and a standby place, or a team from a run that
     no longer stands. The call is marked as run (`deadline_run_at`, at *at*, else now) in the same
-    write. See `run_reserve_distribution`.
+    write.
+
+    **Each run is the whole answer** (#429). A round's distribution can run more than once —
+    again after an amendment posts its call again, and again at a restart where its
+    announcement never posted — and the answers, the roster or both may have moved in between,
+    so the run clears every placement of the round in the division before it writes the new
+    ones, the run finding no reserve accepted included: a reserve the last run seated and this
+    one does not holds no team. Every reader takes a team to mean the reserve was sent to
+    race, and scoring would charge one left on standby as a no-show.
     """
     await db.execute(
         "UPDATE driver_round_attendance SET assigned_team_id = NULL, is_standby = 0 "
@@ -799,19 +753,6 @@ async def write_distribution_on(
             "UPDATE driver_round_attendance SET is_standby = 1 WHERE id = ?",
             (dra_id,),
         )
-
-
-async def _write_distribution(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    assignments: list[tuple[int, int]],
-    standby_ids: list[int],
-) -> None:
-    """`write_distribution_on` in one transaction of its own."""
-    async with get_connection(db_path) as db:
-        await write_distribution_on(db, round_id, division_id, assignments, standby_ids)
-        await db.commit()
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

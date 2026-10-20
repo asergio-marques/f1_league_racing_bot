@@ -55,7 +55,8 @@ _IMAGE_MODULES = ("image_rsvp_post", "image_rsvp_service", "image_render_service
 #: untouched. The deadline's own jobs, which lock the call and announce the placements, are held
 #: by `test_the_deadline_s_jobs_never_redraw_the_graphic` below.
 _EDIT_IN_PLACE = (
-    "run_reserve_distribution",
+    "reserve_distribution_on",
+    "write_distribution_on",
     "_rebuild_embed_for_round",
 )
 

@@ -20,7 +20,10 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.attendance.services.rsvp_service import run_reserve_distribution
+from leaguebot.attendance.services.rsvp_service import (
+    reserve_distribution_on,
+    write_distribution_on,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,10 +35,20 @@ _FUTURE = datetime(2025, 6, 8, 14, 0, 0, tzinfo=timezone.utc)
 
 
 async def _make_db(tmp_path) -> str:
-    """A migrated database for run_reserve_distribution; _seed_base gives it a round."""
+    """A migrated database for the distribution; _seed_base gives it a round."""
     path = str(tmp_path / "rsvp_test.db")
     await run_migrations(path)
     return path
+
+
+async def _distribute(round_id: int, division_id: int, bot: MagicMock) -> bool:
+    """Place the round's reserves in a save of the test's own: the placements worked out, then
+    written (each run is the whole answer), then committed. Returns whether any were placed."""
+    async with get_connection(bot.db_path) as db:
+        assignments, standby = await reserve_distribution_on(db, round_id, division_id)
+        await write_distribution_on(db, round_id, division_id, assignments, standby)
+        await db.commit()
+    return bool(assignments or standby)
 
 
 def _make_bot(db_path: str) -> MagicMock:
@@ -139,7 +152,7 @@ class TestNoAcceptedReserves:
 
         bot = _make_bot(db_path)
         # Should return without writing anything
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             row1 = await _get_dra(db, dra1)
@@ -183,7 +196,7 @@ class TestPriorityOrdering:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -231,7 +244,7 @@ class TestPriorityPartialAllocation:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -277,7 +290,7 @@ class TestPriorityNoFtDrivers:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -338,7 +351,7 @@ class TestTiebreakerStandings:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -385,7 +398,7 @@ class TestTiebreakerStandings:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -424,7 +437,7 @@ class TestTiebreakerAlphabetical:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
@@ -485,7 +498,7 @@ class TestAcceptedAtOrdering:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             early_row = await _get_dra(db, early_dra)
@@ -525,7 +538,7 @@ class TestStandbyClassification:
             await db.commit()
 
         bot = _make_bot(db_path)
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             first_row  = await _get_dra(db, first_dra)
@@ -584,12 +597,12 @@ class TestRedistribution:
         reserve = await _seed_one_seat_one_reserve(db_path, "DECLINED")
         bot = _make_bot(db_path)
 
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
         async with get_connection(db_path) as db:
             assert (await _get_dra(db, reserve))["assigned_team_id"] == 101
 
         await _answer(db_path, 1, "ACCEPTED")
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             row = await _get_dra(db, reserve)
@@ -607,9 +620,9 @@ class TestRedistribution:
         reserve = await _seed_one_seat_one_reserve(db_path, "DECLINED")
         bot = _make_bot(db_path)
 
-        await run_reserve_distribution(42, 10, bot)
+        await _distribute(42, 10, bot)
         await _answer(db_path, 2, "DECLINED")
-        placed = await run_reserve_distribution(42, 10, bot)
+        placed = await _distribute(42, 10, bot)
 
         async with get_connection(db_path) as db:
             row = await _get_dra(db, reserve)
