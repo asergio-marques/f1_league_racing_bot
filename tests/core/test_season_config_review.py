@@ -337,14 +337,6 @@ async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signu
 CONFIG_REVIEW = "/season config-review"
 #: The area of the season these tests change, as the review's evidence names it.
 TEAM_LIST = "the team list"
-NO_PRESS_FROM_THE_ROW = (
-    "#439: the configuration review's button reads its review from its view's memory (the "
-    "message it was bound to, a fingerprint) and deletes the review itself, off the change queue"
-)
-NO_EXPIRY_ON_THE_QUEUE = (
-    "#439: the configuration review's five minutes run in its view's memory, and its on_timeout "
-    "deletes the review and posts the expiry notice itself, off the change queue"
-)
 
 
 async def _standing_review(tmp_path):
@@ -467,7 +459,6 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
     assert _expiry_timer_touched(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: Alex presses ✅ Confirm configuration, the season
     unchanged, and the real confirmation runs past its gates (no fault found afresh, signup off),
@@ -513,7 +504,6 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     assert _lines(env, "⌛ ") == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(
     tmp_path, monkeypatch
 ):
@@ -562,7 +552,6 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
     assert await _prompt_rows(env) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 async def test_an_expired_configuration_review_names_its_own_command(tmp_path):
     """Alex's configuration review is left for its five minutes: its expiry timer fires for Q.
     Once the queue takes it down, the expiry notice it posts in channel 700 names the command to
@@ -895,7 +884,6 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass(monkeypatch)
 # ── The button, on a season changed since the report ───────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_configuration_changed_since_the_review_is_not_confirmed(tmp_path, monkeypatch):
     """Alex's configuration review stands, its row recording the team list as its report
     described it; the team list has changed since. Alex presses ✅ Confirm configuration a moment
@@ -921,7 +909,6 @@ async def test_a_configuration_changed_since_the_review_is_not_confirmed(tmp_pat
     assert (payload["ending"], payload["question_id"]) == ("refused", env.channel.q.id)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(
     tmp_path, monkeypatch
 ):

@@ -883,11 +883,6 @@ async def test_a_refused_confirmation_is_told_in_the_channel_instead(db_path):
 # and Alex's review standing in channel 700 (report R1 and R2, question Q) are
 # `test_review_outcomes_recorded.py`'s.
 
-NO_PRESS_FROM_THE_ROW = (
-    "#439: the mid-season review's button reads its review from its view's memory (the message "
-    "it was bound to, a fingerprint, a deadline) rather than from the review's row, and deletes "
-    "the review itself, off the change queue"
-)
 CONFIRM = "_do_confirm_mid_season_placements"
 
 
@@ -940,7 +935,6 @@ async def _prompt_rows(env) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_stumbled_confirmation_still_clears_its_review(tmp_path, monkeypatch):
     """Alex's mid-season review stands, the season unchanged since its report. Alex presses
     ✅ Confirm placements and the real confirmation runs past its gates and commits the
@@ -1018,7 +1012,11 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
         interaction, what=_review_button("Confirm placements", "/season placements-review")
     )
     assert env.channel.deleted == []
-    assert await _take_downs(env) == []
+    # The button deletes nothing itself. The confirmation here is a double that asks nothing, so the
+    # button asks the take-down for the press that went through; the real confirmation has asked it
+    # already, and the button then asks nothing more.
+    [payload] = await _take_downs(env)
+    assert (payload["ending"], payload["question_id"]) == ("confirmed", env.channel.q.id)
 
 
 async def test_another_league_manager_may_not_confirm_the_mid_season_placements(tmp_path):
@@ -1039,7 +1037,6 @@ async def test_another_league_manager_may_not_confirm_the_mid_season_placements(
     assert await _take_downs(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
         tmp_path, monkeypatch):
     """Alex's mid-season review stands, its row recording Pro's rounds as its report described

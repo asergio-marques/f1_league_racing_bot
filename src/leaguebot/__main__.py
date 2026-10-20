@@ -362,8 +362,6 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
         _ConfirmConfigurationView,
         _ConfirmMidSeasonPlacementsView,
     )
-    from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
-
     families = {
         "approve": _ApproveView,
         "mid_season": _ConfirmMidSeasonPlacementsView,
@@ -372,9 +370,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
 
     def make(payload: dict[str, Any]) -> discord.ui.View:
         cog = cast(SeasonCog, bot.get_cog("SeasonCog"))
-        view = families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
-        view.hold_evidence(int(payload["season_id"]), SeasonFingerprint(payload["evidence"]))
-        return view
+        return families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
 
     return make
 
@@ -843,6 +839,10 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(season_approval_tell_change())
     bot.change_queue.register(season_review_take_down_change())
+    bot.scheduler_service.register_timer(
+        season_review_changes.TIMER,
+        season_review_changes.review_expiry_timer(bot.db_path, lambda: bot.change_queue),
+    )
     bot.change_queue.register(
         season_review_changes.season_review_post_change(
             drawing=_review_drawing(bot), approve_view=_approve_view_for(bot),

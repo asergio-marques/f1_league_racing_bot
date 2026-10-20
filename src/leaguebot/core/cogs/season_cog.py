@@ -52,7 +52,21 @@ from leaguebot.core.services.cancellation_changes import (
 )
 from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
-from leaguebot.core.services.season_review_changes import POST as SEASON_REVIEW_POST
+from leaguebot.core.services.season_review_changes import (
+    CONFIRMED,
+    EXPIRED,
+    FAILED,
+    POST as SEASON_REVIEW_POST,
+    REFUSED,
+    TAKING_DOWN,
+    TIMER_FIRED,
+    UNDER_WAY,
+    StandingReview,
+    mark_press,
+    standing_review,
+    take_review_down,
+    withdraw_take_down,
+)
 from leaguebot.core.services.season_end_changes import (
     ABORT_ONLY_BEFORE,
     PRE_CONFIRMATION,
@@ -527,6 +541,17 @@ async def _confirm_privately(
             await channel.send(fallback)
         except Exception:  # noqa: BLE001
             log.exception("could not tell the channel what the confirmation said")
+
+
+async def _take_the_review_down(bot: LeagueBot, interaction: discord.Interaction) -> int | None:
+    """Ask the queue to take the review the pressed question belongs to down, ending confirmed:
+    the confirming press's own work does this just before it commits, so the review is gone
+    ahead of whatever the confirmation sets going. Returns the change's id, or None where
+    nothing was asked (no question to take down, or one already being taken down)."""
+    question = getattr(interaction.message, "id", None)
+    if not isinstance(question, int):
+        return None
+    return await take_review_down(bot.change_queue, bot.db_path, question, CONFIRMED)
 
 
 class _ReviewPoster:
@@ -2218,6 +2243,7 @@ class SeasonCog(commands.Cog):
             )
             return False
 
+        await _take_the_review_down(self.bot, interaction)
         outcome = await self.bot.placement_service.commit_mid_season_placements(
             season.id, interaction.guild
         )
@@ -2697,6 +2723,7 @@ class SeasonCog(commands.Cog):
         # configuration fixes nothing: the refusal's "Nothing has been confirmed" is then true.
         # Taking both in one transaction would have core hand a connection to the signup
         # module's service, a reach into a module the architecture does not allow.
+        await _take_the_review_down(self.bot, interaction)
         try:
             await self.bot.season_service.set_stage(cfg.season_id, target)
         except InvalidStageTransition:
@@ -5097,17 +5124,28 @@ class SeasonCog(commands.Cog):
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
             fingerprint = (await take_fingerprint(self.bot, cfg.season_id)).areas
-        change_id = await self.bot.change_queue.ask(
-            APPROVAL_KIND,
-            {
-                "season_id": cfg.season_id,
-                "season_number": cfg.season_number,
-                "fingerprint": dict(fingerprint),
-                "channel_id": interaction.channel_id,
-            },
-            interaction=interaction,
-            what=what,
-        )
+        # The review comes down ahead of the approval's own jobs, but only for an approval the
+        # queue accepts: a request it refuses at once leaves the review standing (core
+        # "Confirming placements"). So the take-down is asked with the worker held back, and taken
+        # back where the approval is refused, before anything of it can have been carried out.
+        async with self.bot.change_queue.holding():
+            down = await _take_the_review_down(self.bot, interaction)
+            change_id = await self.bot.change_queue.ask(
+                APPROVAL_KIND,
+                {
+                    "season_id": cfg.season_id,
+                    "season_number": cfg.season_number,
+                    "fingerprint": dict(fingerprint),
+                    "channel_id": interaction.channel_id,
+                },
+                interaction=interaction,
+                what=what,
+            )
+            if change_id is None and down is not None:
+                await withdraw_take_down(
+                    self.bot.change_queue, self.bot.db_path, cast(Any, interaction.message).id, down,
+                    back_to=UNDER_WAY,
+                )
         # None where the queue's own check refused the approval and saved nothing.
         return change_id is not None
 
@@ -5260,29 +5298,31 @@ class _ApproveView(LeagueView):
     is public, so this check is what stops a bystander answering it; the refusal is
     ephemeral, so only the presser reads it.
 
-    **How it ends.** The view times out after five minutes, deletes its own message and
-    replaces it with a notice pinging the reviewer. That timer is held in memory and dies
-    with the process, which is why the message is also recorded in `season_review_prompts`
-    and swept at startup by `_recover_expired_review_prompts`.
+    **The review is its row.** The view holds nothing of the review in memory: a press reads the
+    question's row in `season_review_prompts` (when it was posted, the evidence its report was
+    computed from, what became of the last press), by the id of the message it is on. So the
+    button is the same after a restart, or behind a stopped queue, as on the minute it was
+    posted: it is routed again by id (``timeout=None`` and fixed custom ids), and a press made
+    once the five minutes have run is refused and recorded whether or not the take-down has yet
+    run. The view deletes and posts nothing itself: a review that ends is taken down by the
+    queue (`season.review.take_down`), which deletes it, tells the reviewer and records the lapse.
+
+    **How it ends.** The five minutes are a timer armed when the question appeared
+    (`review_expiry`), whose callback asks the take-down. A press that goes through asks it
+    first, ahead of the approval's own work, so the review is gone before the approval's first
+    job (the core specification's "Confirming placements"); one refused for a changed season, or
+    found after the five minutes, asks it too.
 
     **Five minutes from posting.** The button stands five minutes from the posting of the review,
-    whatever is pressed meanwhile (the core specification's "Confirming placements"). discord.py
-    restarts a view's timer on every press it lets through, a refused one included, so
-    `interaction_check` sets the timeout to what is left of the window first, and the restart
-    lands on the same deadline. A press after it confirms nothing and ends the review.
+    whatever is pressed meanwhile: the row's ``posted_at`` is the deadline's start, and no press,
+    a refused one included, moves it.
 
-    **A press under way is not expired under it.** Where the timer fires while a press is being
-    worked (under test mode the backup question, then the approval), the expiry waits for the
-    press to end: a press that finishes has recorded its own outcome and cleared the review, or,
-    refused or cancelled, expired it, and one that raised leaves the review to expire then, as the
-    timer asked. A second press while one is being worked is refused, so a double-click cannot
+    **A press under way is not expired under it.** A press claims the row (``UNDER_WAY``). The
+    timer firing meanwhile marks it and waits: a press that finishes has taken the review down,
+    or, refused or cancelled, ends it as expired once the five minutes have run; one that raised
+    leaves the review to expire then, its lapse saying an earlier press failed and may have been
+    partly done. A second press while one is being worked is refused, so a double-click cannot
     approve twice.
-
-    **What the log holds.** A review left to lapse records one lapse line naming the member who
-    ran it, beside the public notice. One ended by `_expire_now` (the season changed under it, or
-    its five minutes were up) records only the refusal that ended it. A press whose helper
-    raised leaves the review up and pressable, as before, and a lapse after that says an earlier
-    press failed and may have been partly done.
     """
 
     #: The command whose report this button answers, named when the review expires.
@@ -5298,53 +5338,42 @@ class _ApproveView(LeagueView):
         return _review_button(self._button_label, self._review_command)
 
     def __init__(self, cog: SeasonCog, reviewer_id: int) -> None:
-        super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
+        super().__init__(timeout=None)
         self._cog = cog
         self._reviewer_id = reviewer_id
-        # When the review stops being approvable. Under test mode the approval pauses to
-        # ask about a backup, and that question is given whatever is *left* of this window
-        # rather than a fresh one of its own — an approval delayed by the question must
-        # still expire on time. `discord.py`'s own view timeout counts from construction
-        # and cannot answer "how much is left", so the moment is kept here.
-        self._deadline = datetime.now(timezone.utc) + timedelta(
-            seconds=APPROVAL_WINDOW_SECONDS
+        # The review the last press read from its row. A view serves one question, and a second
+        # press is refused (`_refuse_if_under_way`) before it reads, so this is the row of the one
+        # press being worked; nothing of the review is kept between presses.
+        self._review: StandingReview | None = None
+
+    async def _standing(self, interaction: discord.Interaction) -> StandingReview | None:
+        """The review the pressed question belongs to, read from its row; refused, and recorded,
+        where it stands no longer."""
+        message = interaction.message
+        review = (
+            await standing_review(self._cog.bot.db_path, message.id) if message is not None else None
         )
-        self._fingerprint: "SeasonFingerprint | None" = None
-        self._season_id: int | None = None
-        self._message: discord.Message | None = None
-        self._report: list = []
-        # Set by `_expire_now`: the review ended on a refusal, which is what the log records,
-        # so its lapse is not recorded a second time.
-        self._ended_by_refusal = False
-        # True while a press is being worked by its `_do_*` helper (`_press_worked`).
-        self._pressing = False
-        # Set where the timer fired while a press was being worked: the expiry waits for it.
-        self._expiry_waiting = False
-        # Set when a press's helper raised, and cleared when one finishes: the review stays up,
-        # as it always has, and its lapse says an earlier press failed rather than that nothing
-        # was done.
-        self._press_failed = False
+        if review is None:
+            await refuse(
+                interaction,
+                "\u26d4 This review no longer stands, so it can no longer be answered. "
+                f"**Nothing has been {self._verb}.** Run `{self._review_command}` again.",
+                what=self._button,
+                reason="the review no longer stands",
+            )
+        self._review = review
+        return review
 
-    async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        """The base's check, then the timer held to five minutes from posting.
+    async def _refuse_if_expired(
+        self, interaction: discord.Interaction, review: StandingReview
+    ) -> bool:
+        """Refuse a press made once the review's five minutes are up, and take the review down.
 
-        discord.py restarts the timer on every press this lets through, setting it to the
-        view's `timeout` from now; setting the timeout first to what is left of the window keeps
-        that restart on the deadline.
+        The timer normally takes it down first; a press can still reach the button before the
+        take-down has run, or behind a stopped queue. It confirms nothing, and the refusal is what
+        the log records.
         """
-        if not await super().interaction_check(interaction):
-            return False
-        left = (self._deadline - datetime.now(timezone.utc)).total_seconds()
-        self.timeout = max(left, 0.0)
-        return True
-
-    async def _refuse_if_expired(self, interaction: discord.Interaction) -> bool:
-        """Refuse a press made once the review's five minutes are up, and end the review.
-
-        The timer normally ends the review first; a press can still reach the button in the
-        moment between. It confirms nothing, and the refusal is what the log records.
-        """
-        if datetime.now(timezone.utc) < self._deadline:
+        if datetime.now(timezone.utc) < review.deadline:
             return False
         await refuse(
             interaction,
@@ -5353,16 +5382,21 @@ class _ApproveView(LeagueView):
             what=self._button,
             reason="the review's five minutes were up",
         )
-        await self._expire_now()
+        await take_review_down(self._cog.bot.change_queue, self._cog.bot.db_path,
+                               review.question_id, REFUSED)
         return True
 
-    async def _refuse_if_under_way(self, interaction: discord.Interaction) -> bool:
-        """Refuse a press made while another press of this review is still being worked.
+    async def _refuse_if_under_way(
+        self, interaction: discord.Interaction, review: StandingReview
+    ) -> bool:
+        """Claim the button for this press, or refuse it where another press of the review is
+        being worked (or the review is being taken down).
 
         A double-click would otherwise run a second approval (or confirmation) beside the
         first until the first commits. The second confirms nothing, and is recorded.
         """
-        if not self._pressing:
+        if await mark_press(self._cog.bot.db_path, review.question_id, UNDER_WAY,
+                            only_from=(None, FAILED)):
             return False
         await refuse(
             interaction,
@@ -5374,103 +5408,55 @@ class _ApproveView(LeagueView):
         return True
 
     @asynccontextmanager
-    async def _press_worked(self) -> AsyncIterator[None]:
-        """Around a press's `_do_*` helper: an expiry that falls meanwhile waits for it.
+    async def _press_worked(self, review: StandingReview) -> AsyncIterator["_Press"]:
+        """Around a press whose button it has claimed: what the press leaves is settled on its row.
 
-        A press that finishes has recorded its outcome and the caller clears the review, or
-        expires it where the press was refused and its time ran out, so a timer that fired while
-        it ran is let go. One whose helper raises leaves `_press_failed` set and, where the timer
-        fired meanwhile, the review is expired now; the raise then reaches the view's `on_error`,
-        which records the failure.
+        A press that went through has taken the review down (its own work asks that first). One
+        refused or cancelled leaves it standing, to be pressed again within its five minutes,
+        unless those ran out meanwhile or the season has changed since the review, for which it
+        ends as an expired one does, the press having recorded its own outcome. One that raised
+        leaves the review up, marked, and, where the five minutes ran out meanwhile, takes it down
+        now, its lapse saying an earlier press failed and may have been partly done.
         """
-        self._pressing = True
-        self._press_failed = True
+        press = _Press()
+        bot = self._cog.bot
         try:
-            yield
-            self._press_failed = False
-        finally:
-            self._pressing = False
-            if self._expiry_waiting:
-                self._expiry_waiting = False
-                if self._press_failed:
-                    await self.on_timeout()
-
-    def carries(self, posted_messages: list) -> None:
-        """The report this button answers, so approving can clear it."""
-        self._report = posted_messages
-
-    def hold_evidence(self, season_id: int, fingerprint: "SeasonFingerprint") -> None:
-        """Hold the season and the evidence the report was computed from, as the change that
-        posted the review recorded them with its question."""
-        self._season_id = season_id
-        self._fingerprint = fingerprint
-
-    async def record_fingerprint(self, season_id: int) -> None:
-        """Capture the season as the report just described it.
-
-        Called after the report is built, not before: the fingerprint has to describe
-        what the manager actually read.
-        """
-        from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-
-        self._season_id = season_id
-        self._fingerprint = await take_fingerprint(self._cog.bot, season_id)
-
-    async def bind(self, message: discord.Message) -> None:
-        """Remember the message, and record it so a restart can find it again.
-
-        The record is this prompt's own row, beside any other review's, and carries the review
-        it belongs to and the report above it (`carries` runs first), so that a restart can
-        expire it on the terms a timeout would: its report deleted with it, and its lapse
-        naming its review.
-
-        The five minutes start here, as the question is posted, and not when the view was
-        built: a placements review builds its view before drawing and posting its report,
-        which can take a while.
-        """
-        self._message = message
-        self._deadline = datetime.now(timezone.utc) + timedelta(seconds=APPROVAL_WINDOW_SECONDS)
-        self.timeout = APPROVAL_WINDOW_SECONDS
-        if self._season_id is None:
+            yield press
+        except Exception:
+            current = await standing_review(bot.db_path, review.question_id)
+            if current is not None and current.press != TAKING_DOWN:
+                waiting = current.press == TIMER_FIRED
+                await mark_press(bot.db_path, review.question_id, FAILED)
+                if waiting:
+                    await take_review_down(bot.change_queue, bot.db_path, review.question_id, EXPIRED)
+            raise
+        current = await standing_review(bot.db_path, review.question_id)
+        if current is None or current.press == TAKING_DOWN:
             return
-        try:
-            async with get_connection(self._cog.bot.db_path) as db:
-                await db.execute(
-                    "INSERT INTO season_review_prompts "
-                    "(message_id, season_id, channel_id, reviewer_id, review, "
-                    "report_message_ids, posted_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        message.id,
-                        self._season_id,
-                        message.channel.id,
-                        self._reviewer_id,
-                        self._review_command,
-                        # The poster's list holds the question too: kept apart from its report.
-                        json.dumps(
-                            [posted.id for posted in self._report if posted.id != message.id]
-                        ),
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                )
-                await db.commit()
-        except Exception:  # noqa: BLE001 — a review is not failed over its own bookkeeping
-            log.exception("season review: could not record the approve prompt")
+        if press.went_through:
+            await take_review_down(bot.change_queue, bot.db_path, review.question_id, CONFIRMED)
+        elif press.leave_standing:
+            await mark_press(bot.db_path, review.question_id, None)
+        elif current.press == TIMER_FIRED or datetime.now(timezone.utc) >= current.deadline:
+            await take_review_down(bot.change_queue, bot.db_path, review.question_id, EXPIRED)
+        elif await self._changed_since_review():
+            await take_review_down(bot.change_queue, bot.db_path, review.question_id, REFUSED)
+        else:
+            await mark_press(bot.db_path, review.question_id, None)
 
-    async def _forget(self) -> None:
-        """Drop this prompt's record, and no other review's. The message has been answered, has
-        expired, or is gone."""
-        if self._season_id is None or self._message is None:
-            return
-        try:
-            async with get_connection(self._cog.bot.db_path) as db:
-                await db.execute(
-                    "DELETE FROM season_review_prompts WHERE message_id = ?",
-                    (self._message.id,),
-                )
-                await db.commit()
-        except Exception:  # noqa: BLE001
-            log.exception("season review: could not clear the approve prompt")
+    async def _changed_since_review(self) -> list[str]:
+        """The areas of the season changed since the review the press read described it, named as a
+        league reads them; none where the review recorded no evidence."""
+        review = self._review
+        if review is None or review.evidence is None:
+            return []
+        from leaguebot.core.services.season_fingerprint_service import (
+            SeasonFingerprint,
+            take_fingerprint,
+        )
+
+        current = await take_fingerprint(self._cog.bot, review.season_id)
+        return SeasonFingerprint(review.evidence).differs_from(current)
 
     async def _may_approve(self, interaction: discord.Interaction) -> bool:
         """The reviewer, or a league admin.
@@ -5495,86 +5481,21 @@ class _ApproveView(LeagueView):
             return False
         return is_league_admin(config, member)
 
-    async def on_timeout(self) -> None:
-        """Delete the question and say the review has expired.
-
-        Deleted rather than left disabled: a public message offering a button nobody may
-        press is a standing invitation to press it. The reviewer is pinged so the one
-        person who was waiting learns of it without having to watch the channel. Where a
-        press is being worked, the expiry waits for it (`_press_worked`).
-        """
-        if self._pressing:
-            self._expiry_waiting = True
-            return
-        await self._forget()
-        # The report goes with the question. An expired review is one nobody may answer,
-        # and leaving its dozen messages behind while deleting only the button would say
-        # the season is still awaiting a decision it can no longer be given.
-        report, self._report = self._report, []
-        for stale in report:
-            try:
-                await stale.delete()
-            except discord.NotFound:
-                pass
-            except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning("season review: could not clear an expired report: %s", exc)
-        message, self._message = self._message, None
-        if message is None:
-            return
-        try:
-            await message.delete()
-        except discord.NotFound:
-            pass
-        except (discord.HTTPException, discord.Forbidden) as exc:
-            log.warning("season review: could not delete the expired prompt: %s", exc)
-        try:
-            await message.channel.send(
-                f"⏱️ <@{self._reviewer_id}> your review has expired and can no longer "
-                f"be answered. Run `{self._review_command}` again."
-            )
-        except (discord.HTTPException, discord.Forbidden) as exc:
-            log.warning("season review: could not post the expiry notice: %s", exc)
-        if self._ended_by_refusal:
-            return
-        if self._press_failed:
-            detail = (
-                "An earlier press of the button failed and may have been partly done. "
-                f"Check the failure line before running `{self._review_command}` again."
-            )
-        else:
-            detail = (
-                f"Nothing has been {self._verb}. Run `{self._review_command}` again."
-            )
-        await record_abandoned(
-            self._cog.bot,
-            self._reviewer_id,
-            what=f"`{self._review_command}`",
-            lapsed=True,
-            detail=detail,
-        )
-
-    async def _expire_now(self) -> None:
-        """End the review as a timeout would, before the five minutes are up.
-
-        The refusal that ends it is what the log records, so the lapse is not recorded too.
-        """
-        self.stop()
-        self._ended_by_refusal = True
-        await self.on_timeout()
-
-    @discord.ui.button(label="✅ Approve", style=discord.ButtonStyle.success)
+    @discord.ui.button(
+        label="✅ Approve", style=discord.ButtonStyle.success, custom_id="season_review:approve"
+    )
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        """Ask the change queue to approve the season, and only then take the review down.
+        """Ask the change queue to approve the season, the review taken down ahead of it.
 
         A press refused at the press by the approval's own gates (a date gone by, a channel, the
         rasteriser and the rest) or by the queue's check of it, or cancelled at the test-mode
         backup question, leaves the review and its button standing, to be pressed again within
         its five minutes, as a press that fails on a fault does (the core specification's
         "Confirming placements"). One refused because the season has changed since the review
-        ends it as an expired one does. Only a press whose approval the queue saves deletes the
-        review and forgets its prompt.
+        ends it as an expired one does. Only a press whose approval the queue accepts takes the
+        review down, which the approval itself asks for, just before it asks for the approval.
         """
         # Checked first, the fingerprint included: the message is public, so anyone who can
         # read the channel can press this. Nothing is read and nothing is approved for a
@@ -5588,108 +5509,98 @@ class _ApproveView(LeagueView):
             )
             return
 
-        if await self._refuse_if_expired(interaction):
+        review = await self._standing(interaction)
+        if review is None:
             return
-        if await self._refuse_if_under_way(interaction):
+        if await self._refuse_if_expired(interaction, review):
             return
-        # A second approval of the season, from this review or another, is refused at once,
-        # naming no job, before the fingerprint is read: a season whose first approval has
-        # saved and is stopped at a post no longer fingerprints as it did, and the press is
-        # told what is true of it (#439).
-        if self._season_id is not None and await approval_in_hand(
-            self._cog.bot.db_path, self._season_id
-        ):
-            await refuse(interaction, ALREADY_BEING_APPROVED, what=self._button)
+        if await self._refuse_if_under_way(interaction, review):
             return
+        async with self._press_worked(review) as press:
+            # A second approval of the season, from this review or another, is refused at once,
+            # naming no job, before the evidence is read: a season whose first approval has
+            # saved and is stopped at a post no longer fingerprints as it did, and the press is
+            # told what is true of it (#439).
+            if await approval_in_hand(self._cog.bot.db_path, review.season_id):
+                await refuse(interaction, ALREADY_BEING_APPROVED, what=self._button)
+                press.leave_standing = True
+                return
 
-        # The report you read is the report you approve. The five-minute life makes a change
-        # unlikely; this makes one detectable — and it is what lets the approval trust the
-        # review's own render rather than drawing everything a second time.
-        changed = await self._changed_since_review()
-        if changed:
-            bullets = "\n".join(f"• {area}" for area in changed)
+            # The report you read is the report you approve. The five-minute life makes a change
+            # unlikely; this makes one detectable — and it is what lets the approval trust the
+            # review's own render rather than drawing everything a second time.
+            changed = await self._changed_since_review()
+            if changed:
+                bullets = "\n".join(f"• {area}" for area in changed)
+                await refuse(
+                    interaction,
+                    f"⛔ Your season has changed since this review, so the report above "
+                    f"no longer describes it:\n{bullets}\n"
+                    f"Run `/season placements-review` again and approve from the fresh report. "
+                    f"**Nothing has been approved.**",
+                    what=self._button,
+                    reason=f"the season has changed since this review:\n{bullets}",
+                )
+                await take_review_down(self._cog.bot.change_queue, self._cog.bot.db_path,
+                                       review.question_id, REFUSED)
+                return
+
+            press.went_through = await self._cog._do_approve(
+                interaction,
+                deadline=review.deadline,
+                what=self._button,
+                fingerprint=review.evidence,
+            )
+
+    async def _confirm_press(
+        self,
+        interaction: discord.Interaction,
+        confirm: Callable[..., Awaitable[bool]],
+    ) -> None:
+        """A confirming button's press, every one but the placements approval's alike: who may
+        press, the five minutes, the claim, the evidence, then *confirm*, the confirmation's own
+        work, which takes the review down just before it commits."""
+        if not await self._may_approve(interaction):
             await refuse(
                 interaction,
-                f"⛔ Your season has changed since this review, so the report above "
-                f"no longer describes it:\n{bullets}\n"
-                f"Run `/season placements-review` again and approve from the fresh report. "
-                f"**Nothing has been approved.**",
+                "⛔ Only the person who ran this review, or a league admin, can confirm "
+                "it. **Nothing has been confirmed.**",
                 what=self._button,
-                reason=f"the season has changed since this review:\n{bullets}",
             )
-            await self._expire_now()
             return
-
-        async with self._press_worked():
-            asked = await self._cog._do_approve(
-                interaction,
-                deadline=self._deadline,
-                what=self._button,
-                fingerprint=self._fingerprint.areas if self._fingerprint is not None else None,
-            )
-            ran_out = self._ran_out()
-        await self._settle_press(asked, ran_out=ran_out)
-
-    def _ran_out(self) -> bool:
-        """Whether the review's five minutes ran out while a press was worked, as at a backup
-        question left unanswered. Read inside `_press_worked`, before it lets a waiting expiry
-        go."""
-        return self._expiry_waiting or datetime.now(timezone.utc) >= self._deadline
-
-    async def _settle_press(self, went_through: bool, *, ran_out: bool) -> None:
-        """End a press its `_do_*` helper has finished, every review's button alike.
-
-        One that went through takes the review down. One refused, or cancelled, leaves it
-        standing, to be pressed again within its five minutes, unless those ran out meanwhile
-        or the season has changed since the review, as a check at the press may have refused it
-        for: then it ends as an expired one does, the press having recorded its own outcome
-        (the core specification's "Confirming placements").
-        """
-        if not went_through:
-            if ran_out or await self._changed_since_review():
-                await self._expire_now()
+        review = await self._standing(interaction)
+        if review is None:
             return
-        # Stopped first: the review is answered, and a timer firing while the clean-up below
-        # awaits Discord would otherwise announce it expired and record a lapse.
-        self.stop()
-        await self._forget()
-        await self._clear_report()
-        self._message = None
+        if await self._refuse_if_expired(interaction, review):
+            return
+        if await self._refuse_if_under_way(interaction, review):
+            return
+        async with self._press_worked(review) as press:
+            changed = await self._changed_since_review()
+            if changed:
+                bullets = "\n".join(f"• {area}" for area in changed)
+                await refuse(
+                    interaction,
+                    f"⛔ The season has changed since this review:\n{bullets}\n"
+                    f"Run `{self._review_command}` again and confirm from the fresh "
+                    f"report. **Nothing has been confirmed.**",
+                    what=self._button,
+                    reason=f"the season has changed since this review:\n{bullets}",
+                )
+                await take_review_down(self._cog.bot.change_queue, self._cog.bot.db_path,
+                                       review.question_id, REFUSED)
+                return
+            press.went_through = await confirm(interaction, what=self._button)
 
-    async def _changed_since_review(self) -> list[str]:
-        """The areas of the season changed since the review described it, named as a league
-        reads them; none where the review recorded no fingerprint."""
-        if self._fingerprint is None or self._season_id is None:
-            return []
-        from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
-        current = await take_fingerprint(self._cog.bot, self._season_id)
-        return self._fingerprint.differs_from(current)
+@dataclass
+class _Press:
+    """What one press of a review's button left, for `_ApproveView._press_worked` to settle."""
 
-    async def _clear_report(self) -> None:
-        """Delete the review, the question included, once its press has gone through (for the
-        placements review's approval, once the change queue has saved it): only then, never on a
-        press refused at the press or by the queue's check, or cancelled at the backup question,
-        which leaves the review standing (`_settle_press`).
-
-        The report describes a season awaiting a decision, and the decision is now taken:
-        left standing it is a long scroll of a state that has moved on, above whatever the
-        division channels have since been sent. The approval's own confirmation is
-        ephemeral and survives, so the manager still sees the outcome.
-
-        Deleted one by one rather than by `purge`: these are the review's own messages and
-        nothing else in the channel is the bot's to remove.
-        """
-        for message in [*self._report, self._message]:
-            if message is None:
-                continue
-            try:
-                await message.delete()
-            except discord.NotFound:
-                pass
-            except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning("season review: could not clear a report message: %s", exc)
-        self._report = []
+    #: The approval (or confirmation) went through: the review is taken down.
+    went_through: bool = False
+    #: The press was refused before the season was judged, and says nothing of the review's end.
+    leave_standing: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -5737,44 +5648,14 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
     _button_label = "Confirm placements"
     _verb = "confirmed"
 
-    @discord.ui.button(label="✅ Confirm placements", style=discord.ButtonStyle.success)
+    @discord.ui.button(
+        label="✅ Confirm placements", style=discord.ButtonStyle.success,
+        custom_id="season_review:confirm_placements",
+    )
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        if not await self._may_approve(interaction):
-            await refuse(
-                interaction,
-                "⛔ Only the person who ran this review, or a league admin, can confirm "
-                "it. **Nothing has been confirmed.**",
-                what=self._button,
-            )
-            return
-
-        if await self._refuse_if_expired(interaction):
-            return
-        if await self._refuse_if_under_way(interaction):
-            return
-
-        changed = await self._changed_since_review()
-        if changed:
-            bullets = "\n".join(f"• {area}" for area in changed)
-            await refuse(
-                interaction,
-                f"⛔ The season has changed since this review:\n{bullets}\n"
-                f"Run `{self._review_command}` again and confirm from the fresh "
-                f"report. **Nothing has been confirmed.**",
-                what=self._button,
-                reason=f"the season has changed since this review:\n{bullets}",
-            )
-            await self._expire_now()
-            return
-
-        async with self._press_worked():
-            confirmed = await self._cog._do_confirm_mid_season_placements(
-                interaction, what=self._button
-            )
-            ran_out = self._ran_out()
-        await self._settle_press(confirmed, ran_out=ran_out)
+        await self._confirm_press(interaction, self._cog._do_confirm_mid_season_placements)
 
 
 class _ConfirmConfigurationView(_ApproveView):
@@ -5789,44 +5670,14 @@ class _ConfirmConfigurationView(_ApproveView):
     _button_label = "Confirm configuration"
     _verb = "confirmed"
 
-    @discord.ui.button(label="✅ Confirm configuration", style=discord.ButtonStyle.success)
+    @discord.ui.button(
+        label="✅ Confirm configuration", style=discord.ButtonStyle.success,
+        custom_id="season_review:confirm_configuration",
+    )
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        if not await self._may_approve(interaction):
-            await refuse(
-                interaction,
-                "⛔ Only the person who ran this review, or a league admin, can confirm "
-                "it. **Nothing has been confirmed.**",
-                what=self._button,
-            )
-            return
-
-        if await self._refuse_if_expired(interaction):
-            return
-        if await self._refuse_if_under_way(interaction):
-            return
-
-        changed = await self._changed_since_review()
-        if changed:
-            bullets = "\n".join(f"• {area}" for area in changed)
-            await refuse(
-                interaction,
-                f"⛔ The season has changed since this review:\n{bullets}\n"
-                f"Run `{self._review_command}` again and confirm from the fresh "
-                f"report. **Nothing has been confirmed.**",
-                what=self._button,
-                reason=f"the season has changed since this review:\n{bullets}",
-            )
-            await self._expire_now()
-            return
-
-        async with self._press_worked():
-            confirmed = await self._cog._do_confirm_configuration(
-                interaction, what=self._button
-            )
-            ran_out = self._ran_out()
-        await self._settle_press(confirmed, ran_out=ran_out)
+        await self._confirm_press(interaction, self._cog._do_confirm_configuration)
 
 
 def _round_amend_named(round_number: int | None, division_name: str | None = None) -> str:

@@ -160,11 +160,12 @@ records the outcome: every change type writes its outcome line as a step.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import sqlite3
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -172,7 +173,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.change import (
     AuditRecord,
     ChangeOrigin,
@@ -535,6 +536,8 @@ class ChangeQueue:
         # drains the lane.
         self._working: dict[str, asyncio.Lock] = {}
         self._asking = asyncio.Lock()
+        # The task that `holding` has the asking lock for, so that its own asks pass through.
+        self._holder: "asyncio.Task[Any] | None" = None
         # Taken around each save, so that two lanes never write at once; see the module.
         self._writing = asyncio.Lock()
         # The change each lane's worker is carrying out a unit of, by lane, which a Retry or a
@@ -651,7 +654,7 @@ class ChangeQueue:
 
         # The worker passes over this lock to choose its next change, so it cannot pick the
         # change up before its acknowledgement is recorded and the interaction is held.
-        async with self._asking:
+        async with contextlib.nullcontext() if self._holds() else self._asking:
             key = change_type.key(payload)
             lane = change_type.lane(payload)
             change_id: int | None = None
@@ -722,6 +725,50 @@ class ChangeQueue:
                 )
             self._signal.set()
             return change_id
+
+    def _holds(self) -> bool:
+        return self._holder is not None and self._holder is asyncio.current_task()
+
+    @contextlib.asynccontextmanager
+    async def holding(self) -> AsyncIterator[None]:
+        """Hold the worker back from choosing its next change while the caller asks for several
+        that belong together and may take one back (`withdraw`), as an approval's take-down of its
+        review is asked ahead of the approval, which the queue may then refuse at once: the take-down
+        must not have been carried out by then, for a request the queue refuses at once leaves the
+        review standing. The caller's own asks pass through; nobody else's changes are held beyond
+        the asks, which do not wait on Discord but for the acknowledgement of the last."""
+        async with self._asking:
+            self._holder = asyncio.current_task()
+            try:
+                yield
+            finally:
+                self._holder = None
+
+    async def withdraw(self, change_id: int) -> bool:
+        """Take back change *change_id*, asked and not started: its rows go, and with them any
+        reply held for it. Returns whether it was taken back; one the worker has started, or a job
+        of it has done, is left as it is."""
+        async with self._writing, get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT state FROM queued_changes WHERE id = ?", (change_id,)
+            )
+            row = await cursor.fetchone()
+            if row is None or row["state"] != ChangeState.QUEUED.value:
+                await db.rollback()
+                return False
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM queued_change_steps WHERE change_id = ? AND done_at IS NOT NULL",
+                (change_id,),
+            )
+            (done,) = await sole_row(cursor)
+            if done:
+                await db.rollback()
+                return False
+            await db.execute("DELETE FROM queued_changes WHERE id = ?", (change_id,))
+            await db.commit()
+        self._held.pop(change_id, None)
+        return True
 
     def keep_reply(self, change_id: int, kind: str, key: str) -> None:
         """Keep the reply of change *change_id* once it has finished, for the later change of *kind*

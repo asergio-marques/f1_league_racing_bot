@@ -79,10 +79,6 @@ def _member(user_id: int, name: str):
 # Alex's review of season 1 standing in channel 700 (report R1 and R2, question Q), recorded in
 # `season_review_prompts`, and fire the timer's callback as the scheduler would.
 
-NO_EXPIRY_ON_THE_QUEUE = (
-    "#439: a season review's five minutes run in its view's memory, and its on_timeout deletes "
-    "the review and records the lapse itself, off the change queue"
-)
 REVIEW_CHANNEL = 700
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -168,11 +164,6 @@ def _queue_lines(env) -> list[str]:
 # season has changed (C93, C97a). It deletes and posts nothing itself: a review it ends is taken
 # down by the queue (C92, C97).
 
-NO_PRESS_FROM_THE_ROW = (
-    "#439: a season review's button reads its review from its view's memory (the message it was "
-    "bound to, a fingerprint, a deadline) rather than from the review's row, and deletes the "
-    "review itself, off the change queue"
-)
 #: The area of the season the tests change, as the review's evidence names it.
 AREA = "Division Pro's rounds"
 
@@ -275,7 +266,6 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     assert reason.startswith("Only the person who ran this review, or a league admin"), line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_refused_because_the_season_changed_is_recorded_once(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
@@ -325,7 +315,6 @@ async def test_a_press_refused_because_the_season_changed_is_recorded_once(
 # ── A review left to lapse ─────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     tmp_path, view_class, label, review, helper, verb
@@ -361,7 +350,6 @@ async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     assert review in detail and "again" in detail, detail
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_whose_press_failed_says_so_when_it_lapses(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
@@ -419,7 +407,6 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
 # a press after them is judged by the question's `posted_at`.
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     tmp_path, view_class, label, review, helper, verb
@@ -459,7 +446,6 @@ async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     ), head
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_after_the_five_minutes_confirms_nothing(
     tmp_path, view_class, label, review, helper, verb
@@ -502,7 +488,6 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
 # notice and records no lapse: the review was answered.
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_the_press(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
@@ -540,7 +525,6 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
     assert _lines(env, "⛔ ") == [], _queue_lines(env)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_expire_once_it_ends(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
@@ -600,7 +584,6 @@ async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_exp
 # ── Found in review of the hand-built part (#482) ───────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_timer_firing_while_a_finished_press_clears_the_review_records_no_lapse(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
@@ -687,7 +670,6 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_ON_THE_QUEUE)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_expired_twice_at_once_posts_one_notice(
     tmp_path, view_class, label, review, helper, verb

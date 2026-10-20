@@ -258,12 +258,6 @@ REVIEWER = 4242
 
 ADMIN_ROLE = 444
 
-#: Why a press read from the review's row fails until #439 slice 6b's C93 and C97a are built.
-NO_PRESS_FROM_THE_ROW = (
-    "#439: a season review's button reads its review from its view's memory (the message it was "
-    "bound to, a fingerprint, a deadline) rather than from the review's row, and deletes the "
-    "review itself, off the change queue"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -629,7 +623,6 @@ async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standi
     assert await _prompt_rows(cog) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     tmp_path, monkeypatch
 ):
@@ -671,12 +664,6 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     question.channel.send.assert_not_awaited()
 
 
-#: Why a press whose approval the queue refuses at once fails until #439 slice 6b's C92, C93
-#: and C97 are built.
-NO_REFUSAL_AT_ASK = (
-    "#439: a season review's row records no evidence, no change takes a review down on the "
-    "queue, and the button ends a review refused upon a changed season by deleting it itself"
-)
 
 #: The queue's own check of the approval refusing it at once, for a reason the button's gates
 #: did not see: a round's date gone by while the press was worked.
@@ -777,7 +764,6 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
     question.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REFUSAL_AT_ASK)
 async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as_expired(
     tmp_path, monkeypatch
 ):
@@ -825,7 +811,6 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as
     question.channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: every gate passed, Alex's approval is asked of the
     change queue, and the review's take-down is asked before it, ending confirmed and naming Q

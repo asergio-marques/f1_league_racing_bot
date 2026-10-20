@@ -958,7 +958,11 @@ CREATE INDEX "queued_change_steps_stopped" ON "queued_change_steps" (next_try_at
 -- once, and one ending must not clear the other's record. `review` is the command whose question
 -- it is; `report_message_ids` the report above it (a JSON list), deleted with it at a restart.
 -- `evidence` is what the report was computed from (a JSON object), which Approve judges the season
--- against when it is pressed.
+-- against when it is pressed. `verb` is what the review would have done ("approved" or
+-- "confirmed"), for the notice that says it did not. `press` is what became of the button's last
+-- press, for the timer and the take-down to read: NULL while the review stands untouched, else
+-- UNDER_WAY, TIMER_FIRED (the five minutes ran out while a press was being worked), FAILED (a press
+-- hit a fault and the review stands) or TAKING_DOWN (a take-down is asked and the button is spent).
 CREATE TABLE "season_review_prompts" (
     message_id         INTEGER PRIMARY KEY,
     season_id          INTEGER NOT NULL,
@@ -967,7 +971,9 @@ CREATE TABLE "season_review_prompts" (
     review             TEXT    NOT NULL,
     report_message_ids TEXT    NOT NULL DEFAULT '[]',
     posted_at          TEXT    NOT NULL,
-    evidence           TEXT
+    evidence           TEXT,
+    verb               TEXT    NOT NULL DEFAULT 'confirmed',
+    press              TEXT
 );
 
 -- The circuits a league can schedule, seeded once.

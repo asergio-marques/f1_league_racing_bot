@@ -67,6 +67,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
+    ChangeOrigin,
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
@@ -144,11 +145,18 @@ FORGET = "forget"
 #: its press refused upon a changed state.
 CONFIRMED, EXPIRED, RESTART, REFUSED = "confirmed", "expired", "restart", "refused"
 
+#: What became of a review's button, as its row records it (`season_review_prompts.press`): a
+#: press is being worked, the five minutes ran out meanwhile, a press hit a fault and the review
+#: stands, or a take-down is asked and the button is spent.
+UNDER_WAY, TIMER_FIRED, FAILED, TAKING_DOWN = "UNDER_WAY", "TIMER_FIRED", "FAILED", "TAKING_DOWN"
+#: What a review says it has not done when it lapses, by the family of its button.
+VERBS = {"approve": "approved"}
+
 __all__ = [
     "ARM_EXPIRY", "ApproveViewFactory", "CONFIRMED", "DELETE_DRAWING_NOTICE", "DELETE_MESSAGE",
     "DRAW_AND_POST", "DRAWING_NOTICE", "EXPIRED", "FORGET", "POST", "POST_DRAWING_NOTICE",
     "POST_EXPIRY", "POST_QUESTION", "POST_REPORT", "REFUSED", "RESTART", "REVIEW_WINDOW",
-    "ReviewDrawing", "TAKE_DOWN", "TIMER", "await_from_worker", "season_review_post_change",
+    "FAILED", "ReviewDrawing", "StandingReview", "TAKE_DOWN", "TAKING_DOWN", "TIMER_FIRED", "TIMER", "UNDER_WAY", "VERBS", "await_from_worker", "season_review_post_change",
     "season_review_take_down_change",
 ]
 
@@ -462,12 +470,13 @@ def season_review_post_change(
         await db.execute(
             "INSERT INTO season_review_prompts "
             "(message_id, season_id, channel_id, reviewer_id, review, report_message_ids, "
-            "posted_at, evidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "posted_at, evidence, verb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 int(result.result["new"]), int(ctx.payload["season_id"]),
                 int(ctx.payload["channel_id"]), int(ctx.payload["reviewer_id"]),
                 str(ctx.payload["review"]), json.dumps(_posted_ids(ctx)),
                 result.result["posted_at"], json.dumps(ctx.payload.get("evidence")),
+                VERBS.get(str(ctx.payload.get("view", "approve")), "confirmed"),
             ),
         )
 
@@ -551,3 +560,145 @@ def season_review_post_change(
         doing=lambda payload: f"Posting the review of {payload['review']}",
         outcome=outcome,
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class StandingReview:
+    """A review's question as its row records it: what a press reads, in place of anything the
+    button holds in memory, so that a restart or a stopped queue changes nothing it knows."""
+
+    question_id: int
+    season_id: int
+    channel_id: int
+    reviewer_id: int
+    review: str
+    report_ids: tuple[int, ...]
+    posted_at: datetime
+    evidence: dict[str, Any] | None
+    verb: str
+    press: str | None
+
+    @property
+    def deadline(self) -> datetime:
+        """When the question stops being answerable: five minutes from when it was posted."""
+        return self.posted_at + REVIEW_WINDOW
+
+
+async def standing_review(db_path: str, question_id: int) -> StandingReview | None:
+    """The review whose question is *question_id*, or None where it stands no longer."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT * FROM season_review_prompts WHERE message_id = ?", (int(question_id),)
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    try:
+        report = tuple(int(item) for item in json.loads(row["report_message_ids"] or "[]"))
+    except (TypeError, ValueError):
+        report = ()
+    posted = datetime.fromisoformat(row["posted_at"])
+    if posted.tzinfo is None:
+        posted = posted.replace(tzinfo=timezone.utc)
+    evidence = json.loads(row["evidence"]) if row["evidence"] else None
+    return StandingReview(
+        question_id=int(row["message_id"]), season_id=int(row["season_id"]),
+        channel_id=int(row["channel_id"]), reviewer_id=int(row["reviewer_id"]),
+        review=str(row["review"]), report_ids=report, posted_at=posted,
+        evidence=evidence, verb=str(row["verb"]), press=row["press"],
+    )
+
+
+async def mark_press(
+    db_path: str, question_id: int, to: str | None, *, only_from: tuple[str | None, ...] | None = None
+) -> bool:
+    """Record what became of the button's press on *question_id*'s row, and say whether it did.
+
+    Where *only_from* is given the row changes only from one of those states (None among them for
+    a review untouched), which is how a press claims the button: a second press, finding it
+    claimed, is refused. A row gone is not marked.
+    """
+    where = "message_id = ?"
+    args: list[Any] = [int(question_id)]
+    if only_from is not None:
+        marks = ", ".join("?" for state in only_from if state is not None)
+        clauses = [f"press IN ({marks})"] if marks else []
+        if None in only_from:
+            clauses.append("press IS NULL")
+        where += " AND (" + " OR ".join(clauses) + ")"
+        args += [state for state in only_from if state is not None]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(f"UPDATE season_review_prompts SET press = ? WHERE {where}",
+                                  (to, *args))
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def take_review_down(
+    queue: Any, db_path: str, question_id: int, ending: str
+) -> int | None:
+    """Ask the queue to take the review whose question is *question_id* down, ending *ending*, as
+    the bot; return the change's id, or None where nothing was asked.
+
+    Nothing is asked where the review stands no longer, or where a take-down of it is in hand: the
+    row says so (`TAKING_DOWN`), set before the ask so that two askers at once, a press and the
+    timer, ask once. A fault in the ask puts the row back as it was. An earlier press that failed
+    (`FAILED`) is carried to the lapse, which says so.
+    """
+    review = await standing_review(db_path, question_id)
+    if review is None or review.press == TAKING_DOWN:
+        return None
+    if not await mark_press(db_path, question_id, TAKING_DOWN, only_from=(review.press,)):
+        return None
+    payload: dict[str, Any] = {
+        "channel_id": review.channel_id, "question_id": review.question_id,
+        "report_ids": list(review.report_ids), "reviewer_id": review.reviewer_id,
+        "review": review.review, "ending": ending, "verb": review.verb,
+    }
+    if review.press == FAILED:
+        payload["press_failed"] = True
+    try:
+        change_id = await queue.ask(
+            TAKE_DOWN, payload, what="taking a season review down", origin=ChangeOrigin.BOT
+        )
+    except BaseException:
+        await mark_press(db_path, question_id, review.press)
+        raise
+    return change_id
+
+
+async def withdraw_take_down(
+    queue: Any, db_path: str, question_id: int, change_id: int, *, back_to: str | None
+) -> None:
+    """Take back the take-down *change_id*, asked ahead of an approval the queue then refused at
+    once: a request the queue refuses at once leaves the review standing (the core
+    specification's "Confirming placements"). The row goes back to *back_to*, the state the press
+    had put it in."""
+    if await queue.withdraw(change_id):
+        await mark_press(db_path, question_id, back_to)
+
+
+def review_expiry_timer(
+    db_path: str, queue_of: Callable[[], Any]
+) -> Callable[[int | str], Awaitable[None]]:
+    """The callback the builder registers for the `review_expiry` timer, handed the question's id.
+
+    It reads the review's row again and acts on what the button's last press left. A review
+    answered or being taken down is left to that. One whose press is under way is marked, so that
+    the press, ending, takes it down if it did not go through: the expiry waits for the press. Any
+    other is taken down, ending expired. Its row gone, it asks nothing: the key may be fired more
+    than once. *queue_of* gives the queue when the timer fires, which a restart has rebuilt since.
+    """
+
+    async def fired(key: int | str) -> None:
+        review = await standing_review(db_path, int(key))
+        if review is None or review.press == TAKING_DOWN:
+            return
+        if review.press == UNDER_WAY:
+            if await mark_press(db_path, review.question_id, TIMER_FIRED, only_from=(UNDER_WAY,)):
+                return
+        elif review.press == TIMER_FIRED:
+            return
+        await take_review_down(queue_of(), db_path, review.question_id, EXPIRED)
+
+    return fired

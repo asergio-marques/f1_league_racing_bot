@@ -702,10 +702,6 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 # The question's button (C93–C97): what a press reads, and what it asks of the queue
 # ---------------------------------------------------------------------------
 
-NO_PRESS_ON_THE_QUEUE = (
-    "#439: a season review's button deletes the review and posts its expiry itself, judging the "
-    "season against a fingerprint it took in memory, off the change queue"
-)
 #: The area of the season the tests change, as the review's evidence names it.
 PRO_ROUNDS = "Division Pro's rounds"
 
@@ -799,7 +795,6 @@ async def test_the_private_faults_stay_a_reply(standing):
     assert await change_rows(standing.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)
 async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_review_is_gone_before_its_first_job(
         tmp_path, monkeypatch):
     """Season 3 is in placements, ready to approve, and the league admin's placements review of it
@@ -846,16 +841,17 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     assert sorted(payload["report_ids"]) == sorted([r1.id, r2.id])
     assert channel.deleted == []
 
-    async def _state(change_id: int) -> str:
-        [row] = [row for row in await change_rows(league.db_path) if row["id"] == change_id]
-        return row["state"]
+    async def _jobs_all_done(change_id: int) -> bool:
+        return all(job["done_at"] for job in await step_rows(league.db_path, change_id))
 
+    # A job at a time, until the take-down's last job is done: finishing the change is a unit of
+    # its own, which the queue goes on from into the next change's first job.
     for _ in range(20):
-        if await _state(take_downs[0]["id"]) == "DONE":
+        if await _jobs_all_done(take_downs[0]["id"]):
             break
         await run_queue(league.bot, steps=1)
 
-    assert await _state(take_downs[0]["id"]) == "DONE"
+    assert await _jobs_all_done(take_downs[0]["id"])
     assert channel.messages == []
     assert await _prompts(league.db_path) == []
     assert not [job for job in await step_rows(league.db_path, approvals[0]["id"])
@@ -863,10 +859,8 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
 
 
 @pytest.mark.parametrize("ending", [
-    pytest.param("expired", id="five_minutes",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)),
-    pytest.param("refused", id="refused_press",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)),
+    pytest.param("expired", id="five_minutes"),
+    pytest.param("refused", id="refused_press"),
 ])
 async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
     """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
@@ -895,7 +889,6 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
     assert change["origin"] == "BOT"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_ON_THE_QUEUE)
 async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
     """The queue is stopped when Alex runs his review of season 1; its evidence is what the
     command computed the report from, Pro's rounds "before". While the review waits, Pro's
@@ -945,10 +938,6 @@ NO_ROUTABLE_REVIEW = (
     "#439: a season review's button holds its five minutes in memory, from when its view was "
     "built, and is not routed again once the bot restarts"
 )
-NO_EXPIRY_TIMER = (
-    "#439: a season review's five minutes are its view's own timeout, held in memory, not a timer "
-    "the builder registers"
-)
 
 
 def _refused_as_expired(env: Any, interaction: Any) -> None:
@@ -961,7 +950,6 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
     assert "Approve" in line and PLACEMENTS in line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
 async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing):
     """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
     minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a view just built for it. He is refused,
@@ -1004,7 +992,6 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     assert standing.channel.deleted == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
 async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
         standing, monkeypatch):
     """Alex's review stands in channel 700, its question posted four minutes ago by its row, and
@@ -1035,7 +1022,6 @@ async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minu
     assert abs((deadline - expected).total_seconds()) < 2, (deadline, expected)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_TIMER)
 async def test_the_review_s_five_minutes_are_armed_by_a_job_after_the_question_and_ask_the_take_down(
         standing):
     """The builder registers the review's expiry timer, which the review's `arm_expiry` job arms
@@ -1054,7 +1040,8 @@ async def test_the_review_s_five_minutes_are_armed_by_a_job_after_the_question_a
 
     await run_queue(standing.bot)
 
-    assert channel.messages == []
+    # The review's own messages are gone; the expiry notice just posted is the one left.
+    assert {channel.q, channel.r1, channel.r2}.isdisjoint(channel.messages)
     [(notice, _kwargs)] = channel.sent
     assert f"<@{REVIEWER}>" in notice
 
