@@ -29,7 +29,6 @@ from leaguebot.results.services.result_submission_service import (
     _row_dict_from_qualifying,
     _row_dict_from_race,
     other_active_team_assignments,
-    save_session_result,
     validate_submission_block,
 )
 from leaguebot.results.services.standings_service import (
@@ -38,6 +37,7 @@ from leaguebot.results.services.standings_service import (
     previous_standing_positions,
 )
 from leaguebot.core.services.team_service import TeamService
+from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 
 DIVISION_ID = 37
