@@ -825,6 +825,7 @@ def _prompt_change(
         plan=plan,
         finished_lines=finished_lines,
         tell_origin=tell_origin,
+        turn_channel=lambda payload: int(payload["channel_id"]),
     )
 
 

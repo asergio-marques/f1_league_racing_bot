@@ -547,6 +547,30 @@ async def test_the_last_amended_paste_hands_stage_one_to_the_league_and_its_prom
     assert await _winner(league) == MAX
 
 
+async def test_a_message_typed_while_stage_one_is_in_hand_is_turned_away(tmp_path, monkeypatch):
+    """The league lane is stopped, and Alex pastes the amendment's last session: its turn runs on
+    the amendment's lane and hands stage one to the league, which waits behind the stopped job. A
+    message Alex types meanwhile is turned away at once, as one typed while a turn waits is: it is
+    deleted, a note is left in the channel, no turn is asked for it, and the refusal is logged."""
+    from tests.support.change_queue import queued_log_lines
+
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    await block_queue(league)
+    await _type(league)
+    [stage_one] = await _changes(league, STAGE_ONE)
+    assert stage_one["state"] == "QUEUED"
+    sent_before = len(league.sent_to(AMEND_CHANNEL))
+
+    second = await _type(league, run=False)
+
+    assert second.gone
+    assert len(await _changes(league, TURN)) == 1
+    assert len(league.sent_to(AMEND_CHANNEL)) == sent_before + 1
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    assert logged.count("⛔") == 1, logged
+
+
 async def test_stage_one_s_line_says_what_was_recorded_and_that_nothing_is_published_yet(
     tmp_path, monkeypatch,
 ):

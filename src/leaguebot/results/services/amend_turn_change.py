@@ -674,6 +674,7 @@ def amend_stage_one_change(
         key=lambda payload: f"{STAGE_ONE_KIND}:{payload['amend_id']}",
         doing=lambda payload: f"Recording round {payload['round_id']}'s amended results",
         outcome=outcome,
+        turn_channel=_turn_channel,
     )
 
 
