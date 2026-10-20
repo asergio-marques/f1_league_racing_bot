@@ -161,6 +161,10 @@ def start_change(
     the changes that close the window, one of which waiting on the queue refuses a Sign Up.
     *cancel_timers* takes away a driver's timers, *wizard* is the service whose prompt the welcome is
     made of and *queue_of* the change queue the welcome's buttons are handed.
+
+    The driver's status moves only where the channel was made: `start`, like the 24 hours and the
+    welcome, is not due where a Discard dropped `create_channel`, so that the driver is left able
+    to press Sign Up again, as the outcome tells them.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -409,7 +413,9 @@ def start_change(
             CREATE_CHANNEL, StepKind.ACT, create_channel, describe=describe_create,
             record=save_wizard,
         ),
-        START_JOB: Step(START_JOB, StepKind.SAVE, start, describe=describe_start),
+        START_JOB: Step(
+            START_JOB, StepKind.SAVE, start, still_due=has_channel, describe=describe_start
+        ),
         ARM_INACTIVITY: Step(
             ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=has_channel,
             describe=describe_arm,

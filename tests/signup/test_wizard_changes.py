@@ -43,6 +43,7 @@ import pytest
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
     run_queue,
@@ -247,6 +248,39 @@ async def test_sign_up_is_acknowledged_and_creates_the_channel_and_welcome_as_jo
         (INACTIVITY_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))
     ]
     assert league.channel(NEW_CHANNEL).texts != []
+
+
+async def test_a_discarded_channel_creation_leaves_the_driver_free_to_press_sign_up_again(
+    tmp_path,
+):
+    """Discord refuses to create Kimi's channel and an admin discards the job. His status is not
+    moved (no `start`), no 24 hours are armed and no welcome is posted; he is told to press Sign
+    Up again, and pressing it again, once Discord allows, starts his signup."""
+    league = await _league(tmp_path)
+    create = league.guild.create_text_channel
+    league.guild.create_text_channel = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+    league.channel(SIGNUP_CHANNEL).category.create_text_channel = league.guild.create_text_channel
+
+    press = await _press_sign_up(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "create_channel"
+    await discard_job(league.bot)
+
+    assert await _driver_state(league) != "PENDING_SIGNUP_COMPLETION"
+    assert _armed(league, INACTIVITY_TIMER) == []
+    assert "Press Sign Up again" in _answered(press)
+
+    league.guild.create_text_channel = create
+    league.channel(SIGNUP_CHANNEL).category.create_text_channel = create
+    again = await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    assert "already have a signup in progress" not in _answered(again)
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert (await _wizard(league)) is not None
 
 
 async def test_the_wizard_row_is_saved_with_the_channel_s_mark(tmp_path):
