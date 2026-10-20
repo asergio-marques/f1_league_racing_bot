@@ -75,20 +75,6 @@ def channel_delete_job_id(discord_user_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _wizard_inactivity_job(discord_user_id: str) -> None:
-    """APScheduler callable for wizard inactivity timeout."""
-    if _GLOBAL_WIZARD_SERVICE is None:
-        log.warning(
-            "_wizard_inactivity_job fired but _GLOBAL_WIZARD_SERVICE is None "
-            "(user=%s) — skipping",
-            discord_user_id,
-        )
-        return
-    await ask_expiry(
-        _GLOBAL_WIZARD_SERVICE._change_queue, _GLOBAL_WIZARD_SERVICE._db_path, discord_user_id
-    )
-
-
 async def _wizard_channel_delete_job(discord_user_id: str) -> None:
     """APScheduler callable for post-hold channel deletion: asks the queue, as the bot, to delete
     the held channel on the driver's own lane (`signup.channel.delete`)."""
@@ -390,26 +376,21 @@ class WizardService:
         discord_user_id: str,
         fire_at: datetime,
     ) -> None:
-        """Schedule (or reschedule) the 24-h inactivity APScheduler job."""
-        job_id = self._inactivity_job_id(discord_user_id)
+        """Arm (or move) the driver's 24-hour inactivity timer, the one `signup_inactivity`
+        timer there is: it asks the queue for the signup's expiry (`signup.end`) when it fires,
+        and arming it again replaces the earlier, so that no answer leaves a timer behind."""
         if fire_at.tzinfo is None:
             fire_at = fire_at.replace(tzinfo=timezone.utc)
-        self._scheduler._scheduler.add_job(
-            _wizard_inactivity_job,
-            trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-            id=job_id,
-            replace_existing=True,
-            name=f"Wizard inactivity {discord_user_id}",
-            kwargs={"discord_user_id": discord_user_id},
-        )
-        log.debug("Armed inactivity job %s → %s", job_id, fire_at.isoformat())
+        self._scheduler.arm_once(INACTIVITY_TIMER, discord_user_id, fire_at)
+        log.debug("Armed the inactivity timer for %s → %s", discord_user_id, fire_at.isoformat())
 
     async def _cancel_inactivity_job(
         self, discord_user_id: str
     ) -> None:
-        """Remove the inactivity APScheduler job if it exists."""
-        job_id = self._inactivity_job_id(discord_user_id)
-        self._scheduler.cancel_job(job_id)
+        """Take away the driver's inactivity timer if it stands."""
+        scheduler = self._scheduler
+        scheduler.cancel_job(self._inactivity_job_id(discord_user_id))
+        scheduler.disarm(INACTIVITY_TIMER, discord_user_id)
 
     async def _arm_channel_delete_job(
         self,

@@ -455,7 +455,7 @@ KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/test_mode_cog.py", "TestModeCog.backup_save"): (3, PASS["core"]),
     ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._arm_channel_delete_job"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._arm_inactivity_job"): (2, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._arm_inactivity_job"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._cancel_inactivity_job"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (1, PASS["signup"]),
@@ -502,7 +502,6 @@ KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (3, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["core"]),
     ("signup/services/wizard_service.py", "WizardService._arm_channel_delete_job"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._arm_inactivity_job"): (1, PASS["signup"]),
 }
 
 

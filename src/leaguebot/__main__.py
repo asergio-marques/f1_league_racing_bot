@@ -189,7 +189,9 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.image.services import driver_portrait_service
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services.wizard_service import inactivity_job_id
-    from leaguebot.signup.services.closing_steps import window_close_jobs, window_close_steps
+    from leaguebot.signup.services.closing_steps import (
+        INACTIVITY_TIMER, window_close_jobs, window_close_steps,
+    )
     from leaguebot.weather.services import forecast_cleanup_service
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
@@ -212,6 +214,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
 
     def cancel_signup_timeout(user_id: str) -> None:
         bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
+        bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
 
     async def discard_portraits(accounts):
         return await driver_portrait_service.discard_portraits(bot, accounts)

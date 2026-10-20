@@ -480,13 +480,20 @@ def end_change(
     #: The states from which a wizard still collecting answers can expire.
     expirable = (DriverState.PENDING_SIGNUP_COMPLETION, DriverState.PENDING_DRIVER_CORRECTION)
 
+    def last_activity(record: Any) -> datetime | None:
+        """When the driver last answered (or the signup began), or None where none is recorded."""
+        if not record.last_activity_at:
+            return None
+        last = datetime.fromisoformat(record.last_activity_at)
+        return last if last.tzinfo is not None else last.replace(tzinfo=timezone.utc)
+
     async def answered_in_time(ctx: CheckContext, record: Any) -> bool:
         """Whether an answer typed within the 24 hours waits on the driver's lane. An answer
         carrying no time (a button pressed) was pressed on a question still standing."""
-        deadline = datetime.fromisoformat(record.last_activity_at)
-        if deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=timezone.utc)
-        deadline += INACTIVITY
+        last = last_activity(record)
+        if last is None:
+            return False
+        deadline = last + INACTIVITY
         for waiting in await unfinished(ctx.db_path, [ANSWER]):
             if record.signup_channel_id is None or (
                 int(waiting.get("channel_id", 0)) != int(record.signup_channel_id)
@@ -508,6 +515,11 @@ def end_change(
                 return Verdict.not_due("the driver is no longer part-way through signing up")
             if await answered_in_time(ctx, record):
                 return Verdict.not_due("an answer typed in time waits its turn")
+            # A timer that fires early (an earlier answer's, a correction's) never ends a live
+            # signup: the 24 hours are counted from the driver's last answer.
+            last = last_activity(record)
+            if last is not None and last + INACTIVITY > now():
+                return Verdict.not_due("the driver has answered within the last 24 hours")
             return Verdict.go()
         if ctx.payload.get("reason") == REJECTED:
             # A signup that has moved on since the press: approved by another manager, withdrawn,
