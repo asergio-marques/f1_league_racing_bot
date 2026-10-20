@@ -391,6 +391,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_approval_change,
         season_approval_tell_change,
     )
+    from leaguebot.core.services.season_review_changes import season_review_take_down_change
     from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
     from leaguebot.core.services.season_lifecycle_service import (
         wind_down_change,
@@ -769,6 +770,7 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(season_approval_tell_change())
+    bot.change_queue.register(season_review_take_down_change())
     bot.change_queue.register(channel_tell_change())
     bot.change_queue.register(
         round_amend_change(

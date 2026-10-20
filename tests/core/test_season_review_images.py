@@ -264,11 +264,6 @@ NO_PRESS_FROM_THE_ROW = (
     "bound to, a fingerprint, a deadline) rather than from the review's row, and deletes the "
     "review itself, off the change queue"
 )
-#: Why the take-down's tests fail until #439 slice 6b's C92 is built.
-NO_TAKE_DOWN = (
-    "#439: a season review is taken down by its view and the restart's sweep at once, off the "
-    "change queue"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -402,7 +397,6 @@ async def test_the_access_check_runs_before_the_fingerprint():
 # ── Taking the review down ────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TAKE_DOWN)
 async def test_a_report_message_already_gone_does_not_stop_the_rest(tmp_path):
     """One deleted by hand must not strand the others. Alex's review stands in channel 700, but
     its report message R1 has been deleted by hand. The bot asks for the review to be taken down,

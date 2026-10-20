@@ -73,12 +73,6 @@ PLACEMENTS = "/season placements-review"
 TAKE_DOWN = "season.review.take_down"
 BOT_USER = SimpleNamespace(id=1, name="LeagueBot")
 
-NO_TAKE_DOWN = (
-    "#439: a season review is taken down by its view and the restart's sweep at once, off the "
-    "change queue"
-)
-
-
 def _alex() -> Any:
     alex = MagicMock()
     alex.id = REVIEWER
@@ -179,7 +173,6 @@ def _log(env: Any) -> str:
     return "\n".join(env.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TAKE_DOWN)
 async def test_a_take_down_deletes_each_message_by_id_and_forgets_the_prompt(standing):
     """Alex's review stands in channel 700: report R1 and R2, question Q. The bot asks for it to
     be taken down, confirmed. Nothing is deleted until the queue runs; then Q, R1 and R2 are each
@@ -198,7 +191,6 @@ async def test_a_take_down_deletes_each_message_by_id_and_forgets_the_prompt(sta
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TAKE_DOWN)
 async def test_an_expired_take_down_posts_the_expiry_notice_pinging_the_reviewer(standing):
     """Alex's review ran its five minutes and the bot asks for it to be taken down, expired. Once
     the queue runs the review is deleted, then one notice is posted in channel 700 pinging Alex
@@ -209,7 +201,8 @@ async def test_an_expired_take_down_posts_the_expiry_notice_pinging_the_reviewer
     await _take_down(standing, "expired")
     await run_queue(standing.bot)
 
-    assert channel.messages == []
+    # The notice is itself a message the channel now holds: the review's three are gone.
+    assert [m for m in channel.messages if m in (channel.q, channel.r1, channel.r2)] == []
     [(notice, kwargs)] = channel.sent
     assert f"<@{REVIEWER}>" in notice and PLACEMENTS in notice
     mentions = kwargs.get("allowed_mentions")
@@ -218,7 +211,6 @@ async def test_an_expired_take_down_posts_the_expiry_notice_pinging_the_reviewer
     assert "Alex" in _log(standing)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TAKE_DOWN)
 async def test_a_confirmed_take_down_posts_no_notice(standing):
     """Alex's review was approved and the bot asks for it to be taken down, confirmed. Once the
     queue runs the review is deleted, nothing is posted in channel 700 and no lapse is recorded."""
@@ -229,7 +221,6 @@ async def test_a_confirmed_take_down_posts_no_notice(standing):
     assert "lapsed" not in _log(standing)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TAKE_DOWN)
 async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(standing):
     """Discord refuses to delete report message R1. The bot asks for the review to be taken down,
     expired: the queue stops at R1's delete job. A league admin discards it: the change goes on,
@@ -247,14 +238,14 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(standing)
     await discard_job(standing.bot)
     await run_queue(standing.bot)
 
-    assert channel.messages == [channel.r1]
+    # The expiry notice is itself a message the channel holds: of the review's three, R1 stands.
+    assert [m for m in channel.messages if m in (channel.q, channel.r1, channel.r2)] == [channel.r1]
     assert await _prompts(standing.db_path) == []
     assert str(channel.r1.id) in _log(standing) and "by hand" in _log(standing)
     [change] = await _changes(standing, TAKE_DOWN)
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TAKE_DOWN)
 async def test_a_take_down_whose_channel_is_gone_completes(standing):
     """Channel 700 has been deleted from the server, Alex's review with it. The bot asks for the
     review to be taken down, expired: the change completes without stopping the queue, posts no
