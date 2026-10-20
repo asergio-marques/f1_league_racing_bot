@@ -16,7 +16,7 @@ from discord.ext import commands
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord, module_off
+from leaguebot.core.models.change import ChangeOrigin, StepFailedOnDiscord, module_off
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -368,27 +368,28 @@ _UNATTENDED_HEADS: dict[str, str] = {
 async def close_signups_unattended(
     bot: LeagueBot, *, cause: str, hold_channels: bool = True, finishing: bool = False
 ) -> ForcedCloseOutcome | None:
-    """Close the signup window where no member ran the close, and record it in one line.
+    """Close the signup window where no member ran the close.
 
     *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
     after it), ``"season end"``, ``"divisions done"`` and ``"stop cut off"`` (the bot's start
     finishing a close off the queue that a stop cut off before it recorded the window closed:
     `season_lifecycle_service.close_finish_change`); it picks the audit action the close
-    is written under and the line's head. The line names no member, since none closed the
-    window, and carries the drivers returned with each failed step beneath, as the closes a
-    member runs do. Formed here, beside ``execute_forced_close``, so that no caller forms it:
-    the timer and the restart sweep in ``__main__`` and the two season closes keep only the
-    call.
+    is written under. The close timer and the restart sweep ask the change queue's own close
+    (``signup.close``, named here as the builder registers it, signup's) as the bot's and give
+    nothing back: the window stays open until the queue reaches it, and the change's jobs tell
+    and lock each driver it returns, close the window in its channel and write the one line,
+    which names no member, since none closed the window.
 
-    *hold_channels* False is the change queue's form (``execute_forced_close``): the outcome gives
-    the drivers it returned and the queue's jobs tell and close each one's signup channel, close
-    the window in its channel and record that in the line, which this writes none of (*finishing*
-    excepted, as ``execute_forced_close`` has it).
+    *hold_channels* False is the change queue's form (``execute_forced_close``) a season's end
+    closes the window with: the outcome gives the drivers it returned and the queue's jobs tell
+    and close each one's signup channel, close the window in its channel and record that in the
+    line, which this writes none of (*finishing* excepted, as ``execute_forced_close`` has it,
+    which writes the line headed ``"stop cut off"``).
 
-    Written only where a window was actually closed: a module that is disabled produces nothing
-    (the core specification, Modules), and a window not open needs no close, so both return
-    ``None`` having touched nothing. A line that cannot be written is logged, never raised: the
-    window is closed either way.
+    Nothing is done where a window was not actually open: a module that is disabled produces
+    nothing (the core specification, Modules), and a window not open needs no close, so both
+    return ``None`` having touched nothing. A line that cannot be written is logged, never
+    raised: the window is closed either way.
     """
     audit_action = _UNATTENDED_CAUSES[cause]
     if not await bot.module_service.is_signup_enabled():
@@ -396,7 +397,21 @@ async def close_signups_unattended(
     cfg = await bot.signup_module_service.get_config()
     if cfg is None or not cfg.signups_open:
         return None
-    close_at = cfg.close_at  # the close clears it, so it is read first
+
+    if cause in ("timer", "restart"):
+        await bot.change_queue.ask(
+            "signup.close",
+            {
+                "cause": cause,
+                "window": cfg.signup_button_message_id,
+                "confirmed": False,
+                "audit_action": audit_action,
+                "close_at": cfg.close_at,
+            },
+            what="Closing signups",
+            origin=ChangeOrigin.BOT,
+        )
+        return None
 
     outcome = await execute_forced_close(
         bot, audit_action=audit_action, hold_channels=hold_channels, finishing=finishing
@@ -404,17 +419,9 @@ async def close_signups_unattended(
     if not (hold_channels or finishing):
         return outcome
 
-    head = _UNATTENDED_HEADS.get(cause, "🔒 Signups closed automatically at their set time")
-    if cause in ("timer", "restart") and close_at is not None:
-        armed = datetime.fromisoformat(close_at)
-        if armed.tzinfo is None:
-            armed = armed.replace(tzinfo=timezone.utc)
-        head += f" ({discord.utils.format_dt(armed, 'F')})"
-    if cause == "restart":
-        head += ", at start-up"
     try:
         await bot.output_router.post_log(
-            head
+            _UNATTENDED_HEADS[cause]
             + f"\n  drivers_returned_to_not_signed_up: {outcome.returned}"
             + failed_steps_lines(outcome)
         )

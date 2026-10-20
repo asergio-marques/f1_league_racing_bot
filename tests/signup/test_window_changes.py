@@ -577,7 +577,6 @@ async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_pa
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(tmp_path):
     """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
     the other the bot starts after the close time (`close_signups_unattended` with the cause
