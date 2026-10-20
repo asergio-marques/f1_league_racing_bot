@@ -14,7 +14,7 @@ import discord
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
-__all__ = ["post"]
+__all__ = ["delete_channel", "post"]
 
 
 @posts_in_a_job
@@ -35,3 +35,14 @@ async def post(
     except discord.HTTPException as error:
         raise StepFailedOnDiscord(refused) from error
     return message.id
+
+
+@posts_in_a_job
+async def delete_channel(channel: discord.abc.GuildChannel, *, reason: str) -> None:
+    """Delete *channel*, a driver's signup channel, for *reason*.
+
+    The one place signup deletes a channel of its own as a job. Raises `discord.NotFound` where
+    the channel is already gone and `discord.HTTPException` where Discord refuses; each job says
+    what either means for it.
+    """
+    await channel.delete(reason=reason)

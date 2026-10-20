@@ -204,7 +204,7 @@ async def test_the_sign_up_button_left_on_an_old_server_is_refused():
 
     interaction = _pressed_on(ELSEWHERE, LEAGUE)
 
-    assert await SignupButtonView().interaction_check(interaction) is False
+    assert await SignupButtonView(MagicMock()).interaction_check(interaction) is False
 
 
 # ── While no server is claimed ─────────────────────────────────────────────
@@ -252,7 +252,7 @@ async def test_the_sign_up_button_left_behind_by_a_pack_is_refused():
 
     interaction = _pressed_on(ELSEWHERE, None)
 
-    assert await SignupButtonView().interaction_check(interaction) is False
+    assert await SignupButtonView(MagicMock()).interaction_check(interaction) is False
 
 
 async def test_a_command_while_no_server_is_claimed_still_reaches_the_tier_guards():

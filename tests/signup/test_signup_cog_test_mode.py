@@ -17,7 +17,7 @@ from leaguebot.signup.cogs import signup_cog
 from leaguebot.signup.services import signup_views
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.models.driver_profile import DriverState
-from tests.signup.test_wizard_changes import NO_START_CHANGE, START_KIND, _changes_of, _driver, _league
+from tests.signup.test_wizard_changes import START_KIND, _changes_of, _driver, _league
 from tests.support.change_queue import acknowledgement, updated_reply
 from tests.support.season_league import SIGNING_UP
 from tests.support.undecorate import undecorate
@@ -117,7 +117,6 @@ class TestTheSignUpButton:
         await signup_views.SignupButtonView(league.bot.change_queue).signup_button.callback(press)
         return press
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_it_is_refused_under_test_mode(self, tmp_path):
         """Test mode is on and Kimi presses Sign Up: he is told signups are unavailable in test
         mode, no signup is asked of the queue, and one refusal line names the button, Kimi and
@@ -134,7 +133,6 @@ class TestTheSignUpButton:
         assert lines[0].startswith("⛔ the “Sign Up” button refused for"), lines[0]
         assert f"<@{SIGNING_UP}>" in lines[0] and "test mode" in lines[0], lines[0]
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_the_driver_state_is_not_even_read(self, tmp_path):
         """Rejection at the earliest moment: the refusal precedes every other check. Kimi is
         already part-way through a signup, which would be refused on its own, but with test mode
@@ -153,7 +151,6 @@ class TestTheSignUpButton:
         assert "signup in progress" not in _told(press)
         assert not await _changes_of(league, START_KIND)
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_it_reaches_the_wizard_when_test_mode_is_off(self, tmp_path):
         """Test mode is off and Kimi, signed up to nothing, presses Sign Up: one ``signup.start``
         is asked of the queue."""

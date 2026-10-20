@@ -420,6 +420,10 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
+    from leaguebot.signup.services.wizard_changes import start_change
+    from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
+    from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
+    from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
     from leaguebot.results.services.standings_sync_change import standings_sync_change
     from leaguebot.results.services.resubmission_changes import (
         resubmission_start_change,
@@ -521,6 +525,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service, signup=bot.signup_module_service,
             config=bot.config_service,
             schedule_close=lambda iso: bot.scheduler_service.schedule_signup_close_timer(iso),
+            queue=lambda: bot.change_queue,
         )
     )
     bot.change_queue.register(
@@ -538,6 +543,20 @@ def register_change_types(bot: LeagueBot) -> None:
             server_config=lambda: bot.config_service.get_server_config(),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
+    )
+    bot.change_queue.register(
+        start_change(
+            modules=bot.module_service, config=bot.config_service,
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            teams=lambda: bot.team_service, wizard=lambda: bot.wizard_service,
+            closing_kinds=(CLOSE_KIND, OFF_KIND), cancel_timers=_cancel_wizard_timers(bot),
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    # A signup left unanswered for a day is ended by the wizard's own expiry until the expiry is
+    # asked of the queue.
+    bot.scheduler_service.register_timer(
+        INACTIVITY_TIMER, lambda key: bot.wizard_service.handle_inactivity_timeout(str(key))
     )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())
@@ -1042,7 +1061,7 @@ async def main() -> None:
     from leaguebot.attendance.services.rsvp_service import RsvpView
 
     for _view in (
-        SignupButtonView(),
+        SignupButtonView(bot.change_queue),
         WithdrawButtonView(),
         NoNotesButtonView(),
         PlatformButtonView(),

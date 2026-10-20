@@ -501,6 +501,52 @@ class DriverService:
         profile.current_state = new_state
         return profile
 
+    async def transition_on(
+        self,
+        db: aiosqlite.Connection,
+        discord_user_id: str,
+        new_state: DriverState,
+        *,
+        test_mode_active: bool = False,
+    ) -> DriverProfile:
+        """Transition a driver to *new_state* on the connection handed, committing nothing.
+
+        As `transition`, for a change that moves the driver in a save of its own with what else
+        it writes: a driver with no profile is given one at *new_state*, where the state machine
+        allows it from Not Signed Up. Raises ValueError for a disallowed transition.
+        """
+        cursor = await db.execute(
+            "SELECT id, discord_user_id, current_state, former_driver "
+            "FROM driver_profiles WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
+            if test_mode_active:
+                valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+            if new_state not in valid:
+                raise ValueError(
+                    f"No driver profile found for user {discord_user_id}; "
+                    f"transition from NOT_SIGNED_UP to {new_state.value} is not allowed. "
+                    f"Allowed targets: {sorted(s.value for s in valid) or 'none'}."
+                )
+            cursor = await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
+                "VALUES (?, ?, 0)",
+                (discord_user_id, new_state.value),
+            )
+            return DriverProfile(
+                id=inserted_id(cursor), discord_user_id=discord_user_id,
+                current_state=new_state, former_driver=False,
+            )
+        profile = _row_to_profile(row)
+        await write_transition(
+            db, profile.id, profile.current_state, new_state, test_mode_active=test_mode_active
+        )
+        profile.current_state = new_state
+        return profile
+
     # ------------------------------------------------------------------
     # Reassign user ID (US2)
     # ------------------------------------------------------------------

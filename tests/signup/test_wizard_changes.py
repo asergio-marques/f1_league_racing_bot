@@ -76,11 +76,6 @@ OLD_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
 
-NO_START_CHANGE = (
-    "#439: the Sign Up view is not handed the change queue, and Sign Up creates the driver's "
-    "signup channel, saves the wizard and posts the welcome itself off the queue, with no "
-    "signup.start change"
-)
 NO_EXPIRY_CHANGE = (
     "#439: the inactivity timer and the restart expire a signup themselves off the queue, with no "
     "signup.end change asked as the bot on the league lane, and no timer callback registered by "
@@ -130,6 +125,12 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
 
     league.guild.create_text_channel = AsyncMock(side_effect=_create)
     category.create_text_channel = league.guild.create_text_channel
+    # The league's default teams, which the wizard's team buttons offer (the Reserve team apart).
+    from leaguebot.core.services.team_service import TeamService
+
+    league.bot.team_service = TeamService(league.db_path)
+    await league.bot.team_service.add_default_team("FER", full_name="Scuderia Ferrari")
+    await league.bot.team_service.add_default_team("MCL", full_name="McLaren Racing")
     # Today's handlers off the queue, reached by the presses until the changes replace them.
     league.bot.wizard_service.start_wizard = AsyncMock(return_value=None)
     league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
@@ -233,7 +234,6 @@ def _in_order(seen: list[str], wanted: list[str]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_sign_up_is_acknowledged_and_creates_the_channel_and_welcome_as_jobs(tmp_path):
     """Kimi presses Sign Up while signups are open. At once he is answered privately that his
     signup is under way, and no channel is created yet. When the queue runs, the `signup.start`
@@ -259,7 +259,6 @@ async def test_sign_up_is_acknowledged_and_creates_the_channel_and_welcome_as_jo
     assert league.channel(NEW_CHANNEL).texts != []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_the_wizard_row_is_saved_with_the_channel_s_mark(tmp_path):
     """Kimi presses Sign Up and the queue runs. His wizard's row is saved naming the channel
     created (6500), in the save that marks `create_channel` done: once that job is done, the
@@ -277,7 +276,6 @@ async def test_the_wizard_row_is_saved_with_the_channel_s_mark(tmp_path):
     assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_a_created_channel_whose_save_failed_is_deleted_before_the_next_try(tmp_path):
     """Kimi presses Sign Up; Discord creates his channel (6500), but the save that would record
     it fails (the wizard's table refuses the insert). The queue stops at `create_channel`, no
@@ -308,7 +306,6 @@ async def test_a_created_channel_whose_save_failed_is_deleted_before_the_next_tr
     assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL + 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tmp_path):
     """The close time has come and the timer has asked the queue to close the window, which has
     not yet run. Kimi presses Sign Up: he is told signups are closing, no `signup.start` change
@@ -330,10 +327,8 @@ async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tm
 @pytest.mark.parametrize(
     ("case", "named"),
     [
-        pytest.param("no Manage Channels", "Manage Channels",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
-        pytest.param("the category is full", CATEGORY_NAME,
-                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+        pytest.param("no Manage Channels", "Manage Channels"),
+        pytest.param("the category is full", CATEGORY_NAME),
     ],
 )
 async def test_sign_up_without_manage_channels_or_room_is_refused_naming_the_cause(
@@ -361,7 +356,6 @@ async def test_sign_up_without_manage_channels_or_room_is_refused_naming_the_cau
     assert await _driver_state(league) in (None, "NOT_SIGNED_UP")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_an_old_channel_is_deleted_before_the_new_one_is_created(tmp_path):
     """Kimi signed up before and withdrew: he is Not Signed Up, his old signup channel (6405)
     still standing and named by his wizard's row. He presses Sign Up and the queue runs: the
@@ -390,7 +384,6 @@ async def test_an_old_channel_is_deleted_before_the_new_one_is_created(tmp_path)
     assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_sign_up_posts_its_welcome_on_the_league_lane(tmp_path):
     """Kimi presses Sign Up and the queue runs. The `signup.start` change, its welcome in his
     new channel included, runs on the league lane, not on the lane of the channel it creates."""
@@ -406,7 +399,6 @@ async def test_sign_up_posts_its_welcome_on_the_league_lane(tmp_path):
     assert league.channel(NEW_CHANNEL).texts != []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_sign_up_s_channel_is_seen_only_by_the_driver_and_both_staff_tiers(tmp_path):
     """Kimi presses Sign Up and the queue runs. His channel is named for him, ending
     "-signup", and is created hidden from everyone but Kimi, the league's interaction role and
@@ -430,7 +422,6 @@ async def test_sign_up_s_channel_is_seen_only_by_the_driver_and_both_staff_tiers
     assert staff and staff <= {getattr(key, "id", None) for key in overwrites}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_the_wizard_is_saved_with_the_configuration_as_it_stood_and_no_reserve_team(
     tmp_path,
 ):
@@ -462,10 +453,8 @@ async def test_the_wizard_is_saved_with_the_configuration_as_it_stood_and_no_res
 @pytest.mark.parametrize(
     ("nationality", "first"),
     [
-        pytest.param(True, "Step 1 — Nationality", id="nationality required",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
-        pytest.param(False, "Platform", id="nationality not required",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+        pytest.param(True, "Step 1 — Nationality", id="nationality required"),
+        pytest.param(False, "Platform", id="nationality not required"),
     ],
 )
 async def test_the_first_question_is_nationality_only_where_required_and_a_button_step_locks_typing(
@@ -477,8 +466,13 @@ async def test_the_first_question_is_nationality_only_where_required_and_a_butto
     his platform first, his wizard at Collecting Platform, and his typing in the channel is
     taken away, so a stray message cannot be read as an answer to a button-only step."""
     league = await _league(tmp_path)
-    for table in ("signup_module_settings", "season_signup_config"):
-        await league.write(f"UPDATE {table} SET nationality_required = ?", int(nationality))
+    # The settings row is saved, not updated: a league that never changed them has none.
+    from leaguebot.signup.models.signup_module import SignupModuleSettings
+
+    await league.bot.signup_module_service.save_settings(SignupModuleSettings(
+        nationality_required=nationality, time_type="TIME_TRIAL", time_image_required=True,
+    ))
+    await league.write("UPDATE season_signup_config SET nationality_required = ?", int(nationality))
 
     await _press_sign_up(league)
     await run_queue(league.bot)
@@ -494,7 +488,6 @@ async def test_the_first_question_is_nationality_only_where_required_and_a_butto
     assert bool(locked) is (not nationality)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_sign_up_welcomes_the_driver_by_name_and_writes_its_started_line(tmp_path):
     """Kimi presses Sign Up and the queue runs. His welcome says "Welcome to the signup wizard,
     <@105>!", and the log channel carries the signup's "Signup | Started" line naming him."""
@@ -513,10 +506,8 @@ async def test_sign_up_welcomes_the_driver_by_name_and_writes_its_started_line(t
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param("signups closed", id="signups closed",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
-        pytest.param("module disabled", id="module disabled",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)),
+        pytest.param("signups closed", id="signups closed"),
+        pytest.param("module disabled", id="module disabled"),
     ],
 )
 async def test_a_leftover_sign_up_button_is_refused_once_signups_are_closed(tmp_path, case):
@@ -541,7 +532,6 @@ async def test_a_leftover_sign_up_button_is_refused_once_signups_are_closed(tmp_
     assert await _driver_state(league) in (None, "NOT_SIGNED_UP")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_signing_up_again_disarms_the_abandoned_wizard_s_timers(tmp_path):
     """Kimi abandoned an earlier signup: he is Not Signed Up, his old channel (6405) standing
     and named by his wizard's row. He presses Sign Up and the queue runs: the old wizard's 24
@@ -568,7 +558,6 @@ async def test_signing_up_again_disarms_the_abandoned_wizard_s_timers(tmp_path):
     assert _armed(league, INACTIVITY_TIMER)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
 async def test_an_abandoned_channel_already_gone_does_not_stop_sign_up(tmp_path):
     """Kimi abandoned an earlier signup whose channel (6405) was since deleted by hand, though
     his wizard's row still names it. He presses Sign Up and the queue runs: `delete_old_channel`

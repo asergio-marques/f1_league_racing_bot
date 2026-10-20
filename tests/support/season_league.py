@@ -302,6 +302,7 @@ class SeasonLeague:
         person = MagicMock(spec=discord.Member)
         person.id = user_id
         person.display_name = NAMES.get(user_id, str(user_id))
+        person.name = person.display_name.lower()
         person.mention = f"<@{user_id}>"
         person.bot = user_id == BOT_USER_ID
         person.roles = [role for role in map(self._role, sorted(self.roles_held.get(user_id, ())))

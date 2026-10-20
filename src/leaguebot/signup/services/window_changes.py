@@ -89,6 +89,7 @@ from leaguebot.signup.services.signup_posting import post
 from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -152,13 +153,14 @@ def window_open_change(
     signup: "SignupModuleService",
     config: "ConfigService",
     schedule_close: Callable[[str], None],
+    queue: Callable[[], "ChangeQueue"],
 ) -> ChangeType:
     """The `signup.open` change type, for the builder to register.
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
     close time or None), and ``channel_id`` and ``closed_message_id`` (the signup channel and
     the "signups closed" notice standing in it, each or None). *schedule_close* arms the close
-    timer at an ISO 8601 time.
+    timer at an ISO 8601 time, and *queue* is the change queue the Sign Up button is handed.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -273,7 +275,7 @@ def window_open_change(
             else discord.AllowedMentions.none()
         )
         message_id = await post(
-            found, embed=embed, view=SignupButtonView(), mentions=mentions,
+            found, embed=embed, view=SignupButtonView(queue()), mentions=mentions,
             refused=f"the information message could not be posted in channel {found.id}",
         )
         audited: dict[str, Any] = {"track_ids": track_ids}

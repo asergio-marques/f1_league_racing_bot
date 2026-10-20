@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
+from typing import Any
 
 import aiosqlite
 import discord
@@ -647,34 +648,63 @@ class SignupModuleService:
             if wizard.config_snapshot else None
         )
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO signup_wizard_records
-                    (discord_user_id, wizard_state, signup_channel_id,
-                     config_snapshot_json, draft_answers_json, current_lap_track_index,
-                     last_activity_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(discord_user_id) DO UPDATE SET
-                    wizard_state             = excluded.wizard_state,
-                    signup_channel_id        = excluded.signup_channel_id,
-                    config_snapshot_json     = excluded.config_snapshot_json,
-                    draft_answers_json       = excluded.draft_answers_json,
-                    current_lap_track_index  = excluded.current_lap_track_index,
-                    last_activity_at         = excluded.last_activity_at,
-                    closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
-                """,
-                (
-                    wizard.discord_user_id,
-                    wizard.wizard_state.value,
-                    wizard.signup_channel_id,
-                    snapshot_json,
-                    json.dumps(wizard.draft_answers),
-                    wizard.current_lap_track_index,
-                    wizard.last_activity_at,
-                    int(starting),
-                ),
+            await self.save_wizard_row_on(
+                db, discord_user_id=wizard.discord_user_id,
+                wizard_state=wizard.wizard_state.value,
+                signup_channel_id=wizard.signup_channel_id, snapshot_json=snapshot_json,
+                draft_answers=wizard.draft_answers,
+                current_lap_track_index=wizard.current_lap_track_index,
+                last_activity_at=wizard.last_activity_at, starting=starting,
             )
             await db.commit()
+
+    async def save_wizard_row_on(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        discord_user_id: str,
+        wizard_state: str,
+        signup_channel_id: int | None,
+        snapshot_json: str | None,
+        draft_answers: dict[str, Any],
+        current_lap_track_index: int,
+        last_activity_at: str | None,
+        starting: bool = False,
+    ) -> None:
+        """Insert or update a driver's wizard row on the connection handed; commits nothing.
+
+        What `save_wizard` writes, for a change that saves the row in the same save as a job's
+        mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
+        encoded, so that a job which made it can hand it on in its result. *starting* is as in
+        `save_wizard`.
+        """
+        await db.execute(
+            """
+            INSERT INTO signup_wizard_records
+                (discord_user_id, wizard_state, signup_channel_id,
+                 config_snapshot_json, draft_answers_json, current_lap_track_index,
+                 last_activity_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(discord_user_id) DO UPDATE SET
+                wizard_state             = excluded.wizard_state,
+                signup_channel_id        = excluded.signup_channel_id,
+                config_snapshot_json     = excluded.config_snapshot_json,
+                draft_answers_json       = excluded.draft_answers_json,
+                current_lap_track_index  = excluded.current_lap_track_index,
+                last_activity_at         = excluded.last_activity_at,
+                closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
+            """,
+            (
+                discord_user_id,
+                wizard_state,
+                signup_channel_id,
+                snapshot_json,
+                json.dumps(draft_answers),
+                current_lap_track_index,
+                last_activity_at,
+                int(starting),
+            ),
+        )
 
     async def mark_approved(self, discord_user_id: str) -> None:
         """Mark the latest signup of *discord_user_id* as approved — the one just reviewed.

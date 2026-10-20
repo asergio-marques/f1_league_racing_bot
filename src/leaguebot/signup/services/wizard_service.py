@@ -105,11 +105,32 @@ def _wizard_gone_or_answered(wizard: SignupWizardRecord | None) -> str:
     return _NO_WIZARD if wizard is None else _STEP_ANSWERED
 
 
-class SignupNotOpenError(Exception):
-    """`WizardService.start_wizard` was asked to start a signup while signups are not open.
-
-    The Sign Up button answers it as a refusal (F1, #482).
-    """
+def build_step_view(
+    bot: "LeagueBot",
+    state: WizardState,
+    discord_user_id: str,
+    team_names: list[str] | None = None,
+) -> discord.ui.View:
+    """The view that answers the wizard's question at *state*, for the driver *discord_user_id*."""
+    from leaguebot.signup.services.signup_views import (  # lazy import — avoid circular
+        WithdrawButtonView,
+        PlatformButtonView,
+        DriverTypeButtonView,
+        PreferredTeamsButtonView,
+        NoPreferenceTeammateView,
+        NoNotesButtonView,
+    )
+    if state == WizardState.COLLECTING_PLATFORM:
+        return PlatformButtonView(discord_user_id, bot)
+    if state == WizardState.COLLECTING_DRIVER_TYPE:
+        return DriverTypeButtonView(discord_user_id, bot)
+    if state == WizardState.COLLECTING_PREFERRED_TEAMS:
+        return PreferredTeamsButtonView(discord_user_id, bot, team_names or [])
+    if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
+        return NoPreferenceTeammateView(discord_user_id, bot)
+    if state == WizardState.COLLECTING_NOTES:
+        return NoNotesButtonView(discord_user_id, bot)
+    return WithdrawButtonView(discord_user_id, bot)
 
 
 # ---------------------------------------------------------------------------
@@ -261,8 +282,8 @@ class WizardService:
     # Channel helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
     async def _create_wizard_channel(
-        self,
         guild: discord.Guild,
         member: discord.Member,
         signup_channel_id: int | None,
@@ -307,8 +328,8 @@ class WizardService:
         )
         return channel
 
+    @staticmethod
     async def _revoke_driver_write(
-        self,
         channel: discord.TextChannel,
         member: discord.Member,
     ) -> None:
@@ -358,6 +379,12 @@ class WizardService:
     # ------------------------------------------------------------------
     # Inactivity / channel-delete job helpers
     # ------------------------------------------------------------------
+
+    def _forget_correction(self, discord_user_id: str) -> None:
+        """Cancel the correction timeout an earlier signup of the driver left running."""
+        task = self._correction_tasks.pop(discord_user_id, None)
+        if task is not None:
+            task.cancel()
 
     def _inactivity_job_id(self, discord_user_id: str) -> str:
         return inactivity_job_id(discord_user_id)
@@ -486,122 +513,6 @@ class WizardService:
     # ------------------------------------------------------------------
     # Public API stubs (implementations in T020–T049)
     # ------------------------------------------------------------------
-
-    async def start_wizard(
-        self,
-        interaction: discord.Interaction,
-    ) -> discord.TextChannel | None:
-        """Create the driver's private signup channel and start collection.
-
-        Returns the newly created channel, or None if the module is not
-        configured (caller is responsible for sending an error response).
-
-        Raises `SignupNotOpenError`, before anything is touched, unless the signup module is
-        enabled and signups are open (F1, #482). The Sign Up button the close could not delete
-        stays in the channel, and pressing it then would otherwise start a signup in a closed
-        window. The check is here, in the service the button calls, and the button turns the
-        error into a refusal.
-        """
-        assert self._bot is not None
-        guild = interaction.guild
-        member = interaction.user
-        assert guild is not None
-        assert isinstance(member, discord.Member)
-
-        discord_user_id = str(member.id)
-
-        if not await self._module_svc.is_signup_enabled():
-            raise SignupNotOpenError
-        signup_cfg = await self._signup_svc.get_config()
-        if signup_cfg is not None and not signup_cfg.signups_open:
-            raise SignupNotOpenError
-
-        # T049: delete any existing wizard channel if present
-        existing = await self._signup_svc.get_wizard(discord_user_id)
-        if existing and existing.signup_channel_id is not None:
-            old_ch = guild.get_channel(existing.signup_channel_id)
-            if old_ch is not None:
-                try:
-                    await old_ch.delete(reason="Driver re-started signup wizard")
-                except discord.HTTPException:
-                    pass
-            # Cancel any old jobs
-            await self._cancel_inactivity_job(discord_user_id)
-            await self._cancel_channel_delete_job(discord_user_id)
-            ckey = discord_user_id
-            if ckey in self._correction_tasks:
-                self._correction_tasks.pop(ckey).cancel()
-
-        server_cfg = await self._bot.config_service.get_server_config()
-        if signup_cfg is None:
-            return None
-
-        # Create channel
-        channel = await self._create_wizard_channel(
-            guild,
-            member,
-            signup_cfg.signup_channel_id,
-            server_cfg.interaction_role_id if server_cfg else None,
-            server_cfg.league_admin_role_id if server_cfg else None,
-        )
-
-        # Capture config snapshot
-        snapshot = await self._signup_svc.capture_config_snapshot()
-
-        # Fetch the non-reserve teams' full names for step 6 buttons. A driver is offered, and
-        # answers with, the name every post shows; the shorthand is the league's own shorthand
-        # for typing and is not put to a driver (#381).
-        default_teams = await self._bot.team_service.get_default_teams()
-        snapshot.team_names = [t.full_name for t in default_teams if not t.is_reserve]
-
-        # Determine first wizard state (skip nationality if not required)
-        first_state = (
-            WizardState.COLLECTING_NATIONALITY
-            if snapshot.nationality_required
-            else WizardState.COLLECTING_PLATFORM
-        )
-        now_iso = datetime.now(timezone.utc).isoformat()
-
-        # Upsert wizard record
-        wizard = SignupWizardRecord(
-            id=-1,
-            discord_user_id=discord_user_id,
-            wizard_state=first_state,
-            signup_channel_id=channel.id,
-            config_snapshot=snapshot,
-            draft_answers={
-                "discord_username": member.name,
-                "server_display_name": member.display_name,
-            },
-            current_lap_track_index=0,
-            last_activity_at=now_iso,
-        )
-        # The start of a signup: any closing notice a past close still owes the driver goes.
-        await self._signup_svc.save_wizard(wizard, starting=True)
-
-        # Transition driver to PENDING_SIGNUP_COMPLETION
-        await self._driver_service.transition(
-            discord_user_id, DriverState.PENDING_SIGNUP_COMPLETION
-        )
-
-        # Arm inactivity job (+24 h)
-        fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        await self._arm_inactivity_job(discord_user_id, fire_at)
-
-        track_map = await self._get_track_name_map()
-        # Revoke write if first step is button-only, then post first prompt
-        if first_state in WizardService._BUTTON_ONLY_STATES:
-            await self._revoke_driver_write(channel, member)
-        await channel.send(
-            f"Welcome to the signup wizard, {member.mention}!\n"
-            + self._prompt_for_state(first_state, snapshot, track_name_map=track_map),
-            view=self._build_step_view(first_state, discord_user_id, snapshot.team_names),
-        )
-
-        await self._output_router.post_log(
-            f"{member.display_name} (<@{member.id}>) | Signup | Started",
-        )
-        return channel
 
     async def handle_message(
         self,
@@ -1501,25 +1412,7 @@ class WizardService:
         team_names: list[str] | None = None,
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
-        from leaguebot.signup.services.signup_views import (  # lazy import — avoid circular
-            WithdrawButtonView,
-            PlatformButtonView,
-            DriverTypeButtonView,
-            PreferredTeamsButtonView,
-            NoPreferenceTeammateView,
-            NoNotesButtonView,
-        )
-        if state == WizardState.COLLECTING_PLATFORM:
-            return PlatformButtonView(discord_user_id, self._bot)
-        if state == WizardState.COLLECTING_DRIVER_TYPE:
-            return DriverTypeButtonView(discord_user_id, self._bot)
-        if state == WizardState.COLLECTING_PREFERRED_TEAMS:
-            return PreferredTeamsButtonView(discord_user_id, self._bot, team_names or [])
-        if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
-            return NoPreferenceTeammateView(discord_user_id, self._bot)
-        if state == WizardState.COLLECTING_NOTES:
-            return NoNotesButtonView(discord_user_id, self._bot)
-        return WithdrawButtonView(discord_user_id, self._bot)
+        return build_step_view(self._league_bot, state, discord_user_id, team_names)
 
     async def handle_platform_button(
         self,
@@ -1981,8 +1874,8 @@ class WizardService:
     # Prompt builder helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
     def _prompt_for_state(
-        self,
         state: WizardState,
         snapshot,  # ConfigSnapshot
         wizard: SignupWizardRecord | None = None,

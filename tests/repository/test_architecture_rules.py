@@ -919,6 +919,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
+    ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._advance_wizard_in_channel"): (2, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._answer_stands"): (1, PASS["signup"]),
@@ -937,7 +938,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.request_changes"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.select_correction_parameter"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, PASS["signup"]),
     ("core/utils/batch_notice.py", "delete_notice"): (1, HANDLERS),
     ("core/utils/batch_notice.py", "send_notice"): (1, HANDLERS),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (1, HANDLERS),
@@ -1135,7 +1135,6 @@ KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, SLICE["6b"]),
     ("signup/services/wizard_service.py", "WizardService.request_changes"): (1, SLICE["6b"]),
     ("signup/services/wizard_service.py", "WizardService.select_correction_parameter"): (1, SLICE["6b"]),
-    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, SLICE["6b"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, SLICE["6b"]),
 }
 
@@ -1456,7 +1455,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
-    ("signup/services/signup_views.py", "SignupButtonView.signup_button"): (4, PASS["signup"]),
     ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_withdraw"): (1, PASS["signup"]),
@@ -1464,7 +1462,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService._handle_preferred_teams"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._module_svc"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, PASS["signup"]),
 }
 
 

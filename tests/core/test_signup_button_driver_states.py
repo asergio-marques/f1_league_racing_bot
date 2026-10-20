@@ -33,7 +33,6 @@ import pytest
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.services import signup_views
 from tests.signup.test_wizard_changes import (
-    NO_START_CHANGE,
     START_KIND,
     _changes_of,
     _driver,
@@ -92,7 +91,6 @@ def _assert_one_refusal_line(league: SeasonLeague, reason: str) -> None:
 class TestAReturningRacer:
     """What a league meets on the first day of its second season."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_a_returning_racer_reaches_the_wizard(self, tmp_path):
         """The state the season-end driver pass leaves a driver who raced: reset to Not
         Signed Up, profile kept because the former-driver flag is set. Before #226 was
@@ -105,7 +103,6 @@ class TestAReturningRacer:
 
         assert await _started(league)
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_a_driver_pending_deletion_also_reaches_the_wizard(self, tmp_path):
         """Not Signed Up without the flag — a profile awaiting the next driver pass. It is
         still a profile, so it crashed the button just as the former driver's did."""
@@ -116,7 +113,6 @@ class TestAReturningRacer:
 
         assert await _started(league)
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_a_member_with_no_profile_still_reaches_the_wizard(self, tmp_path):
         """The one press that always worked. Pinned so the fix does not trade it away."""
         league = await _league(tmp_path)
@@ -134,7 +130,6 @@ class TestTheRefusals:
     """Both messages were written, specified and unreachable — every press that should
     have produced one produced the crash instead."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     @pytest.mark.parametrize("state", sorted(signup_views.IN_PROGRESS_STATES, key=lambda s: s.value))
     async def test_a_driver_mid_signup_is_told_so(self, tmp_path, state):
         league = await _league(tmp_path)
@@ -146,7 +141,6 @@ class TestTheRefusals:
         assert not await _started(league)
         _assert_one_refusal_line(league, "already have a signup in progress")
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     @pytest.mark.parametrize("state", sorted(signup_views.APPROVED_STATES, key=lambda s: s.value))
     async def test_an_approved_driver_is_told_so(self, tmp_path, state):
         league = await _league(tmp_path)
@@ -158,7 +152,6 @@ class TestTheRefusals:
         assert not await _started(league)
         _assert_one_refusal_line(league, "already been approved")
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_an_unconfigured_module_is_refused_and_recorded(self, tmp_path):
         """The signup module holds no configuration, so nothing is started: Kimi is told
         "❌ Signup module is not configured. Contact an admin.", the refusal is recorded, and
@@ -178,7 +171,6 @@ class TestTheRefusals:
 
 
 class TestEveryState:
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     @pytest.mark.parametrize("state", sorted(DriverState, key=lambda s: s.value))
     async def test_no_state_crashes_the_button(self, tmp_path, state):
         """Whatever state a driver stands in, pressing the button produces *something* —
@@ -217,7 +209,6 @@ class TestEveryState:
 class TestAPastAccount:
     """An account a driver has since moved on from signs nobody up."""
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_a_past_account_is_refused_and_pointed_at_the_current_one(self, tmp_path):
         """Kimi's account (105) is a past one: his driver now plays as 777. He presses Sign Up
         from 105 and is told it is a past account of a driver, pointed at <@777>; the refusal
@@ -241,7 +232,6 @@ class TestAPastAccount:
         assert not await _started(league)
         _assert_one_refusal_line(league, "past account of a driver")
 
-    @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
     async def test_the_current_account_is_not_mistaken_for_a_past_one(self, tmp_path):
         """Kimi's own account, linked to no other: his signup is asked of the queue."""
         league = await _league(tmp_path)

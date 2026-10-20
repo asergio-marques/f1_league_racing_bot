@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from typing import TYPE_CHECKING
+
 import discord
 
 from leaguebot.core.models.driver_profile import DriverState
@@ -31,7 +33,9 @@ from leaguebot.core.utils.league_server import (
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.signup.services.wizard_service import SignupNotOpenError
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
 
 log = logging.getLogger(__name__)
 
@@ -499,8 +503,9 @@ class SignupButtonView(LeagueView):
     callback is fully implemented in T028 (wizard integration).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, queue: ChangeQueue) -> None:
         super().__init__(timeout=None)
+        self._queue = queue
 
     @discord.ui.button(
         label="Sign Up",
@@ -510,77 +515,15 @@ class SignupButtonView(LeagueView):
     async def signup_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        """T028: Check driver state then launch the signup wizard."""
+        """Ask the queue for the driver's signup: every refusal is that change's check."""
         if not interaction.guild:
             return
-        bot = bot_of(interaction)
-        discord_user_id = str(interaction.user.id)
-
-        # A real driver never joins a server that is under test: test mode and a real
-        # league may not share one, and leaving test mode deletes every fake driver.
-        server_cfg = await bot.config_service.get_server_config()
-        if server_cfg is not None and server_cfg.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ Signups are closed while this server is in test mode. "
-                "Ask an admin to turn it off.",
-                what=_SIGN_UP_BUTTON,
-            )
-            return
-
-        # A past account of a driver signs nobody up (issue #243). The signup would be kept
-        # under an account the driver no longer uses, and the account belongs to that driver
-        # already, so it may not start a profile of its own either.
-        current = await bot.driver_service.current_account(discord_user_id)
-        if current != discord_user_id:
-            await refuse(
-                interaction,
-                f"⛔ This account is a past account of a driver in this league. Sign up from "
-                f"<@{current}>, or ask a league manager to make this account the current one.",
-                what=_SIGN_UP_BUTTON,
-            )
-            return
-
-        profile = await bot.driver_service.get_profile(discord_user_id)
-        if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
-            if profile.current_state in IN_PROGRESS_STATES:
-                await refuse(
-                    interaction,
-                    "⛔ You already have a signup in progress — "
-                    "check your private wizard channel.",
-                    what=_SIGN_UP_BUTTON,
-                )
-            else:
-                # Every remaining state is an approved one: the two sets above cover all
-                # six states that are not NOT_SIGNED_UP. An `elif` here would drop a state
-                # belonging to neither straight through into the wizard, signing somebody
-                # up who should have been refused — so the approved arm takes what is left
-                # and a new state gets a wrong message rather than a wrong signup.
-                await refuse(
-                    interaction,
-                    "⛔ Your signup has already been approved. "
-                    "You cannot sign up again.",
-                    what=_SIGN_UP_BUTTON,
-                )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            channel = await bot.wizard_service.start_wizard(interaction)
-        except SignupNotOpenError:
-            # A button the close could not delete, pressed after the window shut (F1, #482).
-            await refuse(interaction, "⛔ Signups are closed.", what=_SIGN_UP_BUTTON)
-            return
-        if channel is None:
-            await refuse(
-                interaction,
-                "❌ Signup module is not configured. Contact an admin.",
-                what=_SIGN_UP_BUTTON,
-            )
-            return
-        await interaction.followup.send(
-            f"✅ Your signup channel has been created: {channel.mention}",
-            ephemeral=True,
+        await self._queue.ask(
+            "signup.start",
+            {"user_id": str(interaction.user.id)},
+            interaction=interaction,
+            what="Signing up",
+            refusal_what=_SIGN_UP_BUTTON,
         )
 
 
