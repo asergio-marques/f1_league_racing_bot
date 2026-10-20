@@ -72,6 +72,7 @@ from leaguebot.results.services.submission_steps import (
 )
 
 KIND = "results.amend.turn"
+CONFIG_KIND = "results.amend.config"
 CLOSE_KIND = "results.amend.close"
 JUDGE = "judge"
 SAVE_DRAFT = "save_draft"
@@ -84,8 +85,8 @@ POST_CONFIG_CHOICE = "post_config_choice"
 NO_CONFIG = ""
 
 __all__ = [
-    "CLOSE_KIND", "KIND", "NO_CONFIG", "amend_close_change", "amend_turn_change",
-    "take_amended_paste", "turn_steps",
+    "CLOSE_KIND", "CONFIG_KIND", "KIND", "NO_CONFIG", "amend_close_change",
+    "amend_config_change", "amend_turn_change", "take_amended_paste", "turn_steps",
 ]
 
 #: The amendment held in a channel, with what its turns need to know of it.
@@ -330,9 +331,10 @@ def turn_steps(
                 payload["config_name"],
             ),
         )
+        lines = (str(payload["choice_line"]),) if payload.get("choice_line") else ()
         upcoming = await submissions.expected_amended_session_on(db, amend_id)
         if upcoming is None:
-            return StepResult(result={"saved": True})
+            return StepResult(result={"saved": True}, lines=lines)
         channel_id = int(payload["channel_id"])
         asking: list[PlannedStep] = [PlannedStep(POST_PROMPT, {
             "channel_id": channel_id, "round_id": int(payload["round_id"]),
@@ -345,7 +347,7 @@ def turn_steps(
                 "text": f"**{label_of(upcoming)}** — paste the corrected results for this session.",
             }))
         asking.append(PlannedStep(ARM_LAPSE, {"channel_id": channel_id}))
-        return StepResult(result={"saved": True}, then=tuple(asking))
+        return StepResult(result={"saved": True}, lines=lines, then=tuple(asking))
 
     async def end_amendment(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Drop the drafts and close the amendment's row, which ends the conversation, and ask
@@ -371,7 +373,7 @@ def turn_steps(
         return submissions._ConfigSelectView(
             list(payload["config_names"]), await server_config(),
             session=str(payload["session"]),
-            ask=("results.amend.config", dict(payload["draft"])),
+            ask=(CONFIG_KIND, dict(payload["draft"])),
         )
 
     async def describe_judge(_ctx: StepContext) -> str:
@@ -452,6 +454,56 @@ def amend_turn_change(
         key=lambda payload: f"{KIND}:{payload['message_id']}",
         doing=lambda _payload: "Taking an amended results paste",
         outcome=lambda _ctx: "",
+        lane=_lane,
+        conversation_open=_conversation_open,
+        writes=_WRITES,
+        turn_channel=_turn_channel,
+    )
+
+
+def amend_config_change(
+    *,
+    server_config: ServerConfig,
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, int | str, datetime], None],
+) -> ChangeType:
+    """The `results.amend.config` change type, for the builder to register: a session pasted and
+    judged, held as a draft of the amendment with the configuration its press chose, on the
+    amendment's lane.
+
+    The payload is the session's draft (what `judge` plans for the configuration picker) with the
+    press's ``config_name`` and ``choice_line``, the one line the choice leaves in the log
+    channel. The arguments are `amend_turn_change`'s.
+    """
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (PlannedStep(SAVE_DRAFT, dict(payload)),)
+
+    def outcome(ctx: OutcomeContext) -> str:
+        payload = ctx.payload
+        saved = any(
+            view.name == SAVE_DRAFT and view.done and (view.result or {}).get("saved")
+            for view in ctx.steps
+        )
+        if saved:
+            return (
+                f"✅ The {payload['label']} of round {payload['round_number']} is held, "
+                f"scored by **{payload['config_name']}**."
+            )
+        return "ℹ️ Nothing was saved."
+
+    return ChangeType(
+        kind=CONFIG_KIND,
+        opening=(),
+        plan=plan,
+        steps=turn_steps(server_config, now=now, arm_once=arm_once),
+        check=_amendment_standing,
+        key=lambda payload: f"{CONFIG_KIND}:{payload['channel_id']}:{payload['session_type']}",
+        doing=lambda payload: (
+            f"Holding the {payload['label']} of round {payload['round_number']}'s amendment "
+            f"with the {payload['config_name']} configuration"
+        ),
+        outcome=outcome,
         lane=_lane,
         conversation_open=_conversation_open,
         writes=_WRITES,
