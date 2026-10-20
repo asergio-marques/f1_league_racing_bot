@@ -39,6 +39,7 @@ from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
@@ -3152,7 +3153,9 @@ def collected_team_assignments(
     return result
 
 
-async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = None) -> int:
+async def sweep_expired_amendments(
+    bot: LeagueBot, *, queue: "ChangeQueue", now: datetime | None = None
+) -> int:
     """Ask the change queue to end every amendment whose stages went unapproved past their
     deadline (`results.amend.lapse`, as the bot), and give how many it was asked of.
 
@@ -3163,10 +3166,11 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
     next sweep asks again, once the stage is done or an admin has discarded it. The queue carries
     one lapse of an amendment at a time, so a lapse already asked is not asked again.
 
-    *now* is taken as a parameter so a test can pin it alongside the deadline it seeds; left out
+    *queue* is the change queue, handed by whoever sweeps (a service does not look it up on the
+    bot). *now* is taken as a parameter so a test can pin it alongside the deadline it seeds; left out
     it is the wall clock.
     """
-    from leaguebot.results.services.amend_end_changes import SWEEP
+    from leaguebot.results.services.amend_end_changes import SWEEP, ask_lapse
 
     # Normalised to UTC-aware, because the stored deadline always is: comparing it against a
     # naive *now* raises `TypeError` outside the guard below and aborts the whole sweep, leaving
@@ -3189,7 +3193,7 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
         if deadline > moment:
             continue
         try:
-            change_id = await bot.ask_amendment_lapse(int(row["id"]), cause=SWEEP)
+            change_id = await ask_lapse(queue, bot.db_path, int(row["id"]), cause=SWEEP)
         except Exception:  # noqa: BLE001 — one stuck amendment must not stop the rest
             log.exception("sweep_expired_amendments: could not ask the lapse of amendment %s", row["id"])
             continue

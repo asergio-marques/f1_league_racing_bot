@@ -402,7 +402,6 @@ def register_change_types(bot: LeagueBot) -> None:
         amend_cancel_change,
         amend_lapse_change,
         amend_lapse_timer,
-        ask_lapse,
     )
     from leaguebot.results.services.amend_turn_change import (
         amend_close_change,
@@ -482,10 +481,6 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(amend_lapse_change(now=lambda: bot.change_queue.now()))
 
-    async def ask_amendment_lapse(amend_id: int, *, cause: str) -> int | None:
-        return await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=cause)
-
-    bot.ask_amendment_lapse = ask_amendment_lapse
     bot.scheduler_service.register_timer(
         AMEND_TIMER, amend_lapse_timer(bot.db_path, lambda: bot.change_queue)
     )
@@ -843,7 +838,7 @@ async def main() -> None:
         # sweep is what makes that recoverable without anybody noticing it happened.
         async def _amendment_sweep_cb() -> None:
             from leaguebot.results.services.result_submission_service import sweep_expired_amendments
-            await sweep_expired_amendments(bot)
+            await sweep_expired_amendments(bot, queue=bot.change_queue)
 
         bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
         bot.scheduler_service.schedule_amendment_sweep()

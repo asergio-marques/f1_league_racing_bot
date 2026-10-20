@@ -940,7 +940,7 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     await _type(league)
     assert await stopped_job(league.db_path, LANE) is not None
 
-    await sweep_expired_amendments(league.bot, now=NOW + timedelta(minutes=31))
+    await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=NOW + timedelta(minutes=31))
     await run_queue(league.bot)
 
     assert not _deleted(league)

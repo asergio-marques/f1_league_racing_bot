@@ -86,11 +86,6 @@ class LeagueBot(commands.Bot):
     #: None where that module is off, weather's always set. The builder sets it, as it does
     #: `approval_windows`, so that `/round amend` and its change read the same windows (#439).
     amendment_windows: Callable[[], Awaitable[tuple[AttendanceWindows | None, WeatherWindows]]]
-    #: Asks the change queue, as the bot, for the lapse of an amendment by its id, because of a
-    #: ``cause=`` (``"sweep"``, ``"timer"`` or ``"restart"``); gives the change's id, or None where
-    #: it is not due. The builder sets it, as it does the windows above, so that the half-hour sweep,
-    #: a function of results' services, asks without reading the queue off the bot (#439).
-    ask_amendment_lapse: Callable[..., Awaitable[int | None]]
     #: Drops the penalty reviews results holds for staging changes. The builder sets it, so that
     #: the clear of what the bot holds in memory reaches results without looking its cog up by
     #: name or importing it (#439).

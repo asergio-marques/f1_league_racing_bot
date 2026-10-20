@@ -244,7 +244,7 @@ def _clock(league: ReviewLeague) -> Any:
 async def _sweep(league: ReviewLeague, *, after: timedelta) -> int:
     from leaguebot.results.services.result_submission_service import sweep_expired_amendments
 
-    asked = await sweep_expired_amendments(league.bot, now=NOW + after)
+    asked = await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=NOW + after)
     # The sweep asks the queue for each lapse (#439 6b), which the queue then carries out.
     await run_queue(league.bot)
     return asked
