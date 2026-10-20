@@ -499,6 +499,7 @@ def submission_all_cancelled_change() -> ChangeType:
         key=lambda payload: f"{ALL_CANCELLED_KIND}:{payload['round_id']}",
         doing=lambda payload: f"posting round {payload['round_number']}'s cancelled sessions",
         outcome=lambda _ctx: "",
+        turn_channel=lambda payload: int(payload["channel_id"]),
     )
 
 

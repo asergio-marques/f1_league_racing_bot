@@ -342,6 +342,7 @@ def resubmission_swap_change() -> ChangeType:
         key=lambda payload: f"{SWAP_KIND}:{payload['round_id']}",
         doing=lambda payload: f"Replacing round {payload['round_number']}'s results",
         outcome=lambda _ctx: "",
+        turn_channel=lambda payload: int(payload["channel_id"]),
         writes=(
             "session_results", "qualifying_session_results", "race_session_results",
             "round_submission_channels", "resubmission_drafts",

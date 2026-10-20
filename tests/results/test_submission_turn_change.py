@@ -373,6 +373,50 @@ async def test_the_last_paste_s_mark_stays_until_its_review_prompt_appears(tmp_p
     assert MARK not in paste.marks
 
 
+async def test_a_message_typed_while_the_league_holds_the_last_paste_s_review_is_turned_away(
+    tmp_path, monkeypatch,
+):
+    """The qualifying is saved and the league lane is stopped. The admin pastes the race, which
+    hands the review to the league, and then types again: the message is deleted at once with
+    the note, and the refusal is logged, one ⛔ line naming the admin and round 3. It is not
+    marked and left to be ignored when it runs."""
+    league = await _league(tmp_path, monkeypatch)
+    await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING")
+    await block_queue(league, lane="league")
+    await _type(league, RACE_PASTE)
+    await run_queue(league.bot)
+
+    again = await _type(league, "one more thing")
+
+    assert again.gone
+    assert MARK not in again.marks
+    assert "still waiting its turn" in _said(league)
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    line = logged[logged.index("⛔"):]
+    assert logged.count("⛔") == 1 and f"<@{ADMIN_ID}>" in line and "Round 3" in line, logged
+    assert len([row for row in await _turns(league)]) == 1
+
+
+async def test_a_message_typed_while_the_league_holds_a_round_of_cancelled_sessions_is_turned_away(
+    tmp_path, monkeypatch,
+):
+    """Every session is entered as cancelled and the league lane is stopped, so the cancelled
+    lines are not yet posted. A message typed in the channel meanwhile is turned away with the
+    note and the refusal is logged."""
+    league = await _league(tmp_path, monkeypatch)
+    await accept_session(league, ROUND_3, session="FEATURE_QUALIFYING", status="CANCELLED")
+    await block_queue(league, lane="league")
+    await _type(league, "CANCELLED")
+    await run_queue(league.bot)
+
+    again = await _type(league, "one more thing")
+
+    assert again.gone
+    assert "still waiting its turn" in _said(league)
+    logged = "\n".join(await queued_log_lines(league.db_path)) + league.log()
+    assert logged.count("⛔") == 1 and "Round 3" in logged, logged
+
+
 async def test_a_paste_s_turn_writes_only_its_round_s_rows(tmp_path, monkeypatch):
     """The admin pastes the qualifying. Its turn runs on round 3's lane, and writes the round's
     session results alone: the rounds, the standings and the season are as they were."""

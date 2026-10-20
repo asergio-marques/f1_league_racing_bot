@@ -476,6 +476,15 @@ def _hand_the_prompt_over(ctx: StepContext, channel_id: int) -> StepResult:
     )
 
 
+def _marked_channel(payload: dict[str, Any]) -> int | None:
+    """The channel of the typed message the opening was asked with (its ``mark``), which waits
+    while the opening is in hand: the last paste handed the review to the league, and a message
+    typed after it is turned away like any typed while a turn waits. None where the opening was
+    asked by no message (a round's start, a restart)."""
+    mark = payload.get("mark")
+    return int(mark["channel_id"]) if mark else None
+
+
 def review_open_change() -> ChangeType:
     """The change that opens a round's penalty review; see the module."""
 
@@ -724,6 +733,7 @@ def review_open_change() -> ChangeType:
         key=lambda payload: f"{KIND}:{payload['round_id']}",
         doing=lambda payload: _naming("Opening the penalty review", payload),
         outcome=outcome,
+        turn_channel=_marked_channel,
     )
 
 
