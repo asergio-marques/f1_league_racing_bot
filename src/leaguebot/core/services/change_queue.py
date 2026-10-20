@@ -235,14 +235,23 @@ CONVERSATION_LANES_AT_ONCE = 3
 NOTICE_REPOST_EVERY = timedelta(hours=1)
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Held:
     """A member's interaction held to update, with the follow-up message that acknowledged it
     where the interaction was already answered (a deferred command, a form), None where the
-    acknowledgement was its response."""
+    acknowledgement was its response.
+
+    *told* is what the reply last said, and *notes* what follow-ons added to it before it was
+    first updated (`ChangeType.tell_origin`). A follow-on's own entry is *borrowed* from the
+    change that asked for it: the same reply, to add a note to and never to update, as of
+    *acknowledged*."""
 
     interaction: discord.Interaction
     message: discord.WebhookMessage | None
+    told: str | None = None
+    notes: list[str] = field(default_factory=list)
+    borrowed: "_Held | None" = None
+    acknowledged: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -441,6 +450,12 @@ class ChangeType:
     is done: what a league admin discarded and so left undone, named for doing by hand, on a change
     no member waits on (a bot's); or the line of a job whose own was discarded with it. They are
     written in the save that marks the change done.
+
+    *tell_origin* says from what became of a change asked for by another's step (a follow-on) a
+    note for the reply of the member who made that other change, where it is still held to update:
+    a prompt the league discarded, which the member's reply has no other way of hearing of. None,
+    or a note of None, tells nothing; the note is added beneath what the reply already says, or
+    stands in the log alone once the reply can no longer be updated.
     """
 
     kind: str
@@ -459,6 +474,7 @@ class ChangeType:
     turn_channel: Callable[[dict[str, Any]], int | None] | None = None
     plan: Callable[[dict[str, Any]], tuple[PlannedStep, ...]] | None = None
     finished_lines: Callable[[OutcomeContext], tuple[str, ...]] | None = None
+    tell_origin: Callable[[OutcomeContext], str | None] | None = None
 
     def opening_steps(self, payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         """The steps saved when the change is asked for with *payload*: *opening*, or where the
@@ -2257,6 +2273,12 @@ class ChangeQueue:
             ),
         )
         change_id = inserted_id(cursor)
+        held = self._held_and_updatable(change)
+        if change_type.tell_origin is not None and held is not None:
+            self._held[change_id] = _Held(
+                held.interaction, held.message, borrowed=held,
+                acknowledged=datetime.fromisoformat(change["acknowledged_at"]),
+            )
         for position, planned in enumerate(change_type.opening_steps(follow_on.payload)):
             await db.execute(
                 "INSERT INTO queued_change_steps (change_id, position, name, payload) "
@@ -2291,7 +2313,7 @@ class ChangeQueue:
     def _held_and_updatable(self, change: aiosqlite.Row) -> "_Held | None":
         held = self._held.get(change["id"])
         acknowledged = change["acknowledged_at"]
-        if held is None or acknowledged is None:
+        if held is None or held.borrowed is not None or acknowledged is None:
             return None
         if self._clock() - datetime.fromisoformat(acknowledged) >= UPDATABLE_FOR:
             return None
@@ -2327,17 +2349,53 @@ class ChangeQueue:
             self._release(change)
             return
         await self._update_reply(change, text)
+        await self._tell_origin(change, change_type, step_rows)
         self._release(change)
+
+    async def _tell_origin(
+        self, change: aiosqlite.Row, change_type: ChangeType,
+        step_rows: list[aiosqlite.Row] | tuple[aiosqlite.Row, ...],
+    ) -> None:
+        """Add the note a follow-on has for the reply of the change that asked for it
+        (`ChangeType.tell_origin`), while that reply can still be updated. A reply not yet
+        updated carries the note when it is. A note that cannot be worded is logged and left."""
+        lent = self._held.get(change["id"])
+        if lent is None or lent.borrowed is None or lent.acknowledged is None:
+            return
+        if change_type.tell_origin is None:
+            return
+        try:
+            note = change_type.tell_origin(self._outcome_context(change, step_rows))
+        except Exception:  # noqa: BLE001 — the change is done whatever its note's wording does
+            log.error("could not word the note on %s for the reply that asked for it (change %s)",
+                      change["what"], change["id"], exc_info=True)
+            return
+        if note is None or self._clock() - lent.acknowledged >= UPDATABLE_FOR:
+            return
+        reply = lent.borrowed
+        if reply.told is None:
+            reply.notes.append(note)
+            return
+        reply.told = "\n".join([reply.told, note])
+        await self._send_reply(reply, reply.told, change)
 
     async def _update_reply(self, change: aiosqlite.Row, text: str) -> None:
         """Update the acknowledgement with *text*, in as many parts as it needs.
 
         Only while the interaction is held and under 14 minutes old. A failed update is logged
-        and never fails the change.
+        and never fails the change. A change that asked for follow-ons with a note for it
+        (`ChangeType.tell_origin`) carries the notes they added before this, and what it says is
+        kept for the notes that follow.
         """
         held = self._held_and_updatable(change)
         if held is None:
             return
+        text = "\n".join([text, *held.notes])
+        held.notes = []
+        held.told = text
+        await self._send_reply(held, text, change)
+
+    async def _send_reply(self, held: _Held, text: str, change: aiosqlite.Row) -> None:
         interaction = held.interaction
         try:
             for number, part in enumerate(chunk_message(text)):

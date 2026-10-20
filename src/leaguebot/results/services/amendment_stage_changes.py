@@ -709,6 +709,11 @@ def _prompt_change(
             f"  {_CANNOT_GO_ON}",
         )
 
+    def tell_origin(ctx: OutcomeContext) -> str | None:
+        """The manager's reply to the approval, while it can be updated, hears of a discarded
+        prompt too."""
+        return _CANNOT_GO_ON if _not_posted(ctx) else None
+
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         channel_id = int(payload["channel_id"])
         return (
@@ -753,6 +758,7 @@ def _prompt_change(
         writes=(),
         plan=plan,
         finished_lines=finished_lines,
+        tell_origin=tell_origin,
     )
 
 

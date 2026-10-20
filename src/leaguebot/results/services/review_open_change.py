@@ -874,6 +874,18 @@ def review_prompt_change() -> ChangeType:
             "  ⚠️ The appeals review prompt was not posted. It is being posted again.",
         )
 
+    def tell_origin(ctx: OutcomeContext) -> str | None:
+        """The manager's reply to the approval, while it can be updated, hears of a discarded
+        appeals prompt too: the approval's own reply was sent before the prompt was tried."""
+        if ctx.payload.get("stage") != APPEALS_STAGE:
+            return None
+        prompt = next(
+            (v for v in ctx.steps if v.name == review_verdicts.POST_APPEALS_PROMPT), None
+        )
+        if prompt is None or not _discarded(prompt.result):
+            return None
+        return "⚠️ The appeals review prompt was not posted. It is being posted again."
+
     steps: dict[str, Step] = {
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
         review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
@@ -925,6 +937,7 @@ def review_prompt_change() -> ChangeType:
         writes=("round_submission_channels",),
         plan=plan,
         finished_lines=finished_lines,
+        tell_origin=tell_origin,
     )
 
 
