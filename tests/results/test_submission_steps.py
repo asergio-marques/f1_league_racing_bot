@@ -45,7 +45,6 @@ from tests.support.review_league import (
     review_league,
 )
 
-NO_SUBMISSION_STEPS = "#439: the results dialogues have no shared jobs to create a channel or post"
 CHANNEL_NAME = "pro-round-3-results"
 _new_ids = itertools.count(7500)
 
@@ -189,7 +188,6 @@ async def test_a_refused_channel_creation_stops_the_queue_naming_the_permission(
     assert await _submission_channel(league.db_path) == before
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_STEPS)
 async def test_a_prompt_refused_stops_the_queue(tmp_path):
     """The prompt asking for round 3's Feature Race is refused by the submission channel. The
     queue stops at the job with nothing posted; on Retry the prompt naming the Feature Race is
@@ -197,6 +195,9 @@ async def test_a_prompt_refused_stops_the_queue(tmp_path):
     from leaguebot.results.services.submission_steps import post_prompt_step
 
     league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE rounds SET format = 'SPRINT' WHERE id = ?", (ROUND_ID,))
+        await db.commit()
     submission = await _submission_channel(league.db_path)
     target = league.channel(submission)
     target.send_fails = http_error(discord.Forbidden, status=403, text="Missing Access")
