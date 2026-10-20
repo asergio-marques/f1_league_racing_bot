@@ -397,7 +397,13 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.amend_changes import amend_open_change
-    from leaguebot.results.services.amend_end_changes import amend_cancel_change
+    from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
+    from leaguebot.results.services.amend_end_changes import (
+        amend_cancel_change,
+        amend_lapse_change,
+        amend_lapse_timer,
+        ask_lapse,
+    )
     from leaguebot.results.services.amend_turn_change import (
         amend_close_change,
         amend_config_change,
@@ -474,6 +480,15 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(amend_lapse_change(now=lambda: bot.change_queue.now()))
+
+    async def ask_amendment_lapse(amend_id: int, *, cause: str) -> int | None:
+        return await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=cause)
+
+    bot.ask_amendment_lapse = ask_amendment_lapse
+    bot.scheduler_service.register_timer(
+        AMEND_TIMER, amend_lapse_timer(bot.db_path, lambda: bot.change_queue)
+    )
     bot.change_queue.register(
         amend_turn_change(
             server_config=bot.config_service.get_server_config,

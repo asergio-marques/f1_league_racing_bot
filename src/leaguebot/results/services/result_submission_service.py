@@ -1583,6 +1583,14 @@ def _sessions_text(session_types) -> str:
 
 
 async def _claim_amendment(db_path: str, round_id: int) -> str | None:
+    """`_claim_amendment_on`, saved on a connection of its own."""
+    async with get_connection(db_path) as db:
+        deadline = await _claim_amendment_on(db, round_id)
+        await db.commit()
+    return deadline
+
+
+async def _claim_amendment_on(db: aiosqlite.Connection, round_id: int) -> str | None:
     """Take an open amendment's deadline, so that nothing else acts on it until it is returned.
 
     Four things act on an amendment once its first stage has written: approving its report
@@ -1595,22 +1603,23 @@ async def _claim_amendment(db_path: str, round_id: int) -> str | None:
 
     Returns the deadline taken, for :func:`_rearm_amendment` to hand back, or None where the
     amendment is not open: never begun, already committed or reverted, or claimed by another.
+    Commits nothing: the claim is taken in the save of whatever acts on the amendment, and given up
+    with it if that save is undone.
     """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
+    row = await (
+        await db.execute(
             "SELECT expires_at FROM round_amend_channels "
             "WHERE round_id = ? AND pre_amendment_state IS NOT NULL",
             (round_id,),
         )
-        row = await cursor.fetchone()
-        if row is None or row["expires_at"] is None:
-            return None
-        cursor = await db.execute(
-            "UPDATE round_amend_channels SET expires_at = NULL "
-            "WHERE round_id = ? AND expires_at = ?",
-            (round_id, row["expires_at"]),
-        )
-        await db.commit()
+    ).fetchone()
+    if row is None or row["expires_at"] is None:
+        return None
+    cursor = await db.execute(
+        "UPDATE round_amend_channels SET expires_at = NULL "
+        "WHERE round_id = ? AND expires_at = ?",
+        (round_id, row["expires_at"]),
+    )
     return row["expires_at"] if cursor.rowcount == 1 else None
 
 
@@ -4670,19 +4679,21 @@ async def _resubmit_collection_task(
 
 
 async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = None) -> int:
-    """Revert every amendment whose stages went unapproved past their deadline.
+    """Ask the change queue to end every amendment whose stages went unapproved past their
+    deadline (`results.amend.lapse`, as the bot), and give how many it was asked of.
 
-    Returns how many were reverted. The round keeps the classification it raced rather than a
-    half-amended one, and the league is told in the log channel — an amendment quietly undone
-    would be worse than one left hanging.
-
-    Each is claimed before it is reverted (:func:`_claim_amendment`), so a stage being approved
-    at the moment the sweep runs is left to finish rather than reverted from under it. A revert
-    that fails hands the deadline back, and the next sweep tries again.
+    The lapse puts the round back as it was, deletes the amendment's channel and tells the league
+    in the log channel, as jobs of the queue: an amendment quietly undone would be worse than one
+    left hanging. It is not due, and so not asked, while a stage of the amendment is in hand on the
+    queue, stopped included, nor while the stage-two prompt is (results specification :491): the
+    next sweep asks again, once the stage is done or an admin has discarded it. The queue carries
+    one lapse of an amendment at a time, so a lapse already asked is not asked again.
 
     *now* is taken as a parameter so a test can pin it alongside the deadline it seeds; left out
     it is the wall clock.
     """
+    from leaguebot.results.services.amend_end_changes import SWEEP
+
     # Normalised to UTC-aware, because the stored deadline always is: comparing it against a
     # naive *now* raises `TypeError` outside the guard below and aborts the whole sweep, leaving
     # every lapsed amendment unreverted rather than one (#345).
@@ -4691,12 +4702,11 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
         moment = moment.replace(tzinfo=timezone.utc)
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT round_id, session_types, expires_at, started_by "
-            "FROM round_amend_channels WHERE expires_at IS NOT NULL"
+            "SELECT id, expires_at FROM round_amend_channels WHERE expires_at IS NOT NULL"
         )
         candidates = [dict(row) for row in await cursor.fetchall()]
 
-    reverted = 0
+    asked = 0
     for row in candidates:
         try:
             deadline = datetime.fromisoformat(row["expires_at"])
@@ -4704,47 +4714,11 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
             continue
         if deadline > moment:
             continue
-
-        round_id: int = row["round_id"]
-        # A stage in hand on the queue, stopped included, is left alone ("Leave it while stuck"):
-        # once a league admin discards it, the next sweep undoes the amendment.
-        if await stage_in_hand(bot.db_path, round_id):
-            continue
-        sessions = await _amendment_sessions_of(bot.db_path, round_id)
-        taken = await _claim_amendment(bot.db_path, round_id)
-        if taken is None:
-            continue
         try:
-            await revert_abandoned_amendment(bot.db_path, round_id, bot)
-        except Exception:  # noqa: BLE001 — one stuck round must not stop the rest
-            log.exception("sweep_expired_amendments: could not revert round %s", round_id)
-            await _rearm_amendment(bot.db_path, round_id, taken)
+            change_id = await bot.ask_amendment_lapse(int(row["id"]), cause=SWEEP)
+        except Exception:  # noqa: BLE001 — one stuck amendment must not stop the rest
+            log.exception("sweep_expired_amendments: could not ask the lapse of amendment %s", row["id"])
             continue
-        reverted += 1
-
-        await _close_amendment_channel(
-            bot.db_path, await league_guild(bot), round_id, reason="Amendment abandoned",
-        )
-
-        # In the standard lapse form, naming the member who started it (`started_by`).
-        try:
-            rctx = await _get_round_context(bot.db_path, round_id)
-            await record_abandoned(
-                bot,
-                row["started_by"],
-                what=(
-                    f"`/results rounds amend` of round {rctx['round_number']} "
-                    f"({rctx['division_name']})"
-                ),
-                lapsed=True,
-                detail=(
-                    f"season: {rctx['season_number']}, sessions: {_sessions_text(sessions)}\n"
-                    "The amendment's report and appeal stages were not approved in time, so the "
-                    f"round has been put back as it was. {AMENDMENT_RE_RUN}"
-                ),
-            )
-        except Exception:  # noqa: BLE001 — the revert stands whether or not it was announced
-            log.exception(
-                "sweep_expired_amendments: could not announce the revert of round %s", round_id
-            )
-    return reverted
+        if change_id is not None:
+            asked += 1
+    return asked

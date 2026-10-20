@@ -57,6 +57,7 @@ from leaguebot.results.services.amend_changes import (
     COMMAND,
     label_of,
     prompt_steps,
+    record_prompt_posted,
 )
 from leaguebot.results.services.amendment_stage_changes import PROMPT_KIND
 from leaguebot.results.services.review_posting import (
@@ -303,6 +304,7 @@ def turn_steps(
                         "session": f"the {label} of round {row['round_number']} "
                                    f"({row['division_name']})",
                     }),
+                    PlannedStep(ARM_LAPSE, {"channel_id": channel_id}),
                     *clear,
                 ),
             )
@@ -409,8 +411,12 @@ def turn_steps(
         POST: post_step(describing="posting a line in the amendment channel"),
         SAVE_DRAFT: Step(SAVE_DRAFT, StepKind.SAVE, save_draft, describe=describe_save),
         END_AMENDMENT: Step(END_AMENDMENT, StepKind.SAVE, end_amendment, describe=describe_end),
-        POST_CONFIG_CHOICE: post_choice_step(
-            POST_CONFIG_CHOICE, choice_view, describing="posting the points configuration choice"
+        POST_CONFIG_CHOICE: dataclasses.replace(
+            post_choice_step(
+                POST_CONFIG_CHOICE, choice_view,
+                describing="posting the points configuration choice",
+            ),
+            record=record_prompt_posted(now),
         ),
         typed_turns.CLEAR_MARK: typed_turns.clear_mark_step(),
         **prompt_steps(now=now, arm_once=arm_once),

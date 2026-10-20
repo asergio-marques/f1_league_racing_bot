@@ -244,7 +244,9 @@ class _Held:
     *told* is what the reply last said, and *notes* what follow-ons added to it before it was
     first updated (`ChangeType.tell_origin`). A follow-on's own entry is *borrowed* from the
     change that asked for it: the same reply, to add a note to and never to update, as of
-    *acknowledged*."""
+    *acknowledged*. A reply *kept* is one the change that was acknowledged with it has finished
+    with, held for the later change of kind and key *keep_for* (`ChangeQueue.keep_reply`); the
+    change that takes it over is updated through it as of *acknowledged*."""
 
     interaction: discord.Interaction
     message: discord.WebhookMessage | None
@@ -252,6 +254,8 @@ class _Held:
     notes: list[str] = field(default_factory=list)
     borrowed: "_Held | None" = None
     acknowledged: datetime | None = None
+    keep_for: tuple[str, str] | None = None
+    kept: bool = False
 
 
 @dataclass(frozen=True)
@@ -707,7 +711,9 @@ class ChangeQueue:
                     log.info("%s was not asked for again: %s", what, reason)
                 return None
 
-            if interaction is not None:
+            if interaction is None:
+                self._adopt_kept_reply(change_id, kind, change_type.key(payload))
+            else:
                 stopped = await self._stopped_jobs(lane=lane)
                 await self._acknowledge(
                     change_id, change_type, payload, interaction,
@@ -716,6 +722,37 @@ class ChangeQueue:
                 )
             self._signal.set()
             return change_id
+
+    def keep_reply(self, change_id: int, kind: str, key: str) -> None:
+        """Keep the reply of change *change_id* once it has finished, for the later change of *kind*
+        whose key is *key*, which is asked by the bot and has no interaction of its own to tell the
+        member with: an amendment's lapse, asked by a timer five minutes on, tells the manager who
+        opened the amendment that it expired. The later change is updated through the reply as long
+        as the reply could still be updated (`UPDATABLE_FOR` since it was acknowledged); past that
+        the log channel alone tells. A change that holds no reply keeps nothing.
+
+        *Rejected:* a second table of replies, which the register of what is held in memory would
+        carry beside `_held`; a kept reply is the same entry, left in `_held` under the finished
+        change's id until the later change takes it over or the memory is forgotten.
+        """
+        held = self._held.get(change_id)
+        if held is not None and held.borrowed is None:
+            held.keep_for = (kind, key)
+
+    def _adopt_kept_reply(self, change_id: int, kind: str, key: str) -> None:
+        """Hand the later change *change_id* the reply kept for its kind and key, where one is kept
+        and can still be updated; one past that is dropped."""
+        for old_id, held in list(self._held.items()):
+            if not held.kept or held.keep_for != (kind, key):
+                continue
+            del self._held[old_id]
+            stamp = held.acknowledged
+            if stamp is not None and self._clock() - stamp < UPDATABLE_FOR:
+                held.keep_for = None
+                held.kept = False
+                held.told = None
+                self._held[change_id] = held
+                return
 
     async def _acknowledge(
         self,
@@ -766,7 +803,7 @@ class ChangeQueue:
                 "channel alone", change_id, exc_info=True,
             )
             return
-        self._held[change_id] = _Held(interaction, message)
+        self._held[change_id] = _Held(interaction, message, acknowledged=self._clock())
 
     # ------------------------------------------------------------------
     # The worker
@@ -1392,8 +1429,13 @@ class ChangeQueue:
         return ids
 
     def _release(self, change: aiosqlite.Row) -> None:
-        """Let go of the change's interaction, and wake the worker for what comes next."""
-        self._held.pop(change["id"], None)
+        """Let go of the change's interaction, unless it is kept for a later change
+        (`keep_reply`), and wake the worker for what comes next."""
+        held = self._held.get(change["id"])
+        if held is not None and held.keep_for is not None:
+            held.kept = True
+        else:
+            self._held.pop(change["id"], None)
         self._signal.set()
 
     @staticmethod
@@ -2312,10 +2354,14 @@ class ChangeQueue:
 
     def _held_and_updatable(self, change: aiosqlite.Row) -> "_Held | None":
         held = self._held.get(change["id"])
-        acknowledged = change["acknowledged_at"]
-        if held is None or held.borrowed is not None or acknowledged is None:
+        if held is None or held.borrowed is not None:
             return None
-        if self._clock() - datetime.fromisoformat(acknowledged) >= UPDATABLE_FOR:
+        acknowledged = (
+            held.acknowledged if held.acknowledged is not None
+            else None if change["acknowledged_at"] is None
+            else datetime.fromisoformat(change["acknowledged_at"])
+        )
+        if acknowledged is None or self._clock() - acknowledged >= UPDATABLE_FOR:
             return None
         return held
 

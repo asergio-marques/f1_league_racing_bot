@@ -35,11 +35,6 @@ from tests.support.review_league import claim_amendment, revert_amendment, snaps
 from tests.support.teams import seed_team_instances
 
 LAPSE = "results.amend.lapse"
-NO_SWEEP_LAPSE = (
-    "#439: the half-hour sweep reverts an expired amendment itself, off the change queue, rather "
-    "than asking `results.amend.lapse` of it"
-)
-
 SEASON_ID = 91
 DIVISION_ID = 92
 ROUND_ID = 93
@@ -129,6 +124,9 @@ def _bot(db_path):
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    # The queue delivers the lines each job saved through the router after the job; this one saves
+    # none, and there is nothing to deliver.
+    bot.output_router.deliver_queued = AsyncMock()
     bot.get_guild = MagicMock(return_value=None)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     return bot
@@ -331,7 +329,6 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
 # ── The sweep ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_LAPSE)
 async def test_an_expired_amendment_is_reverted(tmp_path):
     """Round 4's amendment is past stage one, the Feature Race overwritten, and its half-hour has
     run. The sweep asks the queue for its lapse, as the bot, and puts nothing back itself; once the
@@ -371,7 +368,6 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
     assert await _drivers(db_path) == [(102, 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_LAPSE)
 async def test_the_revert_is_announced(tmp_path):
     """An amendment quietly undone would be worse than one left hanging. It is announced in the
     standard lapse form; a row that recorded nobody names "a member", with no mention."""
@@ -398,7 +394,6 @@ async def test_the_revert_is_announced(tmp_path):
     assert "<@" not in head
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_LAPSE)
 async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     """The league is told the amendment lapsed and may be run again, so the notice sends the
     manager to the command they now type. The line beneath the standard lapse form says so."""
@@ -488,7 +483,6 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     assert "except Exception" in job
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_LAPSE)
 async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     """The stored deadline is UTC-aware, so comparing it with a naive *now* raises `TypeError`.
 
@@ -694,7 +688,6 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     return next(line for line in lines if line.startswith("⌛ "))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_LAPSE)
 async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path):
     """The sweep names who started the amendment it reverts, by their server display name and
     their mention."""
@@ -703,7 +696,6 @@ async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path
     assert line.splitlines()[0].endswith("lapsed unconfirmed (started by Alex (<@77>))")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_LAPSE)
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
     """The timed revert of an amendment whose opener has since left the server, which the
     sweep still reaches: the standard lapse form, naming them by mention alone, with what

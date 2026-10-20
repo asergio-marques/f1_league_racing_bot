@@ -699,7 +699,6 @@ async def test_the_five_minutes_start_when_the_prompt_appears(tmp_path, monkeypa
     assert last[2] == NOW + timedelta(minutes=9)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_amendment_lapses_five_minutes_after_its_prompt_with_nothing_typed(
     tmp_path, monkeypatch,
 ):
@@ -722,7 +721,6 @@ async def test_an_amendment_lapses_five_minutes_after_its_prompt_with_nothing_ty
     assert f"<@{MEMBER_ID}>" in league.log() or "Alex" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_lapsed_amendment_tells_the_manager_who_ran_it_that_it_expired(
     tmp_path, monkeypatch,
 ):
@@ -741,7 +739,6 @@ async def test_a_lapsed_amendment_tells_the_manager_who_ran_it_that_it_expired(
     assert "/results rounds amend" in told
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_unanswered_configuration_choice_lapses_and_tells_the_manager_it_expired(
     tmp_path, monkeypatch,
 ):
@@ -783,7 +780,61 @@ async def test_an_unanswered_configuration_choice_lapses_and_tells_the_manager_i
     assert "/results rounds amend" in told
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
+async def test_a_lapse_after_the_managers_reply_can_no_longer_be_updated_tells_the_log_alone(
+    tmp_path, monkeypatch,
+):
+    """The queue keeps the manager's reply for the lapse only while it could still be updated, as
+    long as Discord lets it be. Alex opens the amendment; the bot is late and the timer's lapse
+    runs fifteen minutes on. The channel is deleted and the lapse recorded in the log channel
+    naming him, but his reply is not updated: it still says what the opening told him."""
+    league = await _league(tmp_path, monkeypatch)
+    interaction = await _ask_open(league)
+    told = updated_reply(interaction)
+    getattr(league.bot, "_change_queue_test_setup").clock.advance(minutes=15)
+
+    await _fire(league)
+    await run_queue(league.bot)
+
+    assert _deleted(league)
+    assert f"<@{MEMBER_ID}>" in league.log()
+    assert updated_reply(interaction) == told
+    assert "expired" not in updated_reply(interaction).lower()
+
+
+@pytest.mark.parametrize("cause", ["timer", "sweep", "restart"])
+async def test_a_lapse_asked_for_a_closed_amendment_is_dropped_unless_a_restart_finishes_it(
+    tmp_path, monkeypatch, cause,
+):
+    """An amendment that ended but whose channel could not be deleted is kept, closed, for a
+    restart to finish. Asked for that closed amendment's lapse, the timer and the sweep find it not
+    due and ask nothing; a restart asks it, and when it runs the channel is deleted and the row
+    forgotten, with nothing said in the log channel."""
+    from leaguebot.results.services.amend_end_changes import ask_lapse
+
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_amend_channels SET closed_at = ?", (NOW.isoformat(),))
+        await db.commit()
+    [row] = await _amend_rows(league)
+
+    asked = await ask_lapse(
+        league.bot.change_queue, league.db_path, int(row["id"]), cause=cause,
+        armed_for=row["prompt_posted_at"],
+    )
+    await run_queue(league.bot)
+
+    if cause != "restart":
+        assert asked is None
+        assert await _changes(league, LAPSE) == []
+        assert not _deleted(league)
+    else:
+        assert asked is not None
+        assert _deleted(league)
+        assert await _amend_rows(league) == []
+        assert "lapsed" not in league.log() and "restart" not in league.log()
+
+
 async def test_a_paste_typed_in_time_holds_the_lapse_though_its_turn_waits(tmp_path, monkeypatch):
     """The amendment's lane is stopped at another job when Alex pastes the Feature Race four
     minutes after the prompt; his turn waits. The five minutes run out and the lapse is asked:
@@ -801,7 +852,6 @@ async def test_a_paste_typed_in_time_holds_the_lapse_though_its_turn_waits(tmp_p
     assert row["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_lapse_reads_a_paste_typed_in_time_on_the_amendment_s_lane(tmp_path, monkeypatch):
     """As before, Alex's paste typed in time waits behind a stopped job on the amendment's lane
     when the lapse runs on the league lane and leaves the amendment open. Once the stopped job is
@@ -876,7 +926,6 @@ async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_q
     assert row["closed_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_refused_channel_deletion_on_a_lapse_stops_the_queue(tmp_path, monkeypatch):
     """Alex's amendment lapses, and Discord refuses to delete its channel. The lapse is the
     league's, so the league lane stops at the deletion, the channel standing."""
@@ -894,7 +943,6 @@ async def test_a_refused_channel_deletion_on_a_lapse_stops_the_queue(tmp_path, m
     assert not _deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_lapse_timer_is_armed_by_a_job_of_its_own_and_reads_its_row_again(
     tmp_path, monkeypatch,
 ):

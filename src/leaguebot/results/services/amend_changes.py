@@ -69,6 +69,9 @@ POST_OPENING = "post_opening"
 ARM_LAPSE = "arm_lapse"
 #: The one-off timer an amendment's five minutes are armed under, keyed by the amendment's row.
 TIMER = "amend_lapse"
+#: The change that ends an amendment nobody answered, asked by that timer, the half-hour sweep and
+#: the restart (`amend_end_changes`), and the key it is asked under for an amendment.
+LAPSE_KIND = "results.amend.lapse"
 #: How long a paste or a choice of configuration may take, from when its prompt appeared.
 WAIT = timedelta(minutes=5)
 
@@ -85,8 +88,9 @@ _SESSION_LABEL = {
 }
 
 __all__ = [
-    "ARM_LAPSE", "COMMAND", "DELETE_STALE", "KIND", "PLAN_OPEN", "POST_OPENING", "TIMER", "WAIT",
-    "amend_open_change", "amendable_sessions", "amendment_open_refusal", "label_of", "prompt_steps",
+    "ARM_LAPSE", "COMMAND", "DELETE_STALE", "KIND", "LAPSE_KIND", "PLAN_OPEN", "POST_OPENING", "TIMER", "WAIT",
+    "amend_open_change", "amendable_sessions", "amendment_open_refusal", "label_of", "lapse_key",
+    "prompt_steps", "record_prompt_posted",
 ]
 
 
@@ -127,23 +131,43 @@ def amendment_open_refusal(division_name: str, open_row: Any) -> str:
     )
 
 
-def prompt_steps(
-    *, now: Callable[[], datetime], arm_once: Callable[[str, int | str, datetime], None]
-) -> dict[str, Step]:
-    """The two jobs that follow every prompt an amendment shows, keyed by their names: the
-    prompt's posting, which records when it appeared (`prompt_posted_at`), and `arm_lapse`, which
-    arms the five minutes from then (Q18). The opening and every paste's turn plan them."""
+def lapse_key(amend_id: int) -> str:
+    """The key an amendment's lapse is asked under (`LAPSE_KIND`)."""
+    return f"{LAPSE_KIND}:{amend_id}"
 
-    async def record_prompt(
-        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
-    ) -> None:
-        """Record when the prompt appeared, in the save that marks it posted: the five minutes
-        run from then."""
+
+def record_prompt_posted(
+    now: Callable[[], datetime]
+) -> Callable[[aiosqlite.Connection, StepContext, StepResult], Awaitable[None]]:
+    """The record of a prompt's posting: when it appeared (`prompt_posted_at`), saved with the
+    post's mark, since the five minutes run from then. A step that posts a prompt of the
+    amendment carries it, whether it asks a paste or a choice of configuration."""
+
+    async def record(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
         await db.execute(
             "UPDATE round_amend_channels SET prompt_posted_at = ? WHERE channel_id = ?",
             (now().isoformat(), int(ctx.step_payload["channel_id"])),
         )
 
+    return record
+
+
+def prompt_steps(
+    *,
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, int | str, datetime], None],
+    keep_reply: Callable[[int, str, str], None] | None = None,
+) -> dict[str, Step]:
+    """The two jobs that follow every prompt an amendment shows, keyed by their names: the
+    prompt's posting, which records when it appeared (`prompt_posted_at`), and `arm_lapse`, which
+    arms the five minutes from then (Q18). The opening and every paste's turn plan them.
+
+    The timer is armed under the key ``<amendment>:<when the prompt appeared>``, so that when it
+    fires it can tell, from the row, whether a later prompt has since replaced the one it was
+    armed for and asks nothing if so. *keep_reply*, handed by the change that holds the manager's
+    reply (the opening), keeps that reply for the lapse the timer may ask, which has none of its
+    own (`ChangeQueue.keep_reply`).
+    """
     async def arm_lapse(ctx: StepContext) -> StepResult:
         async with get_connection(ctx.db_path) as db:
             row = await (
@@ -154,14 +178,19 @@ def prompt_steps(
             ).fetchone()
         if row is None or row["prompt_posted_at"] is None:
             return StepResult(result={"armed": False})
-        arm_once(TIMER, int(row["id"]), datetime.fromisoformat(row["prompt_posted_at"]) + WAIT)
+        arm_once(
+            TIMER, f"{row['id']}:{row['prompt_posted_at']}",
+            datetime.fromisoformat(row["prompt_posted_at"]) + WAIT,
+        )
+        if keep_reply is not None:
+            keep_reply(ctx.change_id, LAPSE_KIND, lapse_key(int(row["id"])))
         return StepResult(result={"armed": True})
 
     async def describe_arm(_ctx: StepContext) -> str:
         return "arming the timer that ends an amendment nobody answers"
 
     return {
-        POST_PROMPT: dataclasses.replace(post_prompt_step(), record=record_prompt),
+        POST_PROMPT: dataclasses.replace(post_prompt_step(), record=record_prompt_posted(now)),
         ARM_LAPSE: Step(ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm),
     }
 
@@ -428,7 +457,10 @@ def amend_open_change(
             POST_OPENING: post_choice_step(
                 POST_OPENING, opening_view, describing="posting the amendment's opening"
             ),
-            **prompt_steps(now=now, arm_once=arm_once),
+            **prompt_steps(
+                now=now, arm_once=arm_once,
+                keep_reply=lambda change_id, kind, key: queue_of().keep_reply(change_id, kind, key),
+            ),
         },
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",
