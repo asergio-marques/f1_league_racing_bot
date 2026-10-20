@@ -117,7 +117,7 @@ it only to place it; the rules governing it belong to its own specification.
 ### When a command fails
 - A command, button or form that fails before it finishes shall tell the member who used it, seen by them alone, naming what failed, that the fault lies in the bot and not in anything the member entered, that it did not finish, and that it may have been partly done. The reply shall not name the exception.
     - A command that undoes itself on failure shall say, in place of "may have been partly done", what became of the change and what to do next — that the module is still off, that nothing from the paste or the import was saved, that the test driver was not added. Decided 2026-09-28.
-    - A results amendment's failure reply may also name the kind of fault in plain words — that the bot could not read or write its database, that Discord refused or failed a request, that the bot hit an internal fault — but never the exception, and shall end with what to do next. Decided 2026-09-28.
+    - A results amendment's fault is not a reply of its own but a stopped job: the stop notice names the kind of fault in plain words — that the bot could not read or write its database, that Discord refused or failed a request, that the bot hit an internal fault — but never the exception, with Retry and Discard, and nothing is undone by it. Decided 2026-10-20.
 - The failure shall be recorded in the log channel, naming the member, the command, button or form, and the kind of fault. The full detail shall go to the host's log alone.
 - Either shall be made though the other cannot be.
 
