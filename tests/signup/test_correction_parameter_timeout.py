@@ -37,6 +37,7 @@ from unittest.mock import AsyncMock, MagicMock
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     change_rows,
+    discard_job,
     member_interaction,
     run_queue,
     tier_member,
@@ -427,3 +428,20 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
 
     assert await _state(league) == AWAITING
 
+
+async def test_a_lapse_whose_panel_is_discarded_is_still_recorded(tmp_path):
+    """Kimi's correction lapses and Discord refuses the fresh review panel in his channel; an
+    admin discards that job. Kimi is back awaiting approval, and the log channel records the
+    lapse all the same, naming manager 77 and Kimi and saying he is back in the approval queue,
+    without saying a panel is in his channel."""
+    league = await _league(tmp_path)
+    league.channel(KIMI_CHANNEL).fail_when = lambda _content, kwargs: kwargs.get("view") is not None
+
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+
+    assert await _state(league) == "PENDING_ADMIN_APPROVAL"
+    lapse = CORRECTION_LAPSE.split("\n")[0]
+    assert lapse + "\n  Kimi is back in the approval queue." in league.log(), league.log()
+    assert "a fresh review panel is in their channel" not in league.log()

@@ -34,6 +34,7 @@ from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
     run_queue,
@@ -355,6 +356,26 @@ async def test_approval_is_logged_naming_the_manager_and_the_driver(tmp_path):
     [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
     assert f"<@{REVIEWER}>" in approved
     assert f"<@{SIGNING_UP}>" in league.log()
+
+
+async def test_an_approval_whose_role_job_is_discarded_is_still_recorded(tmp_path, monkeypatch):
+    """Manager 77 approves Kimi and a fault of the bot's own stops the queue at the job that
+    gives the driver role; an admin discards it. Kimi is Unassigned, and the log channel carries
+    the Approved line naming 77 and Kimi all the same, saying the role was not granted."""
+    league = await _league(tmp_path)
+
+    await _approve(league, run=False)
+    monkeypatch.setattr(
+        "leaguebot.signup.services.review_changes.league_guild",
+        AsyncMock(side_effect=RuntimeError("fault")),
+    )
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+
+    assert await _state(league) == "UNASSIGNED"
+    [approved] = [line for line in _lines(league) if "| Signup | Approved" in line]
+    assert f"<@{REVIEWER}>" in approved
+    assert "driver role could not be granted" in league.log().lower(), league.log()
 
 
 async def test_an_approved_signup_is_marked_as_such(tmp_path):

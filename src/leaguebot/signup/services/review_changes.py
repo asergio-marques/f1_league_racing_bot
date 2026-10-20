@@ -18,7 +18,9 @@ run. Its jobs are:
 - `grant_role` gives the driver the league's driver role and writes the "Approved" line. A role it
   cannot give (it is gone, the driver has left the server, Discord refuses it) is **named, never
   a stop**: the approval stands, and the manager's reply and the line say so (signup specification,
-  the approval's role rule).
+  the approval's role rule). The "Approved" line is `grant_role`'s; where an admin discards that
+  job the change's `finished_lines` write it as the change closes, since the approval it records
+  stands.
 
 **Request Changes** asks `signup.request_changes` once the manager has typed the reason, through
 the press they made. Its check refuses a signup that has moved on since the press, as a rejection
@@ -55,7 +57,9 @@ manager and the driver for the notice and the line (a save waits on no second co
 `lapse` (a save: back to Pending Admin Approval, the wizard unengaged and the correction's state,
 its reason, requester and offer time cleared), `post_lapse` (the notice mentioning the manager,
 worded for a restart where it was one) and `post_panel` (a fresh review panel, and the lapse
-written to the log, naming the panel where one was posted).
+written to the log, naming the panel where one was posted; where an admin discards `post_panel`
+the change's `finished_lines` write the lapse, saying no panel was posted, since the driver is back
+in the approval queue all the same).
 
 **The lap sum is signup's own.** The sum is written on the signup record by this module, in the
 approval's save; core's `PlacementService.store_total_lap_ms`, which commits on a connection of
@@ -276,6 +280,23 @@ def approve_change(
     async def describe_grant(ctx: StepContext) -> str:
         return f"giving <@{ctx.step_payload['user_id']}> the driver role"
 
+    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        # The "Approved" line is `grant_role`'s; a role job an admin discarded wrote none, and the
+        # approval it follows stands, so the line is written as the change closes.
+        views = {view.name: view for view in ctx.steps}
+        approved_job = views.get(APPROVE_JOB)
+        granted = views.get(GRANT_ROLE)
+        if (
+            approved_job is None or not approved_job.done
+            or "discarded" in (approved_job.result or {})
+            or granted is None or "discarded" not in (granted.result or {})
+        ):
+            return ()
+        return (
+            f"{ctx.named} | Signup | Approved\n  driver: <@{ctx.payload['user_id']}>\n"
+            "  The driver role could not be granted: the job was discarded.",
+        )
+
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
         approved_job = views.get(APPROVE_JOB)
@@ -302,6 +323,7 @@ def approve_change(
         key=lambda payload: f"{APPROVE}:{payload['user_id']}",
         doing=lambda payload: "Approving a signup",
         outcome=outcome,
+        finished_lines=finished_lines,
     )
 
 
@@ -865,12 +887,12 @@ def lapse_change(
             for view in ctx.steps
         )
 
-    def lapse_result(ctx: StepContext) -> dict[str, Any]:
+    def lapse_result(ctx: OutcomeContext) -> dict[str, Any]:
         return next(
             ((view.result or {}) for view in ctx.steps if view.name == LAPSE_JOB and view.done), {}
         )
 
-    def named_result(ctx: StepContext) -> dict[str, Any]:
+    def named_result(ctx: OutcomeContext) -> dict[str, Any]:
         return next(
             ((view.result or {}) for view in ctx.steps if view.name == NAMES and view.done), {}
         )
@@ -927,8 +949,14 @@ def lapse_change(
                 refused=f"the review panel could not be posted in channel {channel.id}",
             )
             posted = True
+        return StepResult(result={"panel": posted}, lines=(lapse_line(ctx, posted),))
+
+    def lapse_line(ctx: OutcomeContext, posted: bool) -> str:
+        """The log channel's record of the lapse, naming the manager who asked and the driver, and
+        whether a fresh review panel is in the driver's channel."""
+        user_id = str(ctx.payload["user_id"])
         driver = named_result(ctx).get("driver") or f"<@{user_id}>"
-        line = abandoned_line(
+        return abandoned_line(
             str(named_result(ctx).get("manager") or "a member"),
             f"the correction request for {driver}'s signup",
             lapsed=True,
@@ -937,7 +965,20 @@ def lapse_change(
                 + ("; a fresh review panel is in their channel." if posted else ".")
             ),
         )
-        return StepResult(result={"panel": posted}, lines=(line,))
+
+    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        # The lapse is `post_panel`'s line; where an admin discarded that job the driver is back in
+        # the approval queue all the same, so the record is written as the change closes, saying
+        # no panel was posted.
+        views = {view.name: view for view in ctx.steps}
+        lapse_view, panel = views.get(LAPSE_JOB), views.get(POST_PANEL)
+        if (
+            lapse_view is None or not lapse_view.done or (lapse_view.result or {}).get("ended")
+            or "discarded" in (lapse_view.result or {})
+            or panel is None or "discarded" not in (panel.result or {})
+        ):
+            return ()
+        return (lapse_line(ctx, False),)
 
     async def describe_names(ctx: StepContext) -> str:
         return f"finding the names of <@{ctx.step_payload['user_id']}> and their manager for the record"
@@ -976,4 +1017,5 @@ def lapse_change(
         key=lambda payload: f"{LAPSE}:{payload['user_id']}",
         doing=lambda payload: "Returning a driver to the approval queue",
         outcome=outcome,
+        finished_lines=finished_lines,
     )
