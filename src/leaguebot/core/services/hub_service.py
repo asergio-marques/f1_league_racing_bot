@@ -259,9 +259,10 @@ async def refresh_panel(
     """Bring the panel in line with what is offered now: the body of the `hub.refresh` job.
 
     Edits the panel where it stands; posts it where there is none or it has been deleted, and
-    gives back `{"new": <id>, "channel_id": <id>}` for the job's record to save. Gives None where it
-    edited, or where no hub channel is set. The panel's buttons are handed *queue*. *kept* is what the job's last try posted and could not
-    record, removed before the panel is posted again.
+    gives back `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
+    `{"edited": <id>, "channel_id": <id>}`, which saves nothing, where it edited. Gives None only
+    where no hub channel is set. The panel's buttons are handed *queue*. *kept* is what the job's
+    last try posted and could not record, removed before the panel is posted again.
 
     Raises `StepFailedOnDiscord`, naming `/bot hub-channel`, where the channel set is no longer in
     the server, and where Discord refuses the edit or the post; `GuildUnavailable` where the
@@ -281,7 +282,7 @@ async def refresh_panel(
             await channel.get_partial_message(cfg.hub_message_id).edit(
                 content=content, view=view
             )
-            return None
+            return {"edited": cfg.hub_message_id, "channel_id": channel.id}
         except discord.NotFound:
             pass  # deleted by hand: posted again below
         except discord.HTTPException as exc:
@@ -334,7 +335,12 @@ def hub_refresh_change(queue: ChangeQueue) -> ChangeType:
         old_channel, old_message = ctx.payload.get("old_channel_id"), ctx.payload.get("old_message_id")
         if old_channel is None or old_message is None:
             return StepResult(result=posted)
-        # A hub moved: the new panel is up, so the old comes down after it and never before.
+        if (int(old_channel), int(old_message)) == (
+            posted["channel_id"], posted.get("new", posted.get("edited"))
+        ):
+            return StepResult(result=posted)  # the panel standing is the one named: keep it
+        # A hub moved: the new panel is up, whether this job posted it or an earlier one did, so
+        # the old comes down after it and never before.
         return StepResult(result=posted, then=(PlannedStep(DELETE_OLD, {
             "channel_id": int(old_channel), "message_id": int(old_message), "what": "hub panel",
         }),))

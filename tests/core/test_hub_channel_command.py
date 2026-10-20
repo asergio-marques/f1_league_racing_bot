@@ -317,6 +317,27 @@ async def test_moving_the_hub_posts_the_new_panel_before_deleting_the_old(db_pat
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
 
 
+async def test_the_old_panel_comes_down_when_an_earlier_refresh_already_posted_the_new(db_path):
+    """A module toggle's refresh is waiting when the hub moves from 7921 to 7920. It runs first and
+    posts the new panel, so the move's own refresh only edits it; the old panel still comes
+    down, as the new one is up either way, and the new is posted once."""
+    from leaguebot.core.models.change import ChangeOrigin
+
+    await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
+    old, new = _channel(OLD_HUB), _channel(HUB)
+    cog, interaction = _setup(db_path, old, new)
+    await cog.bot.change_queue.ask(
+        hub_service.HUB_REFRESH, {"command": "/module enable weather"},
+        what="refreshing the hub panel", origin=ChangeOrigin.BOT,
+    )
+
+    await _run(cog, interaction, new)
+
+    new.send.assert_awaited_once()
+    old._partial.delete.assert_awaited_once()
+    assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
+
+
 async def test_a_refused_deletion_of_the_old_panel_stops_the_queue(db_path):
     """Discord refuses to delete the panel in the old hub 7921: the new panel stands in 7920
     and is kept, and the queue stops at the old panel's deletion rather than reporting it."""
