@@ -50,6 +50,7 @@ notice Discord refuses stops the queue (the owner's rule, every failure stops it
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable
@@ -999,7 +1000,29 @@ async def _record_channel_deleted(
     )
 
 
+async def _record_submission_channel_gone(
+    db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+) -> None:
+    """Forget the amendment record naming the channel and the round's submission row, in the save
+    that marks a cancellation's deletion done: the row's going is the end of that conversation, so
+    a paste still waiting on the channel's lane is found no longer due when its turn comes, rather
+    than refused in a channel that is no longer there. Scoped by the channel as well as the round,
+    as the amendment record's forgetting is."""
+    await _record_channel_deleted(db, ctx, result)
+    payload = ctx.step_payload
+    await db.execute(
+        "DELETE FROM round_submission_channels WHERE round_id = ? AND channel_id = ?",
+        (int(payload["round_id"]), int(payload["channel_id"])),
+    )
+
+
+def cancellation_delete_step() -> Step:
+    """The step a cancellation deletes a round's submission channel with: `DELETE_CHANNEL`, whose
+    record also ends the submission's conversation by deleting its row."""
+    return dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=_record_submission_channel_gone)
+
+
 __all__ = [
-    "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
+    "cancellation_delete_step", "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
     "POST_SESSION_RESULTS", "POST_STANDINGS", "POST_STANDINGS_AFRESH", "not_done", "plan_division_posts", "plan_posts", "posting_steps",
 ]

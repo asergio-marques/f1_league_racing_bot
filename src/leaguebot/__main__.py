@@ -271,13 +271,13 @@ def _submission_hooks() -> "SubmissionHooks":
     module."""
     from leaguebot.core.services.cancellation_changes import SubmissionHooks
     from leaguebot.results.services import result_submission_service
-    from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
+    from leaguebot.results.services.review_posting import cancellation_delete_step
 
     return SubmissionHooks(
         open_submissions=result_submission_service.open_submissions,
         open_submissions_on=result_submission_service.open_submissions_on,
         close_submissions_on=result_submission_service.close_submissions_on,
-        delete_step=posting_steps()[DELETE_CHANNEL],
+        delete_step=cancellation_delete_step(),
     )
 
 

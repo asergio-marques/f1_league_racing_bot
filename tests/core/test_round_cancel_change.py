@@ -1252,9 +1252,11 @@ async def _empty_submission(league: Any) -> None:
     await open_submission(league, R3)
 
 
-async def _submission_closed(league: Any) -> int:
+async def _submission_closed(league: Any) -> int | None:
+    """Round 3's submission row's `closed`; None once its channel's deletion has removed the row,
+    which ends the submission's conversation (design-6-1)."""
     rows = await league.rows("SELECT closed FROM round_submission_channels WHERE round_id = ?", R3)
-    return rows[0]["closed"]
+    return rows[0]["closed"] if rows else None
 
 
 def _channel_deleted(league: Any) -> bool:
@@ -1275,7 +1277,7 @@ async def test_a_round_whose_open_submission_has_accepted_nothing_is_cancelled_a
     await _done(league)
 
     assert await _status(league) == "CANCELLED"
-    assert await _submission_closed(league) == 1
+    assert await _submission_closed(league) is None
     names = await _names(league)
     assert names[names.index("apply") + 1] == "delete_channel"
     assert json.loads((await _job(league, "delete_channel"))["payload"])["channel_id"] == (
@@ -1393,20 +1395,16 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save(tmp_pat
 # cancellation's save already reads the submission's accepted sessions afresh, and that test pins
 # it against the lanes.
 
-NO_CANCELLATION_ENDS_THE_CONVERSATION = (
-    "#439: a round's submission has no lane of its own, its pastes taken off the change queue, "
-    "so a cancellation leaves no turn of it to find no longer due"
-)
 SUBMISSION_TURN = "results.submission.turn"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCELLATION_ENDS_THE_CONVERSATION)
 async def test_a_round_cancellation_ends_its_submission_s_conversation(tmp_path):
     """Round 3 of Pro waits for its results, its submission open in channel 690 with nothing
     accepted. The admin runs `/round cancel Pro 3`; before the queue runs, the manager types
     CANCELLED into channel 690, its turn asked on the round's own lane after the cancellation.
     The queue run: round 3 is cancelled and its submission closed, and the manager's turn is
-    then found no longer due — dropped, with nothing saved for the round's sessions and nothing
+    then found no longer due at its check — a member's paste, so refused and not taken, with the
+    log channel saying the submission is gone, nothing saved for the round's sessions and nothing
     posted in the channel by it."""
     from tests.support.change_queue import member
 
@@ -1425,9 +1423,10 @@ async def test_a_round_cancellation_ends_its_submission_s_conversation(tmp_path)
     await run_queue(league.bot)
 
     assert await _status(league) == "CANCELLED"
-    assert await _submission_closed(league) == 1
+    assert await _submission_closed(league) is None
     [row] = [row for row in await change_rows(league.db_path) if row["id"] == turn]
-    assert row["state"] == "DROPPED"
+    assert row["state"] == "REFUSED"
+    assert "the round's submission is gone" in league.log()
     assert await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3) == []
     assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
 
