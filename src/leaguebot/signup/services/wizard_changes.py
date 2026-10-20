@@ -403,9 +403,26 @@ def start_change(
                 "Press Sign Up again."
             )
         text = f"✅ Your signup channel has been created: <#{(created.result or {})['channel_id']}>"
-        welcome = views.get(POST_WELCOME)
-        if welcome is not None and "discarded" in (welcome.result or {}):
-            text += "\nThe welcome could not be posted and was discarded."
+        # Each job an admin discarded is named, so that the reply says what was not done.
+        notes = {
+            DELETE_OLD_CHANNEL: (
+                "The channel of your earlier signup could not be deleted and was left standing: "
+                "ask a league manager to delete it."
+            ),
+            START_JOB: (
+                "Your signup was not started and was discarded: press Sign Up again to start "
+                "over."
+            ),
+            ARM_INACTIVITY: (
+                "Your signup's 24 hours were not armed and were discarded, so it will not lapse "
+                "by itself until the bot starts again."
+            ),
+            POST_WELCOME: "The welcome could not be posted and was discarded.",
+        }
+        for name, note in notes.items():
+            view = views.get(name)
+            if view is not None and "discarded" in (view.result or {}):
+                text += f"\n{note}"
         return text
 
     steps: dict[str, Step] = {

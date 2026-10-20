@@ -408,6 +408,38 @@ async def test_an_old_channel_is_deleted_before_the_new_one_is_created(tmp_path)
     assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL
 
 
+async def test_a_discarded_deletion_of_the_earlier_channel_is_named_in_the_reply(tmp_path):
+    """Kimi signed up before and withdrew, his old signup channel (6405) standing. He presses Sign
+    Up, Discord refuses to delete the old channel and an admin discards that job. The new channel
+    is created and his signup starts, and the reply says the earlier channel was left standing,
+    which the bot will never delete now that his wizard's row names the new one."""
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver) "
+        "VALUES (?, 'NOT_SIGNED_UP', 0)",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id) "
+        "VALUES (?, 'UNENGAGED', ?)",
+        str(SIGNING_UP), OLD_CHANNEL,
+    )
+    old = _held(league, OLD_CHANNEL)
+    old.delete = AsyncMock(side_effect=http_error(discord.Forbidden, status=403, text="Missing"))
+
+    press = await _press_sign_up(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "delete_old_channel"
+    await discard_job(league.bot)
+
+    assert league.created == [NEW_CHANNEL]
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    reply = _answered(press)
+    assert f"<#{NEW_CHANNEL}>" in reply
+    assert "earlier signup could not be deleted and was left standing" in reply
+
+
 async def test_sign_up_posts_its_welcome_on_the_league_lane(tmp_path):
     """Kimi presses Sign Up and the queue runs. The `signup.start` change, its welcome in his
     new channel included, runs on the league lane, not on the lane of the channel it creates."""
