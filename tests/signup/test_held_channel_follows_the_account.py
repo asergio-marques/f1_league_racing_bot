@@ -196,7 +196,6 @@ async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     assert _due_for(scheduler, NEW) == [DUE]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DELETION_TIMER)
 async def test_a_deletion_job_already_gone_is_armed_again(tmp_path, scheduler):
     """E42: the channel is never left with nothing to delete it. The old account holds a
     channel whose deletion timer is gone; after the reassign one timer names the new account,
@@ -210,7 +209,6 @@ async def test_a_deletion_job_already_gone_is_armed_again(tmp_path, scheduler):
     assert before + timedelta(hours=23) < due <= datetime.now(timezone.utc) + timedelta(hours=24)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DELETION_TIMER)
 async def test_an_account_holding_no_channel_moves_nothing(tmp_path, scheduler):
     """Neither account holds a channel: nothing moves, no timer is armed, nothing is asked."""
     service, queue = await _service(tmp_path, scheduler, held={})

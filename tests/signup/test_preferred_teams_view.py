@@ -70,10 +70,6 @@ NO_TEAM_TURN = (
     "#439: the team buttons are not handed the change queue, and a pick is saved at once off "
     "the queue by the wizard service, with no signup.answer change"
 )
-NO_WITHDRAW_CHANGE = (
-    "#439: Cancel Signup on the team step withdraws at once off the queue, with no signup.end "
-    "change"
-)
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -478,7 +474,6 @@ async def test_no_preference_advances_the_wizard_the_same_way_a_team_does(tmp_pa
         assert asked.get("lane") == KIMI_LANE
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WITHDRAW_CHANGE)
 async def test_cancelling_withdraws_the_signup(tmp_path):
     """Kimi presses Cancel Signup on the team step. It asks signup.end of the league lane, and
     once the queue runs he is Not Signed Up."""
@@ -495,7 +490,7 @@ async def test_cancelling_withdraws_the_signup(tmp_path):
 @pytest.mark.parametrize("press", [
     pytest.param("team", marks=pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)),
     pytest.param("no_preference", marks=pytest.mark.xfail(strict=True, reason=NO_TEAM_TURN)),
-    pytest.param("cancel", marks=pytest.mark.xfail(strict=True, reason=NO_WITHDRAW_CHANGE)),
+    "cancel",
 ])
 async def test_every_press_is_acknowledged_privately_as_under_way(tmp_path, press):
     """Each of Kimi's presses on the team step (a team, No Preference, Cancel Signup) is

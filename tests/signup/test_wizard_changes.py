@@ -91,11 +91,6 @@ NO_CHANNEL_DELETE_CHANGE = (
     "with no signup.channel.delete change: on the driver's lane for the timer, the league's for "
     "the command"
 )
-NO_END_CHANGE = (
-    "#439: the Cancel Signup view is not handed the change queue, and Cancel Signup ends the "
-    "signup and posts its closing notice itself off the queue, with no signup.end change on the "
-    "league lane asking signup.closing back of the driver's lane"
-)
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
@@ -607,7 +602,6 @@ def _locked(league: SeasonLeague) -> bool:
                for call in league.channel(KIMI_CHANNEL).set_permissions.call_args_list)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
 async def test_a_withdrawal_ends_the_signup_tells_the_driver_and_locks_the_channel_as_jobs(
     tmp_path,
 ):
@@ -632,7 +626,6 @@ async def test_a_withdrawal_ends_the_signup_tells_the_driver_and_locks_the_chann
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
 async def test_a_refused_closing_notice_stops_the_queue(tmp_path):
     """Kimi presses Cancel Signup, and Discord refuses every post in his signup channel. When
     the queue runs he is Not Signed Up (the league's change is done), but the turns in his
@@ -655,7 +648,6 @@ async def test_a_refused_closing_notice_stops_the_queue(tmp_path):
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
 async def test_withdraw_changes_the_status_on_the_league_and_the_notice_comes_back_on_the_driver_s_lane(
     tmp_path,
 ):
@@ -1165,7 +1157,6 @@ async def test_a_member_leaving_ends_the_conversation_its_stopped_turn_left_stop
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_END_CHANGE)
 async def test_a_withdrawal_disarms_the_signup_s_24_hours_and_writes_one_withdrawn_line(tmp_path):
     """Kimi presses Cancel Signup part-way through signing up and the queue runs. His 24-hour
     inactivity timer is disarmed, so it cannot later fire against a driver who has withdrawn,
@@ -1236,7 +1227,6 @@ async def test_a_restart_re_arms_each_open_signup_from_its_own_last_activity(tmp
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_a_manager(
     tmp_path,
 ):

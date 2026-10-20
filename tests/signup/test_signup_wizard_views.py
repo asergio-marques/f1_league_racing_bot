@@ -377,9 +377,6 @@ NO_BUTTON_TURN = (
     "#439: the wizard's buttons are not handed the change queue, and a button answer is saved "
     "at once off the queue by the wizard service, with no signup.answer change"
 )
-NO_CANCEL_CHANGE = (
-    "#439: Cancel Signup withdraws the signup at once off the queue, with no signup.end change"
-)
 
 #: Every view that offers Cancel Signup, and the button on it.
 CANCELS = [
@@ -526,7 +523,6 @@ async def test_no_preference_answers_the_teammate_question(tmp_path):
     assert (await _draft(league)).get("preferred_teammate") is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL_CHANGE)
 @pytest.mark.parametrize("view_name, button", CANCELS)
 async def test_cancelling_from_any_step_withdraws_the_signup(tmp_path, view_name, button):
     """Cancel Signup is the one button that destroys work, and a driver reaching it from the
@@ -572,7 +568,6 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL_CHANGE)
 @pytest.mark.parametrize("view_name, button", CANCELS)
 async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
     tmp_path, view_name, button

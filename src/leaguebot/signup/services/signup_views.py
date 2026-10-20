@@ -451,20 +451,27 @@ async def _not_for_you(
 
 
 async def _withdraw(
-    interaction: discord.Interaction, bot: LeagueBot, owner_id: str
+    interaction: discord.Interaction, queue: ChangeQueue | None, owner_id: str
 ) -> None:
-    """Withdraw the driver whose Cancel Signup button *interaction* pressed, and answer it.
+    """Ask the queue to end the signup of the driver whose Cancel Signup button *interaction*
+    pressed (`signup.end`, withdrawn).
 
-    `WizardService.withdraw` returns why it did nothing where the signup had already ended, and
-    the press is refused with that and recorded, never answered as a withdrawal. Any other error
-    reaches the view's failure handler.
+    The press is acknowledged privately and the acknowledgement updated with what became of it.
+    Where the signup has already ended, the change's check refuses it and the refusal is recorded,
+    naming the button and the driver's signup wizard; a withdrawal is never claimed then. *queue*
+    is the change queue the view was handed when it was built.
     """
-    await interaction.response.defer(ephemeral=True)
-    reason = await bot.wizard_service.withdraw(owner_id, guild_of(interaction))
-    if reason is not None:
-        await _refuse_wizard_button(interaction, owner_id, "Cancel Signup", f"⛔ {reason}")
-        return
-    await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+    if queue is None:
+        raise RuntimeError("a signup view was built with no change queue to ask")
+    await queue.ask(
+        "signup.end",
+        {"user_id": owner_id, "reason": "withdrawn"},
+        interaction=interaction,
+        what="Withdrawing a signup",
+        refusal_what=(
+            f"the “Cancel Signup” button of {_wizard_owner(interaction, owner_id)} signup wizard"
+        ),
+    )
 
 
 #: The states a driver may stand in when they press Sign Up having already got a profile,
@@ -538,11 +545,11 @@ class WithdrawButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
+        queue: ChangeQueue | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = queue
 
     @discord.ui.button(
         label="Cancel Signup",
@@ -559,7 +566,7 @@ class WithdrawButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await _withdraw(interaction, _bot, _user_id)
+        await _withdraw(interaction, self._queue, _user_id)
 
 
 class NoNotesButtonView(LeagueView):
@@ -568,11 +575,11 @@ class NoNotesButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
+        queue: ChangeQueue | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = queue
 
     @discord.ui.button(
         label="No Notes",
@@ -607,7 +614,7 @@ class NoNotesButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await _withdraw(interaction, _bot, _user_id)
+        await _withdraw(interaction, self._queue, _user_id)
 
 
 class PlatformButtonView(LeagueView):
@@ -616,11 +623,11 @@ class PlatformButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
+        queue: ChangeQueue | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = queue
 
     async def _pick(self, interaction: discord.Interaction, platform: str) -> None:
         _bot, _user_id = await _resolve_view_context(
@@ -660,7 +667,7 @@ class PlatformButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await _withdraw(interaction, _bot, _user_id)
+        await _withdraw(interaction, self._queue, _user_id)
 
 
 class DriverTypeButtonView(LeagueView):
@@ -669,11 +676,11 @@ class DriverTypeButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
+        queue: ChangeQueue | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = queue
 
     async def _pick(self, interaction: discord.Interaction, driver_type: str) -> None:
         _bot, _user_id = await _resolve_view_context(
@@ -705,7 +712,7 @@ class DriverTypeButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await _withdraw(interaction, _bot, _user_id)
+        await _withdraw(interaction, self._queue, _user_id)
 
 
 class PreferredTeamsButtonView(LeagueView):
@@ -714,13 +721,13 @@ class PreferredTeamsButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
+        queue: ChangeQueue | None = None,
         team_names: list[str] | None = None,
         excluded: list[str] | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = queue
 
         if team_names is not None:
             available = [n for n in team_names if n not in (excluded or [])]
@@ -820,7 +827,7 @@ class PreferredTeamsButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await _withdraw(interaction, _bot, _user_id)
+        await _withdraw(interaction, self._queue, _user_id)
 
 
 class NoPreferenceTeammateView(LeagueView):
@@ -829,11 +836,11 @@ class NoPreferenceTeammateView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: LeagueBot | None = None,
+        queue: ChangeQueue | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = queue
 
     @discord.ui.button(label="No Preference", style=discord.ButtonStyle.secondary, custom_id="tmmate_nopref")
     async def no_preference(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
@@ -858,4 +865,4 @@ class NoPreferenceTeammateView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await _withdraw(interaction, _bot, _user_id)
+        await _withdraw(interaction, self._queue, _user_id)

@@ -1673,14 +1673,8 @@ def _deletions_armed(league: Any) -> list[Any]:
             if call.args and call.args[0] == "signup_channel_delete"]
 
 
-NO_WITHDRAW_CHANGE = (
-    "#439: the Cancel Signup view is not handed the change queue, and a withdrawal ends the "
-    "signup and posts its closing notice itself off the queue, keeping the channel with its "
-    "typing locked where the notice is refused"
-)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WITHDRAW_CHANGE)
 async def test_a_signup_channel_kept_after_a_refused_notice_is_not_reached_by_the_season_s_end(
     tmp_path,
 ):

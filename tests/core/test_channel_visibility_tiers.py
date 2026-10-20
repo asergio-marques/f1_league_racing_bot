@@ -100,9 +100,8 @@ async def _create_wizard_channel(*, league_admin_role_id):
     member = MagicMock(spec=discord.Member)
     member.name = "driver"
 
-    service = WizardService.__new__(WizardService)
     await WizardService._create_wizard_channel(
-        service, guild, member, None, MANAGER_ROLE, league_admin_role_id
+        guild, member, None, MANAGER_ROLE, league_admin_role_id
     )
     return created["overwrites"]
 

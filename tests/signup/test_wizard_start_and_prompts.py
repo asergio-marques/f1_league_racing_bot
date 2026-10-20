@@ -83,6 +83,7 @@ def _service(
 ):
     svc = WizardService.__new__(WizardService)
     svc._correction_tasks = {}
+    svc._change_queue = MagicMock()
     svc._scheduler = MagicMock()
     svc._scheduler._scheduler = MagicMock()
     svc._output_router = MagicMock()

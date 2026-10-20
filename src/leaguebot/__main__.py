@@ -420,7 +420,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
-    from leaguebot.signup.services.wizard_changes import start_change
+    from leaguebot.signup.services.wizard_changes import end_change, start_change
     from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
@@ -549,8 +549,15 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service, config=bot.config_service,
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
             teams=lambda: bot.team_service, wizard=lambda: bot.wizard_service,
-            closing_kinds=(CLOSE_KIND, OFF_KIND), cancel_timers=_cancel_wizard_timers(bot),
+            queue_of=lambda: bot.change_queue, closing_kinds=(CLOSE_KIND, OFF_KIND),
+            cancel_timers=_cancel_wizard_timers(bot),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        end_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            cancel_timers=_cancel_wizard_timers(bot), wizard=lambda: bot.wizard_service,
         )
     )
     # A signup left unanswered for a day is ended by the wizard's own expiry until the expiry is
@@ -775,6 +782,7 @@ async def main() -> None:
         DB_PATH,
         bot.scheduler_service,
         bot.output_router,
+        change_queue=bot.change_queue,
     )
     # Bound as soon as it exists rather than in `on_ready`. The persistent views are routed
     # from the moment the gateway opens, and a signup press arriving while `on_ready` was
@@ -1062,12 +1070,12 @@ async def main() -> None:
 
     for _view in (
         SignupButtonView(bot.change_queue),
-        WithdrawButtonView(),
-        NoNotesButtonView(),
-        PlatformButtonView(),
-        DriverTypeButtonView(),
-        PreferredTeamsButtonView(),   # registers pteam_0..pteam_19 stubs + nopref + cancel
-        NoPreferenceTeammateView(),
+        WithdrawButtonView(None, bot.change_queue),
+        NoNotesButtonView(None, bot.change_queue),
+        PlatformButtonView(None, bot.change_queue),
+        DriverTypeButtonView(None, bot.change_queue),
+        PreferredTeamsButtonView(None, bot.change_queue),   # registers pteam_0..pteam_19 stubs + nopref + cancel
+        NoPreferenceTeammateView(None, bot.change_queue),
         AdminReviewView(),
         CorrectionParameterView(),
         PenaltyReviewView(),

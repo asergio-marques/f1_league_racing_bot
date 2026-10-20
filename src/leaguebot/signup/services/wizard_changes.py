@@ -20,6 +20,12 @@ naming the cause so that nothing is left to stop the queue. Its jobs are:
 - `post_welcome` takes the typing away where the first question is answered by a button, and posts
   the welcome and that question in the new channel, with the "Signup | Started" line.
 
+Cancel Signup asks `signup.end`, a change of the league lane too: its check refuses a signup that
+has already ended, and its one job `end` (a save) returns the driver to Not Signed Up, ends the
+wizard, takes away the timers, writes the "Withdrawn" line and asks back `signup.closing` (signup's
+closing jobs, `closing_steps`) on the driver's own lane, so that a closing notice Discord refuses
+stops that lane alone and the league's change is done.
+
 A job that fails stops the queue (core specification, "How a change is carried out").
 """
 
@@ -34,6 +40,8 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.change import (
+    ChangeOrigin,
+    FollowOn,
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
@@ -51,15 +59,18 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services import track_service
+from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.log_lines import name_of_member
 from leaguebot.signup.models.signup_module import WizardState
-from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
+from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER, KIND as CLOSING
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
     from leaguebot.core.services.module_service import ModuleService
@@ -72,14 +83,26 @@ CREATE_CHANNEL = "create_channel"
 START_JOB = "start"
 ARM_INACTIVITY = "arm_inactivity"
 POST_WELCOME = "post_welcome"
+#: The kind of the change that ends a driver's signup, and its one job.
+END = "signup.end"
+END_JOB = "end"
+#: Why a signup ends: the driver pressed Cancel Signup.
+WITHDRAWN = "withdrawn"
+#: What a driver who presses Cancel Signup on a signup that has already ended is told.
+SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
+#: What the driver's channel is told when they withdraw.
+WITHDRAWN_NOTICE = (
+    "❌ You have withdrawn your signup. This channel will be automatically deleted in 24 hours."
+)
 #: How long a driver has to answer before their signup lapses.
 INACTIVITY = timedelta(hours=24)
 #: The most channels Discord lets a category hold.
 CATEGORY_LIMIT = 50
 
 __all__ = [
-    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_OLD_CHANNEL", "INACTIVITY", "POST_WELCOME",
-    "START", "START_JOB", "start_change",
+    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_OLD_CHANNEL", "END", "END_JOB", "INACTIVITY",
+    "POST_WELCOME", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN", "WITHDRAWN_NOTICE",
+    "end_change", "start_change",
 ]
 
 
@@ -91,6 +114,7 @@ def start_change(
     drivers: Callable[[], "DriverService"],
     teams: Callable[[], "TeamService"],
     wizard: Callable[[], WizardService],
+    queue_of: Callable[[], "ChangeQueue"],
     closing_kinds: tuple[str, ...],
     cancel_timers: Callable[[str], None],
     now: Callable[[], datetime],
@@ -100,8 +124,8 @@ def start_change(
 
     The payload is ``user_id`` (the driver's account, as text). *closing_kinds* are the kinds of
     the changes that close the window, one of which waiting on the queue refuses a Sign Up.
-    *cancel_timers* takes away a driver's timers, and *wizard* is the service whose prompt and
-    buttons the welcome is made of.
+    *cancel_timers* takes away a driver's timers, *wizard* is the service whose prompt the welcome is
+    made of and *queue_of* the change queue the welcome's buttons are handed.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -304,7 +328,7 @@ def start_change(
                 record.wizard_state, record.config_snapshot, track_name_map=track_map
             ),
             view=build_step_view(
-                ctx.bot, record.wizard_state, user_id, record.config_snapshot.team_names
+                queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names
             ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
@@ -368,5 +392,84 @@ def start_change(
         check=check,
         key=lambda payload: f"{START}:{payload['user_id']}",
         doing=lambda payload: "Signing up",
+        outcome=outcome,
+    )
+
+
+def end_change(
+    *,
+    signup: Callable[[], "SignupModuleService"],
+    drivers: Callable[[], "DriverService"],
+    cancel_timers: Callable[[str], None],
+    wizard: Callable[[], WizardService],
+) -> ChangeType:
+    """The `signup.end` change type, for the builder to register.
+
+    The payload is ``user_id`` (the driver's account, as text) and ``reason``, here ``"withdrawn"``.
+    The check refuses the driver's press where the signup has already ended (the transition to Not
+    Signed Up is not one the state machine allows from where they stand), telling them so and
+    changing nothing. Its one job `end` is a save: the driver is moved to Not Signed Up and the
+    wizard ended in the same save, the correction timeout and the timers taken away and the
+    "Withdrawn" line written; it asks back `signup.closing` for the driver's channel, which holds
+    the notice, the lock and the deletion's arming on the channel's own lane. *cancel_timers* takes
+    away a driver's timers and *wizard* is the service whose correction timeout is forgotten.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        user_id = str(ctx.payload["user_id"])
+        profile = await drivers().get_profile(user_id)
+        if profile is None or DriverState.NOT_SIGNED_UP not in ALLOWED_TRANSITIONS.get(
+            profile.current_state, set()
+        ):
+            if ctx.origin is ChangeOrigin.MEMBER:
+                return Verdict.refuse(f"⛔ {SIGNUP_ENDED}", SIGNUP_ENDED)
+            return Verdict.not_due("the signup has already ended")
+        return Verdict.go()
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (PlannedStep(END_JOB, {"user_id": str(payload["user_id"]), "reason": payload["reason"]}),)
+
+    async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        cursor = await db.execute(
+            "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        wizard_row = await cursor.fetchone()
+        await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
+        await signup().end_wizard_on(db, user_id)
+        cancel_timers(user_id)
+        wizard()._forget_correction(user_id)
+        named = await name_of_member(ctx.bot, int(user_id))
+        follow_ons: tuple[FollowOn, ...] = ()
+        if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
+            follow_ons = (FollowOn(
+                CLOSING,
+                {
+                    "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                    "notice": WITHDRAWN_NOTICE,
+                },
+                "Closing a withdrawn signup",
+            ),)
+        return StepResult(result={}, lines=(f"{named} | Signup | Withdrawn",), follow_ons=follow_ons)
+
+    async def describe_end(ctx: StepContext) -> str:
+        return f"ending the signup of <@{ctx.step_payload['user_id']}>"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        views = {view.name: view for view in ctx.steps}
+        ended = views.get(END_JOB)
+        if ended is not None and "discarded" in (ended.result or {}):
+            return "⚠️ Your signup was not withdrawn: the job was discarded."
+        return "✅ Your signup has been withdrawn."
+
+    return ChangeType(
+        kind=END,
+        opening=(),
+        plan=plan,
+        steps={END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end)},
+        check=check,
+        key=lambda payload: f"{END}:{payload['user_id']}",
+        doing=lambda payload: "Withdrawing a signup",
         outcome=outcome,
     )

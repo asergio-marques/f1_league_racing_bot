@@ -288,7 +288,6 @@ async def test_a_driver_stranded_before_the_fix_is_released_without_a_mention(tm
     assert "<@None>" not in _posted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_driver_not_awaiting_a_parameter_is_left_alone(tmp_path):
     """Kimi awaits approval, not a correction parameter, and the bot restarts. No lapse is
     asked and nothing is posted in his channel."""

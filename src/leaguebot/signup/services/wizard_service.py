@@ -32,6 +32,7 @@ from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.utils.league_bot import LeagueBot
 
     from leaguebot.core.services.scheduler_service import SchedulerService
@@ -106,7 +107,7 @@ def _wizard_gone_or_answered(wizard: SignupWizardRecord | None) -> str:
 
 
 def build_step_view(
-    bot: "LeagueBot",
+    queue: "ChangeQueue",
     state: WizardState,
     discord_user_id: str,
     team_names: list[str] | None = None,
@@ -121,16 +122,16 @@ def build_step_view(
         NoNotesButtonView,
     )
     if state == WizardState.COLLECTING_PLATFORM:
-        return PlatformButtonView(discord_user_id, bot)
+        return PlatformButtonView(discord_user_id, queue)
     if state == WizardState.COLLECTING_DRIVER_TYPE:
-        return DriverTypeButtonView(discord_user_id, bot)
+        return DriverTypeButtonView(discord_user_id, queue)
     if state == WizardState.COLLECTING_PREFERRED_TEAMS:
-        return PreferredTeamsButtonView(discord_user_id, bot, team_names or [])
+        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [])
     if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
-        return NoPreferenceTeammateView(discord_user_id, bot)
+        return NoPreferenceTeammateView(discord_user_id, queue)
     if state == WizardState.COLLECTING_NOTES:
-        return NoNotesButtonView(discord_user_id, bot)
-    return WithdrawButtonView(discord_user_id, bot)
+        return NoNotesButtonView(discord_user_id, queue)
+    return WithdrawButtonView(discord_user_id, queue)
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +171,6 @@ _CORRECTION_LABELS: dict[str, str] = {
 
 #: What `WizardService.select_correction_parameter` returns where the request has ended (D2).
 _CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
-
-#: What `WizardService.withdraw` returns where the signup has already ended (S5-A6).
-_SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 
 
 @dataclass(frozen=True)
@@ -221,10 +219,15 @@ class WizardService:
         db_path: str,
         scheduler_service: "SchedulerService",
         output_router: "OutputRouter",
+        *,
+        change_queue: "ChangeQueue",
     ) -> None:
         self._db_path = db_path
         self._scheduler = scheduler_service
         self._output_router = output_router
+        # Handed the change queue when it is built, for the views it makes and the changes it asks
+        # (docs/design/architecture.md, "Services stay attached to the bot, and are built in one place").
+        self._change_queue = change_queue
 
         # Late-bound after bot is ready; set via set_bot().
         self._bot: "LeagueBot | None" = None
@@ -615,54 +618,6 @@ class WizardService:
 
         # A correction is committed by `_commit_correction`, which writes its own line.
         await self._record_signup_line(discord_user_id, guild, "Submitted")
-
-    async def withdraw(
-        self,
-        discord_user_id: str,
-        guild: discord.Guild,
-    ) -> str | None:
-        """Voluntarily withdraw from the signup wizard (T040).
-
-        Transitions the driver to NOT_SIGNED_UP, marking the wizard over in the same save (a
-        restart never tells them it expired), cancels pending jobs/tasks, writes the
-        withdrawal's line, posts the cancellation notice and schedules channel deletion.
-        FR-033, FR-036.
-
-        Returns None where the signup was withdrawn, and otherwise why nothing was changed, for
-        the Cancel Signup button to answer and record: the transition is refused (`ValueError`)
-        where the signup has already ended, withdrawn, rejected, expired or closed, which a
-        leftover button can still press. Nothing is posted again and the channel's deletion is
-        not pushed back. Only that refusal is caught: any other error from the transition
-        reaches the button's failure handler (#457), and nothing is cancelled or claimed.
-        """
-        try:
-            await self._driver_service.transition(
-                discord_user_id,
-                DriverState.NOT_SIGNED_UP,
-                also_on=partial(self._signup_svc.end_wizard_on, discord_user_id=discord_user_id),
-            )
-        except ValueError:
-            return _SIGNUP_ENDED
-
-        # Cancel asyncio correction task if any
-        ckey = discord_user_id
-        if ckey in self._correction_tasks:
-            self._correction_tasks.pop(ckey).cancel()
-
-        # Cancel inactivity APScheduler job
-        await self._cancel_inactivity_job(discord_user_id)
-
-        # Post cancellation notice and hold channel, before the line, which names a channel kept.
-        held = await self.trigger_channel_hold(
-            discord_user_id, guild,
-            "❌ You have cancelled your signup. "
-            "This channel will be automatically deleted in 24 hours.",
-        )
-        text = "Withdrawn"
-        if (kept := _channel_kept(held)) is not None:
-            text += f"\n{kept}"
-        await self._record_signup_line(discord_user_id, guild, text)
-        return None
 
     async def approve_signup(
         self,
@@ -1412,7 +1367,7 @@ class WizardService:
         team_names: list[str] | None = None,
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
-        return build_step_view(self._league_bot, state, discord_user_id, team_names)
+        return build_step_view(self._change_queue, state, discord_user_id, team_names)
 
     async def handle_platform_button(
         self,
@@ -1529,7 +1484,7 @@ class WizardService:
         await channel.send(
             prompt,
             view=PreferredTeamsButtonView(
-                discord_user_id, self._bot, team_names, excluded=current_picks
+                discord_user_id, self._change_queue, team_names, excluded=current_picks
             ),
         )
         return None
