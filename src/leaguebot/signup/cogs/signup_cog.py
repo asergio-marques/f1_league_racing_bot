@@ -36,7 +36,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.wizard_answers import take_typed_answer
-from leaguebot.signup.services.wizard_changes import ask_member_left
+from leaguebot.signup.services.wizard_changes import ask_member_left, departed_placed_driver
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
     AUDIT_FORCE_CLOSE,
@@ -330,39 +330,12 @@ class SignupCog(commands.Cog):
 
         # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
         try:
-            async with get_connection(self.bot.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT current_state FROM driver_profiles "
-                    "WHERE discord_user_id = ?",
-                    (str(member.id),),
-                )
-                row = await cursor.fetchone()
-            if row is None:
+            departed = await departed_placed_driver(
+                self.bot.db_path, str(member.id), member.display_name or str(member.id)
+            )
+            if departed is None:
                 return
-            state = row["current_state"]
-            if state not in ("UNASSIGNED", "ASSIGNED"):
-                return
-            # Fetch display name from signup_records
-            try:
-                async with get_connection(self.bot.db_path) as db:
-                    cursor = await db.execute(
-                        "SELECT server_display_name, discord_username "
-                        "FROM signup_records WHERE discord_user_id = ? "
-                        "ORDER BY id DESC LIMIT 1",
-                        (str(member.id),),
-                    )
-                    rec = await cursor.fetchone()
-                display_name = (
-                    (rec["server_display_name"] or rec["discord_username"] or str(member.id))
-                    if rec is not None
-                    else (member.display_name or str(member.id))
-                )
-            except Exception:  # noqa: BLE001 — the line is posted under the server's name instead
-                log.warning(
-                    "on_member_remove: could not read the signup record of %s", member.id,
-                    exc_info=True,
-                )
-                display_name = member.display_name or str(member.id)
+            state, display_name = departed
             await self.bot.output_router.post_log(
                 f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
             )

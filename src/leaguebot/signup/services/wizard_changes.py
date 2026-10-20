@@ -152,7 +152,7 @@ __all__ = [
     "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
-    "ask_member_left", "channel_delete_change", "end_change", "member_left_change", "start_change",
+    "ask_member_left", "channel_delete_change", "departed_placed_driver", "end_change", "member_left_change", "start_change",
 ]
 
 
@@ -807,6 +807,35 @@ async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> i
         what=f"cleaning up after <@{user_id}> leaving the server",
         origin=ChangeOrigin.BOT,
     )
+
+
+async def departed_placed_driver(
+    db_path: str, user_id: str, fallback_name: str
+) -> tuple[str, str] | None:
+    """The state and name to announce for a placed or approved driver (Unassigned or Assigned) who
+    has left the server, or None for anyone else. The name is the one on their latest signup, else
+    *fallback_name*, whichever of the two reads fails."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
+        )
+        row = await cursor.fetchone()
+    if row is None or row["current_state"] not in ("UNASSIGNED", "ASSIGNED"):
+        return None
+    try:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT server_display_name, discord_username FROM signup_records "
+                "WHERE discord_user_id = ? ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            )
+            rec = await cursor.fetchone()
+    except Exception:  # noqa: BLE001 — the line is posted under the server's name instead
+        log.warning("could not read the signup record of %s", user_id, exc_info=True)
+        return row["current_state"], fallback_name
+    if rec is None:
+        return row["current_state"], fallback_name
+    return row["current_state"], rec["server_display_name"] or rec["discord_username"] or user_id
 
 
 def member_left_change(
