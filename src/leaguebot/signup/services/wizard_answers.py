@@ -79,6 +79,7 @@ from leaguebot.signup.services.wizard_service import (
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 ANSWER = "signup.answer"
@@ -382,7 +383,7 @@ def _what(step: str, owner: str) -> str:
 
 
 async def take_typed_answer(
-    bot: Any, message: discord.Message, wizard: SignupWizardRecord, *, queue: "ChangeQueue"
+    bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *, queue: "ChangeQueue"
 ) -> None:
     """What the signup cog does with a message the wizard's driver typed in their channel:
     nothing where the wizard asks nothing; else turned away where an earlier answer still waits
