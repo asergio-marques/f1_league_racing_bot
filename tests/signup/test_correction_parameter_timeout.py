@@ -72,10 +72,6 @@ NO_RESTART_LAPSE = (
     "signup.correction.lapse of the queue before it starts, nor the choices' "
     "correction_offered_at saved on the wizard's row"
 )
-NO_REQUEST_CHANGE = (
-    "#439: a reason typed after Request Changes is acted on at once off the queue, with no "
-    "signup.request_changes change recording who asked when the queue reaches it"
-)
 
 #: The lapse the correction window records, naming the manager who asked (owner, 2026-09-30,
 #: "Log both as lapses").
@@ -181,7 +177,6 @@ def _panels(league: SeasonLeague) -> list[Any]:
 # ── Remembering who asked ─────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_request_changes_records_the_requesting_admin(tmp_path):
     """Kimi awaits approval. Manager 77 presses Request Changes and types the reason in Kimi's
     channel. When the queue reaches the request, Kimi's wizard names 77 as the manager who
@@ -233,7 +228,6 @@ async def test_a_restart_returns_the_driver_to_pending_admin_approval(tmp_path):
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
     """Kimi's choices were posted a minute ago and the bot restarts. The release is
     unconditional, not re-armed for what was left: when the queue runs Kimi is back awaiting
@@ -274,7 +268,6 @@ async def test_a_restart_says_that_the_bot_restarted(tmp_path):
     assert CORRECTION_LAPSE in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_driver_stranded_before_the_fix_is_released_without_a_mention(tmp_path):
     """Kimi's wizard names no manager who asked (written before the key existed). The restart's
     lapse still releases him and posts in his channel, and mentions no one as `<@None>`."""
@@ -300,7 +293,6 @@ async def test_a_driver_not_awaiting_a_parameter_is_left_alone(tmp_path):
     assert _posted(league) == ""
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_the_revert_reposts_the_review_panel(tmp_path):
     """Without the panel the manager has the driver back but no buttons to act on: the
     restart's lapse posts one fresh review panel in Kimi's channel."""
@@ -312,7 +304,6 @@ async def test_the_revert_reposts_the_review_panel(tmp_path):
     assert len(_panels(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
     """The reposted panel quotes the same answers the first did (#362): it may notify neither
     everyone nor any role."""

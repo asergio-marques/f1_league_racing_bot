@@ -1,9 +1,9 @@
 """AdminReviewCog — admin signup review panel (Approve / Request Changes / Reject).
 
 The cog captures the reason a manager types after Reject or Request Changes. A Reject reason is
-asked of the change queue as the manager's `signup.end` through the manager's stored press, and
-the message is deleted by that change's own jobs; a Request Changes reason is deleted at once and
-acted on by the wizard service. The views and their
+asked of the change queue as the manager's `signup.end`, and a Request Changes reason as
+`signup.request_changes`, each through the manager's stored press; the message is deleted by that
+change's own jobs, not at once. The views and their
 Discord interaction callbacks (T031 AdminReviewView, T035 CorrectionParameterView) are in
 `signup/services/signup_views.py`, beside the jobs that post them; the pending reasons they park
 are held there too. The heavy state-machine logic is delegated to WizardService.
@@ -19,13 +19,8 @@ from discord.ext import commands
 from leaguebot.core.utils.interaction_errors import report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import is_foreign_guild
-from leaguebot.signup.services.signup_views import (
-    _BUTTON_OF,
-    _NOTHING_DONE,
-    _PENDING_REASONS,
-    _refuse_review_button,
-    _review_button,
-)
+from leaguebot.signup.services.review_changes import REQUEST
+from leaguebot.signup.services.signup_views import _BUTTON_OF, _PENDING_REASONS, _review_button
 from leaguebot.signup.services.wizard_changes import END, REJECTED
 
 log = logging.getLogger(__name__)
@@ -63,57 +58,31 @@ class AdminReviewCog(commands.Cog):
         reason = message.content.strip() or "No specific reason given."
 
         action = pending["action"]
-        followup: discord.Webhook = pending["followup"]
         interaction: discord.Interaction = pending["interaction"]
+        what = _review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action])
+        actor = pending["actor"]
         if action == "reject":
-            what = _review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action])
-            actor = pending["actor"]
-            try:
-                await self.bot.change_queue.ask(
-                    END,
-                    {
-                        "user_id": pending["discord_user_id"], "reason": REJECTED,
-                        "actor_id": actor.id, "actor_name": actor.display_name,
-                        "text": reason, "reason_message_id": message.id,
-                    },
-                    interaction=interaction, actor=actor, what=what,
-                )
-            except Exception as error:  # noqa: BLE001 — handed to report_failure, which tells the manager
-                await report_failure(interaction, error, what=what)
+            kind = END
+            payload = {
+                "user_id": pending["discord_user_id"], "reason": REJECTED,
+                "actor_id": actor.id, "actor_name": actor.display_name,
+                "text": reason, "reason_message_id": message.id,
+            }
+        elif action == "request_changes":
+            kind = REQUEST
+            payload = {
+                "user_id": pending["discord_user_id"],
+                "actor_id": actor.id, "actor_name": actor.display_name,
+                "text": reason, "reason_message_id": message.id,
+            }
+        else:
             return
-
         try:
-            await message.delete()
-        except discord.HTTPException:
-            pass
-
-        if action != "request_changes":
-            return
-        service = self.bot.wizard_service.request_changes
-        done = "✅ Correction requested."
-        try:
-            refused = await service(
-                pending["discord_user_id"], pending["guild"], pending["actor"], reason=reason,
+            await self.bot.change_queue.ask(
+                kind, payload, interaction=interaction, actor=actor, what=what,
             )
         except Exception as error:  # noqa: BLE001 — handed to report_failure, which tells the manager
-            await report_failure(
-                interaction,
-                error,
-                what=_review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action]),
-            )
-            return
-        if refused is not None:
-            # The signup moved on while the reason was being typed (#492): nothing was done,
-            # and the driver keeps the status they have.
-            button = _BUTTON_OF[action]
-            await _refuse_review_button(
-                interaction,
-                pending["discord_user_id"],
-                button,
-                f"⛔ This signup has moved on since you pressed {button}. {_NOTHING_DONE[action]}.",
-            )
-            return
-        await followup.send(done, ephemeral=True)
+            await report_failure(interaction, error, what=what)
 
 
 async def setup(bot: LeagueBot) -> None:

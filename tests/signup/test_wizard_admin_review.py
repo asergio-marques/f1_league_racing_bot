@@ -51,10 +51,6 @@ from tests.support.season_league import (
     signing_up,
 )
 
-NO_REQUEST_CHANGE = (
-    "#439: a Request Changes reason is not yet asked of the queue as "
-    "signup.request_changes (C85)"
-)
 
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 REVIEWER = 77
@@ -376,8 +372,7 @@ async def test_an_approved_signup_is_marked_as_such(tmp_path):
     [
         pytest.param("approve", "Approved"),
         pytest.param("reject", "Rejected"),
-        pytest.param("request_changes", "Correction requested",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
+        pytest.param("request_changes", "Correction requested"),
     ],
 )
 async def test_a_driver_who_has_left_is_named_by_mention_alone(tmp_path, outcome, action):
@@ -447,11 +442,7 @@ async def test_a_rejection_reason_is_logged(tmp_path):
     assert "Duplicate entry" in league.log()
 
 
-@pytest.mark.parametrize("outcome", [
-    "reject",
-    pytest.param("request_changes",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
-])
+@pytest.mark.parametrize("outcome", ["reject", "request_changes"])
 async def test_a_signup_still_awaiting_review_is_acted_on_and_nothing_is_refused(
     tmp_path, outcome
 ):
@@ -472,7 +463,6 @@ async def test_a_signup_still_awaiting_review_is_acted_on_and_nothing_is_refused
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_requesting_changes_awaits_a_correction_parameter(tmp_path):
     """Manager 77 pressed Request Changes and types the reason: once the queue runs, Kimi awaits
     a correction parameter."""
@@ -483,7 +473,6 @@ async def test_requesting_changes_awaits_a_correction_parameter(tmp_path):
     assert await _state(league) == "AWAITING_CORRECTION_PARAMETER"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_the_manager_who_asked_is_written_down(tmp_path):
     """The window outlives the process, so the manager's id is saved on Kimi's wizard: it is
     what lets the lapse mention the right manager."""
@@ -494,7 +483,6 @@ async def test_the_manager_who_asked_is_written_down(tmp_path):
     assert (await _draft(league))["_correction_requested_by"] == str(REVIEWER)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_the_reason_is_saved_alongside_it(tmp_path):
     """The reason 77 typed, "Wrong platform", is saved on Kimi's wizard beside the manager's
     id, for the re-collection prompt to give."""
@@ -505,7 +493,6 @@ async def test_the_reason_is_saved_alongside_it(tmp_path):
     assert (await _draft(league))["_correction_reason"] == "Wrong platform"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_the_driver_is_prompted_in_their_own_channel(tmp_path):
     """Once the queue runs, Kimi's own signup channel is told a correction was requested, with
     the choices of what to correct."""
@@ -516,7 +503,6 @@ async def test_the_driver_is_prompted_in_their_own_channel(tmp_path):
     assert any("requested a correction" in text for text in _texts(league)), _texts(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
     """Kimi's wizard is gone when manager 77's reason arrives: nothing is asked of him, he stays
     awaiting approval, nothing is posted in his channel, and the manager is told it was refused
@@ -540,10 +526,7 @@ async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
 
 @pytest.mark.parametrize(
     "action",
-    [
-        "reject",
-        pytest.param("request_changes", marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
-    ],
+    ["reject", "request_changes"],
     ids=["reject", "request-changes"],
 )
 @pytest.mark.parametrize(

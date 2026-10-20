@@ -953,7 +953,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
-    ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, PASS["signup"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
@@ -1113,7 +1112,6 @@ KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_post_service.py", "delete_round_channel"): (1, SLICE["6b"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, SLICE["6b"]),
     ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, SLICE["6b"]),
-    ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, SLICE["6b"]),
     ("signup/services/wizard_service.py", "WizardService._advance_wizard_in_channel"): (2, SLICE["6b"]),
     ("signup/services/wizard_service.py", "WizardService._answer_stands"): (1, SLICE["6b"]),
     ("signup/services/wizard_service.py", "WizardService._commit_correction"): (1, SLICE["6b"]),

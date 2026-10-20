@@ -753,7 +753,10 @@ CREATE TABLE "signup_wizard_records" (
     -- change queue's close, cleared when the queue plans the notice. Set in the save that returns
     -- the driver. (A value 2, a close off the queue, is no longer written: no close is made
     -- off the queue.)
-    closing_notice_owed         INTEGER NOT NULL DEFAULT 0
+    closing_notice_owed         INTEGER NOT NULL DEFAULT 0,
+    -- When the correction choices a manager asked for were posted in the driver's channel: the
+    -- five minutes to choose run from then. NULL while no correction is awaited.
+    correction_offered_at       TEXT
 );
 CREATE INDEX idx_signup_wizard_channel
     ON signup_wizard_records(signup_channel_id);

@@ -167,6 +167,7 @@ def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
     """Removes one driver's signup inactivity and channel-deletion timers, for the close that
     returns them to Not Signed Up (`signup.close`) and for the signup module's switch-off."""
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
+    from leaguebot.signup.services.review_changes import CORRECTION_TIMER
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
     def cancel(user_id: str) -> None:
@@ -174,6 +175,7 @@ def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
         bot.scheduler_service.cancel_job(channel_delete_job_id(user_id))
         bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
         bot.scheduler_service.disarm(DELETE_TIMER, user_id)
+        bot.scheduler_service.disarm(CORRECTION_TIMER, user_id)
 
     return cancel
 
@@ -423,7 +425,11 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
-    from leaguebot.signup.services.review_changes import approve_change
+    from leaguebot.signup.services.review_changes import (
+        approve_change,
+        choices_change,
+        request_changes_change,
+    )
     from leaguebot.signup.services.wizard_answers import answer_change, panel_change, submit_change
     from leaguebot.signup.services.wizard_changes import channel_delete_change, end_change, start_change
     from leaguebot.signup.services.closing_steps import (
@@ -590,6 +596,17 @@ def register_change_types(bot: LeagueBot) -> None:
         approve_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
             config=bot.config_service, cancel_timers=_cancel_wizard_timers(bot),
+        )
+    )
+    bot.change_queue.register(
+        request_changes_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+        )
+    )
+    bot.change_queue.register(
+        choices_change(
+            signup=lambda: bot.signup_module_service, now=lambda: bot.change_queue.now(),
+            arm_once=bot.scheduler_service.arm_once,
         )
     )
     # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as

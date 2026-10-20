@@ -33,7 +33,6 @@ from leaguebot.core.utils.league_server import (
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.signup.services.review_changes import APPROVE
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
@@ -236,7 +235,7 @@ class AdminReviewView(LeagueView):
         # Acknowledged privately and updated with what became of it; the state it was pressed in
         # is judged again, by the change's check, when the queue reaches it.
         await self._queue.ask(
-            APPROVE,
+            "signup.approve",
             {"user_id": _user_id, "actor_name": interaction.user.display_name},
             interaction=interaction,
             what=_review_button(interaction, _user_id, "Approve"),

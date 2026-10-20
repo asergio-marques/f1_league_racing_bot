@@ -77,12 +77,6 @@ REASON = "Lap times look mistyped"
 LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
 LAP_SUM_MS = 181_500
 
-NO_REQUEST_CHANGE = (
-    "#439: a reason typed after Request Changes is deleted at once and the choices posted off "
-    "the queue, their five minutes an asyncio task from the reason, with no "
-    "signup.request_changes change asking signup.choices back of the driver's lane, and no "
-    "correction_offered_at saved"
-)
 NO_CHOOSE_CHANGE = (
     "#439: the correction choices are not handed the change queue, and a choice is judged at "
     "once by today's state rather than by when it was pressed against correction_offered_at, "
@@ -362,7 +356,6 @@ async def test_approve_saves_the_lap_sum_on_the_signup_record_itself(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_request_changes_deletes_the_reason_and_posts_the_choices_as_jobs(tmp_path):
     """Manager 77 pressed Request Changes on Kimi's review panel and types "Lap times look
     mistyped" in his channel. The reason is not deleted at once, and a `signup.request_changes`
@@ -387,7 +380,6 @@ async def test_request_changes_deletes_the_reason_and_posts_the_choices_as_jobs(
     assert len(_sent_with(league, "CorrectionParameterView")) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_the_five_minutes_start_when_the_choices_appear(tmp_path):
     """Manager 77 types the reason after Request Changes; the queue does not reach it until
     three minutes later. When it runs, the choices' time saved on Kimi's wizard is the time they
@@ -406,7 +398,6 @@ async def test_the_five_minutes_start_when_the_choices_appear(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_the_correction_timer_is_armed_by_a_job_of_its_own_after_the_choices(tmp_path):
     """Discord refuses the correction choices in Kimi's channel. Manager 77's reason is typed
     and the queue runs: Kimi's lane stops at `post_choices` and no correction lapse is armed.
@@ -436,7 +427,6 @@ async def test_the_correction_timer_is_armed_by_a_job_of_its_own_after_the_choic
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_request_changes_changes_the_status_on_the_league_and_the_choices_come_back_on_the_lane(
     tmp_path,
 ):

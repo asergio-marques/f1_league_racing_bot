@@ -768,6 +768,17 @@ class SignupModuleService:
             (discord_user_id,),
         )
 
+    async def set_correction_offered_at_on(
+        self, db: aiosqlite.Connection, discord_user_id: str, offered_at: str
+    ) -> None:
+        """Record when the correction choices were posted for a driver, on the connection handed;
+        commits nothing. The five minutes a manager has to choose run from this moment."""
+        await db.execute(
+            "UPDATE signup_wizard_records SET correction_offered_at = ? "
+            "WHERE discord_user_id = ?",
+            (offered_at, discord_user_id),
+        )
+
     async def set_total_lap_ms_on(
         self, db: aiosqlite.Connection, discord_user_id: str, total_ms: int | None
     ) -> None:

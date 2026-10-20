@@ -54,7 +54,6 @@ from tests.signup.test_review_changes import (
     CLOSING_KIND,
     KIMI_CHANNEL,
     KIMI_LANE,
-    NO_REQUEST_CHANGE,
     REQUEST_KIND,
     REVIEWER,
     _answered,
@@ -412,7 +411,6 @@ async def test_a_rejection_reason_reaches_the_driver(tmp_path):
     assert "rejected" in " ".join(_sent(press) + [updated_reply(press)]).lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)
 async def test_a_correction_reason_reaches_the_driver(tmp_path):
     """Manager 77 types the reason after Request Changes: the request asked of the queue
     carries it, to reach Kimi with the correction."""
@@ -650,8 +648,7 @@ async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path
 @pytest.mark.parametrize(
     "action,label",
     [
-        pytest.param("request_changes", "Request Changes",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
+        pytest.param("request_changes", "Request Changes"),
         pytest.param("reject", "Reject"),
     ],
     ids=NEGATIVE_IDS,
