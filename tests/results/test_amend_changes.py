@@ -569,6 +569,50 @@ async def test_stage_one_s_line_says_what_was_recorded_and_that_nothing_is_publi
     assert "RESULT_AMENDED" not in league.log()
 
 
+async def test_a_stage_one_leaving_out_a_driver_with_a_verdict_is_refused_and_ends_the_amendment(
+    tmp_path, monkeypatch,
+):
+    """Max carries a penalty in round 3's Feature Race, and Alex pastes a corrected classification
+    with Lewis alone. Stage one is refused when it runs: its save is undone whole (no snapshot is
+    kept, Lewis still wins, Max's row and his penalty stand), the refusal naming Max is said in the
+    amendment channel and written to the log channel as a refusal, and the amendment ends as a
+    refused paste ends it: the drafts dropped, the row closed and the channel deleted. Neither
+    lane is left stopped."""
+    league = await _league(tmp_path, monkeypatch)
+    async with get_connection(league.db_path) as db:
+        [max_row] = await (await db.execute(
+            "SELECT id FROM race_session_results WHERE driver_user_id = ?", (MAX,)
+        )).fetchall()
+        await db.execute(
+            "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+            "description, justification, applied_by, applied_at) "
+            "VALUES (?, 'TIME', 5, 'Contact at turn 1', 'Wholly at fault', '9001', "
+            "'2026-02-02T00:00:00+00:00')",
+            (max_row["id"],),
+        )
+        await db.commit()
+    await _ask_open(league)
+
+    await _type(league, "1, <@101>, FER, 1:30:00.000, 1:20.000, N/A")
+
+    assert await stopped_job(league.db_path, "league") is None
+    assert await stopped_job(league.db_path, LANE) is None
+    [stage_one] = await _changes(league, STAGE_ONE)
+    assert stage_one["state"] == "DONE"
+    [row] = await _amend_rows(league)
+    assert row["pre_amendment_state"] is None
+    assert row["closed_at"] is not None
+    assert await _drafts(league) == []
+    assert await _winner(league) == LEWIS
+    assert sorted(await race_rows(league.db_path)) == [LEWIS, MAX]
+    assert any("<@102>" in text and "leaves out" in text for text in _texts(league))
+    [refusal] = [line for line in league.bot.log_channel.sent if str(line).startswith("⛔ ")]
+    assert "<@102>" in str(refusal)
+    assert "AMEND_STAGE_1" not in league.log()
+    assert _deleted(league)
+    assert await _rows(league, "SELECT id FROM penalty_records") != []
+
+
 # ---------------------------------------------------------------------------
 # Cancel Amendment (C62)
 # ---------------------------------------------------------------------------
