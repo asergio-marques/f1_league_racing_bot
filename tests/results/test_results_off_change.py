@@ -778,7 +778,7 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path, monkeyp
     """A season with placements still open has the wind-down's Discord work left to do."""
     from leaguebot.core.services import season_lifecycle_service
 
-    wind_down = AsyncMock(return_value=[])
+    wind_down = AsyncMock(return_value=((), ()))
     monkeypatch.setattr(season_lifecycle_service, "close_window_for_wind_down", wind_down)
     seeded = await _seed(tmp_path, stage="ONGOING_PLACEMENTS")
     bot = _league(seeded.db_path)
