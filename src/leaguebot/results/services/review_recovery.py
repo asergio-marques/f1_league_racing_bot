@@ -5,7 +5,10 @@ the entry point gains no rule. A review is put back by asking the change queue, 
 the change that does it (``results.review.open``, ``results.appeals.open``,
 ``results.review.close_stale``): recovery posts nothing and deletes nothing of a review itself.
 
-**A round whose review a change is carrying out is left alone**, a stopped one included. Nothing
+**A round whose review, or whose submission, a change is carrying out is left alone**, a stopped
+one included: a paste's turn, the cancelled sessions' lines or the closing of the channel they
+leave, a resubmission or its swap (`SUBMISSION_KINDS`). Recovery over any of them would delete the
+sessions of a finished round as a first paste cut short, or end a resubmission whose swap is queued. Nothing
 overtakes a stopped job, so the change finishes it, and a second prompt posted beside it would
 replace the one a queued approval was pressed on and refuse that approval at its check. A round with
 no change in hand is put back by the stage it was left at:
@@ -46,16 +49,44 @@ import discord
 
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.change_queue import ChangeQueue, ever_asked
+from leaguebot.core.services.change_queue import ChangeQueue, ever_asked, unfinished
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import name_of_member
-from leaguebot.results.services import review_open_change
+from leaguebot.results.services import (
+    resubmission_changes,
+    review_open_change,
+    submission_changes,
+    submission_turn_change,
+)
 from leaguebot.results.services.review_changes import round_in_hand
 
 log = logging.getLogger(__name__)
 
 _BOT = ChangeOrigin.BOT
+
+#: Every kind of change that carries out part of a round's submission: a paste's turn, the
+#: cancelled sessions' lines and the closing of a channel they leave, a resubmission and its swap.
+#: A payload names its round, or only the channel it was typed in.
+SUBMISSION_KINDS: tuple[str, ...] = (
+    submission_turn_change.KIND,
+    submission_turn_change.CONFIG_KIND,
+    submission_turn_change.RESUBMISSION_KIND,
+    submission_turn_change.RESUBMISSION_CONFIG_KIND,
+    submission_turn_change.SWAP_KIND,
+    submission_changes.ALL_CANCELLED_KIND,
+    submission_changes.CLOSE_KIND,
+    resubmission_changes.KIND,
+)
+
+
+async def _submission_in_hand(db_path: str, round_id: int, channel_id: int) -> bool:
+    """Whether a change of a submission kind naming *round_id* or its *channel_id* is queued,
+    running or stopped."""
+    return any(
+        payload.get("round_id") == round_id or payload.get("channel_id") == channel_id
+        for payload in await unfinished(db_path, SUBMISSION_KINDS)
+    )
 
 __all__ = ["recover_review"]
 
@@ -80,7 +111,9 @@ async def recover_review(
     """
     round_id = int(row["round_id"])
     try:
-        if await round_in_hand(bot.db_path, round_id):
+        if await round_in_hand(bot.db_path, round_id) or await _submission_in_hand(
+            bot.db_path, round_id, int(row["channel_id"])
+        ):
             log.info("Recovery: round %s's review is in hand on the queue, left to it", round_id)
             return True
         stage = await _stage(bot.db_path, row)

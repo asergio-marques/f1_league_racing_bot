@@ -185,6 +185,61 @@ async def test_a_submission_whose_turn_is_in_hand_is_left_alone_at_a_restart(tmp
     assert not _deleted(league)
 
 
+async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_at_a_restart(
+    tmp_path,
+):
+    """Every session of round 3 was cancelled and the round's lane stopped on the deletion of its
+    channel: `results.submission.close_channel` is in hand, the submission row still open. At the
+    restart the recovery leaves round 3 alone, as one whose submission a change is closing: it
+    asks no restart of it, which would delete the cancelled sessions and open the submission
+    afresh."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.results.services.submission_changes import CLOSE_KIND
+
+    league = await _league(tmp_path)
+    await league.bot.change_queue.ask(
+        CLOSE_KIND, {"round_id": ROUND_3, "channel_id": SUBMISSION_CHANNEL},
+        origin=ChangeOrigin.BOT, what="closing round 3's submission channel",
+    )
+
+    await _restart(league, run=False)
+
+    assert [row["kind"] for row in await change_rows(league.db_path)] == [CLOSE_KIND]
+    assert await _sessions(league) == 1
+    assert await _submission(league) == [{"channel_id": SUBMISSION_CHANNEL, "closed": 0}]
+    assert not _deleted(league)
+
+
+async def test_a_resubmission_whose_swap_is_in_hand_is_not_ended_at_a_restart(tmp_path):
+    """Round 3 is being resubmitted, its review open, when the last resubmitted paste hands the
+    league the swap and the league lane stops before it runs. At the restart the recovery leaves
+    round 3 alone: it asks no review opening to end the resubmission, which would queue behind
+    the swap, say the earlier results still stand and record the resubmission as lapsed after the
+    swap had replaced them."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.results.services.resubmission_changes import SWAP_KIND
+
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE round_submission_channels SET in_penalty_review = 1, resubmitting = 1 "
+        "WHERE round_id = ?", ROUND_3,
+    )
+    await league.bot.change_queue.ask(
+        SWAP_KIND,
+        {
+            "round_id": ROUND_3, "channel_id": SUBMISSION_CHANNEL, "division_id": 1,
+            "season_id": 1, "round_number": 3, "division_name": "Pro",
+            "cancel_message_id": None, "all_cancelled": False, "mark": None,
+        },
+        origin=ChangeOrigin.BOT, what="swapping round 3's resubmitted results in",
+    )
+
+    await _restart(league, run=False)
+
+    assert [row["kind"] for row in await change_rows(league.db_path)] == [SWAP_KIND]
+    assert not _deleted(league)
+
+
 async def test_a_refused_channel_deletion_at_a_restart_stops_the_queue(tmp_path):
     """Discord refuses to delete channel 690 (Missing Permissions). The queue stops at the
     restart's deletion, on the league lane, with round 3's sessions already cleared and no new

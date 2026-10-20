@@ -1454,7 +1454,6 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
     for row in orphans:
         round_id: int = row["round_id"]
-        channel_id: int = row["channel_id"]
 
         guild = await league_guild(bot)
 
@@ -1467,18 +1466,9 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
         # A first paste cut short is cleared, its channel deleted and its submission opened
         # afresh by the change queue's `results.submission.restart`, before the queue starts. A
-        # paste whose turn is still in hand on the queue is left alone: the queue answers it.
-        from leaguebot.core.services.change_queue import unfinished
+        # round with a change of its submission in hand is left to it above.
         from leaguebot.results.services.submission_changes import ask_submission_restart
 
-        # A turn's payload names the channel it was typed in, not the round.
-        if any(
-            payload.get("channel_id") == channel_id
-            for payload in await unfinished(
-                bot.db_path, ["results.submission.turn", "results.submission.config"]
-            )
-        ):
-            continue
         log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
         try:
             await ask_submission_restart(bot.change_queue, bot.db_path, round_id)
