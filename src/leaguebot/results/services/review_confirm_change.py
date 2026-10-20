@@ -95,12 +95,18 @@ async def approval_wait_refusal(
 ) -> str | None:
     """Why an Approve must wait, or None: a staging or confirmation is in hand on the review's
     lane, or, for a round's own review, the approval message it was pressed on is no longer the one
-    the submission row names. Read from the database alone, so the press and the change as it runs
+    the submission row names. A press that carries no approval message (the prompt's Approve, its
+    state's message cleared by a staging whose withdrawal was discarded) has none to be replaced,
+    so the row's alone never refuses it. Read from the database alone, so the press and the change as it runs
     read one rule. An amendment keeps its approval message in memory alone, so only the first
     reason applies to it."""
     if await staging_in_hand(db_path, round_id, amendment=amendment):
         return STAGING_IN_HAND
-    if not amendment and await approval_on_the_row(db_path, round_id) != approval_message_id:
+    if (
+        not amendment
+        and approval_message_id is not None
+        and await approval_on_the_row(db_path, round_id) != approval_message_id
+    ):
         return APPROVAL_REPLACED
     return None
 

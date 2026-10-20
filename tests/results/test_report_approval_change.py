@@ -1560,6 +1560,26 @@ async def test_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
     assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
 
+async def test_an_approve_on_the_prompt_goes_through_after_a_discarded_withdrawal(tmp_path):
+    """Alex staged a penalty after No Penalties / Confirm had posted approval message 8901, so
+    the review's state forgot it; Discord refused taking 8901 down and an admin discarded that,
+    leaving the row naming 8901. Alex presses Approve on the prompt, which carries no approval
+    message: no newer one stands, so it is not refused as replaced, and the reports are approved."""
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = ?",
+                         (APPROVAL,))
+        await db.commit()
+
+    interaction = await _approve(league, staged=[], approval=None)
+    await run_queue(league.bot)
+
+    [approval] = await changes_of(league.db_path, KIND)
+    assert approval["state"] != "REFUSED"
+    assert "replaced by a newer one" not in updated_reply(interaction)
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+
+
 async def test_an_approval_whose_message_was_replaced_is_refused_as_it_runs(tmp_path):
     """Alex presses Approve on round 3's approval message 8901 while the league lane is stopped,
     so his approval waits. Before it runs, the review's approval message is replaced (the row now
