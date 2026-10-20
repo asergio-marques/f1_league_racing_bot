@@ -2485,10 +2485,12 @@ def empty_queue_in(path: str | os.PathLike[str]) -> None:
 
 
 async def unfinished(
-    db_path: str, kinds: Collection[str], *, excluding: int | None = None
+    db_path: str, kinds: Collection[str], *, excluding: int | None = None,
+    before: int | None = None,
 ) -> list[dict[str, Any]]:
     """The payloads of the changes of *kinds* that are queued or running, a stopped one included,
-    oldest first, leaving out the change whose id is *excluding*.
+    oldest first, leaving out the change whose id is *excluding*, and, with *before*, those asked
+    at or after the change whose id that is: a check that holds only what was asked ahead of it.
 
     A change done, refused, dropped or discarded is not in hand and is not given. Read on a
     connection of its own, so a check may call it while the queue is between jobs.
@@ -2500,8 +2502,9 @@ async def unfinished(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
-            "AND state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR id != ?) ORDER BY id",
-            (*kinds, excluding, excluding),
+            "AND state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR id != ?) "
+            "AND (? IS NULL OR id < ?) ORDER BY id",
+            (*kinds, excluding, excluding, before, before),
         )
         return [json.loads(row["payload"]) for row in await cursor.fetchall()]
 

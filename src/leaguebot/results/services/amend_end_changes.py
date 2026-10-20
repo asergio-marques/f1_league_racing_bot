@@ -8,8 +8,9 @@ channel's deletion stops the league's lane where Discord refuses it, and not the
 
 **The check** is judged at the press and again when the change comes up to run. A closed or gone
 amendment is too late to cancel; an amendment whose stage one is being recorded, or a stage of
-which is being approved, on the queue (`stage_in_hand`, stopped included) is left alone until that
-is done (results specification :491, "Leave it while stuck").
+which is being approved, on the queue ahead of the cancel (`stage_in_hand`, stopped included) is left alone until that
+is done; one asked after it is not ahead, and is found no longer due once the cancel has ended
+the amendment (results specification :491, "Leave it while stuck").
 
 **The jobs.** `names` resolves the standings names a full tie is settled by, outside any save;
 `revert` is one save: the round put back from the amendment's snapshot with its standings
@@ -144,7 +145,9 @@ def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
             ).fetchone()
         if row is None or row["closed_at"] is not None:
             return Verdict.refuse(TOO_LATE)
-        if await submissions.stage_in_hand(ctx.db_path, int(row["round_id"])):
+        if await submissions.stage_in_hand(
+            ctx.db_path, int(row["round_id"]), before=ctx.change_id
+        ):
             return Verdict.refuse(STAGE_IN_HAND)
         return Verdict.go()
 

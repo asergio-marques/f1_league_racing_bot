@@ -1462,11 +1462,15 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
 SUBMISSION_WAIT_RECHECK_SECONDS = 300
 
 
-async def stage_in_hand(db_path: str, round_id: int) -> bool:
+async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = None) -> bool:
     """Whether the recording of the amendment's stage one, an approval of one of its stages, or the
     lane's putting up of the stage prompt that follows either, is in hand on the change queue for
     *round_id*, queued, running or stopped on a failure. Nothing overtakes it, so the sweep,
-    Cancel, the lapse and restart recovery leave the amendment alone while it is."""
+    Cancel, the lapse and restart recovery leave the amendment alone while it is.
+
+    With *before*, only what was asked ahead of the change of that id counts: a Cancel asked
+    before the last paste handed stage one over comes up first and ends the amendment, so stage one
+    queued behind it is no stage "in hand" ahead of it."""
     from leaguebot.core.services.change_queue import unfinished
     from leaguebot.results.services.amend_turn_change import STAGE_ONE_KIND
     from leaguebot.results.services.amendment_stage_changes import (
@@ -1478,7 +1482,7 @@ async def stage_in_hand(db_path: str, round_id: int) -> bool:
     return any(
         change.get("round_id") == round_id
         for change in await unfinished(
-            db_path, [STAGE_ONE_KIND, REPORTS_KIND, APPEALS_KIND, PROMPT_KIND]
+            db_path, [STAGE_ONE_KIND, REPORTS_KIND, APPEALS_KIND, PROMPT_KIND], before=before
         )
     )
 

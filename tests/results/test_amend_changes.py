@@ -702,6 +702,37 @@ async def test_cancel_amendment_runs_on_the_league_and_ends_the_conversation(
     assert await _winner(league) == LEWIS
 
 
+async def test_a_cancel_asked_before_the_last_paste_hands_stage_one_over_ends_the_amendment(
+    tmp_path, monkeypatch,
+):
+    """The league lane is stopped at another job. Alex presses Cancel Amendment, which waits on the
+    league lane, and then pastes the Feature Race: his turn runs on the amendment's lane and asks
+    stage one of the league behind the cancel. Once the stopped job goes through, the cancel runs
+    first: stage one asked after it is no stage in hand ahead of it, so the cancel is not refused,
+    the amendment ends with the round as it stood, and stage one is found no longer due."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    holder = await block_queue(league)
+    await _press_cancel(league)
+    await _type(league)
+    [cancel] = await _changes(league, CANCEL)
+    [stage_one] = await _changes(league, STAGE_ONE)
+    assert cancel["id"] < stage_one["id"]
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    [cancel] = await _changes(league, CANCEL)
+    [stage_one] = await _changes(league, STAGE_ONE)
+    assert cancel["state"] == "DONE"
+    assert stage_one["state"] == "DROPPED"
+    assert await stopped_job(league.db_path) is None
+    assert await _winner(league) == LEWIS
+    assert _deleted(league)
+    [row] = await _amend_rows(league)
+    assert row["closed_at"] is not None
+
+
 # ---------------------------------------------------------------------------
 # The lapse (C63, C64)
 # ---------------------------------------------------------------------------
