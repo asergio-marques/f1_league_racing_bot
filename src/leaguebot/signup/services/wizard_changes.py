@@ -221,6 +221,9 @@ def start_change(
                 "⛔ Signups are closing. Try again once they have closed, if they reopen."
             )
         guild = await league_guild(ctx.bot)
+        if guild is not None and guild.get_member(int(user_id)) is None:
+            # Leaving the server cancels a signup (signup :107): there is no one to sign up.
+            return Verdict.not_due("the member left the server before their signup channel was made")
         beside = None if guild is None or cfg.signup_channel_id is None else guild.get_channel(
             int(cfg.signup_channel_id)
         )

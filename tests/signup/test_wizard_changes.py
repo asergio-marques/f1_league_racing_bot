@@ -240,6 +240,21 @@ async def test_sign_up_is_acknowledged_and_creates_the_channel_and_welcome_as_jo
     assert league.channel(NEW_CHANNEL).texts != []
 
 
+async def test_a_member_who_leaves_before_their_channel_is_made_is_dropped_not_stopped(tmp_path):
+    """Kimi presses Sign Up and leaves the server before the queue reaches his signup. The change
+    is found no longer due and dropped: no channel is created, he is not moved, and the league's
+    lane is not stopped."""
+    league = await _league(tmp_path)
+
+    await _press_sign_up(league)
+    league.absent.add(SIGNING_UP)
+    await run_queue(league.bot)
+
+    assert league.created == []
+    assert await stopped_job(league.db_path) is None
+    assert await _driver_state(league) != "PENDING_SIGNUP_COMPLETION"
+
+
 async def test_a_discarded_channel_creation_leaves_the_driver_free_to_press_sign_up_again(
     tmp_path,
 ):
