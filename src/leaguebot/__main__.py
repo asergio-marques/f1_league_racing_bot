@@ -165,12 +165,15 @@ def _forget_setup(bot: LeagueBot) -> None:
 
 def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
     """Removes one driver's signup inactivity and channel-deletion timers, for the close that
-    returns them to Not Signed Up (`signup.close`)."""
+    returns them to Not Signed Up (`signup.close`) and for the signup module's switch-off."""
+    from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
     def cancel(user_id: str) -> None:
         bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
         bot.scheduler_service.cancel_job(channel_delete_job_id(user_id))
+        bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
+        bot.scheduler_service.disarm(DELETE_TIMER, user_id)
 
     return cancel
 
@@ -442,6 +445,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.signup.services.closing_steps import closing_change
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
+    from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
     from leaguebot.results.services.resubmission_changes import (
@@ -550,6 +554,14 @@ def register_change_types(bot: LeagueBot) -> None:
         window_close_change(
             signup_module_service=lambda: bot.signup_module_service, returned_by_close=RETURNED_BY_CLOSE,
             cancel_timers=_cancel_wizard_timers(bot),
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        signup_off_change(
+            modules=bot.module_service, signup_module_service=lambda: bot.signup_module_service,
+            returned_by_close=RETURNED_BY_CLOSE, cancel_timers=_cancel_wizard_timers(bot),
+            cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )

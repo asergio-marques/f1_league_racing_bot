@@ -23,7 +23,6 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import LeagueView, league_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +56,8 @@ RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNU
 #: The forced close's failed steps that do not name a driver, worded once for every caller.
 #: How the change that turns results off names itself in its lines.
 _RESULTS_OFF = "`/module disable results`"
+#: How the change that turns signup off names itself in the acknowledgement.
+_SIGNUP_OFF = "`/module disable signup`"
 _BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup channel."
 _NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
 
@@ -1141,17 +1142,23 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
+        # The switch-off is a change on the queue: where the window is open it closes it first, as
+        # jobs, and its last job turns the module off, forgets the channel and audits it. The
+        # command acknowledges it at once and clears the channel's overwrites, a permission and
+        # not a message.
         signup_cfg = await self.bot.signup_module_service.get_config()
-
-        # Force-close if signups are open
-        closed: ForcedCloseOutcome | None = None
-        if signup_cfg and signup_cfg.signups_open:
-            closed = await execute_forced_close(self.bot, audit_action="SIGNUP_FORCE_CLOSE")
-
-        # Cancel any active signup close timer
-        self.bot.scheduler_service.cancel_signup_close_timer()
+        window = (
+            signup_cfg.signup_button_message_id if signup_cfg and signup_cfg.signups_open else None
+        )
+        asked = await self.bot.change_queue.ask(
+            module_off("signup"),
+            {"window": window},
+            interaction=interaction,
+            what=_SIGNUP_OFF,
+            refusal_what=describe(interaction),
+        )
+        if asked is None:
+            return
 
         # Remove bot-applied permission overwrites (only those set by /signup channel)
         if signup_cfg and signup_cfg.signup_channel_id is not None:
@@ -1180,51 +1187,3 @@ class ModuleCog(commands.Cog):
                             log.exception(
                                 "disable_signup: could not clear overwrite for %s", target
                             )
-
-        # Cancel all wizard inactivity and channel-delete APScheduler jobs for this server
-        if signup_cfg:
-            active_wizards = await self.bot.signup_module_service.get_all_active_wizards()
-            scheduler = self.bot.scheduler_service
-            for wiz in active_wizards:
-                from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
-
-                for job_id in (
-                    inactivity_job_id(wiz.discord_user_id),
-                    channel_delete_job_id(wiz.discord_user_id),
-                ):
-                    scheduler.cancel_job(job_id)
-
-        # Forget the channel. The time slots and question settings are kept (issue #127).
-        await self.bot.signup_module_service.delete_config()
-
-        # Set disabled + audit
-        await self.bot.module_service.set_signup_enabled(False)
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "signup"}), now),
-            )
-            await db.commit()
-
-        detail = ""
-        notes = ""
-        if closed is not None:
-            detail = (
-                f"\n  drivers_returned_to_not_signed_up: {closed.returned}"
-                + failed_steps_lines(closed)
-            )
-            notes = failed_steps_reply(closed)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable signup | Success"
-            + detail,
-        )
-        for part in chunk_message(
-            "✅ Signup module disabled. Its channel has been cleared; its time slots and "
-            "question settings are kept, and so are the league's base role and driver role."
-            + notes
-        ):
-            await interaction.followup.send(part, ephemeral=True)

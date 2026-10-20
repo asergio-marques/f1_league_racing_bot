@@ -92,11 +92,6 @@ DELETE_TIMER = "signup_channel_delete"
 #: A second driver part-way through signing up.
 OTHER = 107
 
-NO_MODULE_OFF_CHANGE = (
-    "#439: /module disable signup turns the module off itself, off the queue, with no "
-    "module.off:signup change"
-)
-
 
 # ---------------------------------------------------------------------------
 # A bot double, for the command's own work on the channel's overwrites
@@ -318,7 +313,6 @@ async def _log_lines(league: SeasonLeague) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_the_module_is_disabled(tmp_path):
     """Manager 77 runs `/module disable signup` with the window closed. He is answered at once
     with an under-way line and the module is still on; when the queue runs, the module is off and
@@ -354,7 +348,6 @@ async def test_disabling_twice_does_no_work(tmp_path):
             if row["kind"] == MODULE_OFF_KIND and row["state"] == "DONE"] == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_the_disable_is_audited(tmp_path):
     """Nothing is audited until the queue runs; then one MODULE_DISABLE row names the module."""
     league = await _league(tmp_path)
@@ -370,7 +363,6 @@ async def test_the_disable_is_audited(tmp_path):
     assert json.loads(rows[0]["old_value"]) == {"module": "signup"}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_the_disable_is_logged(tmp_path):
     """Kimi is part-way through signing up when the module is disabled with the window open. Once
     the queue has run the switch-off, closing the window as its jobs, a line in the log channel
@@ -387,7 +379,6 @@ async def test_the_disable_is_logged(tmp_path):
     assert any("/module disable signup" in line for line in await _log_lines(league))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_the_configuration_is_cleared(tmp_path):
     """The configuration row, which holds the channel, is deleted by the switch-off's job: it
     stands until the queue runs, and is gone after, the acknowledgement updated to say the
@@ -405,7 +396,6 @@ async def test_the_configuration_is_cleared(tmp_path):
     assert "Its channel has been cleared" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_disabling_signup_keeps_both_roles(tmp_path):
     """They are the league's, not the module's (issue #276). Disabling signup deleted them
     with its configuration row, and a league that ran on without signups lost the base role
@@ -428,7 +418,6 @@ async def test_disabling_signup_keeps_both_roles(tmp_path):
     assert "base role and driver role" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     """Only the channel goes (issue #127). The slots and the three question settings live in
     tables no key joins to the configuration row, so nothing but the rule keeps them: a
@@ -469,7 +458,6 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_closed_signups_are_not_force_closed_again(tmp_path):
     """Closing transitions every in-progress driver and posts into their channels; running it
     over an already-closed signup would notice nobody and post nothing. With the window closed,
@@ -494,7 +482,6 @@ async def test_the_close_timer_is_cancelled(tmp_path):
     league.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
     """Two timers per driver. Left armed, the inactivity timeout would transition a driver whose
     signup no longer exists, and the delete timer would remove a channel a league has since
@@ -533,7 +520,6 @@ async def test_a_job_that_has_already_fired_is_stepped_over():
     scheduler.disarm(DELETE_TIMER, "101")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_a_league_with_no_configuration_still_disables(tmp_path):
     """A module toggled on and never configured: there are no wizards, no channel and no timers,
     and the flag still has to come down. The switch-off's only job is `switch_off`, the module is
@@ -601,7 +587,6 @@ async def test_a_server_with_no_configuration_row_reverts_the_rest(tmp_path):
     assert 1 in _reverted(guild)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     """A module left half-disabled is worse than a channel with a stale overwrite: one is
     repairable by hand, the other needs the toggle run again in a state it may refuse. Discord
@@ -626,7 +611,6 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     assert "disabled" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_a_deleted_signup_channel_does_not_stop_the_disable(tmp_path):
     """The module's configuration names the signup channel (620), which has since been deleted
     from the server: the module is still on until the queue runs, and off once it has."""
@@ -654,7 +638,6 @@ async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
     guild.get_channel.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_a_guild_the_bot_has_left_does_not_stop_the_disable(tmp_path):
     """The database half can be put right without Discord: with the league's server out of
     the bot's reach, the module is still on until the queue runs, and the switch-off then turns

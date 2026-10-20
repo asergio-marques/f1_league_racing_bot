@@ -91,10 +91,13 @@ class SignupModuleService:
         next enabled, as the signup specification requires (issue #127).
         """
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM signup_module_config",
-            )
+            await self.delete_config_on(db)
             await db.commit()
+
+    async def delete_config_on(self, db: aiosqlite.Connection) -> None:
+        """Forget the signup channel and the window state on *db*, committing nothing, so that
+        the module's switch-off saves it together with the flag coming down (`delete_config`)."""
+        await db.execute("DELETE FROM signup_module_config")
 
     async def move_base_role_overwrite(
         self, guild: discord.Guild, old_role_id: int | None, new_role: discord.Role

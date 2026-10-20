@@ -60,12 +60,14 @@ CLOSE_CAUSES: dict[str, tuple[str, str]] = {
 KIND = "signup.closing"
 #: The timer that deletes a held signup channel a day on.
 DELETE_TIMER = "signup_channel_delete"
+#: The timer that ends a signup left unanswered for a day: a closing or a switch-off takes it away.
+INACTIVITY_TIMER = "signup_inactivity"
 #: How long a closed signup channel is kept before it is deleted.
 HOLD = timedelta(hours=24)
 
 __all__ = [
     "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_TIMER",
-    "HOLD", "KIND", "POST_CLOSED", "SIGNUP_NOTICE", "closing_change", "closing_steps",
+    "HOLD", "INACTIVITY_TIMER", "KIND", "POST_CLOSED", "SIGNUP_NOTICE", "closing_change", "closing_steps",
     "window_close_jobs", "window_close_steps",
 ]
 

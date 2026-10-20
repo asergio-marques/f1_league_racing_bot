@@ -349,10 +349,6 @@ NO_CLOSE_CHANGE = (
     "#439: the signup window is closed by execute_forced_close off the queue, naming a failed "
     "step and running on, with no signup.close change whose jobs stop the queue"
 )
-NO_MODULE_OFF_CHANGE = (
-    "#439: /module disable signup closes the window and switches the module off itself, off "
-    "the queue, with no module.off:signup change"
-)
 
 
 async def _close_league(tmp_path: Any, *drivers: int) -> SeasonLeague:
@@ -623,7 +619,6 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
         assert any("returned" in text and "1" in text for text in beneath), (cause, line)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MODULE_OFF_CHANGE)
 async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as_jobs(tmp_path):
     """Kimi is still filling in the wizard. Manager 77 runs `/module disable signup`. Until the
     queue runs, the module is still on and the window open. When it runs, the
