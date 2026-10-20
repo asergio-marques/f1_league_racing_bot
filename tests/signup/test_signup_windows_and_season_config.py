@@ -15,10 +15,6 @@ SERVER_ID = 22040
 
 #: The window is opened and closed only inside a save the caller holds: the `/signup open` job's
 #: record and the close's (#439, slice 6b, C66, C68); the committing forms go (C72).
-NO_WINDOW_ON = (
-    "#439: the signup window is opened and closed only by committing forms that hold their "
-    "own connection, with no set_window_open_on or set_window_closed_on taking the caller's save"
-)
 
 
 async def _open(svc, db_path, button_message_id, selected_tracks):
@@ -57,7 +53,6 @@ async def db_path(tmp_path):
     return path
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
 async def test_opening_records_a_window_of_the_season(db_path):
     svc = SignupModuleService(db_path)
 
@@ -69,7 +64,6 @@ async def test_opening_records_a_window_of_the_season(db_path):
     assert windows[0]["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
 async def test_the_close_time_is_kept_with_the_window(db_path):
     svc = SignupModuleService(db_path)
     await _open(svc, db_path, 111, [])
@@ -82,7 +76,6 @@ async def test_the_close_time_is_kept_with_the_window(db_path):
     assert window["closed_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
 async def test_a_second_window_is_a_second_record(db_path):
     svc = SignupModuleService(db_path)
     await _open(svc, db_path, 111, ["1"])
@@ -122,7 +115,6 @@ async def test_the_snapshot_is_replaced_not_duplicated(db_path):
     assert len((await svc.get_season_config(5))["slots"]) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
 async def test_windows_and_config_go_with_their_season(db_path):
     svc = SignupModuleService(db_path)
     await _open(svc, db_path, 111, [])

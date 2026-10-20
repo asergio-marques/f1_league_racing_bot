@@ -87,12 +87,17 @@ def uncommitted_seat_excluded(seat_alias: str = "ts") -> str:
 async def live_season_stage(db_path: str) -> tuple[int, SeasonStage] | None:
     """The server's active season and its stage, or None where it holds none."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, stage FROM seasons "
-            "WHERE status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY id DESC LIMIT 1",
-        )
-        row = await cursor.fetchone()
+        return await live_season_stage_on(db)
+
+
+async def live_season_stage_on(db: aiosqlite.Connection) -> tuple[int, SeasonStage] | None:
+    """`live_season_stage` read on the caller's connection."""
+    cursor = await db.execute(
+        "SELECT id, stage FROM seasons "
+        "WHERE status IN ('SETUP', 'ACTIVE') "
+        "ORDER BY id DESC LIMIT 1",
+    )
+    row = await cursor.fetchone()
     if row is None or row["stage"] is None:
         return None
     return int(row["id"]), SeasonStage(row["stage"])
@@ -146,6 +151,20 @@ async def advance_on_window_open(db_path: str) -> SeasonStage | None:
     if target is None:
         return None
     await _move(db_path, season_id, stage, target)
+    return target
+
+
+async def advance_on_window_open_on(db: aiosqlite.Connection) -> SeasonStage | None:
+    """`advance_on_window_open` on the caller's connection, committing nothing, so that the
+    season's move is saved with the window's opening."""
+    found = await live_season_stage_on(db)
+    if found is None:
+        return None
+    season_id, stage = found
+    target = WINDOW_OPENS_FROM.get(stage)
+    if target is None:
+        return None
+    await _move_on(db, season_id, stage, target)
     return target
 
 

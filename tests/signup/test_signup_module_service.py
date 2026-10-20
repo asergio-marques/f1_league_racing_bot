@@ -38,10 +38,6 @@ async def _save_wizard(svc, db_path, wizard, *, starting=False):
 
 
 #: The window is opened and closed only inside a save the caller holds (#439, slice 6b, C66, C68).
-NO_WINDOW_ON = (
-    "#439: the signup window is opened and closed only by committing forms that hold their "
-    "own connection, with no set_window_open_on or set_window_closed_on taking the caller's save"
-)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -387,7 +383,6 @@ class TestWindowState:
         svc = await self._make_config(db_path)
         assert await svc.get_window_state() is False
 
-    @pytest.mark.xfail(strict=True, reason=NO_WINDOW_ON)
     async def test_set_open_then_closed(self, db_path):
         svc = await self._make_config(db_path)
         # Opened and closed in saves of the caller's, as the jobs do (#439, slice 6b, C66, C68).

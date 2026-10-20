@@ -7,6 +7,8 @@ and every post states who it may notify.
 
 from __future__ import annotations
 
+from typing import Any
+
 import discord
 
 from leaguebot.core.models.change import StepFailedOnDiscord
@@ -17,12 +19,19 @@ __all__ = ["post"]
 
 @posts_in_a_job
 async def post(
-    channel: discord.TextChannel, text: str, *, mentions: discord.AllowedMentions, refused: str
+    channel: discord.TextChannel, text: str | None = None, *, mentions: discord.AllowedMentions,
+    refused: str, embed: discord.Embed | None = None, view: discord.ui.View | None = None,
 ) -> int:
-    """Send *text* to *channel*, notifying only what *mentions* allows, and give the id of the
-    message posted. Raises `StepFailedOnDiscord` with *refused* where Discord refuses it."""
+    """Send *text*, with *embed* and *view* where given, to *channel*, notifying only what
+    *mentions* allows, and give the id of the message posted. Raises `StepFailedOnDiscord` with
+    *refused* where Discord refuses it."""
+    extras: dict[str, Any] = {}
+    if embed is not None:
+        extras["embed"] = embed
+    if view is not None:
+        extras["view"] = view
     try:
-        message = await channel.send(text, allowed_mentions=mentions)
+        message = await channel.send(text, allowed_mentions=mentions, **extras)
     except discord.HTTPException as error:
         raise StepFailedOnDiscord(refused) from error
     return message.id

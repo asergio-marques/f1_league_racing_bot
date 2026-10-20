@@ -71,10 +71,6 @@ CLOSED_NOTICE = 9001
 #: The permissions the bot needs on the signup channel to post the Sign Up button.
 NEEDED = ("**View Channel**", "**Send Messages**", "**Embed Links**")
 
-NO_OPEN_CHANGE = (
-    "#439: /signup open posts its information message and records the window open itself, off "
-    "the queue, with no signup.open change whose post_info job opens the window in its record"
-)
 
 
 def _role(role_id: int) -> MagicMock:
@@ -199,7 +195,6 @@ def _refuse_posts(league: _League) -> None:
                                           text="Missing Permissions")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_signup_open_is_acknowledged_and_posts_the_information_with_its_button(tmp_path):
     """Manager 77 runs `/signup open`. He is answered at once with an under-way line and nothing
     is posted yet. When the queue runs, one message is posted in the signup channel carrying the
@@ -219,7 +214,6 @@ async def test_signup_open_is_acknowledged_and_posts_the_information_with_its_bu
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_path):
     """Manager 77 runs `/signup open`. Until the queue runs, signups stay closed and the season
     waits. When it runs, the `post_info` job is done, and with it the window is recorded open,
@@ -245,7 +239,6 @@ async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_
     assert str(audit["actor_id"]) == "77"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted(tmp_path):
     """The last close's "signups closed" notice still stands in the signup channel. Manager 77
     runs `/signup open` and the queue runs: the information message is posted first, then the
@@ -263,7 +256,6 @@ async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted
     assert CLOSED_NOTICE not in league.signup.messages
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_signup_open_without_the_bot_s_permissions_is_refused_naming_them(tmp_path):
     """The bot may view the signup channel and send messages in it, but not embed links. Manager
     77 runs `/signup open`: he is refused at once, the reply naming View Channel, Send Messages
@@ -281,7 +273,6 @@ async def test_signup_open_without_the_bot_s_permissions_is_refused_naming_them(
     assert not (await league.config())["signups_open"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_a_refused_information_post_stops_the_queue_with_signups_still_closed(tmp_path):
     """Discord refuses every post in the signup channel. Manager 77 runs `/signup open` and the
     queue runs: it stops at `post_info`, with nothing posted, signups still closed, no button id
@@ -302,7 +293,6 @@ async def test_a_refused_information_post_stops_the_queue_with_signups_still_clo
     assert await league.audits() == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_a_discarded_information_post_leaves_signups_closed(tmp_path):
     """Discord refuses every post in the signup channel, so `/signup open`'s change stops at
     `post_info`. A league admin discards it: the queue is no longer stopped, signups stay closed

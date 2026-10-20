@@ -276,29 +276,37 @@ class SignupModuleService:
     async def set_window_open(
         self, button_message_id: int, selected_tracks: list[str]
     ) -> None:
-        """Open the window, and record it as a window of the server's active season.
+        """Open the window on a connection of its own, committing it: `set_window_open_on`."""
+        async with get_connection(self._db_path) as db:
+            await self.set_window_open_on(db, button_message_id, selected_tracks)
+            await db.commit()
+
+    async def set_window_open_on(
+        self, db: aiosqlite.Connection, button_message_id: int, selected_tracks: list[str]
+    ) -> None:
+        """Open the window, and record it as a window of the server's active season, on the
+        caller's connection, committing nothing: the Sign Up button's message is kept, the
+        previous closed notice forgotten.
 
         The record is what a signup made through this window is kept against (issue #220):
         the tracks it asked times for, and later its close time. A server with no active
         season records none — `/signup open` refuses there, so only a caller outside that
         command reaches this without one.
         """
-        async with get_connection(self._db_path) as db:
+        await db.execute(
+            "UPDATE signup_module_config "
+            "SET signups_open = 1, signup_button_message_id = ?, selected_tracks_json = ?, "
+            "    signup_closed_message_id = NULL "
+            "",
+            (button_message_id, json.dumps(selected_tracks)),
+        )
+        season_id = await self._live_season_id(db)
+        if season_id is not None:
             await db.execute(
-                "UPDATE signup_module_config "
-                "SET signups_open = 1, signup_button_message_id = ?, selected_tracks_json = ?, "
-                "    signup_closed_message_id = NULL "
-                "",
-                (button_message_id, json.dumps(selected_tracks)),
+                "INSERT INTO signup_windows (season_id, selected_tracks_json) "
+                "VALUES (?, ?)",
+                (season_id, json.dumps(selected_tracks)),
             )
-            season_id = await self._live_season_id(db)
-            if season_id is not None:
-                await db.execute(
-                    "INSERT INTO signup_windows (season_id, selected_tracks_json) "
-                    "VALUES (?, ?)",
-                    (season_id, json.dumps(selected_tracks)),
-                )
-            await db.commit()
 
     @staticmethod
     async def _live_season_id(db) -> int | None:
@@ -359,16 +367,22 @@ class SignupModuleService:
     async def set_close_at(self, close_at_iso: str | None) -> None:
         """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_module_config SET close_at = ?",
-                (close_at_iso,),
-            )
-            await db.execute(
-                "UPDATE signup_windows SET close_at = ? "
-                "WHERE closed_at IS NULL",
-                (close_at_iso,),
-            )
+            await self.set_close_at_on(db, close_at_iso)
             await db.commit()
+
+    async def set_close_at_on(
+        self, db: aiosqlite.Connection, close_at_iso: str | None
+    ) -> None:
+        """Persist (or clear) the auto-close time on the caller's connection, committing nothing."""
+        await db.execute(
+            "UPDATE signup_module_config SET close_at = ?",
+            (close_at_iso,),
+        )
+        await db.execute(
+            "UPDATE signup_windows SET close_at = ? "
+            "WHERE closed_at IS NULL",
+            (close_at_iso,),
+        )
 
     async def snapshot_season_config(self, season_id: int) -> None:
         """Keep the signup configuration *season_id* is confirmed with (issue #220).

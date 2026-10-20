@@ -1126,67 +1126,13 @@ class SignupCog(commands.Cog):
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await refuse(
-                interaction,
-                "❌ Signup module is not configured.",
-                what=describe(interaction),
+                interaction, "❌ Signup module is not configured.", what=describe(interaction)
             )
             return
 
-        if cfg.signups_open:
-            await refuse(interaction, "❌ Signups are already open.", what=describe(interaction))
-            return
-
-        # A window opens only while the season waits for one, or while it is being raced
-        # with no window already run and unplaced (issue #220).
-        from leaguebot.core.services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
-
-        live = await live_season_stage(self.bot.db_path)
-        if live is None or live[1] not in WINDOW_OPENS_FROM:
-            await refuse(
-                interaction,
-                "❌ Signups can only be opened while the season is waiting for its signup "
-                "window, once its configuration is confirmed, or while it is ongoing with "
-                "no placements left to confirm.",
-                what=describe(interaction),
-            )
-            return
-
-        # Guard: the channel and the league's two roles must all be set (issue #276), and both
-        # roles still on the server, the driver role one the bot can grant (#374). A base role
-        # gone pings nobody and opens a channel nobody can see; a driver role gone or refused
-        # lets every approval of the window grant nothing, with only the host's log told.
-        base_role_id = server_cfg.base_role_id if server_cfg is not None else None
-        driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
-        missing = []
-        if cfg.signup_channel_id is None:
-            missing.append("`signup channel` (use `/signup channel`)")
-        if base_role_id is None:
-            missing.append("`base role` (use `/bot base-role`)")
-        if driver_role_id is None:
-            missing.append("`driver role` (use `/bot driver-role`)")
-        missing += league_role_faults(interaction.guild, base_role_id, driver_role_id)
-        if missing:
-            await refuse(
-                interaction,
-                "❌ Signups cannot be opened until the signup module's configuration is "
-                "put right:\n"
-                + "\n".join(f"  • {m}" for m in missing),
-                what=describe(interaction),
-                reason="the signup module's configuration is not put right: " + "; ".join(missing),
-            )
-            return
-
-        # Guard: at least one slot configured
-        slots = await self.bot.signup_module_service.get_slots()
-        if not slots:
-            await refuse(
-                interaction,
-                "❌ At least one availability time slot must be configured before opening signups.",
-                what=describe(interaction),
-            )
-            return
-
-        # Parse close_time — the same rule `/signup close-time add` holds to
+        # The command's own input is judged here, ahead of the change's check; the rest of the
+        # league's state (the window, the season's stage, the configuration, the channel and the
+        # bot's permissions on it) is the change's, judged as it is asked and as it runs.
         close_at_iso: str | None = None
         if close_time and close_time.strip():
             close_at_iso, close_error = _parse_close_time(close_time)
@@ -1194,9 +1140,7 @@ class SignupCog(commands.Cog):
                 await refuse(interaction, close_error, what=describe(interaction))
                 return
 
-        # Parse track_ids
         track_list: list[str] = []
-        track_name_map: dict[str, str] = {}
         if track_ids and track_ids.strip():
             parts = [t.strip() for t in re.split(r"[,\s]+", track_ids.strip()) if t.strip()]
             async with get_connection(self.bot.db_path) as db:
@@ -1212,121 +1156,17 @@ class SignupCog(commands.Cog):
                 return
             track_list = parts
 
-        await interaction.response.defer(ephemeral=True)
-
-        # Build and post signup button + info message
-        settings = await self.bot.signup_module_service.get_settings()
-        guild = interaction.guild
-        assert guild is not None
-        signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
-        base_role = guild.get_role(base_role_id) if base_role_id else None
-        if signup_channel is None or not isinstance(signup_channel, discord.TextChannel):
-            await refuse(
-                interaction,
-                "❌ Configured signup channel not found.",
-                what=describe(interaction),
-            )
-            return
-
-        if track_list:
-            track_names = [track_name_map[t] for t in track_list]
-            tracks_display = "\n".join(f"• {n}" for n in track_names)
-        else:
-            tracks_display = "No tracks specified"
-
-        tt_label = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"
-        img_label = "Required" if settings.time_image_required else "Not required"
-        nat_label = "Required" if settings.nationality_required else "Not required"
-
-        role_mention = base_role.mention if base_role else ""
-        role_line = f"\n\n{role_mention} — click below to sign up!" if role_mention else ""
-
-        close_line = ""
-        if close_at_iso:
-            parsed_utc = datetime.fromisoformat(close_at_iso)
-            close_line = f"\n**Auto-closes:** {discord_ts(parsed_utc)} ({discord_ts(parsed_utc, 'R')})"
-
-        info_embed = discord.Embed(
-            title="🏁 Driver Signups Are Open!",
-            description=(
-                f"**Available time slots:**\n"
-                + "\n".join(f"• {s.display_label}" for s in slots)
-                + f"\n\n**Tracks:**\n{tracks_display}"
-                + f"\n\n**Time type:** {tt_label}"
-                + f"\n**Time image proof:** {img_label}"
-                + f"\n**Nationality:** {nat_label}"
-                + close_line
-                + role_line
-            ),
-            color=discord.Color.green(),
-        )
-
-        view = SignupButtonView()
-        allowed_mentions = discord.AllowedMentions(roles=[base_role]) if base_role else discord.AllowedMentions.none()
-        # Discord refusing the post is a refusal the manager can act on. Any other error is a
-        # fault in the bot, and goes to the command's failure path. Either way nothing has been
-        # changed: the window stays closed, and the "signups closed" notice still stands.
-        try:
-            posted_msg = await signup_channel.send(embed=info_embed, view=view, allowed_mentions=allowed_mentions)
-        except discord.Forbidden:
-            await refuse(
-                interaction,
-                f"❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on "
-                f"{signup_channel.mention} to post the Sign Up button. Signups were not opened.",
-                what=describe(interaction),
-            )
-            return
-
-        # The "signups closed" notice comes down only once the open message is up, so the
-        # channel always shows one or the other. Signups are open whether or not it goes.
-        if cfg.signup_closed_message_id:
-            try:
-                old_msg = await signup_channel.fetch_message(cfg.signup_closed_message_id)
-                await old_msg.delete()
-            except discord.NotFound:
-                pass
-            except Exception:
-                log.warning("signup_open: could not delete closed status message", exc_info=True)
-
-        await self.bot.signup_module_service.set_window_open(
-            posted_msg.id, track_list
-        )
-        from leaguebot.core.services.season_lifecycle_service import advance_on_window_open
-
-        await advance_on_window_open(self.bot.db_path)
-
-        if close_at_iso:
-            await self.bot.signup_module_service.set_close_at(close_at_iso)
-            self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'SIGNUP_OPEN', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps(
-                     {"track_ids": track_list, "close_at": close_at_iso}
-                     if close_at_iso
-                     else {"track_ids": track_list}
-                 ), now),
-            )
-            await db.commit()
-
-        close_notice = (
-            f" Auto-close scheduled for {discord_ts(datetime.fromisoformat(close_at_iso))} ({discord_ts(datetime.fromisoformat(close_at_iso), 'R')})."
-            if close_at_iso
-            else ""
-        )
-        await interaction.followup.send(
-            f"✅ Signups opened. Button posted in {signup_channel.mention}.{close_notice}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup open | Success"
-            + (f"\n  track_ids: {', '.join(track_list)}" if track_list else "")
-            + (f"\n  close_time: {close_at_iso}" if close_at_iso else ""),
+        await self.bot.change_queue.ask(
+            "signup.open",
+            {
+                "track_ids": track_list,
+                "close_at": close_at_iso,
+                "channel_id": cfg.signup_channel_id,
+                "closed_message_id": cfg.signup_closed_message_id,
+            },
+            interaction=interaction,
+            what="Opening signups",
+            refusal_what=describe(interaction),
         )
 
     # ── /signup close (T019) ──────────────────────────────────────────

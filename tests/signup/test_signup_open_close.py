@@ -70,10 +70,6 @@ from tests.support.season_league import SIGNUP_CHANNEL_BASE, setup_league, signi
 from tests.support.undecorate import undecorate
 
 #: Why a test of the queue's form of a command fails until the build puts it on the queue.
-NO_OPEN_CHANGE = (
-    "#439: /signup open posts its information message itself, off the queue, with no "
-    "signup.open change whose post_info job stops the queue on a fault"
-)
 NO_CLOSE_CHANGE = (
     "#439: /signup close and its Confirm Close close the window by execute_forced_close off "
     "the queue, asking no signup.close change"
@@ -628,7 +624,6 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_OPEN_CHANGE)
 async def test_a_failed_post_leaves_signups_closed(tmp_path):
     """The button is how a driver signs up. Recording the window as open without one would
     leave a league believing signups were running with no way in. A fault in the post is the
