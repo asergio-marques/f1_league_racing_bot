@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
@@ -108,7 +109,12 @@ if TYPE_CHECKING:
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
+log = logging.getLogger(__name__)
+
 START = "signup.start"
+#: The change a member leaving the server asks, and its jobs.
+MEMBER_LEFT = "signup.member_left"
+LEAVE_JOB = "leave"
 DELETE_OLD_CHANNEL = "delete_old_channel"
 CREATE_CHANNEL = "create_channel"
 START_JOB = "start"
@@ -145,7 +151,8 @@ __all__ = [
     "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
     "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
-    "channel_delete_change", "end_change", "start_change",
+    "LEAVE_JOB", "MEMBER_LEFT",
+    "ask_member_left", "channel_delete_change", "end_change", "member_left_change", "start_change",
 ]
 
 
@@ -705,6 +712,25 @@ def end_change(
     )
 
 
+@posts_in_a_job
+async def _delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
+    """Delete the signup channel the step's payload names, for *reason*: a channel already gone is
+    nothing to do (``gone``), and one Discord refuses fails the job, which stops the queue."""
+    guild = await league_guild(ctx.bot)
+    if guild is None:
+        raise StepFailedOnDiscord("the league's server could not be found")
+    found = guild.get_channel(int(ctx.step_payload["channel_id"]))
+    if found is None:
+        return StepResult(result={"gone": True})
+    try:
+        await delete_channel(found, reason=reason)
+    except discord.NotFound:
+        return StepResult(result={"gone": True})
+    except discord.HTTPException as error:
+        raise StepFailedOnDiscord(f"the signup channel {found.id} could not be deleted") from error
+    return StepResult(result={})
+
+
 def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> ChangeType:
     """The `signup.channel.delete` change type, for the builder to register.
 
@@ -730,23 +756,8 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         row = await signup().get_wizard(str(ctx.step_payload["user_id"]))
         return row is not None and row.signup_channel_id == int(ctx.step_payload["channel_id"])
 
-    @posts_in_a_job
     async def delete(ctx: StepContext) -> StepResult:
-        guild = await league_guild(ctx.bot)
-        if guild is None:
-            raise StepFailedOnDiscord("the league's server could not be found")
-        found = guild.get_channel(int(ctx.step_payload["channel_id"]))
-        if found is None:
-            return StepResult(result={"gone": True})
-        try:
-            await delete_channel(found, reason="Signup wizard channel hold expired")
-        except discord.NotFound:
-            return StepResult(result={"gone": True})
-        except discord.HTTPException as error:
-            raise StepFailedOnDiscord(
-                f"the signup channel {found.id} could not be deleted"
-            ) from error
-        return StepResult(result={})
+        return await _delete_signup_channel(ctx, "Signup wizard channel hold expired")
 
     async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
         await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))
@@ -780,4 +791,161 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
             f"channel:{int(payload['channel_id'])}" if payload.get("own_lane") else LEAGUE_LANE
         ),
         writes=("signup_wizard_records",),
+    )
+
+
+async def ask_member_left(queue: "ChangeQueue", db_path: str, user_id: str) -> int | None:
+    """Ask the queue, as the bot, to clean up after *user_id* leaving the league's server
+    (`signup.member_left`): asked for every member who leaves, whoever they are, since the
+    change's own check decides what there is to clean up. Gives the change's id, or None where
+    there is nothing to do (that check judges it, and drops the change)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+    return await queue.ask(
+        MEMBER_LEFT,
+        {"user_id": user_id, "channel_id": None if row is None else row["signup_channel_id"]},
+        what=f"cleaning up after <@{user_id}> leaving the server",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+def member_left_change(
+    *,
+    signup: Callable[[], "SignupModuleService"],
+    drivers: Callable[[], "DriverService"],
+    cancel_timers: Callable[[str], None],
+) -> ChangeType:
+    """The `signup.member_left` change type, for the builder to register, on the league lane (a
+    member leaving counts as a command, and the driver's status is the league's).
+
+    The payload is ``user_id`` (the account that left) and ``channel_id`` (the signup channel their
+    wizard held when the change was asked, or None). It is not due, and is dropped, where there is
+    nothing to clean up: the driver has no wizard collecting answers and is not awaiting review or
+    a correction choice, or they have signed up again into another channel meanwhile. Its jobs
+    are `name_driver`, which finds the name and state for the line (a save waits on no second
+    connection); `leave` (a save), which takes the driver's timers away, moves them to Not Signed
+    Up, keeps the wizard's row while a channel stands to be deleted, and writes the line; and
+    `delete_channel`, which deletes the channel at once, with no hold, and whose record deletes the
+    wizard's row. The check lets every departure be asked and judges it as the change comes up to
+    run. A member who leaves while the queue is stopped keeps their channel and state
+    until it clears. A channel Discord refuses to delete stops the queue.
+    """
+    #: The states of a driver whose wizard is unengaged but who still has a channel to clean up.
+    awaiting = (DriverState.PENDING_ADMIN_APPROVAL, DriverState.AWAITING_CORRECTION_PARAMETER)
+
+    async def state_label(user_id: str) -> str | None:
+        """The state the driver leaves in, from whichever of the wizard and the driver is active,
+        or None where there is nothing to clean up."""
+        wizard = await signup().get_wizard(user_id)
+        if wizard is not None and wizard.wizard_state != WizardState.UNENGAGED:
+            return wizard.wizard_state.value
+        profile = await drivers().get_profile(user_id)
+        if profile is None or profile.current_state not in awaiting:
+            return None
+        return profile.current_state.value
+
+    async def check(ctx: CheckContext) -> Verdict:
+        if ctx.change_id is None:
+            # Asked for every departure: what there is to clean up is judged as the change comes
+            # up to run, by which time the driver may have moved on or signed up again.
+            return Verdict.go()
+        user_id = str(ctx.payload["user_id"])
+        if await state_label(user_id) is None:
+            return Verdict.not_due("the member has no signup to clean up")
+        asked = ctx.payload.get("channel_id")
+        wizard = await signup().get_wizard(user_id)
+        if asked is not None and (wizard is None or wizard.signup_channel_id != int(asked)):
+            return Verdict.not_due("the member has signed up again since they left")
+        return Verdict.go()
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        user_id = str(payload["user_id"])
+        planned = [
+            PlannedStep(NAME_JOB, {"user_id": user_id}),
+            PlannedStep(LEAVE_JOB, {"user_id": user_id, "channel_id": payload.get("channel_id")}),
+        ]
+        if payload.get("channel_id") is not None:
+            planned.append(PlannedStep(DELETE_CHANNEL, {
+                "user_id": user_id, "channel_id": int(payload["channel_id"]),
+            }))
+        return tuple(planned)
+
+    async def name_driver(ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        name = user_id
+        try:
+            record = await signup().get_record(user_id)
+            if record is not None:
+                name = record.server_display_name or record.discord_username or user_id
+        except Exception:  # noqa: BLE001 — the line is written under the member's id instead
+            log.warning("could not read the signup record of %s", user_id, exc_info=True)
+        return StepResult(result={"name": name, "state": await state_label(user_id)})
+
+    async def leave(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        cancel_timers(user_id)
+        # A driver who has already moved on is cleaned up all the same; any other error is not
+        # swallowed (#457).
+        try:
+            await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
+        except ValueError:
+            pass
+        if ctx.step_payload.get("channel_id") is None:
+            await signup().delete_wizard_on(db, user_id)
+        named = next(
+            ((view.result or {}) for view in ctx.steps if view.name == NAME_JOB and view.done), {}
+        )
+        return StepResult(result={}, lines=(
+            f"Driver left server: **{named.get('name') or user_id}** (<@{user_id}>) | "
+            f"state: {named.get('state') or 'unknown'}",
+        ))
+
+    async def left(ctx: StepContext) -> bool:
+        """Whether `leave` took place, for the deletion after it: not where an admin discarded
+        it, which leaves the driver where they were."""
+        return not any(
+            view.name == LEAVE_JOB and "discarded" in (view.result or {}) for view in ctx.steps
+        )
+
+    async def held(ctx: StepContext) -> bool:
+        row = await signup().get_wizard(str(ctx.step_payload["user_id"]))
+        return await left(ctx) and (
+            row is not None and row.signup_channel_id == int(ctx.step_payload["channel_id"])
+        )
+
+    async def delete(ctx: StepContext) -> StepResult:
+        return await _delete_signup_channel(ctx, "Driver left the server")
+
+    async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
+        await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))
+
+    async def describe_name(ctx: StepContext) -> str:
+        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+
+    async def describe_leave(ctx: StepContext) -> str:
+        return f"ending the signup of <@{ctx.step_payload['user_id']}>, who left the server"
+
+    async def describe_delete(ctx: StepContext) -> str:
+        return f"deleting the signup channel <#{ctx.step_payload['channel_id']}>"
+
+    return ChangeType(
+        kind=MEMBER_LEFT,
+        opening=(),
+        plan=plan,
+        steps={
+            NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
+            LEAVE_JOB: Step(LEAVE_JOB, StepKind.SAVE, leave, describe=describe_leave),
+            DELETE_CHANNEL: Step(
+                DELETE_CHANNEL, StepKind.DELETE, delete, still_due=held,
+                describe=describe_delete, record=forget,
+            ),
+        },
+        check=check,
+        key=lambda payload: f"{MEMBER_LEFT}:{payload['user_id']}",
+        doing=lambda payload: "Cleaning up after a member who left",
+        outcome=lambda _ctx: "",
     )

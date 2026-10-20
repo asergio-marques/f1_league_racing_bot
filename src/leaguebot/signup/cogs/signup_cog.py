@@ -36,6 +36,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.wizard_answers import take_typed_answer
+from leaguebot.signup.services.wizard_changes import ask_member_left
 from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
     AUDIT_FORCE_CLOSE,
@@ -312,6 +313,11 @@ class SignupCog(commands.Cog):
     async def on_member_remove(self, member: discord.Member) -> None:
         """T048: Clean up wizard state when a member leaves the server (FR-027).
 
+        The clean-up is the change queue's: the listener asks it, as the bot, for
+        `signup.member_left` for every member who leaves, and the change's own check decides what
+        there is to clean up. A member who leaves while the queue is stopped keeps their channel
+        and state until it clears.
+
         Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
         leave without going through the wizard path.
 
@@ -320,9 +326,7 @@ class SignupCog(commands.Cog):
         """
         if await is_foreign_guild(self.bot, member.guild.id):
             return
-        await self.bot.wizard_service.handle_member_remove(
-            str(member.id), member.guild
-        )
+        await ask_member_left(self.bot.change_queue, self.bot.db_path, str(member.id))
 
         # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
         try:

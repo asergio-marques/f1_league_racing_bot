@@ -1103,17 +1103,6 @@ MEMBER_LEFT_KIND = "signup.member_left"
 #: A change of the test's own on Kimi's lane, standing for one of his turns.
 KIMI_TURN = "test.kimi_turn"
 
-NO_MEMBER_LEFT_CHANGE = (
-    "#439: a member leaving mid-signup is cleaned up at once off the queue by the wizard "
-    "service, his channel deleted there and then, with no signup.member_left change asked as the "
-    "bot on the league lane"
-)
-NO_MEMBER_LEFT_ENDING = (
-    "#439: a member leaving mid-signup is cleaned up off the queue with no signup.member_left "
-    "change, and a change type cannot yet name its lane or how its conversation is read, so a "
-    "turn stopped on the driver's lane is not left stopped and found no longer due once the "
-    "league has ended his signup"
-)
 
 
 async def _leave(league: SeasonLeague, user_id: int = SIGNING_UP) -> None:
@@ -1175,7 +1164,6 @@ def _stuck_turn(league: SeasonLeague) -> list[str]:
     return tries
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
 async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_jobs(tmp_path):
     """Kimi is part-way through signing up when he leaves the server. Nothing is deleted at once:
     the listener asks the queue for `signup.member_left` as the bot, on the league lane (a member
@@ -1200,7 +1188,6 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
                for line in league.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
 async def test_a_member_leaving_while_the_queue_is_stopped_keeps_their_channel_until_it_clears(
     tmp_path,
 ):
@@ -1230,7 +1217,6 @@ async def test_a_member_leaving_while_the_queue_is_stopped_keeps_their_channel_u
     assert await _wizard(league) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_ENDING)
 async def test_a_member_leaving_ends_the_conversation_its_stopped_turn_left_stopped(tmp_path):
     """One of Kimi's turns is stopped on his own lane, at a post in his signup channel Discord
     refuses, when he leaves the server. The league's `signup.member_left` runs regardless: he is
@@ -1398,7 +1384,6 @@ async def test_a_restart_asks_no_expiry_of_a_signup_already_ended_or_waiting_on_
 
 
 @pytest.mark.parametrize("state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER"])
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
 async def test_a_member_leaving_while_waiting_on_a_manager_is_cleaned_up_too(tmp_path, state):
     """Kimi has given his last answer, his wizard parked, and waits on a manager: his signup is
     awaiting approval, or a manager has asked him to correct an answer and he has not yet been
@@ -1424,7 +1409,6 @@ async def test_a_member_leaving_while_waiting_on_a_manager_is_cleaned_up_too(tmp
 
 
 @pytest.mark.parametrize("approved", [False, True], ids=["never signed up", "approved"])
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_CHANGE)
 async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_path, approved):
     """A member leaves the server with no signup in progress: Kimi, who never signed up, or a
     driver (106) whose signup was approved and who is Unassigned. The listener asks

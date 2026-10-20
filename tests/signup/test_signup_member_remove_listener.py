@@ -91,10 +91,6 @@ async def _leave(cog):
     await SignupCog.on_member_remove(cog, _member())
 
 
-NO_MEMBER_LEFT_ASK = (
-    "#439: the listener hands a departure to the wizard service's clean-up off the queue, and "
-    "asks the change queue for no signup.member_left change"
-)
 MEMBER_LEFT_KIND = "signup.member_left"
 
 
@@ -109,7 +105,6 @@ def _logged(cog) -> str:
 
 
 @pytest.mark.parametrize("state", [None, "NOT_SIGNED_UP", "PENDING_ADMIN_APPROVAL", "ASSIGNED"])
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_ASK)
 async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state):
     """Whatever the member's state, the listener asks the queue, as the bot, for one
     `signup.member_left` change naming them, and cleans nothing up itself: their driver state
@@ -173,7 +168,6 @@ async def test_anyone_else_leaving_is_not_announced(tmp_path, state):
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_MEMBER_LEFT_ASK)
 async def test_a_failing_announcement_is_not_raised_out_of_the_event(tmp_path):
     """An Assigned driver leaves and the log channel refuses the announcement: the listener
     raises nothing, and the clean-up was still asked of the queue."""
