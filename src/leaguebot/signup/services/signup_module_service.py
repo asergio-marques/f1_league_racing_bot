@@ -755,13 +755,30 @@ class SignupModuleService:
         that was not (issue #243, `driver_service.SIGNUP_PRECEDENCE_SQL`).
         """
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_records SET approved = 1 WHERE id = ("
-                "  SELECT id FROM signup_records WHERE discord_user_id = ?"
-                "  ORDER BY id DESC LIMIT 1)",
-                (discord_user_id,),
-            )
+            await self.mark_approved_on(db, discord_user_id)
             await db.commit()
+
+    async def mark_approved_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
+        """Mark the latest signup of *discord_user_id* approved on the connection handed;
+        commits nothing. What `mark_approved` does, for the approval's save."""
+        await db.execute(
+            "UPDATE signup_records SET approved = 1 WHERE id = ("
+            "  SELECT id FROM signup_records WHERE discord_user_id = ?"
+            "  ORDER BY id DESC LIMIT 1)",
+            (discord_user_id,),
+        )
+
+    async def set_total_lap_ms_on(
+        self, db: aiosqlite.Connection, discord_user_id: str, total_ms: int | None
+    ) -> None:
+        """Store *total_ms*, the sum of a driver's signup lap times, on their latest signup, on
+        the connection handed; commits nothing. The seeding value a placement is made from."""
+        await db.execute(
+            "UPDATE signup_records SET total_lap_ms = ? WHERE id = ("
+            "  SELECT id FROM signup_records WHERE discord_user_id = ?"
+            "  ORDER BY id DESC LIMIT 1)",
+            (total_ms, discord_user_id),
+        )
 
     async def withdraw_approval(self, driver_profile_id: int) -> None:
         """Clear the approval of the driver's latest approved signup, under any of their accounts.

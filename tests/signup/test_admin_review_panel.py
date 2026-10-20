@@ -54,7 +54,6 @@ from tests.signup.test_review_changes import (
     CLOSING_KIND,
     KIMI_CHANNEL,
     KIMI_LANE,
-    NO_APPROVE_CHANGE,
     NO_REQUEST_CHANGE,
     REQUEST_KIND,
     REVIEWER,
@@ -65,7 +64,7 @@ from tests.signup.test_review_changes import (
     _manager,
     _texts,
 )
-from tests.signup.test_wizard_changes import END_KIND, NO_REJECT_CHANGE
+from tests.signup.test_wizard_changes import END_KIND
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     http_error,
@@ -85,10 +84,6 @@ NO_WIZARD_CHANNEL = 6499
 NO_PROFILE = "9999"
 #: The reason manager 77 types after Reject or Request Changes.
 REASON = "Lap time could not be verified."
-
-NO_QUEUE_AT_CONSTRUCTION = (
-    "#439: the review panel is built with the bot, not handed the change queue (A23)"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +142,13 @@ async def _press(
     return press
 
 
+#: The rule the log channel's router appends beneath every line it posts.
+LOG_SEPARATOR = "\n" + "\u2015" * 36
+
+
 def _lines(league: SeasonLeague) -> list[str]:
-    return [str(line) for line in league.bot.log_channel.sent]
+    """The log channel's lines as they were written, without the rule the router appends."""
+    return [str(line).removesuffix(LOG_SEPARATOR) for line in league.bot.log_channel.sent]
 
 
 def _refusals(league: SeasonLeague) -> list[str]:
@@ -187,7 +187,6 @@ def _payload(change: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_driver_cannot_action_their_own_signup(tmp_path, button):
     """The panel sits in the driver's own channel, which they can read. This check is the
@@ -206,7 +205,6 @@ async def test_a_driver_cannot_action_their_own_signup(tmp_path, button):
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_signup_already_actioned_is_refused(tmp_path, button):
     """Three managers can be looking at one panel and the buttons never disappear. Without
@@ -226,7 +224,6 @@ async def test_a_signup_already_actioned_is_refused(tmp_path, button):
     assert await _driver_state(league) == "UNASSIGNED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_driver_whose_profile_has_gone_is_refused(tmp_path, button):
     """They withdrew, or left the server, between the panel being posted and pressed: a panel
@@ -242,7 +239,6 @@ async def test_a_driver_whose_profile_has_gone_is_refused(tmp_path, button):
     await _nothing_asked(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(tmp_path):
     """A panel rebuilt after a restart carries no stored driver and finds one by channel.
     Finding none must refuse rather than act on `None`: Approve pressed on a rebuilt panel in a
@@ -260,7 +256,6 @@ async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(tm
     await _nothing_asked(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
     """A panel rebuilt with no driver, pressed in Kimi's channel, finds Kimi by the channel's
     wizard: the approval asked of the queue names him, and once it runs he is Unassigned."""
@@ -279,7 +274,6 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approving_approves_the_signup(tmp_path):
     """Manager 77 presses Approve on Kimi's panel; once the queue runs Kimi is Unassigned and
     the manager's reply, as updated, says the signup was approved."""
@@ -292,7 +286,6 @@ async def test_approving_approves_the_signup(tmp_path):
     assert "approved" in _answered(press).lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approve_tells_the_manager_of_a_driver_role_not_granted(tmp_path):
     """Discord refuses Kimi the driver role. Manager 77 presses Approve and the queue runs: the
     approval stands, and the manager's updated reply says both that the signup was approved and
@@ -309,7 +302,6 @@ async def test_approve_tells_the_manager_of_a_driver_role_not_granted(tmp_path):
     assert await _driver_state(league) == "UNASSIGNED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approving_needs_no_reason(tmp_path):
     """Only the two negative outcomes collect one — a driver told why they were approved
     would be an odd thing to read. Approve waits for no reason: the approval is asked of the
@@ -327,7 +319,6 @@ async def test_approving_needs_no_reason(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 @pytest.mark.parametrize(
     "button,action",
     [("request_changes_button", "request_changes"), ("reject_button", "reject")],
@@ -347,7 +338,6 @@ async def test_the_negative_buttons_ask_for_a_reason_first(tmp_path, button, act
     await _nothing_asked(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(tmp_path):
     """Two managers in one channel must not answer each other's prompt: managers 77 and 78
     each press Reject on Kimi's panel, and an entry is parked for each."""
@@ -546,7 +536,6 @@ REJECT_LAPSED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_the_negative_buttons_write_their_press_line_and_park_the_press(
     tmp_path, button, label
@@ -566,7 +555,6 @@ async def test_the_negative_buttons_write_their_press_line_and_park_the_press(
     assert _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["interaction"] is press
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untouched(
     tmp_path, monkeypatch, button, label
@@ -600,7 +588,6 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_reason_given_in_time_cancels_the_lapse(tmp_path):
     """The reason takes the entry and cancels its lapse, so no lapse follows the rejection:
     the rejection is asked of the queue, and once it runs no lapse line or lapse reply is
@@ -619,7 +606,6 @@ async def test_a_reason_given_in_time_cancels_the_lapse(tmp_path):
     assert not any(text.startswith("⌛") for text in _sent(press))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
 async def test_a_lapse_whose_entry_was_replaced_does_nothing(tmp_path, monkeypatch):
     """A lapse acts only while its own entry is the one pending: a later press has put
     another in its place, and that one is left for its own five minutes."""
@@ -637,16 +623,15 @@ async def test_a_lapse_whose_entry_was_replaced_does_nothing(tmp_path, monkeypat
     assert not any(text.startswith("⌛") for text in _sent(press))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_QUEUE_AT_CONSTRUCTION)
-async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path, monkeypatch):
+async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path):
     """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
     reason goes, and its lapse with it, so no lapse fires into a league that has changed.
     Managers 77 and 78 press Reject and Request Changes on Kimi's panel; the league's memory is
     cleared, handed the change queue: both lapses are cancelled, no reason is left waiting, and
-    no lapse is recorded or told."""
+    no lapse is recorded or told. The lapses keep their five minutes: a lapse of no length would
+    fire while the second press reads the database, and leave one pending."""
     from leaguebot.core.services.in_memory_state import clear_in_memory_state
 
-    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
     league = await _league(tmp_path)
     league.roles_held[SECOND_MANAGER] = {MANAGER_ROLE_ID}
     rejecting = await _press(league, "reject_button")

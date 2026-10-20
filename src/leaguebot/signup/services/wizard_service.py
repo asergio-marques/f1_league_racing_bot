@@ -590,7 +590,7 @@ class WizardService:
                 panel_text = self._format_review_panel(record, slot_labels, track_name_map=track_map)
                 await channel.send(
                     panel_text,
-                    view=AdminReviewView(discord_user_id, self._bot),
+                    view=AdminReviewView(discord_user_id, change_queue=self._change_queue),
                     allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
 
@@ -1909,7 +1909,7 @@ class WizardService:
                     )
                     await channel.send(
                         self._format_review_panel(record, slot_labels, track_name_map=track_map),
-                        view=AdminReviewView(discord_user_id, self._bot),
+                        view=AdminReviewView(discord_user_id, change_queue=self._change_queue),
                         allowed_mentions=_REVIEW_PANEL_MENTIONS,
                     )
                     panel_posted = True
@@ -2019,6 +2019,6 @@ class WizardService:
                 }
                 await channel.send(
                     self._format_review_panel(record, slot_labels, track_name_map=track_map),
-                    view=AdminReviewView(discord_user_id, self._bot),
+                    view=AdminReviewView(discord_user_id, change_queue=self._change_queue),
                     allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )

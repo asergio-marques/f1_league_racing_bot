@@ -818,13 +818,16 @@ def submit_change(
     )
 
 
-def panel_change(*, signup: Callable[[], "SignupModuleService"]) -> ChangeType:
+def panel_change(
+    *, signup: Callable[[], "SignupModuleService"], queue_of: Callable[[], "ChangeQueue"]
+) -> ChangeType:
     """The `signup.panel` change type, for the builder to register, on the driver's lane: the
     league asked it back once the signup was saved. Its one job `post_panel` takes the driver's
     typing away, now that the channel holds a review rather than a question, and posts the
     review panel (users may be notified, never a group, #362); then `clear_mark` takes the ⏳ off
     the last answer, the mark outliving the whole hand-over. The payload is ``user_id``,
-    ``channel_id`` and the ``mark``. A channel gone from the server is nothing to post in."""
+    ``channel_id`` and the ``mark``. A channel gone from the server is nothing to post in. *queue_of*
+    gives the change queue the panel's buttons are handed."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": _channel_of(payload)}
@@ -869,7 +872,7 @@ def panel_change(*, signup: Callable[[], "SignupModuleService"]) -> ChangeType:
         await post(
             channel,
             WizardService._format_review_panel(record, slot_labels, track_name_map=track_map),
-            view=AdminReviewView(user_id, ctx.bot), mentions=_REVIEW_PANEL_MENTIONS,
+            view=AdminReviewView(user_id, change_queue=queue_of()), mentions=_REVIEW_PANEL_MENTIONS,
             refused=f"the review panel could not be posted in channel {channel.id}",
         )
         return StepResult(result={})

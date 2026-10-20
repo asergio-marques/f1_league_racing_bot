@@ -33,6 +33,7 @@ from leaguebot.core.utils.league_server import (
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.signup.services.review_changes import APPROVE
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
@@ -176,17 +177,20 @@ class AdminReviewView(LeagueView):
     FR-039, A-004.
     """
 
-    def __init__(self, discord_user_id: str | None = None, bot: LeagueBot | None = None) -> None:
+    def __init__(
+        self, discord_user_id: str | None = None, *, change_queue: ChangeQueue | None = None
+    ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        # Handed the change queue when it is built, by whoever posts or registers the panel.
+        self._queue = change_queue
 
     async def _resolve(self, interaction: discord.Interaction):
         """Return (bot, discord_user_id) resolving from channel when not stored."""
-        _bot = self._bot or bot_of(interaction)
+        _bot = bot_of(interaction)
         _user_id = self._discord_user_id
         if _user_id is None:
-            wizard = await _bot.wizard_service.get_wizard_by_channel(
+            wizard = await _bot.signup_module_service.get_wizard_by_channel(
                 channel_id_of(interaction)
             )
             _user_id = wizard.discord_user_id if wizard else None
@@ -227,14 +231,16 @@ class AdminReviewView(LeagueView):
         ok, _bot, _user_id = await self._guard(interaction, "Approve")
         if not ok:
             return
-        await interaction.response.defer(ephemeral=True)
-        role_note = await _bot.wizard_service.approve_signup(
-            _user_id, interaction.guild, interaction.user
+        if self._queue is None:
+            raise RuntimeError("a signup review panel was built with no change queue to ask")
+        # Acknowledged privately and updated with what became of it; the state it was pressed in
+        # is judged again, by the change's check, when the queue reaches it.
+        await self._queue.ask(
+            APPROVE,
+            {"user_id": _user_id, "actor_name": interaction.user.display_name},
+            interaction=interaction,
+            what=_review_button(interaction, _user_id, "Approve"),
         )
-        reply = "✅ Signup approved."
-        if role_note:
-            reply += f"\n⚠️ {role_note}"
-        await interaction.followup.send(reply, ephemeral=True)
 
     async def _ask_for_reason(
         self,

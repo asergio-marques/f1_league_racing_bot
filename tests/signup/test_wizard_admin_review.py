@@ -51,7 +51,6 @@ from tests.support.season_league import (
     signing_up,
 )
 
-NO_APPROVE_CHANGE = "#439: Approve is not yet asked of the queue as signup.approve (C84)"
 NO_REQUEST_CHANGE = (
     "#439: a Request Changes reason is not yet asked of the queue as "
     "signup.request_changes (C85)"
@@ -212,7 +211,6 @@ async def _closings(league: SeasonLeague) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_an_approved_driver_is_granted_the_driver_role(tmp_path):
     """Manager 77 approves Kimi and the queue runs: Kimi is given the league's driver role
     (820), once."""
@@ -223,7 +221,6 @@ async def test_an_approved_driver_is_granted_the_driver_role(tmp_path):
     assert league.granted.get(SIGNING_UP) == [DRIVER_ROLE]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_an_approved_driver_becomes_unassigned(tmp_path):
     """Unassigned, not placed. Approval says they may race; the placement commands decide
     where."""
@@ -234,7 +231,6 @@ async def test_an_approved_driver_becomes_unassigned(tmp_path):
     assert await _state(league) == "UNASSIGNED"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_a_driver_with_no_lap_times_stores_no_seeding_value(tmp_path):
     """A league that asked for no times has nothing to seed from, and storing a zero would seed
     every driver identically: Kimi's record, holding no lap times, is approved with no total."""
@@ -246,7 +242,6 @@ async def test_a_driver_with_no_lap_times_stores_no_seeding_value(tmp_path):
     assert (await _record(league))["total_lap_ms"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approval_without_a_signup_configuration_does_nothing(tmp_path):
     """The signup module's configuration is gone when manager 77 presses Approve: Kimi stays
     awaiting approval, holds no role, and nothing is posted in his channel; the manager is told
@@ -264,7 +259,6 @@ async def test_approval_without_a_signup_configuration_does_nothing(tmp_path):
 
 
 @pytest.mark.parametrize("why", ["role missing", "member left", "Discord refuses"])
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp_path, why):
     """The driver role cannot be given: the role has been deleted, Kimi has left the server, or
     Discord refuses it. The approval stands, as the core specification's role rules have it:
@@ -289,7 +283,6 @@ async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(tmp
     assert "driver role could not be granted" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
     """Where the role is given there is nothing to report: neither the manager's reply nor the
     log says a role could not be granted, and the Approved line names the manager and Kimi."""
@@ -305,7 +298,6 @@ async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
                for line in _lines(league)), league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     """No driver role is set for the league: Kimi is approved and given no role."""
     league = await _league(tmp_path)
@@ -317,7 +309,6 @@ async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     assert league.granted.get(SIGNING_UP) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_a_driver_who_has_left_the_server_is_still_approved(tmp_path):
     """Kimi has left the server: he may come back, and the record is the league's either way,
     so he is approved all the same."""
@@ -330,7 +321,6 @@ async def test_a_driver_who_has_left_the_server_is_still_approved(tmp_path):
     assert (await _record(league))["approved"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approval_holds_the_channel_rather_than_deleting_it(tmp_path):
     """The driver is told the outcome in the channel; deleting it at once would take the
     message with it. After the queue runs Kimi's channel still stands, is told he was approved,
@@ -349,7 +339,6 @@ async def test_approval_holds_the_channel_rather_than_deleting_it(tmp_path):
     assert armed == [(DELETE_TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approval_cancels_the_inactivity_timeout(tmp_path):
     """The wizard is finished. Left armed, the 24-hour timeout would later close a signup that
     had already been approved, so the approval disarms Kimi's inactivity timer."""
@@ -360,7 +349,6 @@ async def test_approval_cancels_the_inactivity_timeout(tmp_path):
     league.bot.scheduler_service.disarm.assert_any_call(INACTIVITY_TIMER, str(SIGNING_UP))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_approval_is_logged_naming_the_manager_and_the_driver(tmp_path):
     """Manager 77 approves Kimi: the log channel carries an Approved line naming 77, with Kimi
     named beneath it."""
@@ -373,7 +361,6 @@ async def test_approval_is_logged_naming_the_manager_and_the_driver(tmp_path):
     assert f"<@{SIGNING_UP}>" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_APPROVE_CHANGE)
 async def test_an_approved_signup_is_marked_as_such(tmp_path):
     """Issue #243: an approved signup outranks a later one of the driver's that was not. Kimi's
     signup record is marked approved once the queue has run his approval."""
@@ -387,8 +374,7 @@ async def test_an_approved_signup_is_marked_as_such(tmp_path):
 @pytest.mark.parametrize(
     ("outcome", "action"),
     [
-        pytest.param("approve", "Approved", marks=pytest.mark.xfail(strict=True,
-                                                                    reason=NO_APPROVE_CHANGE)),
+        pytest.param("approve", "Approved"),
         pytest.param("reject", "Rejected"),
         pytest.param("request_changes", "Correction requested",
                      marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),

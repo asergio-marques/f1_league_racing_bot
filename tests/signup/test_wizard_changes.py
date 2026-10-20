@@ -82,11 +82,6 @@ NO_EXPIRY_CHANGE = (
     "signup.end change asked as the bot on the league lane, and no timer callback registered by "
     "the builder; the wizard service is not handed the change queue when built"
 )
-NO_REJECT_CHANGE = (
-    "#439: a reason typed after Reject is deleted at once and the signup rejected off the queue, "
-    "with no signup.end change on the league lane asking signup.closing, which deletes the "
-    "reason, back of the driver's lane"
-)
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
