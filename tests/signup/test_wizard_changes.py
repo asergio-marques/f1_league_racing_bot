@@ -802,6 +802,30 @@ async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     assert "lapsed" in league.log().lower()
 
 
+async def test_an_expiry_whose_end_is_discarded_tells_and_locks_and_deletes_nothing(
+    tmp_path, monkeypatch
+):
+    """Kimi's 24 hours run out, and the `end` job of his expiry fails and is discarded by an
+    admin. He is still Pending Signup Completion, so his channel is not told his signup expired,
+    his typing there is not revoked and the channel's deletion is not armed: a day later the
+    bot would otherwise delete the channel of a driver it still holds mid-signup."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    refused = AsyncMock(side_effect=RuntimeError("the database refused"))
+    monkeypatch.setattr(league.bot.driver_service, "transition_on", refused)
+
+    await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "end"
+    await discard_job(league.bot)
+
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert _expired(league) == []
+    assert not _locked(league)
+    assert _armed(league, DELETE_TIMER) == []
+
+
 @pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(tmp_path):
     """Kimi was last active 23 hours and 59 minutes ago. He types his nationality, which waits

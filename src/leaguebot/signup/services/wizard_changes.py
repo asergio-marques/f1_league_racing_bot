@@ -41,6 +41,7 @@ A job that fails stops the queue (core specification, "How a change is carried o
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -637,6 +638,14 @@ def end_change(
             "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
         })
 
+    async def ended(ctx: StepContext) -> bool:
+        """Whether the signup was ended, for the notice, lock and deletion that follow `end`: not
+        where an admin discarded `end`, which leaves the driver still part-way through signing up
+        (Discard drops that one job and the later ones check they are still due, core spec)."""
+        return not any(
+            view.name == END_JOB and "discarded" in (view.result or {}) for view in ctx.steps
+        )
+
     async def describe_name(ctx: StepContext) -> str:
         return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
 
@@ -672,7 +681,13 @@ def end_change(
         steps={
             NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
             END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end),
-            **closing_steps(now=now, arm_once=arm_once),
+            **{
+                name: (
+                    dataclasses.replace(step, still_due=ended)
+                    if name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION) else step
+                )
+                for name, step in closing_steps(now=now, arm_once=arm_once).items()
+            },
         },
         check=check,
         key=lambda payload: f"{END}:{payload['user_id']}",
