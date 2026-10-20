@@ -29,7 +29,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
-import pytest
 
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
@@ -76,12 +75,6 @@ REASON = "Lap times look mistyped"
 #: Kimi's two lap times, and their sum in milliseconds.
 LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
 LAP_SUM_MS = 181_500
-
-NO_LAPSE_CHANGE = (
-    "#439: the correction's five minutes and the restart release the driver themselves off the "
-    "queue, with no correction_lapse timer callback registered by the builder and no "
-    "signup.correction.lapse change asked as the bot on the league lane"
-)
 
 
 async def _league(tmp_path: Any, *, state: str = "PENDING_ADMIN_APPROVAL",
@@ -497,7 +490,6 @@ async def test_a_choice_pressed_after_the_five_minutes_is_refused(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_CHANGE)
 async def test_a_lapse_asked_by_its_timer_returns_the_driver_and_posts_the_notice_and_panel(
     tmp_path,
 ):
@@ -524,7 +516,6 @@ async def test_a_lapse_asked_by_its_timer_returns_the_driver_and_posts_the_notic
     assert "lapsed" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_CHANGE)
 async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_path):
     """The bot starts again. Kimi's correction choices were posted ten minutes ago, a second
     driver's (115) one minute ago, both awaiting a correction parameter. Recovering the
@@ -560,7 +551,6 @@ async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_pat
     assert await _driver_state(league, OTHER) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_CHANGE)
 async def test_a_lapse_is_not_due_where_a_choice_is_queued(tmp_path):
     """Kimi's correction choices were posted four minutes and 59 seconds ago. Manager 77 presses
     Nationality, which waits its turn; two minutes later the correction's timer fires and asks

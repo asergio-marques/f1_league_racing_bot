@@ -1048,9 +1048,11 @@ class WizardService:
     async def recover_correction_timeouts(self) -> None:
         """Called from recover_wizards: release every driver awaiting a correction parameter.
 
-        The five-minute selection window is an in-memory asyncio task, so a restart
-        discards it and nothing re-creates it — which left the driver parked for good,
-        shown in no listing and refused by their own Sign Up button (issue #129).
+        The five-minute selection window is a one-off timer, so a restart discards it and nothing
+        re-creates it — which left the driver parked for good, shown in no listing and refused by
+        their own Sign Up button (issue #129). The restart asks the queue, as the bot and before
+        it starts, for the lapse of each such driver (`signup.correction.lapse`, with *restart*
+        set, which words the notice).
 
         A restart releases them **unconditionally** rather than re-arming whatever time was
         left. The state exists only while a manager is mid-decision, and a manager whose
@@ -1063,6 +1065,8 @@ class WizardService:
         ``get_all_active_wizards_all_servers`` filters that out in SQL. The driver profile
         is the only record that the window is open, so it is what is read here.
         """
+        from leaguebot.signup.services.review_changes import ask_lapse
+
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT discord_user_id FROM driver_profiles WHERE current_state = ?",
@@ -1072,13 +1076,11 @@ class WizardService:
 
         for row in rows:
             try:
-                await self._correction_timeout_callback(
-                    row["discord_user_id"], after_restart=True
-                )
+                await ask_lapse(self._change_queue, row["discord_user_id"], restart=True)
             except Exception:
-                # One league's missing guild or deleted channel must not strand the rest.
+                # One driver's refused ask must not strand the rest.
                 log.exception(
-                    "recover_correction_timeouts: could not release %s",
+                    "recover_correction_timeouts: could not ask the lapse of %s",
                     row["discord_user_id"],
                 )
 

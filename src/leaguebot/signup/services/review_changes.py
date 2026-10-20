@@ -46,6 +46,17 @@ job of its own after it, which takes the five minutes away and arms the driver's
 when it ran. The choice asks back `signup.recollect` on the driver's own lane for the permission
 and the prompt to re-submit, so that a channel Discord refuses stops that driver's lane alone.
 
+**The correction's lapse** asks `signup.correction.lapse` (C87), on the league lane, when the five
+minutes run out (the timer `correction_lapse`, which the builder registers) and for each driver
+still awaiting a choice when the bot starts again, before the queue does (`ask_lapse`). Its check
+drops it where the signup module is off, the driver no longer awaits a choice, or a choice pressed
+in time waits on the queue (that choice counts, Q23). Its jobs are `names`, which finds the
+manager and the driver for the notice and the line (a save waits on no second connection),
+`lapse` (a save: back to Pending Admin Approval, the wizard unengaged and the correction's state,
+its reason, requester and offer time cleared), `post_lapse` (the notice mentioning the manager,
+worded for a restart where it was one) and `post_panel` (a fresh review panel, and the lapse
+written to the log, naming the panel where one was posted).
+
 **The lap sum is signup's own.** The sum is written on the signup record by this module, in the
 approval's save; core's `PlacementService.store_total_lap_ms`, which commits on a connection of
 its own, is not asked.
@@ -64,6 +75,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.change import (
+    ChangeOrigin,
     FollowOn,
     PlannedStep,
     StepKind,
@@ -79,11 +91,12 @@ from leaguebot.core.services.change_queue import (
     OutcomeContext,
     Step,
     StepContext,
+    unfinished,
 )
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import name_of_member
+from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -91,7 +104,7 @@ from leaguebot.signup.services.closing_steps import (
     KIND as CLOSING,
 )
 from leaguebot.signup.services.signup_posting import post
-from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE
+from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, AdminReviewView
 from leaguebot.signup.services.wizard_answers import (
     INACTIVITY,
     _BUTTON_ONLY,
@@ -100,6 +113,7 @@ from leaguebot.signup.services.wizard_answers import (
 )
 from leaguebot.signup.services.wizard_service import (
     _CORRECTION_PARAMETER_STATES,
+    _REVIEW_PANEL_MENTIONS,
     WizardService,
     build_step_view,
 )
@@ -108,6 +122,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 APPROVE = "signup.approve"
@@ -124,6 +139,11 @@ RECOLLECT = "signup.recollect"
 CHOOSE_JOB = "choose"
 ARM_INACTIVITY = "arm_inactivity"
 POST_RECOLLECT = "post_recollect"
+LAPSE = "signup.correction.lapse"
+NAMES = "names"
+LAPSE_JOB = "lapse"
+POST_LAPSE = "post_lapse"
+POST_PANEL = "post_panel"
 #: The timer that releases a driver whose correction nobody chose within five minutes.
 CORRECTION_TIMER = "correction_lapse"
 #: How long a manager has to choose what a driver is to correct, from the choices appearing.
@@ -141,8 +161,9 @@ APPROVED_NOTICE = (
 
 __all__ = [
     "ACTIONED", "APPROVE", "APPROVED_NOTICE", "CHOICES", "CHOOSE", "CORRECTION_ENDED",
-    "CORRECTION_TIMER", "CORRECTION_WINDOW", "RECOLLECT", "REQUEST", "approve_change",
-    "choices_change", "choose_change", "recollect_change", "request_changes_change", "total_lap_ms",
+    "CORRECTION_TIMER", "CORRECTION_WINDOW", "LAPSE", "RECOLLECT", "REQUEST", "approve_change",
+    "ask_lapse", "choices_change", "choose_change", "lapse_change", "recollect_change",
+    "request_changes_change", "total_lap_ms",
 ]
 
 
@@ -744,4 +765,215 @@ def recollect_change(
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,
         writes=(),
+    )
+
+
+async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False) -> int | None:
+    """Ask the queue, as the bot, for the lapse of *user_id*'s correction request
+    (`signup.correction.lapse`): the correction timer's ask once its five minutes ran out, and the
+    restart's for every driver still awaiting a choice (*restart*, which only changes the notice's
+    wording). Gives the change's id, or None where the change is not due (its check judges that)."""
+    return await queue.ask(
+        LAPSE,
+        {"user_id": user_id, "restart": restart},
+        what=f"returning <@{user_id}> to the approval queue, no correction having been chosen",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+def lapse_change(
+    *,
+    modules: "ModuleService",
+    signup: Callable[[], "SignupModuleService"],
+    drivers: Callable[[], "DriverService"],
+    queue_of: Callable[[], "ChangeQueue"],
+) -> ChangeType:
+    """The `signup.correction.lapse` change type, for the builder to register, on the league lane
+    (a timer's change is the league's whole, and so is the driver's status).
+
+    The payload is ``user_id`` (the driver's account, as text) and ``restart`` (whether the bot
+    starting again asked it, which words the notice). It is not due, and is dropped, where the
+    signup module is off (no panel is posted into a module the league turned off), the driver no
+    longer awaits a correction choice, or a choice pressed in time is still queued: that choice
+    counts. *queue_of* gives the change queue the fresh review panel is handed.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        user_id = str(ctx.payload["user_id"])
+        if not await modules.is_signup_enabled():
+            return Verdict.not_due("the signup module is off")
+        profile = await drivers().get_profile(user_id)
+        if profile is None or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER:
+            return Verdict.not_due("the driver no longer awaits a correction choice")
+        if any(
+            str(waiting.get("user_id")) == user_id for waiting in await unfinished(ctx.db_path, [CHOOSE])
+        ):
+            return Verdict.not_due("a choice pressed in time waits its turn")
+        return Verdict.go()
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        shared = {"user_id": str(payload["user_id"]), "restart": bool(payload.get("restart"))}
+        return (
+            PlannedStep(NAMES, dict(shared)),
+            PlannedStep(LAPSE_JOB, dict(shared)),
+            PlannedStep(POST_LAPSE, dict(shared)),
+            PlannedStep(POST_PANEL, dict(shared)),
+        )
+
+    async def names(ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        wizard = await signup().get_wizard(user_id)
+        asked = None if wizard is None else wizard.draft_answers.get("_correction_requested_by")
+        guild = await league_guild(ctx.bot)
+        member = None if guild is None else guild.get_member(int(user_id))
+        driver = getattr(member, "display_name", None)
+        return StepResult(result={
+            "manager": await name_of_member(ctx.bot, int(asked) if asked else None),
+            "driver": driver if isinstance(driver, str) else f"<@{user_id}>",
+        })
+
+    async def lapse(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        # The check judged the state as the change started; the transition is the check that
+        # cannot be raced, and a refused one means the window has nothing left to lapse.
+        try:
+            await drivers().transition_on(db, user_id, DriverState.PENDING_ADMIN_APPROVAL)
+        except ValueError:
+            return StepResult(result={"ended": True})
+        wizard = await signup().get_wizard_on(db, user_id)
+        if wizard is None:
+            return StepResult(result={})
+        requested_by = wizard.draft_answers.get("_correction_requested_by")
+        wizard.wizard_state = WizardState.UNENGAGED
+        # The reason goes with the rest of the correction state, so that a stale one cannot
+        # resurface on the manager's next correction.
+        for key in ("_is_correction", "_correction_reason", "_correction_requested_by"):
+            wizard.draft_answers.pop(key, None)
+        await signup().save_wizard_on(db, wizard)
+        await signup().set_correction_offered_at_on(db, user_id, None)
+        return StepResult(result={
+            "requested_by": requested_by,
+            "channel_id": wizard.signup_channel_id,
+        })
+
+    async def lapsed(ctx: StepContext) -> bool:
+        """Whether the lapse took place, for the notice and the panel that follow it: not where
+        the window had nothing left to lapse, nor where an admin discarded the `lapse` job."""
+        return any(
+            view.name == LAPSE_JOB and view.done and not (view.result or {}).get("ended")
+            and "discarded" not in (view.result or {})
+            for view in ctx.steps
+        )
+
+    def lapse_result(ctx: StepContext) -> dict[str, Any]:
+        return next(
+            ((view.result or {}) for view in ctx.steps if view.name == LAPSE_JOB and view.done), {}
+        )
+
+    def named_result(ctx: StepContext) -> dict[str, Any]:
+        return next(
+            ((view.result or {}) for view in ctx.steps if view.name == NAMES and view.done), {}
+        )
+
+    @posts_in_a_job
+    async def post_lapse(ctx: StepContext) -> StepResult:
+        channel_id = lapse_result(ctx).get("channel_id")
+        if channel_id is None:
+            return StepResult(result={"no_channel": True})
+        channel = await _text_channel(ctx, int(channel_id))
+        if channel is None:
+            return StepResult(result={"no_channel": True})
+        requested_by = lapse_result(ctx).get("requested_by")
+        driver = named_result(ctx).get("driver") or f"<@{ctx.step_payload['user_id']}>"
+        lapse_text = (
+            "the bot restarted before a correction parameter was chosen"
+            if ctx.step_payload["restart"] else "nobody chose a correction parameter in time"
+        )
+        # No mention where the window was opened before the requesting manager was recorded.
+        opening = f"<@{requested_by}> — {lapse_text}" if requested_by else lapse_text.capitalize()
+        await post(
+            channel,
+            f"⏰ {opening}. **{driver}** is back in the approval queue.",
+            mentions=discord.AllowedMentions(
+                everyone=False, roles=False,
+                users=[discord.Object(id=int(requested_by))] if requested_by else [],
+            ),
+            refused=f"the correction's lapse could not be told in channel {channel.id}",
+        )
+        return StepResult(result={})
+
+    @posts_in_a_job
+    async def post_panel(ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        posted = False
+        channel_id = lapse_result(ctx).get("channel_id")
+        channel = None if channel_id is None else await _text_channel(ctx, int(channel_id))
+        record = await signup().get_record(user_id) if channel is not None else None
+        if channel is not None and record is not None:
+            wizard = await signup().get_wizard(user_id)
+            slot_labels = {
+                slot.slot_id: slot.display_label
+                for slot in (
+                    wizard.config_snapshot.slots if wizard and wizard.config_snapshot else []
+                )
+            }
+            async with get_connection(ctx.db_path) as db:
+                track_map = await track_service.get_track_name_map(db)
+            await post(
+                channel,
+                WizardService._format_review_panel(record, slot_labels, track_name_map=track_map),
+                view=AdminReviewView(user_id, change_queue=queue_of()),
+                mentions=_REVIEW_PANEL_MENTIONS,
+                refused=f"the review panel could not be posted in channel {channel.id}",
+            )
+            posted = True
+        driver = named_result(ctx).get("driver") or f"<@{user_id}>"
+        line = abandoned_line(
+            str(named_result(ctx).get("manager") or "a member"),
+            f"the correction request for {driver}'s signup",
+            lapsed=True,
+            detail=(
+                f"{driver} is back in the approval queue"
+                + ("; a fresh review panel is in their channel." if posted else ".")
+            ),
+        )
+        return StepResult(result={"panel": posted}, lines=(line,))
+
+    async def describe_names(ctx: StepContext) -> str:
+        return f"finding the names of <@{ctx.step_payload['user_id']}> and their manager for the record"
+
+    async def describe_lapse(ctx: StepContext) -> str:
+        return f"returning <@{ctx.step_payload['user_id']}> to the approval queue"
+
+    async def describe_post_lapse(ctx: StepContext) -> str:
+        return f"telling <@{ctx.step_payload['user_id']}>'s channel the correction lapsed"
+
+    async def describe_panel(ctx: StepContext) -> str:
+        return f"posting <@{ctx.step_payload['user_id']}>'s review panel again"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        lapse_view = next((view for view in ctx.steps if view.name == LAPSE_JOB), None)
+        if lapse_view is not None and "discarded" in (lapse_view.result or {}):
+            return "⚠️ The driver was not returned to the approval queue: the job was discarded."
+        return ""
+
+    return ChangeType(
+        kind=LAPSE,
+        opening=(),
+        plan=plan,
+        steps={
+            NAMES: Step(NAMES, StepKind.ACT, names, describe=describe_names),
+            LAPSE_JOB: Step(LAPSE_JOB, StepKind.SAVE, lapse, describe=describe_lapse),
+            POST_LAPSE: Step(
+                POST_LAPSE, StepKind.ACT, post_lapse, still_due=lapsed,
+                describe=describe_post_lapse,
+            ),
+            POST_PANEL: Step(
+                POST_PANEL, StepKind.ACT, post_panel, still_due=lapsed, describe=describe_panel
+            ),
+        },
+        check=check,
+        key=lambda payload: f"{LAPSE}:{payload['user_id']}",
+        doing=lambda payload: "Returning a driver to the approval queue",
+        outcome=outcome,
     )

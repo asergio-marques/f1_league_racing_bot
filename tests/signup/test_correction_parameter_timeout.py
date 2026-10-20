@@ -34,8 +34,6 @@ from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     change_rows,
@@ -60,24 +58,11 @@ KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 REVIEWER = 77
 AWAITING = "AWAITING_CORRECTION_PARAMETER"
 
-NO_LAPSE_TIMER = (
-    "#439: the correction's five minutes are an asyncio task that releases the driver itself "
-    "off the queue, with no correction_lapse timer callback registered by the builder asking "
-    "signup.correction.lapse as the bot on the league lane, nor the choices' correction_offered_at "
-    "saved on the wizard's row"
-)
-NO_RESTART_LAPSE = (
-    "#439: the wizard service is not handed the change queue when built, and the restart "
-    "releases each driver awaiting a choice itself off the queue rather than asking "
-    "signup.correction.lapse of the queue before it starts, nor the choices' "
-    "correction_offered_at saved on the wizard's row"
-)
-
 #: The lapse the correction window records, naming the manager who asked (owner, 2026-09-30,
 #: "Log both as lapses").
 CORRECTION_LAPSE = (
     "⌛ the correction request for Kimi's signup lapsed unconfirmed "
-    f"(started by Admin (<@{REVIEWER}>))\n"
+    f"(started by Admin (`<@{REVIEWER}>`))\n"
     "  Kimi is back in the approval queue; a fresh review panel is in their channel."
 )
 
@@ -210,7 +195,6 @@ async def test_request_changes_records_the_requesting_admin(tmp_path):
 # ── The restart ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_returns_the_driver_to_pending_admin_approval(tmp_path):
     """Kimi's choices were posted five minutes ago and the bot restarts. The restart asks the
     lapse as the bot on the league lane, posting nothing; when the queue runs Kimi is back
@@ -240,7 +224,6 @@ async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
     assert await _state(league) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_path):
     """Manager 77 asked for a correction of Kimi's signup and the bot restarted before a
     parameter was chosen. When the queue runs the lapse, 77 is mentioned in Kimi's channel and
@@ -254,7 +237,6 @@ async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_pat
     assert CORRECTION_LAPSE in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_LAPSE)
 async def test_a_restart_says_that_the_bot_restarted(tmp_path):
     """The two lapse reasons read differently, so a manager knows which happened: the notice a
     restart's lapse posts in Kimi's channel says the bot restarted, and the log records it as
@@ -320,7 +302,6 @@ async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
 # ── The ordinary five-minute lapse ────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
     """Manager 77 asked for a correction of Kimi's signup and chose no parameter within five
     minutes of the choices appearing. When the timer's lapse runs Kimi is back awaiting review,
@@ -335,7 +316,6 @@ async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
     assert CORRECTION_LAPSE in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_a_lapse_whose_driver_has_already_moved_on_records_nothing(tmp_path):
     """The five minutes run out and the timer asks the lapse, but before the queue reaches it
     Kimi's signup moves on (to Pending Driver Correction). When the queue runs the lapse is no
@@ -355,7 +335,6 @@ async def test_a_lapse_whose_driver_has_already_moved_on_records_nothing(tmp_pat
     assert "lapsed" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
     """Kimi's wizard holds the correction's reason, the manager who asked and the correction
     flag. Once the timer's lapse runs none of them is left, so a stale reason cannot resurface
@@ -380,7 +359,6 @@ async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
 # ── The disabled module ───────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LAPSE_TIMER)
 async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_path):
     """The signup module is turned off and Kimi's five minutes run out. The lapse posts no
     review panel into a module the league turned off: Kimi stays awaiting a parameter, nothing

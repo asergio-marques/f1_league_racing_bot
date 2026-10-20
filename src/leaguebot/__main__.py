@@ -426,9 +426,12 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
     from leaguebot.signup.services.review_changes import (
+        CORRECTION_TIMER,
         approve_change,
+        ask_lapse,
         choices_change,
         choose_change,
+        lapse_change,
         recollect_change,
         request_changes_change,
     )
@@ -622,6 +625,17 @@ def register_change_types(bot: LeagueBot) -> None:
         recollect_change(
             signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
         )
+    )
+    bot.change_queue.register(
+        lapse_change(
+            modules=bot.module_service, signup=lambda: bot.signup_module_service,
+            drivers=lambda: bot.driver_service, queue_of=lambda: bot.change_queue,
+        )
+    )
+    # A correction nobody chose within five minutes is lapsed by the change its timer asks of the
+    # queue, as the bot.
+    bot.scheduler_service.register_timer(
+        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, str(key))
     )
     # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
     # the bot.
