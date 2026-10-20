@@ -558,6 +558,15 @@ class SchedulerService:
         """Take away the one-off timer of *kind* for *key*, if it stands."""
         self._remove_job(self._timer_id(kind, key))
 
+    def timer_due(self, kind: str, key: int | str) -> datetime | None:
+        """When the one-off timer of *kind* for *key* is next due, or None where none stands."""
+        return self.job_due(self._timer_id(kind, key))
+
+    def job_due(self, job_id: str) -> datetime | None:
+        """When the job *job_id* is next due, or None where none stands or it will not fire."""
+        job = self._scheduler.get_job(job_id)
+        return None if job is None else getattr(job, "next_run_time", None)
+
     @property
     def jobstore_path(self) -> str:
         """The file the job store lives in, which is never the league database."""

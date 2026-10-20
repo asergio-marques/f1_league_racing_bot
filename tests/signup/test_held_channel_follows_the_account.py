@@ -37,16 +37,6 @@ DUE = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=6)
 DELETE_TIMER = "signup_channel_delete"
 DELETE_KIND = "signup.channel.delete"
 
-NO_DELETION_TIMER = (
-    "#439: a held channel's 24-hour deletion is an APScheduler job the wizard service arms "
-    "itself, not a one-off timer armed and disarmed through the scheduler service, and the "
-    "wizard service is not handed the change queue"
-)
-NO_REASSIGN_DELETE_ASK = (
-    "#439: where the new account holds a held channel of its own, `/driver reassign` deletes "
-    "the replaced account's channel at once off the queue, with no signup.channel.delete asked"
-)
-
 
 @pytest.fixture
 def scheduler(tmp_path, monkeypatch):
@@ -146,7 +136,6 @@ async def _channel_of(service: WizardService, account: str) -> int | None:
     return None if wizard is None else wizard.signup_channel_id
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DELETION_TIMER)
 async def test_a_held_channel_moves_with_its_deletion_still_due_when_it_was(tmp_path, scheduler):
     """E23. The old account (6401) holds channel 8801, its deletion due in six hours. A
     reassign to 6402 moves the record and the channel's permission, and leaves one deletion
@@ -170,7 +159,6 @@ async def test_a_held_channel_moves_with_its_deletion_still_due_when_it_was(tmp_
     assert calls[1].args == (old_member,) and calls[1].kwargs["overwrite"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REASSIGN_DELETE_ASK)
 async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     tmp_path, scheduler
 ):
@@ -218,7 +206,6 @@ async def test_an_account_holding_no_channel_moves_nothing(tmp_path, scheduler):
     assert queue.ask.await_args_list == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DELETION_TIMER)
 async def test_the_new_job_is_armed_before_the_record_moves(tmp_path, scheduler):
     """E43: a crash after the first step leaves the old timer able to find the record. The new
     account's timer is armed, then the record re-keyed, then the old account's timer disarmed."""

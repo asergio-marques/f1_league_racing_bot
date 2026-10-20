@@ -86,11 +86,6 @@ NO_REJECT_CHANGE = (
     "with no signup.end change on the league lane asking signup.closing, which deletes the "
     "reason, back of the driver's lane"
 )
-NO_CHANNEL_DELETE_CHANGE = (
-    "#439: a held signup channel is deleted by its timer, or by /driver reassign, off the queue, "
-    "with no signup.channel.delete change: on the driver's lane for the timer, the league's for "
-    "the command"
-)
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
@@ -904,7 +899,6 @@ async def _held_after_signup(league: SeasonLeague, user_id: int = SIGNING_UP,
     return _held(league, cid)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_DELETE_CHANGE)
 async def test_the_24_hour_deletion_is_a_job_and_a_refused_one_stops_the_queue(tmp_path):
     """Kimi's signup ended a day ago and his signup channel (6405) is held. Its 24-hour timer
     fires and asks `signup.channel.delete`; Discord refuses to delete the channel. The turns in
@@ -932,7 +926,6 @@ async def test_the_24_hour_deletion_is_a_job_and_a_refused_one_stops_the_queue(t
     assert await stopped_job(league.db_path, KIMI_LANE) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_DELETE_CHANGE)
 async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it(
     tmp_path,
 ):
@@ -957,7 +950,6 @@ async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stop
     assert league.channel(KIMI_CHANNEL) is held
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_DELETE_CHANGE)
 async def test_driver_reassign_asks_the_held_channel_s_deletion(tmp_path):
     """Kimi's old account (105) holds his signup channel (6405); his new account (1105) holds a
     held channel of its own (6600). `/driver reassign` moves him to the new account, so the old

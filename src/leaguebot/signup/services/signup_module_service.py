@@ -754,11 +754,19 @@ class SignupModuleService:
 
     async def delete_wizard(self, discord_user_id: str) -> None:
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM signup_wizard_records WHERE discord_user_id = ?",
-                (discord_user_id,),
-            )
+            await self.delete_wizard_on(db, discord_user_id)
             await db.commit()
+
+    async def delete_wizard_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
+        """Delete a driver's wizard record on the connection handed; commits nothing.
+
+        What `delete_wizard` does, for a change whose job records the deletion of the driver's
+        channel in the save that marks the job done.
+        """
+        await db.execute(
+            "DELETE FROM signup_wizard_records WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
 
     #: The values of ``signup_wizard_records.closing_notice_owed``: none, owed by the change
     #: queue's close of the window. (A value 2, owed by a close off the queue, is no longer

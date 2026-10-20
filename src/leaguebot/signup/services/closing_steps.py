@@ -77,6 +77,8 @@ DELETE_TIMER = "signup_channel_delete"
 INACTIVITY_TIMER = "signup_inactivity"
 #: How long a closed signup channel is kept before it is deleted.
 HOLD = timedelta(hours=24)
+#: The kind of the change that deletes a driver's held signup channel.
+DELETE_KIND = "signup.channel.delete"
 #: The kind of the change that ends a driver's signup, and the reason a day without an answer gives.
 END = "signup.end"
 EXPIRED = "expired"
@@ -89,9 +91,9 @@ EXPIRED_NOTICE = (
 __all__ = [
     "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER",
-    "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND", "POST_CLOSED",
-    "SIGNUP_NOTICE", "ask_expiry", "closing_change", "closing_steps", "window_close_jobs",
-    "window_close_steps",
+    "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
+    "POST_CLOSED", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "closing_change",
+    "closing_steps", "window_close_jobs", "window_close_steps",
 ]
 
 
@@ -112,6 +114,30 @@ async def ask_expiry(queue: "ChangeQueue", db_path: str, user_id: str) -> int | 
         END,
         {"user_id": user_id, "reason": EXPIRED, "channel_id": row["signup_channel_id"]},
         what=f"ending the signup of <@{user_id}>, left unanswered for a day",
+        origin=ChangeOrigin.BOT,
+    )
+
+
+async def ask_channel_delete(
+    queue: "ChangeQueue", db_path: str, user_id: str, *, own_lane: bool
+) -> int | None:
+    """Ask the queue, as the bot, to delete the signup channel *user_id*'s wizard holds
+    (`signup.channel.delete`): the hold's 24-hour timer's ask, on the driver's own lane
+    (*own_lane*, since a timer's deletion is the conversation's own), and `/driver reassign`'s for
+    the channel of the account it replaced, on the league's. Gives the change's id, or None where
+    the driver holds no channel."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None or row["signup_channel_id"] is None:
+        return None
+    return await queue.ask(
+        DELETE_KIND,
+        {"user_id": user_id, "channel_id": int(row["signup_channel_id"]), "own_lane": own_lane},
+        what=f"deleting the signup channel of <@{user_id}>",
         origin=ChangeOrigin.BOT,
     )
 

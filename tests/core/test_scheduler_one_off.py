@@ -137,6 +137,27 @@ async def test_a_one_off_timer_armed_again_for_the_same_key_replaces_the_earlier
     assert sorted(job.trigger.run_date for job in service._scheduler.get_jobs()) == [first, first]
 
 
+async def test_a_timer_and_a_job_say_when_they_are_due(services):
+    """A held channel's deletion is armed for an hour from now: the scheduler says when the timer
+    is due by its kind and key, and when the job under its id is, and says nothing of a timer
+    never armed, a job that does not stand, or a timer taken away."""
+    service = services()
+    service.register_timer("signup_channel_delete", lambda _key: None)
+    service.start()
+    due = _now() + timedelta(hours=1)
+
+    service.arm_once("signup_channel_delete", "6101", due)
+
+    assert service.timer_due("signup_channel_delete", "6101") == due
+    assert service.job_due("once:signup_channel_delete:6101") == due
+    assert service.timer_due("signup_channel_delete", "6102") is None
+    assert service.job_due("no_such_job") is None
+
+    service.disarm("signup_channel_delete", "6101")
+
+    assert service.timer_due("signup_channel_delete", "6101") is None
+
+
 async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(services):
     """A correction's five minutes were armed, and the bot went down before they ran out and
     stayed down two hours past them. When the bot starts again and the builder registers the

@@ -26,6 +26,12 @@ wizard, takes away the timers, writes the "Withdrawn" line and asks back `signup
 closing jobs, `closing_steps`) on the driver's own lane, so that a closing notice Discord refuses
 stops that lane alone and the league's change is done.
 
+A held channel's deletion asks `signup.channel.delete` (`channel_delete_change`): the hold's
+24-hour timer's own, on the driver's lane, and `/driver reassign`'s for the replaced account's channel, on
+the league's. The one job `delete_channel` deletes the channel, a channel already gone being
+nothing to do, and its record deletes the wizard's row; Discord's refusal stops the lane that
+asked.
+
 The reason a manager types after Reject asks `signup.end` the same way, through the manager's
 stored press: the message is not deleted at once, but by the first job of the `signup.closing` it
 asks back, ahead of the notice that gives it.
@@ -44,6 +50,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.change import (
+    LEAGUE_LANE,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -72,6 +79,7 @@ from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
     CLOSE_SIGNUP,
+    DELETE_KIND,
     END,
     EXPIRED,
     EXPIRED_NOTICE,
@@ -100,6 +108,8 @@ CREATE_CHANNEL = "create_channel"
 START_JOB = "start"
 ARM_INACTIVITY = "arm_inactivity"
 POST_WELCOME = "post_welcome"
+#: The job that deletes a held signup channel.
+DELETE_CHANNEL = "delete_channel"
 #: The job that ends a driver's signup (the kind, `END`, is in `closing_steps`).
 END_JOB = "end"
 #: Why a signup ends: the driver pressed Cancel Signup.
@@ -123,10 +133,11 @@ INACTIVITY = timedelta(hours=24)
 CATEGORY_LIMIT = 50
 
 __all__ = [
-    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_OLD_CHANNEL", "END", "END_JOB", "EXPIRED", "INACTIVITY",
+    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
+    "END_JOB", "EXPIRED", "INACTIVITY",
     "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
-    "end_change", "start_change",
+    "channel_delete_change", "end_change", "start_change",
 ]
 
 
@@ -619,4 +630,82 @@ def end_change(
             else "Withdrawing a signup"
         ),
         outcome=outcome,
+    )
+
+
+def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> ChangeType:
+    """The `signup.channel.delete` change type, for the builder to register.
+
+    The payload is ``user_id`` (the account whose wizard holds the channel), ``channel_id`` (the
+    channel held) and ``own_lane``. A hold's 24-hour timer asks it on the driver's own lane
+    (``channel:<id>``, `own_lane` true), where Discord's refusal stops that lane alone; the
+    channel of the account `/driver reassign` replaced is deleted on the league's, as the
+    command's change. It is not due, and is dropped, where the driver's wizard no longer names the
+    channel: a new signup, or a move to another account, has taken it over. Its one job
+    `delete_channel` deletes the channel, one already gone being nothing to do, and its record
+    deletes the wizard's row in the save that marks the job done, so the row names a channel only
+    while the channel may stand. *signup* is a getter, so that the service is the one the bot
+    holds when the job runs.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        row = await signup().get_wizard(str(ctx.payload["user_id"]))
+        if row is None or row.signup_channel_id != int(ctx.payload["channel_id"]):
+            return Verdict.not_due("the driver no longer holds that signup channel")
+        return Verdict.go()
+
+    async def held(ctx: StepContext) -> bool:
+        row = await signup().get_wizard(str(ctx.step_payload["user_id"]))
+        return row is not None and row.signup_channel_id == int(ctx.step_payload["channel_id"])
+
+    @posts_in_a_job
+    async def delete(ctx: StepContext) -> StepResult:
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise StepFailedOnDiscord("the league's server could not be found")
+        found = guild.get_channel(int(ctx.step_payload["channel_id"]))
+        if found is None:
+            return StepResult(result={"gone": True})
+        try:
+            await delete_channel(found, reason="Signup wizard channel hold expired")
+        except discord.NotFound:
+            return StepResult(result={"gone": True})
+        except discord.HTTPException as error:
+            raise StepFailedOnDiscord(
+                f"the signup channel {found.id} could not be deleted"
+            ) from error
+        return StepResult(result={})
+
+    async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
+        await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))
+
+    async def describe(ctx: StepContext) -> str:
+        return f"deleting the signup channel <#{ctx.step_payload['channel_id']}>"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        deleted = {view.name: view for view in ctx.steps}.get(DELETE_CHANNEL)
+        if deleted is not None and "discarded" in (deleted.result or {}):
+            return "⚠️ The signup channel was not deleted: the job was discarded."
+        return "✅ The signup channel has been deleted."
+
+    return ChangeType(
+        kind=DELETE_KIND,
+        opening=(),
+        plan=lambda payload: (PlannedStep(DELETE_CHANNEL, {
+            "user_id": str(payload["user_id"]), "channel_id": int(payload["channel_id"]),
+        }),),
+        steps={
+            DELETE_CHANNEL: Step(
+                DELETE_CHANNEL, StepKind.DELETE, delete, still_due=held, describe=describe,
+                record=forget,
+            ),
+        },
+        check=check,
+        key=lambda payload: f"{DELETE_KIND}:{payload['user_id']}",
+        doing=lambda payload: "Deleting a signup channel",
+        outcome=outcome,
+        lane=lambda payload: (
+            f"channel:{int(payload['channel_id'])}" if payload.get("own_lane") else LEAGUE_LANE
+        ),
+        writes=("signup_wizard_records",),
     )

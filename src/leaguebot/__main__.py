@@ -420,8 +420,13 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
-    from leaguebot.signup.services.wizard_changes import end_change, start_change
-    from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER, ask_expiry
+    from leaguebot.signup.services.wizard_changes import channel_delete_change, end_change, start_change
+    from leaguebot.signup.services.closing_steps import (
+        DELETE_TIMER,
+        INACTIVITY_TIMER,
+        ask_channel_delete,
+        ask_expiry,
+    )
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
     from leaguebot.results.services.standings_sync_change import standings_sync_change
@@ -565,6 +570,12 @@ def register_change_types(bot: LeagueBot) -> None:
     # the bot.
     bot.scheduler_service.register_timer(
         INACTIVITY_TIMER, lambda key: ask_expiry(bot.change_queue, bot.db_path, str(key))
+    )
+    # A held signup channel's 24 hours ending asks its deletion, on the driver's own lane.
+    bot.change_queue.register(channel_delete_change(signup=lambda: bot.signup_module_service))
+    bot.scheduler_service.register_timer(
+        DELETE_TIMER,
+        lambda key: ask_channel_delete(bot.change_queue, bot.db_path, str(key), own_lane=True),
     )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())

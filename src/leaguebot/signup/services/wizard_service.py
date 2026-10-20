@@ -30,7 +30,12 @@ from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationalit
 from leaguebot.core.utils.log_lines import record_abandoned, record_refusal
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
-from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER, ask_expiry
+from leaguebot.signup.services.closing_steps import (
+    DELETE_TIMER,
+    INACTIVITY_TIMER,
+    ask_channel_delete,
+    ask_expiry,
+)
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
@@ -85,7 +90,8 @@ async def _wizard_inactivity_job(discord_user_id: str) -> None:
 
 
 async def _wizard_channel_delete_job(discord_user_id: str) -> None:
-    """APScheduler callable for post-hold channel deletion."""
+    """APScheduler callable for post-hold channel deletion: asks the queue, as the bot, to delete
+    the held channel on the driver's own lane (`signup.channel.delete`)."""
     if _GLOBAL_WIZARD_SERVICE is None:
         log.warning(
             "_wizard_channel_delete_job fired but _GLOBAL_WIZARD_SERVICE is None "
@@ -93,7 +99,10 @@ async def _wizard_channel_delete_job(discord_user_id: str) -> None:
             discord_user_id,
         )
         return
-    await _GLOBAL_WIZARD_SERVICE._execute_channel_delete(discord_user_id)
+    await ask_channel_delete(
+        _GLOBAL_WIZARD_SERVICE._change_queue, _GLOBAL_WIZARD_SERVICE._db_path, discord_user_id,
+        own_lane=True,
+    )
 
 
 #: What a button press is told where the wizard it belongs to is gone, where the step it
@@ -360,28 +369,6 @@ class WizardService:
             reason="Signup wizard button step answered",
         )
 
-    async def _execute_channel_delete(
-        self, discord_user_id: str
-    ) -> None:
-        """Delete the wizard channel and clean up the wizard record."""
-        svc = self._signup_svc
-        wizard = await svc.get_wizard(discord_user_id)
-        if wizard is None or wizard.signup_channel_id is None:
-            return
-        guild = await self._get_guild()
-        if guild is not None:
-            channel = guild.get_channel(wizard.signup_channel_id)
-            if channel is not None:
-                try:
-                    await channel.delete(reason="Signup wizard channel hold expired")
-                except discord.HTTPException as exc:
-                    log.warning(
-                        "_execute_channel_delete: could not delete channel %s: %s",
-                        wizard.signup_channel_id,
-                        exc,
-                    )
-        await svc.delete_wizard(discord_user_id)
-
     # ------------------------------------------------------------------
     # Inactivity / channel-delete job helpers
     # ------------------------------------------------------------------
@@ -464,17 +451,20 @@ class WizardService:
         deletion is kept at the moment it was already due.
 
         Where the new account holds a held channel of its own, that one is kept and the
-        replaced account's is deleted at once: its final message has been posted, and the
-        driver can keep only one (decided 2026-09-18).
+        replaced account's is deleted, by the `signup.channel.delete` change asked for it on the
+        command's lane: its final message has been posted, and the driver can keep only one
+        (decided 2026-09-18).
 
-        **The order is what survives a crash part-way.** The new deletion job is armed first,
-        then the record re-keyed, then the old job removed. At every point one job can find
+        **The order is what survives a crash part-way.** The new deletion timer is armed first
+        (through `arm_once`, as the closing's `arm_deletion` arms the hold), then the record
+        re-keyed, then the old timer removed. At every point one job can find
         the record — a job whose record has moved simply finds none — and the channel is
         never left with nothing to delete it.
 
         Returns what Discord would not allow, for the command to report.
         """
         svc = self._signup_svc
+        scheduler = self._scheduler
         problems: list[str] = []
         held = await svc.get_wizard(from_account)
         if held is None or held.signup_channel_id is None:
@@ -482,22 +472,26 @@ class WizardService:
         theirs = await svc.get_wizard(to_account)
 
         if theirs is not None and theirs.signup_channel_id is not None:
+            # The replaced account's channel is deleted by the change asked for it, on the
+            # command's lane; its timer goes once the change is saved, so that the channel is
+            # never left with nothing to delete it.
+            await ask_channel_delete(self._change_queue, self._db_path, from_account, own_lane=False)
+            scheduler.disarm(DELETE_TIMER, from_account)
             await self._cancel_channel_delete_job(from_account)
-            await self._execute_channel_delete(from_account)
             return problems
 
-        job = self._scheduler._scheduler.get_job(
-            self._channel_delete_job_id(from_account)
-        )
-        fire_at = getattr(job, "next_run_time", None) or (
-            datetime.now(timezone.utc) + timedelta(hours=24)
+        fire_at = (
+            scheduler.timer_due(DELETE_TIMER, from_account)
+            or scheduler.job_due(self._channel_delete_job_id(from_account))
+            or (datetime.now(timezone.utc) + timedelta(hours=24))
         )
         if theirs is not None:
             # An abandoned draft on the new account: the transient state of a signup never
             # begun, which would otherwise collide with the record moving in.
             await svc.delete_wizard(to_account)
-        await self._arm_channel_delete_job(to_account, fire_at)
+        scheduler.arm_once(DELETE_TIMER, to_account, fire_at)
         await svc.rekey_wizard(from_account, to_account)
+        scheduler.disarm(DELETE_TIMER, from_account)
         await self._cancel_channel_delete_job(from_account)
 
         channel = as_text_channel(guild.get_channel(held.signup_channel_id))
