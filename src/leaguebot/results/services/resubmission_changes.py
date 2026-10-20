@@ -428,6 +428,7 @@ async def ask_resubmission_cancel(
             "publish": False,
             "returning": "cancelled",
             "cancel_message_id": announcement,
+            "while_resubmitting": True,
         },
         interaction=interaction,
         what=f"cancelling round {ref.round_number}'s resubmission",

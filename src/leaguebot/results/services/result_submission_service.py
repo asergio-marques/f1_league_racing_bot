@@ -4087,7 +4087,8 @@ async def _ask_return_to_review(
             message_id = cancel_view.message.id
     await ask_review_open(
         bot, sub_channel, round_id, round_number,
-        {"publish": False, "returning": returning, "cancel_message_id": message_id},
+        {"publish": False, "returning": returning, "cancel_message_id": message_id,
+         "while_resubmitting": True},
         queue=queue, actor=actor, origin=origin,
     )
 

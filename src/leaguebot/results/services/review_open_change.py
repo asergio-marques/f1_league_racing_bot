@@ -56,7 +56,9 @@ with the check's reason, since the manager can set it right and press Retry.
 
 The payload is ``round_id``, ``label``, ``publish`` (whether the interim results go out),
 ``returning`` (``"cancelled"`` or ``"failed"`` for a resubmission's return, ``"restart"`` for
-one a restart cut short), ``cancel_message_id`` and ``old_prompt_id``.
+one a restart cut short), ``while_resubmitting`` (set on those first requests: the check finds
+the request no longer due, or refuses it, where the round is no longer resubmitting, as its swap
+may have replaced the results while it waited), ``cancel_message_id`` and ``old_prompt_id``.
 
 **A restart that cut a resubmission short is ended in the opening's own jobs** (``returning`` =
 ``"restart"``, the bot's request). The collection lived in memory, so before anything else
@@ -220,7 +222,7 @@ async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | Non
         return await (
             await db.execute(
                 "SELECT r.status, r.division_id, r.round_number, d.name AS division_name, "
-                "       rsc.channel_id, rsc.closed "
+                "       rsc.channel_id, rsc.closed, rsc.resubmitting "
                 "FROM rounds r JOIN divisions d ON d.id = r.division_id "
                 "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
                 "WHERE r.id = ?",
@@ -493,6 +495,12 @@ def review_open_change() -> ChangeType:
                       f"penalty review cannot be opened.")
         if row["channel_id"] is None or row["closed"]:
             return no("The round's submission channel is closed.")
+        if ctx.payload.get("while_resubmitting") and not row["resubmitting"]:
+            # The resubmission this would end has ended already: its swap replaced the results
+            # (or another return ended it) while this waited. Ending it again would say the earlier
+            # results stand over the replaced ones. A request a Discard asks again does not carry
+            # the mark, as the flag it waits on is cleared by then.
+            return no("The resubmission has already ended.")
         approving = await unfinished(ctx.db_path, [REPORTS_APPROVE], excluding=ctx.change_id)
         if any(p.get("round_id") == round_id for p in approving):
             return no("The round's reports are being approved.")

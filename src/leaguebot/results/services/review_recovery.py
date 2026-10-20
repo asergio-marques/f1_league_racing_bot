@@ -116,6 +116,7 @@ async def _restart_payload(bot: LeagueBot, row: aiosqlite.Row, round_label: str)
     return {
         "round_id": int(row["round_id"]), "channel_id": int(row["channel_id"]),
         "label": "Provisional Results", "publish": False, "returning": "restart",
+        "while_resubmitting": True,
         "round_number": int(row["round_number"]), "division_name": row["division_name"],
         "cancel_message_id": row["resubmit_prompt_message_id"],
         "started_by_named": await name_of_member(bot, row["resubmit_started_by"]),

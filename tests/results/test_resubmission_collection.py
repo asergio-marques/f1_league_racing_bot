@@ -58,11 +58,12 @@ from tests.support.change_queue import (
     MEMBER_ID,
     acknowledgement,
     member_interaction,
+    retry_job,
     run_queue,
     tier_member,
     updated_reply,
 )
-from tests.support.review_league import ReviewLeague
+from tests.support.review_league import ReviewLeague, block_queue
 from tests.support.teams import seed_team_instances
 
 AMENDED = "Provisional Results (amended)"
@@ -432,6 +433,31 @@ async def test_cancelling_the_resubmission_tells_the_manager_the_earlier_results
     assert "Resubmission of round 3" in reply
     assert "cancelled. The earlier results stand." in reply
     assert "penalty review is open" not in reply
+
+
+async def test_a_cancel_pressed_behind_the_last_paste_s_swap_finds_the_resubmission_ended(
+    tmp_path, monkeypatch,
+):
+    """The league lane is stopped at another job when Alex types the last resubmitted paste, so
+    the swap waits. He presses Cancel meanwhile; the cancel's review opening queues behind the
+    swap. Once the lane is retried the swap replaces the results, and the cancel finds the
+    resubmission ended: Alex is told so, the log carries no 'earlier results stand' line, and the
+    round holds the resubmitted sessions."""
+    league = await _reviewing(tmp_path, monkeypatch)
+    await _press_resubmit(league)
+    await _type(league, "CANCELLED")
+    holder = await block_queue(league, lane="league")
+    await _type(league, RACE_PASTE)
+    interaction = await _press_cancel(league)
+
+    holder["fail"] = False
+    await retry_job(league.bot, lane="league")
+    await run_queue(league.bot)
+
+    assert (QUALIFYING_TYPE.value, "CANCELLED") in await _sessions(league)
+    assert (await _row(league))["resubmitting"] == 0
+    assert "already ended" in updated_reply(interaction)
+    assert not any("earlier results stand" in text.lower() for text in _texts(league))
 
 
 async def test_cancel_refuses_somebody_without_the_tier(tmp_path, monkeypatch):
