@@ -69,6 +69,7 @@ from leaguebot.core.services.change_queue import (
 )
 from leaguebot.core.services.season_lifecycle_service import (
     WINDOW_CLOSED_NOTICE,
+    WINDOW_NOT_CLOSED,
     WINDOW_OPENS_FROM,
     advance_on_window_open_on,
     live_season_stage,
@@ -554,9 +555,7 @@ def window_close_change(
             head = f"System | Signups auto-close | Incomplete ({head})"
         failed = failed_jobs(ctx.steps)
         if not closed and not any(step == NOT_RETURNED for step in failed):
-            failed.append(
-                "The signup window could not be closed. Close it with `/signup close`."
-            )
+            failed.append(WINDOW_NOT_CLOSED)
         line = (
             f"{head}\n  drivers_returned_to_not_signed_up: {drivers_returned(ctx.steps)}"
             + "".join(f"\n  failed_step: {step}" for step in failed)

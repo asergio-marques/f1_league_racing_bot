@@ -431,8 +431,12 @@ TAKE_DRIVER_ROLE = "take_driver_role"
 #: The jobs that close the window in its channel, signup's own, which a season's end names.
 DELETE_BUTTON = "delete_button"
 POST_CLOSED = "post_closed"
-#: What a season's end says of a window it could not close.
-WINDOW_NOT_CLOSED = "The signup window could not be closed. Close it with `/signup close`."
+#: What a season's end, a wind-down or a close says of a window it could not close. A close time
+#: that was armed stays armed, and `/signup close` refuses while one is, so it is named first.
+WINDOW_NOT_CLOSED = (
+    "The signup window could not be closed. Close it with `/signup close`. "
+    "Where a close time is set, run `/signup close-time cancel` first."
+)
 
 #: What a signup channel is told where the signup window closes under it.
 WINDOW_CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."

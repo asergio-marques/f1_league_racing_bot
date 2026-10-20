@@ -416,7 +416,10 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
 
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
 #: How a discarded closed notice is named: the window was not closed.
-WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+WINDOW_OPEN = (
+    "The signup window could not be closed. Close it with `/signup close`. "
+    "Where a close time is set, run `/signup close-time cancel` first."
+)
 #: How a driver returned and left untold would be named: never for a discarded closed notice,
 #: which drops only that post (b15-2).
 RETURNED_NOT_TOLD = (

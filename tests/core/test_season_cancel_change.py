@@ -138,7 +138,10 @@ ROLES_KEPT = (
     "roles and the driver role by hand."
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
-WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
+WINDOW_OPEN = (
+    "The signup window could not be closed. Close it with `/signup close`. "
+    "Where a close time is set, run `/signup close-time cancel` first."
+)
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."

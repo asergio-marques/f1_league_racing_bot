@@ -576,6 +576,32 @@ async def test_a_failed_close_step_stops_the_queue_and_a_discard_names_it(tmp_pa
     assert f"<@{SIGNING_UP}>" in said
 
 
+async def test_a_close_that_could_not_record_the_window_closed_names_the_close_time_command_first(
+    tmp_path,
+):
+    """The window has a close time armed, and the timer's close runs: Discord refuses "Signups are
+    now closed", so the queue stops at `post_closed`, and a league admin discards it. The window
+    is not recorded closed and its close time stays armed, so `/signup close` would refuse: the
+    line says to run `/signup close-time cancel` first, and so does the not-closed text a season's
+    end writes."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.core.services.season_lifecycle_service import WINDOW_NOT_CLOSED
+
+    league = await _close_league(tmp_path)
+    await league.write("UPDATE signup_module_config SET close_at = ?", "2026-10-13T11:00:00+00:00")
+    league.channel(LEAGUE_SIGNUP_CHANNEL).fail_when = lambda content, _kwargs: CLOSED_TEXT in str(content)
+
+    await close_signups_unattended(league.bot, cause="timer")
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+
+    assert (await _window(league))["signups_open"]
+    [line] = [each for each in league.log().split("\n⌛") if "Signups auto-close" in each] or [league.log()]
+    assert "`/signup close`" in line and "`/signup close-time cancel`" in line
+    assert line.index("`/signup close-time cancel`") > line.index("`/signup close`")
+    assert "`/signup close-time cancel`" in WINDOW_NOT_CLOSED
+
+
 async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_path):
     """Kimi is still filling in the wizard. Manager 77 runs `/signup close` and presses Confirm
     Close; before the queue reaches it, signups are reopened on another Sign Up message (7777).
