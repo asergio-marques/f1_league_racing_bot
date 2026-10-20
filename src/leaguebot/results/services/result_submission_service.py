@@ -1256,29 +1256,6 @@ _AMENDMENT_NOT_OPEN = (
 AMENDMENT_RE_RUN = "Re-run `/results rounds amend` to try again."
 #: What an amendment put back as it was says became of the round.
 ROUND_PUT_BACK = "The round was put back as it was. " + AMENDMENT_RE_RUN
-#: The next step an amendment whose round could not be put back yet tells its manager: a re-run
-#: before then is refused, the amendment still holding its division.
-AMENDMENT_RE_RUN_ONCE_PUT_BACK = "Run `/results rounds amend` again once it has been put back."
-#: What an amendment handed to the sweep says became of the round: the sweep retries within
-#: minutes, and restart recovery at the next start.
-ROUND_NOT_PUT_BACK_YET = (
-    "The round could not be put back yet; the bot tries again within a few minutes. "
-    "Restarting the bot retries that. " + AMENDMENT_RE_RUN_ONCE_PUT_BACK
-)
-
-
-def amendment_fault_reply(kind: str, became: str) -> str:
-    """The reply to an amendment that stopped on a fault in the bot.
-
-    It says the fault is the bot's and not anything the manager entered, names the *kind* of
-    fault in plain words — `describe_fault`'s, never the exception — and says what *became* of
-    the round and what to do next. An amendment undoes itself, so it says that rather than the
-    standard "may have been partly done" (the core specification's "When a command fails").
-    """
-    return (
-        "❌ The amendment stopped on a fault in the bot, not on anything you entered: "
-        f"{kind}. {became}"
-    )
 
 
 def _sessions_text(session_types) -> str:
