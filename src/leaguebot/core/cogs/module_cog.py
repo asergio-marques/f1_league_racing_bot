@@ -8,20 +8,19 @@ import json
 import logging
 from dataclasses import dataclass
 from functools import partial
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, StepFailedOnDiscord, module_off
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, report_failure
-from leaguebot.core.utils.league_server import LeagueView, league_guild
+from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 
 log = logging.getLogger(__name__)
@@ -53,34 +52,19 @@ _MODULE_CHOICES = [
 RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNUP_COMPLETION})
 
 
-#: The forced close's failed steps that do not name a driver, worded once for every caller.
 #: How the change that turns results off names itself in its lines.
 _RESULTS_OFF = "`/module disable results`"
 #: How the change that turns signup off names itself in the acknowledgement.
 _SIGNUP_OFF = "`/module disable signup`"
-_BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup channel."
-_NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
-
-
-def _channel_not_locked(user_id: str) -> str:
-    """The failed step of a driver whose channel Discord would not lock or set for deletion."""
-    return (
-        f"<@{user_id}>'s signup channel could not be locked and will not delete itself: "
-        "delete it by hand."
-    )
 
 
 @dataclass(frozen=True)
 class ForcedCloseOutcome:
-    """What a forced close did: the drivers it turned away, and each step that failed.
+    """What the close of the signup window did: the drivers it turned away.
 
-    Every step of the close runs whatever the one before did, because the window has to end up
-    closed and audited whatever Discord makes of it. So a step that fails cannot stop the close;
-    it is named here instead, one plain sentence each, for the caller to tell the member and
-    write beneath its line. Each failure's traceback stays in the host log.
-
-    It lives in core, beside the function that returns it: core callers (the season's end, the
-    close timer) use it too, and core imports nothing from the signup module for it.
+    It lives in core, beside the function that returns it: core callers (the season's end) use it
+    too, and core imports nothing from the signup module for it. Every failure of the close is
+    raised and stops the queue, so ``failed`` (one plain sentence per failed step) stays empty.
     """
 
     #: How many drivers were returned to Not Signed Up, read at the moment of closing.
@@ -92,81 +76,46 @@ class ForcedCloseOutcome:
     returned_ids: tuple[str, ...] = ()
 
 
-def failed_steps_reply(outcome: ForcedCloseOutcome) -> str:
-    """What a reply adds beneath its own text where the close failed a step, or nothing.
-
-    Starts with a line break, so a caller appends it to its sentence unconditionally. It lists
-    every step. A close that failed one step per driver (a category the bot can no longer
-    manage, say) can fail hundreds, and the whole reply then runs past Discord's 2000
-    characters: the caller sends it through ``chunk_message``, in parts, rather than cutting
-    the list short, so that the member is told every step the window's close failed.
-    """
-    if not outcome.failed:
-        return ""
-    steps = "\n".join(f"• {step}" for step in outcome.failed)
-    return "\n⚠️ The window is closed, but not every step succeeded:\n" + steps
-
-
-def failed_steps_lines(outcome: ForcedCloseOutcome) -> str:
-    """What a log line carries beneath its head where the close failed a step, or nothing.
-
-    One indented line per step, each starting with a line break, in the form the line's other
-    details take.
-    """
-    return "".join(f"\n  failed_step: {step}" for step in outcome.failed)
-
-
 async def execute_forced_close(
     bot: LeagueBot,
     *,
     audit_action: str,
-    hold_channels: bool = True,
-    finishing: bool = False,
+    hold_channels: bool = False,
 ) -> ForcedCloseOutcome:
-    """Force-close the signup window, and return what it did.
+    """Return the drivers still filling in the signup wizard to Not Signed Up, for the change
+    queue's close of the signup window, and say what it did.
 
-    *hold_channels* False is the change queue's form: the close notices and locks no signup
-    channel itself, leaving each driver it returned (the outcome's ``returned_ids``) to the
-    queue's ``signup_notice`` and ``close_signup`` jobs, so that a notice Discord refuses stops
-    the queue before the channel is locked, and which leaves the season's stage where it stands
-    (step 4b). Off the queue (``/signup close``, the close timer, a restart past the close time,
-    turning signup off) it holds them as before, locking the channel and arming its deletion
-    whatever became of the notice. The queue's form returns the drivers and does nothing more:
-    the Sign Up button's deletion, the "Signups are now closed" post, the window's close and its
-    audit are jobs of the change that asked for it (signup's ``delete_button`` and ``post_closed``).
-    Only *finishing* (the start-up finishing a close off the queue that a stop cut off, which no
-    job of a change follows, until that finish is deleted) has the queue's form close the window
-    itself, as the off-queue form does. The queue's form raises where a step after the drivers were
-    returned does, as a `StepFailedOnDiscord` whose result names them (``returned``): the stop
-    keeps them on the job, so that its next try, which finds none left to return, still tells and
-    closes each one's channel.
+    This is the queue's form, the only form there is: no close of the window is made off the queue
+    any more (`/signup close`, its timer, a restart past the close time and turning signup off
+    ask the queue's own close, and a season's end and every division done ask this one). It
+    notices and locks no signup channel itself, leaving each driver it returned (the outcome's
+    ``returned_ids``) to the queue's ``signup_notice`` and ``close_signup`` jobs, so that a notice
+    Discord refuses stops the queue before the channel is locked, and it leaves the season's stage
+    where it stands: the Sign Up button's deletion, the "Signups are now closed" post, the
+    window's close and its audit are jobs of the change that asked for it (signup's
+    ``delete_button`` and ``post_closed``). *hold_channels* is the keyword the form that held the
+    channels itself was told apart by; only False is left, and True raises.
 
-    1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
-       wizard over in the same save (owed its closing notice on the queue), so a restart never
-       tells a driver whose signup has ended that it expired. The queue's form raises a failed
-       return, other than the state machine's, naming the drivers already returned.
-    2. Delete signup button message (graceful NotFound).
-    3. Post "signups are closed" to signup channel.
-    4. Set window closed.
-    5. Emit audit entry.
+    Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
+    wizard over in the same save (owed its closing notice), so a restart never tells a driver
+    whose signup has ended that it expired. A failed return, other than the state machine's, is
+    raised as a `StepFailedOnDiscord` whose result names the drivers already returned
+    (``returned``): the stop keeps them on the job, so that its next try, which finds none left
+    to return, still tells and closes each one's channel.
 
-    Every step runs whatever the one before did. A step that fails is named in the outcome's
-    ``failed`` and its traceback is logged; it is never swallowed. A driver whose transition the
-    state machine refuses (``ValueError``) has moved on since the close read them: they are not
-    counted as returned, and it is not a failure. Any other error from that transition is. Either
-    way the driver is not the close's to touch: only the drivers returned have their timers
-    cancelled and their channels held, so a driver whose return failed keeps signing up.
+    A driver whose transition the state machine refuses (``ValueError``) has moved on since the
+    close read them: they are not counted as returned, and it is not a failure. Only the drivers
+    returned have their timers cancelled, so a driver whose return failed keeps signing up.
 
     The count is of transitions that succeeded, read at the moment of closing. The
     confirmation ``/signup close`` shows may be up to five minutes older than that.
     """
+    if hold_channels:
+        raise ValueError("the signup window is closed on the change queue only")
     cfg = await bot.signup_module_service.get_config()
     if cfg is None:
         return ForcedCloseOutcome(returned=0)
 
-    failed: list[str] = []
-
-    # 1. Transition the drivers still filling in the wizard
     async with get_connection(bot.db_path) as db:
         placeholders = ",".join("?" for _ in RETURNED_BY_CLOSE)
         cursor = await db.execute(
@@ -183,18 +132,15 @@ async def execute_forced_close(
     for row in rows:
         try:
             # The return and the end of the driver's signup are one save: their wizard is marked
-            # over, so a restart never expires it, and owed its closing notice. On the queue the
-            # queue's jobs then give it once; off it, the hold below gives it and the audit save
-            # clears the mark, and where a stop cuts the close off first the bot's start finishes
-            # it (`signup.close.finish`). Signup writes its own table (`end_wizard_on`).
+            # over, so a restart never expires it, and owed its closing notice, which the queue's
+            # jobs then give once. Signup writes its own table (`end_wizard_on`).
             await bot.driver_service.transition(
                 row["discord_user_id"],
                 DriverState.NOT_SIGNED_UP,
                 also_on=partial(
                     bot.signup_module_service.end_wizard_on,
                     discord_user_id=row["discord_user_id"],
-                    closing_notice_owed=not hold_channels,
-                    by_off_queue_close=hold_channels,
+                    closing_notice_owed=True,
                 ),
             )
             returned += 1
@@ -212,142 +158,15 @@ async def execute_forced_close(
             # The state machine's refusal: the driver moved on since they were read.
             log.info("forced_close: driver %s had moved on", row["discord_user_id"])
         except Exception as exc:
-            if not hold_channels:
-                # The queue's form raises, as every failure on the queue does. Each driver
-                # returned before this one is saved and marked owed, their timers already
-                # cancelled: the stop keeps them on the job for its next try.
-                raise StepFailedOnDiscord(
-                    f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
-                    result={"returned": list(returned_ids)},
-                ) from exc
-            log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
-            failed.append(
-                f"<@{row['discord_user_id']}> could not be returned to Not Signed Up."
-            )
+            # As every failure on the queue does, this raises. Each driver returned before this
+            # one is saved and marked owed, their timers already cancelled: the stop keeps them on
+            # the job for its next try.
+            raise StepFailedOnDiscord(
+                f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
+                result={"returned": list(returned_ids)},
+            ) from exc
 
-    if not (hold_channels or finishing):
-        return ForcedCloseOutcome(
-            returned=returned, failed=tuple(failed), returned_ids=tuple(returned_ids)
-        )
-
-    try:
-        # Post cancellation notice in each wizard channel and schedule deletion.
-        # This mirrors the withdraw() path so drivers see a message and the channel
-        # is cleaned up after a 24-hour hold.
-        reached: list[str] = []
-        if hold_channels:
-            # The notice the start-up's finish looks for in the channel to know it was held.
-            from leaguebot.core.services.season_lifecycle_service import WINDOW_CLOSED_NOTICE
-
-            _guild = await league_guild(bot)
-            if _guild is None:
-                failed.extend(f"<@{uid}> was not told signups had closed." for uid in returned_ids)
-            else:
-                _wizard_svc = bot.wizard_service
-                for uid in returned_ids:
-                    try:
-                        held = await _wizard_svc.trigger_channel_hold(
-                            uid, _guild,
-                            WINDOW_CLOSED_NOTICE,
-                            arm_when_refused=True,
-                        )
-                        reached.append(uid)
-                        if held.channel_id is not None and held.posted is False:
-                            # Held and set for deletion all the same (signup spec: closing the window).
-                            failed.append(f"<@{uid}> was not told signups had closed.")
-                    except discord.HTTPException:
-                        # Discord refused the lock or the arming of the deletion, which the hold
-                        # makes only after the notice: say so, rather than that they were not told.
-                        log.exception("forced_close: could not lock the channel of driver %s", uid)
-                        reached.append(uid)
-                        failed.append(_channel_not_locked(uid))
-                    except Exception:
-                        log.exception("forced_close: trigger_channel_hold failed for driver %s", uid)
-                        failed.append(f"<@{uid}> was not told signups had closed.")
-
-        # 2. Delete button message
-        if cfg.signup_button_message_id:
-            guild = await league_guild(bot)
-            channel = (
-                as_text_channel(guild.get_channel(cfg.signup_channel_id))
-                if guild and cfg.signup_channel_id is not None
-                else None
-            )
-            if channel:
-                try:
-                    msg = await channel.fetch_message(cfg.signup_button_message_id)
-                    await msg.delete()
-                except discord.NotFound:
-                    pass
-                except Exception:
-                    log.exception("forced_close: could not delete button message")
-                    failed.append(_BUTTON_NOT_REMOVED)
-            else:
-                failed.append(_BUTTON_NOT_REMOVED)
-
-        # 3. Post closed message; capture ID so it can be deleted when re-opening
-        closed_msg_id: int | None = None
-        guild = await league_guild(bot)
-        channel = (
-            as_text_channel(guild.get_channel(cfg.signup_channel_id))
-            if guild and cfg.signup_channel_id is not None
-            else None
-        )
-        if channel:
-            try:
-                closed_msg = await channel.send("🔒 Signups are now closed.")
-                closed_msg_id = closed_msg.id
-            except Exception:
-                log.exception("forced_close: could not post closed message")
-                failed.append(_NOTICE_NOT_POSTED)
-        else:
-            failed.append(_NOTICE_NOT_POSTED)
-
-        # 4. Set window closed (persists closed_msg_id)
-        await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
-
-        # 4b. Move the season on (issue #220). Every close a member or a timer runs reaches here —
-        #     the command, the close timer and the restart sweep — so each moves the season alike.
-        #     A failure is logged and never undoes the close: the window is shut either way. The
-        #     change queue's form (*hold_channels* False) moves it not at all: a season's end closes
-        #     the window in the middle of its jobs, and a cancelled season sent on to Pending
-        #     completion between them would stand there, refused its own cancellation, should the
-        #     queue stop; the change that closes the window saves the stage move itself.
-        if hold_channels:
-            from leaguebot.core.services.season_lifecycle_service import advance_on_window_close
-
-            try:
-                await advance_on_window_close(bot.db_path)
-            except Exception:  # noqa: BLE001
-                log.exception("forced_close: could not move the season on")
-                failed.append("The season could not be moved on.")
-
-        # 5. Audit entry. The drivers the hold reached are owed nothing more, and their marks go
-        #    in the same save; a driver it did not reach keeps theirs for the bot's start.
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, ?, ?, ?, ?)",
-                (0, "system", audit_action, "open", "closed", now),
-            )
-            if reached:
-                await bot.signup_module_service.clear_closing_notices_on(db, reached)
-            await db.commit()
-    except Exception as exc:
-        if hold_channels:
-            raise
-        # The drivers are already returned and nothing else will name them, so the stop keeps
-        # them on the job (`StepFailedOnDiscord.result`) for its next try to tell and close.
-        raise StepFailedOnDiscord(
-            "the signup window could not be closed after its drivers were returned",
-            result={"returned": list(returned_ids)},
-        ) from exc
-
-    return ForcedCloseOutcome(
-        returned=returned, failed=tuple(failed), returned_ids=tuple(returned_ids)
-    )
+    return ForcedCloseOutcome(returned=returned, returned_ids=tuple(returned_ids))
 
 
 #: Why a close nobody ran happened, and the audit action it is recorded under.
@@ -356,41 +175,30 @@ _UNATTENDED_CAUSES: dict[str, str] = {
     "restart": "SIGNUP_AUTO_CLOSE",
     "season end": "SIGNUP_SEASON_END_CLOSE",
     "divisions done": "SIGNUP_DIVISIONS_DONE_CLOSE",
-    "stop cut off": "SIGNUP_FORCE_CLOSE",
-}
-
-_UNATTENDED_HEADS: dict[str, str] = {
-    "season end": "🔒 Signups closed as the season ended",
-    "divisions done": "🔒 Signups closed as every division is done",
-    "stop cut off": "🔒 Signups closed at start-up, finishing a close a stop cut off",
 }
 
 
 async def close_signups_unattended(
-    bot: LeagueBot, *, cause: str, hold_channels: bool = True, finishing: bool = False
+    bot: LeagueBot, *, cause: str, hold_channels: bool = False
 ) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close.
 
     *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
-    after it), ``"season end"``, ``"divisions done"`` and ``"stop cut off"`` (the bot's start
-    finishing a close off the queue that a stop cut off before it recorded the window closed:
-    `season_lifecycle_service.close_finish_change`); it picks the audit action the close
+    after it), ``"season end"`` and ``"divisions done"``; it picks the audit action the close
     is written under. The close timer and the restart sweep ask the change queue's own close
     (``signup.close``, named here as the builder registers it, signup's) as the bot's and give
     nothing back: the window stays open until the queue reaches it, and the change's jobs tell
     and lock each driver it returns, close the window in its channel and write the one line,
     which names no member, since none closed the window.
 
-    *hold_channels* False is the change queue's form (``execute_forced_close``) a season's end
-    closes the window with: the outcome gives the drivers it returned and the queue's jobs tell
-    and close each one's signup channel, close the window in its channel and record that in the
-    line, which this writes none of (*finishing* excepted, as ``execute_forced_close`` has it,
-    which writes the line headed ``"stop cut off"``).
+    A season's end and every division done close the window with ``execute_forced_close``: the
+    outcome gives the drivers it returned and the queue's jobs tell and close each one's signup
+    channel, close the window in its channel and record that in the line, which this writes
+    none of. *hold_channels* is as there: only False is left.
 
     Nothing is done where a window was not actually open: a module that is disabled produces
     nothing (the core specification, Modules), and a window not open needs no close, so both
-    return ``None`` having touched nothing. A line that cannot be written is logged, never
-    raised: the window is closed either way.
+    return ``None`` having touched nothing.
     """
     audit_action = _UNATTENDED_CAUSES[cause]
     if not await bot.module_service.is_signup_enabled():
@@ -414,21 +222,9 @@ async def close_signups_unattended(
         )
         return None
 
-    outcome = await execute_forced_close(
-        bot, audit_action=audit_action, hold_channels=hold_channels, finishing=finishing
+    return await execute_forced_close(
+        bot, audit_action=audit_action, hold_channels=hold_channels
     )
-    if not (hold_channels or finishing):
-        return outcome
-
-    try:
-        await bot.output_router.post_log(
-            _UNATTENDED_HEADS[cause]
-            + f"\n  drivers_returned_to_not_signed_up: {outcome.returned}"
-            + failed_steps_lines(outcome)
-        )
-    except Exception:  # noqa: BLE001 — the window is closed either way
-        log.warning("could not record in the log channel that signups closed (%s)", cause, exc_info=True)
-    return outcome
 
 
 # ---------------------------------------------------------------------------

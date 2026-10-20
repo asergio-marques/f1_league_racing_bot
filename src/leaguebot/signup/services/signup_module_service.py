@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
-from datetime import datetime, timezone
 
 import aiosqlite
 import discord
@@ -305,14 +304,6 @@ class SignupModuleService:
             row = await cursor.fetchone()
         return bool(row["signups_open"]) if row else False
 
-    async def set_window_open(
-        self, button_message_id: int, selected_tracks: list[str]
-    ) -> None:
-        """Open the window on a connection of its own, committing it: `set_window_open_on`."""
-        async with get_connection(self._db_path) as db:
-            await self.set_window_open_on(db, button_message_id, selected_tracks)
-            await db.commit()
-
     async def set_window_open_on(
         self, db: aiosqlite.Connection, button_message_id: int, selected_tracks: list[str]
     ) -> None:
@@ -369,13 +360,6 @@ class SignupModuleService:
             }
             for row in rows
         ]
-
-    async def set_window_closed(
-        self, *, closed_msg_id: int | None = None
-    ) -> None:
-        async with get_connection(self._db_path) as db:
-            await self.set_window_closed_on(db, closed_msg_id=closed_msg_id)
-            await db.commit()
 
     async def set_window_closed_on(
         self, db: aiosqlite.Connection, *, closed_msg_id: int | None = None
@@ -468,30 +452,6 @@ class SignupModuleService:
             "slots": json.loads(row["slots_json"]),
             "captured_at": row["captured_at"],
         }
-
-    async def save_closed_message_id(self, msg_id: int | None) -> None:
-        """Persist only the closed-status message ID without altering other fields."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_module_config SET signup_closed_message_id = ? "
-                "",
-                (msg_id,),
-            )
-            await db.commit()
-
-    # Convenience aliases (FR-017)
-
-    async def set_signups_open(
-        self, button_message_id: int, selected_tracks: list[str]
-    ) -> None:
-        """Alias for set_window_open."""
-        await self.set_window_open(button_message_id, selected_tracks)
-
-    async def set_signups_closed(
-        self, *, closed_msg_id: int | None = None
-    ) -> None:
-        """Alias for set_window_closed."""
-        await self.set_window_closed(closed_msg_id=closed_msg_id)
 
     async def save_selected_tracks(self, tracks: list[str]) -> None:
         """Persist selected_tracks without changing the open/closed state."""
@@ -774,10 +734,10 @@ class SignupModuleService:
             await db.commit()
 
     #: The values of ``signup_wizard_records.closing_notice_owed``: none, owed by the change
-    #: queue's close of the window, owed by a close off the queue.
+    #: queue's close of the window. (A value 2, owed by a close off the queue, is no longer
+    #: written: no close is made off the queue.)
     _OWED_NONE = 0
     _OWED_BY_QUEUE = 1
-    _OWED_BY_OFF_QUEUE_CLOSE = 2
 
     async def end_wizard_on(
         self,
@@ -785,16 +745,13 @@ class SignupModuleService:
         discord_user_id: str,
         *,
         closing_notice_owed: bool = False,
-        by_off_queue_close: bool = False,
     ) -> None:
         """Mark a driver's signup over on the connection handed; commits nothing.
 
         The wizard is unengaged, so a restart's recovery never re-arms or expires it, and owes its
-        closing notice where asked: *closing_notice_owed* for the change queue's close of the
-        signup window, *by_off_queue_close* for a close off the queue (`/signup close`, its timer,
-        a restart past the close time, turning signup off), which wins where both are given. The
-        signup channel is kept: the hold and the channel's deletion still read it. A driver with
-        no wizard record is nothing to end.
+        closing notice where asked (*closing_notice_owed*, for the change queue's close of the
+        signup window). The signup channel is kept: the channel's deletion still reads it. A driver
+        with no wizard record is nothing to end.
 
         The owed mark is a record of work still owed, kept beside the change queue, which
         architecture.md rejects as a rule ("a separate record of work still owed after a save").
@@ -804,37 +761,15 @@ class SignupModuleService:
         driver, so that the next try or the restart finds exactly those drivers, and is cleared in
         the save that plans their jobs (`clear_closing_notices_on`), from which the queue's own
         records hold them. It is never read from wizard state, so a channel kept on purpose is
-        never found.
-
-        It has two kinds, kept apart so that neither close takes the other's drivers. The queue's
-        (1) is read by `owed_closing_notices` and `take_closing_notices_on`. A close off the queue
-        returns each driver in a save of its own too, then tells and locks them one by one, so a
-        stop between leaves the later drivers returned, untold and with a writable channel nobody
-        deletes: it marks its own (2) in the same save, clears those it reached in its audit save,
-        and the bot's start finishes the rest through a change of its own, reading them with
-        `off_queue_closing_notices` and `take_off_queue_closing_notices_on`. Both kinds are owed
-        by a close of the window and by nothing else. Do not widen the mark further into a
+        never found. It is read by `owed_closing_notices` and `take_closing_notices_on`, and is
+        owed by a close of the window and by nothing else. Do not widen the mark further into a
         general record of owed work.
-
-        A mark of a close off the queue also records the window that close was closing, as the
-        Sign Up button message the configuration holds in the same save, while the window still
-        stands open: a close cut off before it recorded the window closed leaves it open, and the
-        start-up step closes it (`cut_off_window_open`). The button message is the window's
-        identity, each opening posting a new one, so a mark an older close left standing never
-        closes a window opened since.
         """
-        if by_off_queue_close:
-            owed = self._OWED_BY_OFF_QUEUE_CLOSE
-        elif closing_notice_owed:
-            owed = self._OWED_BY_QUEUE
-        else:
-            owed = self._OWED_NONE
+        owed = self._OWED_BY_QUEUE if closing_notice_owed else self._OWED_NONE
         await db.execute(
             "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
-            "closing_notice_owed = ?, closing_window_message_id = CASE WHEN ? THEN ("
-            "  SELECT signup_button_message_id FROM signup_module_config WHERE id = 1"
-            ") ELSE NULL END WHERE discord_user_id = ?",
-            (owed, int(owed == self._OWED_BY_OFF_QUEUE_CLOSE), discord_user_id),
+            "closing_notice_owed = ? WHERE discord_user_id = ?",
+            (owed, discord_user_id),
         )
 
     async def owed_closing_notices(self) -> list[str]:
@@ -843,28 +778,6 @@ class SignupModuleService:
         open; a save reads them with `take_closing_notices_on`."""
         async with get_connection(self._db_path) as db:
             return await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
-
-    async def off_queue_closing_notices(self) -> list[str]:
-        """The accounts a close off the queue returned and has not yet reached, in the order of
-        their records, on a connection of its own: those a stop cut the close off before. A save
-        reads them with `take_off_queue_closing_notices_on`."""
-        async with get_connection(self._db_path) as db:
-            return await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
-
-    async def cut_off_window_open(self) -> bool:
-        """Whether the signup window stands open and is the very window a close off the queue
-        was closing when a stop cut it off: a driver it returned still owes their notice under a
-        mark recording this window's Sign Up button. A window opened since is never it."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT 1 FROM signup_module_config c "
-                "WHERE c.id = 1 AND c.signups_open = 1 AND EXISTS ("
-                "  SELECT 1 FROM signup_wizard_records w "
-                "  WHERE w.closing_notice_owed = ? "
-                "    AND w.closing_window_message_id = c.signup_button_message_id)",
-                (self._OWED_BY_OFF_QUEUE_CLOSE,),
-            )
-            return await cursor.fetchone() is not None
 
     async def clear_closing_notices_on(
         self, db: aiosqlite.Connection, accounts: Iterable[str]
@@ -882,13 +795,6 @@ class SignupModuleService:
         """Read the accounts the queue's close still owes their closing notice and clear them, on
         the connection handed, so a save needs no second connection; commits nothing."""
         accounts = await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
-        await self.clear_closing_notices_on(db, accounts)
-        return accounts
-
-    async def take_off_queue_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
-        """Read the accounts a close off the queue still owes their closing notice and clear them,
-        on the connection handed; commits nothing."""
-        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_OFF_QUEUE_CLOSE)
         await self.clear_closing_notices_on(db, accounts)
         return accounts
 

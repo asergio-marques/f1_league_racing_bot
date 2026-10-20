@@ -185,23 +185,16 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.core.cogs.module_cog import close_signups_unattended
     from leaguebot.core.models.change import PlannedStep
     from leaguebot.core.services import backup_service
-    from leaguebot.core.services.season_lifecycle_service import (
-        WINDOW_CLOSED_NOTICE,
-        SeasonEndHooks,
-    )
+    from leaguebot.core.services.season_lifecycle_service import SeasonEndHooks
     from leaguebot.image.services import driver_portrait_service
     from leaguebot.results.services import result_submission_service
-    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+    from leaguebot.signup.services.wizard_service import inactivity_job_id
     from leaguebot.signup.services.closing_steps import window_close_jobs, window_close_steps
     from leaguebot.weather.services import forecast_cleanup_service
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
-        # The start-up finishing a close a stop cut off has no change's jobs after it to close the
-        # window, so its close does (until `close_finish_change` is deleted).
-        return await close_signups_unattended(
-            bot_, cause=cause, hold_channels=False, finishing=cause == "stop cut off"
-        )
+        return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
 
     async def window_open() -> bool:
         if not await bot.module_service.is_signup_enabled():
@@ -247,21 +240,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         for account in accounts:
             await bot.signup_module_service.end_wizard_on(db, str(account))
 
-    async def off_queue_closing_notices() -> list[str]:
-        return await bot.signup_module_service.off_queue_closing_notices()
-
-    async def take_off_queue_closing_notices_on(db: aiosqlite.Connection) -> list[str]:
-        return await bot.signup_module_service.take_off_queue_closing_notices_on(db)
-
-    async def closing_held(user_id: str, guild: discord.Guild) -> bool:
-        # A channel-delete job standing is the record of a hold; where the scheduler dropped it
-        # after a long stop, the wizard service judges the channel and arms the deletion again.
-        if bot.scheduler_service.has_job(channel_delete_job_id(user_id)):
-            return True
-        return await bot.wizard_service.rearm_deletion_if_held(
-            user_id, guild, WINDOW_CLOSED_NOTICE
-        )
-
     async def window_jobs(cause: str, returned: int) -> "tuple[PlannedStep, ...]":
         config = await bot.signup_module_service.get_config()
         return window_close_jobs(
@@ -292,10 +270,6 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
         clear_closing_notices_on=clear_closing_notices_on,
         take_closing_notices_on=take_closing_notices_on,
         end_wizards_on=end_wizards_on,
-        off_queue_closing_notices=off_queue_closing_notices,
-        take_off_queue_closing_notices_on=take_off_queue_closing_notices_on,
-        cut_off_window_open=lambda: bot.signup_module_service.cut_off_window_open(),
-        closing_held=closing_held,
     )
 
 
@@ -414,7 +388,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
     from leaguebot.core.services.season_lifecycle_service import (
-        close_finish_change,
         wind_down_change,
     )
     from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
@@ -629,7 +602,6 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(forecast_flush_change(now=lambda: bot.change_queue.now()))
     hooks = _season_end_hooks(bot)
     bot.change_queue.register(wind_down_change(placement=bot.placement_service, hooks=hooks))
-    bot.change_queue.register(close_finish_change(placement=bot.placement_service, hooks=hooks))
     bot.change_queue.register(
         season_complete_change(
             modules=bot.module_service,
@@ -1002,12 +974,6 @@ async def main() -> None:
             await bot.wizard_service.recover_wizards()
         except NotImplementedError:
             pass  # stub until T030 is implemented
-
-        # Finish any close of the signup window off the queue that the stop cut off, its drivers
-        # returned and not yet told. After the close timers', whose restart close may leave marks
-        # of its own, and the wizards', which pass these over; before the queue starts, so that
-        # the change is saved and run behind any change the queue resumes.
-        await _recover_off_queue_closing_notices(bot)
 
         # Restore in-memory pending setups from DB SETUP seasons
         await _recover_pending_setups(bot)
@@ -1781,28 +1747,6 @@ async def _recover_season_left_by_a_closed_window(bot: LeagueBot) -> None:
             log.info("on_ready: moved the season on to %s, its signup window closed", moved.value)
     except Exception:
         log.exception("Could not move on a season its signup window's close left behind")
-
-
-async def _recover_off_queue_closing_notices(bot: LeagueBot) -> None:
-    """Ask the change queue, as the bot, to finish a close of the signup window off the queue
-    that a stop cut off (`signup.close.finish`), where any driver it returned is still owed their
-    notice. Nothing is asked where none is: the queue's own close keeps marks of its own, which
-    the queue finds for itself. A failure to ask is logged, and the start goes on: the marks stand
-    for the next start to find."""
-    from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.season_lifecycle_service import CLOSE_FINISH
-
-    try:
-        if not await bot.signup_module_service.off_queue_closing_notices():
-            return
-        await bot.change_queue.ask(
-            CLOSE_FINISH,
-            {},
-            origin=ChangeOrigin.BOT,
-            what="finishing the signup window's close a stop cut off",
-        )
-    except Exception:
-        log.exception("Could not ask to finish the signup window's close a stop cut off")
 
 
 async def _recover_pending_setups(bot: LeagueBot) -> None:
