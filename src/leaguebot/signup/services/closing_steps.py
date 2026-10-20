@@ -71,6 +71,9 @@ CLOSE_CAUSES: dict[str, tuple[str, str]] = {
 }
 #: The kind of the change that closes one driver's signup channel on the driver's own lane.
 KIND = "signup.closing"
+#: The kind of the change that takes down a manager's typed reason the signup it was typed for
+#: has moved on from, on the driver's own lane.
+REASON_KIND = "signup.reason.delete"
 #: The timer that deletes a held signup channel a day on.
 DELETE_TIMER = "signup_channel_delete"
 #: The timer that ends a signup left unanswered for a day: a closing or a switch-off takes it away.
@@ -92,8 +95,8 @@ __all__ = [
     "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_REASON",
     "DELETE_TIMER",
     "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
-    "POST_CLOSED", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "closing_change",
-    "closing_steps", "window_close_jobs", "window_close_steps",
+    "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "closing_change",
+    "closing_steps", "reason_delete_change", "window_close_jobs", "window_close_steps",
 ]
 
 
@@ -350,6 +353,48 @@ def closing_change(
         check=standing,
         key=lambda payload: f"{KIND}:{payload['user_id']}",
         doing=lambda payload: f"Closing the signup of <@{payload['user_id']}>",
+        outcome=outcome,
+        lane=lambda payload: f"channel:{int(payload['channel_id'])}",
+        writes=(),
+    )
+
+
+def reason_delete_change() -> ChangeType:
+    """The `signup.reason.delete` change type, for the builder to register, on the driver's own lane
+    (``channel:<signup channel>``): the manager's reason, typed after Reject or Request Changes,
+    for a signup that has moved on since the press. The press was refused and nothing else is
+    done, so the one job `delete_reason` takes the message down, as the closing and the correction
+    choices do for a reason that was taken. The payload is ``channel_id`` and ``message_id``; a
+    message already gone is nothing to do, and one Discord refuses to delete stops the driver's
+    lane."""
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (PlannedStep(DELETE_REASON, {
+            "channel_id": int(payload["channel_id"]),
+            "message_id": int(payload["message_id"]), "what": "reason message",
+        }),)
+
+    async def standing(_ctx: CheckContext) -> Verdict:
+        return Verdict.go()
+
+    async def describe_reason(ctx: StepContext) -> str:
+        return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=REASON_KIND,
+        opening=(),
+        plan=plan,
+        steps={
+            DELETE_REASON: dataclasses.replace(
+                standing_posts.delete_replaced_step(DELETE_REASON), describe=describe_reason
+            ),
+        },
+        check=standing,
+        key=lambda payload: f"{REASON_KIND}:{payload['message_id']}",
+        doing=lambda payload: "Taking down a manager's reason",
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=(),

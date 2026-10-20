@@ -558,3 +558,22 @@ async def test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded(
     assert refusals[0].startswith(f"⛔ the “{label}” button of"), refusals[0]
     assert f"refused for {_manager(league).display_name} (<@{REVIEWER}>)" in refusals[0]
     assert "has moved on" in refusals[0]
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["reject", "request_changes"],
+    ids=["reject", "request-changes"],
+)
+async def test_a_reason_typed_after_the_signup_moved_on_is_taken_down(tmp_path, action):
+    """Manager 77 presses Reject or Request Changes on Kimi's panel; Kimi withdraws before the
+    reason arrives. 77 types the reason, is told the signup has moved on, and the queue runs:
+    the reason is deleted from Kimi's channel, where Kimi could otherwise read it."""
+    league = await _league(tmp_path)
+
+    await _type_reason(league, action, "Lap time could not be verified.",
+                       moved_to="NOT_SIGNED_UP")
+
+    standing = [m.content for m in league.channel(KIMI_CHANNEL).posted
+                if getattr(m, "content", None) == "Lap time could not be verified."]
+    assert standing == [], standing

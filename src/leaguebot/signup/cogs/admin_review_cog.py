@@ -3,7 +3,8 @@
 The cog captures the reason a manager types after Reject or Request Changes. A Reject reason is
 asked of the change queue as the manager's `signup.end`, and a Request Changes reason as
 `signup.request_changes`, each through the manager's stored press; the message is deleted by that
-change's own jobs, not at once. The views and their
+change's own jobs, not at once; where the press is refused (the signup has moved on), the reason
+is taken down by a change of its own on the driver's lane. The views and their
 Discord interaction callbacks (T031 AdminReviewView, T035 CorrectionParameterView) are in
 `signup/services/signup_views.py`, beside the jobs that post them; the pending reasons they park
 are held there too. The heavy state-machine logic is delegated to WizardService.
@@ -16,9 +17,11 @@ import logging
 import discord
 from discord.ext import commands
 
+from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.utils.interaction_errors import report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import is_foreign_guild
+from leaguebot.signup.services.closing_steps import REASON_KIND
 from leaguebot.signup.services.review_changes import REQUEST
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _PENDING_REASONS, _review_button
 from leaguebot.signup.services.wizard_changes import END, REJECTED
@@ -78,9 +81,17 @@ class AdminReviewCog(commands.Cog):
         else:
             return
         try:
-            await self.bot.change_queue.ask(
+            asked = await self.bot.change_queue.ask(
                 kind, payload, interaction=interaction, actor=actor, what=what,
             )
+            if asked is None:
+                # The press was refused (the signup has moved on) or is already in hand: the
+                # change that would have taken the reason down was never asked, so its message
+                # does not stand in the driver's channel.
+                await self.bot.change_queue.ask(
+                    REASON_KIND, {"channel_id": message.channel.id, "message_id": message.id},
+                    what="taking down a manager's reason", origin=ChangeOrigin.BOT,
+                )
         except Exception as error:  # noqa: BLE001 — handed to report_failure, which tells the manager
             await report_failure(interaction, error, what=what)
 
