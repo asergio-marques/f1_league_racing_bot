@@ -172,7 +172,7 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (4, PASS["core"]),
+    ("__main__.py", "_recover_expired_review_prompts"): (2, PASS["core"]),
     ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
     ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
@@ -885,7 +885,6 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (2, HANDLERS),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
     ("core/cogs/season_cog.py", "_confirm_privately"): (1, HANDLERS),
     ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
@@ -1062,7 +1061,6 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (2, SLICE["6b"]),
     ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, SLICE["6b"]),
     ("core/cogs/season_cog.py", "_confirm_privately"): (1, SLICE["6b"]),
     ("core/utils/batch_notice.py", "delete_notice"): (1, SLICE["6b"]),
@@ -1722,7 +1720,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
@@ -1951,7 +1948,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_config_service.py", "ImageConfigService.set_tier_colour"): (1, SLICE[7]),
     ("image/services/image_config_service.py", "ImageConfigService.set_tier_colours"): (1, SLICE[7]),
     # Core's pass
-    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_images"): (1, PASS["core"]),

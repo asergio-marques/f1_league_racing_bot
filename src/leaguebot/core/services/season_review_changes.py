@@ -171,6 +171,52 @@ __all__ = [
 ]
 
 
+async def _review_channel(bot: Any, channel_id: int) -> discord.TextChannel | None:
+    """The channel a review stands in, or None where it is gone: found in the cache, then on the
+    league's server, then fetched.
+
+    A restart takes a review down while the cache may not yet hold every channel, and a cache
+    miss looks like a deleted channel, so trusting the cache alone would count a message still
+    standing as gone with its channel. A channel Discord says is gone, or that the bot may not
+    see, is gone; a fetch that fails otherwise stops the queue, the review's row standing until
+    the try after, Retry or Discard.
+    """
+    channel = as_text_channel(bot.get_channel(channel_id))
+    if channel is not None:
+        return channel
+    guild = await league_guild(bot)
+    if guild is not None:
+        channel = as_text_channel(guild.get_channel(channel_id))
+        if channel is not None:
+            return channel
+    try:
+        return as_text_channel(await bot.fetch_channel(channel_id))
+    except (discord.NotFound, discord.Forbidden):
+        return None
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord("the review's channel could not be looked up") from exc
+
+
+async def _delete_review_message(ctx: StepContext) -> StepResult:
+    """Delete one message of the review. A channel that is gone completes the job (the message
+    went with it); a `NotFound` propagates, which the queue completes; any other Discord refusal
+    stops the queue, keeping the message's link for a Discard to name."""
+    payload = ctx.step_payload
+    channel = await _review_channel(ctx.bot, int(payload["channel_id"]))
+    if channel is None:
+        return StepResult(result={"gone": True})
+    message = channel.get_partial_message(int(payload["message_id"]))
+    try:
+        await delete_notice(message)
+    except discord.NotFound:
+        raise
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord(
+            "a message of the review could not be deleted", result={"link": message.jump_url},
+        ) from exc
+    return StepResult(result={"deleted": True})
+
+
 def season_review_take_down_change() -> ChangeType:
     """The `season.review.take_down` change type, for the builder to register."""
 
@@ -199,10 +245,7 @@ def season_review_take_down_change() -> ChangeType:
         payload = ctx.step_payload
         reviewer = int(payload["reviewer_id"])
         named = await name_of_member(ctx.bot, reviewer)
-        guild = await league_guild(ctx.bot)
-        channel = None if guild is None else as_text_channel(
-            guild.get_channel(int(payload["channel_id"]))
-        )
+        channel = await _review_channel(ctx.bot, int(payload["channel_id"]))
         if channel is None:
             return StepResult(result={"named": named, "no_channel": True})
         review = payload["review"]
@@ -290,8 +333,8 @@ def season_review_take_down_change() -> ChangeType:
         opening=(),
         plan=plan,
         steps={
-            DELETE_MESSAGE: dataclasses.replace(
-                standing_posts.delete_replaced_step(DELETE_MESSAGE), describe=describe_delete
+            DELETE_MESSAGE: Step(
+                DELETE_MESSAGE, StepKind.DELETE, _delete_review_message, describe=describe_delete
             ),
             POST_EXPIRY: Step(
                 POST_EXPIRY, StepKind.ACT, post_expiry, describe=describe_expiry

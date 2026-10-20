@@ -51,15 +51,11 @@ import pytest
 
 import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection, run_migrations
-from tests.support.review_prompts import store_review_prompt
 
 SERVER_ID = 11808
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
-CHANNEL_ID = 700
-MESSAGE_ID = 8800
-REVIEWER_ID = 77
 STARTER_ID = 4242
 
 PHASE_1_DAYS = 7
@@ -307,19 +303,6 @@ async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def _seed_prompt(db_path):
-    async with get_connection(db_path) as db:
-        await store_review_prompt(
-            db,
-            season_id=SEASON_ID,
-            channel_id=CHANNEL_ID,
-            message_id=MESSAGE_ID,
-            reviewer_id=REVIEWER_ID,
-            posted_at="2026-02-01T00:00:00+00:00",
-        )
-        await db.commit()
-
-
 def _review_channel(*, fetch_fails: bool = False, send_fails: bool = False):
     channel = MagicMock()
     message = MagicMock()
@@ -335,110 +318,6 @@ def _review_channel(*, fetch_fails: bool = False, send_fails: bool = False):
     )
     channel._message = message
     return channel
-
-
-async def _prompt_rows(db_path) -> int:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) AS n FROM season_review_prompts")
-        return (await cursor.fetchone())["n"]
-
-
-async def test_a_standing_review_prompt_is_deleted(tmp_path):
-    """Its five minutes are a view timeout held in memory: the bot was down, so they cannot
-    have been served, and no view exists to serve them now."""
-    db_path = await _base_db(tmp_path, "review_delete")
-    await _seed_prompt(db_path)
-    channel = _review_channel()
-
-    await bot_module._recover_expired_review_prompts(_stub_bot(db_path, channel=channel))
-
-    channel._message.delete.assert_awaited_once()
-
-
-async def test_the_reviewer_is_told_the_review_expired(tmp_path):
-    """They would otherwise sit watching a channel for a button that is never coming back."""
-    db_path = await _base_db(tmp_path, "review_notice")
-    await _seed_prompt(db_path)
-    channel = _review_channel()
-
-    await bot_module._recover_expired_review_prompts(_stub_bot(db_path, channel=channel))
-
-    posted = str(channel.send.await_args.args[0])
-    assert f"<@{REVIEWER_ID}>" in posted
-    assert "/season placements-review" in posted
-
-
-async def test_the_row_is_cleared(tmp_path):
-    """Otherwise the same prompt is swept on every later restart, posting the notice again
-    each time."""
-    db_path = await _base_db(tmp_path, "review_clear")
-    await _seed_prompt(db_path)
-
-    await bot_module._recover_expired_review_prompts(
-        _stub_bot(db_path, channel=_review_channel())
-    )
-
-    assert await _prompt_rows(db_path) == 0
-
-
-async def test_a_channel_missing_from_the_cache_is_fetched(tmp_path):
-    """A cache miss and a deleted channel are indistinguishable to `get_channel`, and the
-    row is cleared either way — so a miss would drop the only record of a message still
-    standing."""
-    db_path = await _base_db(tmp_path, "review_fetch")
-    await _seed_prompt(db_path)
-    channel = _review_channel()
-    stub = _stub_bot(db_path, channel=None)
-    stub.fetch_channel = AsyncMock(return_value=channel)
-
-    await bot_module._recover_expired_review_prompts(stub)
-
-    stub.fetch_channel.assert_awaited_once()
-    channel._message.delete.assert_awaited_once()
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        discord.NotFound(MagicMock(status=404), "gone"),
-        discord.Forbidden(MagicMock(status=403), "no"),
-    ],
-)
-async def test_a_channel_that_cannot_be_fetched_still_clears_the_row(tmp_path, error):
-    """Deleted, or the bot removed from it. Either way the row has nothing left to describe."""
-    db_path = await _base_db(tmp_path, f"review_unfetchable_{type(error).__name__}")
-    await _seed_prompt(db_path)
-    stub = _stub_bot(db_path, channel=None)
-    stub.fetch_channel = AsyncMock(side_effect=error)
-
-    await bot_module._recover_expired_review_prompts(stub)
-
-    assert await _prompt_rows(db_path) == 0
-
-
-async def test_a_message_already_gone_still_posts_the_notice(tmp_path):
-    """Deleted by hand, or with something else. The reviewer still needs telling."""
-    db_path = await _base_db(tmp_path, "review_msggone")
-    await _seed_prompt(db_path)
-    channel = _review_channel(fetch_fails=True)
-
-    await bot_module._recover_expired_review_prompts(_stub_bot(db_path, channel=channel))
-
-    channel.send.assert_awaited_once()
-    assert await _prompt_rows(db_path) == 0
-
-
-async def test_a_notice_that_cannot_be_posted_still_clears_the_row(tmp_path):
-    """The message is deleted by then; leaving the row would sweep a prompt that no longer
-    exists on every restart from here on."""
-    db_path = await _base_db(tmp_path, "review_sendfail")
-    await _seed_prompt(db_path)
-
-    await bot_module._recover_expired_review_prompts(
-        _stub_bot(db_path, channel=_review_channel(send_fails=True))
-    )
-
-    assert await _prompt_rows(db_path) == 0
 
 
 async def test_a_restart_with_no_standing_prompts_does_nothing(tmp_path):

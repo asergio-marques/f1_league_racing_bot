@@ -638,13 +638,9 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
 # The restart (C98)
 # ---------------------------------------------------------------------------
 
-NO_RESTART_TAKE_DOWN = (
-    "#439: a restart takes down each season review left standing itself, off the change queue"
-)
 CONFIG = "/season config-review"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_TAKE_DOWN)
 async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_queue_starts(
         standing):
     """Two reviews stand in channel 700 when the bot starts: Alex's placements review (report R1
@@ -669,16 +665,16 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
 
     await run_queue(standing.bot)
 
-    assert channel.messages == []
+    # Every message of both reviews is gone; the two notices just posted are what the channel holds.
+    assert {channel.q, channel.r1, channel.r2, config_question}.isdisjoint(channel.messages)
     notices = [content for content, _ in channel.sent]
-    assert len(notices) == 2
+    assert len(notices) == len(channel.messages) == 2
     assert all("restarting" in notice and f"<@{REVIEWER}>" in notice for notice in notices)
     assert any(PLACEMENTS in notice for notice in notices)
     assert any(CONFIG in notice for notice in notices)
     assert await _prompts(standing.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RESTART_TAKE_DOWN)
 async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_second_start(standing):
     """Discord refuses to delete Alex's report message R1. The bot starts and asks the review's
     take-down, which stops at R1's delete. The bot starts again with it still stopped: the
@@ -934,10 +930,6 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
 # An expired review's button (C97a)
 # ---------------------------------------------------------------------------
 
-NO_ROUTABLE_REVIEW = (
-    "#439: a season review's button holds its five minutes in memory, from when its view was "
-    "built, and is not routed again once the bot restarts"
-)
 
 
 def _refused_as_expired(env: Any, interaction: Any) -> None:
@@ -966,7 +958,6 @@ async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorde
     assert standing.channel.deleted == [] and standing.channel.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_ROUTABLE_REVIEW)
 async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(standing):
     """The bot restarts with Alex's review standing in channel 700, posted on 7 September. The
     restart's step routes the button on Q again, before the queue starts, rather than leaving it

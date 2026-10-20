@@ -369,7 +369,10 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
     }
 
     def make(payload: dict[str, Any]) -> discord.ui.View:
-        cog = cast(SeasonCog, bot.get_cog("SeasonCog"))
+        # The season cog is loaded by the time a review is posted. A restart routes the buttons of
+        # the reviews left standing before it is, and those are served by a cog of the same bot.
+        loaded = bot.get_cog("SeasonCog")
+        cog = loaded if isinstance(loaded, SeasonCog) else SeasonCog(bot)
         return families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
 
     return make
@@ -1767,98 +1770,70 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
 
 async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
-    """Clear any season-review approve button left standing by a previous run.
+    """Ask the change queue to take down every season review left standing by a previous run.
 
-    The button expires five minutes after `/season placements-review` posts it, and the timer that
-    does so is a `discord.ui.View` timeout — held in memory, and lost with the process. A
-    bot restarted inside that window would otherwise leave a public message offering a
-    button nothing is listening to, for ever.
+    The button expires five minutes after the review posts its question, by a timer held in
+    memory and lost with the process. A bot restarted inside that window would otherwise leave a
+    public message offering a button nothing is counting, for ever.
 
-    Every row that survives to startup is expired by definition: the bot was down, so the
-    five minutes cannot have been served, and no view exists to serve them now. Each is
-    therefore deleted, its report with it, and replaced with the same notice a timeout would
-    have posted, the reviewer pinged so they learn of it without watching the channel. Its lapse
-    is recorded in the log channel as a timeout's is, naming the reviewer and the review.
+    Every row that survives to start-up is expired by definition: the bot was down, so the five
+    minutes cannot have been served. Each is asked for as a ``season.review.take_down`` ending
+    ``restart``, as the bot, **before the queue starts** (core specification, "What survives a
+    restart"): its jobs delete the question and the report above it, post the notice pinging the
+    reviewer, record the lapse in the log channel and drop the row. Nothing is deleted, posted or
+    written here, so a deletion Discord refuses stops the queue with the row standing, rather than
+    being lost.
+
+    A row whose take-down is already queued, running or stopped is left to it and asked for no
+    second time: what a review's press has marked is held in memory and empty after a restart, so
+    the queue is what says. Each question's button is routed again by the id of its message, so a
+    press made before the take-down has run reaches a view that refuses it and records the refusal
+    (a press reads the row, which says its five minutes ran).
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.utils.log_lines import record_abandoned
+    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.season_review_changes import RESTART, TAKE_DOWN, take_review_down
 
     try:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
-                "SELECT channel_id, message_id, reviewer_id, review, report_message_ids, "
-                "posted_at FROM season_review_prompts"
+                "SELECT message_id, reviewer_id, review FROM season_review_prompts"
             )
             prompts = await cursor.fetchall()
+        in_hand = {
+            int(payload["question_id"])
+            for payload in await unfinished(bot.db_path, [TAKE_DOWN])
+        }
     except Exception:
         log.exception("could not read the standing season review prompts")
         return
 
+    view_for = _approve_view_for(bot)
     for row in prompts:
-        # Fetched rather than only read from the cache. A cache miss and a deleted channel
-        # are indistinguishable to `get_channel`, and the row is cleared either way — so a
-        # miss would drop the only record of a message still standing, which is precisely
-        # what this sweep exists to prevent.
-        channel = as_text_channel(bot.get_channel(int(row["channel_id"])))
-        if channel is None:
-            try:
-                channel = as_text_channel(await bot.fetch_channel(int(row["channel_id"])))
-            except (discord.NotFound, discord.Forbidden):
-                channel = None
-            except discord.HTTPException as exc:
-                log.warning("could not fetch the channel of a standing review: %s", exc)
-                channel = None
-        review = str(row["review"])
-        if channel is not None:
-            # The question, then the report above it: the report goes with it, as it does
-            # when the review expires while the bot runs.
-            try:
-                report = [int(mid) for mid in json.loads(row["report_message_ids"] or "[]")]
-            except (ValueError, TypeError):
-                # Unreadable, which `bind` never writes: the question is still swept.
-                log.warning("an expired review's report could not be read; its question is swept")
-                report = []
-            standing = [int(row["message_id"]), *report]
-            for message_id in standing:
-                try:
-                    message = await channel.fetch_message(message_id)
-                    await message.delete()
-                except discord.NotFound:
-                    # Already gone — deleted by hand, or the channel with it. The row is
-                    # cleared below regardless, which is the point of the sweep.
-                    pass
-                except (discord.HTTPException, discord.Forbidden) as exc:
-                    log.warning("could not delete an expired review's message: %s", exc)
-            try:
-                await channel.send(
-                    f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
-                    f"restarting and can no longer be answered. Run `{review}` again."
-                )
-            except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning("could not post the review expiry notice: %s", exc)
-
-        await record_abandoned(
-            bot,
-            int(row["reviewer_id"]),
-            what=f"`{review}`",
-            lapsed=True,
-            detail=(
-                "The bot restarted while it stood, so it can no longer be answered, and "
-                f"nothing has been confirmed. Run `{review}` again."
-            ),
-        )
-
+        question_id = int(row["message_id"])
         try:
-            async with get_connection(bot.db_path) as db:
-                await db.execute(
-                    "DELETE FROM season_review_prompts WHERE message_id = ?",
-                    (int(row["message_id"]),),
-                )
-                await db.commit()
+            bot.add_view(
+                view_for({"view": _review_view_of(row), "reviewer_id": row["reviewer_id"]}),
+                message_id=question_id,
+            )
         except Exception:
-            log.exception("could not clear the season review prompt")
-        else:
-            log.info("cleared a season review prompt posted at %s", row["posted_at"])
+            log.exception("could not route the button of the review at %s again", question_id)
+        if question_id in in_hand:
+            log.info("the take-down of the review at %s is in hand, so it is left to it", question_id)
+            continue
+        try:
+            await take_review_down(bot.change_queue, bot.db_path, question_id, RESTART)
+        except Exception:
+            log.exception("could not ask for the take-down of the review at %s", question_id)
+
+
+def _review_view_of(row: aiosqlite.Row) -> str:
+    """The family of the button a standing review's row belongs to, as the builder's factory of
+    review views names it: the configuration review by its command, any other by the placements
+    approval's. A mid-season confirmation is routed as the approval is, which differs from it in
+    what it says it has not done: the take-down queued beside it is what ends the review, and a
+    press that reaches the button before then is refused all the same."""
+    return "configuration" if str(row["review"]) == "/season config-review" else "approve"
 
 
 async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:

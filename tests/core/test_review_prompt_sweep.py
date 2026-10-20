@@ -55,9 +55,6 @@ PLACEMENTS = "/season placements-review"
 TAKE_DOWN = "season.review.take_down"
 BOT_USER = SimpleNamespace(id=1, name="LeagueBot")
 
-NO_SWEEP_ON_THE_QUEUE = (
-    "#439: the restart's sweep takes each season review down itself, off the change queue"
-)
 
 
 def _server(bot: Any, channel: Any | None, *, cached: bool = True) -> None:
@@ -167,7 +164,6 @@ def _lapses(env: Any) -> list[str]:
     return [line for line in env.bot.log_channel.sent if line.startswith("⌛ ")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_standing_prompt_is_deleted(league):
     """Alex's review question stands in channel 700 when the bot starts. The sweep deletes
     nothing itself and asks one take-down of the queue; once the queue runs, the question is
@@ -185,7 +181,6 @@ async def test_a_standing_prompt_is_deleted(league):
     assert league.channel.deleted == [question]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_the_notice_pings_the_reviewer(league):
     """Alex's question stands at a restart. Once the queue runs, channel 700 is told the review
     expired, pinging Alex and naming `/season placements-review`."""
@@ -199,7 +194,6 @@ async def test_the_notice_pings_the_reviewer(league):
     assert PLACEMENTS in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_the_row_is_cleared(league):
     """Left behind, it would be swept again on every restart for ever. Once the queue has taken
     Alex's review down, its row is gone and the queue is not stopped."""
@@ -212,7 +206,6 @@ async def test_the_row_is_cleared(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_message_already_gone_still_clears_its_row(league):
     """Alex's question was deleted by hand while the bot was down: its row stands, the message
     does not. The take-down's delete completes as gone, the notice is still posted once, the row
@@ -228,7 +221,6 @@ async def test_a_message_already_gone_still_clears_its_row(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_an_unreachable_channel_still_clears_its_row(league):
     """Channel 700 itself is gone: neither the cache nor a fetch finds it. The take-down completes
     with the channel gone, nothing is posted anywhere in its place, the row is cleared and the
@@ -244,7 +236,6 @@ async def test_an_unreachable_channel_still_clears_its_row(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_channel_missing_from_the_cache_is_fetched(league):
     """The sweep runs during startup, where the cache may not yet hold every channel.
 
@@ -263,7 +254,6 @@ async def test_a_channel_missing_from_the_cache_is_fetched(league):
     assert await _rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_fetch_that_fails_stops_the_queue_keeping_its_row(league):
     """Channel 700 is missing from the cache, and Discord fails the fetch (500). The take-down
     stops the queue rather than clearing the row: Alex's review still stands in the record, to
@@ -279,7 +269,6 @@ async def test_a_fetch_that_fails_stops_the_queue_keeping_its_row(league):
     assert len(await _rows(league.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_refused_delete_stops_the_queue(league):
     """Discord refuses to delete Alex's question (403). The take-down stops the queue at that
     delete, nothing lost quietly: the question still stands, and so does its row."""
@@ -314,7 +303,6 @@ async def test_an_unreadable_database_is_survived():
 # ── #482: what the sweep records, and one row per standing prompt ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 @pytest.mark.parametrize("review", [PLACEMENTS, "/season config-review"])
 async def test_a_cleared_prompt_records_its_lapse_naming_the_reviewer_and_the_review(
     league, review
@@ -338,7 +326,6 @@ async def test_a_cleared_prompt_records_its_lapse_naming_the_reviewer_and_the_re
     assert review in beneath and "again" in beneath, lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_an_older_review_lapsing_leaves_a_newer_ones_record_for_the_restart(league):
     """F1. Two placements reviews stand in channel 700, Alex's older question and his newer one.
     The older's five minutes run, and its timer asks its take-down; once the queue runs, only the
@@ -372,7 +359,6 @@ async def test_an_older_review_lapsing_leaves_a_newer_ones_record_for_the_restar
     assert await _rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_review_standing_at_a_restart_has_its_report_deleted_with_its_prompt(league):
     """F2. Alex's placements review stands in channel 700: its report (two messages) and its
     question. The bot restarts; once the queue runs, the report goes with the question, each
@@ -391,7 +377,6 @@ async def test_a_review_standing_at_a_restart_has_its_report_deleted_with_its_pr
     assert await _rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SWEEP_ON_THE_QUEUE)
 async def test_a_prompt_whose_report_list_cannot_be_read_is_still_cleared(league):
     """A standing prompt whose recorded report is unreadable (written by hand, say) is still
     swept: its question is deleted, the notice posted, its lapse recorded and its row cleared,
