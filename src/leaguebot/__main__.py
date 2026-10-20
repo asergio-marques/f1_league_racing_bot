@@ -177,11 +177,16 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.image.services import driver_portrait_service
     from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
+    from leaguebot.signup.services.closing_steps import window_close_jobs, window_close_steps
     from leaguebot.weather.services import forecast_cleanup_service
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
-        return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
+        # The start-up finishing a close a stop cut off has no change's jobs after it to close the
+        # window, so its close does (until `close_finish_change` is deleted).
+        return await close_signups_unattended(
+            bot_, cause=cause, hold_channels=False, finishing=cause == "stop cut off"
+        )
 
     async def window_open() -> bool:
         if not await bot.module_service.is_signup_enabled():
@@ -242,7 +247,20 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
             user_id, guild, WINDOW_CLOSED_NOTICE
         )
 
+    async def window_jobs(cause: str, returned: int) -> "tuple[PlannedStep, ...]":
+        config = await bot.signup_module_service.get_config()
+        return window_close_jobs(
+            cause, returned,
+            channel_id=None if config is None else config.signup_channel_id,
+            button_message_id=None if config is None else config.signup_button_message_id,
+        )
+
     return SeasonEndHooks(
+        window_jobs=window_jobs,
+        window_steps=window_close_steps(
+            signup_module_service=lambda: bot.signup_module_service,
+            now=lambda: bot.change_queue.now(),
+        ),
         close_signups=close_signups,
         window_open=window_open,
         cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),

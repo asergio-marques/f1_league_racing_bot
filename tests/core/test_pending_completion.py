@@ -198,10 +198,6 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
     assert seats[0]["n"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: the wind-down's close audits the window's close and writes its line itself, not in "
-    "post_closed's record (C66, C67)"
-))
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
     """The season is in Ongoing signups with every division finished, and signups are open:
     winding it down closes the window as every division being done, and cancels the close

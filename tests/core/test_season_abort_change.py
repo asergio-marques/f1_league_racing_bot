@@ -89,11 +89,6 @@ NOT_FORGOTTEN = (
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
-#: Until C66/C67, a season end's close records the window closed in `close_window`; from them
-#: on, in the record of its `post_closed` job, in the same save as that job's mark.
-CLOSE_RECORDED_BY_ITS_NOTICE = (
-    "#439: a season end's window close is not yet recorded by its post_closed job (C66, C67)"
-)
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -385,7 +380,6 @@ async def _driver_role_held(league: Any) -> None:
 # ── Defect 5: every failure stops the queue ─────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     """The signup window is open and the abort queued; recording the window closed fails. The
     queue stops at `post_closed`, whose record writes the window's close, with the season still
@@ -488,7 +482,6 @@ async def test_the_driver_pass_test_mode_and_the_season_s_deletion_are_saved_tog
     assert not await _season_stands(league)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_stop_part_way_is_finished_on_restart(tmp_path):
     """The abort is run as far as `post_closed`, which records the window closed, and the bot
     stops there with the season still standing. When it starts again, the abort is finished:
@@ -843,9 +836,7 @@ _DISCARDS = {
 
 
 @pytest.mark.parametrize("job", [
-    pytest.param(job, marks=pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE))
-    if job == "post_closed" else job
-    for job in sorted(_DISCARDS)
+    job for job in sorted(_DISCARDS)
 ])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand(tmp_path, monkeypatch, job):
     build, where, text = _DISCARDS[job]
@@ -898,7 +889,6 @@ RETURNED_NOT_TOLD = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_close_returned(
     tmp_path,
 ):

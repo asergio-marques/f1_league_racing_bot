@@ -41,12 +41,6 @@ SIGNUP_CHANNEL = 700
 BUTTON_MESSAGE = 8800
 CLOSED_MESSAGE = 9900
 
-#: Until C66/C67, the queue's close audits the window's close and writes its "🔒 Signups closed"
-#: line itself; from them on, `post_closed`'s record writes both, with the window's close.
-AUDITED_BY_ITS_NOTICE = (
-    "#439: the queue's close still audits the window's close and writes its line itself, not in "
-    "post_closed's record (C66, C67)"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -499,7 +493,6 @@ async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=AUDITED_BY_ITS_NOTICE)
 async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
     """The queue's close serves a season's end and every division done. It writes no audit of
     the window's close: that record is written by the "Signups are now closed" post's own job,
@@ -561,7 +554,6 @@ def _unattended_bot(db_path, *, signups_open=True, enabled=True, channel=None):
 _CAUSES = ["season end", "divisions done"]
 
 
-@pytest.mark.xfail(strict=True, reason=AUDITED_BY_ITS_NOTICE)
 @pytest.mark.parametrize("cause", _CAUSES)
 async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_closed_notice(
     tmp_path, cause

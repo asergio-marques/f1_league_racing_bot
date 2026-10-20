@@ -149,6 +149,7 @@ async def execute_forced_close(
     audit_action: str,
     window: int | None | _Unasked = _Unasked.UNASKED,
     hold_channels: bool = True,
+    finishing: bool = False,
 ) -> ForcedCloseOutcome:
     """Force-close the signup window, and return what it did.
 
@@ -166,7 +167,12 @@ async def execute_forced_close(
     the queue before the channel is locked, and which leaves the season's stage where it stands
     (step 4b). Off the queue (``/signup close``, the close timer, a restart past the close time,
     turning signup off) it holds them as before, locking the channel and arming its deletion
-    whatever became of the notice. The queue's form raises where a step after the drivers were
+    whatever became of the notice. The queue's form returns the drivers and does nothing more:
+    the Sign Up button's deletion, the "Signups are now closed" post, the window's close and its
+    audit are jobs of the change that asked for it (signup's ``delete_button`` and ``post_closed``).
+    Only *finishing* (the start-up finishing a close off the queue that a stop cut off, which no
+    job of a change follows, until that finish is deleted) has the queue's form close the window
+    itself, as the off-queue form does. The queue's form raises where a step after the drivers were
     returned does, as a `StepFailedOnDiscord` whose result names them (``returned``): the stop
     keeps them on the job, so that its next try, which finds none left to return, still tells and
     closes each one's channel.
@@ -267,6 +273,11 @@ async def execute_forced_close(
             failed.append(
                 f"<@{row['discord_user_id']}> could not be returned to Not Signed Up."
             )
+
+    if not (hold_channels or finishing):
+        return ForcedCloseOutcome(
+            returned=returned, failed=tuple(failed), returned_ids=tuple(returned_ids)
+        )
 
     try:
         # Post cancellation notice in each wizard channel and schedule deletion.
@@ -405,7 +416,7 @@ _UNATTENDED_HEADS: dict[str, str] = {
 
 
 async def close_signups_unattended(
-    bot: LeagueBot, *, cause: str, hold_channels: bool = True
+    bot: LeagueBot, *, cause: str, hold_channels: bool = True, finishing: bool = False
 ) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close, and record it in one line.
 
@@ -420,7 +431,9 @@ async def close_signups_unattended(
     call.
 
     *hold_channels* False is the change queue's form (``execute_forced_close``): the outcome gives
-    the drivers it returned and the queue's jobs tell and close each one's signup channel.
+    the drivers it returned and the queue's jobs tell and close each one's signup channel, close
+    the window in its channel and record that in the line, which this writes none of (*finishing*
+    excepted, as ``execute_forced_close`` has it).
 
     Written only where a window was actually closed: a module that is disabled produces nothing
     (the core specification, Modules), and a window not open needs no close, so both return
@@ -436,8 +449,10 @@ async def close_signups_unattended(
     close_at = cfg.close_at  # the close clears it, so it is read first
 
     outcome = await execute_forced_close(
-        bot, audit_action=audit_action, hold_channels=hold_channels
+        bot, audit_action=audit_action, hold_channels=hold_channels, finishing=finishing
     )
+    if not (hold_channels or finishing):
+        return outcome
 
     head = _UNATTENDED_HEADS.get(cause, "🔒 Signups closed automatically at their set time")
     if cause in ("timer", "restart") and close_at is not None:

@@ -54,11 +54,6 @@ from tests.support.season_league import (
 
 
 
-#: Until C66/C67, the wind-down's close records the window closed in its `wind_down` job; from
-#: them on, in the record of its `post_closed` job, in the same save as that job's mark.
-CLOSE_RECORDED_BY_ITS_NOTICE = (
-    "#439: the wind-down's window close is not yet recorded by its post_closed job (C66, C67)"
-)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
@@ -137,7 +132,6 @@ async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     """The signup window is open and the wind-down asked; recording the window closed fails. The
     queue stops at `post_closed`, whose record writes the window's close, with the season still
@@ -289,7 +283,6 @@ def _closes_then_fails_once(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tells_and_closes_them(
     tmp_path,
 ):
@@ -345,7 +338,6 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
     tmp_path,
 ):
@@ -380,7 +372,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
     assert await _stage(league) == "PENDING_COMPLETION"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 @pytest.mark.parametrize("failures", [1, 2], ids=["fails once", "fails again on the retry"])
 async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
     tmp_path, failures,
@@ -464,7 +455,6 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_closed_still_tells_and_closes_its_drivers_at_start(
     tmp_path,
 ):
@@ -496,7 +486,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     assert await _owed(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_wind_down_returned(
     tmp_path,
 ):

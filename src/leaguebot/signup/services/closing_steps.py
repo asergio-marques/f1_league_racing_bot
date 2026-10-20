@@ -17,13 +17,17 @@ lane alone. It needs only its channel to stand, not the signup it closes: that h
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import aiosqlite
 import discord
 
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, StepResult, Verdict
+from leaguebot.core.services import standing_posts
+from leaguebot.core.services.audit_service import record_system_change_on
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -34,9 +38,23 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post
 
+if TYPE_CHECKING:
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
 SIGNUP_NOTICE = "signup_notice"
 CLOSE_SIGNUP = "close_signup"
 ARM_DELETION = "arm_deletion"
+DELETE_BUTTON = "delete_button"
+POST_CLOSED = "post_closed"
+#: What the signup channel is left saying once the window has closed.
+CLOSED_NOTICE = "🔒 Signups are now closed."
+#: How a close nobody ran is audited and its line headed, by the cause the change gives it.
+CLOSE_CAUSES: dict[str, tuple[str, str]] = {
+    "season end": ("SIGNUP_SEASON_END_CLOSE", "🔒 Signups closed as the season ended"),
+    "divisions done": (
+        "SIGNUP_DIVISIONS_DONE_CLOSE", "🔒 Signups closed as every division is done"
+    ),
+}
 #: The kind of the change that closes one driver's signup channel on the driver's own lane.
 KIND = "signup.closing"
 #: The timer that deletes a held signup channel a day on.
@@ -45,8 +63,9 @@ DELETE_TIMER = "signup_channel_delete"
 HOLD = timedelta(hours=24)
 
 __all__ = [
-    "ARM_DELETION", "CLOSE_SIGNUP", "DELETE_TIMER", "HOLD", "KIND", "SIGNUP_NOTICE",
-    "closing_change", "closing_steps",
+    "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_TIMER",
+    "HOLD", "KIND", "POST_CLOSED", "SIGNUP_NOTICE", "closing_change", "closing_steps",
+    "window_close_jobs", "window_close_steps",
 ]
 
 
@@ -121,6 +140,89 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
         SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
         CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
         ARM_DELETION: Step(ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm),
+    }
+
+
+def window_close_jobs(
+    cause: str, returned: int, *, channel_id: int | None, button_message_id: int | None
+) -> tuple[PlannedStep, ...]:
+    """The jobs that close the signup window in its channel once a close nobody ran has returned
+    its drivers: the Sign Up button's deletion where one stands, then the "Signups are now
+    closed" post, whose record closes the window. *cause* is a key of `CLOSE_CAUSES`, *returned*
+    how many drivers the close returned, for the line the post's record writes."""
+    audit_action, head = CLOSE_CAUSES[cause]
+    planned: list[PlannedStep] = []
+    if button_message_id is not None and channel_id is not None:
+        planned.append(PlannedStep(DELETE_BUTTON, {
+            "channel_id": channel_id, "message_id": button_message_id,
+            "what": "Sign Up button", "division_name": "signups",
+        }))
+    planned.append(PlannedStep(POST_CLOSED, {
+        "channel_id": channel_id, "audit_action": audit_action, "head": head, "returned": returned,
+    }))
+    return tuple(planned)
+
+
+def window_close_steps(
+    *, signup_module_service: Callable[[], "SignupModuleService"], now: Callable[[], datetime]
+) -> dict[str, Step]:
+    """The two jobs that close the window in its channel, for a change that ends signups.
+
+    `delete_button` takes the Sign Up button down (a button already gone completes it). `post_closed`
+    posts "Signups are now closed" in the signup channel, and in the save that marks it done its
+    record closes the window with the post's id (so the next opening deletes the notice), audits
+    the close and has the queue write the "Signups closed" line: no window is ever recorded
+    closed without its notice up, and a refused post stops the queue with signups still open.
+    Where its try posted and the record then failed, the message is kept for the next try to remove
+    before it posts again. A window already closed by another hand is not closed twice.
+    *signup_module_service* is a getter, so that the service is the one the bot holds when the job runs.
+    """
+
+    async def post_closed(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        guild = await league_guild(ctx.bot)
+        found = None if guild is None or ctx.step_payload.get("channel_id") is None else (
+            guild.get_channel(int(ctx.step_payload["channel_id"]))
+        )
+        if not isinstance(found, discord.TextChannel):
+            raise StepFailedOnDiscord("the signup channel could not be found to post in")
+        message_id = await post(
+            found, CLOSED_NOTICE, mentions=discord.AllowedMentions.none(),
+            refused=f"the closed notice could not be posted in channel {found.id}",
+        )
+        payload = ctx.step_payload
+        line = f"{payload['head']}\n  drivers_returned_to_not_signed_up: {payload['returned']}"
+        return StepResult(
+            result={"new": message_id, "channel_id": found.id}, lines=(line,)
+        )
+
+    async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        await signup_module_service().set_window_closed_on(
+            db, closed_msg_id=int((result.result or {})["new"])
+        )
+        await record_system_change_on(
+            db, change_type=str(ctx.step_payload["audit_action"]), old_value="open",
+            new_value="closed", now=now(),
+        )
+
+    async def window_stands(_ctx: StepContext) -> bool:
+        return await signup_module_service().get_window_state()
+
+    async def describe_closed(_ctx: StepContext) -> str:
+        return "closing the signup window and telling its channel"
+
+    async def describe_button(_ctx: StepContext) -> str:
+        return "taking the Sign Up button down"
+
+    button = dataclasses.replace(
+        standing_posts.delete_replaced_step(DELETE_BUTTON), describe=describe_button
+    )
+    return {
+        DELETE_BUTTON: button,
+        POST_CLOSED: Step(
+            POST_CLOSED, StepKind.ACT, post_closed, still_due=window_stands,
+            describe=describe_closed, record=record,
+        ),
     }
 
 

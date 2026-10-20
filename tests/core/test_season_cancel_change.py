@@ -139,11 +139,6 @@ ROLES_KEPT = (
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
-#: Until C66/C67, a season end's close records the window closed in `close_window`; from them
-#: on, in the record of its `post_closed` job, in the same save as that job's mark.
-CLOSE_RECORDED_BY_ITS_NOTICE = (
-    "#439: a season end's window close is not yet recorded by its post_closed job (C66, C67)"
-)
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -456,7 +451,6 @@ def _forbidden() -> discord.HTTPException:
 # ── Defect 5, and the cancellation's windows ────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     """The signup window is open and the cancellation queued; recording the window closed fails.
     The queue stops at `post_closed`, whose record writes the window's close, with the season
@@ -1372,9 +1366,7 @@ _DISCARDS = {
 
 
 @pytest.mark.parametrize("job", [
-    pytest.param(job, marks=pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE))
-    if job == "post_closed" else job
-    for job in sorted(_DISCARDS)
+    job for job in sorted(_DISCARDS)
 ])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_beneath_the_success_line(
     tmp_path, monkeypatch, job,
@@ -1428,7 +1420,6 @@ RETURNED_NOT_TOLD = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_close_returned(
     tmp_path,
 ):

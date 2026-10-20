@@ -127,11 +127,6 @@ BACKUP_KEPT = (
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
 WINDOW_OPEN = "The signup window could not be closed. Close it with `/signup close`."
-#: Until C66/C67, a season end's close records the window closed in `close_window`; from them
-#: on, in the record of its `post_closed` job, in the same save as that job's mark.
-CLOSE_RECORDED_BY_ITS_NOTICE = (
-    "#439: a season end's window close is not yet recorded by its post_closed job (C66, C67)"
-)
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -471,7 +466,6 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
                    for each in line.split("\n  not done: ")[1:])
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
     """The signup window is open and the completion queued; recording the window closed fails.
     The queue stops at `post_closed`, whose record writes the window's close, with the season
@@ -1011,7 +1005,6 @@ async def test_a_driver_who_left_the_server_and_a_role_deleted_are_passed_over(t
     assert len(_success_lines(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_pass(tmp_path):
     """The signup window open and the completion queued. Run as far as `post_closed`, whose
     record writes the window's close, the window is closed while the season is still active,
@@ -1251,9 +1244,7 @@ _DISCARDS = {
 
 
 @pytest.mark.parametrize("job", [
-    pytest.param(job, marks=pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE))
-    if job == "post_closed" else job
-    for job in sorted(_DISCARDS)
+    job for job in sorted(_DISCARDS)
 ])
 async def test_a_discarded_job_is_named_with_what_to_do_by_hand_and_the_line_says_incomplete(
     tmp_path, monkeypatch, job,
@@ -1349,7 +1340,6 @@ def _closes_then_fails_once(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_that_stopped_after_returning_its_drivers_still_tells_and_closes_them(
     tmp_path,
 ):
@@ -1406,7 +1396,6 @@ def _killed_before_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_still_tells_and_closes_them_at_start(
     tmp_path,
 ):
@@ -1442,7 +1431,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_returning_its_drivers_stil
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 @pytest.mark.parametrize("failures", [1, 2], ids=["fails once", "fails again on the retry"])
 async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_the_retry(
     tmp_path, failures,
@@ -1554,7 +1542,6 @@ def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     setattr(service, name, _set_window_closed)
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_closed_still_tells_and_closes_its_drivers_at_start(
     tmp_path,
 ):
@@ -1589,7 +1576,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     assert await _owed(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 @pytest.mark.parametrize("refused", ["the record", "the post"])
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_close_returned(
     tmp_path, refused,
@@ -1860,7 +1846,6 @@ async def test_a_completion_with_a_discard_and_a_driver_with_no_channel_left_rea
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_RECORDED_BY_ITS_NOTICE)
 async def test_a_completion_whose_closed_notice_was_discarded_reads_incomplete_for_the_window_alone(
     tmp_path,
 ):

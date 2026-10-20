@@ -263,7 +263,8 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
     - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
       the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
     - `close_window`: the signup close timer cancelled and the window closed, where it stands open;
-      it plans a `signup_notice` and a `close_signup` for each driver the close returned.
+      it plans the window's own jobs (`delete_button`, `post_closed`, which closes the window) and a
+      `signup_notice` and a `close_signup` for each driver the close returned.
     - `flush_forecasts`: plans weather's `delete_forecast` for each forecast posted under test
       mode, so that each deletion is a job of its own and a refusal stops the queue there.
     - `discard_portraits`: the portraits of the drivers the driver pass deleted removed.
@@ -297,10 +298,12 @@ def season_end_steps(placement: "PlacementService", hooks: SeasonEndHooks) -> di
         )
 
     async def close_window(ctx: StepContext) -> StepResult:
-        returned = await close_signup_window(
+        returned, window = await close_signup_window(
             ctx.bot, hooks, str(ctx.step_payload.get("cause", SEASON_END_CAUSE)), kept=ctx.kept
         )
-        return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
+        return StepResult(
+            result={"returned": list(returned)}, then=(*window, *window_closed_jobs(returned))
+        )
 
     async def describe_window(ctx: StepContext) -> str:
         number = ctx.payload.get("season_number")

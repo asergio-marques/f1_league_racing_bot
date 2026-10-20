@@ -87,11 +87,6 @@ async def test_a_sheet_with_attendance_off_is_still_dropped(tmp_path):
 
 # ── The signup window a season's end closes (C67) ──────────────────────────────────
 
-CLOSE_JOBS = (
-    "#439: a season's end deletes the Sign Up button and posts the closed notice inside its "
-    "close_window job, a refusal named in its outcome, rather than as jobs of their own that stop "
-    "the queue"
-)
 
 #: The notice a closed window leaves in the signup channel.
 CLOSED_NOTICE = "🔒 Signups are now closed."
@@ -116,7 +111,6 @@ def _closed_notices(league) -> list:
             if message.content == CLOSED_NOTICE]
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_JOBS)
 async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path):
     """The season is ongoing with its signup window open, the Sign Up button standing in the
     signup channel. Admin 77 cancels the season and the queue runs: the button is deleted by a
@@ -132,7 +126,6 @@ async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path
     assert (await league.season())["status"] == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_JOBS)
 async def test_a_season_end_s_refused_closed_notice_stops_the_queue(tmp_path):
     """The season is ongoing with its signup window open, and Discord refuses every post in the
     signup channel. Admin 77 cancels the season: the queue stops at the `post_closed` job, with no
@@ -157,7 +150,6 @@ async def test_a_season_end_s_refused_closed_notice_stops_the_queue(tmp_path):
     assert (await league.season())["status"] == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=CLOSE_JOBS)
 async def test_the_closed_notice_s_id_is_saved_with_its_mark(tmp_path):
     """The season is ongoing with its signup window open. Admin 77 cancels the season and the
     queue runs: the closed notice is posted by a `post_closed` job, done, and the notice's id is

@@ -334,19 +334,27 @@ class SignupModuleService:
         self, *, closed_msg_id: int | None = None
     ) -> None:
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_module_config "
-                "SET signups_open = 0, signup_button_message_id = NULL, "
-                "    signup_closed_message_id = ?, close_at = NULL "
-                "",
-                (closed_msg_id,),
-            )
-            # The window record keeps the close time it carried; only its closing is stamped.
-            await db.execute(
-                "UPDATE signup_windows SET closed_at = datetime('now') "
-                "WHERE closed_at IS NULL",
-            )
+            await self.set_window_closed_on(db, closed_msg_id=closed_msg_id)
             await db.commit()
+
+    async def set_window_closed_on(
+        self, db: aiosqlite.Connection, *, closed_msg_id: int | None = None
+    ) -> None:
+        """Record the window closed on the caller's connection, committing nothing: the Sign Up
+        button's id and the close time are cleared, *closed_msg_id* is kept so the next opening
+        deletes the notice, and the window's record is stamped closed."""
+        await db.execute(
+            "UPDATE signup_module_config "
+            "SET signups_open = 0, signup_button_message_id = NULL, "
+            "    signup_closed_message_id = ?, close_at = NULL "
+            "",
+            (closed_msg_id,),
+        )
+        # The window record keeps the close time it carried; only its closing is stamped.
+        await db.execute(
+            "UPDATE signup_windows SET closed_at = datetime('now') "
+            "WHERE closed_at IS NULL",
+        )
 
     async def set_close_at(self, close_at_iso: str | None) -> None:
         """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""

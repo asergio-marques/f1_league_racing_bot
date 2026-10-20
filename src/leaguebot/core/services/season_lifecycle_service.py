@@ -338,6 +338,11 @@ class SeasonEndHooks:
       connection.
     - *cut_off_window_open*: the signup window stands open and is the one a close off the queue
       was closing when a stop cut it off, by the mark that close left.
+    - *window_jobs*: the jobs that close the signup window in its channel once a close has
+      returned its drivers (the Sign Up button's deletion, the "Signups are now closed" post whose
+      record closes the window), given the close's cause and the number of drivers it returned.
+    - *window_steps*: signup's two jobs those are, `delete_button` and `post_closed`, for the
+      change's `steps` (as *forecast_steps* are weather's).
     - *closing_held*: whether the account's signup channel was already held, given the league's
       server. It reads the scheduler's job store first, a channel-delete job standing being the
       record of a hold (the job store standing in for a record of signup's own, which it was
@@ -365,6 +370,8 @@ class SeasonEndHooks:
     take_off_queue_closing_notices_on: Callable[[aiosqlite.Connection], Awaitable[list[str]]]
     cut_off_window_open: Callable[[], Awaitable[bool]]
     closing_held: Callable[[str, discord.Guild], Awaitable[bool]]
+    window_jobs: Callable[[str, int], Awaitable[tuple[PlannedStep, ...]]]
+    window_steps: Mapping[str, Step]
 
 
 #: The jobs of one driver's Discord side of a season's end, as the stop notice, the tests and
@@ -372,6 +379,11 @@ class SeasonEndHooks:
 SIGNUP_NOTICE = "signup_notice"
 CLOSE_SIGNUP = "close_signup"
 TAKE_DRIVER_ROLE = "take_driver_role"
+#: The jobs that close the window in its channel, signup's own, which a season's end names.
+DELETE_BUTTON = "delete_button"
+POST_CLOSED = "post_closed"
+#: What a season's end says of a window it could not close.
+WINDOW_NOT_CLOSED = "The signup window could not be closed. Close it with `/signup close`."
 
 #: What a signup channel is told where the signup window closes under it.
 WINDOW_CLOSED_NOTICE = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
@@ -505,21 +517,24 @@ def kept_returned(kept: Mapping[str, Any] | None) -> tuple[str, ...]:
 
 async def close_signup_window(
     bot: LeagueBot, hooks: SeasonEndHooks, cause: str, *, kept: Mapping[str, Any] | None = None
-) -> tuple[str, ...]:
-    """Cancel the signup close timer and close the window where it stands open (#439).
+) -> tuple[tuple[str, ...], tuple[PlannedStep, ...]]:
+    """Cancel the signup close timer and return the drivers of the window where it stands open (#439).
 
     Gives the accounts the close returned to Not Signed Up, whose channels the queue's jobs then
-    tell and close: the close itself holds none. Raises what the close raises, for the queue to
-    stop on; a window not open is nothing to close.
+    tell and close, and the jobs that close the window itself in its channel (the Sign Up button's
+    deletion and the "Signups are now closed" post, whose record closes the window), planned where
+    the window stood open: the close itself posts and records nothing. Raises what the close
+    raises, for the queue to stop on; a window not open is nothing to close.
 
     *kept* is what the job's last try left when it stopped: a close that stopped after returning
     its drivers fails with their ids as its result, and the next try finds none left to return.
     They are given with whatever it returns now, so that no driver's channel goes untold and
-    open, and also where the window was shut by that try and only its audit failed.
+    open.
     """
     before = kept_returned(kept)
     now: tuple[str, ...] = ()
-    if await hooks.window_open():
+    stood_open = await hooks.window_open()
+    if stood_open:
         hooks.cancel_close_timer()
         try:
             closed = await hooks.close_signups(bot, cause)
@@ -531,11 +546,12 @@ async def close_signup_window(
             raise
         if closed is not None:
             now = tuple(str(user_id) for user_id in closed.returned_ids)
-    # Read after the close, whether it closed the window now or found it closed: a try cut off
-    # after the window was recorded closed left each driver it returned marked as owed their
-    # notice, in the save that returned them.
+    # Read after the close: a try cut off after it returned its drivers left each marked as owed
+    # their notice, in the save that returned them.
     owed = tuple(str(user_id) for user_id in await hooks.owed_closing_notices())
-    return tuple(dict.fromkeys((*before, *now, *owed)))
+    returned = tuple(dict.fromkeys((*before, *now, *owed)))
+    jobs = await hooks.window_jobs(cause, len(returned)) if stood_open else ()
+    return returned, jobs
 
 
 def drivers_told_record(
@@ -559,8 +575,9 @@ def drivers_told_record(
 
 async def close_window_for_wind_down(
     bot: LeagueBot, hooks: SeasonEndHooks, *, kept: Mapping[str, Any] | None = None
-) -> tuple[str, ...]:
-    """Close the signup window as every division is done, giving the drivers it returned."""
+) -> tuple[tuple[str, ...], tuple[PlannedStep, ...]]:
+    """Close the signup window as every division is done, giving the drivers it returned and the
+    jobs that close the window itself."""
     return await close_signup_window(bot, hooks, "divisions done", kept=kept)
 
 
@@ -626,6 +643,7 @@ def close_signup_steps(
         SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
         CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
         TAKE_DRIVER_ROLE: Step(TAKE_DRIVER_ROLE, StepKind.ACT, take_role, describe=describe_role),
+        **hooks.window_steps,
     }
 
 
@@ -913,6 +931,13 @@ def wind_down_change(
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
+    def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
+        # Only a window the close could not record is told: the drivers it returned are told by
+        # jobs of their own, whatever became of the post.
+        if any(view.name == POST_CLOSED and "discarded" in (view.result or {}) for view in ctx.steps):
+            return (f"System | Every division is done | Incomplete\n  not done: {WINDOW_NOT_CLOSED}",)
+        return ()
+
     steps = wind_down_steps(hooks)
     if placement is not None and hooks is not None:
         steps.update(
@@ -926,6 +951,7 @@ def wind_down_change(
         key=lambda _payload: WIND_DOWN,
         doing=lambda _payload: "Winding the season down",
         outcome=outcome,
+        finished_lines=finished_lines,
     )
 
 
@@ -947,8 +973,10 @@ def wind_down_steps(hooks: SeasonEndHooks | None) -> dict[str, Step]:
     async def wind_down(ctx: StepContext) -> StepResult:
         if hooks is None:
             raise RuntimeError("a wind-down is run with the hooks the builder hands it")
-        returned = await close_window_for_wind_down(ctx.bot, hooks, kept=ctx.kept)
-        return StepResult(result={"returned": list(returned)}, then=window_closed_jobs(returned))
+        returned, window = await close_window_for_wind_down(ctx.bot, hooks, kept=ctx.kept)
+        return StepResult(
+            result={"returned": list(returned)}, then=(*window, *window_closed_jobs(returned))
+        )
 
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
         # A window close discarded after it returned drivers leaves them marked as owed their

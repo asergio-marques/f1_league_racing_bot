@@ -91,11 +91,14 @@ from leaguebot.core.services.season_end_service import (
 )
 from leaguebot.core.services.season_lifecycle_service import (
     CLOSE_SIGNUP,
+    DELETE_BUTTON,
     NO_CHANNEL_LEFT,
+    POST_CLOSED,
     SIGNUP_NOTICE,
     TAKE_DRIVER_ROLE,
     TURN_DOWN_STEP,
     WIND_DOWN_STEP,
+    WINDOW_NOT_CLOSED,
     SeasonEndHooks,
     advance_to_pending_completion_on,
     driver_jobs,
@@ -196,7 +199,9 @@ BACKUP_KEPT = (
     "The saved test-mode state could not be deleted. It is deleted with the next `/test-mode "
     "toggle` that switches test mode off."
 )
-WINDOW_KEPT = "The signup window could not be closed. Close it with `/signup close`."
+WINDOW_KEPT = WINDOW_NOT_CLOSED
+#: What a discarded deletion of the Sign Up button leaves for a league admin to do.
+BUTTON_KEPT = "The Sign Up button could not be removed from the signup channel."
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
     "forecast channel."
@@ -393,8 +398,10 @@ def shared_not_done(ctx: OutcomeContext, untold: Sequence[str] | None = None) ->
                 roles_at = len(lines)
                 lines.append("")
             roles.append(f"<@{each['user_id']}>")
-        elif view.name == CLOSE_WINDOW:
+        elif view.name in (CLOSE_WINDOW, POST_CLOSED):
             lines.append(WINDOW_KEPT)
+        elif view.name == DELETE_BUTTON:
+            lines.append(BUTTON_KEPT)
         elif view.name == FLUSH_FORECASTS:
             lines.append(FORECASTS_KEPT)
         elif view.name == DELETE_FORECAST:
