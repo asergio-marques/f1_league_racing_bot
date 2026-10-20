@@ -112,6 +112,9 @@ POST_WELCOME = "post_welcome"
 DELETE_CHANNEL = "delete_channel"
 #: The job that ends a driver's signup (the kind, `END`, is in `closing_steps`).
 END_JOB = "end"
+#: The job, before `end`, that names the driver for the lines `end` writes: the lookup uses a
+#: connection of its own, which a save must not wait on.
+NAME_JOB = "name_driver"
 #: Why a signup ends: the driver pressed Cancel Signup.
 WITHDRAWN = "withdrawn"
 #: Why a signup ends: a manager pressed Reject and typed the reason.
@@ -134,7 +137,7 @@ CATEGORY_LIMIT = 50
 
 __all__ = [
     "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "END",
-    "END_JOB", "EXPIRED", "INACTIVITY",
+    "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
     "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "channel_delete_change", "end_change", "start_change",
@@ -453,9 +456,11 @@ def end_change(
     payload then carries ``actor_id`` and ``actor_name`` (the manager), ``text`` (the reason) and
     ``reason_message_id`` (the message it was typed in)), or `EXPIRED` (their 24 hours ran out,
     asked by the timer or at a restart, with the signup channel's id as ``channel_id``). Its job
-    `end` is a save: the driver is moved to Not Signed Up and the wizard ended in the same save, the
-    correction timeout and the timers taken away and the line written ("Withdrawn", "Rejected" with
-    the manager and the reason, or the lapse).
+    `end` is a save, after `name_driver`, which finds the driver's name for the line (the lookup
+    uses a connection of its own, which a save must not wait on): the driver is moved to Not
+    Signed Up and the wizard ended in the same save, the correction timeout and the timers taken
+    away and the line written ("Withdrawn", "Rejected" with the manager and the reason, or the
+    lapse).
 
     A withdrawal is refused by the check where the signup has already ended (the transition to Not
     Signed Up is not one the state machine allows from where they stand), telling the driver so and
@@ -526,7 +531,7 @@ def end_change(
                 key: payload[key]
                 for key in ("actor_id", "actor_name", "text", "reason_message_id")
             })
-        planned = [PlannedStep(END_JOB, shared_end)]
+        planned = [PlannedStep(NAME_JOB, {"user_id": user_id}), PlannedStep(END_JOB, shared_end)]
         channel_id = payload.get("channel_id")
         if payload["reason"] == EXPIRED and channel_id is not None:
             shared = {"user_id": user_id, "channel_id": int(channel_id)}
@@ -548,7 +553,10 @@ def end_change(
         await signup().end_wizard_on(db, user_id)
         cancel_timers(user_id)
         wizard()._forget_correction(user_id)
-        named = await name_of_member(ctx.bot, int(user_id))
+        named = member_named(None, int(user_id))
+        for view in ctx.steps:
+            if view.name == NAME_JOB and view.done:
+                named = str((view.result or {}).get("named") or named)
         if ctx.step_payload["reason"] == EXPIRED:
             # The lapse is the whole of the expiry's line: its notice, lock and deletion are the
             # change's own jobs after this one.
@@ -595,6 +603,14 @@ def end_change(
             ),)
         return StepResult(result={}, lines=(f"{named} | Signup | Withdrawn",), follow_ons=follow_ons)
 
+    async def name_driver(ctx: StepContext) -> StepResult:
+        return StepResult(result={
+            "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
+        })
+
+    async def describe_name(ctx: StepContext) -> str:
+        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+
     async def describe_end(ctx: StepContext) -> str:
         return f"ending the signup of <@{ctx.step_payload['user_id']}>"
 
@@ -625,6 +641,7 @@ def end_change(
         opening=(),
         plan=plan,
         steps={
+            NAME_JOB: Step(NAME_JOB, StepKind.ACT, name_driver, describe=describe_name),
             END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end),
             **closing_steps(now=now, arm_once=arm_once),
         },

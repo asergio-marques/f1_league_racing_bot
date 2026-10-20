@@ -1199,6 +1199,32 @@ async def test_a_withdrawal_disarms_the_signup_s_24_hours_and_writes_one_withdra
     assert f"<@{SIGNING_UP}>" in withdrawn[0]
 
 
+async def test_a_signup_s_end_looks_the_driver_up_before_its_save_not_in_it(tmp_path, monkeypatch):
+    """Kimi presses Cancel Signup and the queue runs. The driver is named by a job of his own
+    (`name_driver`) before `end`, with the queue's write lock not held, so the save that ends the
+    signup waits on no second connection (architecture.md, "The database"); the line it writes
+    still names him."""
+    from leaguebot.signup.services import wizard_changes
+
+    league = await _mid_signup(tmp_path)
+    held: list[bool] = []
+    real = wizard_changes.name_of_member
+
+    async def _spy(bot: Any, member_id: Any) -> str:
+        held.append(league.bot.change_queue._writing.locked())
+        return await real(bot, member_id)
+
+    monkeypatch.setattr(wizard_changes, "name_of_member", _spy)
+
+    await _press_cancel(league)
+    await run_queue(league.bot)
+
+    assert held == [False]
+    assert _in_order(await _job_names(league, END_KIND), ["name_driver", "end"])
+    withdrawn = [line for line in league.bot.log_channel.sent if "Withdrawn" in line]
+    assert len(withdrawn) == 1 and f"<@{SIGNING_UP}>" in withdrawn[0]
+
+
 async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tmp_path):
     """Kimi was last active 25 hours ago, but has since given his last answer: his signup awaits
     a manager's approval and his wizard is parked. His 24-hour timer fires and the queue runs.
