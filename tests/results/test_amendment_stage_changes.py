@@ -343,7 +343,10 @@ async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_pat
     assert "/results rounds amend" in reply
     log = league.log()
     assert "AMEND_STAGE_2 | Incomplete" in log
-    assert "/results rounds amend" in log
+    line = log[log.index("AMEND_STAGE_2 | Incomplete"):]
+    assert "⚠️" in line
+    assert "appeals" in line.lower()
+    assert "/results rounds amend" in line
     assert _amend_appeals_prompts(league) == []
 
 
