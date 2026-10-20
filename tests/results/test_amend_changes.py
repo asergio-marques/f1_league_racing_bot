@@ -50,6 +50,7 @@ from tests.support.change_queue import (
     MEMBER_ID,
     acknowledgement,
     change_rows,
+    discard_job,
     http_error,
     member_interaction,
     retry_job,
@@ -882,3 +883,81 @@ async def test_the_lapse_timer_is_armed_by_a_job_of_its_own_and_reads_its_row_ag
     await _fire(league)
 
     assert await _changes(league, LAPSE) == []
+
+
+async def _discarded_opening(league: ReviewLeague) -> str:
+    """Alex's amendment is asked and run; an admin discards the job the league lane stopped at,
+    and the queue runs on. Gives Alex's reply as it was last updated."""
+    interaction = await _ask_open(league)
+    assert await stopped_job(league.db_path, "league") is not None
+    await discard_job(league.bot, lane="league")
+    assert await stopped_job(league.db_path) is None
+    return updated_reply(interaction)
+
+
+async def test_a_discarded_channel_creation_is_worded_in_the_managers_reply(tmp_path, monkeypatch):
+    """Discord refuses to create the amendment channel and an admin discards the job. Nothing is
+    opened, and Alex's reply, which would otherwise stay at "under way" for good, says so."""
+    league = await _league(tmp_path, monkeypatch)
+    league.create_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+
+    told = await _discarded_opening(league)
+
+    assert "was not created" in told
+    assert "✅" not in told
+    assert await _amend_rows(league) == []
+
+
+async def test_a_discarded_stale_deletion_names_the_channel_left_to_delete_by_hand(
+    tmp_path, monkeypatch,
+):
+    """The finished amendment's channel (706) will not delete and an admin discards that job. The
+    new amendment opens and its row replaces the stale one, the only record of 706, so Alex's reply
+    names 706 as left standing."""
+    league = await _league(tmp_path, monkeypatch)
+    stale = channel(STALE_CHANNEL, league.events)
+    stale.delete_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    league.channels[STALE_CHANNEL] = stale
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "started_by, closed_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', ?, 77, ?)",
+            (ROUND_ID, STALE_CHANNEL, NOW.isoformat(), NOW.isoformat()),
+        )
+        await db.commit()
+
+    told = await _discarded_opening(league)
+
+    assert f"✅ Amendment channel created: <#{AMEND_CHANNEL}>" in told
+    assert f"<#{STALE_CHANNEL}> was not deleted" in told
+    assert [row["channel_id"] for row in await _amend_rows(league)] == [AMEND_CHANNEL]
+
+
+async def test_a_discarded_opening_message_is_worded_in_the_managers_reply(tmp_path, monkeypatch):
+    """Discord refuses the amendment's opening message and an admin discards it. The channel and
+    the first prompt stand, and Alex's reply says the opening was not posted."""
+    league = await _league(tmp_path, monkeypatch)
+    league.channel(AMEND_CHANNEL).fail_when = lambda content, _kwargs: "Amend Results" in str(content)
+
+    told = await _discarded_opening(league)
+
+    assert f"✅ Amendment channel created: <#{AMEND_CHANNEL}>" in told
+    assert f"The opening message was not posted in <#{AMEND_CHANNEL}>" in told
+    [row] = await _amend_rows(league)
+    assert row["prompt_posted_at"] is not None
+
+
+async def test_a_discarded_prompt_says_no_time_limit_runs(tmp_path, monkeypatch):
+    """Discord refuses the first session's prompt and an admin discards it. With no time recorded
+    for it nothing times the amendment out, and Alex's reply says the prompt was not posted."""
+    league = await _league(tmp_path, monkeypatch)
+    league.channel(AMEND_CHANNEL).fail_when = (
+        lambda content, _kwargs: "Amend Results" not in str(content)
+    )
+
+    told = await _discarded_opening(league)
+
+    assert f"✅ Amendment channel created: <#{AMEND_CHANNEL}>" in told
+    assert f"prompt was not posted in <#{AMEND_CHANNEL}>" in told
+    [row] = await _amend_rows(league)
+    assert row["prompt_posted_at"] is None

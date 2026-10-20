@@ -365,12 +365,40 @@ def amend_open_change(
         return "arming the timer that ends an amendment nobody answers"
 
     def opened(ctx: OutcomeContext) -> str:
-        made = next(
-            (each.result for each in ctx.steps
-             if each.name == CREATE_CHANNEL and each.done and each.result),
-            None,
-        )
-        return "" if made is None else f"✅ Amendment channel created: <#{made['channel_id']}>"
+        """The manager's reply: the channel, or the channel that was not created, and a line for
+        each job an admin discarded (a discarded job is done with a ``discarded`` result)."""
+        made: dict[str, Any] | None = None
+        lines: list[str] = []
+        for view in ctx.steps:
+            result = view.result or {}
+            discarded = "discarded" in result
+            channel = view.payload.get("channel_id")
+            if view.name == CREATE_CHANNEL:
+                if discarded:
+                    lines.append(
+                        "⚠️ The amendment channel was not created, so nothing was opened: "
+                        "run `/results rounds amend` again."
+                    )
+                elif view.done and result:
+                    made = result
+            elif not discarded:
+                continue
+            elif view.name == DELETE_STALE:
+                lines.append(
+                    f"⚠️ The finished amendment's channel <#{channel}> was not deleted, and no "
+                    "record of it is kept: delete it by hand."
+                )
+            elif view.name == POST_OPENING:
+                lines.append(f"⚠️ The opening message was not posted in <#{channel}>.")
+            elif view.name == POST_PROMPT:
+                lines.append(
+                    f"⚠️ The first session's prompt was not posted in <#{channel}>, so no time "
+                    "limit runs on the amendment: cancel it there and run "
+                    "`/results rounds amend` again."
+                )
+        if made is not None:
+            lines.insert(0, f"✅ Amendment channel created: <#{made['channel_id']}>")
+        return "\n".join(lines)
 
     return ChangeType(
         kind=KIND,
