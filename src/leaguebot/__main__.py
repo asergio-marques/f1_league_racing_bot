@@ -562,6 +562,7 @@ def register_change_types(bot: LeagueBot) -> None:
             modules=bot.module_service, signup_module_service=lambda: bot.signup_module_service,
             returned_by_close=RETURNED_BY_CLOSE, cancel_timers=_cancel_wizard_timers(bot),
             cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
+            server_config=lambda: bot.config_service.get_server_config(),
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )

@@ -1143,9 +1143,9 @@ class ModuleCog(commands.Cog):
             return
 
         # The switch-off is a change on the queue: where the window is open it closes it first, as
-        # jobs, and its last job turns the module off, forgets the channel and audits it. The
-        # command acknowledges it at once and clears the channel's overwrites, a permission and
-        # not a message.
+        # jobs, and its switch-off turns the module off, forgets the channel and audits it, then
+        # clears the channel's overwrites in a job of its own, so that they go only with the module.
+        # The command acknowledges it at once and does nothing else.
         signup_cfg = await self.bot.signup_module_service.get_config()
         window = (
             signup_cfg.signup_button_message_id if signup_cfg and signup_cfg.signups_open else None
@@ -1159,31 +1159,3 @@ class ModuleCog(commands.Cog):
         )
         if asked is None:
             return
-
-        # Remove bot-applied permission overwrites (only those set by /signup channel)
-        if signup_cfg and signup_cfg.signup_channel_id is not None:
-            guild = await league_guild(self.bot)
-            if guild:
-                channel = guild.get_channel(signup_cfg.signup_channel_id)
-                if channel and isinstance(channel, discord.TextChannel):
-                    targets_to_revert: list[discord.Role | discord.Member] = [
-                        guild.default_role, guild.me
-                    ]
-                    # The base role is the league's and outlives the module (issue #276):
-                    # only its overwrite on this channel goes.
-                    server_cfg = await self.bot.config_service.get_server_config()
-                    if server_cfg and server_cfg.base_role_id is not None:
-                        base_role = guild.get_role(server_cfg.base_role_id)
-                        if base_role:
-                            targets_to_revert.append(base_role)
-                    if server_cfg:
-                        interaction_role = guild.get_role(server_cfg.interaction_role_id)
-                        if interaction_role:
-                            targets_to_revert.append(interaction_role)
-                    for target in targets_to_revert:
-                        try:
-                            await channel.set_permissions(target, overwrite=None)
-                        except Exception:
-                            log.exception(
-                                "disable_signup: could not clear overwrite for %s", target
-                            )

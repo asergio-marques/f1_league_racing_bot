@@ -673,7 +673,8 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     queue runs, the module is still on and the window open. When it runs, the
     `module.off:signup` change closes the window as its jobs — Kimi returned, the button
     deleted, the closed notice posted, Kimi told — and its last job, `switch_off`, turns the
-    module off and forgets the signup channel."""
+    module off and forgets the signup channel, after which the channel's overwrites are cleared
+    and the one line is written."""
     from leaguebot.core.cogs.module_cog import ModuleCog
 
     league = await _close_league(tmp_path, SIGNING_UP)
@@ -693,8 +694,8 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     jobs = await _close_jobs(league, MODULE_OFF_KIND)
     assert all(job["done_at"] for job in jobs)
     names = [job["name"] for job in jobs]
-    assert names[-1] == "switch_off"
-    assert names.index("post_closed") < names.index("switch_off")
+    assert names[-2:] == ["clear_overwrites", "off_line"]
+    assert names.index("post_closed") < names.index("switch_off") < names.index("clear_overwrites")
     assert await _driver_state(league) == "NOT_SIGNED_UP"
     assert SIGNUP_BUTTON not in league.channel(LEAGUE_SIGNUP_CHANNEL).messages
     assert len(_closed_notices(league)) == 1

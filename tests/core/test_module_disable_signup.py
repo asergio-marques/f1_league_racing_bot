@@ -19,8 +19,9 @@ fires days later against a module that is switched off: the inactivity timeout w
 transition a driver whose signup no longer exists, and the channel-delete job would remove a
 channel a league has since repurposed.
 
-**Only the overwrites the bot applied are cleared, and by the command** (a permission, not a
-message, so not a job). `/signup channel` sets five: everyone, the bot, the base role, the
+**Only the overwrites the bot applied are cleared, and by a job after the switch-off**
+(`clear_overwrites`, planned by `switch_off`, so a switch-off that is refused or discarded leaves
+the channel as the module needs it). `/signup channel` sets five: everyone, the bot, the base role, the
 interaction role and, since #116, the league admin role. The first four are what is reverted.
 The admin role's is left standing, an allow for a role that already governs the league (#372,
 closed as won't fix). A league that has added its own overwrites to that channel keeps them,
@@ -41,9 +42,7 @@ as the signup specification requires.
 the driver role are core's, read from the server configuration, and survive the disable; only
 the base role's overwrite on the signup channel goes.
 
-The tests of the overwrites drive the command on a bot double with a real queue and run nothing
-on it: the overwrites are the command's own. The rest run the switch-off on
-`tests.support.season_league`'s league, its signup module on.
+The tests run the switch-off on `tests.support.season_league`'s league, its signup module on.
 """
 from __future__ import annotations
 
@@ -231,15 +230,6 @@ async def _audit(db_path) -> list[dict]:
             "SELECT change_type, old_value FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
-
-
-def _reverted(guild) -> list[int]:
-    channel = guild.get_channel(SIGNUP_CHANNEL)
-    return [
-        call.args[0].id
-        for call in channel.set_permissions.await_args_list
-        if call.kwargs.get("overwrite") is None
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -461,13 +451,13 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
 async def test_closed_signups_are_not_force_closed_again(tmp_path):
     """Closing transitions every in-progress driver and posts into their channels; running it
     over an already-closed signup would notice nobody and post nothing. With the window closed,
-    the switch-off's only job is `switch_off`."""
+    the switch-off has no close job: only `switch_off`, and the `clear_overwrites` it plans."""
     league = await _league(tmp_path)
 
     await _switch_off(league)
     await run_queue(league.bot)
 
-    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off"]
+    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
 
 
 async def test_the_close_timer_is_cancelled(tmp_path):
@@ -539,52 +529,125 @@ async def test_a_league_with_no_configuration_still_disables(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _signup_channel(league: SeasonLeague, *, set_permissions_fails: bool = False) -> Any:
+    """The signup channel (620) as a double that records its permission edits."""
+    channel = _channel(set_permissions_fails=set_permissions_fails)
+    channel.id = LEAGUE_SIGNUP_CHANNEL
+    finding = league.guild.get_channel.side_effect
+    league.guild.get_channel = MagicMock(
+        side_effect=lambda cid: channel if int(cid) == LEAGUE_SIGNUP_CHANNEL else finding(cid)
+    )
+    return channel
+
+
+def _cleared(channel: Any) -> list[Any]:
+    return [
+        call.args[0] for call in channel.set_permissions.await_args_list
+        if call.kwargs.get("overwrite") is None
+    ]
+
+
 async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
-    """Everyone's, the bot's, the base role's and the interaction role's are reverted. The
-    league admin role's, which `/signup channel` sets too, is left (#372)."""
-    db_path = await _make_db(tmp_path, name="disable_perms")
-    guild = _guild(channel=_channel())
-    cog = _make_cog(db_path, guild=guild)
+    """Everyone's, the bot's, the base role's and the interaction role's are reverted by the
+    switch-off's `clear_overwrites` job, after `switch_off` and not before. The league admin
+    role's, which `/signup channel` sets too, is left (#372)."""
+    league = await _league(tmp_path)
+    await league.write("UPDATE server_configs SET base_role_id = ?", BASE_ROLE)
+    channel = _signup_channel(league)
+    interaction_role = (await league.bot.config_service.get_server_config()).interaction_role_id
 
-    await _disable(cog, _interaction())
+    await _switch_off(league)
 
-    assert set(_reverted(guild)) == {1, BASE_ROLE, INTERACTION_ROLE} | {guild.me.id}
+    assert channel.set_permissions.await_count == 0
+
+    await run_queue(league.bot)
+
+    guild = league.guild
+    assert set(_cleared(channel)) == {
+        guild.default_role, guild.me, guild.get_role(BASE_ROLE), guild.get_role(interaction_role),
+    }
+    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off", "clear_overwrites"]
 
 
 async def test_a_league_with_no_base_role_reverts_the_rest(tmp_path):
     """Configuring one is optional; the other three overwrites were still applied."""
-    db_path = await _make_db(tmp_path, name="disable_nobase")
-    guild = _guild(channel=_channel())
-    cog = _make_cog(db_path, server_config=_server_config(base_role=None), guild=guild)
+    league = await _league(tmp_path)
+    channel = _signup_channel(league)
 
-    await _disable(cog, _interaction())
+    await _switch_off(league)
+    await run_queue(league.bot)
 
-    assert BASE_ROLE not in _reverted(guild)
-    assert 1 in _reverted(guild)
+    assert league.guild.get_role(BASE_ROLE) not in _cleared(channel)
+    assert league.guild.default_role in _cleared(channel)
 
 
 async def test_a_base_role_that_has_been_deleted_is_stepped_over(tmp_path):
     """Its overwrite went with it, and the others still need reverting."""
-    db_path = await _make_db(tmp_path, name="disable_basegone")
-    guild = _guild(channel=_channel(), roles={INTERACTION_ROLE: _role(INTERACTION_ROLE)})
-    cog = _make_cog(db_path, guild=guild)
+    league = await _league(tmp_path)
+    await league.write("UPDATE server_configs SET base_role_id = ?", BASE_ROLE)
+    league.roles_gone.add(BASE_ROLE)
+    channel = _signup_channel(league)
+    interaction_role = (await league.bot.config_service.get_server_config()).interaction_role_id
 
-    await _disable(cog, _interaction())
+    await _switch_off(league)
+    await run_queue(league.bot)
 
-    assert INTERACTION_ROLE in _reverted(guild)
+    assert league.guild.get_role(interaction_role) in _cleared(channel)
+    assert len(_cleared(channel)) == 3
 
 
 async def test_a_server_with_no_configuration_row_reverts_the_rest(tmp_path):
     """The interaction role comes from the server config, and a server without one is a
     broken state that must not stop the module being disabled."""
-    db_path = await _make_db(tmp_path, name="disable_noservercfg")
-    guild = _guild(channel=_channel())
-    cog = _make_cog(db_path, guild=guild, server_config=None)
+    league = await _league(tmp_path)
+    channel = _signup_channel(league)
+    league.bot.config_service.get_server_config = AsyncMock(return_value=None)
 
-    await _disable(cog, _interaction())
+    await _switch_off(league)
+    await run_queue(league.bot)
 
-    assert INTERACTION_ROLE not in _reverted(guild)
-    assert 1 in _reverted(guild)
+    assert set(_cleared(channel)) == {league.guild.default_role, league.guild.me}
+    assert not await league.bot.module_service.is_signup_enabled()
+
+
+async def test_a_switch_off_refused_when_it_runs_leaves_the_overwrites_standing(tmp_path):
+    """The module is switched off with the window closed, and the window is opened before the
+    queue reaches it: the switch-off is refused when it runs, nothing is changed, the module is
+    still on and the signup channel keeps the overwrites it needs while the module is on."""
+    league = await _league(tmp_path)
+    channel = _signup_channel(league)
+    interaction = await _switch_off(league)
+    await league.write("UPDATE signup_module_config SET signups_open = 1, "
+                       "signup_button_message_id = 6201")
+
+    await run_queue(league.bot)
+
+    assert "Nothing was changed" in updated_reply(interaction)
+    assert await league.bot.module_service.is_signup_enabled()
+    assert channel.set_permissions.await_count == 0
+
+
+async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, monkeypatch):
+    """The switch-off's save fails, the queue stops at it and a league admin discards it: the
+    module is still on, the reply says so and the signup channel keeps its overwrites."""
+    from tests.support.change_queue import discard_job, stopped_job
+
+    league = await _league(tmp_path)
+    channel = _signup_channel(league)
+    monkeypatch.setattr(
+        type(league.bot.signup_module_service), "delete_config_on",
+        AsyncMock(side_effect=RuntimeError("the save failed")),
+    )
+    interaction = await _switch_off(league)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path) or {}).get("name") == "switch_off"
+
+    await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await league.bot.module_service.is_signup_enabled()
+    assert channel.set_permissions.await_count == 0
+    assert "still on" in updated_reply(interaction)
 
 
 async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
@@ -628,14 +691,21 @@ async def test_a_deleted_signup_channel_does_not_stop_the_disable(tmp_path):
 
 async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
     """Nothing was ever applied, so there is nothing to revert, and asking Discord for
-    channel `None` would raise."""
-    db_path = await _make_db(tmp_path, name="disable_nochannel")
-    guild = _guild(channel=_channel())
-    cog = _make_cog(db_path, config=_config(channel=None), guild=guild)
+    channel `None` would raise: the module's configuration names no channel, and the
+    switch-off's only job is `switch_off`."""
+    league = await _league(tmp_path, configured=False)
+    await league.write(
+        "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+        "VALUES (1, NULL, 0)"
+    )
+    channel = _signup_channel(league)
 
-    await _disable(cog, _interaction())
+    await _switch_off(league)
+    await run_queue(league.bot)
 
-    guild.get_channel.assert_not_called()
+    assert [job["name"] for job in await _off_jobs(league)] == ["switch_off"]
+    assert channel.set_permissions.await_count == 0
+    assert not await league.bot.module_service.is_signup_enabled()
 
 
 async def test_a_guild_the_bot_has_left_does_not_stop_the_disable(tmp_path):
@@ -653,3 +723,97 @@ async def test_a_guild_the_bot_has_left_does_not_stop_the_disable(tmp_path):
 
     assert not await league.bot.module_service.is_signup_enabled()
     assert len(await _disables(league)) == 1
+
+
+# ---------------------------------------------------------------------------
+# A close that went wrong, and a switch-off discarded after it
+# ---------------------------------------------------------------------------
+
+
+async def _season_stage(league: SeasonLeague) -> str:
+    [row] = await league.rows("SELECT stage FROM seasons")
+    return str(row["stage"])
+
+
+def _failed_steps(lines: list[str]) -> list[str]:
+    [line] = {each for each in lines if "drivers_returned_to_not_signed_up" in each}
+    return [step.split("\n")[0] for step in line.split("\n  failed_step: ")[1:]]
+
+
+async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp_path):
+    """Kimi is still signing up, the window is open and the season is at its Signups stage. Manager
+    77 disables signup; Discord refuses "Signups are now closed" in the signup channel, and a league
+    admin discards that job. The module goes off, the season is moved on to Placements as the notice's
+    record would have moved it, and the reply and the line both say the closed notice could not be
+    posted. Kimi is still told his channel is closed."""
+    from tests.support.change_queue import discard_job
+
+    league = await _league(tmp_path, SIGNING_UP, open_window=True)
+    league.channel(LEAGUE_SIGNUP_CHANNEL).fail_when = (
+        lambda content, _kwargs: "Signups are now closed" in str(content)
+    )
+    interaction = await _switch_off(league)
+    await run_queue(league.bot)
+
+    await discard_job(league.bot)
+
+    assert not await league.bot.module_service.is_signup_enabled()
+    assert await _season_stage(league) == "PLACEMENTS"
+    assert "closed notice could not be posted" in updated_reply(interaction)
+    assert "The module is off, but not every step succeeded" in updated_reply(interaction)
+    assert _failed_steps(await _log_lines(league)) == [
+        "The closed notice could not be posted in the signup channel."
+    ]
+
+
+async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standing(tmp_path, monkeypatch):
+    """The first job of the close, returning the drivers still signing up, fails and is discarded.
+    Nothing after it was planned, so the Sign Up button stands and no closed notice was posted:
+    the reply and the line say so, the module goes off and the season is moved on, and the window
+    is not said to be closed."""
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from tests.support.change_queue import discard_job
+
+    league = await _league(tmp_path, SIGNING_UP, open_window=True)
+    monkeypatch.setattr(
+        SignupModuleService, "end_wizard_on", AsyncMock(side_effect=RuntimeError("the save failed"))
+    )
+    interaction = await _switch_off(league)
+    await run_queue(league.bot)
+
+    await discard_job(league.bot)
+
+    assert not await league.bot.module_service.is_signup_enabled()
+    assert await _season_stage(league) == "PLACEMENTS"
+    reply = updated_reply(interaction)
+    assert "Sign Up button was left standing" in reply
+    assert "The window is closed" not in reply
+    assert any("Sign Up button was left standing" in step
+               for step in _failed_steps(await _log_lines(league)))
+
+
+async def test_a_switch_off_discarded_after_the_close_says_what_the_close_did(tmp_path, monkeypatch):
+    """The window is open and Kimi still signing up. The close's jobs run, then the switch-off's
+    save fails and a league admin discards it. The module is still on, but the window was
+    closed and Kimi returned: the reply says so rather than that nothing was changed, and the one
+    line records the close and the discard."""
+    from tests.support.change_queue import discard_job
+
+    league = await _league(tmp_path, SIGNING_UP, open_window=True)
+    monkeypatch.setattr(
+        type(league.bot.signup_module_service), "delete_config_on",
+        AsyncMock(side_effect=RuntimeError("the save failed")),
+    )
+    interaction = await _switch_off(league)
+    await run_queue(league.bot)
+
+    await discard_job(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled()
+    reply = updated_reply(interaction)
+    assert "Nothing was changed" not in reply
+    assert "Signups were closed first, returning 1 driver(s)" in reply
+    [line] = {each for each in await _log_lines(league)
+              if "drivers_returned_to_not_signed_up" in each}
+    assert "Incomplete" in line and "drivers_returned_to_not_signed_up: 1" in line
+    assert "could not be turned off" in line
