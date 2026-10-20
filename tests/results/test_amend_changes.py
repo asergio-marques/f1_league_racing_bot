@@ -464,7 +464,6 @@ async def test_a_refused_deletion_after_a_refused_paste_stops_only_the_amendment
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_amendment_s_configuration_choice_is_a_turn(tmp_path, monkeypatch):
     """The season has two points configurations attached and the Feature Race carries neither.
     Alex pastes the Feature Race: its turn offers the configurations in the amendment channel and
@@ -506,7 +505,6 @@ async def test_the_amendment_s_configuration_choice_is_a_turn(tmp_path, monkeypa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_last_amended_paste_records_stage_one_and_posts_stage_two_as_jobs(
     tmp_path, monkeypatch,
 ):
@@ -526,7 +524,6 @@ async def test_the_last_amended_paste_records_stage_one_and_posts_stage_two_as_j
     assert any("Stage 2 of 3" in text for text in _texts(league))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_last_amended_paste_hands_stage_one_to_the_league_and_its_prompt_comes_back_on_the_lane(
     tmp_path, monkeypatch,
 ):
@@ -550,7 +547,6 @@ async def test_the_last_amended_paste_hands_stage_one_to_the_league_and_its_prom
     assert await _winner(league) == MAX
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_stage_one_s_line_says_what_was_recorded_and_that_nothing_is_published_yet(
     tmp_path, monkeypatch,
 ):
@@ -783,7 +779,6 @@ async def test_a_lapse_reads_a_paste_typed_in_time_on_the_amendment_s_lane(tmp_p
     assert await _winner(league) == MAX
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand(
     tmp_path, monkeypatch,
 ):

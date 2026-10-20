@@ -1244,79 +1244,89 @@ def amendment_wait_text() -> str:
 async def snapshot_before_amendment(
     db_path: str, round_id: int, session_types: list[SessionType]
 ) -> None:
-    """Record the round as it stands, so an abandoned amendment can be undone.
+    """`snapshot_before_amendment_on`, saved on a connection of its own."""
+    async with get_connection(db_path) as db:
+        await snapshot_before_amendment_on(db, round_id, session_types)
+        await db.commit()
+
+
+async def snapshot_before_amendment_on(
+    db: aiosqlite.Connection, round_id: int, session_types: list[SessionType],
+    *, now: datetime | None = None,
+) -> None:
+    """Record the round as it stands, so an abandoned amendment can be undone, on the connection
+    handed and committing nothing: stage one writes it in its own save (#439).
 
     Taken before stage one writes. Captures, for every session being amended, its header, its
     driver rows, and its verdict records, and the round's attendance pardons — which is the
     whole of what the amendment changes that a revert cannot recompute. The standings and the
     points follow from the driver rows, so restoring those and cascading again reproduces them.
+    The amendment's half-hour runs from *now*, the queue's clock where it is handed.
     """
     from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     sessions: list[dict] = []
-    async with get_connection(db_path) as db:
-        for session_type in session_types:
-            is_qualifying = session_type.is_qualifying
-            rows_table = (
-                "qualifying_session_results" if is_qualifying else "race_session_results"
-            )
-            cursor = await db.execute(
-                "SELECT * FROM session_results WHERE round_id = ? AND session_type = ?",
-                (round_id, session_type.value),
-            )
-            header = await cursor.fetchone()
-            if header is None:
-                continue
-            cursor = await db.execute(
-                f"SELECT * FROM {rows_table} WHERE session_result_id = ? ORDER BY id",  # noqa: S608
-                (header["id"],),
-            )
-            driver_rows = [dict(row) for row in await cursor.fetchall()]
-
-            # **Whole rows, not references** (#345). Approving the report stage *deletes* the
-            # session's verdict records and writes the approved set back, so an amendment
-            # reverted after that point has nothing left to re-point: a snapshot holding only
-            # ``(id, points_at)`` would silently no-op and lose every appeal record it carried.
-            verdicts: list[dict] = []
-            for table in VERDICT_TABLES:
-                for row in await select_verdicts(
-                    db, table, "v.*", session_result_id=header["id"]
-                ):
-                    verdicts.append({"table": table, "row": row})
-
-            sessions.append(
-                {
-                    "session_result_id": header["id"],
-                    "session_type": session_type.value,
-                    "rows_table": rows_table,
-                    "header": dict(header),
-                    "driver_rows": driver_rows,
-                    "verdicts": verdicts,
-                }
-            )
-        if not sessions:
-            return
-
-        # **The pardons, whole** (#345). The appeal stage rewrites them before it releases the
-        # snapshot, so a failure between the two — or a crash — would otherwise revert the
-        # classification and the verdicts and leave the amendment's pardons standing on them.
+    for session_type in session_types:
+        is_qualifying = session_type.is_qualifying
+        rows_table = (
+            "qualifying_session_results" if is_qualifying else "race_session_results"
+        )
         cursor = await db.execute(
-            "SELECT * FROM attendance_pardons WHERE attendance_id IN "
-            "(SELECT id FROM driver_round_attendance WHERE round_id = ?) ORDER BY id",
-            (round_id,),
+            "SELECT * FROM session_results WHERE round_id = ? AND session_type = ?",
+            (round_id, session_type.value),
         )
-        pardons = [dict(row) for row in await cursor.fetchall()]
+        header = await cursor.fetchone()
+        if header is None:
+            continue
+        cursor = await db.execute(
+            f"SELECT * FROM {rows_table} WHERE session_result_id = ? ORDER BY id",  # noqa: S608
+            (header["id"],),
+        )
+        driver_rows = [dict(row) for row in await cursor.fetchall()]
 
-        expires = (
-            datetime.now(timezone.utc)
-            + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)
-        ).isoformat()
-        await db.execute(
-            "UPDATE round_amend_channels SET pre_amendment_state = ?, expires_at = ? "
-            "WHERE round_id = ?",
-            (_json.dumps({"sessions": sessions, "pardons": pardons}), expires, round_id),
+        # **Whole rows, not references** (#345). Approving the report stage *deletes* the
+        # session's verdict records and writes the approved set back, so an amendment
+        # reverted after that point has nothing left to re-point: a snapshot holding only
+        # ``(id, points_at)`` would silently no-op and lose every appeal record it carried.
+        verdicts: list[dict] = []
+        for table in VERDICT_TABLES:
+            for row in await select_verdicts(
+                db, table, "v.*", session_result_id=header["id"]
+            ):
+                verdicts.append({"table": table, "row": row})
+
+        sessions.append(
+            {
+                "session_result_id": header["id"],
+                "session_type": session_type.value,
+                "rows_table": rows_table,
+                "header": dict(header),
+                "driver_rows": driver_rows,
+                "verdicts": verdicts,
+            }
         )
-        await db.commit()
+    if not sessions:
+        return
+
+    # **The pardons, whole** (#345). The appeal stage rewrites them before it releases the
+    # snapshot, so a failure between the two — or a crash — would otherwise revert the
+    # classification and the verdicts and leave the amendment's pardons standing on them.
+    cursor = await db.execute(
+        "SELECT * FROM attendance_pardons WHERE attendance_id IN "
+        "(SELECT id FROM driver_round_attendance WHERE round_id = ?) ORDER BY id",
+        (round_id,),
+    )
+    pardons = [dict(row) for row in await cursor.fetchall()]
+
+    expires = (
+        (now or datetime.now(timezone.utc))
+        + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)
+    ).isoformat()
+    await db.execute(
+        "UPDATE round_amend_channels SET pre_amendment_state = ?, expires_at = ? "
+        "WHERE round_id = ?",
+        (_json.dumps({"sessions": sessions, "pardons": pardons}), expires, round_id),
+    )
 
 
 async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot | None = None) -> bool:
@@ -1846,6 +1856,7 @@ async def cancel_amendment(bot: LeagueBot, round_id: int, *, cancelled_by) -> bo
     return True
 
 
+@posts_in_a_job
 async def run_amendment_review_stages(
     db_path: str,
     round_id: int,
@@ -1940,85 +1951,119 @@ async def amend_round_results(
     amended_by: int,
     bot: LeagueBot,
 ) -> None:
-    """Supersede the chosen sessions' results with their corrected classifications.
+    """Supersede the chosen sessions' results with their corrected classifications, saved on a
+    connection of its own (`amend_round_results_on`), and write the stage's line to the log
+    channel. The standings names a full tie is settled by are resolved first, through *bot*."""
+    names = await _standings_names(db_path, division_id, bot)
+    async with get_connection(db_path) as db:
+        await amend_round_results_on(
+            db, round_id, division_id, sessions, amended_by, names
+        )
+        await db.commit()
+    # **A stage, not an outcome.** The `RESULT_AMENDED` entry belongs to the final stage.
+    rctx = await _get_round_context(db_path, round_id)
+    await bot.output_router.post_log(
+        f"{await name_of_member(bot, amended_by)} | AMEND_STAGE_1 | Recorded\n"
+        f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
+        f"  round: {rctx['round_number']}, sessions: "
+        + ", ".join(f"{s.session_type.value}={s.config_name}" for s in sessions)
+        + "\n"
+        "  Corrected classification recorded. Nothing is published until the report and "
+        "appeal stages are approved."
+    )
+
+
+async def amend_round_results_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    sessions: list[AmendedSession],
+    amended_by: int,
+    display_names: Mapping[int, str] | None = None,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Supersede the chosen sessions' results with their corrected classifications, on the
+    connection handed and committing nothing.
 
     The first of an amendment's three stages (#345). It snapshots every chosen session, writes
-    each corrected classification and re-points its verdicts at it — all in one transaction, so
-    the round is never left holding some sessions corrected and others not — then applies each
-    session's points and recomputes the standings once. It posts nothing:
-    :func:`run_amendment_review_stages` opens the next stage.
+    each corrected classification and re-points its verdicts at it, applies each session's points
+    and recomputes the standings once, all in the caller's save, so the round is never left
+    holding some sessions corrected and others not. It posts nothing: the amendment's lane puts
+    up the next stage. *display_names* are the standings names a full tie is settled by, resolved
+    by the caller before its save; the save waits on nothing but its own connection (#439).
+    *now* is the clock the amendment's half-hour runs from.
 
     Raises :class:`AmendmentWouldOrphanVerdictError` where a driver carrying a verdict is missing
     from their session's corrected classification, and ``SeasonImmutableError`` for an archived
-    season, with nothing written in either case.
+    season, with nothing written in either case, the caller's save being rolled back.
     """
     from leaguebot.core.services.season_service import SeasonImmutableError
 
-    submitted_at = datetime.now(timezone.utc).isoformat()
+    submitted_at = (now or datetime.now(timezone.utc)).isoformat()
     # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an
     # amendment abandoned before its last stage is approved would otherwise leave the round
     # scored from the corrected classification and posted from the old one, for ever.
-    await snapshot_before_amendment(db_path, round_id, [s.session_type for s in sessions])
+    await snapshot_before_amendment_on(
+        db, round_id, [s.session_type for s in sessions], now=now
+    )
     written: list[tuple[int, AmendedSession]] = []
-    async with get_connection(db_path) as db:
-        # Immutability guard: reject writes to archived seasons
+    # Immutability guard: reject writes to archived seasons
+    cursor = await db.execute(
+        """
+        SELECT s.status AS season_status, s.id AS season_id
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        JOIN seasons s ON s.id = d.season_id
+        WHERE r.id = ?
+        """,
+        (round_id,),
+    )
+    season_row = await cursor.fetchone()
+    if season_row and season_row["season_status"] == "COMPLETED":
+        raise SeasonImmutableError(
+            f"Round {round_id} belongs to an archived season — results cannot be amended."
+        )
+    season_id: int | None = season_row["season_id"] if season_row else None
+
+    # **Who the round held before the rewrite goes into the snapshot** (#216), read here
+    # because the next lines delete those rows. A driver an amendment strikes out entirely
+    # is afterwards in no result at all, so nothing would find them to reconsider their
+    # former-driver flag — which was the "never cleared" half of #216. Stage three passes
+    # this list to `recompute_former_drivers_for_round` as `also_consider`.
+    cursor = await db.execute(_PROFILES_IN_ROUND_SQL, (round_id, round_id))
+    profiles_before = sorted({r["profile_id"] for r in await cursor.fetchall()})
+
+    for session in sessions:
+        written.append(
+            (
+                await _write_amended_session_in_tx(
+                    db, round_id, division_id, session, amended_by, submitted_at,
+                    has_season=season_row is not None,
+                ),
+                session,
+            )
+        )
+    if profiles_before:
         cursor = await db.execute(
-            """
-            SELECT s.status AS season_status, s.id AS season_id
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE r.id = ?
-            """,
+            "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
             (round_id,),
         )
-        season_row = await cursor.fetchone()
-        if season_row and season_row["season_status"] == "COMPLETED":
-            raise SeasonImmutableError(
-                f"Round {round_id} belongs to an archived season — results cannot be amended."
+        snapshot_row = await cursor.fetchone()
+        if snapshot_row is not None and snapshot_row["pre_amendment_state"]:
+            snapshot = _json.loads(snapshot_row["pre_amendment_state"])
+            snapshot["profiles_before"] = profiles_before
+            await db.execute(
+                "UPDATE round_amend_channels SET pre_amendment_state = ? WHERE round_id = ?",
+                (_json.dumps(snapshot), round_id),
             )
-        season_id: int | None = season_row["season_id"] if season_row else None
-
-        # **Who the round held before the rewrite goes into the snapshot** (#216), read here
-        # because the next lines delete those rows. A driver an amendment strikes out entirely
-        # is afterwards in no result at all, so nothing would find them to reconsider their
-        # former-driver flag — which was the "never cleared" half of #216. Stage three passes
-        # this list to `recompute_former_drivers_for_round` as `also_consider`.
-        cursor = await db.execute(_PROFILES_IN_ROUND_SQL, (round_id, round_id))
-        profiles_before = sorted({r["profile_id"] for r in await cursor.fetchall()})
-
-        for session in sessions:
-            written.append(
-                (
-                    await _write_amended_session_in_tx(
-                        db, round_id, division_id, session, amended_by, submitted_at,
-                        has_season=season_row is not None,
-                    ),
-                    session,
-                )
-            )
-        if profiles_before:
-            cursor = await db.execute(
-                "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
-                (round_id,),
-            )
-            snapshot_row = await cursor.fetchone()
-            if snapshot_row is not None and snapshot_row["pre_amendment_state"]:
-                snapshot = _json.loads(snapshot_row["pre_amendment_state"])
-                snapshot["profiles_before"] = profiles_before
-                await db.execute(
-                    "UPDATE round_amend_channels SET pre_amendment_state = ? WHERE round_id = ?",
-                    (_json.dumps(snapshot), round_id),
-                )
-        await db.commit()
 
     # Apply points from the config so points_awarded / fastest_lap_bonus are populated
     # before standings computation. (ParsedRaceRow / ParsedQualifyingRow carry no pts.)
     for session_result_id, session in written:
         if season_id is not None and session.config_name is not None:
-            await _apply_points_from_config(
-                db_path, session_result_id, season_id, session.config_name,
-                session.session_type,
+            await _apply_points_from_config_on(
+                db, session_result_id, season_id, session.config_name, session.session_type,
             )
 
     # **Stage one publishes nothing** (#345). It records the corrected classification and the
@@ -2034,20 +2079,8 @@ async def amend_round_results(
     # amendment reverted before it completed left that provisional posting standing.
     from leaguebot.results.services import standings_service  # lazy import
 
-    await standings_service.cascade_recompute_from_round(
-        db_path, division_id, round_id, await _standings_names(db_path, division_id, bot)
-    )
-
-    # **A stage, not an outcome.** The `RESULT_AMENDED` entry belongs to the final stage.
-    rctx = await _get_round_context(db_path, round_id)
-    await bot.output_router.post_log(
-        f"{await name_of_member(bot, amended_by)} | AMEND_STAGE_1 | Recorded\n"
-        f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-        f"  round: {rctx['round_number']}, sessions: "
-        + ", ".join(f"{s.session_type.value}={s.config_name}" for s in sessions)
-        + "\n"
-        "  Corrected classification recorded. Nothing is published until the report and "
-        "appeal stages are approved."
+    await standings_service.cascade_recompute_from_round_on(
+        db, division_id, round_id, display_names
     )
 
 
@@ -3070,8 +3103,22 @@ async def _apply_points_from_config(
     points_awarded and fastest_lap_bonus populated from the chosen points configuration.
     """
     async with get_connection(db_path) as db:
-        if await _apply_points_in_tx(db, session_result_id, season_id, config_name, session_type):
+        if await _apply_points_from_config_on(
+            db, session_result_id, season_id, config_name, session_type
+        ):
             await db.commit()
+
+
+async def _apply_points_from_config_on(
+    db: aiosqlite.Connection,
+    session_result_id: int,
+    season_id: int,
+    config_name: str,
+    session_type: SessionType,
+) -> bool:
+    """`_apply_points_from_config` on the connection handed, committing nothing (stage one's
+    save, #439). Gives whether anything was written."""
+    return await _apply_points_in_tx(db, session_result_id, season_id, config_name, session_type)
 
 
 async def _apply_points_in_tx(

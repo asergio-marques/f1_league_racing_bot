@@ -220,7 +220,6 @@ async def _active_race(league: Any) -> dict[str, Any]:
     return race
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_valid_paste_is_written(tmp_path, monkeypatch):
     """The season has one points configuration, "Standard". Alex pastes the amended Feature Race,
     Max ahead of Lewis. Once the queue runs, the queue is not stopped, round 3's Feature Race
@@ -251,7 +250,6 @@ async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(
     assert row["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_recording_stage_one_logs_no_success(tmp_path, monkeypatch):
     """Stage one is not the amendment succeeding, and the log must not say it was. Once Alex's
     paste has recorded stage one, nothing in the log channel says AMEND_SUCCESS."""
@@ -282,7 +280,6 @@ async def test_the_sessions_existing_configuration_is_kept_where_still_attached(
     assert (await _active_race(league))["config_name"] == "Standard"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_fastest_lap_override_in_the_paste_is_passed_on(tmp_path, monkeypatch):
     """Alex's amended Feature Race opens with "FL: <@102>", naming Max, who finished. Once the
     queue runs, the amended Feature Race carries Max as its fastest-lap override."""
@@ -436,7 +433,6 @@ async def test_a_refused_channel_deletion_on_a_cancellation_stops_the_queue(
     assert not _deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path, monkeypatch):
     """The retired eight-column format is gone, not merely unused (#345).
 
@@ -544,7 +540,6 @@ async def _stage_in_hand(db_path, *, stopped: bool) -> None:
         pytest.param(True, id="stopped"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_cancelling_while_a_stage_is_being_approved_says_so_and_puts_nothing_back(
     tmp_path, monkeypatch, stopped,
 ):

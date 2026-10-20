@@ -58,10 +58,13 @@ from leaguebot.results.services.amend_changes import (
     label_of,
     prompt_steps,
 )
+from leaguebot.results.services.amendment_stage_changes import PROMPT_KIND
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,
+    NAMES,
     delete_message_step,
+    display_names,
     posting_steps,
 )
 from leaguebot.results.services.submission_steps import (
@@ -73,11 +76,13 @@ from leaguebot.results.services.submission_steps import (
 
 KIND = "results.amend.turn"
 CONFIG_KIND = "results.amend.config"
+STAGE_ONE_KIND = "results.amend.stage_one"
 CLOSE_KIND = "results.amend.close"
 JUDGE = "judge"
 SAVE_DRAFT = "save_draft"
 END_AMENDMENT = "end_amendment"
 POST_CONFIG_CHOICE = "post_config_choice"
+RECORD_STAGE_ONE = "record_stage_one"
 
 #: The configuration name a draft keeps for a season with none attached. A draft whose
 #: configuration is unset is still awaiting its choice (`expected_amended_session_on`), so a
@@ -86,7 +91,8 @@ NO_CONFIG = ""
 
 __all__ = [
     "CLOSE_KIND", "CONFIG_KIND", "KIND", "NO_CONFIG", "amend_close_change",
-    "amend_config_change", "amend_turn_change", "take_amended_paste", "turn_steps",
+    "STAGE_ONE_KIND", "amend_config_change", "amend_stage_one_change", "amend_turn_change",
+    "take_amended_paste", "turn_steps",
 ]
 
 #: The amendment held in a channel, with what its turns need to know of it.
@@ -269,7 +275,7 @@ def turn_steps(
             ]
         draft = {
             "channel_id": channel_id, "amend_id": int(row["amend_id"]), "round_id": round_id,
-            "session_type": expected.value, "label": label,
+            "division_id": int(row["division_id"]), "session_type": expected.value, "label": label,
             "round_number": int(row["round_number"]),
             "rows": driver_rows, "fl_override": fl_override, "mark": mark,
             "several": len(covered) > 1,
@@ -334,7 +340,18 @@ def turn_steps(
         lines = (str(payload["choice_line"]),) if payload.get("choice_line") else ()
         upcoming = await submissions.expected_amended_session_on(db, amend_id)
         if upcoming is None:
-            return StepResult(result={"saved": True}, lines=lines)
+            # Every session is in: stage one is the league's, handed over in this save.
+            return StepResult(
+                result={"saved": True}, lines=lines,
+                follow_ons=(FollowOn(
+                    STAGE_ONE_KIND,
+                    {
+                        "amend_id": amend_id, "round_id": int(payload["round_id"]),
+                        "division_id": int(payload["division_id"]), "channel_id": int(payload["channel_id"]),
+                    },
+                    f"recording round {payload['round_number']}'s amended results",
+                ),),
+            )
         channel_id = int(payload["channel_id"])
         asking: list[PlannedStep] = [PlannedStep(POST_PROMPT, {
             "channel_id": channel_id, "round_id": int(payload["round_id"]),
@@ -508,6 +525,149 @@ def amend_config_change(
         conversation_open=_conversation_open,
         writes=_WRITES,
         turn_channel=_turn_channel,
+    )
+
+
+def amend_stage_one_change(
+    *,
+    server_config: ServerConfig,
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, int | str, datetime], None],
+) -> ChangeType:
+    """The `results.amend.stage_one` change type, for the builder to register, on the league lane:
+    the amendment's pastes, all in, recorded.
+
+    The last paste's turn hands it over in its own save. The payload is ``amend_id``,
+    ``round_id``, ``division_id`` and ``channel_id``; the pastes are read from the amendment's
+    drafts when it runs. Its jobs are `names` (the standings names, resolved before the save, which
+    waits on nothing but its connection) and `record_stage_one`, one save: the round snapshotted,
+    each corrected classification written over it, the points applied and the standings recomputed
+    (`amend_round_results_on`), the stage's line written, and the amendment's lane asked for the
+    stage-two prompt (`results.amend.prompt`). Nothing is published (#345).
+
+    A driver carrying a verdict missing from a corrected classification refuses the amendment
+    (`AmendmentWouldOrphanVerdictError`): the save is undone to where it began, the refusal is said
+    in the channel and logged, and the whole amendment ends as a refused paste ends it. Any other
+    fault leaves the save unwritten and stops the league's queue; the drafts stay, so a Retry
+    records them. The drafts are kept once recorded: the amendment expects its next session by
+    them.
+    """
+    steps = turn_steps(server_config, now=now, arm_once=arm_once)
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (
+            PlannedStep(NAMES, {"division_id": int(payload["division_id"])}),
+            PlannedStep(RECORD_STAGE_ONE),
+        )
+
+    async def standing(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT closed_at, pre_amendment_state FROM round_amend_channels WHERE id = ?",
+                    (int(ctx.payload["amend_id"]),),
+                )
+            ).fetchone()
+        if row is None or row["closed_at"] is not None:
+            return Verdict.not_due("the amendment has ended")
+        if row["pre_amendment_state"] is not None:
+            return Verdict.not_due("the amendment's stage one is already recorded")
+        return Verdict.go()
+
+    async def record(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        payload = ctx.payload
+        amend_id, round_id = int(payload["amend_id"]), int(payload["round_id"])
+        division_id, channel_id = int(payload["division_id"]), int(payload["channel_id"])
+        row = await (
+            await db.execute(
+                "SELECT rac.started_by, rac.session_types, r.round_number, "
+                "d.name AS division_name, s.season_number "
+                "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
+                "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
+                "WHERE rac.id = ?",
+                (amend_id,),
+            )
+        ).fetchone()
+        assert row is not None  # the check found the amendment standing
+        drafted = await submissions.amend_drafts_on(db, amend_id)
+        sessions = [
+            submissions.AmendedSession(
+                each.session_type, each.driver_rows, each.config_name, each.fl_driver_override
+            )
+            for each in drafted
+        ]
+        what = f"`{COMMAND}` of round {row['round_number']} ({row['division_name']})"
+        await db.execute("SAVEPOINT stage_one")
+        try:
+            await submissions.amend_round_results_on(
+                db, round_id, division_id, sessions, int(row["started_by"]),
+                display_names(ctx, division_id), now=now(),
+            )
+        except submissions.AmendmentWouldOrphanVerdictError as exc:
+            await db.execute("ROLLBACK TO SAVEPOINT stage_one")
+            await db.execute("RELEASE SAVEPOINT stage_one")
+            return StepResult(
+                result={"refused": str(exc)},
+                lines=(refusal_line(ctx.named, what, str(exc)),),
+                then=(
+                    PlannedStep(POST, {"channel_id": channel_id, "text": f"❌ {exc}"}),
+                    PlannedStep(END_AMENDMENT, {
+                        "channel_id": channel_id, "amend_id": amend_id, "round_id": round_id,
+                    }),
+                ),
+            )
+        await db.execute("RELEASE SAVEPOINT stage_one")
+        covered = _covered(row)
+        line = (
+            f"{ctx.named} | AMEND_STAGE_1 | Recorded\n"
+            f"  season: {row['season_number']}, division: {row['division_name']!r}\n"
+            f"  round: {row['round_number']}, sessions: "
+            + ", ".join(f"{each.session_type.value}={each.config_name}" for each in sessions)
+            + "\n"
+            "  Corrected classification recorded. Nothing is published until the report and "
+            "appeal stages are approved."
+        )
+        return StepResult(
+            result={"recorded": True},
+            lines=(line,),
+            follow_ons=(FollowOn(
+                PROMPT_KIND,
+                {
+                    "stage": "reports", "round_id": round_id, "division_id": division_id,
+                    "channel_id": channel_id, "session_types": [each.value for each in covered],
+                    "round_number": int(row["round_number"]),
+                    "division_name": row["division_name"],
+                },
+                f"the stage-two prompt of round {row['round_number']}'s amendment",
+            ),),
+        )
+
+    async def describe_record(_ctx: StepContext) -> str:
+        return "recording the amended results"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        refused = next(
+            (str(view.result["refused"]) for view in ctx.steps
+             if view.name == RECORD_STAGE_ONE and view.result and view.result.get("refused")),
+            None,
+        )
+        return f"❌ {refused}" if refused else ""
+
+    return ChangeType(
+        kind=STAGE_ONE_KIND,
+        opening=(),
+        plan=plan,
+        steps={
+            **steps,
+            NAMES: posting_steps()[NAMES],
+            RECORD_STAGE_ONE: Step(
+                RECORD_STAGE_ONE, StepKind.SAVE, record, describe=describe_record
+            ),
+        },
+        check=standing,
+        key=lambda payload: f"{STAGE_ONE_KIND}:{payload['amend_id']}",
+        doing=lambda payload: f"Recording round {payload['round_id']}'s amended results",
+        outcome=outcome,
     )
 
 

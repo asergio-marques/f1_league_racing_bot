@@ -1127,7 +1127,6 @@ KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "ask_review_open"): (1, SLICE["6b"]),
     ("results/services/result_submission_service.py", "create_submission_channel"): (1, SLICE["6b"]),
     ("results/services/result_submission_service.py", "enter_resubmit_flow"): (1, SLICE["6b"]),
-    ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, SLICE["6b"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (13, SLICE["6b"]),
     ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, SLICE["6b"]),
     ("results/services/results_post_service.py", "_delete_posting"): (1, SLICE["6b"]),
