@@ -1099,6 +1099,26 @@ async def test_a_refused_channel_deletion_on_a_lapse_stops_the_queue(tmp_path, m
     assert not _deleted(league)
 
 
+async def test_a_lapse_is_named_in_the_log_channel_by_its_round_and_division(
+    tmp_path, monkeypatch,
+):
+    """Alex's amendment of round 3 lapses and Discord refuses to delete its channel. The stop
+    notice in the log channel names the amendment by its round number and division and says why it
+    ended in words, not by the round's database id nor by the cause's code word."""
+    league = await _league(tmp_path, monkeypatch)
+    await _ask_open(league)
+    league.channel(AMEND_CHANNEL).delete_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions"
+    )
+
+    await _fire(league)
+    await run_queue(league.bot)
+
+    log = league.log()
+    assert "ending the amendment of round 3 (Pro): its five minutes ran out" in log, log
+    assert f"round {ROUND_ID}'s" not in log and "(timer)" not in log
+
+
 async def test_the_lapse_timer_is_armed_by_a_job_of_its_own_and_reads_its_row_again(
     tmp_path, monkeypatch,
 ):

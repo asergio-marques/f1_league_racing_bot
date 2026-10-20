@@ -254,9 +254,18 @@ EXPIRED = (
 
 _AMENDMENT_FOR_LAPSE = (
     "SELECT rac.id, rac.round_id, rac.channel_id, rac.started_by, rac.session_types, "
-    "rac.closed_at, rac.pre_amendment_state, rac.prompt_posted_at, r.division_id "
-    "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id WHERE rac.id = ?"
+    "rac.closed_at, rac.pre_amendment_state, rac.prompt_posted_at, r.division_id, "
+    "r.round_number, d.name AS division_name "
+    "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
+    "JOIN divisions d ON d.id = r.division_id WHERE rac.id = ?"
 )
+
+#: Why a lapse was asked, as the log channel's lines about the queue say it.
+_BECAUSE = {
+    TIMER: "its five minutes ran out",
+    SWEEP: "its half-hour ran out",
+    RESTART: "the bot restarted with it open",
+}
 
 
 async def ask_lapse(
@@ -276,7 +285,11 @@ async def ask_lapse(
         "started_by": row["started_by"], "cause": cause, "armed_for": armed_for,
     }
     return await queue.ask(
-        LAPSE_KIND, payload, what=f"ending round {row['round_id']}'s amendment ({cause})",
+        LAPSE_KIND, payload,
+        what=(
+            f"ending the amendment of round {row['round_number']} ({row['division_name']}): "
+            f"{_BECAUSE[cause]}"
+        ),
         origin=ChangeOrigin.BOT,
     )
 
