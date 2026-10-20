@@ -85,7 +85,7 @@ _SESSION_LABEL = {
 
 __all__ = [
     "ARM_LAPSE", "COMMAND", "DELETE_STALE", "KIND", "PLAN_OPEN", "POST_OPENING", "TIMER", "WAIT",
-    "amend_open_change", "amendable_sessions", "amendment_open_refusal", "label_of",
+    "amend_open_change", "amendable_sessions", "amendment_open_refusal", "label_of", "prompt_steps",
 ]
 
 
@@ -124,6 +124,45 @@ def amendment_open_refusal(division_name: str, open_row: Any) -> str:
         f"{open_row['round_number']}, {sessions} — in <#{channel_id}>. Finish or cancel it "
         "there first: one amendment is open in a division at a time."
     )
+
+
+def prompt_steps(
+    *, now: Callable[[], datetime], arm_once: Callable[[str, int | str, datetime], None]
+) -> dict[str, Step]:
+    """The two jobs that follow every prompt an amendment shows, keyed by their names: the
+    prompt's posting, which records when it appeared (`prompt_posted_at`), and `arm_lapse`, which
+    arms the five minutes from then (Q18). The opening and every paste's turn plan them."""
+
+    async def record_prompt(
+        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
+    ) -> None:
+        """Record when the prompt appeared, in the save that marks it posted: the five minutes
+        run from then."""
+        await db.execute(
+            "UPDATE round_amend_channels SET prompt_posted_at = ? WHERE channel_id = ?",
+            (now().isoformat(), int(ctx.step_payload["channel_id"])),
+        )
+
+    async def arm_lapse(ctx: StepContext) -> StepResult:
+        async with get_connection(ctx.db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT id, prompt_posted_at FROM round_amend_channels WHERE channel_id = ?",
+                    (int(ctx.step_payload["channel_id"]),),
+                )
+            ).fetchone()
+        if row is None or row["prompt_posted_at"] is None:
+            return StepResult(result={"armed": False})
+        arm_once(TIMER, int(row["id"]), datetime.fromisoformat(row["prompt_posted_at"]) + WAIT)
+        return StepResult(result={"armed": True})
+
+    async def describe_arm(_ctx: StepContext) -> str:
+        return "arming the timer that ends an amendment nobody answers"
+
+    return {
+        POST_PROMPT: dataclasses.replace(post_prompt_step(), record=record_prompt),
+        ARM_LAPSE: Step(ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm),
+    }
 
 
 def amend_open_change(
@@ -332,37 +371,11 @@ def amend_open_change(
             sessions_text=", ".join(payload["session_types"]),
         )
 
-    async def record_prompt(
-        db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
-    ) -> None:
-        """Record when the prompt appeared, in the save that marks it posted: the five minutes
-        run from then."""
-        await db.execute(
-            "UPDATE round_amend_channels SET prompt_posted_at = ? WHERE channel_id = ?",
-            (now().isoformat(), int(ctx.step_payload["channel_id"])),
-        )
-
-    async def arm_lapse(ctx: StepContext) -> StepResult:
-        async with get_connection(ctx.db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT id, prompt_posted_at FROM round_amend_channels WHERE channel_id = ?",
-                    (int(ctx.step_payload["channel_id"]),),
-                )
-            ).fetchone()
-        if row is None or row["prompt_posted_at"] is None:
-            return StepResult(result={"armed": False})
-        arm_once(TIMER, int(row["id"]), datetime.fromisoformat(row["prompt_posted_at"]) + WAIT)
-        return StepResult(result={"armed": True})
-
     async def describe_plan(_ctx: StepContext) -> str:
         return "opening the amendment"
 
     async def describe_create(ctx: StepContext) -> str:
         return f"creating the amendment channel of round {ctx.step_payload['round_number']}"
-
-    async def describe_arm(_ctx: StepContext) -> str:
-        return "arming the timer that ends an amendment nobody answers"
 
     def opened(ctx: OutcomeContext) -> str:
         """The manager's reply: the channel, or the channel that was not created, and a line for
@@ -414,8 +427,7 @@ def amend_open_change(
             POST_OPENING: post_choice_step(
                 POST_OPENING, opening_view, describing="posting the amendment's opening"
             ),
-            POST_PROMPT: dataclasses.replace(post_prompt_step(), record=record_prompt),
-            ARM_LAPSE: Step(ARM_LAPSE, StepKind.ACT, arm_lapse, describe=describe_arm),
+            **prompt_steps(now=now, arm_once=arm_once),
         },
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",

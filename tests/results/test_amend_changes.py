@@ -392,7 +392,6 @@ async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
     assert "Feature Race" in _texts(league)[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, monkeypatch):
     """Alex pastes the Feature Race, and before its turn has run pastes it again. The second
     message is turned away at once: deleted, with a note in the channel, and no second turn is
@@ -441,7 +440,6 @@ async def test_a_refused_amended_paste_ends_the_whole_amendment_writing_nothing(
     assert await _winner(league) == LEWIS
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_refused_deletion_after_a_refused_paste_stops_only_the_amendment_s_lane(
     tmp_path, monkeypatch,
 ):

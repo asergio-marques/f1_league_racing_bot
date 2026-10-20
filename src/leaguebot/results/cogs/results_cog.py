@@ -841,6 +841,12 @@ class ResultsCog(commands.Cog):
 
             await ask_lock(self.bot.change_queue, message)
             return
+        # The opener's message in an open amendment's channel is a paste too: a turn on the
+        # amendment's lane (#439).
+        from leaguebot.results.services.amend_turn_change import take_amended_paste
+
+        if await take_amended_paste(self.bot, message, queue=self.bot.change_queue):
+            return
         # A league manager's message in a round's open submission is a paste: marked at once and
         # taken as a turn on the round's lane, or turned away while an earlier one waits (#439).
         from leaguebot.results.services.submission_turn_change import take_paste

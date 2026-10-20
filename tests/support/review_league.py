@@ -129,6 +129,10 @@ def channel(channel_id: int, events: list[tuple[str, int, int]]) -> Any:
         return message
 
     async def _fetch(message_id: int) -> Any:
+        # A message a member typed (`typed_message`) is found until it is deleted.
+        typed = [m for m in getattr(channel, "posted", ()) if m.id == message_id]
+        if typed:
+            return typed[0]
         if message_id not in channel.messages:
             raise http_error(discord.NotFound, status=404, text="Unknown Message")
         return channel.messages[message_id]

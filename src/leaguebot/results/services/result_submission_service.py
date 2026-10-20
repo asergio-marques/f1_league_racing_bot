@@ -3933,6 +3933,31 @@ async def resubmission_drafts_on(
     return collected
 
 
+async def amend_drafts_on(db: aiosqlite.Connection, amend_id: int) -> list[CollectedSession]:
+    """The sessions an amendment holds as drafts, in running order, read on the connection handed.
+    A draft is held as a resubmission's is (`resubmission_drafts_on`), keyed by the amendment; one
+    whose points configuration is still to be chosen is not given."""
+    held_rows = await (
+        await db.execute(
+            "SELECT session_type, rows_json, config_name FROM amend_drafts "
+            "WHERE amend_id = ? AND config_name IS NOT NULL",
+            (amend_id,),
+        )
+    ).fetchall()
+    drafts = {found["session_type"]: found for found in held_rows}
+    collected: list[CollectedSession] = []
+    for session in SessionType:
+        found = drafts.get(session.value)
+        if found is None:
+            continue
+        held = _json.loads(found["rows_json"])
+        collected.append(CollectedSession(
+            session, "ACTIVE", found["config_name"] or None, None,
+            list(held["rows"]), held["fl_override"],
+        ))
+    return collected
+
+
 class ResubmissionCancelView(LeagueView):
     """The **Cancel** button on a resubmission's announcement.
 

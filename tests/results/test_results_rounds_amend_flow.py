@@ -303,7 +303,6 @@ async def test_a_fastest_lap_override_in_the_paste_is_passed_on(tmp_path, monkey
 OUTSIDER_PASTE = "1, <@103>, FER, 1:30:00.000, 1:20.000, N/A\n2, <@101>, FER, +5.000, 1:21.000, N/A"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_paste_that_fails_validation_writes_nothing(tmp_path, monkeypatch):
     """Alex's amended Feature Race names a driver (103) outside the division. Once its turn runs,
     nothing is written, Lewis still ahead; the amendment channel is told validation errors were
@@ -322,7 +321,6 @@ async def test_a_paste_that_fails_validation_writes_nothing(tmp_path, monkeypatc
     assert row["closed_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(
     tmp_path, monkeypatch,
 ):
@@ -358,7 +356,6 @@ async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(
     ],
     ids=["validation", "fastest-lap-override"],
 )
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(
     tmp_path, monkeypatch, paste, told,
 ):
