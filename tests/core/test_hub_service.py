@@ -328,14 +328,6 @@ def _bot(db_path, guild):
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
-NO_HUB_ON_THE_QUEUE = (
-    "#439: the hub panel is refreshed off the change queue, a refused or unpostable panel "
-    "reported in a line rather than stopping the queue"
-)
-NO_HUB_ASK = (
-    "#439: a stale press and the start-up refresh the hub panel at once, rather than asking "
-    "the change queue for it"
-)
 
 
 @pytest.fixture
@@ -420,7 +412,6 @@ async def test_a_deleted_panel_is_posted_again(league):
     assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ON_THE_QUEUE)
 async def test_a_refused_panel_stops_the_queue(league):
     """Discord refuses the panel in the hub: the queue stops at the refresh, no panel id is
     kept, and once the bot is let post there, Retry posts it and keeps its id."""
@@ -437,7 +428,6 @@ async def test_a_refused_panel_stops_the_queue(league):
     assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ON_THE_QUEUE)
 async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
     """The hub channel set (7900) is no longer in the server: the queue stops at the refresh,
     its notice naming `/bot hub-channel`, and nothing is posted."""
@@ -451,7 +441,6 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
     assert league.hub.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ON_THE_QUEUE)
 async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
     """The panel is posted; its id is written in the refresh job's own save, with its mark,
     never by a commit of the configuration service's own."""
@@ -473,7 +462,6 @@ async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
     assert all(job["done_at"] is not None for job in await step_rows(league.db_path, change["id"]))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ON_THE_QUEUE)
 async def test_a_hub_not_set_is_not_due(league):
     """No hub channel is set: the refresh asked is not due, so nothing is saved on the queue
     and nothing posted."""
@@ -494,7 +482,6 @@ async def _panel_with(league, option):
     return league.hub.posted[0].view
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ASK)
 async def test_a_stale_press_refreshes_the_panel(league):
     """The panel still carried the option; Alex presses it after it stopped being offered. The
     press is refused and the refresh asked of the queue: the panel is unchanged until the queue
@@ -511,7 +498,6 @@ async def test_a_stale_press_refreshes_the_panel(league):
     assert "Nothing is offered here yet." in league.hub.posted[0].content
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ASK)
 async def test_a_burst_of_stale_presses_asks_one_refresh(league):
     """Alex presses the stale option twice before the queue runs: one refresh is asked,
     the second press's request dropped while the first waits, and the panel is refreshed once."""
@@ -606,7 +592,6 @@ async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
 # ── Start-up ──────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ASK)
 async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     """Every option, offered or not: a stale press is refused in words, not in silence. The
     panel stands in the hub; after a restart every registered option's button is routed again,
@@ -624,7 +609,6 @@ async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     assert [r["state"] for r in await _refreshes(league)] == ["QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ASK)
 async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
     """The hub is set and no panel stands. The start-up asks the queue for the panel, as the
     bot's, and posts nothing itself; the panel is posted, and its id kept, once the queue runs."""
@@ -638,7 +622,6 @@ async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
     assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_ASK)
 async def test_a_restart_with_no_option_registered_adds_no_view(league):
     await recover_hub(league.bot, queue=league.bot.change_queue)
 

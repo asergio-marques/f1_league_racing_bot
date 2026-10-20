@@ -175,7 +175,6 @@ async def test_the_hub_is_set_permissioned_and_given_its_panel(db_path):
     assert f"**Hub channel** set to <#{HUB}>" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_MOVE_ON_THE_QUEUE)
 async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue(db_path):
     """Core spec :135: a command that makes its own change and then asks for a post replies
     with what it did, and the post follows on the queue. The manager points the hub at 7920:
@@ -247,7 +246,6 @@ async def test_a_channel_the_bot_cannot_manage_is_refused_before_anything_is_wri
     assert await _stored(db_path) == {"hub_channel_id": None, "hub_message_id": None}
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HUB_MOVE_ON_THE_QUEUE)
 async def test_a_panel_that_cannot_be_posted_stops_the_queue_and_the_hub_is_kept(db_path):
     """The channel is the right one; the repair is in Discord's settings. Discord refuses the
     new panel: the hub stays set to the channel chosen, and the queue stops at the panel's

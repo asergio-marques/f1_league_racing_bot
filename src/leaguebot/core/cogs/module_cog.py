@@ -439,26 +439,28 @@ class ModuleCog(commands.Cog):
             await self._refresh_hub(interaction, describe(interaction))
 
     async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
-        """Bring the hub's panel up to date: a module's options are offered while it is on.
+        """Ask the change queue to bring the hub's panel up to date: a module's options are
+        offered while it is on.
 
         Run after every enable and disable, the confirmed results disable included, whether
-        or not the module offers anything — the hub asks each option, not each module. A
-        panel that cannot be refreshed is logged, naming the member and *what* caused the refresh,
-        and never fails the toggle behind it. The caller names it: a button's interaction
-        carries no command, so `describe` could only say "an interaction" for it.
+        or not the module offers anything — the hub asks each option, not each module. The refresh
+        is the bot's change, named for the member and *what* caused it: a panel Discord refuses
+        stops the queue at the refresh and never fails the toggle behind it. The caller names
+        it: a button's interaction carries no command, so `describe` could only say "an
+        interaction" for it.
         """
-        from leaguebot.core.services.hub_service import refresh_panel
+        from leaguebot.core.services.hub_service import HUB_REFRESH
 
         try:
-            fault = await refresh_panel(self.bot)
-        except Exception:  # noqa: BLE001 — see the docstring
-            log.exception("module toggle: the hub panel could not be refreshed")
-            return
-        if fault is not None:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                f"{what} | Hub panel not refreshed: {fault}"
+            await self.bot.change_queue.ask(
+                HUB_REFRESH,
+                {"command": what},
+                actor=interaction.user,
+                what="refreshing the hub panel",
+                origin=ChangeOrigin.BOT,
             )
+        except Exception:  # noqa: BLE001 — see the docstring
+            log.exception("module toggle: the hub panel could not be asked for")
 
     async def _refuse_module_change(
         self,

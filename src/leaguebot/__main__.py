@@ -695,7 +695,7 @@ def register_change_types(bot: LeagueBot) -> None:
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
         )
     )
-    bot.change_queue.register(hub_refresh_change())
+    bot.change_queue.register(hub_refresh_change(bot.change_queue))
     bot.change_queue.register(calendar_sync_change(bot.season_service))
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(sheet_post_change())
@@ -1080,9 +1080,7 @@ async def main() -> None:
         try:
             from leaguebot.core.services.hub_service import recover_hub
 
-            hub_fault = await recover_hub(bot)
-            if hub_fault is not None:
-                await bot.output_router.post_log(f"Hub panel not recovered: {hub_fault}")
+            await recover_hub(bot, queue=bot.change_queue)
         except Exception:
             log.warning("Hub recovery failed", exc_info=True)
 

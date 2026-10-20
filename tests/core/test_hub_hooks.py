@@ -50,13 +50,6 @@ def _interaction():
     return interaction
 
 
-NO_TOGGLE_ASK = (
-    "#439: a module toggle refreshes the hub panel at once, rather than asking the change "
-    "queue for it"
-)
-NO_RECOVER_HUB_QUEUE = (
-    "#439: the start-up recovers the hub without handing it the change queue"
-)
 HUB = 7930
 
 
@@ -101,7 +94,6 @@ async def _refreshes_asked(bot) -> list[dict]:
 # ── The panel follows the modules ─────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_TOGGLE_ASK)
 @pytest.mark.parametrize(
     ("module", "command"),
     [
@@ -297,7 +289,6 @@ async def test_permissions_that_raise_do_not_fail_the_role_command(monkeypatch):
 # ── A restart recovers the hub ────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECOVER_HUB_QUEUE)
 def test_the_hub_is_recovered_at_start_up():
     """`on_ready` is a closure inside `main`, so its wiring is asserted on the source: the
     start-up hands the recovery the change queue, which it asks for the panel. The recovery

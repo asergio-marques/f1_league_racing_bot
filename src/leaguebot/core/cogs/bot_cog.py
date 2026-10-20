@@ -39,7 +39,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import LEAGUE_LANE
+from leaguebot.core.models.change import LEAGUE_LANE, ChangeOrigin
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
 from leaguebot.core.utils.channel_guard import (
@@ -649,12 +649,17 @@ class BotCog(commands.Cog):
         faults: list[str] = []
         if old_channel_id is not None and old_channel_id != channel.id:
             faults += await _stand_down_old_hub(guild, old_channel_id, old_message_id)
-        for fault in (
-            await hub_service.apply_hub_permissions(self.bot, guild, channel),
-            await hub_service.refresh_panel(self.bot),
-        ):
-            if fault is not None:
-                faults.append(fault)
+        fault = await hub_service.apply_hub_permissions(self.bot, guild, channel)
+        if fault is not None:
+            faults.append(fault)
+        # The panel is posted by the change queue, which stops for a refusal.
+        await self.bot.change_queue.ask(
+            hub_service.HUB_REFRESH,
+            {"command": describe(interaction)},
+            actor=interaction.user,
+            what="posting the hub panel",
+            origin=ChangeOrigin.BOT,
+        )
 
         await _audit(
             self.bot,
@@ -664,7 +669,7 @@ class BotCog(commands.Cog):
             {"channel_id": channel.id},
         )
 
-        reply = f"✅ **Hub channel** set to {channel.mention}."
+        reply = f"✅ **Hub channel** set to {channel.mention}. Its panel follows on the change queue."
         if faults:
             reply += "\n⚠️ " + "\n⚠️ ".join(faults)
         await interaction.followup.send(reply, ephemeral=True)
