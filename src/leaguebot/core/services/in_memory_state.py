@@ -43,7 +43,7 @@ def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
 
     # A reason being awaited from an admin, keyed by the channel it is awaited in, and the
     # five-minute lapse that would otherwise fire into a league that has changed.
-    from leaguebot.signup.cogs.admin_review_cog import clear_pending_reasons
+    from leaguebot.signup.services.signup_views import clear_pending_reasons
 
     clear_pending_reasons()
 

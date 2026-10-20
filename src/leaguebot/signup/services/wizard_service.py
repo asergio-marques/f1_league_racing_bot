@@ -689,7 +689,7 @@ class WizardService:
         if wizard.signup_channel_id:
             channel = guild.get_channel(wizard.signup_channel_id)
             if channel and isinstance(channel, discord.TextChannel):
-                from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
+                from leaguebot.signup.services.signup_views import AdminReviewView
                 track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_id: s.display_label
@@ -939,7 +939,7 @@ class WizardService:
         if isinstance(channel, discord.TextChannel):
             driver_member = guild.get_member(int(discord_user_id))
             mention = driver_member.mention if driver_member else f"<@{discord_user_id}>"
-            from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView
+            from leaguebot.signup.services.signup_views import CorrectionParameterView
             await channel.send(
                 f"{mention} **{actor.display_name}** has requested a correction.\n"
                 "Please select the parameter to correct (5-minute window):",
@@ -1546,7 +1546,7 @@ class WizardService:
         team_names: list[str] | None = None,
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
-        from leaguebot.signup.cogs.signup_cog import (  # lazy import — avoid circular
+        from leaguebot.signup.services.signup_views import (  # lazy import — avoid circular
             WithdrawButtonView,
             PlatformButtonView,
             DriverTypeButtonView,
@@ -1677,7 +1677,7 @@ class WizardService:
             f"**Step 6 — {ordinal} Preferred Team** *(so far: {picks_str})*\n"
             f"Select your {ordinal} preferred team, or press **No Preference** to finish."
         )
-        from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView  # lazy import
+        from leaguebot.signup.services.signup_views import PreferredTeamsButtonView  # lazy import
         await channel.send(
             prompt,
             view=PreferredTeamsButtonView(
@@ -2217,7 +2217,7 @@ class WizardService:
             if isinstance(channel, discord.TextChannel):
                 record = await self._signup_svc.get_record(discord_user_id)
                 if record is not None:
-                    from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
+                    from leaguebot.signup.services.signup_views import AdminReviewView
                     track_map = await self._get_track_name_map()
                     slot_labels = {
                         s.slot_id: s.display_label
@@ -2343,7 +2343,7 @@ class WizardService:
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
-                from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
+                from leaguebot.signup.services.signup_views import AdminReviewView
                 track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_id: s.display_label

@@ -152,7 +152,7 @@ async def test_a_choice_of_points_configuration_writes_one_line():
 
 
 async def _may_review(member, config):
-    from leaguebot.signup.cogs.admin_review_cog import _may_review_signup
+    from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(member)
     interaction.client.config_service.get_server_config = AsyncMock(return_value=config)
@@ -170,7 +170,7 @@ async def test_the_driver_may_not_action_their_own_signup_review():
 
 
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
-    from leaguebot.signup.cogs.admin_review_cog import _may_review_signup
+    from leaguebot.signup.services.signup_views import _may_review_signup
 
     interaction = _interaction(_member(MANAGER_ROLE))
     interaction.client.config_service.get_server_config = AsyncMock(

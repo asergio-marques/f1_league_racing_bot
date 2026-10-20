@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.signup.cogs import signup_cog
+from leaguebot.signup.services import signup_views
 from tests.signup.test_wizard_changes import (
     NO_START_CHANGE,
     START_KIND,
@@ -64,7 +64,7 @@ async def _holding(league: SeasonLeague, state: DriverState | None, *,
 async def _press_the_button(league: SeasonLeague) -> Any:
     """Kimi presses Sign Up on a view handed the change queue (A23)."""
     press = _driver(league)
-    view = signup_cog.SignupButtonView(league.bot.change_queue)
+    view = signup_views.SignupButtonView(league.bot.change_queue)
     await view.signup_button.callback(press)
     return press
 
@@ -135,7 +135,7 @@ class TestTheRefusals:
     have produced one produced the crash instead."""
 
     @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
-    @pytest.mark.parametrize("state", sorted(signup_cog.IN_PROGRESS_STATES, key=lambda s: s.value))
+    @pytest.mark.parametrize("state", sorted(signup_views.IN_PROGRESS_STATES, key=lambda s: s.value))
     async def test_a_driver_mid_signup_is_told_so(self, tmp_path, state):
         league = await _league(tmp_path)
         await _holding(league, state)
@@ -147,7 +147,7 @@ class TestTheRefusals:
         _assert_one_refusal_line(league, "already have a signup in progress")
 
     @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)
-    @pytest.mark.parametrize("state", sorted(signup_cog.APPROVED_STATES, key=lambda s: s.value))
+    @pytest.mark.parametrize("state", sorted(signup_views.APPROVED_STATES, key=lambda s: s.value))
     async def test_an_approved_driver_is_told_so(self, tmp_path, state):
         league = await _league(tmp_path)
         await _holding(league, state)
@@ -205,10 +205,10 @@ class TestEveryState:
         it in that set. Do not delete this assertion: without it the new state silently
         gets 'Your signup has already been approved' and signs nobody up.
         """
-        covered = signup_cog.IN_PROGRESS_STATES | signup_cog.APPROVED_STATES
+        covered = signup_views.IN_PROGRESS_STATES | signup_views.APPROVED_STATES
 
         assert covered == set(DriverState) - {DriverState.NOT_SIGNED_UP}
-        assert not (signup_cog.IN_PROGRESS_STATES & signup_cog.APPROVED_STATES)
+        assert not (signup_views.IN_PROGRESS_STATES & signup_views.APPROVED_STATES)
 
 
 # ── A past account of a driver (issue #243) ───────────────────────────────

@@ -40,7 +40,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView
+from leaguebot.signup.services.signup_views import CorrectionParameterView
 from tests.signup.test_review_changes import (
     CHOOSE_KIND,
     KIMI_CHANNEL,

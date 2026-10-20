@@ -169,7 +169,7 @@ def _press(league: SeasonLeague, *, at: datetime | None = None) -> Any:
 async def _press_approve(league: SeasonLeague) -> Any:
     """Manager 77 presses Approve on Kimi's review panel. The panel is handed the change queue
     when it is built (A23), never reaching it through the bot."""
-    from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
+    from leaguebot.signup.services.signup_views import AdminReviewView
 
     press = _press(league)
     view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue)
@@ -180,7 +180,7 @@ async def _press_approve(league: SeasonLeague) -> Any:
 async def _press_choice(league: SeasonLeague, parameter: str = "nationality") -> Any:
     """Manager 77 presses *parameter* among the correction choices in Kimi's channel, now. The
     choices are handed the change queue when they are built (A23)."""
-    from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView
+    from leaguebot.signup.services.signup_views import CorrectionParameterView
 
     press = _press(league)
     view = CorrectionParameterView(str(SIGNING_UP), change_queue=league.bot.change_queue)

@@ -162,13 +162,13 @@ async def _type(league: SeasonLeague, content: str) -> None:
 async def _press(league: SeasonLeague, view_class: str, label: str, **built: Any) -> None:
     """Kimi presses *label* on the step's buttons in his channel, the view handed his account
     and the change queue when it is built (A23), and *built* besides."""
-    from leaguebot.signup.cogs import signup_cog
+    from leaguebot.signup.services import signup_views
 
     press = member_interaction(league.bot, user=league._member(SIGNING_UP))
     press.guild = league.guild
     press.channel_id = KIMI_CHANNEL
     press.channel = league.channel(KIMI_CHANNEL)
-    view = getattr(signup_cog, view_class)(str(SIGNING_UP), league.bot.change_queue, **built)
+    view = getattr(signup_views, view_class)(str(SIGNING_UP), league.bot.change_queue, **built)
     [button] = [child for child in view.children if getattr(child, "label", None) == label]
     await button.callback(press)
 

@@ -43,9 +43,9 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-import leaguebot.signup.cogs.admin_review_cog as arc
-from leaguebot.signup.cogs.admin_review_cog import (
-    AdminReviewCog,
+import leaguebot.signup.services.signup_views as arc
+from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+from leaguebot.signup.services.signup_views import (
     AdminReviewView,
     _PENDING_REASONS,
 )

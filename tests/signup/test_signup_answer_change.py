@@ -157,7 +157,7 @@ async def _type(league: SeasonLeague, content: str) -> Any:
 async def _press_platform(league: SeasonLeague, platform: str) -> Any:
     """Kimi presses *platform* on the platform question; gives his press. The view is handed his
     account and the change queue when it is built (A23)."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
+    from leaguebot.signup.services.signup_views import PlatformButtonView
 
     press = member_interaction(league.bot, user=league._member(SIGNING_UP))
     press.guild = league.guild

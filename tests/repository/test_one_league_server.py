@@ -200,7 +200,7 @@ async def test_a_modal_submitted_in_another_server_is_refused():
 async def test_the_sign_up_button_left_on_an_old_server_is_refused():
     """The case that matters: a persistent view registered once at start-up, pressed on a
     server the league has left."""
-    from leaguebot.signup.cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.services.signup_views import SignupButtonView
 
     interaction = _pressed_on(ELSEWHERE, LEAGUE)
 
@@ -248,7 +248,7 @@ async def test_a_modal_submitted_while_no_server_is_claimed_is_refused():
 
 
 async def test_the_sign_up_button_left_behind_by_a_pack_is_refused():
-    from leaguebot.signup.cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.services.signup_views import SignupButtonView
 
     interaction = _pressed_on(ELSEWHERE, None)
 
@@ -417,7 +417,8 @@ def _message_elsewhere():
 
 
 async def test_the_reason_listener_ignores_another_server():
-    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
+    from leaguebot.signup.services.signup_views import _PENDING_REASONS
 
     bot = _listener_bot()
     _PENDING_REASONS[(70, 7)] = {"action": "reject"}

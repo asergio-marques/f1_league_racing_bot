@@ -47,7 +47,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
+from leaguebot.signup.services.signup_views import PreferredTeamsButtonView
 from tests.signup.test_wizard_advance import KIMI_CHANNEL, KIMI_LANE, _state, _wizard
 from tests.support.change_queue import (
     acknowledgement,

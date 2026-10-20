@@ -142,7 +142,7 @@ def _assert_refusal_recorded(interaction, button: str) -> None:
 
 async def test_another_member_cannot_answer_a_driver_s_platform_question():
     """The channel is private to its driver, but a league manager can see it."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
+    from leaguebot.signup.services.signup_views import PlatformButtonView
 
     queue = MagicMock()
     view = PlatformButtonView(DRIVER_ID, queue)
@@ -157,7 +157,7 @@ async def test_another_member_cannot_answer_a_driver_s_platform_question():
 
 async def test_another_member_cannot_cancel_a_driver_s_signup():
     """The one button that destroys work."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
+    from leaguebot.signup.services.signup_views import PlatformButtonView
 
     queue = MagicMock()
     view = PlatformButtonView(DRIVER_ID, queue)
@@ -178,7 +178,7 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
 async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     """A button left in a channel whose wizard has been cleared up. The lookup finding
     nothing must refuse rather than pass unauthenticated."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
+    from leaguebot.signup.services.signup_views import PlatformButtonView
 
     view = PlatformButtonView()
     interaction = _interaction(wizard_user=None)
@@ -191,7 +191,7 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
 
 async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     """The guard has to hold on the recovered identity too, not only the stored one."""
-    from leaguebot.signup.cogs.signup_cog import PlatformButtonView
+    from leaguebot.signup.services.signup_views import PlatformButtonView
 
     view = PlatformButtonView()
     interaction = _interaction(OTHER_USER_ID)
@@ -208,7 +208,7 @@ async def test_a_rebuilt_view_still_refuses_the_wrong_member():
 
 
 async def test_another_member_cannot_choose_a_driver_s_type():
-    from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
+    from leaguebot.signup.services.signup_views import DriverTypeButtonView
 
     queue = MagicMock()
     view = DriverTypeButtonView(DRIVER_ID, queue)
@@ -222,7 +222,7 @@ async def test_another_member_cannot_choose_a_driver_s_type():
 
 
 async def test_another_member_cannot_cancel_from_the_driver_type_step():
-    from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
+    from leaguebot.signup.services.signup_views import DriverTypeButtonView
 
     queue = MagicMock()
     view = DriverTypeButtonView(DRIVER_ID, queue)
@@ -243,7 +243,7 @@ async def test_another_member_cannot_cancel_from_the_driver_type_step():
 async def test_a_button_is_offered_for_each_team_still_available():
     """Unlike the other views, this one's buttons are built from the league's own teams,
     so there is no decorator to read them off — the view has to be inspected."""
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
+    from leaguebot.signup.services.signup_views import PreferredTeamsButtonView
 
     view = PreferredTeamsButtonView(
         DRIVER_ID, MagicMock(), ["Alpha", "Beta", "Gamma"]
@@ -256,7 +256,7 @@ async def test_a_button_is_offered_for_each_team_still_available():
 
 async def test_a_team_already_picked_is_excluded():
     """What stops a driver spending two of their three picks on one team."""
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
+    from leaguebot.signup.services.signup_views import PreferredTeamsButtonView
 
     view = PreferredTeamsButtonView(
         DRIVER_ID, MagicMock(), ["Alpha", "Beta"], excluded=["Alpha"]
@@ -269,7 +269,7 @@ async def test_a_team_already_picked_is_excluded():
 
 async def test_no_preference_is_always_offered():
     """It is the driver's only way out of the loop before their third pick."""
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
+    from leaguebot.signup.services.signup_views import PreferredTeamsButtonView
 
     view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
 
@@ -278,7 +278,7 @@ async def test_no_preference_is_always_offered():
 
 
 async def test_another_member_cannot_finish_a_driver_s_team_step():
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
+    from leaguebot.signup.services.signup_views import PreferredTeamsButtonView
 
     queue = MagicMock()
     view = PreferredTeamsButtonView(DRIVER_ID, queue, ["Alpha"])
@@ -292,7 +292,7 @@ async def test_another_member_cannot_finish_a_driver_s_team_step():
 
 
 async def test_another_member_cannot_cancel_from_the_team_step():
-    from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
+    from leaguebot.signup.services.signup_views import PreferredTeamsButtonView
 
     queue = MagicMock()
     view = PreferredTeamsButtonView(DRIVER_ID, queue, ["Alpha"])
@@ -311,7 +311,7 @@ async def test_another_member_cannot_cancel_from_the_team_step():
 
 
 async def test_another_member_cannot_answer_the_teammate_question():
-    from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
+    from leaguebot.signup.services.signup_views import NoPreferenceTeammateView
 
     queue = MagicMock()
     view = NoPreferenceTeammateView(DRIVER_ID, queue)
@@ -325,7 +325,7 @@ async def test_another_member_cannot_answer_the_teammate_question():
 
 
 async def test_another_member_cannot_cancel_from_the_teammate_step():
-    from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
+    from leaguebot.signup.services.signup_views import NoPreferenceTeammateView
 
     queue = MagicMock()
     view = NoPreferenceTeammateView(DRIVER_ID, queue)
@@ -356,10 +356,10 @@ async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_a
 ):
     """The Cancel Signup posted with the welcome message, and the notes step's No Notes and
     Cancel Signup, carry the same guard as every other step, and record its refusal."""
-    from leaguebot.signup.cogs import signup_cog
+    from leaguebot.signup.services import signup_views
 
     queue = MagicMock()
-    view = getattr(signup_cog, view_name)(DRIVER_ID, queue)
+    view = getattr(signup_views, view_name)(DRIVER_ID, queue)
     interaction = _interaction(OTHER_USER_ID)
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -410,7 +410,7 @@ async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
                     registered: bool = False) -> Any:
     """Kimi presses *button* on *view_name*, built for him and handed the change queue (A23),
     or re-registered at start with the queue alone; gives his press."""
-    from leaguebot.signup.cogs import signup_cog
+    from leaguebot.signup.services import signup_views
     from tests.signup.test_preferred_teams_view import KIMI_CHANNEL, TEAMS
 
     press = member_interaction(league.bot, user=league._member(SIGNING_UP),
@@ -420,10 +420,10 @@ async def _press_on(league: SeasonLeague, view_name: str, button: str, *,
     press.channel = league.channel(KIMI_CHANNEL)
     account = None if registered else str(SIGNING_UP)
     if view_name == "PreferredTeamsButtonView":
-        view = signup_cog.PreferredTeamsButtonView(account, league.bot.change_queue, list(TEAMS))
+        view = signup_views.PreferredTeamsButtonView(account, league.bot.change_queue, list(TEAMS))
         await getattr(view, button)(press)
         return press
-    view = getattr(signup_cog, view_name)(account, league.bot.change_queue)
+    view = getattr(signup_views, view_name)(account, league.bot.change_queue)
     await getattr(type(view), button)(view, press, MagicMock())
     return press
 

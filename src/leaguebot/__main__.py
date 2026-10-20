@@ -1003,7 +1003,7 @@ async def main() -> None:
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
     # interaction time, so a single registration handles all active wizard sessions.
-    from leaguebot.signup.cogs.signup_cog import (
+    from leaguebot.signup.services.signup_views import (
         SignupButtonView,
         WithdrawButtonView,
         NoNotesButtonView,
@@ -1012,7 +1012,7 @@ async def main() -> None:
         PreferredTeamsButtonView,
         NoPreferenceTeammateView,
     )
-    from leaguebot.signup.cogs.admin_review_cog import AdminReviewView, CorrectionParameterView
+    from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
     from leaguebot.results.services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
     from leaguebot.attendance.services.rsvp_service import RsvpView
 

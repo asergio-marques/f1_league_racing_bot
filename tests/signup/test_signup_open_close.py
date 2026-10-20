@@ -900,7 +900,7 @@ def test_every_state_the_close_returns_is_one_the_confirmation_lists():
     """A state added to the close alone would drop drivers the confirmation never named, and
     one of them parked alone would let the close through with no confirmation at all."""
     from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
-    from leaguebot.signup.cogs.signup_cog import IN_PROGRESS_STATES
+    from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
 
     assert RETURNED_BY_CLOSE <= IN_PROGRESS_STATES
 

@@ -1648,7 +1648,7 @@ async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_
     Once the queue has run they are Not Signed Up (the league's `signup.end` done), and the turns
     in their channel stop at `signup_notice`: nothing posted, their typing not revoked, no
     deletion armed (C76, decision 25). Gives the channel."""
-    from leaguebot.signup.cogs.signup_cog import WithdrawButtonView
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
 
     await _mid_wizard(league, user_id)
     kept = MagicMock(spec=discord.TextChannel)

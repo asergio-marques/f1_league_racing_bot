@@ -119,7 +119,7 @@ def _press(league: SeasonLeague) -> Any:
 async def _approve(league: SeasonLeague, *, run: bool = True) -> Any:
     """Manager 77 presses Approve on Kimi's review panel, handed the change queue when built
     (A23), and the queue runs unless *run* is false."""
-    from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
+    from leaguebot.signup.services.signup_views import AdminReviewView
 
     press = _press(league)
     view = AdminReviewView(str(SIGNING_UP), change_queue=league.bot.change_queue)

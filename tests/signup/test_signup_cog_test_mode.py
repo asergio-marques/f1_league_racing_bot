@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from leaguebot.signup.cogs import signup_cog
+from leaguebot.signup.services import signup_views
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.models.driver_profile import DriverState
 from tests.signup.test_wizard_changes import NO_START_CHANGE, START_KIND, _changes_of, _driver, _league
@@ -113,7 +114,7 @@ class TestTheSignUpButton:
     @staticmethod
     async def _press(league: Any) -> Any:
         press = _driver(league)
-        await signup_cog.SignupButtonView(league.bot.change_queue).signup_button.callback(press)
+        await signup_views.SignupButtonView(league.bot.change_queue).signup_button.callback(press)
         return press
 
     @pytest.mark.xfail(strict=True, reason=NO_START_CHANGE)

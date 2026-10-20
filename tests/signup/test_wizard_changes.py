@@ -166,7 +166,7 @@ def _driver(league: SeasonLeague, user_id: int = SIGNING_UP, *, cid: int = SIGNU
 async def _press_sign_up(league: SeasonLeague) -> Any:
     """Kimi presses Sign Up in the signup channel; gives his press. The view is handed the change
     queue when it is built (A23), never reaching it through the bot."""
-    from leaguebot.signup.cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.services.signup_views import SignupButtonView
 
     press = _driver(league)
     await SignupButtonView(league.bot.change_queue).signup_button.callback(press)
@@ -177,7 +177,7 @@ async def _press_cancel(league: SeasonLeague) -> Any:
     """Kimi presses Cancel Signup in his signup channel; gives his press. The view is handed his
     account and the change queue when it is built (A23), never reaching the queue through the
     bot."""
-    from leaguebot.signup.cogs.signup_cog import WithdrawButtonView
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
 
     press = _driver(league, cid=KIMI_CHANNEL)
     view = WithdrawButtonView(str(SIGNING_UP), league.bot.change_queue)
