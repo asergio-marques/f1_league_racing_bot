@@ -2377,25 +2377,26 @@ class ChangeQueue:
             reply.notes.append(note)
             return
         reply.told = "\n".join([reply.told, note])
-        await self._send_reply(reply, reply.told, change)
+        await self._update_reply(change, reply.told, onto=reply)
 
-    async def _update_reply(self, change: aiosqlite.Row, text: str) -> None:
+    async def _update_reply(
+        self, change: aiosqlite.Row, text: str, *, onto: _Held | None = None
+    ) -> None:
         """Update the acknowledgement with *text*, in as many parts as it needs.
 
         Only while the interaction is held and under 14 minutes old. A failed update is logged
-        and never fails the change. A change that asked for follow-ons with a note for it
-        (`ChangeType.tell_origin`) carries the notes they added before this, and what it says is
-        kept for the notes that follow.
+        and never fails the change. A reply carries the notes follow-ons added to it before it
+        was first updated (`ChangeType.tell_origin`), and what it says is kept for the notes that
+        follow; *onto* is the reply of the change that asked for *change*, which a note is added
+        to without the reply being updated as its own.
         """
-        held = self._held_and_updatable(change)
+        held = onto if onto is not None else self._held_and_updatable(change)
         if held is None:
             return
-        text = "\n".join([text, *held.notes])
-        held.notes = []
-        held.told = text
-        await self._send_reply(held, text, change)
-
-    async def _send_reply(self, held: _Held, text: str, change: aiosqlite.Row) -> None:
+        if onto is None:
+            text = "\n".join([text, *held.notes])
+            held.notes = []
+            held.told = text
         interaction = held.interaction
         try:
             for number, part in enumerate(chunk_message(text)):
