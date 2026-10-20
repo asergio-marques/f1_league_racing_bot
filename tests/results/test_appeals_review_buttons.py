@@ -218,6 +218,9 @@ def _staging_press(state: PenaltyReviewState):
     bot = league_double(state.db_path)
     attach_queue(bot, state.db_path, now=PRESSED_AT)
     state.bot = bot
+    # The approval message's withdrawal is the shared delete step (#439, C54), which finds the
+    # channel through the league's server, so the server answers as the bot double does.
+    bot.get_guild = MagicMock(return_value=MagicMock(get_channel=bot.get_channel))
     user = MagicMock()
     user.id = 77
     user.display_name = "Alex"
