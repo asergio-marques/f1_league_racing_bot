@@ -168,14 +168,15 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
     return _League(db_path, bot, guild, events)
 
 
-async def _open(league: _League) -> Any:
-    """League manager 77 runs `/signup open` with no tracks and no close time."""
+async def _open(league: _League, close_time: str | None = None) -> Any:
+    """League manager 77 runs `/signup open` with no tracks and, unless *close_time* is given, no
+    close time."""
     cog = SignupCog.__new__(SignupCog)
     cog.bot = league.bot
     interaction = member_interaction(league.bot, user=tier_member("manager", member_id=77))
     interaction.guild = league.guild
     interaction.command = MagicMock(qualified_name="signup open")
-    await undecorate(SignupCog.signup_open)(cog, interaction, None, None)
+    await undecorate(SignupCog.signup_open)(cog, interaction, None, close_time)
     return interaction
 
 
@@ -310,6 +311,28 @@ async def test_a_discarded_information_post_leaves_signups_closed(tmp_path):
     assert not config["signups_open"]
     assert config["signup_button_message_id"] is None
     assert await league.stage() == "WAITING"
+
+
+async def test_a_discarded_information_post_leaves_the_closed_notice_and_arms_no_close(tmp_path):
+    """The last close's notice still stands. Manager 77 runs `/signup open` with a close time and
+    Discord refuses every post in the signup channel, so the change stops at `post_info`; an admin
+    discards it. The window was never opened on this change, so its later jobs find themselves no
+    longer due: the "signups closed" notice stays standing and no close timer is armed, or it would
+    close, at that time, a window opened afterwards with no close time."""
+    league = await _league(tmp_path, closed_notice=True)
+    _refuse_posts(league)
+    await _open(league, close_time="2999-01-01T20:00:00")
+    await run_queue(league.bot)
+
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    jobs = await _jobs(league)
+    assert jobs["arm_close"]["done_at"] and jobs["delete_closed"]["done_at"]
+    assert CLOSED_NOTICE in league.signup.messages
+    league.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+    assert not (await league.config())["signups_open"]
 
 
 # ---------------------------------------------------------------------------

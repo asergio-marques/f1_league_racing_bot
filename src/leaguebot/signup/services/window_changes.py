@@ -300,6 +300,14 @@ def window_open_change(
     async def not_open(_ctx: StepContext) -> bool:
         return not await signup.get_window_state()
 
+    async def opened_here(ctx: StepContext) -> bool:
+        """Whether the window was opened on this change's own post. A discarded post (or one
+        found not due) opened nothing, and the jobs that follow it belong to the window it
+        opens: the closed notice stays, and no close timer is armed for a window that is not
+        open or was opened by another change."""
+        posted = next((view for view in ctx.steps if view.name == POST_INFO), None)
+        return posted is not None and "new" in (posted.result or {})
+
     async def describe_post(_ctx: StepContext) -> str:
         return "posting the signup information and opening the window"
 
@@ -340,9 +348,12 @@ def window_open_change(
             POST_INFO, StepKind.ACT, post_info, still_due=not_open, describe=describe_post,
             record=record,
         ),
-        ARM_CLOSE: Step(ARM_CLOSE, StepKind.ACT, arm_close, describe=describe_arm),
+        ARM_CLOSE: Step(
+            ARM_CLOSE, StepKind.ACT, arm_close, still_due=opened_here, describe=describe_arm
+        ),
         DELETE_CLOSED: dataclasses.replace(
-            standing_posts.delete_replaced_step(DELETE_CLOSED), describe=describe_delete
+            standing_posts.delete_replaced_step(DELETE_CLOSED), still_due=opened_here,
+            describe=describe_delete,
         ),
     }
     return ChangeType(
