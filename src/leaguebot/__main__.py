@@ -419,6 +419,12 @@ def register_change_types(bot: LeagueBot) -> None:
         review_prompt_change,
     )
     from leaguebot.results.services.review_confirm_change import review_confirm_change
+    from leaguebot.results.services.review_lock_change import (
+        TIMER,
+        lock_change,
+        lock_clear_change,
+        lock_clear_timer,
+    )
     from leaguebot.results.services.review_stage_change import review_stage_change
 
     bot.change_queue.register(
@@ -456,6 +462,15 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(review_prompt_change())
     bot.change_queue.register(review_stage_change())
     bot.change_queue.register(review_confirm_change())
+    bot.change_queue.register(
+        lock_change(
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once
+        )
+    )
+    bot.change_queue.register(lock_clear_change())
+    bot.scheduler_service.register_timer(
+        TIMER, lock_clear_timer(bot.db_path, lambda: bot.change_queue)
+    )
     bot.change_queue.register(appeals_open_change())
     bot.change_queue.register(close_stale_change())
     # The review's change types stamp what they write with the queue's own clock, read when they

@@ -848,18 +848,10 @@ class ResultsCog(commands.Cog):
         from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
 
         if await is_channel_in_penalty_review(self.bot.db_path, message.channel.id):
-            try:
-                await message.delete()
-            except discord.HTTPException:
-                pass
-            try:
-                await message.channel.send(
-                    f"❌ **{message.author.display_name}** this channel is locked during penalty review."
-                    " Please use the buttons above.",
-                    delete_after=8,
-                )
-            except discord.HTTPException:
-                pass
+            # Deleted and warned by jobs on the round's lane, not at once (#439).
+            from leaguebot.results.services.review_lock_change import ask_lock
+
+            await ask_lock(self.bot.change_queue, message)
             return
         # A league manager's message in a round's open submission is a paste: marked at once and
         # taken as a turn on the round's lane, or turned away while an earlier one waits (#439).

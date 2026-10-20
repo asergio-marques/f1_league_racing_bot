@@ -704,6 +704,17 @@ CREATE TABLE amend_drafts (
     PRIMARY KEY (amend_id, session_type)
 );
 
+-- review_lock_warnings
+-- The "channel locked during penalty review" warning a round's submission channel carries until
+-- its eight seconds are up (#439). The warning is a message the bot posted by a job, and the timer
+-- that takes it down is armed by a job of its own, so the row is what the timer finds when it
+-- fires: with the row gone, there is nothing to take down. due_at is when the timer was armed for.
+CREATE TABLE review_lock_warnings (
+    message_id INTEGER PRIMARY KEY,
+    channel_id INTEGER NOT NULL,
+    due_at     TEXT    NOT NULL
+);
+
 -- signup_module_settings
 CREATE TABLE "signup_module_settings" (
     id                      INTEGER PRIMARY KEY CHECK (id = 1),

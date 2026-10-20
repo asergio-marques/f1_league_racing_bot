@@ -24,7 +24,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
-import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
@@ -50,10 +49,6 @@ TYPED = 8970
 ALEX = 4242
 WARNING = "locked during penalty review"
 
-NO_LOCK_CHANGE = (
-    "#439: a message typed in a review channel is deleted and warned at once, off the queue, the "
-    "warning sent with delete_after"
-)
 
 
 def _typed(league: ReviewLeague, content: str = "can I add a penalty?") -> Any:
@@ -118,7 +113,6 @@ def _lane(change: dict[str, Any]) -> str:
     return change.get("lane") or "league"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_a_message_in_a_locked_channel_is_deleted_and_warned_as_jobs(tmp_path):
     """Alex types in round 3's submission channel while its penalty review is open. Nothing is
     deleted or posted at once; a lock change is asked on round 3's lane. When it runs, his
@@ -150,7 +144,6 @@ async def test_a_message_in_a_locked_channel_is_deleted_and_warned_as_jobs(tmp_p
     assert row["channel_id"] == SUBMISSION_CHANNEL
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_the_warning_s_clear_is_armed_by_a_job_of_its_own_after_its_row_is_saved(tmp_path):
     """Alex's message in the locked channel is deleted and warned. The warning's eight seconds
     are armed by a job of their own, after the job that saved the warning's row: a timer for
@@ -170,7 +163,6 @@ async def test_the_warning_s_clear_is_armed_by_a_job_of_its_own_after_its_row_is
     assert names.index("arm_clear") > names.index("post_warning")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_the_warning_is_deleted_by_a_job_its_timer_asks_eight_seconds_on(tmp_path):
     """Alex's message in the locked channel has been deleted and warned. When the warning's
     timer fires, its callback asks a clear change; when that runs, the warning is deleted from
@@ -192,7 +184,6 @@ async def test_the_warning_is_deleted_by_a_job_its_timer_asks_eight_seconds_on(t
     assert await _warning_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_the_warning_s_clear_runs_on_the_round_s_lane(tmp_path):
     """The league lane is stopped at a job of its own when the warning's timer fires: the clear
     is asked on round 3's lane, and the warning is deleted while the league stays stopped."""
@@ -212,7 +203,6 @@ async def test_the_warning_s_clear_runs_on_the_round_s_lane(tmp_path):
     assert await stopped_job(league.db_path, "league") is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_a_warning_clear_whose_row_is_gone_asks_nothing(tmp_path):
     """The warning's row is gone by the time its timer fires (deleted by hand, or by a clear
     already run): the callback asks no clear change, and nothing is deleted."""
@@ -231,7 +221,6 @@ async def test_a_warning_clear_whose_row_is_gone_asks_nothing(tmp_path):
     assert warning in league.channel(SUBMISSION_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_a_refused_deletion_stops_the_queue(tmp_path):
     """Discord refuses to delete Alex's message in the locked channel. Round 3's lane stops at
     that deletion, with no warning posted, and the league lane runs on; Retry deletes the message
@@ -258,7 +247,6 @@ async def test_a_refused_deletion_stops_the_queue(tmp_path):
     assert len(_warnings(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_LOCK_CHANGE)
 async def test_messages_typed_while_the_queue_is_stopped_stand_until_it_clears(tmp_path):
     """Round 3's lane is stopped at another job when Alex types in the locked channel. His
     message stands and no warning is posted; once the stop clears, it is deleted and warned."""

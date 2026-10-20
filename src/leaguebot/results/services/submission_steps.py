@@ -163,12 +163,18 @@ async def _send(
     return message.id
 
 
-def post_step(name: str = POST, *, describing: str = "posting a line in the dialogue's channel") -> Step:
+def post_step(
+    name: str = POST,
+    *,
+    describing: str = "posting a line in the dialogue's channel",
+    record: Record | None = None,
+) -> Step:
     """The job that posts one line in a dialogue's channel, named *name* on the queue.
 
-    The payload is ``channel_id``, ``text`` and, optionally, ``mention_role_ids``: the only roles
-    the line may notify (none where absent). It returns ``{"message_id": <id>}``. *describing* is
-    what a stop or a Discard says the job was doing.
+    The payload is ``channel_id``, ``text`` and, optionally, ``mention_role_ids`` and
+    ``mention_user_ids``: the only roles and members the line may notify (none where absent). It
+    returns ``{"message_id": <id>}``. *describing* is what a stop or a Discard says the job was
+    doing; *record*, where given, is written in the save that marks the job done.
     """
 
     async def post(ctx: StepContext) -> StepResult:
@@ -178,7 +184,10 @@ def post_step(name: str = POST, *, describing: str = "posting a line in the dial
         if not isinstance(channel, discord.TextChannel):
             raise StepFailedOnDiscord("the dialogue's channel is not in the server")
         roles = [discord.Object(id=int(each)) for each in payload.get("mention_role_ids", ())]
-        mentions = discord.AllowedMentions(everyone=False, users=False, roles=roles or False)
+        members = [discord.Object(id=int(each)) for each in payload.get("mention_user_ids", ())]
+        mentions = discord.AllowedMentions(
+            everyone=False, users=members or False, roles=roles or False
+        )
         message_id = await _send(
             channel, str(payload["text"]), mentions=mentions, refused="the line could not be posted"
         )
@@ -187,7 +196,7 @@ def post_step(name: str = POST, *, describing: str = "posting a line in the dial
     async def describe(_ctx: StepContext) -> str:
         return describing
 
-    return Step(name, StepKind.ACT, post, describe=describe)
+    return Step(name, StepKind.ACT, post, describe=describe, record=record)
 
 
 def post_choice_step(
