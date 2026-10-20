@@ -91,6 +91,10 @@ class LeagueBot(commands.Bot):
     #: it is not due. The builder sets it, as it does the windows above, so that the half-hour sweep,
     #: a function of results' services, asks without reading the queue off the bot (#439).
     ask_amendment_lapse: Callable[..., Awaitable[int | None]]
+    #: Drops the penalty reviews results holds for staging changes. The builder sets it, so that
+    #: the clear of what the bot holds in memory reaches results without looking its cog up by
+    #: name or importing it (#439).
+    clear_held_reviews: Callable[[], None]
 
 
 def bot_of(interaction: discord.Interaction) -> LeagueBot:

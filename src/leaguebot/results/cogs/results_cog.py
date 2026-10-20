@@ -795,13 +795,6 @@ class ResultsCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
-    def clear_held_reviews(self) -> None:
-        """Drop the penalty reviews held for staging changes: called by `clear_in_memory_state`,
-        which finds this cog by name because core imports nothing of a module."""
-        from leaguebot.results.services.penalty_wizard import clear_held_reviews
-
-        clear_held_reviews()
-
     # ------------------------------------------------------------------
     # Guard: block messages while a round is in penalty review (T014)
     # ------------------------------------------------------------------

@@ -52,8 +52,8 @@ CLEARED = {
     ("core/services/change_queue.py", "_notice_tried"),
     ("core/services/change_queue.py", "_retrying"),
     # The penalty review a staging is handed on to its change, by (round, appeals): dropped by
-    # results' cog, found by name, so a pack's or a reset's gone round holds no review (#439, 6b,
-    # C54).
+    # the callable the builder hands the bot (`bot.clear_held_reviews`), so a pack's or a reset's
+    # gone round holds no review (#439, 6b, C54).
     ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
 }
 
@@ -223,14 +223,17 @@ async def test_the_clear_empties_every_store():
 async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_staging():
     """A review handed on to a staging change is gone after the clear, so a factory reset leaves
     no review of a round that no longer exists (#439, 6b, C54)."""
-    from leaguebot.results.cogs.results_cog import ResultsCog
-    from leaguebot.results.services.penalty_wizard import held_review, hold_review
+    from leaguebot.results.services.penalty_wizard import (
+        clear_held_reviews,
+        held_review,
+        hold_review,
+    )
 
     review: Any = SimpleNamespace(round_id=7)
     hold_review(review, appeals=False)
     hold_review(review, appeals=True)
-    cog = ResultsCog(MagicMock())
-    bot = SimpleNamespace(get_cog=lambda name: cog if name == "ResultsCog" else None)
+    # The builder hands the bot results' clearer (`bot.clear_held_reviews`).
+    bot = SimpleNamespace(get_cog=lambda name: None, clear_held_reviews=clear_held_reviews)
 
     clear_in_memory_state(bot, queue=MagicMock())
 

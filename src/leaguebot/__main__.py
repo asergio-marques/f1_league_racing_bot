@@ -741,6 +741,10 @@ async def main() -> None:
     bot.approval_windows = lambda: read_approval_windows(bot)
     bot.amendment_windows = lambda: read_amendment_windows(bot)
 
+    from leaguebot.results.services.penalty_wizard import clear_held_reviews
+
+    bot.clear_held_reviews = clear_held_reviews
+
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 

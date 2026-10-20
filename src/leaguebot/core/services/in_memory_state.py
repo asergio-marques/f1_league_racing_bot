@@ -35,9 +35,9 @@ def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
     if season_cog is not None:
         season_cog.clear_pending()
 
-    # The penalty reviews handed to staging changes, which results' cog drops: found by name,
-    # core importing nothing of a module.
-    clear_held = getattr(bot.get_cog("ResultsCog"), "clear_held_reviews", None)
+    # The penalty reviews handed to staging changes, which results drops: the builder hands the
+    # bot the callable (`bot.clear_held_reviews`), core importing nothing of a module.
+    clear_held = getattr(bot, "clear_held_reviews", None)
     if clear_held is not None:
         clear_held()
 
