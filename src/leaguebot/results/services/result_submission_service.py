@@ -1329,6 +1329,127 @@ async def snapshot_before_amendment_on(
     )
 
 
+async def _restore_from_snapshot_on(db: aiosqlite.Connection, round_id: int) -> bool:
+    """Put a round's driver rows, verdicts, headers, former-driver flags and pardons back from its
+    amendment's snapshot and clear the snapshot, on the connection handed and committing nothing.
+
+    The restore itself, shared by the committing `revert_abandoned_amendment` and by
+    `revert_abandoned_amendment_on`, which an amendment's lapse and cancel run in their saves.
+    Returns False, writing nothing, where there is no snapshot to restore from. The standings are
+    not touched here: each form cascades them its own way.
+    """
+    cursor = await db.execute(
+        "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or not row["pre_amendment_state"]:
+        return False
+
+    snapshot = _json.loads(row["pre_amendment_state"])
+
+    from leaguebot.results.services.verdict_records import delete_verdicts
+
+    for state in snapshot["sessions"]:
+        rows_table: str = state["rows_table"]
+        session_result_id: int = state["session_result_id"]
+        # Whatever the amendment left behind goes, in both tables, so the snapshot is
+        # written over a clean slate rather than merged into one.
+        await delete_verdicts(db, session_result_id=session_result_id)
+        await db.execute(
+            f"DELETE FROM {rows_table} WHERE session_result_id = ?",  # noqa: S608
+            (session_result_id,),
+        )
+        for driver_row in state["driver_rows"]:
+            columns = ", ".join(driver_row)
+            placeholders = ", ".join("?" for _ in driver_row)
+            await db.execute(
+                f"INSERT INTO {rows_table} ({columns}) VALUES ({placeholders})",  # noqa: S608
+                list(driver_row.values()),
+            )
+        # The verdicts come back whole, ids included, so anything that referenced one
+        # still finds it — and the DSQ marks they alone produce reappear with them.
+        for verdict in state["verdicts"]:
+            verdict_row = verdict["row"]
+            columns = ", ".join(verdict_row)
+            placeholders = ", ".join("?" for _ in verdict_row)
+            await db.execute(
+                f"INSERT INTO {verdict['table']} ({columns}) VALUES ({placeholders})",  # noqa: S608
+                list(verdict_row.values()),
+            )
+        header = state["header"]
+        await db.execute(
+            "UPDATE session_results SET submitted_by = ?, submitted_at = ?, "
+            "config_name = ?, fl_driver_override = ? WHERE id = ?",
+            (
+                header.get("submitted_by"),
+                header.get("submitted_at"),
+                header.get("config_name"),
+                header.get("fl_driver_override"),
+                session_result_id,
+            ),
+        )
+    # The flag follows the results back (#216). Stage one marks nobody now, so in the
+    # ordinary case this finds nothing to do; it runs all the same, because the round's
+    # rows have just been restored and the flag is defined by them. `profiles_before`
+    # names anyone the abandoned amendment had struck out, who is in no result to be
+    # found by until the restore above puts them back.
+    await recompute_former_drivers_for_round(
+        db, round_id, also_consider=snapshot.get("profiles_before", [])
+    )
+    if "pardons" in snapshot:
+        await db.execute(
+            "DELETE FROM attendance_pardons WHERE attendance_id IN "
+            "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
+            (round_id,),
+        )
+        for pardon in snapshot["pardons"]:
+            columns = ", ".join(pardon)
+            placeholders = ", ".join("?" for _ in pardon)
+            await db.execute(
+                f"INSERT INTO attendance_pardons ({columns}) VALUES ({placeholders})",  # noqa: S608
+                list(pardon.values()),
+            )
+    await db.execute(
+        "UPDATE round_amend_channels SET pre_amendment_state = NULL, expires_at = NULL "
+        "WHERE round_id = ?",
+        (round_id,),
+    )
+    return True
+
+
+async def revert_abandoned_amendment_on(
+    db: aiosqlite.Connection, round_id: int, display_names: Mapping[int, str] | None = None
+) -> bool:
+    """Put a round back as it was before an amendment nobody approved, on the connection handed
+    and committing nothing: an amendment's lapse and its cancel run it in their `revert` save.
+
+    The restore is `_restore_from_snapshot_on`'s, and the standings are cascaded again from the
+    round in the same save (`standings_service.cascade_recompute_from_round_on`), so the round and
+    its championship are put back together or not at all. A save waits on nothing but its own
+    connection (architecture.md, "The database"), so the names a full tie is settled by are not
+    looked up here: the change resolves them before the save, in a job of its own, and hands them
+    in as *display_names*; none handed, the tie is settled by user id.
+
+    **Nothing is reposted, because nothing was posted** (#345), and the round's pardons come back
+    as they were; see `revert_abandoned_amendment`, whose account of both holds here.
+
+    Returns True where the round was put back, and False where there was no snapshot to put it
+    back from: an amendment abandoned before stage one wrote has nothing to undo.
+    """
+    if not await _restore_from_snapshot_on(db, round_id):
+        return False
+    from leaguebot.results.services import standings_service
+
+    cursor = await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))
+    division = await cursor.fetchone()
+    if division is not None:
+        await standings_service.cascade_recompute_from_round_on(
+            db, int(division["division_id"]), round_id, display_names
+        )
+    return True
+
+
 async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot | None = None) -> bool:
     """Put a round back as it was before an amendment nobody approved.
 
@@ -1358,84 +1479,8 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot
     Returns True where the round was put back, and False where there was nothing to revert.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None or not row["pre_amendment_state"]:
-        return False
-
-    snapshot = _json.loads(row["pre_amendment_state"])
-
-    from leaguebot.results.services.verdict_records import delete_verdicts
-
-    async with get_connection(db_path) as db:
-        for state in snapshot["sessions"]:
-            rows_table: str = state["rows_table"]
-            session_result_id: int = state["session_result_id"]
-            # Whatever the amendment left behind goes, in both tables, so the snapshot is
-            # written over a clean slate rather than merged into one.
-            await delete_verdicts(db, session_result_id=session_result_id)
-            await db.execute(
-                f"DELETE FROM {rows_table} WHERE session_result_id = ?",  # noqa: S608
-                (session_result_id,),
-            )
-            for driver_row in state["driver_rows"]:
-                columns = ", ".join(driver_row)
-                placeholders = ", ".join("?" for _ in driver_row)
-                await db.execute(
-                    f"INSERT INTO {rows_table} ({columns}) VALUES ({placeholders})",  # noqa: S608
-                    list(driver_row.values()),
-                )
-            # The verdicts come back whole, ids included, so anything that referenced one
-            # still finds it — and the DSQ marks they alone produce reappear with them.
-            for verdict in state["verdicts"]:
-                verdict_row = verdict["row"]
-                columns = ", ".join(verdict_row)
-                placeholders = ", ".join("?" for _ in verdict_row)
-                await db.execute(
-                    f"INSERT INTO {verdict['table']} ({columns}) VALUES ({placeholders})",  # noqa: S608
-                    list(verdict_row.values()),
-                )
-            header = state["header"]
-            await db.execute(
-                "UPDATE session_results SET submitted_by = ?, submitted_at = ?, "
-                "config_name = ?, fl_driver_override = ? WHERE id = ?",
-                (
-                    header.get("submitted_by"),
-                    header.get("submitted_at"),
-                    header.get("config_name"),
-                    header.get("fl_driver_override"),
-                    session_result_id,
-                ),
-            )
-        # The flag follows the results back (#216). Stage one marks nobody now, so in the
-        # ordinary case this finds nothing to do; it runs all the same, because the round's
-        # rows have just been restored and the flag is defined by them. `profiles_before`
-        # names anyone the abandoned amendment had struck out, who is in no result to be
-        # found by until the restore above puts them back.
-        await recompute_former_drivers_for_round(
-            db, round_id, also_consider=snapshot.get("profiles_before", [])
-        )
-        if "pardons" in snapshot:
-            await db.execute(
-                "DELETE FROM attendance_pardons WHERE attendance_id IN "
-                "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
-                (round_id,),
-            )
-            for pardon in snapshot["pardons"]:
-                columns = ", ".join(pardon)
-                placeholders = ", ".join("?" for _ in pardon)
-                await db.execute(
-                    f"INSERT INTO attendance_pardons ({columns}) VALUES ({placeholders})",  # noqa: S608
-                    list(pardon.values()),
-                )
-        await db.execute(
-            "UPDATE round_amend_channels SET pre_amendment_state = NULL, expires_at = NULL "
-            "WHERE round_id = ?",
-            (round_id,),
-        )
+        if not await _restore_from_snapshot_on(db, round_id):
+            return False
         await db.commit()
 
     # The championship follows from the rows, so it is recomputed rather than snapshotted.
@@ -1807,11 +1852,12 @@ async def next_submission_message(bot: LeagueBot, db_path: str, round_id: int, s
 
 
 async def stage_in_hand(db_path: str, round_id: int) -> bool:
-    """Whether an approval of one of the amendment's stages, or the lane's putting up of the
-    appeals stage's prompt that the report stage's approval asks, is in hand on the change queue
-    for *round_id*, queued, running or stopped on a failure. Nothing overtakes it, so the sweep,
-    Cancel and restart recovery leave the amendment alone while it is."""
+    """Whether the recording of the amendment's stage one, an approval of one of its stages, or the
+    lane's putting up of the stage prompt that follows either, is in hand on the change queue for
+    *round_id*, queued, running or stopped on a failure. Nothing overtakes it, so the sweep,
+    Cancel, the lapse and restart recovery leave the amendment alone while it is."""
     from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.results.services.amend_turn_change import STAGE_ONE_KIND
     from leaguebot.results.services.amendment_stage_changes import (
         APPEALS_KIND,
         PROMPT_KIND,
@@ -1820,7 +1866,9 @@ async def stage_in_hand(db_path: str, round_id: int) -> bool:
 
     return any(
         change.get("round_id") == round_id
-        for change in await unfinished(db_path, [REPORTS_KIND, APPEALS_KIND, PROMPT_KIND])
+        for change in await unfinished(
+            db_path, [STAGE_ONE_KIND, REPORTS_KIND, APPEALS_KIND, PROMPT_KIND]
+        )
     )
 
 

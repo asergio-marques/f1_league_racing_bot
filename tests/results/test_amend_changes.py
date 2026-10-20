@@ -632,7 +632,6 @@ async def _press_cancel(league: ReviewLeague) -> Any:
     return press
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_cancel_amendment_reverts_and_deletes_the_channel_as_jobs(tmp_path, monkeypatch):
     """Stage one of Alex's amendment is recorded, Max now ahead. Alex presses Cancel Amendment: he
     is answered privately that it is under way and nothing is undone yet. When the queue runs, the
@@ -658,7 +657,6 @@ async def test_cancel_amendment_reverts_and_deletes_the_channel_as_jobs(tmp_path
     assert row["closed_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_cancel_amendment_runs_on_the_league_and_ends_the_conversation(
     tmp_path, monkeypatch,
 ):

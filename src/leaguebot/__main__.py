@@ -397,6 +397,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.amend_changes import amend_open_change
+    from leaguebot.results.services.amend_end_changes import amend_cancel_change
     from leaguebot.results.services.amend_turn_change import (
         amend_close_change,
         amend_config_change,
@@ -469,8 +470,10 @@ def register_change_types(bot: LeagueBot) -> None:
         amend_open_change(
             modules=bot.module_service, server_config=bot.config_service.get_server_config,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+            queue_of=lambda: bot.change_queue,
         )
     )
+    bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(
         amend_turn_change(
             server_config=bot.config_service.get_server_config,

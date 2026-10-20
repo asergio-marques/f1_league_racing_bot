@@ -35,11 +35,6 @@ from tests.support.review_league import claim_amendment, revert_amendment, snaps
 from tests.support.teams import seed_team_instances
 
 LAPSE = "results.amend.lapse"
-NO_REVERT_IN_THE_SAVE = (
-    "#439: the revert has no form taking a connection, so it cascades the standings on its own "
-    "connections, resolving their names through a bot, rather than in its save from the names "
-    "it is handed"
-)
 NO_SWEEP_LAPSE = (
     "#439: the half-hour sweep reverts an expired amendment itself, off the change queue, rather "
     "than asking `results.amend.lapse` of it"
@@ -205,7 +200,6 @@ async def test_the_classification_is_put_back(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVERT_IN_THE_SAVE)
 async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
     """They follow from the driver rows, so a second stored copy would only drift. The lapse's and
     the cancel's revert recompute them in their own save, through the form of the cascade that
@@ -220,7 +214,6 @@ async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
     cascade.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVERT_IN_THE_SAVE)
 async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     """As the posting does (decided 2026-09-15). Recomputed by user id instead, the stored order
     disagrees with the posted one, and the next round's movement arrows show a driver moving
@@ -238,7 +231,6 @@ async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     assert _names_handed(cascade) == names
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVERT_IN_THE_SAVE)
 async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_running(tmp_path):
     """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater. Where
     the names could not be had, none are handed, and the cascade runs on ids."""

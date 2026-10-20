@@ -1741,7 +1741,7 @@ TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (1, "the penalty and appeal records, results' own"),
     ("results/services/result_submission_service.py", "_repoint_verdicts"):
         (1, "the penalty and appeal records, results' own"),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment"):
+    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"):
         (3, "results' own session result tables, and the penalty and appeal records"),
     ("results/services/verdict_records.py", "delete_verdicts"):
         (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
@@ -1839,7 +1839,7 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/season_service.py", "_sync_division_rounds"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),

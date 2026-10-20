@@ -385,7 +385,6 @@ def _cancel_line(league: Any) -> str:
     return line
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_cancelling_writes_nothing_and_tidies_up(tmp_path, monkeypatch):
     """Alex opens the amendment and, before pasting anything, presses ❌ Cancel Amendment. Once
     the queue runs, nothing is written, Lewis still ahead; the amendment channel is deleted; and
@@ -409,7 +408,6 @@ async def test_cancelling_writes_nothing_and_tidies_up(tmp_path, monkeypatch):
     assert "AMEND_CANCELLED" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_refused_channel_deletion_on_a_cancellation_stops_the_queue(
     tmp_path, monkeypatch,
 ):
@@ -487,7 +485,6 @@ async def test_a_second_amendment_of_an_open_session_is_refused(tmp_path, monkey
     assert row["pre_amendment_state"] == "{}"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_cancelling_too_late_says_so(tmp_path, monkeypatch):
     """The appeal stage may already have committed it; nothing is undone then. Stage one of Alex's
     amendment is recorded, Max ahead, and the amendment is then finished and its row closed. Alex

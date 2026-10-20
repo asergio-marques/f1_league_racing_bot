@@ -37,6 +37,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.change_queue import (
+    ChangeQueue,
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -171,13 +172,14 @@ def amend_open_change(
     server_config: ServerConfig,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
+    queue_of: Callable[[], ChangeQueue],
 ) -> ChangeType:
     """The `results.amend.open` change type, for the builder to register.
 
     *modules* tells whether results are on, *server_config* reads the server configuration the
     Cancel button checks its presser against, *now* is the queue's clock (read when the prompt's
-    time is recorded) and *arm_once* the scheduler service's, handed here so that no job looks the
-    scheduler up on the bot. The payload is ``{"round_id", "division_id", "session_types"}``, the
+    time is recorded), *arm_once* the scheduler service's and *queue_of* the change queue the
+    Cancel button asks, handed here so that no job looks either up on the bot. The payload is ``{"round_id", "division_id", "session_types"}``, the
     sessions as session-type values in running order.
     """
 
@@ -361,14 +363,13 @@ def amend_open_change(
         return AmendCancelView(
             amend_id=int(row["id"]),
             opener_id=int(payload["opener_id"]),
-            bot=ctx.bot,
+            queue=queue_of(),
+            db_path=ctx.db_path,
             server_cfg=await server_config(),
             what=(
                 f"`/results rounds amend` of round {payload['round_number']} "
                 f"({payload['division_name']})"
             ),
-            round_number=int(payload["round_number"]),
-            sessions_text=", ".join(payload["session_types"]),
         )
 
     async def describe_plan(_ctx: StepContext) -> str:
