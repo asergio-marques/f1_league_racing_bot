@@ -77,11 +77,6 @@ OLD_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_CHANNEL = SIGNUP_CHANNEL_BASE + SIGNING_UP
 KIMI_LANE = f"channel:{KIMI_CHANNEL}"
 
-NO_EXPIRY_CHANGE = (
-    "#439: the inactivity timer and the restart expire a signup themselves off the queue, with no "
-    "signup.end change asked as the bot on the league lane, and no timer callback registered by "
-    "the builder; the wizard service is not handed the change queue when built"
-)
 
 
 async def _league(tmp_path: Any, *, manage_channels: bool = True,
@@ -821,14 +816,14 @@ async def test_an_expiry_whose_end_is_discarded_tells_and_locks_and_deletes_noth
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(tmp_path):
     """Kimi was last active 23 hours and 59 minutes ago. He types his nationality, which waits
     its turn on his lane; two minutes later, his 24 hours run out and the timer asks for his
     signup's expiry. When the queue runs, after the 24 hours, the answer counts: he is still
     Pending Signup Completion, no expiry notice is posted, his channel is not locked and no
     deletion is armed."""
-    from tests.support.change_queue import ask_turn, typed_message
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from tests.support.change_queue import typed_message
 
     league = await _league(tmp_path)
     await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=23, minutes=59))
@@ -836,8 +831,14 @@ async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(t
     kimi.bot = False
     answer = typed_message(league.channel(KIMI_CHANNEL), kimi, "British",
                            created_at=league.clock.now)
+    answer.guild = league.guild
+    league.bot.wizard_service.get_wizard_by_channel = AsyncMock(
+        side_effect=league.bot.signup_module_service.get_wizard_by_channel
+    )
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
 
-    await ask_turn(league.bot, "signup.answer", answer)
+    await cog.on_message(answer)
     league.clock.advance(minutes=2)
     await _timer_callback(league, INACTIVITY_TIMER)(str(SIGNING_UP))
     await run_queue(league.bot)
