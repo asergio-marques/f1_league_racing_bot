@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
@@ -308,6 +309,76 @@ def _cancellation_hooks(bot: LeagueBot) -> "CancellationHooks":
     )
 
 
+async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
+    """Draw one picture of a season review to a file, and give where it is.
+
+    A lineup is the image module's, drawn obtaining each seated driver's missing portrait first
+    (#407), so a review is not judged on a placeholder the league will not see, and, mid-season,
+    with its uncommitted drivers in it (#374). A calendar is core's, of the division's rounds as
+    they stand when it is drawn. A picture the renderer will not draw raises, with the renderer's
+    message.
+    """
+    kind, division_id = str(picture["kind"]), int(picture["division_id"])
+    if kind == "lineup":
+        from leaguebot.image.services import image_lineup_post
+
+        outcome: Any = await image_lineup_post.render_for_command(
+            bot, await league_guild(bot), division_id,
+            include_uncommitted=bool(picture.get("include_uncommitted")),
+            obtain_missing_portraits=True,
+        )
+    else:
+        from leaguebot.core.services import calendar_post_service
+
+        division = await bot.season_service.get_division(division_id)
+        outcome = await calendar_post_service.render_for_command(
+            bot, division, await bot.season_service.get_division_rounds(division_id),
+            await calendar_post_service.tracks_by_name(bot.db_path),
+            season_number=picture.get("season_number"),
+        )
+    if outcome.png_path is None:
+        raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
+    return cast("Path", outcome.png_path)
+
+
+def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
+    """The drawing `season.review.post` is handed: it draws a picture in the worker thread the
+    change runs it in, its coroutine awaited on the bot's event loop (`await_from_worker`)."""
+    from leaguebot.core.services.season_review_changes import await_from_worker
+
+    def drawing(picture: Mapping[str, Any]) -> "Path":
+        return await_from_worker(_draw_review_picture(bot, picture))
+
+    return drawing
+
+
+def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.View]":
+    """The factory of a review question's view, handed to `season.review.post`: the season cog's
+    view of the review the payload names (its ``view``: ``approve``, ``mid_season`` or
+    ``configuration``), holding the evidence the report was computed from."""
+    from leaguebot.core.cogs.season_cog import (
+        SeasonCog,
+        _ApproveView,
+        _ConfirmConfigurationView,
+        _ConfirmMidSeasonPlacementsView,
+    )
+    from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
+
+    families = {
+        "approve": _ApproveView,
+        "mid_season": _ConfirmMidSeasonPlacementsView,
+        "configuration": _ConfirmConfigurationView,
+    }
+
+    def make(payload: dict[str, Any]) -> discord.ui.View:
+        cog = cast(SeasonCog, bot.get_cog("SeasonCog"))
+        view = families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
+        view.hold_evidence(int(payload["season_id"]), SeasonFingerprint(payload["evidence"]))
+        return view
+
+    return make
+
+
 def _amend_hooks(bot: LeagueBot) -> "AmendHooks":
     """What `/round amend`'s change needs of weather and attendance, handed it here so that core
     imports neither. Each is looked up as it is called, so that nothing is bound before it is
@@ -391,6 +462,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_approval_change,
         season_approval_tell_change,
     )
+    from leaguebot.core.services import season_review_changes
     from leaguebot.core.services.season_review_changes import season_review_take_down_change
     from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
     from leaguebot.core.services.season_lifecycle_service import (
@@ -771,6 +843,12 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(season_approval_tell_change())
     bot.change_queue.register(season_review_take_down_change())
+    bot.change_queue.register(
+        season_review_changes.season_review_post_change(
+            drawing=_review_drawing(bot), approve_view=_approve_view_for(bot),
+            scheduler=bot.scheduler_service,
+        )
+    )
     bot.change_queue.register(channel_tell_change())
     bot.change_queue.register(
         round_amend_change(

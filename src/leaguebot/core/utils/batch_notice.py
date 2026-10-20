@@ -27,15 +27,19 @@ import discord
 log = logging.getLogger(__name__)
 
 
-async def send_notice(channel, text: str, *, allowed_mentions: discord.AllowedMentions | None = None):
+async def send_notice(
+    channel, text: str, *, allowed_mentions: discord.AllowedMentions | None = None, **extra
+):
     """Send the notice *text* to *channel* and give the message, raising whatever Discord raises.
 
     The send half of :func:`batch_notice`, for a caller that treats a notice that cannot be
     posted as a failure of its own (a job of the change queue, which stops the queue at it).
     *allowed_mentions*, where given, says whom the notice may notify; a caller that gives none
-    leaves it to the bot's default.
+    leaves it to the bot's default. *extra* are the message's other parts (a ``file``, a ``view``)
+    for a post that is more than a line: the season review's pictures and question.
     """
-    extra = {} if allowed_mentions is None else {"allowed_mentions": allowed_mentions}
+    if allowed_mentions is not None:
+        extra["allowed_mentions"] = allowed_mentions
     return await channel.send(text, **extra)
 
 

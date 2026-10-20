@@ -280,11 +280,6 @@ EVIDENCE = {"season_id": 1, "fingerprint": "f00d"}
 #: The view the builder's factory makes for the question: the season cog's `_ApproveView`.
 APPROVE = SimpleNamespace(name="the Approve button")
 
-NO_REVIEW_POST = (
-    "#439: a season review is drawn and posted by the command at once, its pictures and report "
-    "as the command's follow-ups, off the change queue"
-)
-
 
 class _Drawing:
     """The drawing the builder hands: draws a picture to a file, recording each picture asked
@@ -401,7 +396,6 @@ def _question(channel: Any) -> Any:
     return [m for m in _posts(channel) if m.content == QUESTION][-1]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_review_posts_the_drawing_notice_before_drawing_and_deletes_it_after(posting):
     """Alex's review of season 1 carries Pro's calendar and lineup pictures. Once the queue runs,
     "🎨 Drawing the graphics for this review — one moment." is posted in channel 700 before the
@@ -424,7 +418,6 @@ async def test_a_review_posts_the_drawing_notice_before_drawing_and_deletes_it_a
     assert len(pictures) == 2 and max(pictures) < deleted_at < first_report
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_order(posting):
     """Alex's review carries Pro's calendar, then its lineup. Once the queue runs, the calendar is
     drawn and posted, then the lineup, each by a `draw_and_post` job of its own; the report's two
@@ -448,7 +441,6 @@ async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_or
     assert posting.views and posting.views[0]["season_id"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posting):
     """Discord refuses every message carrying a file in channel 700 (no Attach Files). Once the
     queue runs, each picture is posted as its text instead, in the same try: the queue does not
@@ -466,7 +458,6 @@ async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posti
     assert contents[-1] == QUESTION
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(posting):
     """Once Alex's review is posted, `season_review_prompts` holds one row for its question: season
     1, channel 700, Alex as reviewer, `/season placements-review`, the ids of both pictures and
@@ -487,7 +478,6 @@ async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(
     assert json.loads(row["evidence"]) == EVIDENCE
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
     """Alex's `/season placements-review` is asked of the queue and the queue posts it, its
     question standing in channel 700. The log channel then holds one line naming Alex and
@@ -504,7 +494,6 @@ async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
     assert not any(line.startswith("⛔") for line in lines), lines
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     """The queue is stopped at 12:00 when Alex runs his review; it clears at 12:03. The question is
     posted at 12:03, and a job after it arms the review's expiry timer for its question at 12:08,
@@ -531,7 +520,6 @@ async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     assert names.index("arm_expiry") > names.index("post_question")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_when_it_clears(
         posting):
     """The queue is stopped when Alex runs his review. He is answered at once, and nothing is
@@ -555,7 +543,6 @@ async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_wh
     assert [m.content for m in _posts(posting.channel)][-1] == QUESTION
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_the_reviewer_s_reply(
         posting):
     """Pro's lineup will not draw (its template's font cannot be loaded). Once the queue runs the
@@ -574,7 +561,6 @@ async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_
     assert "Pro lineup" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_be_updated(
         posting):
     """Pro's lineup will not draw, and Alex's reply can no longer be updated (its token has run
@@ -590,7 +576,6 @@ async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_
     assert "Pro lineup" in _log(posting)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_off_the_event_loop(
         posting):
     """Once Alex's review runs, each of its pictures is drawn by the callable the builder handed
@@ -607,13 +592,6 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
     assert all(thread is not threading.current_thread() for thread in posting.drawing.threads)
 
 
-NO_BUILDER_DRAWING = (
-    "#439: the builder hands season.review.post no drawing; a review's lineup is drawn by the "
-    "command itself"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_BUILDER_DRAWING)
 @pytest.mark.parametrize("uncommitted", [False, True], ids=["placements", "mid_season"])
 async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portraits(
         posting, monkeypatch, uncommitted):

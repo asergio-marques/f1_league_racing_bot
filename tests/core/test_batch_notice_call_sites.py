@@ -263,7 +263,6 @@ def _assert_plain_text(text: object) -> None:
         assert forbidden not in text
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRAWING_ON_THE_QUEUE)
 def test_every_notice_carries_plain_text_for_a_league():
     """The season review's drawing notice, now its job's text: today's words, a league's to read.
     The confirmation's is read below, and the results review's as they are sent, above."""

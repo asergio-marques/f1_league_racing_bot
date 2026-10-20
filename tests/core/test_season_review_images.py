@@ -318,7 +318,6 @@ async def _take_downs(env) -> list[dict]:
     return await take_downs(env)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_the_reviewer_may_approve(tmp_path, monkeypatch):
     """Alex's placements review stands in channel 700, posted a moment ago, the season unchanged
     since its report. Alex, who ran it, presses Approve: the approval is worked."""
@@ -331,7 +330,6 @@ async def test_the_reviewer_may_approve(tmp_path, monkeypatch):
     cog._do_approve.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkeypatch):
     """Alex's placements review stands, the season unchanged. Sam, who holds the league's admin
     role but did not run the review, presses Approve: the approval is worked."""
@@ -583,7 +581,6 @@ def _assert_standing(cog, question) -> None:
     assert _asked(cog, "season.review.take_down") == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, monkeypatch):
     """The review's one round is dated 90 days ago, so Alex's Approve is refused at the press,
     told its round's date has already gone by. Nothing is asked of the queue, the review is left
@@ -608,7 +605,6 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, mo
     assert await _prompt_rows(cog) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standing(
     tmp_path, monkeypatch
 ):
@@ -751,7 +747,6 @@ async def _kinds_queued(cog) -> list[str]:
     return [row["kind"] for row in await change_rows(cog.bot.db_path)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REFUSAL_AT_ASK)
 async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every gate at the press passes, so Alex's approval goes through the button to the queue,
     whose own check refuses it at once (a round's date gone by while the press was worked). That

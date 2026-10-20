@@ -957,6 +957,8 @@ CREATE INDEX "queued_change_steps_stopped" ON "queued_change_steps" (next_try_at
 -- One row per standing review prompt, keyed by the prompt message: two reviews may stand at
 -- once, and one ending must not clear the other's record. `review` is the command whose question
 -- it is; `report_message_ids` the report above it (a JSON list), deleted with it at a restart.
+-- `evidence` is what the report was computed from (a JSON object), which Approve judges the season
+-- against when it is pressed.
 CREATE TABLE "season_review_prompts" (
     message_id         INTEGER PRIMARY KEY,
     season_id          INTEGER NOT NULL,
@@ -964,7 +966,8 @@ CREATE TABLE "season_review_prompts" (
     reviewer_id        INTEGER NOT NULL,
     review             TEXT    NOT NULL,
     report_message_ids TEXT    NOT NULL DEFAULT '[]',
-    posted_at          TEXT    NOT NULL
+    posted_at          TEXT    NOT NULL,
+    evidence           TEXT
 );
 
 -- The circuits a league can schedule, seeded once.

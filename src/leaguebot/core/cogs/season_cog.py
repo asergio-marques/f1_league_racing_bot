@@ -5789,6 +5789,12 @@ class _ApproveView(LeagueView):
         """The report this button answers, so approving can clear it."""
         self._report = posted_messages
 
+    def hold_evidence(self, season_id: int, fingerprint: "SeasonFingerprint") -> None:
+        """Hold the season and the evidence the report was computed from, as the change that
+        posted the review recorded them with its question."""
+        self._season_id = season_id
+        self._fingerprint = fingerprint
+
     async def record_fingerprint(self, season_id: int) -> None:
         """Capture the season as the report just described it.
 
