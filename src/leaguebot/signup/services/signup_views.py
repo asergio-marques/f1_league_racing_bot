@@ -307,9 +307,11 @@ class AdminReviewView(LeagueView):
 class CorrectionParameterView(LeagueView):
     """One button per collectable wizard parameter; admin selects which to re-collect (T035).
 
-    Restricted to the league manager tier or above, through `_may_review_signup`.
-    Calls WizardService.select_correction_parameter() with the chosen parameter label.
-    FR-042.
+    Restricted to the league manager tier or above, through `_may_review_signup`. Handed the
+    change queue when it is built, a press asks `signup.correction.choose` of it with the time it
+    was pressed, acknowledged privately and updated with what became of it; the five minutes a
+    manager has to choose are judged against that time by the change's check, so a choice pressed
+    in time counts though the queue reaches it later. FR-042.
     """
 
     _PARAMETERS = [
@@ -324,15 +326,17 @@ class CorrectionParameterView(LeagueView):
         ("Notes",               "notes"),
     ]
 
-    def __init__(self, discord_user_id: str | None = None, bot: LeagueBot | None = None) -> None:
-        super().__init__(timeout=None)  # persistent — logical timeout enforced by asyncio task
+    def __init__(
+        self, discord_user_id: str | None = None, *, change_queue: ChangeQueue | None = None
+    ) -> None:
+        super().__init__(timeout=None)  # persistent: the logical timeout is the correction timer's
         self._discord_user_id = discord_user_id
-        self._bot = bot
+        self._queue = change_queue
 
         for label, param_key in self._PARAMETERS:
             def make_callback(p: str, label: str) -> Handler:
                 async def callback(inter: discord.Interaction) -> None:
-                    _bot = self._bot or bot_of(inter)
+                    _bot = bot_of(inter)
                     _user_id = self._discord_user_id
                     if not await _may_review_signup(inter):
                         await _refuse_review_button(
@@ -340,7 +344,7 @@ class CorrectionParameterView(LeagueView):
                         )
                         return
                     if _user_id is None:
-                        wizard = await _bot.wizard_service.get_wizard_by_channel(
+                        wizard = await _bot.signup_module_service.get_wizard_by_channel(
                             channel_id_of(inter)
                         )
                         _user_id = wizard.discord_user_id if wizard else None
@@ -349,23 +353,20 @@ class CorrectionParameterView(LeagueView):
                             inter, None, label, "⛔ Could not identify driver for this correction."
                         )
                         return
-                    await inter.response.defer(ephemeral=True)
-                    # The service acts only while the request is open (D2) and says why where
-                    # it is not: a choice made after the window lapsed, after another was
-                    # chosen or after the signup was decided is refused, not a fault.
-                    ended = await _bot.wizard_service.select_correction_parameter(
-                        _user_id, p, guild_of(inter)
-                    )
-                    if ended is not None:
-                        await _refuse_review_button(inter, _user_id, label, f"⛔ {ended}")
-                        return
-                    await inter.followup.send(
-                        f"✅ Re-collecting **{p.replace('_', ' ')}**.", ephemeral=True
-                    )
-                    await _bot.output_router.post_log(
-                        f"{interaction_member(inter)} | "
-                        f"{_review_button(inter, _user_id, label)} | "
-                        f"Correction requested: {label}"
+                    if self._queue is None:
+                        raise RuntimeError(
+                            "the correction choices were built with no change queue to ask"
+                        )
+                    # The request's being open, and the five minutes, are judged by the change's
+                    # check at the time of the press and again as the queue reaches it.
+                    await self._queue.ask(
+                        "signup.correction.choose",
+                        {
+                            "user_id": _user_id, "parameter": p, "label": label,
+                            "pressed_at": inter.created_at.isoformat(),
+                        },
+                        interaction=inter,
+                        what=_review_button(inter, _user_id, label),
                     )
                 return callback
 

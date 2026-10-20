@@ -737,7 +737,7 @@ class WizardService:
             await channel.send(
                 f"{mention} **{actor.display_name}** has requested a correction.\n"
                 "Please select the parameter to correct (5-minute window):",
-                view=CorrectionParameterView(discord_user_id, self._bot),
+                view=CorrectionParameterView(discord_user_id, change_queue=self._change_queue),
             )
 
         # Arm 5-minute correction selection timeout

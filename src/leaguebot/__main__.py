@@ -428,6 +428,8 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.signup.services.review_changes import (
         approve_change,
         choices_change,
+        choose_change,
+        recollect_change,
         request_changes_change,
     )
     from leaguebot.signup.services.wizard_answers import answer_change, panel_change, submit_change
@@ -605,8 +607,20 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         choices_change(
-            signup=lambda: bot.signup_module_service, now=lambda: bot.change_queue.now(),
-            arm_once=bot.scheduler_service.arm_once,
+            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+        )
+    )
+    bot.change_queue.register(
+        choose_change(
+            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
+            disarm=bot.scheduler_service.disarm,
+        )
+    )
+    bot.change_queue.register(
+        recollect_change(
+            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
         )
     )
     # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
@@ -1132,7 +1146,7 @@ async def main() -> None:
         PreferredTeamsButtonView(None, bot.change_queue),   # registers pteam_0..pteam_19 stubs + nopref + cancel
         NoPreferenceTeammateView(None, bot.change_queue),
         AdminReviewView(change_queue=bot.change_queue),
-        CorrectionParameterView(),
+        CorrectionParameterView(change_queue=bot.change_queue),
         PenaltyReviewView(),
         ApprovalView(),
         AppealsReviewView(),

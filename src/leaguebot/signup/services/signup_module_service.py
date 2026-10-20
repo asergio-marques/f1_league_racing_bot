@@ -628,7 +628,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at "
+                "       last_activity_at, correction_offered_at "
                 "FROM signup_wizard_records WHERE discord_user_id = ?",
                 (discord_user_id,),
             )
@@ -644,7 +644,7 @@ class SignupModuleService:
         cursor = await db.execute(
             "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
             "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-            "       last_activity_at "
+            "       last_activity_at, correction_offered_at "
             "FROM signup_wizard_records WHERE discord_user_id = ?",
             (discord_user_id,),
         )
@@ -658,7 +658,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at "
+                "       last_activity_at, correction_offered_at "
                 "FROM signup_wizard_records "
                 "WHERE signup_channel_id = ?",
                 (channel_id,),
@@ -769,10 +769,11 @@ class SignupModuleService:
         )
 
     async def set_correction_offered_at_on(
-        self, db: aiosqlite.Connection, discord_user_id: str, offered_at: str
+        self, db: aiosqlite.Connection, discord_user_id: str, offered_at: str | None
     ) -> None:
         """Record when the correction choices were posted for a driver, on the connection handed;
-        commits nothing. The five minutes a manager has to choose run from this moment."""
+        commits nothing. The five minutes a manager has to choose run from this moment. None
+        clears it, once no correction is awaited."""
         await db.execute(
             "UPDATE signup_wizard_records SET correction_offered_at = ? "
             "WHERE discord_user_id = ?",
@@ -918,7 +919,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at "
+                "       last_activity_at, correction_offered_at "
                 "FROM signup_wizard_records "
                 "WHERE wizard_state != 'UNENGAGED'",
             )
@@ -931,7 +932,7 @@ class SignupModuleService:
             cursor = await db.execute(
                 "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
-                "       last_activity_at "
+                "       last_activity_at, correction_offered_at "
                 "FROM signup_wizard_records WHERE wizard_state != 'UNENGAGED'"
             )
             rows = await cursor.fetchall()
@@ -983,6 +984,7 @@ class SignupModuleService:
             draft_answers=json.loads(row["draft_answers_json"] or "{}"),
             current_lap_track_index=row["current_lap_track_index"],
             last_activity_at=row["last_activity_at"],
+            correction_offered_at=row["correction_offered_at"],
         )
 
     # ── Config snapshot ───────────────────────────────────────────────

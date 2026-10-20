@@ -145,3 +145,6 @@ class SignupWizardRecord:
     draft_answers: dict[str, Any]
     current_lap_track_index: int
     last_activity_at: str   # ISO-8601 UTC
+    #: When the correction choices a manager asked for were posted in the driver's channel (the
+    #: five minutes to choose run from then); None while no correction is awaited.
+    correction_offered_at: str | None = None

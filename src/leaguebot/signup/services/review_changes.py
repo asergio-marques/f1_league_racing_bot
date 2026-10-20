@@ -34,6 +34,18 @@ minutes from that time, so the manager's five minutes start when the buttons app
 the reason was typed, however long the queue held it. A choices change whose conversation has
 ended is dropped.
 
+**The choice of what to correct** asks `signup.correction.choose` (C86) when a manager presses one of
+the correction choices, acknowledged privately and updated. Its check refuses a request that has
+ended (the five minutes lapsed, another choice was made, the signup was decided, the wizard is gone)
+and a press made more than five minutes after the choices appeared, **judged at the press's time**
+(the payload's ``pressed_at`` against the wizard's ``correction_offered_at``), so a choice pressed in
+time counts though the queue reaches it later, and a choice pressed late is refused though the
+lapse has not yet run. Its jobs are `name_driver`, `choose` (a save: Pending Driver Correction, the
+wizard moved to the step that re-collects the answer, the line written) and `arm_inactivity`, a
+job of its own after it, which takes the five minutes away and arms the driver's 24 hours from
+when it ran. The choice asks back `signup.recollect` on the driver's own lane for the permission
+and the prompt to re-submit, so that a channel Discord refuses stops that driver's lane alone.
+
 **The lap sum is signup's own.** The sum is written on the signup record by this module, in the
 approval's save; core's `PlacementService.store_total_lap_ms`, which commits on a connection of
 its own, is not asked.
@@ -45,7 +57,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -59,7 +71,8 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services import standing_posts, track_service
+from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -71,11 +84,28 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import name_of_member
-from leaguebot.signup.services.closing_steps import DELETE_REASON, KIND as CLOSING
+from leaguebot.signup.models.signup_module import WizardState
+from leaguebot.signup.services.closing_steps import (
+    DELETE_REASON,
+    INACTIVITY_TIMER,
+    KIND as CLOSING,
+)
 from leaguebot.signup.services.signup_posting import post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE
+from leaguebot.signup.services.wizard_answers import (
+    INACTIVITY,
+    _BUTTON_ONLY,
+    _set_typing,
+    _text_channel,
+)
+from leaguebot.signup.services.wizard_service import (
+    _CORRECTION_PARAMETER_STATES,
+    WizardService,
+    build_step_view,
+)
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -89,11 +119,18 @@ NAME_DRIVER = "name_driver"
 REQUEST_JOB = "request"
 POST_CHOICES = "post_choices"
 ARM_LAPSE = "arm_lapse"
+CHOOSE = "signup.correction.choose"
+RECOLLECT = "signup.recollect"
+CHOOSE_JOB = "choose"
+ARM_INACTIVITY = "arm_inactivity"
+POST_RECOLLECT = "post_recollect"
 #: The timer that releases a driver whose correction nobody chose within five minutes.
 CORRECTION_TIMER = "correction_lapse"
 #: How long a manager has to choose what a driver is to correct, from the choices appearing.
 CORRECTION_WINDOW = timedelta(minutes=5)
 
+#: What a manager is told whose choice finds the correction request over.
+CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
 #: What a manager is told whose press finds the signup already actioned.
 ACTIONED = "This signup has already been actioned."
 #: What the driver's channel is told when their signup is approved.
@@ -103,9 +140,16 @@ APPROVED_NOTICE = (
 )
 
 __all__ = [
-    "ACTIONED", "APPROVE", "APPROVED_NOTICE", "CHOICES", "CORRECTION_TIMER", "CORRECTION_WINDOW",
-    "REQUEST", "approve_change", "choices_change", "request_changes_change", "total_lap_ms",
+    "ACTIONED", "APPROVE", "APPROVED_NOTICE", "CHOICES", "CHOOSE", "CORRECTION_ENDED",
+    "CORRECTION_TIMER", "CORRECTION_WINDOW", "RECOLLECT", "REQUEST", "approve_change",
+    "choices_change", "choose_change", "recollect_change", "request_changes_change", "total_lap_ms",
 ]
+
+
+def _instant(text: str) -> datetime:
+    """An ISO time as text, read as UTC where it carries no zone."""
+    at = datetime.fromisoformat(text)
+    return at if at.tzinfo is not None else at.replace(tzinfo=timezone.utc)
 
 
 def total_lap_ms(lap_times: dict[str, str]) -> int | None:
@@ -342,14 +386,15 @@ def request_changes_change(
 def choices_change(
     *,
     signup: Callable[[], "SignupModuleService"],
+    queue_of: Callable[[], "ChangeQueue"],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
     """The `signup.choices` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the league asked it back once a manager's request for changes
     was saved. The payload is ``user_id``, ``channel_id``, ``actor_name`` (the manager) and
-    ``reason_message_id``. *now* and *arm_once* are the queue's clock and the scheduler service's
-    one-off timer."""
+    ``reason_message_id``. *queue_of* gives the change queue the choices are handed. *now* and
+    *arm_once* are the queue's clock and the scheduler service's one-off timer."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": int(payload["channel_id"])}
@@ -393,7 +438,7 @@ def choices_change(
             found,
             f"{mention} **{ctx.step_payload['actor_name']}** has requested a correction.\n"
             "Please select the parameter to correct (5-minute window):",
-            view=CorrectionParameterView(user_id, ctx.bot),
+            view=CorrectionParameterView(user_id, change_queue=queue_of()),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
             ),
@@ -447,4 +492,256 @@ def choices_change(
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,
         writes=("signup_wizard_records",),
+    )
+
+
+def _owner_of(guild: discord.Guild | None, user_id: str) -> str:
+    """Whose signup review a button sits on, as the log channel names it: "Alex's", by the display
+    name the league's server gives them, or their mention where the name is not to be had."""
+    member = None if guild is None else guild.get_member(int(user_id))
+    name = getattr(member, "display_name", None)
+    return f"{name if isinstance(name, str) else f'<@{user_id}>'}'s"
+
+
+def choose_change(
+    *,
+    signup: Callable[[], "SignupModuleService"],
+    drivers: Callable[[], "DriverService"],
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, str, datetime], None],
+    disarm: Callable[[str, str], None],
+) -> ChangeType:
+    """The `signup.correction.choose` change type, for the builder to register.
+
+    The payload is ``user_id`` (the driver's account, as text), ``parameter`` (the answer to
+    correct, by its key), ``label`` (the button's, which the line names it by) and ``pressed_at``
+    (when the manager pressed it, which the five minutes are judged against). *now*, *arm_once* and
+    *disarm* are the queue's clock and the scheduler service's one-off timer and its removal.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        user_id = str(ctx.payload["user_id"])
+        profile = await drivers().get_profile(user_id)
+        wizard = await signup().get_wizard(user_id)
+        ended = Verdict.refuse(f"⛔ {CORRECTION_ENDED}", CORRECTION_ENDED)
+        if (
+            ctx.payload["parameter"] not in _CORRECTION_PARAMETER_STATES
+            or profile is None or wizard is None
+            or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER
+        ):
+            return ended
+        offered = wizard.correction_offered_at
+        if offered is not None and (
+            _instant(str(ctx.payload["pressed_at"])) > _instant(offered) + CORRECTION_WINDOW
+        ):
+            return ended
+        return Verdict.go()
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        shared = {key: payload[key] for key in ("user_id", "parameter", "label")}
+        return (
+            PlannedStep(NAME_DRIVER, {"user_id": str(payload["user_id"])}),
+            PlannedStep(CHOOSE_JOB, shared),
+            PlannedStep(ARM_INACTIVITY, {"user_id": str(payload["user_id"])}),
+        )
+
+    async def name_driver(ctx: StepContext) -> StepResult:
+        guild = await league_guild(ctx.bot)
+        return StepResult(result={"owner": _owner_of(guild, str(ctx.step_payload["user_id"]))})
+
+    async def choose(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        pl = ctx.step_payload
+        user_id = str(pl["user_id"])
+        wizard = await signup().get_wizard_on(db, user_id)
+        if wizard is None:
+            return StepResult(result={"ended": True})
+        target = _CORRECTION_PARAMETER_STATES[str(pl["parameter"])]
+        # The check judged the state as the change started; the transition is the check that
+        # cannot be raced, and a refused one means the request has ended all the same.
+        try:
+            await drivers().transition_on(db, user_id, DriverState.PENDING_DRIVER_CORRECTION)
+        except ValueError:
+            return StepResult(result={"ended": True})
+        reason = wizard.draft_answers.pop("_correction_reason", "")
+        wizard.wizard_state = target
+        wizard.draft_answers["_is_correction"] = True
+        if target == WizardState.COLLECTING_LAP_TIME:
+            wizard.current_lap_track_index = 0
+        if target == WizardState.COLLECTING_PREFERRED_TEAMS:
+            wizard.draft_answers.pop("_pref_teams_step", None)
+            wizard.draft_answers["preferred_teams"] = []
+        wizard.last_activity_at = now().isoformat()
+        await signup().save_wizard_on(db, wizard)
+        await signup().set_correction_offered_at_on(db, user_id, None)
+        owner = next(
+            (str((view.result or {}).get("owner")) for view in ctx.steps
+             if view.name == NAME_DRIVER and view.done),
+            "a",
+        )
+        label = pl["label"]
+        line = (
+            f"{ctx.named} | the “{label}” button of {owner} signup review | "
+            f"Correction requested: {label}"
+        )
+        follow_ons: tuple[FollowOn, ...] = ()
+        if wizard.signup_channel_id is not None:
+            follow_ons = (FollowOn(
+                RECOLLECT,
+                {
+                    "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
+                    "parameter": pl["parameter"], "reason": reason,
+                },
+                "Asking a driver to re-submit an answer",
+            ),)
+        return StepResult(result={}, lines=(line,), follow_ons=follow_ons)
+
+    async def chosen(ctx: StepContext) -> bool:
+        return any(
+            view.name == CHOOSE_JOB and view.done and not (view.result or {}).get("ended")
+            and "discarded" not in (view.result or {})
+            for view in ctx.steps
+        )
+
+    async def arm_inactivity(ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        disarm(CORRECTION_TIMER, user_id)
+        arm_once(INACTIVITY_TIMER, user_id, now() + INACTIVITY)
+        return StepResult(result={})
+
+    async def describe_name(ctx: StepContext) -> str:
+        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+
+    async def describe_choose(ctx: StepContext) -> str:
+        return f"sending <@{ctx.step_payload['user_id']}> back to one answer of their signup"
+
+    async def describe_arm(ctx: StepContext) -> str:
+        return f"arming the 24 hours of <@{ctx.step_payload['user_id']}>'s correction"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        views = {view.name: view for view in ctx.steps}
+        chose = views.get(CHOOSE_JOB)
+        if chose is not None and "discarded" in (chose.result or {}):
+            return "⚠️ No answer was sent back: the job was discarded."
+        if chose is not None and (chose.result or {}).get("ended"):
+            return f"⛔ {CORRECTION_ENDED}"
+        return f"✅ Re-collecting **{str(ctx.payload['parameter']).replace('_', ' ')}**."
+
+    return ChangeType(
+        kind=CHOOSE,
+        opening=(),
+        plan=plan,
+        steps={
+            NAME_DRIVER: Step(NAME_DRIVER, StepKind.ACT, name_driver, describe=describe_name),
+            CHOOSE_JOB: Step(CHOOSE_JOB, StepKind.SAVE, choose, describe=describe_choose),
+            ARM_INACTIVITY: Step(
+                ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=chosen,
+                describe=describe_arm,
+            ),
+        },
+        check=check,
+        key=lambda payload: f"{CHOOSE}:{payload['user_id']}",
+        doing=lambda payload: "Choosing what a driver is to correct",
+        outcome=outcome,
+    )
+
+
+def recollect_change(
+    *,
+    signup: Callable[[], "SignupModuleService"],
+    queue_of: Callable[[], "ChangeQueue"],
+) -> ChangeType:
+    """The `signup.recollect` change type, for the builder to register, on the driver's lane
+    (``channel:<signup channel>``): the league asked it back once a manager's choice was saved.
+
+    The payload is ``user_id``, ``channel_id``, ``parameter`` (the answer to re-submit) and
+    ``reason`` (the manager's, which the prompt gives). Its one job `post_recollect` sets the
+    driver's typing for the step they return to (taken away for a button step, given back for a
+    typed one: a driver returned to a typed question with typing revoked could not answer) and
+    posts the prompt. A channel gone from the server is nothing to post in: the driver's state is
+    the league's record and the prompt only how they learn of it. *queue_of* gives the change
+    queue the step's buttons are handed. A change whose driver is no longer part-way through a
+    correction is dropped.
+    """
+
+    def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        return (PlannedStep(POST_RECOLLECT, {
+            "user_id": str(payload["user_id"]), "channel_id": int(payload["channel_id"]),
+            "parameter": payload["parameter"], "reason": payload.get("reason") or "",
+        }),)
+
+    async def standing(_ctx: CheckContext) -> Verdict:
+        return Verdict.go()
+
+    async def open_(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+        row = await (
+            await db.execute(
+                "SELECT 1 FROM signup_wizard_records w JOIN driver_profiles d "
+                "ON d.discord_user_id = w.discord_user_id "
+                "WHERE w.signup_channel_id = ? AND d.current_state = ?",
+                (int(payload["channel_id"]), DriverState.PENDING_DRIVER_CORRECTION.value),
+            )
+        ).fetchone()
+        return row is not None
+
+    @posts_in_a_job
+    async def post_recollect(ctx: StepContext) -> StepResult:
+        pl = ctx.step_payload
+        user_id = str(pl["user_id"])
+        channel = await _text_channel(ctx, int(pl["channel_id"]))
+        if channel is None:
+            return StepResult(result={"no_channel": True})
+        wizard = await signup().get_wizard(user_id)
+        if wizard is None:
+            return StepResult(result={"no_wizard": True})
+        snapshot = wizard.config_snapshot
+        state = wizard.wizard_state
+        member = channel.guild.get_member(int(user_id))
+        if member is not None:
+            await _set_typing(
+                channel, member, allowed=state not in _BUTTON_ONLY,
+                reason=(
+                    "Signup wizard channel hold" if state in _BUTTON_ONLY
+                    else "Signup wizard button step answered"
+                ),
+            )
+        mention = member.mention if member is not None else f"<@{user_id}>"
+        reason_line = f"\n**Reason:** {pl['reason']}" if pl["reason"] else ""
+        async with get_connection(ctx.db_path) as db:
+            track_map = await track_service.get_track_name_map(db)
+        await post(
+            channel,
+            f"{mention} Please re-submit your **{str(pl['parameter']).replace('_', ' ')}**:"
+            f"{reason_line}\n"
+            + WizardService._prompt_for_state(
+                state, snapshot, wizard, track_name_map=track_map
+            ),
+            view=build_step_view(
+                queue_of(), state, user_id, snapshot.team_names if snapshot else []
+            ),
+            mentions=discord.AllowedMentions(
+                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+            ),
+            refused=f"the prompt to re-submit could not be posted in channel {channel.id}",
+        )
+        return StepResult(result={})
+
+    async def describe_post(ctx: StepContext) -> str:
+        return f"asking for an answer again in <#{ctx.step_payload['channel_id']}>"
+
+    return ChangeType(
+        kind=RECOLLECT,
+        opening=(),
+        plan=plan,
+        steps={
+            POST_RECOLLECT: Step(
+                POST_RECOLLECT, StepKind.ACT, post_recollect, describe=describe_post
+            ),
+        },
+        check=standing,
+        key=lambda payload: f"{RECOLLECT}:{payload['user_id']}",
+        doing=lambda payload: f"Asking <@{payload['user_id']}> to re-submit an answer",
+        outcome=lambda _ctx: "",
+        lane=lambda payload: f"channel:{int(payload['channel_id'])}",
+        conversation_open=open_,
+        writes=(),
     )

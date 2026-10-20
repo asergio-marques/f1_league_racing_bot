@@ -77,11 +77,6 @@ REASON = "Lap times look mistyped"
 LAP_TIMES = {"1": "1:30.000", "2": "1:31.500"}
 LAP_SUM_MS = 181_500
 
-NO_CHOOSE_CHANGE = (
-    "#439: the correction choices are not handed the change queue, and a choice is judged at "
-    "once by today's state rather than by when it was pressed against correction_offered_at, "
-    "with no signup.correction.choose change asking signup.recollect back of the lane"
-)
 NO_LAPSE_CHANGE = (
     "#439: the correction's five minutes and the restart release the driver themselves off the "
     "queue, with no correction_lapse timer callback registered by the builder and no "
@@ -453,7 +448,6 @@ async def test_request_changes_changes_the_status_on_the_league_and_the_choices_
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_a_choice_pressed_in_time_counts_though_it_runs_after(tmp_path):
     """Kimi awaits a correction parameter, the choices posted four minutes and 59 seconds ago.
     Manager 77 presses Nationality now; the queue reaches it two minutes later, past the five
@@ -482,7 +476,6 @@ async def test_a_choice_pressed_in_time_counts_though_it_runs_after(tmp_path):
     assert updated_reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_a_choice_pressed_after_the_five_minutes_is_refused(tmp_path):
     """Kimi awaits a correction parameter, the choices posted five minutes and one second ago,
     their lapse not yet run. Manager 77 presses Nationality and the queue runs: the press is

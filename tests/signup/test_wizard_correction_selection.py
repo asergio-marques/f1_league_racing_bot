@@ -39,7 +39,7 @@ import pytest
 from tests.signup.test_review_changes import (
     INACTIVITY_TIMER,
     KIMI_CHANNEL,
-    NO_CHOOSE_CHANGE,
+    _answered,
     _armed,
     _driver_state,
     _league,
@@ -101,7 +101,6 @@ def _typing(league: SeasonLeague) -> list[bool]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
     """Kimi's wizard is gone when manager 77 presses Platform. The choice is refused, 77 told
     why rather than that Kimi is being re-collected, and nothing changes: Kimi still awaits a
@@ -117,7 +116,6 @@ async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
     assert _texts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 @pytest.mark.parametrize(
     "state",
     ["PENDING_ADMIN_APPROVAL", "PENDING_DRIVER_CORRECTION", "UNASSIGNED", "NOT_SIGNED_UP"],
@@ -133,7 +131,7 @@ async def test_a_request_that_has_ended_is_refused_and_changes_nothing(tmp_path,
 
     press = await _choose(league, "platform")
 
-    assert _ENDED in (updated_reply(press) or "")
+    assert _ENDED in _answered(press)
     assert await _driver_state(league) == state
     assert (await _wizard(league))["wizard_state"] == "UNENGAGED"
     assert _armed(league, INACTIVITY_TIMER) == []
@@ -145,7 +143,6 @@ async def test_a_request_that_has_ended_is_refused_and_changes_nothing(tmp_path,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_the_driver_is_asked_to_correct_rather_than_to_sign_up_again(tmp_path):
     """Manager 77 presses Platform; once the queue runs Kimi is Pending Driver Correction, not
     back at the start of signing up."""
@@ -156,7 +153,6 @@ async def test_the_driver_is_asked_to_correct_rather_than_to_sign_up_again(tmp_p
     assert await _driver_state(league) == "PENDING_DRIVER_CORRECTION"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_the_wizard_is_marked_as_a_correction(tmp_path):
     """The last answer's turn reads this to commit instead of continuing. Without it a driver
     asked to fix one answer is walked through every later question again. Once the queue runs
@@ -168,7 +164,6 @@ async def test_the_wizard_is_marked_as_a_correction(tmp_path):
     assert (await _draft(league))["_is_correction"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_a_fresh_inactivity_deadline_is_armed(tmp_path):
     """Kimi now has 24 hours to answer, the same as any other step: once the queue runs his
     24-hour inactivity timer is armed, a day from now."""
@@ -186,7 +181,6 @@ async def test_a_fresh_inactivity_deadline_is_armed(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_correcting_lap_times_starts_again_from_the_first_track(tmp_path):
     """Kimi's wizard stands at the third lap-time track. Left there, he would be asked about the
     track after the last one he answered, or about none at all. Once Lap Times is chosen and the
@@ -198,7 +192,6 @@ async def test_correcting_lap_times_starts_again_from_the_first_track(tmp_path):
     assert (await _wizard(league))["current_lap_track_index"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_correcting_preferred_teams_clears_the_previous_picks(tmp_path):
     """Kimi had picked Alpha and Beta, two picks into the loop. The loop appends, so without the
     reset his new choices would join the ones the league rejected: once Preferred Teams is chosen
@@ -212,7 +205,6 @@ async def test_correcting_preferred_teams_clears_the_previous_picks(tmp_path):
     assert "_pref_teams_step" not in draft
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_correcting_another_parameter_leaves_the_lap_index_alone(tmp_path):
     """The reset is specific to lap times; Kimi correcting his notes has not unanswered his lap
     times, and his wizard stays at the third track."""
@@ -228,7 +220,6 @@ async def test_correcting_another_parameter_leaves_the_lap_index_alone(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_the_driver_is_prompted_in_their_channel_and_named(tmp_path):
     """Manager 77 presses Platform ID; once the queue runs one prompt in Kimi's channel mentions
     him and asks for his platform id."""
@@ -241,7 +232,6 @@ async def test_the_driver_is_prompted_in_their_channel_and_named(tmp_path):
     assert "platform id" in prompt.lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_the_reason_the_manager_gave_reaches_the_driver(tmp_path):
     """It is the whole point of asking rather than rejecting: the reason 77 gave, "Your platform
     ID does not match your account", is in Kimi's prompt."""
@@ -254,7 +244,6 @@ async def test_the_reason_the_manager_gave_reaches_the_driver(tmp_path):
     assert "does not match your account" in "\n".join(_texts(league))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_the_reason_is_consumed_so_a_later_correction_cannot_reuse_it(tmp_path):
     """Popped, not read: once the queue has run the choice, Kimi's wizard holds no reason, so a
     second correction cannot tell him to fix what he already fixed."""
@@ -265,7 +254,6 @@ async def test_the_reason_is_consumed_so_a_later_correction_cannot_reuse_it(tmp_
     assert "_correction_reason" not in await _draft(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_no_reason_gives_no_reason_line(tmp_path):
     """With no reason given, Kimi's prompt carries no "Reason:" line."""
     league = await _awaiting(tmp_path)
@@ -275,7 +263,6 @@ async def test_no_reason_gives_no_reason_line(tmp_path):
     assert "**Reason:**" not in "\n".join(_texts(league))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_returning_to_a_button_step_revokes_typing(tmp_path):
     """Platform is answered by a button, so once the queue runs Kimi's typing in his channel is
     revoked, and never granted."""
@@ -286,7 +273,6 @@ async def test_returning_to_a_button_step_revokes_typing(tmp_path):
     assert _typing(league) == [False]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_returning_to_a_typed_step_restores_typing(tmp_path):
     """The case that matters. Notes are typed, so once the queue runs Kimi's typing in his
     channel is granted, and never revoked: with it revoked he could not answer at all, and the
@@ -298,7 +284,6 @@ async def test_returning_to_a_typed_step_restores_typing(tmp_path):
     assert _typing(league) == [True]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHOOSE_CHANGE)
 async def test_a_missing_channel_still_records_the_correction(tmp_path):
     """Manager 77 presses Platform and Kimi's signup channel is deleted before the queue reaches
     the choice. The driver's state is the league's record, the prompt only how he learns of it:
