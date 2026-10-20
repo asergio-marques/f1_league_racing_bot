@@ -2104,18 +2104,13 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
     # Results' pass
     ("results/services/result_submission_service.py", "_apply_points_from_config"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_claim_amendment"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_close_amend_channel_record"): (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "_rearm_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "amend_round_results"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "close_submission_channel"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "create_submission_channel"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "enter_resubmit_flow"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "replace_round_results"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "save_session_result"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "snapshot_before_amendment"): (1, PASS["results"]),
     # Attendance's pass
     ("attendance/services/attendance_service.py", "AttendanceService.delete_division_configs"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),

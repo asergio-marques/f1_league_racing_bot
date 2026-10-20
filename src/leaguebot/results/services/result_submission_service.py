@@ -37,9 +37,9 @@ from leaguebot.image.utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
-from leaguebot.core.utils.interaction_errors import describe_fault, report_failure
+from leaguebot.core.utils.interaction_errors import report_failure
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, league_guild
-from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
@@ -1241,15 +1241,6 @@ def amendment_wait_text() -> str:
     )
 
 
-async def snapshot_before_amendment(
-    db_path: str, round_id: int, session_types: list[SessionType]
-) -> None:
-    """`snapshot_before_amendment_on`, saved on a connection of its own."""
-    async with get_connection(db_path) as db:
-        await snapshot_before_amendment_on(db, round_id, session_types)
-        await db.commit()
-
-
 async def snapshot_before_amendment_on(
     db: aiosqlite.Connection, round_id: int, session_types: list[SessionType],
     *, now: datetime | None = None,
@@ -1333,10 +1324,9 @@ async def _restore_from_snapshot_on(db: aiosqlite.Connection, round_id: int) -> 
     """Put a round's driver rows, verdicts, headers, former-driver flags and pardons back from its
     amendment's snapshot and clear the snapshot, on the connection handed and committing nothing.
 
-    The restore itself, shared by the committing `revert_abandoned_amendment` and by
-    `revert_abandoned_amendment_on`, which an amendment's lapse and cancel run in their saves.
-    Returns False, writing nothing, where there is no snapshot to restore from. The standings are
-    not touched here: each form cascades them its own way.
+    The restore itself, which `revert_abandoned_amendment_on` runs for an amendment's lapse and
+    cancel in their saves. Returns False, writing nothing, where there is no snapshot to restore
+    from. The standings are not touched here: the caller cascades them.
     """
     cursor = await db.execute(
         "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
@@ -1432,7 +1422,10 @@ async def revert_abandoned_amendment_on(
     in as *display_names*; none handed, the tie is settled by user id.
 
     **Nothing is reposted, because nothing was posted** (#345), and the round's pardons come back
-    as they were; see `revert_abandoned_amendment`, whose account of both holds here.
+    as they were. An amendment publishes nothing until its last stage is approved, and approving
+    that stage releases the snapshot before the rebuild begins, so wherever a snapshot is still
+    here to revert from, the channels are still showing the round as it was. Reposting would only
+    move the round to the bottom of each channel, out of order.
 
     Returns True where the round was put back, and False where there was no snapshot to put it
     back from: an amendment abandoned before stage one wrote has nothing to undo.
@@ -1448,91 +1441,6 @@ async def revert_abandoned_amendment_on(
             db, int(division["division_id"]), round_id, display_names
         )
     return True
-
-
-async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot | None = None) -> bool:
-    """Put a round back as it was before an amendment nobody approved.
-
-    The round keeps the classification it raced rather than a half-amended one: for every
-    session the amendment re-entered, the driver rows are restored from the snapshot, its
-    verdict records written back whole, and its header put back; the standings are then
-    cascaded again so the championship follows.
-
-    **Nothing is reposted, because nothing was posted** (#345). An amendment publishes nothing
-    until its last stage is approved, and approving that stage releases the snapshot before the
-    rebuild begins — so wherever a snapshot is still here to revert from, the channels are still
-    showing the round as it was. Reposting would only move the round to the bottom of each
-    channel, out of order.
-
-    The round's pardons come back as they were too: the last stage rewrites them before it
-    releases the snapshot. The attendance itself is left alone, being recalculated only after
-    the release.
-
-    Reached by the sweep, by **Cancel**, by an internal failure part-way through, and by restart
-    recovery, and safe to call where no snapshot was taken — an amendment abandoned before stage
-    one wrote has nothing to undo. The caller holds the claim on the amendment, where there is
-    anybody else who could act on it; see :func:`_claim_amendment`.
-
-    *bot*, where given, is how the league's names are reached, so that the standings put back
-    settle a full tie as the posting does; see :func:`_standings_names`.
-
-    Returns True where the round was put back, and False where there was nothing to revert.
-    """
-    async with get_connection(db_path) as db:
-        if not await _restore_from_snapshot_on(db, round_id):
-            return False
-        await db.commit()
-
-    # The championship follows from the rows, so it is recomputed rather than snapshotted.
-    #
-    # **Reported, never raised** (#345). The restore and the clearing of the snapshot are
-    # committed by the time this runs, so raising here would tell the caller the revert failed
-    # when the round is in fact back — and the caller would then hand an amendment with no
-    # snapshot left to the sweep, which cannot claim it, leaving the row and its channel for a
-    # restart to clear. A stale standing is a `/results standings sync` away.
-    from leaguebot.results.services import standings_service
-
-    division_id = await _division_of_round(db_path, round_id)
-    if division_id is not None:
-        try:
-            await standings_service.cascade_recompute_from_round(
-                db_path, division_id, round_id,
-                await _standings_names(db_path, division_id, bot),
-            )
-        except Exception:  # noqa: BLE001 — the round is back; its standings are downstream
-            log.exception(
-                "revert: round %s was put back but its standings were not recomputed", round_id
-            )
-    return True
-
-
-async def _standings_names(db_path: str, division_id: int, bot: LeagueBot | None, guild=None):
-    """The names the division's standings are drawn under, or None — never raising.
-
-    A standings snapshot stores the order the league is shown, and a full tie is settled by name
-    there (decided 2026-09-15). Recomputed without the names, the tie is settled by user id, and
-    the next round's movement arrows — worked out from the stored order — then show a driver
-    moving who did not. Where the names cannot be had, the cascade runs on ids rather than not
-    at all.
-    """
-    from leaguebot.results.services.results_post_service import standings_display_names
-
-    try:
-        if guild is None and bot is not None:
-            guild = await league_guild(bot)
-        return await standings_display_names(db_path, division_id, guild, bot)
-    except Exception:  # noqa: BLE001 — ordering a tie by id is the lesser fault
-        log.exception("could not resolve the standings names of division %s", division_id)
-        return None
-
-
-async def _division_of_round(db_path: str, round_id: int) -> int | None:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
-        )
-        row = await cursor.fetchone()
-    return row["division_id"] if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -1582,14 +1490,6 @@ def _sessions_text(session_types) -> str:
     return ", ".join(st.value if isinstance(st, SessionType) else str(st) for st in session_types)
 
 
-async def _claim_amendment(db_path: str, round_id: int) -> str | None:
-    """`_claim_amendment_on`, saved on a connection of its own."""
-    async with get_connection(db_path) as db:
-        deadline = await _claim_amendment_on(db, round_id)
-        await db.commit()
-    return deadline
-
-
 async def _claim_amendment_on(db: aiosqlite.Connection, round_id: int) -> str | None:
     """Take an open amendment's deadline, so that nothing else acts on it until it is returned.
 
@@ -1601,7 +1501,7 @@ async def _claim_amendment_on(db: aiosqlite.Connection, round_id: int) -> str | 
     NULL that only one of them can win. The sweep reads only rows with a deadline, so a claimed
     amendment is invisible to it as well.
 
-    Returns the deadline taken, for :func:`_rearm_amendment` to hand back, or None where the
+    Returns the deadline taken, or None where the
     amendment is not open: never begun, already committed or reverted, or claimed by another.
     Commits nothing: the claim is taken in the save of whatever acts on the amendment, and given up
     with it if that save is undone.
@@ -1644,17 +1544,6 @@ async def _recompute_former_drivers_after_amendment_on(db: aiosqlite.Connection,
     await recompute_former_drivers_for_round(db, round_id, also_consider=profiles_before)
 
 
-async def _rearm_amendment(db_path: str, round_id: int, deadline: str) -> None:
-    """Hand back a deadline taken by :func:`_claim_amendment`, the amendment still open."""
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_amend_channels SET expires_at = ? "
-            "WHERE round_id = ? AND pre_amendment_state IS NOT NULL",
-            (deadline, round_id),
-        )
-        await db.commit()
-
-
 async def _release_amendment_on(db: aiosqlite.Connection, round_id: int) -> None:
     """Drop the snapshot and the deadline: the amendment is committed and can no longer revert.
 
@@ -1668,36 +1557,6 @@ async def _release_amendment_on(db: aiosqlite.Connection, round_id: int) -> None
         "WHERE round_id = ?",
         (round_id,),
     )
-
-
-async def _close_amendment_channel(db_path: str, guild, round_id: int, *, reason: str) -> None:
-    """End an amendment's record and delete its channel, as `_close_amend_channel_record` does."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT channel_id FROM round_amend_channels WHERE round_id = ?", (round_id,)
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return
-    channel = guild.get_channel(row["channel_id"]) if guild is not None else None
-    await _close_amend_channel_record(
-        db_path, round_id, row["channel_id"], channel, reason=reason
-    )
-
-
-async def _amendment_sessions_of(db_path: str, round_id: int) -> list[str]:
-    """The session-type values a round's amendment re-enters, as its record lists them."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT session_types FROM round_amend_channels WHERE round_id = ?", (round_id,)
-        )
-        row = await cursor.fetchone()
-    if row is None or not row["session_types"]:
-        return []
-    try:
-        return list(_json.loads(row["session_types"]))
-    except (TypeError, ValueError):
-        return []
 
 
 async def open_amendment_in_division(db_path: str, division_id: int):
@@ -1881,38 +1740,6 @@ async def stage_in_hand(db_path: str, round_id: int) -> bool:
     )
 
 
-async def cancel_amendment(bot: LeagueBot, round_id: int, *, cancelled_by) -> bool:
-    """Undo an amendment its manager cancelled after the first stage, and close its channel.
-
-    Returns False where it was too late — the appeal stage is already committing it — or the
-    amendment is otherwise no longer open; nothing is done then. Raises where the revert itself
-    failed, having handed the amendment to the sweep with the snapshot intact.
-
-    **It writes no line to the log channel.** Its callers do: the Cancel Amendment button
-    records the cancel in the standard form, naming whoever pressed it, and a report stage that
-    could not open records the one failure it was. Written here too, either would make two
-    lines of one outcome. *cancelled_by* is kept for the host's log.
-    """
-    db_path: str = bot.db_path
-    # A stage in hand on the queue, a stopped one included, is left alone: it is the amendment's
-    # own approval, and Cancel is refused while it is carried out ("Leave it while stuck").
-    if await stage_in_hand(db_path, round_id):
-        return False
-    deadline = await _claim_amendment(db_path, round_id)
-    if deadline is None:
-        return False
-    try:
-        await revert_abandoned_amendment(db_path, round_id, bot)
-    except Exception:
-        await _rearm_amendment(db_path, round_id, datetime.now(timezone.utc).isoformat())
-        raise
-
-    guild = await league_guild(bot)
-    await _close_amendment_channel(db_path, guild, round_id, reason="Amendment cancelled")
-    log.info("cancel_amendment: round %s put back, cancelled by %s", round_id, cancelled_by)
-    return True
-
-
 @posts_in_a_job
 async def run_amendment_review_stages(
     db_path: str,
@@ -1998,36 +1825,6 @@ class AmendedSession:
     driver_rows: list
     config_name: str | None
     fl_driver_override: int | None = None
-
-
-async def amend_round_results(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    sessions: list[AmendedSession],
-    amended_by: int,
-    bot: LeagueBot,
-) -> None:
-    """Supersede the chosen sessions' results with their corrected classifications, saved on a
-    connection of its own (`amend_round_results_on`), and write the stage's line to the log
-    channel. The standings names a full tie is settled by are resolved first, through *bot*."""
-    names = await _standings_names(db_path, division_id, bot)
-    async with get_connection(db_path) as db:
-        await amend_round_results_on(
-            db, round_id, division_id, sessions, amended_by, names
-        )
-        await db.commit()
-    # **A stage, not an outcome.** The `RESULT_AMENDED` entry belongs to the final stage.
-    rctx = await _get_round_context(db_path, round_id)
-    await bot.output_router.post_log(
-        f"{await name_of_member(bot, amended_by)} | AMEND_STAGE_1 | Recorded\n"
-        f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-        f"  round: {rctx['round_number']}, sessions: "
-        + ", ".join(f"{s.session_type.value}={s.config_name}" for s in sessions)
-        + "\n"
-        "  Corrected classification recorded. Nothing is published until the report and "
-        "appeal stages are approved."
-    )
 
 
 async def amend_round_results_on(

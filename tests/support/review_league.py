@@ -572,19 +572,12 @@ async def race_rows(db_path: str) -> dict[int, dict[str, Any]]:
 async def snapshot_amendment(db_path: str, round_id: int,
                              session_types: list[SessionType]) -> None:
     """Record the round as it stands before an amendment's stage one writes, as stage one does,
-    for a test that seeds an amendment past stage one.
-
-    Through the form that takes a connection (`snapshot_before_amendment_on`) where the bot has it,
-    on a connection opened and committed here: #439 6b's stage one writes through it, and deletes
-    the committing form. Until then, through the committing form."""
+    for a test that seeds an amendment past stage one: through `snapshot_before_amendment_on`, on
+    a connection opened and committed here."""
     from leaguebot.results.services import result_submission_service as service
 
-    on_a_connection = getattr(service, "snapshot_before_amendment_on", None)
-    if on_a_connection is None:
-        await service.snapshot_before_amendment(db_path, round_id, session_types)
-        return
     async with get_connection(db_path) as db:
-        await on_a_connection(db, round_id, session_types)
+        await service.snapshot_before_amendment_on(db, round_id, session_types)
         await db.commit()
 
 
@@ -595,24 +588,18 @@ async def amend_stage_one(db_path: str, round_id: int, division_id: int, session
     snapshotted, each corrected classification written over it, its points applied and the
     standings recomputed, all in one save; nothing posted.
 
-    Through the form that takes a connection (`amend_round_results_on(db, round_id, division_id,
-    sessions, amended_by, display_names)`) where the bot has it, on a connection opened and
-    committed here: #439 6b's `results.amend.stage_one` runs it in its save, and deletes the
-    committing form. That save waits on nothing but its own connection (architecture.md, "The
+    Through `amend_round_results_on(db, round_id, division_id, sessions, amended_by,
+    display_names)`, on a connection opened and committed here: `results.amend.stage_one` runs it
+    in its save. That save waits on nothing but its own connection (architecture.md, "The
     database"), so the standings names a full tie is settled by are resolved before it and handed
     in as *display_names*, as the stage approvals hand them to `cascade_recompute_from_round_on`;
-    no bot is handed, and the stage's log line is the change's, not the save's. Until then,
-    through the committing form, handed *bot*, which resolves the names and writes the line."""
+    *bot* is not used, and the stage's log line is the change's, not the save's."""
     from leaguebot.results.services import result_submission_service as service
 
-    on_a_connection = getattr(service, "amend_round_results_on", None)
-    if on_a_connection is None:
-        await service.amend_round_results(
-            db_path, round_id, division_id, sessions, amended_by, bot
-        )
-        return
     async with get_connection(db_path) as db:
-        await on_a_connection(db, round_id, division_id, sessions, amended_by, display_names)
+        await service.amend_round_results_on(
+            db, round_id, division_id, sessions, amended_by, display_names
+        )
         await db.commit()
 
 
@@ -621,37 +608,27 @@ async def revert_amendment(db_path: str, round_id: int,
     """Put a round back from its amendment's snapshot, as the amendment's lapse and cancel do;
     gives whether there was anything to put back.
 
-    Through the form that takes a connection (`revert_abandoned_amendment_on`) where the bot has
-    it, on a connection opened and committed here: #439 6b's lapse and cancel revert through it,
-    inside their `revert` save, and delete the committing form. That save waits on nothing but its
-    own connection (architecture.md, "The database"), so the standings names are resolved before
-    it, by a job of their own, and handed in as *display_names*, as the stage approvals hand them
-    to `cascade_recompute_from_round_on`; no bot is handed. Until then, through the committing
-    form, handed no bot, so its cascade runs on ids."""
+    Through `revert_abandoned_amendment_on`, on a connection opened and committed here: the lapse
+    and cancel run it inside their `revert` save. That save waits on nothing but its own connection
+    (architecture.md, "The database"), so the standings names are resolved before it, by a job of
+    their own, and handed in as *display_names*, as the stage approvals hand them to
+    `cascade_recompute_from_round_on`; none handed, a full tie is settled by user id."""
     from leaguebot.results.services import result_submission_service as service
 
-    on_a_connection = getattr(service, "revert_abandoned_amendment_on", None)
-    if on_a_connection is None:
-        return bool(await service.revert_abandoned_amendment(db_path, round_id))
     async with get_connection(db_path) as db:
-        reverted = await on_a_connection(db, round_id, display_names)
+        reverted = await service.revert_abandoned_amendment_on(db, round_id, display_names)
         await db.commit()
     return bool(reverted)
 
 
 async def claim_amendment(db_path: str, round_id: int) -> str | None:
     """Take an open amendment's deadline, as a stage's approval does before it writes; gives the
-    deadline taken, or None where there was nothing to claim.
-
-    Through `_claim_amendment_on` where the bot has it, on a connection opened and committed here;
-    until #439 6b gives it that form, through the committing one."""
+    deadline taken, or None where there was nothing to claim: through `_claim_amendment_on`, on a
+    connection opened and committed here."""
     from leaguebot.results.services import result_submission_service as service
 
-    on_a_connection = getattr(service, "_claim_amendment_on", None)
-    if on_a_connection is None:
-        return await service._claim_amendment(db_path, round_id)
     async with get_connection(db_path) as db:
-        claimed = await on_a_connection(db, round_id)
+        claimed = await service._claim_amendment_on(db, round_id)
         await db.commit()
     return claimed
 

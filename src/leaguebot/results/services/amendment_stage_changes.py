@@ -26,7 +26,7 @@ retried ("Retry like any job"). While a stage's job is in hand, stopped included
 neither lapses nor can be cancelled, restart recovery leaves it alone, and a Retry approves it
 even past its half-hour. Once a league admin discards it, the next sweep undoes an amendment past
 its half-hour ("Leave it while stuck"). One change at a time already stops two stages running
-together, so the stage claim of the old code (`_claim_amendment`) is not used on this path.
+together, so no stage claim is taken on this path.
 
 **A stage's Approve waits for the stage to be shown**: it is refused while the amendment's lane
 holds a staging or a confirmation in hand (`staging_in_hand`, C56a), whichever stage it is.

@@ -56,20 +56,14 @@ def _function(relative: str, name: str) -> ast.AST:
 
 def _revert() -> ast.AST:
     """The revert's body: its form taking a connection, which the lapse and cancel run in their
-    save since #439 6b, where the module has it; else the committing form it replaces."""
-    try:
-        return _function(MODULE, "revert_abandoned_amendment_on")
-    except AssertionError:
-        return _function(MODULE, "revert_abandoned_amendment")
+    save."""
+    return _function(MODULE, "revert_abandoned_amendment_on")
 
 
 def _stage_one() -> ast.AST:
     """Stage one's body: its form taking a connection, which `results.amend.stage_one` runs in its
-    save since #439 6b, where the module has it; else the committing form it replaces."""
-    try:
-        return _function(MODULE, "amend_round_results_on")
-    except AssertionError:
-        return _function(MODULE, "amend_round_results")
+    save."""
+    return _function(MODULE, "amend_round_results_on")
 
 
 def _code(node: ast.AST) -> str:
