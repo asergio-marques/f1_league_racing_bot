@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -62,9 +62,19 @@ from leaguebot.core.services import track_service
 from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.log_lines import name_of_member
+from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.signup.models.signup_module import WizardState
-from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER, KIND as CLOSING
+from leaguebot.signup.services.closing_steps import (
+    ARM_DELETION,
+    CLOSE_SIGNUP,
+    END,
+    EXPIRED,
+    EXPIRED_NOTICE,
+    INACTIVITY_TIMER,
+    KIND as CLOSING,
+    SIGNUP_NOTICE,
+    closing_steps,
+)
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
@@ -78,13 +88,14 @@ if TYPE_CHECKING:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 START = "signup.start"
+#: The kind of the typed answer a signup's driver gives, which an expiry waits behind (Q22).
+ANSWER = "signup.answer"
 DELETE_OLD_CHANNEL = "delete_old_channel"
 CREATE_CHANNEL = "create_channel"
 START_JOB = "start"
 ARM_INACTIVITY = "arm_inactivity"
 POST_WELCOME = "post_welcome"
-#: The kind of the change that ends a driver's signup, and its one job.
-END = "signup.end"
+#: The job that ends a driver's signup (the kind, `END`, is in `closing_steps`).
 END_JOB = "end"
 #: Why a signup ends: the driver pressed Cancel Signup.
 WITHDRAWN = "withdrawn"
@@ -100,7 +111,7 @@ INACTIVITY = timedelta(hours=24)
 CATEGORY_LIMIT = 50
 
 __all__ = [
-    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_OLD_CHANNEL", "END", "END_JOB", "INACTIVITY",
+    "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_OLD_CHANNEL", "END", "END_JOB", "EXPIRED", "INACTIVITY",
     "POST_WELCOME", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN", "WITHDRAWN_NOTICE",
     "end_change", "start_change",
 ]
@@ -402,22 +413,60 @@ def end_change(
     drivers: Callable[[], "DriverService"],
     cancel_timers: Callable[[str], None],
     wizard: Callable[[], WizardService],
+    now: Callable[[], datetime],
+    arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
     """The `signup.end` change type, for the builder to register.
 
-    The payload is ``user_id`` (the driver's account, as text) and ``reason``, here ``"withdrawn"``.
-    The check refuses the driver's press where the signup has already ended (the transition to Not
-    Signed Up is not one the state machine allows from where they stand), telling them so and
-    changing nothing. Its one job `end` is a save: the driver is moved to Not Signed Up and the
-    wizard ended in the same save, the correction timeout and the timers taken away and the
-    "Withdrawn" line written; it asks back `signup.closing` for the driver's channel, which holds
-    the notice, the lock and the deletion's arming on the channel's own lane. *cancel_timers* takes
-    away a driver's timers and *wizard* is the service whose correction timeout is forgotten.
+    The payload is ``user_id`` (the driver's account, as text) and ``reason``: `WITHDRAWN` (the
+    driver pressed Cancel Signup), or `EXPIRED` (their 24 hours ran out, asked by the timer or at
+    a restart, with the signup channel's id as ``channel_id``). Its job `end` is a save: the driver
+    is moved to Not Signed Up and the wizard ended in the same save, the correction timeout and the
+    timers taken away and the line written ("Withdrawn", or the lapse).
+
+    A withdrawal is refused by the check where the signup has already ended (the transition to Not
+    Signed Up is not one the state machine allows from where they stand), telling the driver so and
+    changing nothing; it asks back `signup.closing` for the driver's channel, which holds the
+    notice, the lock and the deletion's arming on the channel's own lane. An expiry is the league's
+    whole (a timer is a command's, decision 31): the change carries those three jobs itself, after
+    `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
+    mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
+    on the driver's lane (the time typed counts, Q22). *cancel_timers* takes away a driver's
+    timers, *wizard* is the service whose correction timeout is forgotten, and *now* and
+    *arm_once* are the queue's clock and the scheduler service's one-off timer, for the deletion.
     """
+    #: The states from which a wizard still collecting answers can expire.
+    expirable = (DriverState.PENDING_SIGNUP_COMPLETION, DriverState.PENDING_DRIVER_CORRECTION)
+
+    async def answered_in_time(ctx: CheckContext, record: Any) -> bool:
+        """Whether an answer typed within the 24 hours waits on the driver's lane. An answer
+        carrying no time (a button pressed) was pressed on a question still standing."""
+        deadline = datetime.fromisoformat(record.last_activity_at)
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        deadline += INACTIVITY
+        for waiting in await unfinished(ctx.db_path, [ANSWER]):
+            if record.signup_channel_id is None or (
+                int(waiting.get("channel_id", 0)) != int(record.signup_channel_id)
+            ):
+                continue
+            typed = waiting.get("typed_at")
+            if typed is None or datetime.fromisoformat(typed) <= deadline:
+                return True
+        return False
 
     async def check(ctx: CheckContext) -> Verdict:
         user_id = str(ctx.payload["user_id"])
         profile = await drivers().get_profile(user_id)
+        if ctx.payload.get("reason") == EXPIRED:
+            record = await signup().get_wizard(user_id)
+            if record is None or record.wizard_state == WizardState.UNENGAGED:
+                return Verdict.not_due("the signup is no longer collecting answers")
+            if profile is None or profile.current_state not in expirable:
+                return Verdict.not_due("the driver is no longer part-way through signing up")
+            if await answered_in_time(ctx, record):
+                return Verdict.not_due("an answer typed in time waits its turn")
+            return Verdict.go()
         if profile is None or DriverState.NOT_SIGNED_UP not in ALLOWED_TRANSITIONS.get(
             profile.current_state, set()
         ):
@@ -427,7 +476,17 @@ def end_change(
         return Verdict.go()
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
-        return (PlannedStep(END_JOB, {"user_id": str(payload["user_id"]), "reason": payload["reason"]}),)
+        user_id = str(payload["user_id"])
+        planned = [PlannedStep(END_JOB, {"user_id": user_id, "reason": payload["reason"]})]
+        channel_id = payload.get("channel_id")
+        if payload["reason"] == EXPIRED and channel_id is not None:
+            shared = {"user_id": user_id, "channel_id": int(channel_id)}
+            planned += [
+                PlannedStep(SIGNUP_NOTICE, {**shared, "notice": EXPIRED_NOTICE}),
+                PlannedStep(CLOSE_SIGNUP, shared),
+                PlannedStep(ARM_DELETION, shared),
+            ]
+        return tuple(planned)
 
     async def end(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
@@ -441,6 +500,16 @@ def end_change(
         cancel_timers(user_id)
         wizard()._forget_correction(user_id)
         named = await name_of_member(ctx.bot, int(user_id))
+        if ctx.step_payload["reason"] == EXPIRED:
+            # The lapse is the whole of the expiry's line: its notice, lock and deletion are the
+            # change's own jobs after this one.
+            return StepResult(result={}, lines=(abandoned_line(
+                named, "the signup wizard", lapsed=True,
+                detail=(
+                    "The signup was cancelled after 24 hours without an answer. "
+                    "They may press Sign Up again while signups are open."
+                ),
+            ),))
         follow_ons: tuple[FollowOn, ...] = ()
         if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
             follow_ons = (FollowOn(
@@ -459,17 +528,32 @@ def end_change(
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
         ended = views.get(END_JOB)
+        expired = ctx.payload.get("reason") == EXPIRED
         if ended is not None and "discarded" in (ended.result or {}):
-            return "⚠️ Your signup was not withdrawn: the job was discarded."
+            return (
+                "⚠️ The signup was not ended: the job was discarded." if expired
+                else "⚠️ Your signup was not withdrawn: the job was discarded."
+            )
+        if expired:
+            left = [name for name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION)
+                    if name in views and "discarded" in (views[name].result or {})]
+            return "✅ The signup has expired." + (
+                f"\nDiscarded, and not done: {', '.join(left)}." if left else ""
+            )
         return "✅ Your signup has been withdrawn."
 
     return ChangeType(
         kind=END,
         opening=(),
         plan=plan,
-        steps={END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end)},
+        steps={
+            END_JOB: Step(END_JOB, StepKind.SAVE, end, describe=describe_end),
+            **closing_steps(now=now, arm_once=arm_once),
+        },
         check=check,
         key=lambda payload: f"{END}:{payload['user_id']}",
-        doing=lambda payload: "Withdrawing a signup",
+        doing=lambda payload: (
+            "Ending a signup" if payload.get("reason") == EXPIRED else "Withdrawing a signup"
+        ),
         outcome=outcome,
     )

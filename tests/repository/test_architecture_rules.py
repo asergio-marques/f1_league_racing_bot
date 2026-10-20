@@ -427,7 +427,6 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
 
 KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
-    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, BACKGROUND_FAILURES),
 }
 
 
@@ -460,6 +459,7 @@ KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._cancel_inactivity_job"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (2, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
 
 

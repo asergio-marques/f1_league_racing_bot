@@ -421,7 +421,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.signup.services.signup_off_change import signup_off_change
     from leaguebot.signup.services.window_changes import window_close_change, window_open_change
     from leaguebot.signup.services.wizard_changes import end_change, start_change
-    from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
+    from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER, ask_expiry
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
     from leaguebot.results.services.standings_sync_change import standings_sync_change
@@ -558,12 +558,13 @@ def register_change_types(bot: LeagueBot) -> None:
         end_change(
             signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
             cancel_timers=_cancel_wizard_timers(bot), wizard=lambda: bot.wizard_service,
+            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
-    # A signup left unanswered for a day is ended by the wizard's own expiry until the expiry is
-    # asked of the queue.
+    # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
+    # the bot.
     bot.scheduler_service.register_timer(
-        INACTIVITY_TIMER, lambda key: bot.wizard_service.handle_inactivity_timeout(str(key))
+        INACTIVITY_TIMER, lambda key: ask_expiry(bot.change_queue, bot.db_path, str(key))
     )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())

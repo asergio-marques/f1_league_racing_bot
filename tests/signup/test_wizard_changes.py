@@ -713,7 +713,6 @@ def _wizards(league: SeasonLeague) -> Any:
     return wizards
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_an_expiry_asked_by_its_timer_ends_the_signup(tmp_path):
     """Kimi is part-way through signing up, last active 24 hours and a minute ago. His 24-hour
     timer fires: it asks the queue for `signup.end` as the bot, on the league lane, and nothing
@@ -769,7 +768,6 @@ async def test_an_answer_typed_before_the_24_hours_counts_though_it_runs_after(t
     assert _armed(league, DELETE_TIMER) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_a_restart_asks_the_expiry_of_each_lapsed_signup(tmp_path):
     """The bot starts again. Kimi was last active 25 hours ago, a second driver (115) an hour
     ago, both part-way through signing up. Recovering the wizards (the wizard service built with
@@ -1173,7 +1171,6 @@ async def test_a_withdrawal_disarms_the_signup_s_24_hours_and_writes_one_withdra
     assert f"<@{SIGNING_UP}>" in withdrawn[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tmp_path):
     """Kimi was last active 25 hours ago, but has since given his last answer: his signup awaits
     a manager's approval and his wizard is parked. His 24-hour timer fires and the queue runs.
@@ -1201,7 +1198,6 @@ async def test_an_expiry_for_a_driver_who_has_since_submitted_changes_nothing(tm
 
 
 @pytest.mark.parametrize("naive", [False, True], ids=["with a zone", "without a zone"])
-@pytest.mark.xfail(strict=True, reason=NO_EXPIRY_CHANGE)
 async def test_a_restart_re_arms_each_open_signup_from_its_own_last_activity(tmp_path, naive):
     """The bot starts again. A driver (115) part-way through signing up was last active an hour
     ago, the time stored with its zone or, as in older rows, without one (read as UTC).

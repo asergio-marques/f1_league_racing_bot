@@ -25,7 +25,15 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, StepResult, Verdict
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import (
+    ChangeOrigin,
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.audit_service import record_system_change_on
 from leaguebot.core.services.season_lifecycle_service import advance_on_window_close_on
@@ -40,6 +48,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 SIGNUP_NOTICE = "signup_notice"
@@ -64,12 +73,42 @@ DELETE_TIMER = "signup_channel_delete"
 INACTIVITY_TIMER = "signup_inactivity"
 #: How long a closed signup channel is kept before it is deleted.
 HOLD = timedelta(hours=24)
+#: The kind of the change that ends a driver's signup, and the reason a day without an answer gives.
+END = "signup.end"
+EXPIRED = "expired"
+#: What a signup channel is told when its driver's 24 hours run out.
+EXPIRED_NOTICE = (
+    "⏰ Your signup session has expired due to inactivity. "
+    "This channel will be automatically deleted in 24 hours."
+)
 
 __all__ = [
     "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_TIMER",
-    "HOLD", "INACTIVITY_TIMER", "KIND", "POST_CLOSED", "SIGNUP_NOTICE", "closing_change", "closing_steps",
-    "window_close_jobs", "window_close_steps",
+    "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND", "POST_CLOSED",
+    "SIGNUP_NOTICE", "ask_expiry", "closing_change", "closing_steps", "window_close_jobs",
+    "window_close_steps",
 ]
+
+
+async def ask_expiry(queue: "ChangeQueue", db_path: str, user_id: str) -> int | None:
+    """Ask the queue, as the bot, for the expiry of *user_id*'s signup (`signup.end` for the
+    reason `EXPIRED`): the 24-hour timer's ask, and the restart's for a deadline that passed while
+    the bot was down. Gives the change's id, or None where the driver has no wizard or the
+    expiry is not due (the change's check judges that, and drops it)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return await queue.ask(
+        END,
+        {"user_id": user_id, "reason": EXPIRED, "channel_id": row["signup_channel_id"]},
+        what=f"ending the signup of <@{user_id}>, left unanswered for a day",
+        origin=ChangeOrigin.BOT,
+    )
 
 
 def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, datetime], None]) -> dict[str, Step]:

@@ -30,6 +30,7 @@ from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationalit
 from leaguebot.core.utils.log_lines import record_abandoned, record_refusal
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
+from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER, ask_expiry
 
 if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
@@ -78,7 +79,9 @@ async def _wizard_inactivity_job(discord_user_id: str) -> None:
             discord_user_id,
         )
         return
-    await _GLOBAL_WIZARD_SERVICE.handle_inactivity_timeout(discord_user_id)
+    await ask_expiry(
+        _GLOBAL_WIZARD_SERVICE._change_queue, _GLOBAL_WIZARD_SERVICE._db_path, discord_user_id
+    )
 
 
 async def _wizard_channel_delete_job(discord_user_id: str) -> None:
@@ -1001,68 +1004,6 @@ class WizardService:
                 f"the signup channel {channel.id} could not be locked"
             ) from exc
 
-    async def handle_inactivity_timeout(
-        self, discord_user_id: str
-    ) -> None:
-        """APScheduler callback: 24-h inactivity deadline reached (T043-T045).
-
-        Cancels pending tasks/jobs, transitions driver to NOT_SIGNED_UP, records the lapse
-        and holds the channel. The restart's sweep (`recover_wizards`) calls this for a
-        deadline that passed while the bot was down, so one record serves both.
-        FR-047, FR-048.
-
-        The lapse is recorded as "the signup wizard lapsed unconfirmed", naming the driver who
-        started it, with what became of it and what they may do next (owner, 2026-09-30). The
-        transition's `ValueError` is a driver who has already moved on: the signup did not
-        lapse, so no lapse is recorded, but the channel is still held, with the expiry notice
-        and its deletion 24 hours on (owner, 2026-10-01). Any other error is not caught (#457):
-        for the scheduled job APScheduler logs it with its traceback, and for the restart's
-        sweep, whose task is dropped, it may never be reported (#439, #453). Either way nothing
-        is recorded or posted.
-        """
-        # Cancel asyncio correction task if any
-        ckey = discord_user_id
-        if ckey in self._correction_tasks:
-            self._correction_tasks.pop(ckey).cancel()
-
-        guild = await self._get_guild()
-        if guild is None:
-            log.warning(
-                "handle_inactivity_timeout: the league's server was not found; skipping channel hold",
-            )
-
-        try:
-            await self._driver_service.transition(
-                discord_user_id,
-                DriverState.NOT_SIGNED_UP,
-                also_on=partial(self._signup_svc.end_wizard_on, discord_user_id=discord_user_id),
-            )
-        except ValueError:
-            log.info(
-                "handle_inactivity_timeout: %s has already moved on; no lapse recorded",
-                discord_user_id,
-            )
-        else:
-            await record_abandoned(
-                self._league_bot,
-                int(discord_user_id),
-                what="the signup wizard",
-                lapsed=True,
-                detail=(
-                    "The signup was cancelled after 24 hours without an answer. "
-                    "They may press Sign Up again while signups are open."
-                ),
-            )
-
-        if guild is not None:
-            held = await self.trigger_channel_hold(
-                discord_user_id, guild,
-                "⏰ Your signup session has expired due to inactivity. "
-                "This channel will be automatically deleted in 24 hours.",
-            )
-            if (kept := _channel_kept(held)) is not None:
-                await self._record_signup_line(discord_user_id, guild, f"Channel kept\n{kept}")
-
     async def handle_member_remove(
         self, discord_user_id: str, guild: discord.Guild
     ) -> None:
@@ -1150,9 +1091,10 @@ class WizardService:
         """Called in on_ready: re-arm inactivity jobs for non-UNENGAGED wizards.
 
         For each active wizard, if the inactivity deadline (last_activity_at
-        + 24 h) is still in the future, re-arm the APScheduler job with the
-        correct fire time.  If it has already passed, call
-        handle_inactivity_timeout() immediately in a background task.
+        + 24 h) is still in the future, re-arm the signup's timer with the
+        correct fire time.  If it has already passed, ask the queue, as the bot, for the signup's
+        expiry (`signup.end`), before the queue starts; the change's check drops it where the
+        driver has since moved on.
 
         SC-005.
         """
@@ -1174,11 +1116,9 @@ class WizardService:
 
             discord_user_id = wizard.discord_user_id
             if fire_at > now:
-                await self._arm_inactivity_job(discord_user_id, fire_at)
+                self._scheduler.arm_once(INACTIVITY_TIMER, discord_user_id, fire_at)
             else:
-                asyncio.create_task(
-                    self.handle_inactivity_timeout(discord_user_id)
-                )
+                await ask_expiry(self._change_queue, self._db_path, discord_user_id)
 
     async def recover_correction_timeouts(self) -> None:
         """Called from recover_wizards: release every driver awaiting a correction parameter.
