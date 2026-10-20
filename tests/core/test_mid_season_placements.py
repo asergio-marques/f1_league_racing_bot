@@ -978,7 +978,6 @@ async def test_a_stumbled_confirmation_still_clears_its_review(tmp_path, monkeyp
     assert await _prompt_rows(env) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monkeypatch):
     """The core specification's "Confirming placements", as for every review's button: a press
     refused at the press leaves the review and its button standing, to be pressed again within
@@ -1003,7 +1002,6 @@ async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monke
     assert await _prompt_rows(env) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeypatch):
     """Alex's mid-season review stands, posted a moment ago, the season unchanged since its
     report. Alex, who ran it, presses ✅ Confirm placements: the confirmation is worked once,

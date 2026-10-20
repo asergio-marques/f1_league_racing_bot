@@ -626,7 +626,6 @@ async def test_the_timer_firing_while_a_finished_press_clears_the_review_records
     assert _lines(env, "⌛ ") == [], _queue_lines(env)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_five_minutes_run_from_the_posting_of_the_question(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
@@ -646,7 +645,6 @@ async def test_the_five_minutes_run_from_the_posting_of_the_question(
     assert _lines(env, "⛔ ") == [], _queue_lines(env)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_second_press_while_one_is_being_worked_is_refused(
     tmp_path, monkeypatch, view_class, label, review, helper, verb

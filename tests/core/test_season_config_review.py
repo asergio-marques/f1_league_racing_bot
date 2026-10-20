@@ -415,7 +415,6 @@ async def _prompt_rows(env) -> int:
     return count
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_the_reviewer_may_confirm(tmp_path, monkeypatch):
     """Alex's configuration review stands in channel 700, posted a moment ago, the season as its
     report described it. Alex, who ran it, presses ✅ Confirm configuration: the confirmation is
@@ -447,7 +446,6 @@ async def test_another_league_manager_may_not_confirm(tmp_path):
     assert await _take_downs(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_PRESS_FROM_THE_ROW)
 async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every review's button alike: Alex presses ✅ Confirm configuration a moment after the
     question appears, the season unchanged, and the confirmation is refused at its own check (a
