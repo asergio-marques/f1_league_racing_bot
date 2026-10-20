@@ -21,6 +21,7 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.amend_views import AmendCancelView, log_amend_failed
 from leaguebot.results.services.points_config_service import (
     ConfigAlreadyExistsError,
     ConfigNotFoundError,
@@ -33,7 +34,6 @@ from leaguebot.results.services.season_points_service import (
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import (
-    is_league_manager,
     league_admin_only,
     league_manager_only,
     changes_nothing,
@@ -2397,7 +2397,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from leaguebot.results.models.points_config import SessionType
-        from leaguebot.core.db.database import get_connection
+        from leaguebot.core.db.database import get_connection, inserted_id
 
         # --- Resolve division and round ---
         # The live season, not the most recent one (issue #224). This read
@@ -2699,31 +2699,11 @@ class ResultsCog(commands.Cog):
             )
             return
 
+        amend_id = inserted_id(_ins)
         opened.round_id = rnd.id
         opened.channel = amend_channel
         opened.round_number = rnd.round_number
 
-        # Cancel button posted in the amend channel
-        cancelled_flag: list[bool] = [False]
-        # **What the collection loop races the paste against** (#345). It used to race
-        # `cancel_view.wait()`, and cancelled that task on every turn of the loop — which
-        # cancels the view's own future, and discord.py drops every press on a view whose
-        # future is done. The button was therefore dead from the moment the paste arrived,
-        # which is exactly when it becomes the only way to undo the amendment. An event of
-        # its own leaves the view listening for as long as its channel exists.
-        cancelled_event = asyncio.Event()
-        # Set once stage one has written. From then on the button no longer stops a paste being
-        # waited for — there is none — but undoes what stage one wrote (#345).
-        stage_one_done: list[bool] = [False]
-        # Set while stage one is writing. A cancel in that window can neither stop the write nor
-        # safely revert it half-done, so it is answered and refused rather than swallowed — which
-        # is what it was: the button replied "cancelled", stopped itself, and cancelled nothing.
-        stage_one_writing: list[bool] = [False]
-        # The round, for the view below: a check made out here does not reach inside it.
-        amended_round_id = rnd.id
-        # Who pressed Cancel, which may be a league manager other than the opener: the cancel
-        # line names whoever pressed it.
-        cancelled_by: list[discord.abc.User | None] = [None]
         from leaguebot.results.services.result_submission_service import (
             AMENDMENT_RE_RUN,
             AMENDMENT_RE_RUN_ONCE_PUT_BACK,
@@ -2739,28 +2719,17 @@ class ResultsCog(commands.Cog):
             member: discord.abc.User | None = None,
             not_put_back: str | None = None,
         ) -> None:
-            """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words.
-
-            It names *member*, whoever pressed what failed: a Cancel Amendment press may be a
-            league manager's other than the opener's. Left out, it is the member who ran the
-            command.
-
-            *not_put_back* is what the reply says became of a round that could not be put back
-            yet, given where that is so: the line ends on it, in plain text, so that whoever
-            reads the log rather than the reply also waits for the round to be put back before
-            running the command again, a re-run until then being refused.
-            """
-            who = member if member is not None else interaction.user
-            became = f"\n  {not_put_back.replace('`', '')}" if not_put_back else ""
-            try:
-                await self.bot.output_router.post_log(
-                    f"{who.display_name} (<@{who.id}>) | AMEND_FAILED | "
-                    f"round {rnd.round_number} session {sessions_text}\n"
-                    f"  {where}; fault: {type(error).__name__}. The details are in the host's log."
-                    + became
-                )
-            except Exception:  # noqa: BLE001 — the failure is still in the host's log
-                log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
+            """The one `AMEND_FAILED` line a failure makes: see `log_amend_failed`. It names
+            *member*; left out, the member who ran the command."""
+            await log_amend_failed(
+                self.bot,
+                member if member is not None else interaction.user,
+                round_number=rnd.round_number,
+                sessions_text=sessions_text,
+                error=error,
+                where=where,
+                not_put_back=not_put_back,
+            )
 
         async def _tell_of_failure(reply: str) -> None:
             """Tell the admin of a failure already logged, without raising.
@@ -2777,97 +2746,22 @@ class ResultsCog(commands.Cog):
                     exc_info=True,
                 )
 
-        #: The Cancel Amendment button as a refusal's line names it.
-        cancel_what = f"the \u201cCancel Amendment\u201d button of {what_amended}"
-
-        class _CancelView(LeagueView):
-            def __init__(self_v) -> None:
-                super().__init__(timeout=None)
-
-            @discord.ui.button(label="❌ Cancel Amendment", style=discord.ButtonStyle.danger)
-            async def cancel_btn(self_v, bi: discord.Interaction, btn: discord.ui.Button) -> None:
-                # The member who opened the amendment, or anyone holding the league manager
-                # tier. Reading `interaction_role` by hand tested that role alone, so a league
-                # admin without it was refused a button they are entitled to press.
-                if bi.user.id != interaction.user.id and not (
-                    server_cfg is not None
-                    and isinstance(bi.user, discord.Member)
-                    and is_league_manager(server_cfg, bi.user)
-                ):
-                    await refuse(
-                        bi, "⛔ Only league managers can cancel.", what=cancel_what
-                    )
-                    return
-                if stage_one_writing[0]:
-                    await refuse(
-                        bi,
-                        "⏳ The corrected results are being recorded — press **Cancel "
-                        "Amendment** again in a moment to undo them.",
-                        what=cancel_what,
-                    )
-                    return
-                if stage_one_done[0]:
-                    from leaguebot.results.services.result_submission_service import (
-                        stage_in_hand,
-                    )
-
-                    # **A stage's approval on the change queue holds the amendment** (#439):
-                    # queued, running or stopped on a failure, it cannot be cancelled, and the
-                    # presser is told so before anything is said of putting the round back.
-                    if await stage_in_hand(self.bot.db_path, amended_round_id):
-                        await refuse(
-                            bi,
-                            "⏳ A stage of this amendment is being approved, so it cannot be "
-                            "cancelled now. If its approval is stopped, press Retry or Discard "
-                            "on its notice in the log channel.",
-                            what=cancel_what,
-                        )
-                        return
-                    # **After stage one, cancelling is a revert** (#345). The corrected
-                    # classification is already written, so stopping here would leave the
-                    # round scored from it and posted from the old one until the sweep came.
-                    await bi.response.send_message(
-                        "Cancelling — putting the round back as it was.", ephemeral=True
-                    )
-                    from leaguebot.results.services.result_submission_service import cancel_amendment
-
-                    try:
-                        undone = await cancel_amendment(
-                            self.bot, amended_round_id, cancelled_by=bi.user.id
-                        )
-                    except Exception as exc:  # noqa: BLE001 — reported to the presser, and logged
-                        log.exception("amend: cancelling round %s failed", amended_round_id)
-                        await _log_amend_failed(
-                            exc,
-                            "cancelled, but the round could not be put back",
-                            member=bi.user,
-                            not_put_back=ROUND_NOT_PUT_BACK_YET,
-                        )
-                        await bi.followup.send(
-                            amendment_fault_reply(describe_fault(exc), ROUND_NOT_PUT_BACK_YET),
-                            ephemeral=True,
-                        )
-                        return
-                    if undone:
-                        self_v.stop()
-                        await record_abandoned(
-                            self.bot, bi.user, what=what_amended, lapsed=False,
-                            detail=ROUND_PUT_BACK,
-                        )
-                    else:
-                        await refuse(
-                            bi,
-                            "ℹ️ Too late to cancel — the amendment is already being "
-                            "committed, or is no longer open.",
-                            what=cancel_what,
-                        )
-                    return
-                cancelled_by[0] = bi.user
-                cancelled_flag[0] = True
-                cancelled_event.set()
-                await bi.response.send_message("Amendment cancelled.", ephemeral=True)
-
-        cancel_view = _CancelView()
+        # **What the collection loop races the paste against** (#345). It used to race
+        # `cancel_view.wait()`, and cancelled that task on every turn of the loop — which
+        # cancels the view's own future, and discord.py drops every press on a view whose
+        # future is done. The button was therefore dead from the moment the paste arrived,
+        # which is exactly when it becomes the only way to undo the amendment. An event of
+        # its own (`cancel_view.cancelled_event`) leaves the view listening for as long as its
+        # channel exists.
+        cancel_view = AmendCancelView(
+            amend_id=amend_id,
+            opener_id=interaction.user.id,
+            bot=self.bot,
+            server_cfg=server_cfg,
+            what=what_amended,
+            round_number=rnd.round_number,
+            sessions_text=sessions_text,
+        )
         opened.cancel_view = cancel_view
         await amend_channel.send(
             f"📋 **Amend Results — Round {round_number} ({division_name})**\n"
@@ -2926,7 +2820,7 @@ class ResultsCog(commands.Cog):
             """
             await record_abandoned(
                 self.bot,
-                interaction.user if lapsed else (cancelled_by[0] or interaction.user),
+                interaction.user if lapsed else (cancel_view.cancelled_by or interaction.user),
                 what=what_amended,
                 lapsed=lapsed,
                 detail=f"Nothing was written. {AMENDMENT_RE_RUN}",
@@ -2966,7 +2860,7 @@ class ResultsCog(commands.Cog):
                     ),
                 )
             )
-            cancel_task = self.bot.loop.create_task(cancelled_event.wait())
+            cancel_task = self.bot.loop.create_task(cancel_view.cancelled_event.wait())
             done, pending = await _asyncio.wait(
                 {done_task, cancel_task},
                 return_when=_asyncio.FIRST_COMPLETED,
@@ -2978,10 +2872,7 @@ class ResultsCog(commands.Cog):
             if not done:
                 await _abandoned(lapsed=True, reply=_expired("no results were pasted"))
                 return
-            if cancel_task in done:
-                # The button was pressed: it sets the flag before the event, so both hold.
-                cancelled_flag[0] = True
-            if cancelled_flag[0]:
+            if cancel_view.cancelled:
                 await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
                 return
 
@@ -3072,7 +2963,7 @@ class ResultsCog(commands.Cog):
                 # has no timeout — holding the channel and its row, and refusing every later
                 # amendment of the division until somebody chose a configuration anyway.
                 _cfg_task = self.bot.loop.create_task(cfg_view.wait())
-                _cancel_task = self.bot.loop.create_task(cancelled_event.wait())
+                _cancel_task = self.bot.loop.create_task(cancel_view.cancelled_event.wait())
                 _done, _pending = await _asyncio.wait(
                     {_cfg_task, _cancel_task},
                     return_when=_asyncio.FIRST_COMPLETED,
@@ -3085,7 +2976,7 @@ class ResultsCog(commands.Cog):
                         lapsed=True, reply=_expired("no points configuration was chosen")
                     )
                     return
-                if cancelled_flag[0]:
+                if cancel_view.cancelled:
                     await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
                     return
                 config_name = cfg_view.selected or config_names[0]
@@ -3107,11 +2998,11 @@ class ResultsCog(commands.Cog):
         )
         # **Cancelled at the last moment** (#345). Read again here, the last point at which
         # stopping costs nothing: from the next line the write is under way.
-        if cancelled_flag[0]:
+        if cancel_view.cancelled:
             await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
             return
 
-        stage_one_writing[0] = True
+        cancel_view.stage_one_writing = True
         opened.stage_one_started = True
         try:
             await amend_round_results(
@@ -3122,14 +3013,14 @@ class ResultsCog(commands.Cog):
                 interaction.user.id,
                 bot_of(interaction),
             )
-            # Set before the writing flag is lowered, so that no press falls between the two
-            # and finds neither the write in progress nor the amendment open (#345).
-            stage_one_done[0] = True
+            # The snapshot stage one took first is what says the amendment is open to be
+            # reverted, so that no press falls between the write ending and the flag lowered
+            # below and finds neither the write in progress nor the amendment open (#345).
         except AmendmentWouldOrphanVerdictError as exc:
             # A refusal, not a fault. The admin gets the reason where they are looking rather
             # than a traceback in a channel they may not have open, because this one is theirs
             # to act on: include the driver, or withdraw the verdict (#345).
-            stage_one_writing[0] = False
+            cancel_view.stage_one_writing = False
             await _refused(f"❌ {exc}", reason=str(exc))
             return
         except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
@@ -3154,19 +3045,19 @@ class ResultsCog(commands.Cog):
                 await _log_amend_failed(
                     exc, "the corrected results could not be recorded", not_put_back=unrestored
                 )
-                stage_one_writing[0] = False
+                cancel_view.stage_one_writing = False
                 await _tell_of_failure(amendment_fault_reply(describe_fault(exc), unrestored))
                 return
             # The writing flag stays raised until the line is written, so that a Cancel pressed
             # meanwhile is refused as "being recorded", and logged, rather than told the
             # amendment was cancelled with nothing to record it.
             await _log_amend_failed(exc, "the corrected results could not be recorded")
-            stage_one_writing[0] = False
+            cancel_view.stage_one_writing = False
             await _cleanup_channel()
             await _tell_of_failure(amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK))
             return
 
-        stage_one_writing[0] = False
+        cancel_view.stage_one_writing = False
 
         # **Stages two and three follow in this channel** (#345). The corrected classifications
         # are recorded, and nothing posted; what the round *decided* about those sessions is
