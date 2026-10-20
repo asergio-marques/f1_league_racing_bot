@@ -28,6 +28,9 @@ even past its half-hour. Once a league admin discards it, the next sweep undoes 
 its half-hour ("Leave it while stuck"). One change at a time already stops two stages running
 together, so the stage claim of the old code (`_claim_amendment`) is not used on this path.
 
+**A stage's Approve waits for the stage to be shown**: it is refused while the amendment's lane
+holds a staging or a confirmation in hand (`staging_in_hand`, C56a), whichever stage it is.
+
 **The release and everything the rebuild writes are saved together**, so a stop after the release
 leaves no standings or attendance owed. Once that save is made the amendment can no longer be
 abandoned.
@@ -109,6 +112,7 @@ from leaguebot.results.services.review_posting import (
     plan_division_posts,
     posting_steps,
 )
+from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.verdict_announcement_service import (
     _banners_heading_sanctions_on,
@@ -288,6 +292,8 @@ def amendment_stage_changes(
         refusal = await _open_refusal(ctx.db_path, round_id, now(), reports_stage=True)
         if refusal is None and await _in_hand(ctx, REPORTS_KIND, round_id):
             refusal = _AMENDMENT_NOT_OPEN
+        if refusal is None and await staging_in_hand(ctx.db_path, round_id, amendment=True):
+            refusal = STAGING_IN_HAND
         return Verdict.go() if refusal is None else Verdict.refuse(refusal)
 
     async def apply_reports(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -407,6 +413,8 @@ def amendment_stage_changes(
         refusal = await _open_refusal(ctx.db_path, round_id, now(), reports_stage=False)
         if refusal is None and await _in_hand(ctx, APPEALS_KIND, round_id):
             refusal = _AMENDMENT_NOT_OPEN
+        if refusal is None and await staging_in_hand(ctx.db_path, round_id, amendment=True):
+            refusal = STAGING_IN_HAND
         return Verdict.go() if refusal is None else Verdict.refuse(refusal)
 
     async def names_not_discarded(ctx: StepContext) -> bool:

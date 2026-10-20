@@ -36,7 +36,10 @@ saves and resumes:
 **The check** is the one every control of the review asks (`review_stage_refusal`: the round awaits
 its report verdicts, no resubmission is collecting, the prompt is the current one), that no
 amendment holds the division, and that no other approval of the round is in hand (`unfinished`,
-a stopped one included), which is refused with the wording the review's controls use.
+a stopped one included), which is refused with the wording the review's controls use. An Approve
+also waits for the review's lane: it is refused while a staging or a confirmation is still in
+hand on it, and where the approval message it was pressed on is no longer the one the submission
+row names (`approval_wait_refusal`, C56a).
 
 The payload is ``round_id``, ``division_id``, ``staged`` and ``pardons`` (each as plain data,
 `to_payload`), ``prompt_message_id`` and ``approval_message_id``. What is staged travels in it, so a
@@ -77,6 +80,7 @@ from leaguebot.results.services.penalty_wizard import (
     StagedPardon,
     review_stage_refusal,
 )
+from leaguebot.results.services.review_confirm_change import approval_wait_refusal
 from leaguebot.results.services.result_submission_service import (
     _recompute_session_points_on,
     _snapshot_staged_drivers_on,
@@ -143,6 +147,10 @@ def report_approval_change(
             refusal = await held_by_amendment(
                 ctx.db_path, round_id, int(payload["division_id"]),
                 then="Approve the reports again then.",
+            )
+        if refusal is None:
+            refusal = await approval_wait_refusal(
+                ctx.db_path, round_id, payload.get("approval_message_id")
             )
         if refusal is not None:
             return Verdict.refuse(refusal)

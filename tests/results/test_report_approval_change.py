@@ -1437,6 +1437,10 @@ async def test_the_approval_writes_penalty_review_approved_with_its_audit_body(t
 
 async def test_the_prompt_and_approval_message_are_taken_down_after_the_reposts(tmp_path):
     league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE round_submission_channels SET approval_message_id = ?",
+                         (APPROVAL,))
+        await db.commit()
     await _approve(league, approval=APPROVAL)
     await run_queue(league.bot)
 
@@ -1534,13 +1538,6 @@ async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
 # Approve waits for the staging (#439, slice 6b, C56a; decision 26)
 # ---------------------------------------------------------------------------
 
-NO_STAGING_WAIT = (
-    "#439: Approve does not wait for a staging still being shown, nor read the approval message "
-    "the submission row holds"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=NO_STAGING_WAIT)
 async def test_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
     """Round 3's lane is stopped, so the penalty for Lewis Alex has just added is still waiting
     to be shown on the prompt. Alex presses Approve on the review: it is refused at the press,
@@ -1555,15 +1552,14 @@ async def test_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
     interaction = await _approve(league)
     await run_queue(league.bot)
 
-    [approval] = await changes_of(league.db_path, KIND)
-    assert approval["state"] == "REFUSED"
+    # Refused at the press, so no change of the approval's is saved at all.
+    assert await changes_of(league.db_path, KIND) == []
     said = acknowledgement(interaction) + updated_reply(interaction)
     assert "still being shown" in said
     assert await penalty_records(league.db_path) == []
     assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_STAGING_WAIT)
 async def test_an_approval_whose_message_was_replaced_is_refused_as_it_runs(tmp_path):
     """Alex presses Approve on round 3's approval message 8901 while the league lane is stopped,
     so his approval waits. Before it runs, the review's approval message is replaced (the row now

@@ -36,6 +36,7 @@ from leaguebot.core.services.change_queue import (
     OutcomeContext,
     Step,
     StepContext,
+    unfinished,
 )
 from leaguebot.results.services import penalty_wizard
 from leaguebot.results.services.penalty_wizard import (
@@ -43,16 +44,65 @@ from leaguebot.results.services.penalty_wizard import (
     held_review,
 )
 from leaguebot.results.services.review_stage_change import (
+    KIND as STAGE_KIND,
     approval_on_the_row,
     conversation_open,
     lane_of,
 )
 
-__all__ = ["KIND", "review_confirm_change"]
+__all__ = [
+    "KIND",
+    "approval_wait_refusal",
+    "review_confirm_change",
+    "staging_in_hand",
+]
 
 KIND = "results.review.confirm"
 
 POST_APPROVAL = "post_approval"
+
+#: What an Approve answers while a change to the review is still to be shown (C56a).
+STAGING_IN_HAND = (
+    "\u23f3 A change to this review is still being shown. Press Approve once it appears."
+)
+
+#: What an Approve answers once the approval message it was pressed on has been replaced.
+APPROVAL_REPLACED = (
+    "\u274c This approval message has been replaced by a newer one in this channel. Use that one."
+)
+
+
+async def staging_in_hand(db_path: str, round_id: int, *, amendment: bool = False) -> bool:
+    """Whether the review's lane holds a staging or a confirmation in hand, a stopped one included.
+
+    Both are asked with the press that made them and shown on the lane in their turn; an Approve
+    pressed before they are shown would approve a review the manager has not yet seen as it stands
+    (C56a). The review is the round's own, or the amendment's where *amendment* is set: the two
+    keep their lanes apart, as their channels are.
+    """
+    held = await unfinished(db_path, [STAGE_KIND, KIND])
+    return any(
+        int(p["round_id"]) == round_id and bool(p.get("amendment")) == amendment for p in held
+    )
+
+
+async def approval_wait_refusal(
+    db_path: str,
+    round_id: int,
+    approval_message_id: int | None,
+    *,
+    amendment: bool = False,
+) -> str | None:
+    """Why an Approve must wait, or None: a staging or confirmation is in hand on the review's
+    lane, or, for a round's own review, the approval message it was pressed on is no longer the one
+    the submission row names. Read from the database alone, so the press and the change as it runs
+    read one rule. An amendment keeps its approval message in memory alone, so only the first
+    reason applies to it."""
+    if await staging_in_hand(db_path, round_id, amendment=amendment):
+        return STAGING_IN_HAND
+    if not amendment and await approval_on_the_row(db_path, round_id) != approval_message_id:
+        return APPROVAL_REPLACED
+    return None
 
 
 async def _post_approval(ctx: StepContext) -> StepResult:

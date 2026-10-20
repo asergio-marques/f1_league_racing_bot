@@ -34,7 +34,8 @@ of jobs the queue saves and resumes:
 one included), refused with the wording the review's controls use, that the round still awaits its
 appeal verdicts and the prompt is the current one (`appeals_stage_refusal`), and that no amendment
 holds the division. Once the first approval is done the round's status refuses any later one, so
-the corrections are applied once.
+the corrections are applied once. It also refuses while a staging or a confirmation is still in
+hand on the round's lane (`staging_in_hand`, C56a): press Approve once the change appears.
 
 The payload is ``round_id``, ``division_id``, ``staged`` (the corrections, each as plain data,
 `to_payload`) and ``appeals_prompt_message_id``, with ``round_number`` and ``division_name`` where
@@ -70,6 +71,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.driver_service import current_account_map_for_division
 from leaguebot.core.services import season_lifecycle_service, season_service
 from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.penalty_service import StagedPenalty
@@ -133,6 +135,8 @@ def appeals_approval_change(
                 ctx.db_path, round_id, int(payload["division_id"]),
                 then="Approve the appeals again then.",
             )
+        if refusal is None and await staging_in_hand(ctx.db_path, round_id):
+            refusal = STAGING_IN_HAND
         if refusal is not None:
             return Verdict.refuse(refusal)
         return Verdict.go()

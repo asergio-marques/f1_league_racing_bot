@@ -351,6 +351,9 @@ async def test_approving_the_reports_takes_the_prompt_and_the_approval_down(tmp_
     """**They stayed up through the appeals stage**, where every button on them still worked. They
     refuse now whether or not they come down; down, they are not there to be pressed."""
     league = await review_league(tmp_path)
+    await _set(
+        league.db_path, "UPDATE round_submission_channels SET approval_message_id = ?", APPROVAL
+    )
 
     await _approve_reports(league, approval=APPROVAL)
 
