@@ -89,9 +89,11 @@ async def _in_review(db: aiosqlite.Connection, channel_id: int) -> bool:
 
 
 async def _conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
+    """Whether the channel's submission is still open: a final approval closes it and keeps its
+    row, so a lock stopped across that finds itself no longer due, as the review's own does."""
     row = await (
         await db.execute(
-            "SELECT 1 FROM round_submission_channels WHERE channel_id = ?",
+            "SELECT 1 FROM round_submission_channels WHERE channel_id = ? AND closed = 0",
             (int(payload["channel_id"]),),
         )
     ).fetchone()

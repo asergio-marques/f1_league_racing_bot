@@ -265,3 +265,31 @@ async def test_messages_typed_while_the_queue_is_stopped_stand_until_it_clears(t
     assert await stopped_job(league.db_path) is None
     assert TYPED not in league.channel(SUBMISSION_CHANNEL).messages
     assert len(_warnings(league)) == 1
+
+
+async def test_a_warning_stopped_in_a_channel_the_appeals_closed_is_found_not_due_on_retry(tmp_path):
+    """Discord refuses the warning, and round 3's lane stops there. Meanwhile the appeals are
+    approved on the league lane, which closes the submission (its row stays, closed). Retry finds
+    the lock no longer due and clears the stop, posting nothing in the closed channel."""
+    league = await review_league(tmp_path)
+    channel = league.channel(SUBMISSION_CHANNEL)
+    channel.send_fails = http_error(status=403, text="Missing Access")
+
+    await _listen(league, _typed(league))
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, LANE)
+    assert stopped is not None and stopped["name"] == "post_warning"
+
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1 WHERE channel_id = ?",
+            (SUBMISSION_CHANNEL,),
+        )
+        await db.commit()
+    channel.send_fails = None
+    await retry_job(league.bot, lane=LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert _warnings(league) == []
+    assert await _warning_rows(league.db_path) == []
