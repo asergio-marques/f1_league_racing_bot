@@ -77,6 +77,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import (
+    Ahead,
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -145,18 +146,27 @@ FORGET = "forget"
 #: its press refused upon a changed state.
 CONFIRMED, EXPIRED, RESTART, REFUSED = "confirmed", "expired", "restart", "refused"
 
-#: What became of a review's button, as its row records it (`season_review_prompts.press`): a
-#: press is being worked, the five minutes ran out meanwhile, a press hit a fault and the review
-#: stands, or a take-down is asked and the button is spent.
+#: What became of a review's button (`_PRESSES`): a press is being worked, the five minutes ran out
+#: meanwhile, a press hit a fault and the review stands, or a take-down is asked and the button is
+#: spent.
 UNDER_WAY, TIMER_FIRED, FAILED, TAKING_DOWN = "UNDER_WAY", "TIMER_FIRED", "FAILED", "TAKING_DOWN"
 #: What a review says it has not done when it lapses, by the family of its button.
 VERBS = {"approve": "approved"}
+
+#: What became of each standing review's button, by the id of its question. It is held in memory
+#: and not on the row: only the button and the timer of the running bot read it, no change type
+#: does, and a restart takes every standing review down (`RESTART`), whose lapse reads no mark, so
+#: nothing is lost by it. Written outside any queued change, as a row's column would have been,
+#: which would have been a save the architecture's rule forbids. Cleared with the league's other
+#: in-memory state (`forget_presses`), and by the take-down's `forget` job with the row.
+_PRESSES: dict[int, str] = {}
 
 __all__ = [
     "ARM_EXPIRY", "ApproveViewFactory", "CONFIRMED", "DELETE_DRAWING_NOTICE", "DELETE_MESSAGE",
     "DRAW_AND_POST", "DRAWING_NOTICE", "EXPIRED", "FORGET", "POST", "POST_DRAWING_NOTICE",
     "POST_EXPIRY", "POST_QUESTION", "POST_REPORT", "REFUSED", "RESTART", "REVIEW_WINDOW",
-    "FAILED", "ReviewDrawing", "StandingReview", "TAKE_DOWN", "TAKING_DOWN", "TIMER_FIRED", "TIMER", "UNDER_WAY", "VERBS", "await_from_worker", "season_review_post_change",
+    "FAILED", "ReviewDrawing", "claim_take_down", "forget_presses", "mark_press",
+    "release_take_down", "take_review_down_before", "StandingReview", "TAKE_DOWN", "TAKING_DOWN", "TIMER_FIRED", "TIMER", "UNDER_WAY", "VERBS", "await_from_worker", "season_review_post_change",
     "season_review_take_down_change",
 ]
 
@@ -226,6 +236,9 @@ def season_review_take_down_change() -> ChangeType:
         await db.execute(
             "DELETE FROM season_review_prompts WHERE message_id = ?", (int(payload["question_id"]),)
         )
+        # Its button is spent with the row. A save that then failed to commit would leave the row
+        # with no mark, but the queue stops there and a Retry carries the job on.
+        mark_press(int(payload["question_id"]), None)
         lines: list[str] = []
         review = payload["review"]
         if payload["ending"] in (EXPIRED, RESTART):
@@ -564,8 +577,9 @@ def season_review_post_change(
 
 @dataclasses.dataclass(frozen=True)
 class StandingReview:
-    """A review's question as its row records it: what a press reads, in place of anything the
-    button holds in memory, so that a restart or a stopped queue changes nothing it knows."""
+    """A review's question as its row records it, and what became of its button (`_PRESSES`): what
+    a press reads, in place of anything the button holds, so that a restart or a stopped queue
+    changes nothing the review itself knows."""
 
     question_id: int
     season_id: int
@@ -605,50 +619,48 @@ async def standing_review(db_path: str, question_id: int) -> StandingReview | No
         question_id=int(row["message_id"]), season_id=int(row["season_id"]),
         channel_id=int(row["channel_id"]), reviewer_id=int(row["reviewer_id"]),
         review=str(row["review"]), report_ids=report, posted_at=posted,
-        evidence=evidence, verb=str(row["verb"]), press=row["press"],
+        evidence=evidence, verb=str(row["verb"]), press=_PRESSES.get(int(row["message_id"])),
     )
 
 
-async def mark_press(
-    db_path: str, question_id: int, to: str | None, *, only_from: tuple[str | None, ...] | None = None
+def mark_press(
+    question_id: int, to: str | None, *, only_from: tuple[str | None, ...] | None = None
 ) -> bool:
-    """Record what became of the button's press on *question_id*'s row, and say whether it did.
+    """Record what became of the button's press on *question_id*, and say whether it did.
 
-    Where *only_from* is given the row changes only from one of those states (None among them for
+    Where *only_from* is given the mark changes only from one of those states (None among them for
     a review untouched), which is how a press claims the button: a second press, finding it
-    claimed, is refused. A row gone is not marked.
+    claimed, is refused. It awaits nothing, so a claim cannot be raced.
     """
-    where = "message_id = ?"
-    args: list[Any] = [int(question_id)]
-    if only_from is not None:
-        marks = ", ".join("?" for state in only_from if state is not None)
-        clauses = [f"press IN ({marks})"] if marks else []
-        if None in only_from:
-            clauses.append("press IS NULL")
-        where += " AND (" + " OR ".join(clauses) + ")"
-        args += [state for state in only_from if state is not None]
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(f"UPDATE season_review_prompts SET press = ? WHERE {where}",
-                                  (to, *args))
-        await db.commit()
-        return cursor.rowcount > 0
+    if only_from is not None and _PRESSES.get(int(question_id)) not in only_from:
+        return False
+    if to is None:
+        _PRESSES.pop(int(question_id), None)
+    else:
+        _PRESSES[int(question_id)] = to
+    return True
 
 
-async def take_review_down(
-    queue: Any, db_path: str, question_id: int, ending: str
-) -> int | None:
-    """Ask the queue to take the review whose question is *question_id* down, ending *ending*, as
-    the bot; return the change's id, or None where nothing was asked.
+def forget_presses() -> None:
+    """Drop every review's mark, with the rest of the league's state held in memory."""
+    _PRESSES.clear()
 
-    Nothing is asked where the review stands no longer, or where a take-down of it is in hand: the
-    row says so (`TAKING_DOWN`), set before the ask so that two askers at once, a press and the
-    timer, ask once. A fault in the ask puts the row back as it was. An earlier press that failed
-    (`FAILED`) is carried to the lapse, which says so.
+
+async def claim_take_down(
+    db_path: str, question_id: int, ending: str
+) -> tuple[dict[str, Any], str | None] | None:
+    """Claim the take-down of the review whose question is *question_id*, ending *ending*: its
+    payload, and the mark the review had, for `release_take_down` to put back; None where the
+    review stands no longer or a take-down of it is in hand.
+
+    The review is marked `TAKING_DOWN` before anything is asked, so that two askers at once, a
+    press and the timer, ask once. An earlier press that failed (`FAILED`) is carried to the lapse,
+    which says so.
     """
     review = await standing_review(db_path, question_id)
     if review is None or review.press == TAKING_DOWN:
         return None
-    if not await mark_press(db_path, question_id, TAKING_DOWN, only_from=(review.press,)):
+    if not mark_press(question_id, TAKING_DOWN, only_from=(review.press,)):
         return None
     payload: dict[str, Any] = {
         "channel_id": review.channel_id, "question_id": review.question_id,
@@ -657,25 +669,63 @@ async def take_review_down(
     }
     if review.press == FAILED:
         payload["press_failed"] = True
+    return payload, review.press
+
+
+def release_take_down(question_id: int, back_to: str | None) -> None:
+    """Put a claimed take-down's mark back to *back_to*, the take-down not having been asked."""
+    mark_press(question_id, back_to)
+
+
+async def take_review_down(
+    queue: Any, db_path: str, question_id: int, ending: str
+) -> int | None:
+    """Ask the queue to take the review whose question is *question_id* down, ending *ending*, as
+    the bot; return the change's id, or None where nothing was asked.
+
+    Nothing is asked where the review stands no longer, or where a take-down of it is in hand
+    (`claim_take_down`). A fault in the ask puts the mark back as it was.
+    """
+    claimed = await claim_take_down(db_path, question_id, ending)
+    if claimed is None:
+        return None
+    payload, was = claimed
     try:
-        change_id = await queue.ask(
+        return await queue.ask(
             TAKE_DOWN, payload, what="taking a season review down", origin=ChangeOrigin.BOT
         )
     except BaseException:
-        await mark_press(db_path, question_id, review.press)
+        release_take_down(question_id, was)
         raise
+
+
+async def take_review_down_before(
+    queue: Any, db_path: str, question_id: int, kind: str, payload: dict[str, Any], **ask: Any
+) -> int | None:
+    """Ask the queue for the change *kind* and, in the same save, the take-down of the review
+    whose question is *question_id*, ending `CONFIRMED`, ahead of it; return *kind*'s change id, or
+    None where the queue refused it.
+
+    The review comes down ahead of the change's jobs, but only for a change the queue accepts: one
+    it refuses at once leaves the review standing, with its mark as it was, and no take-down is
+    left on the queue (the core specification's "Confirming placements"). Where the review stands
+    no longer, or a take-down of it is in hand, *kind* is asked alone. *ask* is what `ChangeQueue.ask`
+    takes besides the kind and payload.
+    """
+    claimed = await claim_take_down(db_path, question_id, CONFIRMED)
+    if claimed is None:
+        return await queue.ask(kind, payload, **ask)
+    take_down, was = claimed
+    try:
+        change_id = await queue.ask_after(
+            Ahead(TAKE_DOWN, take_down, "taking a season review down"), kind, payload, **ask
+        )
+    except BaseException:
+        release_take_down(question_id, was)
+        raise
+    if change_id is None:
+        release_take_down(question_id, was)
     return change_id
-
-
-async def withdraw_take_down(
-    queue: Any, db_path: str, question_id: int, change_id: int, *, back_to: str | None
-) -> None:
-    """Take back the take-down *change_id*, asked ahead of an approval the queue then refused at
-    once: a request the queue refuses at once leaves the review standing (the core
-    specification's "Confirming placements"). The row goes back to *back_to*, the state the press
-    had put it in."""
-    if await queue.withdraw(change_id):
-        await mark_press(db_path, question_id, back_to)
 
 
 def review_expiry_timer(
@@ -695,7 +745,7 @@ def review_expiry_timer(
         if review is None or review.press == TAKING_DOWN:
             return
         if review.press == UNDER_WAY:
-            if await mark_press(db_path, review.question_id, TIMER_FIRED, only_from=(UNDER_WAY,)):
+            if mark_press(review.question_id, TIMER_FIRED, only_from=(UNDER_WAY,)):
                 return
         elif review.press == TIMER_FIRED:
             return

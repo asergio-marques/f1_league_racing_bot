@@ -160,12 +160,11 @@ records the outcome: every change type writes its outcome line as a step.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import os
 import sqlite3
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -173,7 +172,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import aiosqlite
 import discord
 
-from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.change import (
     AuditRecord,
     ChangeOrigin,
@@ -499,6 +498,18 @@ def _refusal_text(verdict: Verdict) -> str:
 
 
 @dataclass(frozen=True)
+class Ahead:
+    """A change to be saved with another and carried out before it (`ChangeQueue.ask_after`):
+    its kind, its payload, what it is called in the log and its origin (the bot's, as no member
+    asked for it)."""
+
+    kind: str
+    payload: dict[str, Any]
+    what: str
+    origin: ChangeOrigin = ChangeOrigin.BOT
+
+
+@dataclass(frozen=True)
 class _Recheck:
     """What is asked again in the save that runs a step's work or its record, with the write lock
     held: the step's `still_due`, and its change's `conversation_open` on the save's connection.
@@ -536,8 +547,6 @@ class ChangeQueue:
         # drains the lane.
         self._working: dict[str, asyncio.Lock] = {}
         self._asking = asyncio.Lock()
-        # The task that `holding` has the asking lock for, so that its own asks pass through.
-        self._holder: "asyncio.Task[Any] | None" = None
         # Taken around each save, so that two lanes never write at once; see the module.
         self._writing = asyncio.Lock()
         # The change each lane's worker is carrying out a unit of, by lane, which a Retry or a
@@ -654,121 +663,215 @@ class ChangeQueue:
 
         # The worker passes over this lock to choose its next change, so it cannot pick the
         # change up before its acknowledgement is recorded and the interaction is held.
-        async with contextlib.nullcontext() if self._holds() else self._asking:
-            key = change_type.key(payload)
+        async with self._asking:
             lane = change_type.lane(payload)
-            change_id: int | None = None
-            first_job: int | None = None
             async with self._writing, get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
-                cursor = await db.execute(
-                    "SELECT dedup_key, state FROM queued_changes WHERE lane = ? "
-                    "ORDER BY id DESC LIMIT 1",
-                    (lane,),
+                saved = await self._insert(
+                    db, change_type, payload, origin=origin, member=member, what=what
                 )
-                last = await cursor.fetchone()
-                repeat = (
-                    not change_type.repeatable
-                    and last is not None
-                    and last["dedup_key"] == key
-                    and last["state"] == ChangeState.QUEUED.value
-                )
-                if not repeat:
-                    cursor = await db.execute(
-                        "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, "
-                        "actor_name, actor_display, what, lane) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            kind,
-                            key,
-                            json.dumps(payload),
-                            origin.value,
-                            getattr(member, "id", None),
-                            None if member is None else str(member),
-                            getattr(member, "display_name", None),
-                            what,
-                            lane,
-                        ),
-                    )
-                    change_id = inserted_id(cursor)
-                    for position, planned in enumerate(change_type.opening_steps(payload)):
-                        cursor = await db.execute(
-                            "INSERT INTO queued_change_steps (change_id, position, name, payload) "
-                            "VALUES (?, ?, ?, ?)",
-                            (change_id, position, planned.name, json.dumps(planned.payload)),
-                        )
-                        if first_job is None:
-                            first_job = inserted_id(cursor)
+                if saved is not None:
                     await db.commit()
                 else:
                     await db.rollback()
 
-            if change_id is None:
-                reason = (
-                    f"{change_type.doing(payload)} has already been asked for and has not started "
-                    f"yet, so it was not asked for again."
+            if saved is None:
+                await self._refuse_repeat(
+                    change_type, payload, interaction=interaction, origin=origin,
+                    what=what, refusal_what=refusal_what,
                 )
-                if interaction is not None and origin is ChangeOrigin.MEMBER:
-                    await refuse(interaction, f"⚠️ {reason}", what=refusal_what or what)
-                else:
-                    log.info("%s was not asked for again: %s", what, reason)
                 return None
-
-            if interaction is None:
-                self._adopt_kept_reply(change_id, kind, change_type.key(payload))
-            else:
-                stopped = await self._stopped_jobs(lane=lane)
-                await self._acknowledge(
-                    change_id, change_type, payload, interaction,
-                    first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
-                    lane=lane,
-                )
+            change_id, first_job = saved
+            await self._acknowledge_saved(
+                change_id, change_type, payload, interaction=interaction, lane=lane,
+                first_job=first_job,
+            )
             self._signal.set()
             return change_id
 
-    def _holds(self) -> bool:
-        return self._holder is not None and self._holder is asyncio.current_task()
+    async def _insert(
+        self,
+        db: aiosqlite.Connection,
+        change_type: ChangeType,
+        payload: dict[str, Any],
+        *,
+        origin: ChangeOrigin,
+        member: Any,
+        what: str,
+        check_repeat: bool = True,
+    ) -> tuple[int, int | None] | None:
+        """Write *change_type*'s change and its opening steps on *db*, whose transaction is open:
+        its id and the id of its first job, or None where it repeats the last change asked on its
+        lane before that has started, which writes nothing. *check_repeat* is false where the
+        caller has made that check already, as `ask_after` does before it writes the first of two."""
+        if check_repeat and await self._repeats(db, change_type, payload):
+            return None
+        key = change_type.key(payload)
+        lane = change_type.lane(payload)
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, "
+            "actor_name, actor_display, what, lane) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                change_type.kind,
+                key,
+                json.dumps(payload),
+                origin.value,
+                getattr(member, "id", None),
+                None if member is None else str(member),
+                getattr(member, "display_name", None),
+                what,
+                lane,
+            ),
+        )
+        change_id = inserted_id(cursor)
+        first_job: int | None = None
+        for position, planned in enumerate(change_type.opening_steps(payload)):
+            cursor = await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, payload) "
+                "VALUES (?, ?, ?, ?)",
+                (change_id, position, planned.name, json.dumps(planned.payload)),
+            )
+            if first_job is None:
+                first_job = inserted_id(cursor)
+        return change_id, first_job
 
-    @contextlib.asynccontextmanager
-    async def holding(self) -> AsyncIterator[None]:
-        """Hold the worker back from choosing its next change while the caller asks for several
-        that belong together and may take one back (`withdraw`), as an approval's take-down of its
-        review is asked ahead of the approval, which the queue may then refuse at once: the take-down
-        must not have been carried out by then, for a request the queue refuses at once leaves the
-        review standing. The caller's own asks pass through; nobody else's changes are held beyond
-        the asks, which do not wait on Discord but for the acknowledgement of the last."""
+    @staticmethod
+    async def _repeats(
+        db: aiosqlite.Connection, change_type: ChangeType, payload: dict[str, Any]
+    ) -> bool:
+        """Whether *change_type*'s change repeats the last asked on its lane, not yet started."""
+        cursor = await db.execute(
+            "SELECT dedup_key, state FROM queued_changes WHERE lane = ? ORDER BY id DESC LIMIT 1",
+            (change_type.lane(payload),),
+        )
+        last = await cursor.fetchone()
+        return (
+            not change_type.repeatable
+            and last is not None
+            and last["dedup_key"] == change_type.key(payload)
+            and last["state"] == ChangeState.QUEUED.value
+        )
+
+    async def _refuse_repeat(
+        self,
+        change_type: ChangeType,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None,
+        origin: ChangeOrigin,
+        what: str,
+        refusal_what: str | None,
+    ) -> None:
+        """Say that a request repeats a change not yet started, and was not asked for again."""
+        reason = (
+            f"{change_type.doing(payload)} has already been asked for and has not started "
+            f"yet, so it was not asked for again."
+        )
+        if interaction is not None and origin is ChangeOrigin.MEMBER:
+            await refuse(interaction, f"⚠️ {reason}", what=refusal_what or what)
+        else:
+            log.info("%s was not asked for again: %s", what, reason)
+
+    async def _acknowledge_saved(
+        self,
+        change_id: int,
+        change_type: ChangeType,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None,
+        lane: str,
+        first_job: int | None,
+    ) -> None:
+        """Acknowledge a change just saved to *interaction*, or adopt the reply kept for it."""
+        if interaction is None:
+            self._adopt_kept_reply(change_id, change_type.kind, change_type.key(payload))
+            return
+        stopped = await self._stopped_jobs(lane=lane)
+        await self._acknowledge(
+            change_id, change_type, payload, interaction,
+            first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
+            lane=lane,
+        )
+
+    async def ask_after(
+        self,
+        ahead: "Ahead",
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None = None,
+        actor: Any = None,
+        what: str,
+        refusal_what: str | None = None,
+        origin: ChangeOrigin = ChangeOrigin.MEMBER,
+    ) -> int | None:
+        """Ask for the change *kind* with another, *ahead*, to be carried out before it: the
+        request is checked as `ask` checks it, and, where it passes, the two are saved in one
+        transaction, *ahead* first. Returns the id of *kind*'s change, or None where it was
+        refused, repeats one not yet started, or is no longer due, when neither is saved.
+
+        An approval's take-down of its review is asked so (core specification, "Confirming
+        placements"): the review comes down ahead of the approval's jobs, but only for an approval
+        the queue accepts, and a request it refuses leaves the review standing. Asking the
+        take-down first and taking it back on a refusal would leave it queued, and carried out, if
+        the bot stopped or the ask raised between the two; one save cannot. Only *kind*'s change
+        is acknowledged. *ahead* is dropped, and *kind* asked alone, where *ahead* repeats a
+        change not yet started or is no longer due.
+        """
+        change_type = self._type(kind)
+        ahead_type = self._type(ahead.kind)
+        member = actor if actor is not None else (interaction.user if interaction else None)
+        verdict = await self.check(kind, payload, origin=origin)
+        if verdict.kind is not VerdictKind.GO:
+            return await self.ask(
+                kind, payload, interaction=interaction, actor=actor, what=what,
+                refusal_what=refusal_what, origin=origin,
+            )
+        ahead_due = (
+            await self.check(ahead.kind, ahead.payload, origin=ahead.origin)
+        ).kind is VerdictKind.GO
+
         async with self._asking:
-            self._holder = asyncio.current_task()
-            try:
-                yield
-            finally:
-                self._holder = None
+            lane = change_type.lane(payload)
+            async with self._writing, get_connection(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                first = saved = None
+                # The change asked for is checked for a repeat first, for what is written ahead of
+                # it would otherwise be the last change on its lane.
+                if not await self._repeats(db, change_type, payload):
+                    if ahead_due:
+                        first = await self._insert(
+                            db, ahead_type, ahead.payload, origin=ahead.origin, member=None,
+                            what=ahead.what,
+                        )
+                    saved = await self._insert(
+                        db, change_type, payload, origin=origin, member=member, what=what,
+                        check_repeat=False,
+                    )
+                if saved is not None:
+                    await db.commit()
+                else:
+                    await db.rollback()
 
-    async def withdraw(self, change_id: int) -> bool:
-        """Take back change *change_id*, asked and not started: its rows go, and with them any
-        reply held for it. Returns whether it was taken back; one the worker has started, or a job
-        of it has done, is left as it is."""
-        async with self._writing, get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                "SELECT state FROM queued_changes WHERE id = ?", (change_id,)
+            if saved is None:
+                await self._refuse_repeat(
+                    change_type, payload, interaction=interaction, origin=origin,
+                    what=what, refusal_what=refusal_what,
+                )
+                return None
+            if first is not None:
+                await self._acknowledge_saved(
+                    first[0], ahead_type, ahead.payload, interaction=None,
+                    lane=ahead_type.lane(ahead.payload), first_job=first[1],
+                )
+            change_id, first_job = saved
+            await self._acknowledge_saved(
+                change_id, change_type, payload, interaction=interaction, lane=lane,
+                first_job=first_job,
             )
-            row = await cursor.fetchone()
-            if row is None or row["state"] != ChangeState.QUEUED.value:
-                await db.rollback()
-                return False
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM queued_change_steps WHERE change_id = ? AND done_at IS NOT NULL",
-                (change_id,),
-            )
-            (done,) = await sole_row(cursor)
-            if done:
-                await db.rollback()
-                return False
-            await db.execute("DELETE FROM queued_changes WHERE id = ?", (change_id,))
-            await db.commit()
-        self._held.pop(change_id, None)
-        return True
+            self._signal.set()
+            return change_id
 
     def keep_reply(self, change_id: int, kind: str, key: str) -> None:
         """Keep the reply of change *change_id* once it has finished, for the later change of *kind*

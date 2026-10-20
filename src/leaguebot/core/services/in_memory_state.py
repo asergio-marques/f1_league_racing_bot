@@ -18,6 +18,7 @@ import logging
 from typing import TYPE_CHECKING, cast
 
 from leaguebot.core.services.change_queue import ChangeQueue
+from leaguebot.core.services.season_review_changes import forget_presses
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -46,6 +47,9 @@ def clear_in_memory_state(bot: LeagueBot, *, queue: ChangeQueue) -> None:
     from leaguebot.signup.services.signup_views import clear_pending_reasons
 
     clear_pending_reasons()
+
+    # What became of each standing review's button: the reviews go with the database.
+    forget_presses()
 
     # The interactions held to update a change's reply: the changes they belong to are deleted
     # with the pack or reset, so nothing is left to update.

@@ -470,6 +470,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     bot = cog.bot = MagicMock()
     bot.db_path = db_path
     bot.change_queue.ask = AsyncMock(return_value=1)
+    bot.change_queue.ask_after = AsyncMock(return_value=1)
     bot.output_router.post_log = AsyncMock()
     bot.config_service.get_server_config = AsyncMock(
         return_value=ServerConfig(
@@ -820,9 +821,12 @@ async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkey
 
     await _ApproveView.approve(view, _gated_press(question), MagicMock())
 
-    kinds = [call.args[0] for call in cog.bot.change_queue.ask.await_args_list]
-    assert kinds == ["season.review.take_down", "season.approve"]
-    [payload] = _asked(cog, "season.review.take_down")
+    # One ask, saving both: the take-down ahead of the approval.
+    cog.bot.change_queue.ask.assert_not_awaited()
+    [call] = cog.bot.change_queue.ask_after.await_args_list
+    ahead, kind = call.args[0], call.args[1]
+    assert (ahead.kind, kind) == ("season.review.take_down", "season.approve")
+    payload = ahead.payload
     assert (payload["ending"], payload["question_id"]) == ("confirmed", GATED_QUESTION)
     assert sorted(payload["report_ids"]) == list(GATED_REPORT)
     question.delete.assert_not_awaited()

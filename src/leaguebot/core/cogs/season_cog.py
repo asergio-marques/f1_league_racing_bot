@@ -65,7 +65,7 @@ from leaguebot.core.services.season_review_changes import (
     mark_press,
     standing_review,
     take_review_down,
-    withdraw_take_down,
+    take_review_down_before,
 )
 from leaguebot.core.services.season_end_changes import (
     ABORT_ONLY_BEFORE,
@@ -5126,26 +5126,24 @@ class SeasonCog(commands.Cog):
             fingerprint = (await take_fingerprint(self.bot, cfg.season_id)).areas
         # The review comes down ahead of the approval's own jobs, but only for an approval the
         # queue accepts: a request it refuses at once leaves the review standing (core
-        # "Confirming placements"). So the take-down is asked with the worker held back, and taken
-        # back where the approval is refused, before anything of it can have been carried out.
-        async with self.bot.change_queue.holding():
-            down = await _take_the_review_down(self.bot, interaction)
-            change_id = await self.bot.change_queue.ask(
-                APPROVAL_KIND,
-                {
-                    "season_id": cfg.season_id,
-                    "season_number": cfg.season_number,
-                    "fingerprint": dict(fingerprint),
-                    "channel_id": interaction.channel_id,
-                },
-                interaction=interaction,
-                what=what,
+        # "Confirming placements"). So the two are asked in one save, the take-down first, and a
+        # refused approval leaves no take-down behind.
+        question = getattr(interaction.message, "id", None)
+        approval = {
+            "season_id": cfg.season_id,
+            "season_number": cfg.season_number,
+            "fingerprint": dict(fingerprint),
+            "channel_id": interaction.channel_id,
+        }
+        if isinstance(question, int):
+            change_id = await take_review_down_before(
+                self.bot.change_queue, self.bot.db_path, question, APPROVAL_KIND, approval,
+                interaction=interaction, what=what,
             )
-            if change_id is None and down is not None:
-                await withdraw_take_down(
-                    self.bot.change_queue, self.bot.db_path, cast(Any, interaction.message).id, down,
-                    back_to=UNDER_WAY,
-                )
+        else:
+            change_id = await self.bot.change_queue.ask(
+                APPROVAL_KIND, approval, interaction=interaction, what=what
+            )
         # None where the queue's own check refused the approval and saved nothing.
         return change_id is not None
 
@@ -5395,8 +5393,7 @@ class _ApproveView(LeagueView):
         A double-click would otherwise run a second approval (or confirmation) beside the
         first until the first commits. The second confirms nothing, and is recorded.
         """
-        if await mark_press(self._cog.bot.db_path, review.question_id, UNDER_WAY,
-                            only_from=(None, FAILED)):
+        if mark_press(review.question_id, UNDER_WAY, only_from=(None, FAILED)):
             return False
         await refuse(
             interaction,
@@ -5409,7 +5406,7 @@ class _ApproveView(LeagueView):
 
     @asynccontextmanager
     async def _press_worked(self, review: StandingReview) -> AsyncIterator["_Press"]:
-        """Around a press whose button it has claimed: what the press leaves is settled on its row.
+        """Around a press whose button it has claimed: what the press leaves is settled on the review's mark.
 
         A press that went through has taken the review down (its own work asks that first). One
         refused or cancelled leaves it standing, to be pressed again within its five minutes,
@@ -5426,7 +5423,7 @@ class _ApproveView(LeagueView):
             current = await standing_review(bot.db_path, review.question_id)
             if current is not None and current.press != TAKING_DOWN:
                 waiting = current.press == TIMER_FIRED
-                await mark_press(bot.db_path, review.question_id, FAILED)
+                mark_press(review.question_id, FAILED)
                 if waiting:
                     await take_review_down(bot.change_queue, bot.db_path, review.question_id, EXPIRED)
             raise
@@ -5437,13 +5434,13 @@ class _ApproveView(LeagueView):
             # The confirmation asked the review's take-down itself, ahead of its own work.
             return
         if press.leave_standing:
-            await mark_press(bot.db_path, review.question_id, None)
+            mark_press(review.question_id, None)
         elif current.press == TIMER_FIRED or datetime.now(timezone.utc) >= current.deadline:
             await take_review_down(bot.change_queue, bot.db_path, review.question_id, EXPIRED)
         elif await self._changed_since_review():
             await take_review_down(bot.change_queue, bot.db_path, review.question_id, REFUSED)
         else:
-            await mark_press(bot.db_path, review.question_id, None)
+            mark_press(review.question_id, None)
 
     async def _changed_since_review(self) -> list[str]:
         """The areas of the season changed since the review the press read described it, named as a

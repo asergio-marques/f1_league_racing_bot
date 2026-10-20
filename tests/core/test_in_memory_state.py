@@ -55,6 +55,9 @@ CLEARED = {
     # the callable the builder hands the bot (`bot.clear_held_reviews`), so a pack's or a reset's
     # gone round holds no review (#439, 6b, C54).
     ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
+    # What became of each standing review's button, by its question's id: the reviews go with the
+    # database a pack or a reset replaces, so no mark may outlive them (#439, 6b, C97).
+    ("core/services/season_review_changes.py", "_PRESSES"),
 }
 
 #: Stores the plan deletes, and the commit that deletes them: accounted for while they stand,
@@ -232,6 +235,20 @@ async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_stagi
 
     assert held_review(7, appeals=False) is None
     assert held_review(7, appeals=True) is None
+
+
+async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button():
+    """A review's button was pressed and its press is under way; after the clear no review's mark
+    is left, so a review of the same question id in the league that follows is untouched."""
+    from leaguebot.core.services.season_review_changes import UNDER_WAY, _PRESSES, mark_press
+
+    mark_press(999, UNDER_WAY)
+    assert _PRESSES == {999: UNDER_WAY}
+    bot = SimpleNamespace(get_cog=lambda name: None)
+
+    clear_in_memory_state(bot, queue=MagicMock())
+
+    assert _PRESSES == {}
 
 
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):

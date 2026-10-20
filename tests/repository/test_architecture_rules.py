@@ -1988,7 +1988,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
     ("core/services/season_lifecycle_service.py", "_move"): (1, PASS["core"]),
-    ("core/services/season_review_changes.py", "mark_press"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.add_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.add_round"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
