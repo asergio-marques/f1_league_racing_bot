@@ -1803,7 +1803,7 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/module_service.py", "ModuleService.set_attendance_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_results_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.set_signup_enabled_on"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),

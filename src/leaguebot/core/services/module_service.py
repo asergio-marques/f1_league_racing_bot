@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import aiosqlite
-
 from leaguebot.core.db.database import get_connection
 
 log = logging.getLogger(__name__)
@@ -45,16 +43,11 @@ class ModuleService:
 
     async def set_signup_enabled(self, value: bool) -> None:
         async with get_connection(self._db_path) as db:
-            await self.set_signup_enabled_on(db, value)
+            await db.execute(
+                "UPDATE server_configs SET signup_module_enabled = ?",
+                (int(value),),
+            )
             await db.commit()
-
-    async def set_signup_enabled_on(self, db: aiosqlite.Connection, value: bool) -> None:
-        """Set the signup flag on *db*, committing nothing: the module's switch-off writes it in
-        the same save as its configuration's deletion and its audit."""
-        await db.execute(
-            "UPDATE server_configs SET signup_module_enabled = ?",
-            (int(value),),
-        )
 
     async def is_results_enabled(self) -> bool:
         async with get_connection(self._db_path) as db:

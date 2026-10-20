@@ -120,7 +120,7 @@ def signup_off_change(
         for account in wizards:
             cancel_timers(account)
         await signup_module_service().delete_config_on(db)
-        await modules.set_signup_enabled_on(db, False)
+        await db.execute("UPDATE server_configs SET signup_module_enabled = 0")
         line = f"{ctx.named} | /module disable signup | Success"
         if ctx.payload["window"] is not None:
             line += f"\n  drivers_returned_to_not_signed_up: {drivers_returned(ctx.steps)}"
