@@ -1262,7 +1262,7 @@ class ChangeQueue:
                 # The change belongs to a conversation the league has ended, which is why its
                 # check fails: a turn that has not started is no longer due, as one that has is
                 # (R4), not a refusal with a line of its own in the log channel.
-                await self._drop_ended(change, pending)
+                await self._drop_ended(change, pending, verdict)
                 return False
 
         if change["origin"] == ChangeOrigin.MEMBER.value:
@@ -1387,10 +1387,14 @@ class ChangeQueue:
         await self._strip_stop(pending)
         self._release(change)
 
-    async def _drop_ended(self, change: aiosqlite.Row, pending: aiosqlite.Row | None) -> None:
+    async def _drop_ended(
+        self, change: aiosqlite.Row, pending: aiosqlite.Row | None, verdict: Verdict
+    ) -> None:
         """Drop a change not yet started whose conversation the league has ended: a line in the log
         channel says it is no longer due, naming the job it would have begun with, and a stop at
-        that job is cleared in the same save."""
+        that job is cleared in the same save. A press whose acknowledgement is still held is
+        told what its check said, as a refusal tells it, so that it is never left saying it is
+        under way."""
         job_id = change["id"] if pending is None else pending["id"]
         lines = [conversation_ended_line(job_id, change["what"])]
         cleared = self._cleared(change, pending, "its conversation was ended, so it was dropped")
@@ -1400,6 +1404,8 @@ class ChangeQueue:
         log.info("%s is no longer due: its conversation was ended", change["what"])
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
         await self._strip_stop(pending)
+        if change["origin"] == ChangeOrigin.MEMBER.value:
+            await self._update_reply(change, _refusal_text(verdict))
         self._release(change)
 
     @staticmethod

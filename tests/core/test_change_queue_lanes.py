@@ -943,6 +943,34 @@ async def test_a_turn_whose_check_fails_after_the_league_ended_its_conversation_
     assert await _open_changes(env) == []
 
 
+async def test_a_press_dropped_because_its_conversation_ended_is_told_what_its_check_said(env):
+    """A member presses a button in channel 7 and the press waits behind the league's change
+    that ends the conversation. When its turn comes its check refuses, and the conversation is
+    over, so the press is dropped as no longer due; its acknowledgement is nevertheless updated
+    with what the check said, not left saying it is under way."""
+    await _conversations(env)
+    api = _api()
+
+    async def _check(_ctx):
+        return api.Verdict.go() if await _is_open(env, 7) else api.Verdict.refuse("⚠️ Gone.")
+
+    kind = dataclasses.replace(
+        _type("turn", steps=[_saving("answer", "Max")], lane=_in_channel, check=_check),
+        conversation_open=_still_running,
+    )
+    _queue(env, _ender(), kind)
+    press = member_interaction(env.bot)
+
+    await _ask(env, "end", {"channel": 7})
+    await _ask(env, "turn", {"channel": 7}, interaction=press)
+    await run_queue(env.bot)
+
+    assert [row["state"] for row in await change_rows(env.db_path) if row["kind"] == "turn"] == [
+        "DROPPED"
+    ]
+    assert press.edit_original_response.await_args.kwargs["content"] == "⚠️ Gone."
+
+
 async def test_a_stopped_job_of_an_ended_conversation_stays_stopped_with_its_notice(env):
     """A turn in channel 7 stops at a post Discord refuses. The league then ends that conversation,
     and Discord would now take the post. The bot carries on past the job's scheduled tries, an
