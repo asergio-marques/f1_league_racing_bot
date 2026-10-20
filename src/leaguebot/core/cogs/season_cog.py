@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, cast, overload
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, cast
 
 import discord
 from discord import app_commands
@@ -530,68 +530,23 @@ async def _confirm_privately(
 
 
 class _ReviewPoster:
-    """Sends a season review's messages, keeping each public one so that approving it can take
-    them down.
+    """Sends a season review's private messages: the faults a manager has to put right.
 
-    A review is a dozen messages sent from the command and from the helpers it calls, several
-    of which know nothing of each other. Each is handed this rather than the interaction and
-    sends through it, so every public message is collected in one place and the type check sees
-    every send (#228). It replaced patching ``interaction.followup.send`` for the length of the
-    review, which collected in one place too but could not be checked;
-    `tests/core/test_season_review_images.py` holds that nothing in a review sends around it.
-
-    Only the public messages are kept. An ephemeral followup is visible to the reviewer alone
-    and cannot be deleted by id, and the fault reports among them are the reason a manager
-    knows what to fix.
+    A review's public messages are not sent from the command at all: the change queue posts them
+    (`season.review.post`, #439), so a refused post stops the queue and the review comes down by
+    its take-down. What the command still says itself is said to the reviewer alone, an ephemeral
+    followup that cannot be deleted by id, and the fault reports among them are the reason a
+    manager knows what to fix. Every one is handed this rather than the interaction, so the type
+    check sees every send (#228); `tests/core/test_season_review_images.py` holds that nothing in
+    a review sends around it.
     """
 
     def __init__(self, interaction: discord.Interaction) -> None:
         self.interaction = interaction
-        #: The review's public messages, in the order they were sent.
-        self.posted: list[discord.WebhookMessage] = []
 
-    @overload
-    async def reply(
-        self,
-        content: str,
-        *,
-        ephemeral: Literal[False],
-        file: discord.File | None = None,
-        view: discord.ui.View | None = None,
-    ) -> discord.WebhookMessage: ...
-
-    @overload
-    async def reply(
-        self,
-        content: str,
-        *,
-        ephemeral: Literal[True],
-        file: discord.File | None = None,
-        view: discord.ui.View | None = None,
-    ) -> None: ...
-
-    async def reply(
-        self,
-        content: str,
-        *,
-        ephemeral: bool,
-        file: discord.File | None = None,
-        view: discord.ui.View | None = None,
-    ) -> discord.WebhookMessage | None:
-        """Answer with *content*; a public message is waited on and kept, a private one is not."""
-        extra: dict[str, Any] = {}
-        if file is not None:
-            extra["file"] = file
-        if view is not None:
-            extra["view"] = view
-        if ephemeral:
-            await self.interaction.followup.send(content, ephemeral=True, **extra)
-            return None
-        message = await self.interaction.followup.send(
-            content, ephemeral=False, wait=True, **extra
-        )
-        self.posted.append(message)
-        return message
+    async def reply(self, content: str, *, ephemeral: Literal[True]) -> None:
+        """Tell the reviewer *content*, privately."""
+        await self.interaction.followup.send(content, ephemeral=True)
 
 
 class SeasonCog(commands.Cog):
@@ -827,16 +782,6 @@ class SeasonCog(commands.Cog):
             return []
         return problems
 
-    async def _record_review_posted(self, interaction: discord.Interaction, command: str) -> None:
-        """Write the one line that says who ran *command* and that its question is standing.
-
-        A review changes nothing until it is answered, but it leads to a change and asks to
-        be answered: the line lets the lapse or refusal that follows it read against it.
-        """
-        await self.bot.output_router.post_log(
-            f"{interaction_member(interaction)} | {command} | Review posted"
-        )
-
     async def _review_picture_gates(self) -> tuple[bool, bool]:
         """Whether the league conveys its calendar, and its lineup, as pictures: the gates the
         review draws by, read once for the whole review. A fault in either shows the text, as
@@ -902,33 +847,6 @@ class SeasonCog(commands.Cog):
             interaction=interaction,
             what=describe(interaction),
         )
-
-    async def _post_approval_prompt(
-        self, poster: _ReviewPoster, view: "_ApproveView", season_id: int
-    ) -> None:
-        """Ask, publicly, whether the configuration just reported is accepted.
-
-        Public rather than ephemeral so a reviewer who cannot approve — a league manager
-        holding only the interaction role — can put the question to somebody who can. The
-        message therefore says who may answer it, since anyone reading the channel can see
-        the button and only two kinds of member may press it.
-
-        The fingerprint is taken here rather than at the top of the command: it must
-        describe the season as the report just described it, and the report is only
-        complete now.
-        """
-        await view.record_fingerprint(season_id)
-        message = await poster.reply(
-            f"\U0001f4cb **Do you accept this season configuration?**\n"
-            f"Reviewed by <@{poster.interaction.user.id}>. Approval is open to them or to a server "
-            f"administrator for the next {APPROVAL_WINDOW_SECONDS // 60} minutes, after "
-            f"which this review expires and must be run again.",
-            view=view,
-            ephemeral=False,
-        )
-        view.carries(poster.posted)
-        await view.bind(message)
-        await self._record_review_posted(poster.interaction, "/season placements-review")
 
     async def _lineup_problems(self, season_id: int) -> list[str]:
         """Where the lineup template cannot draw a division of this season (047 FR-022).
@@ -2659,8 +2577,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=False)
-        poster = _ReviewPoster(interaction)
+        await interaction.response.defer(ephemeral=True)
         module = self.bot.module_service
         on, off = "✅ Enabled", "❌ Disabled"
         server_config = await self.bot.config_service.get_server_config()
@@ -2708,38 +2625,32 @@ class SeasonCog(commands.Cog):
             sections.append(await self._weather_review_lines())
         if await module.is_images_enabled():
             sections.append(await self._build_image_review_section())
+        report: list[str] = []
         for section in sections:
             body = "\n".join(section).strip()
             if not body:
                 continue
-            for chunk in chunk_message(body):
-                await poster.reply(chunk, ephemeral=False)
+            report.extend(chunk_message(body))
 
         faults = await self._configuration_faults(cfg.season_id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
-            for chunk in chunk_message(
+            report.extend(chunk_message(
                 "⛔ **The configuration cannot be confirmed yet.**\n"
                 f"{body}\n"
                 "Put these right, then run `/season config-review` again."
-            ):
-                await poster.reply(chunk, ephemeral=False)
-            return
-
-        view = _ConfirmConfigurationView(self, interaction.user.id)
-        await view.record_fingerprint(cfg.season_id)
-        message = await poster.reply(
-            "📋 **Do you confirm this season's configuration?**\n"
-            f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
-            f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Once "
-            "confirmed, the team list, the game edition, test mode and the signup module "
-            "are fixed for this season.",
-            view=view,
-            ephemeral=False,
+            ))
+        await self._ask_review(
+            interaction, "/season config-review", cfg.season_id, report, [],
+            offered=not faults, view="configuration",
+            question=(
+                "📋 **Do you confirm this season's configuration?**\n"
+                f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
+                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Once "
+                "confirmed, the team list, the game edition, test mode and the signup module "
+                "are fixed for this season."
+            ),
         )
-        view.carries(poster.posted)
-        await view.bind(message)
-        await self._record_review_posted(interaction, "/season config-review")
 
     async def _do_confirm_configuration(
         self, interaction: discord.Interaction, *, what: str | None = None

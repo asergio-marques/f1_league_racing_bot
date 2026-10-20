@@ -590,10 +590,6 @@ async def test_an_expired_configuration_review_names_its_own_command(tmp_path):
 POST = "season.review.post"
 #: The channel the manager runs the command in, where the review is posted.
 COMMAND_CHANNEL = 111
-NO_REVIEW_POST = (
-    "#439: /season config-review posts its report and question as the command's follow-ups and "
-    "binds the question's view itself, off the change queue"
-)
 
 
 class _RecordedView:
@@ -666,7 +662,6 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -697,7 +692,6 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     interaction.followup.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -725,7 +719,6 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     assert "Do you confirm this season's configuration?" not in text
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 @pytest.mark.parametrize("signup", [True, False])
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
@@ -739,7 +732,6 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance and weather on, the review asked of the queue carries each
@@ -777,7 +769,6 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -788,7 +779,6 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
@@ -801,7 +791,6 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -1034,7 +1023,6 @@ async def test_every_config_review_refusal_is_recorded(stage, set_up):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REVIEW_POST)
 async def test_a_posted_config_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
     monkeypatch,
 ):

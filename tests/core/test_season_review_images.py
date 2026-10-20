@@ -847,37 +847,13 @@ async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkey
 # ── The question the button is attached to ────────────────────────────────
 
 
-# ── Collecting the report, so approving can clear it ──────────────────────
-
-
-async def test_the_poster_keeps_every_public_message():
-    """Every public message a review sends is kept, so that approving it can take them down."""
-    interaction = MagicMock()
-    sent = [MagicMock(), MagicMock()]
-    interaction.followup.send = AsyncMock(side_effect=sent)
-    poster = _ReviewPoster(interaction)
-
-    await poster.reply("first", ephemeral=False)
-    await poster.reply("second", ephemeral=False)
-
-    assert poster.posted == sent
-
-
-async def test_the_poster_asks_for_the_message_back():
-    """`followup.send` returns None unless `wait=True`, so without it nothing is kept and the
-    report could never be cleared."""
-    interaction = MagicMock()
-    original = AsyncMock(return_value=MagicMock())
-    interaction.followup.send = original
-
-    await _ReviewPoster(interaction).reply("body", ephemeral=False)
-
-    assert original.await_args.kwargs["wait"] is True
+# ── The private faults ────────────────────────────────────────────────────
 
 
 async def test_the_poster_leaves_ephemeral_messages_alone():
-    """An ephemeral followup is the reviewer's alone and cannot be deleted by id; the
-    fault reports among them are how a manager knows what to fix."""
+    """The poster sends only the reviewer's private messages: an ephemeral followup, which cannot be
+    deleted by id and which is how a manager knows what to fix. The review's public messages are
+    posted by the change queue (#439)."""
     interaction = MagicMock()
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
@@ -885,20 +861,8 @@ async def test_the_poster_leaves_ephemeral_messages_alone():
 
     assert await poster.reply("a fault", ephemeral=True) is None
 
-    assert poster.posted == []
+    assert original.await_args.kwargs["ephemeral"] is True
     assert "wait" not in original.await_args.kwargs
-
-
-async def test_the_poster_passes_a_file_and_a_view_on():
-    interaction = MagicMock()
-    original = AsyncMock(return_value=MagicMock())
-    interaction.followup.send = original
-    attachment, view = MagicMock(), MagicMock()
-
-    await _ReviewPoster(interaction).reply("body", ephemeral=False, file=attachment, view=view)
-
-    assert original.await_args.kwargs["file"] is attachment
-    assert original.await_args.kwargs["view"] is view
 
 
 def test_nothing_in_a_review_sends_around_the_poster():

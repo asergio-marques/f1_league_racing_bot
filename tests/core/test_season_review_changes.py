@@ -795,7 +795,6 @@ async def test_the_private_faults_stay_a_reply(standing):
     calls = interaction.followup.send.await_args_list
     assert calls and all(call.kwargs.get("ephemeral") is True for call in calls)
     assert "Pro has no lineup channel" in calls[0].args[0]
-    assert poster.posted == []
     assert standing.channel.sent == []
     assert await change_rows(standing.db_path) == []
 
