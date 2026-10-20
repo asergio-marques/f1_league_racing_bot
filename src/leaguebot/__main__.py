@@ -410,6 +410,7 @@ def register_change_types(bot: LeagueBot) -> None:
         amend_turn_change,
     )
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
+    from leaguebot.signup.services.closing_steps import closing_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
     from leaguebot.results.services.resubmission_changes import (
         resubmission_start_change,
@@ -503,6 +504,9 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(amend_close_change())
+    bot.change_queue.register(
+        closing_change(now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once)
+    )
     bot.change_queue.register(review_open_change())
     bot.change_queue.register(review_prompt_change())
     bot.change_queue.register(review_stage_change())

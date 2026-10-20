@@ -21,7 +21,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
-import pytest
 
 from tests.support.change_queue import (
     change_rows,
@@ -53,12 +52,6 @@ KIMI_LANE = f"channel:{KIMI_CHANNEL}"
 OTHER_LANE = f"channel:{OTHER_CHANNEL}"
 #: The closing notice the league change hands over.
 NOTICE = "Your signup has been withdrawn. This channel will be deleted in 24 hours."
-
-NO_CLOSING_STEPS = (
-    "#439: signup has no closing change of its own: the closing notice, the lock and the "
-    "24-hour deletion are WizardService.trigger_channel_hold off the queue, with no "
-    "signup.closing change on the driver's lane"
-)
 
 
 async def _league(tmp_path: Any) -> SeasonLeague:
@@ -119,7 +112,6 @@ def _notices(league: SeasonLeague, cid: int = KIMI_CHANNEL) -> list[str]:
     return [text for text in league.channel(cid).texts if text == NOTICE]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSING_STEPS)
 async def test_a_closing_notice_refused_stops_the_queue(tmp_path):
     """Kimi's signup has ended and Discord refuses every post in his signup channel. The closing
     change is asked and the queue runs: it stops at `signup_notice`, with no notice posted, his
@@ -148,7 +140,6 @@ async def test_a_closing_notice_refused_stops_the_queue(tmp_path):
     assert len(_armed(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSING_STEPS)
 async def test_close_signup_locks_the_channel_and_asks_its_deletion_a_day_on(tmp_path):
     """Kimi's signup has ended. The closing change is asked and the queue runs: its jobs
     `signup_notice`, `close_signup` and `arm_deletion` are done in that order; the notice is
@@ -172,7 +163,6 @@ async def test_close_signup_locks_the_channel_and_asks_its_deletion_a_day_on(tmp
     assert _armed(league) == [(TIMER, str(SIGNING_UP), league.clock.now + timedelta(hours=24))]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSING_STEPS)
 async def test_a_closing_notice_asked_back_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it(
     tmp_path,
 ):

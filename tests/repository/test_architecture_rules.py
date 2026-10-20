@@ -923,6 +923,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
+    ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._advance_wizard_in_channel"): (2, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._answer_stands"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._commit_correction"): (1, PASS["signup"]),
