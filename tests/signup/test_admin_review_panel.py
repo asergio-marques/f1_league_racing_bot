@@ -375,6 +375,9 @@ async def _park(league: SeasonLeague, action: str) -> Any:
     league.bot.wizard_service.reject_signup = AsyncMock(return_value=None)
     press = _pressed_by(league, REVIEWER)
     await press.response.defer(ephemeral=True)
+    # The acknowledgement of a deferred press is its first follow-up, and editing that message is
+    # editing the press's original response, as Discord has it.
+    press.followup.send.return_value = MagicMock(edit=press.edit_original_response)
     _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
         "action": action,
         "discord_user_id": str(SIGNING_UP),
@@ -403,7 +406,6 @@ def _rejected(league: SeasonLeague) -> list[str]:
     return [text for text in _texts(league) if "rejected" in text.lower()]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_rejection_reason_reaches_the_driver(tmp_path):
     """Manager 77 types the reason after Reject. A rejection is asked of the queue; once it
     runs Kimi's channel is told his signup was rejected, giving the reason, and the manager is
@@ -433,7 +435,6 @@ async def test_a_correction_reason_reaches_the_driver(tmp_path):
     assert "Your platform ID looks wrong." in json.dumps(_payload(request))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_an_empty_reason_becomes_a_stated_one(tmp_path):
     """The driver is told something rather than shown an empty **Reason:** that reads as
     a bug. Manager 77 types only spaces after Reject; once the queue runs Kimi's channel is
@@ -448,7 +449,6 @@ async def test_an_empty_reason_becomes_a_stated_one(tmp_path):
     assert len(told) == 1 and "No specific reason given." in told[0], _texts(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_the_reason_message_is_deleted(tmp_path):
     """It is a private judgement about a driver, typed into a channel the driver reads. The
     reason stands until the queue reaches it, and is deleted by a job of the rejection."""
@@ -462,7 +462,6 @@ async def test_the_reason_message_is_deleted(tmp_path):
     assert message.gone
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_reason_that_cannot_be_deleted_still_counts(tmp_path):
     """The action matters more than the tidying: Discord refuses to delete the manager's
     reason. Once the queue runs Kimi is Not Signed Up all the same; only the turns in Kimi's
@@ -668,8 +667,7 @@ async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path
     [
         pytest.param("request_changes", "Request Changes",
                      marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
-        pytest.param("reject", "Reject",
-                     marks=pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)),
+        pytest.param("reject", "Reject"),
     ],
     ids=NEGATIVE_IDS,
 )

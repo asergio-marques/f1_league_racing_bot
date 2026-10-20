@@ -1,7 +1,8 @@
 """Signup's own closing jobs, and the `signup.closing` change that runs them on a driver's lane.
 
 A driver's signup channel is closed in three jobs, each built by a factory the builder registers
-with what it needs handed it: `signup_notice` tells the channel why it closes, mentioning the
+with what it needs handed it (and, where a manager's typed reason began the closing, a fourth
+before them, `delete_reason`, which takes that message down): `signup_notice` tells the channel why it closes, mentioning the
 driver and no one else; `close_signup` takes the driver's typing from it; `arm_deletion` arms the
 channel's deletion a day on (the `signup_channel_delete` timer, keyed by the driver's account).
 The notice goes first, so a driver is never locked out of a channel that says nothing: where
@@ -51,6 +52,9 @@ if TYPE_CHECKING:
     from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
+#: The job that deletes the reason a manager typed after Reject, ahead of the closing notice that
+#: gives it.
+DELETE_REASON = "delete_reason"
 SIGNUP_NOTICE = "signup_notice"
 CLOSE_SIGNUP = "close_signup"
 ARM_DELETION = "arm_deletion"
@@ -83,7 +87,8 @@ EXPIRED_NOTICE = (
 )
 
 __all__ = [
-    "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_TIMER",
+    "ARM_DELETION", "CLOSED_NOTICE", "CLOSE_CAUSES", "CLOSE_SIGNUP", "DELETE_BUTTON", "DELETE_REASON",
+    "DELETE_TIMER",
     "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND", "POST_CLOSED",
     "SIGNUP_NOTICE", "ask_expiry", "closing_change", "closing_steps", "window_close_jobs",
     "window_close_steps",
@@ -178,7 +183,13 @@ def closing_steps(*, now: Callable[[], datetime], arm_once: Callable[[str, str, 
     async def describe_arm(ctx: StepContext) -> str:
         return f"arming the deletion of <@{ctx.step_payload['user_id']}>'s signup channel"
 
+    async def describe_reason(ctx: StepContext) -> str:
+        return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
+
     return {
+        DELETE_REASON: dataclasses.replace(
+            standing_posts.delete_replaced_step(DELETE_REASON), describe=describe_reason
+        ),
         SIGNUP_NOTICE: Step(SIGNUP_NOTICE, StepKind.ACT, signup_notice, describe=describe_notice),
         CLOSE_SIGNUP: Step(CLOSE_SIGNUP, StepKind.ACT, close_signup, describe=describe_close),
         ARM_DELETION: Step(ARM_DELETION, StepKind.ACT, arm_deletion, describe=describe_arm),
@@ -280,15 +291,24 @@ def closing_change(
 ) -> ChangeType:
     """The `signup.closing` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the notice, the lock and the deletion's arming of a signup
-    that has ended. The payload is ``user_id``, ``channel_id`` and ``notice``."""
+    that has ended. The payload is ``user_id``, ``channel_id`` and ``notice``, and
+    ``reason_message_id`` where a manager's typed reason (after Reject) is to come down first: the
+    notice gives the reason, so the message is deleted ahead of it."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": int(payload["channel_id"])}
-        return (
+        planned: list[PlannedStep] = []
+        if payload.get("reason_message_id") is not None:
+            planned.append(PlannedStep(DELETE_REASON, {
+                "channel_id": shared["channel_id"],
+                "message_id": int(payload["reason_message_id"]), "what": "reason message",
+            }))
+        planned += [
             PlannedStep(SIGNUP_NOTICE, {**shared, "notice": str(payload["notice"])}),
             PlannedStep(CLOSE_SIGNUP, shared),
             PlannedStep(ARM_DELETION, shared),
-        )
+        ]
+        return tuple(planned)
 
     async def standing(_ctx: CheckContext) -> Verdict:
         return Verdict.go()

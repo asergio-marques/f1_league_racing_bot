@@ -610,6 +610,7 @@ def typed_message(channel: Any, author: Any, content: str = "", *,
     message.fails_marks = None
     message.fails_delete = None
     message.gone = False
+    message.jump_url = f"https://discord.test/{channel.id}/{message.id}"
 
     def _check(fails: Any) -> None:
         if message.gone:

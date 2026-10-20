@@ -26,6 +26,10 @@ wizard, takes away the timers, writes the "Withdrawn" line and asks back `signup
 closing jobs, `closing_steps`) on the driver's own lane, so that a closing notice Discord refuses
 stops that lane alone and the league's change is done.
 
+The reason a manager types after Reject asks `signup.end` the same way, through the manager's
+stored press: the message is not deleted at once, but by the first job of the `signup.closing` it
+asks back, ahead of the notice that gives it.
+
 A job that fails stops the queue (core specification, "How a change is carried out").
 """
 
@@ -63,6 +67,7 @@ from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
+from leaguebot.core.utils.member_names import member_named
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
@@ -76,7 +81,7 @@ from leaguebot.signup.services.closing_steps import (
     closing_steps,
 )
 from leaguebot.signup.services.signup_posting import delete_channel, post
-from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
+from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
 
 if TYPE_CHECKING:
@@ -99,6 +104,13 @@ POST_WELCOME = "post_welcome"
 END_JOB = "end"
 #: Why a signup ends: the driver pressed Cancel Signup.
 WITHDRAWN = "withdrawn"
+#: Why a signup ends: a manager pressed Reject and typed the reason.
+REJECTED = "rejected"
+#: What a manager is told whose reason arrives after the signup moved on.
+REJECT_MOVED_ON = (
+    f"⛔ This signup has moved on since you pressed {_BUTTON_OF['reject']}. "
+    f"{_NOTHING_DONE['reject']}."
+)
 #: What a driver who presses Cancel Signup on a signup that has already ended is told.
 SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 #: What the driver's channel is told when they withdraw.
@@ -112,7 +124,8 @@ CATEGORY_LIMIT = 50
 
 __all__ = [
     "ARM_INACTIVITY", "CREATE_CHANNEL", "DELETE_OLD_CHANNEL", "END", "END_JOB", "EXPIRED", "INACTIVITY",
-    "POST_WELCOME", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN", "WITHDRAWN_NOTICE",
+    "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
+    "WITHDRAWN_NOTICE",
     "end_change", "start_change",
 ]
 
@@ -419,15 +432,22 @@ def end_change(
     """The `signup.end` change type, for the builder to register.
 
     The payload is ``user_id`` (the driver's account, as text) and ``reason``: `WITHDRAWN` (the
-    driver pressed Cancel Signup), or `EXPIRED` (their 24 hours ran out, asked by the timer or at
-    a restart, with the signup channel's id as ``channel_id``). Its job `end` is a save: the driver
-    is moved to Not Signed Up and the wizard ended in the same save, the correction timeout and the
-    timers taken away and the line written ("Withdrawn", or the lapse).
+    driver pressed Cancel Signup), `REJECTED` (a manager pressed Reject and typed the reason: the
+    payload then carries ``actor_id`` and ``actor_name`` (the manager), ``text`` (the reason) and
+    ``reason_message_id`` (the message it was typed in)), or `EXPIRED` (their 24 hours ran out,
+    asked by the timer or at a restart, with the signup channel's id as ``channel_id``). Its job
+    `end` is a save: the driver is moved to Not Signed Up and the wizard ended in the same save, the
+    correction timeout and the timers taken away and the line written ("Withdrawn", "Rejected" with
+    the manager and the reason, or the lapse).
 
     A withdrawal is refused by the check where the signup has already ended (the transition to Not
     Signed Up is not one the state machine allows from where they stand), telling the driver so and
     changing nothing; it asks back `signup.closing` for the driver's channel, which holds the
-    notice, the lock and the deletion's arming on the channel's own lane. An expiry is the league's
+    notice, the lock and the deletion's arming on the channel's own lane. A rejection is refused
+    where the driver no longer awaits review (another manager approved them, they withdrew, a
+    correction was asked for), telling the manager so and changing nothing, and otherwise asks back
+    the same change, whose first job deletes the manager's reason message and whose notice gives
+    the reason. An expiry is the league's
     whole (a timer is a command's, decision 31): the change carries those three jobs itself, after
     `end`. It is not due, and is dropped, where the driver's wizard is parked or they are not
     mid-signup any longer, and where an answer typed before the 24 hours ran out is still waiting
@@ -467,6 +487,12 @@ def end_change(
             if await answered_in_time(ctx, record):
                 return Verdict.not_due("an answer typed in time waits its turn")
             return Verdict.go()
+        if ctx.payload.get("reason") == REJECTED:
+            # A signup that has moved on since the press: approved by another manager, withdrawn,
+            # or already sent back for a correction (#492). The reason is too late to act on.
+            if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
+                return Verdict.refuse(REJECT_MOVED_ON)
+            return Verdict.go()
         if profile is None or DriverState.NOT_SIGNED_UP not in ALLOWED_TRANSITIONS.get(
             profile.current_state, set()
         ):
@@ -477,7 +503,13 @@ def end_change(
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         user_id = str(payload["user_id"])
-        planned = [PlannedStep(END_JOB, {"user_id": user_id, "reason": payload["reason"]})]
+        shared_end = {"user_id": user_id, "reason": payload["reason"]}
+        if payload["reason"] == REJECTED:
+            shared_end.update({
+                key: payload[key]
+                for key in ("actor_id", "actor_name", "text", "reason_message_id")
+            })
+        planned = [PlannedStep(END_JOB, shared_end)]
         channel_id = payload.get("channel_id")
         if payload["reason"] == EXPIRED and channel_id is not None:
             shared = {"user_id": user_id, "channel_id": int(channel_id)}
@@ -511,6 +543,30 @@ def end_change(
                 ),
             ),))
         follow_ons: tuple[FollowOn, ...] = ()
+        if ctx.step_payload["reason"] == REJECTED:
+            payload = ctx.step_payload
+            manager = member_named(payload["actor_name"], int(payload["actor_id"]))
+            if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
+                follow_ons = (FollowOn(
+                    CLOSING,
+                    {
+                        "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                        "notice": (
+                            f"<@{user_id}> ❌ Your signup has been rejected by "
+                            f"**{payload['actor_name']}**.\n**Reason:** {payload['text']}\n"
+                            "This channel will be automatically deleted in 24 hours."
+                        ),
+                        "reason_message_id": int(payload["reason_message_id"]),
+                    },
+                    "Closing a rejected signup",
+                ),)
+            return StepResult(
+                result={},
+                lines=(
+                    f"{manager} | Signup | Rejected\n  driver: {named}\n  reason: {payload['text']}",
+                ),
+                follow_ons=follow_ons,
+            )
         if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
             follow_ons = (FollowOn(
                 CLOSING,
@@ -529,11 +585,16 @@ def end_change(
         views = {view.name: view for view in ctx.steps}
         ended = views.get(END_JOB)
         expired = ctx.payload.get("reason") == EXPIRED
+        rejected = ctx.payload.get("reason") == REJECTED
         if ended is not None and "discarded" in (ended.result or {}):
+            if rejected:
+                return "⚠️ The signup was not rejected: the job was discarded."
             return (
                 "⚠️ The signup was not ended: the job was discarded." if expired
                 else "⚠️ Your signup was not withdrawn: the job was discarded."
             )
+        if rejected:
+            return "✅ Signup rejected."
         if expired:
             left = [name for name in (SIGNUP_NOTICE, CLOSE_SIGNUP, ARM_DELETION)
                     if name in views and "discarded" in (views[name].result or {})]
@@ -553,7 +614,9 @@ def end_change(
         check=check,
         key=lambda payload: f"{END}:{payload['user_id']}",
         doing=lambda payload: (
-            "Ending a signup" if payload.get("reason") == EXPIRED else "Withdrawing a signup"
+            "Ending a signup" if payload.get("reason") == EXPIRED
+            else "Rejecting a signup" if payload.get("reason") == REJECTED
+            else "Withdrawing a signup"
         ),
         outcome=outcome,
     )

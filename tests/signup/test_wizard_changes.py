@@ -817,7 +817,6 @@ def _said_to(press: Any) -> str:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path):
     """Kimi's signup awaits approval, his signup channel (6405) standing. Manager 77 has pressed
     Reject on the review panel, which waits for the reason (the press deferred and parked as the
@@ -839,6 +838,9 @@ async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path)
     press.guild = league.guild
     press.channel_id = KIMI_CHANNEL
     await press.response.defer(ephemeral=True)
+    # The acknowledgement of a deferred press is its first follow-up, and editing that message is
+    # editing the press's original response, as Discord has it.
+    press.followup.send.return_value = MagicMock(edit=press.edit_original_response)
     _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)] = {
         "action": "reject",
         "discord_user_id": str(SIGNING_UP),

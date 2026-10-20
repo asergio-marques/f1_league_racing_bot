@@ -52,7 +52,6 @@ from tests.support.season_league import (
 )
 
 NO_APPROVE_CHANGE = "#439: Approve is not yet asked of the queue as signup.approve (C84)"
-NO_REJECT_CHANGE = "#439: a Reject reason is not yet asked of the queue as signup.end (C78)"
 NO_REQUEST_CHANGE = (
     "#439: a Request Changes reason is not yet asked of the queue as "
     "signup.request_changes (C85)"
@@ -199,7 +198,9 @@ def _answered(press: Any) -> str:
 
 
 def _lines(league: SeasonLeague) -> list[str]:
-    return league.log().splitlines()
+    """The log channel's lines as a reader sees them: the router wraps each mention in backticks
+    so that it names without notifying, and the backticks are not part of what a line says."""
+    return league.log().replace("`", "").splitlines()
 
 
 async def _closings(league: SeasonLeague) -> list[dict[str, Any]]:
@@ -388,8 +389,7 @@ async def test_an_approved_signup_is_marked_as_such(tmp_path):
     [
         pytest.param("approve", "Approved", marks=pytest.mark.xfail(strict=True,
                                                                     reason=NO_APPROVE_CHANGE)),
-        pytest.param("reject", "Rejected", marks=pytest.mark.xfail(strict=True,
-                                                                   reason=NO_REJECT_CHANGE)),
+        pytest.param("reject", "Rejected"),
         pytest.param("request_changes", "Correction requested",
                      marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
     ],
@@ -418,7 +418,6 @@ async def test_a_driver_who_has_left_is_named_by_mention_alone(tmp_path, outcome
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_rejected_driver_returns_to_not_signed_up(tmp_path):
     """Manager 77 pressed Reject and types the reason: once the queue runs, Kimi is Not Signed
     Up."""
@@ -429,7 +428,6 @@ async def test_a_rejected_driver_returns_to_not_signed_up(tmp_path):
     assert await _state(league) == "NOT_SIGNED_UP"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_rejection_grants_no_role(tmp_path):
     """Kimi's rejection, once run, grants him no role, though the league has a driver role and
     his channel is told he was rejected."""
@@ -441,7 +439,6 @@ async def test_rejection_grants_no_role(tmp_path):
     assert any("rejected" in text.lower() for text in _texts(league)), _texts(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_rejection_reason_reaches_the_driver(tmp_path):
     """The driver has to know what to fix before signing up again: the closing notice posted in
     Kimi's channel gives "Lap time unverified"."""
@@ -452,7 +449,6 @@ async def test_a_rejection_reason_reaches_the_driver(tmp_path):
     assert any("Lap time unverified" in text for text in _texts(league)), _texts(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)
 async def test_a_rejection_reason_is_logged(tmp_path):
     """Manager 77 rejects Kimi as a duplicate entry: the log channel carries a Rejected line
     naming 77, with the reason beneath it."""
@@ -466,7 +462,7 @@ async def test_a_rejection_reason_is_logged(tmp_path):
 
 
 @pytest.mark.parametrize("outcome", [
-    pytest.param("reject", marks=pytest.mark.xfail(strict=True, reason=NO_REJECT_CHANGE)),
+    "reject",
     pytest.param("request_changes",
                  marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
 ])
@@ -556,16 +552,18 @@ async def test_a_driver_with_no_wizard_is_left_alone(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("action", ["reject", "request_changes"],
-                         ids=["reject", "request-changes"])
+@pytest.mark.parametrize(
+    "action",
+    [
+        "reject",
+        pytest.param("request_changes", marks=pytest.mark.xfail(strict=True, reason=NO_REQUEST_CHANGE)),
+    ],
+    ids=["reject", "request-changes"],
+)
 @pytest.mark.parametrize(
     "state", ["UNASSIGNED", "NOT_SIGNED_UP", "AWAITING_CORRECTION_PARAMETER"],
     ids=["after-approve", "after-withdrawal", "changes-already-requested"],
 )
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: a Reject or Request Changes reason is not yet asked of the queue, its check "
-    "refusing a signup that has moved on (C78, C85)"
-))
 async def test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded(
     tmp_path, action, state
 ):
