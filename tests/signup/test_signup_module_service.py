@@ -739,3 +739,33 @@ async def test_a_mark_is_cleared_by_the_save_that_starts_a_signup_and_by_no_othe
     await _save_wizard(svc, db_path, _make_wizard("401"), starting=True)
     assert (await _wizard_row(db_path, "401"))["closing_notice_owed"] == 0
     assert await svc.owed_closing_notices() == []
+
+
+async def test_the_drivers_mid_signup_are_listed_oldest_first_with_the_channel_they_have(db_path):
+    """Four drivers: 1 pending completion with a channel, 2 awaiting admin approval with no wizard,
+    3 assigned (not mid-signup) and 4 pending completion whose wizard has no channel. Asked for
+    the two mid-signup states, the service gives drivers 1, 2 and 4 in profile order, each with
+    their state and channel (None where they have none); asked for no state, it gives nothing."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    pending = DriverState.PENDING_SIGNUP_COMPLETION
+    review = DriverState.PENDING_ADMIN_APPROVAL
+    async with get_connection(db_path) as db:
+        await db.executemany(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
+            [("1", pending.value), ("2", review.value), ("3", DriverState.ASSIGNED.value),
+             ("4", pending.value)],
+        )
+        await db.executemany(
+            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) VALUES (?, ?)",
+            [("1", 501), ("3", 503), ("4", None)],
+        )
+        await db.commit()
+    svc = SignupModuleService(db_path)
+
+    assert await svc.drivers_mid_signup({pending, review}) == [
+        ("1", pending, 501), ("2", review, None), ("4", pending, None),
+    ]
+    assert await svc.drivers_mid_signup(set()) == []

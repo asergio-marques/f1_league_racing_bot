@@ -10,6 +10,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -48,6 +49,34 @@ class SignupModuleService:
             signup_closed_message_id=row["signup_closed_message_id"],
             close_at=row["close_at"],
         )
+
+    async def drivers_mid_signup(
+        self, states: Iterable[DriverState]
+    ) -> list[tuple[str, DriverState, int | None]]:
+        """Each driver whose state is one of *states*, oldest profile first, as their account, their
+        state and their signup channel.
+
+        A driver with no wizard record, or one whose channel was never made, has no channel (None).
+        `/signup close` lists them for its confirmation, so a manager can follow the link and
+        nudge someone to finish before closing.
+        """
+        wanted = tuple(state.value for state in states)
+        if not wanted:
+            return []
+        placeholders = ",".join("?" for _ in wanted)
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
+                f"FROM driver_profiles p "
+                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
+                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
+                wanted,
+            )
+            rows = await cursor.fetchall()
+        return [
+            (row["discord_user_id"], DriverState(row["current_state"]), row["signup_channel_id"])
+            for row in rows
+        ]
 
     async def save_config(self, cfg: SignupModuleConfig) -> None:
         async with get_connection(self._db_path) as db:

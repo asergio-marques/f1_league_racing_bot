@@ -214,7 +214,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (4, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, PASS["signup"]),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_close"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (2, PASS["signup"]),

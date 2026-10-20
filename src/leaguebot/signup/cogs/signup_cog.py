@@ -33,7 +33,6 @@ from discord.ext import commands
 
 from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
 from leaguebot.signup.services.window_changes import (
@@ -1195,16 +1194,7 @@ class SignupCog(commands.Cog):
         # Each driver is named with their signup channel, so a manager can follow the link
         # and nudge someone to finish before closing. A driver with no wizard record, or one
         # whose channel was never made, is named alone.
-        async with get_connection(self.bot.db_path) as db:
-            placeholders = ",".join("?" for _ in IN_PROGRESS_STATES)
-            cursor = await db.execute(
-                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
-                f"FROM driver_profiles p "
-                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
-                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
-                tuple(state.value for state in IN_PROGRESS_STATES),
-            )
-            rows = await cursor.fetchall()
+        rows = await self.bot.signup_module_service.drivers_mid_signup(IN_PROGRESS_STATES)
 
         if not rows:
             # No in-progress drivers — nothing to confirm, so the close is asked at once.
@@ -1231,11 +1221,11 @@ class SignupCog(commands.Cog):
 
         returned: list[str] = []
         kept: list[str] = []
-        for row in rows:
-            group = returned if DriverState(row["current_state"]) in RETURNED_BY_CLOSE else kept
-            line = _name_for_uid(row["discord_user_id"])
-            if row["signup_channel_id"] is not None:
-                line += f" — <#{row['signup_channel_id']}>"
+        for user_id, state, channel_id in rows:
+            group = returned if state in RETURNED_BY_CLOSE else kept
+            line = _name_for_uid(user_id)
+            if channel_id is not None:
+                line += f" — <#{channel_id}>"
             group.append(line)
 
         view = ConfirmCloseView(self.bot, interaction, cfg.signup_button_message_id)
