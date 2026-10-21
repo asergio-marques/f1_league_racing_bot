@@ -278,13 +278,17 @@ def report_approval_change(
         )
         return StepResult(
             result={"closed": True}, lines=(line,),
-            follow_ons=(await _appeals_prompt_request(db, ctx),),
+            follow_ons=(await _appeals_prompt_request(db, ctx, applied.result or {}),),
         )
 
-    async def _appeals_prompt_request(db: aiosqlite.Connection, ctx: StepContext) -> FollowOn:
+    async def _appeals_prompt_request(
+        db: aiosqlite.Connection, ctx: StepContext, applied: dict[str, Any]
+    ) -> FollowOn:
         """The round's lane is asked, in the last save, to take the review's two screens down and
         put the appeals stage's prompt up: the submission channel is the conversation's, so its
-        lane posts there (C44b), and a prompt Discord refuses stops that lane alone."""
+        lane posts there (C44b), and a prompt Discord refuses stops that lane alone. The round's
+        number and division are those the approval read in its save (*applied*), so that the
+        prompt's lines name the round whatever the press carried."""
         payload = ctx.payload
         row = await (
             await db.execute(
@@ -310,8 +314,8 @@ def report_approval_change(
                 "division_id": int(payload["division_id"]),
                 "channel_id": int(row["channel_id"]),
                 "takedowns": takedowns,
-                "round_number": payload.get("round_number"),
-                "division_name": payload.get("division_name"),
+                "round_number": applied.get("round_number", payload.get("round_number")),
+                "division_name": applied.get("division_name", payload.get("division_name")),
             },
             what="the appeals review prompt, with the penalty review taken down",
         )

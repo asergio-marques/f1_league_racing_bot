@@ -59,6 +59,7 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    retry_job,
     run_queue,
     tier_member,
     updated_reply,
@@ -471,7 +472,8 @@ async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
     """The reports are approved, but Discord refuses the appeals prompt: it stops the round's lane
     like any job. Once a league admin discards it, Alex's reply, still open to update, says the
     reports are approved and the appeals review is being posted again, and the log carries the
-    approval's line as incomplete, naming the prompt as not posted and being posted again."""
+    approval's line as incomplete, naming round 3 and the prompt as not posted and being posted
+    again. Once Discord takes it, the round's appeals prompt is posted again."""
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
 
@@ -484,8 +486,16 @@ async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
     assert "approved" in said
     assert "appeals review" in said
     assert "posted again" in said
-    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
-    assert "The appeals review prompt was not posted. It is being posted again." in league.log()
+    incomplete = _after(league.log(), "PENALTY_REVIEW_APPROVED | Incomplete")
+    assert incomplete.startswith("\n  round: 3 (Pro)\n")
+    assert "The appeals review prompt was not posted. It is being posted again." in incomplete
+
+    # It is asked again at once, and Discord, still refusing, stops it again until it takes it.
+    assert await stopped_at(league) == "post_appeals_prompt"
+    league.channel(SUBMISSION_CHANNEL).fail_when = None
+    await retry_job(league.bot)
+    assert await stopped_at(league) is None
+    assert len(appeals_prompts(league)) == 1
 
 
 # ---------------------------------------------------------------------------
