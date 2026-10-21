@@ -111,6 +111,15 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=N
     return bot
 
 
+async def _forced_close(bot, *, audit_action: str):
+    """The season's end's close, handed the bot's own canceller of a driver's signup timers."""
+    from leaguebot.__main__ import _cancel_wizard_timers
+
+    return await execute_forced_close(
+        bot, audit_action=audit_action, cancel_timers=_cancel_wizard_timers(bot)
+    )
+
+
 def _driver_notices(bot) -> list:
     """Every message the close posted other than the window's "signups are now closed" notice:
     a driver's closing notice. The bot's guild hands this one channel for every channel id, a
@@ -171,7 +180,7 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     db_path = await _make_db(tmp_path, name=f"fc_{state.value}", drivers=[("101", state)])
     bot = _bot(db_path)
 
-    outcome = await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
+    outcome = await _forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
 
     bot.driver_service.transition.assert_not_awaited()
     bot.scheduler_service.cancel_job.assert_not_called()
@@ -196,7 +205,7 @@ async def test_a_job_already_gone_is_stepped_over(tmp_path):
     bot = _bot(db_path)
     bot.scheduler_service = scheduler
 
-    outcome = await execute_forced_close(bot, audit_action="X")
+    outcome = await _forced_close(bot, audit_action="X")
 
     assert list(outcome.returned_ids) == ["101"]
 
@@ -210,7 +219,7 @@ async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_pa
     )
     bot = _bot(db_path, transition_error=ValueError("not in PENDING_SIGNUP_COMPLETION"))
 
-    outcome = await execute_forced_close(bot, audit_action="X")
+    outcome = await _forced_close(bot, audit_action="X")
 
     assert outcome.returned == 0
     assert list(outcome.returned_ids) == []
@@ -237,7 +246,7 @@ async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds
     bot = _bot(db_path)
     ended = _ends_recorded(bot)
 
-    outcome = await execute_forced_close(bot, audit_action="X")
+    outcome = await _forced_close(bot, audit_action="X")
 
     bot.driver_service.transition.assert_awaited_once()
     assert bot.driver_service.transition.await_args.args == ("101", DriverState.NOT_SIGNED_UP)
@@ -339,7 +348,7 @@ async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_s
 
     if case == "the mark fails":
         with pytest.raises(Exception) as raised:
-            await execute_forced_close(bot, audit_action="X")
+            await _forced_close(bot, audit_action="X")
         chain, error = [], raised.value
         while error is not None:
             chain.append(str(error))
@@ -351,7 +360,7 @@ async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_s
         assert await _window_still_open(bot.db_path)
         return
 
-    await execute_forced_close(bot, audit_action="X")
+    await _forced_close(bot, audit_action="X")
 
     assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
     assert await _wizard_of(bot.db_path, "101") == ("UNENGAGED", WIZARD_CHANNEL)
@@ -369,11 +378,12 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     standing in the scheduler, when the change queue's close returns them, on the real driver
     and signup module services. The process is killed in 102's return, after 101's return has
     been saved. At that moment 101 is Not Signed Up and owed their closing notice, and their
-    inactivity and channel-delete jobs are already cancelled: none is left to tell them their
-    session expired once the bot starts again. 102 is untouched: still part-way through, owed
-    nothing, their inactivity job standing."""
+    inactivity and channel-delete jobs are already cancelled and their 24-hour timer disarmed:
+    none is left to tell them their session expired once the bot starts again. 102 is
+    untouched: still part-way through, owed nothing, their inactivity job standing."""
     from datetime import timedelta, timezone
 
+    from leaguebot.signup.services.closing_steps import INACTIVITY_TIMER
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
     bot = await _real_services(tmp_path, name="fc_killed")
@@ -410,7 +420,7 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     bot.driver_service.transition = _transition
 
     with pytest.raises(_Killed):
-        await execute_forced_close(bot, audit_action="X")
+        await _forced_close(bot, audit_action="X")
 
     # What stands at the moment of the kill, before anything after the loop could run.
     assert asked == ["101", "102"]
@@ -419,6 +429,8 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     assert inactivity_job_id("101") in cancelled
     assert channel_delete_job_id("101") in cancelled
     assert inactivity_job_id("101") not in standing
+    bot.scheduler_service.disarm.assert_any_call(INACTIVITY_TIMER, "101")
+    assert all(call.args[1] != "102" for call in bot.scheduler_service.disarm.call_args_list)
     assert await _state_of(bot.db_path, "102") == "PENDING_SIGNUP_COMPLETION"
     assert await _owed_of(bot.db_path, "102") == 0
     assert not any(job_id.endswith("_102") for job_id in cancelled)
@@ -452,7 +464,7 @@ async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is
     bot.driver_service.transition = AsyncMock(side_effect=_transition)
 
     with pytest.raises(StepFailedOnDiscord) as raised:
-        await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
+        await _forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
 
     first, second = asked
     assert sorted(asked) == ["101", "102"]
@@ -477,7 +489,7 @@ async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
         ],
     )
 
-    outcome = await execute_forced_close(_bot(db_path), audit_action="X")
+    outcome = await _forced_close(_bot(db_path), audit_action="X")
 
     assert outcome.returned == 2
     assert sorted(outcome.returned_ids) == ["101", "102"]
@@ -494,7 +506,7 @@ async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
     with the window's close, so a discarded post leaves no record that signups closed."""
     db_path = await _make_db(tmp_path, name="fc_audit")
 
-    await execute_forced_close(_bot(db_path), audit_action="SIGNUP_DIVISIONS_DONE_CLOSE")
+    await _forced_close(_bot(db_path), audit_action="SIGNUP_DIVISIONS_DONE_CLOSE")
 
     assert await _audit(db_path) == []
 
@@ -505,7 +517,7 @@ async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_noconfig")
     bot = _bot(db_path, config=None)
 
-    outcome = await execute_forced_close(bot, audit_action="X")
+    outcome = await _forced_close(bot, audit_action="X")
 
     assert outcome.returned == 0
 
@@ -564,9 +576,13 @@ async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_
             ("102", DriverState.PENDING_SIGNUP_COMPLETION),
         ],
     )
+    from leaguebot.__main__ import _cancel_wizard_timers
+
     bot = _unattended_bot(db_path)
 
-    outcome = await close_signups_unattended(bot, cause=cause)
+    outcome = await close_signups_unattended(
+        bot, cause=cause, cancel_timers=_cancel_wizard_timers(bot)
+    )
 
     assert outcome is not None
     assert sorted(outcome.returned_ids) == ["101", "102"]
@@ -668,3 +684,24 @@ def test_the_close_timer_and_the_restart_sweep_call_the_close_nobody_ran(find, c
     assert closes, f"{function.name} does not call close_signups_unattended"
     assert [_cause_of(call) for call in closes] == [cause] * len(closes)
     assert _calls_to(function, "execute_forced_close") == []
+
+
+async def test_a_season_end_s_close_is_refused_without_its_timer_canceller(tmp_path):
+    """A season's end closes the window through `close_signups_unattended`, which returns drivers
+    and so must be handed what cancels their timers: without it, it raises before it returns
+    anyone, rather than leave a returned driver's 24-hour timer standing."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+
+    db_path = await _make_db(
+        tmp_path, name="fc_nocanceller", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    bot = _bot(db_path, config=SimpleNamespace(
+        signups_open=True, signup_channel_id=SIGNUP_CHANNEL,
+        signup_button_message_id=BUTTON_MESSAGE,
+    ))
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+
+    with pytest.raises(TypeError):
+        await close_signups_unattended(bot, cause="season end")
+
+    bot.driver_service.transition.assert_not_awaited()

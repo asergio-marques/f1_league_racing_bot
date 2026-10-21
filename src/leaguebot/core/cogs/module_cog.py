@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from datetime import datetime, timezone
@@ -78,6 +79,7 @@ async def execute_forced_close(
     bot: LeagueBot,
     *,
     audit_action: str,
+    cancel_timers: Callable[[str], None],
 ) -> ForcedCloseOutcome:
     """Return the drivers still filling in the signup wizard to Not Signed Up, for the change
     queue's close of the signup window, and say what it did.
@@ -90,7 +92,9 @@ async def execute_forced_close(
     Discord refuses stops the queue before the channel is locked, and it leaves the season's stage
     where it stands: the Sign Up button's deletion, the "Signups are now closed" post, the
     window's close and its audit are jobs of the change that asked for it (signup's
-    ``delete_button`` and ``post_closed``).
+    ``delete_button`` and ``post_closed``). *cancel_timers* takes away one driver's signup timers
+    (the 24 hours, the channel's deletion and the correction's), signup's own, which core cannot
+    name.
 
     Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
     wizard over in the same save (owed its closing notice), so a restart never tells a driver
@@ -119,8 +123,6 @@ async def execute_forced_close(
         )
         rows = await cursor.fetchall()
 
-    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
-
     returned = 0
     returned_ids: list[str] = []
     for row in rows:
@@ -140,14 +142,10 @@ async def execute_forced_close(
             returned += 1
             returned_ids.append(str(row["discord_user_id"]))
             # Their timers go now, before the next driver's save and any await, so that a kill
-            # part-way through the loop never leaves a returned driver's inactivity job in the
+            # part-way through the loop never leaves a returned driver's 24-hour timer in the
             # persistent jobstore to tell them their session expired as well as that signups
             # closed.
-            for job_id in (
-                inactivity_job_id(row["discord_user_id"]),
-                channel_delete_job_id(row["discord_user_id"]),
-            ):
-                bot.scheduler_service.cancel_job(job_id)
+            cancel_timers(str(row["discord_user_id"]))
         except ValueError:
             # The state machine's refusal: the driver moved on since they were read.
             log.info("forced_close: driver %s had moved on", row["discord_user_id"])
@@ -173,7 +171,7 @@ _UNATTENDED_CAUSES: dict[str, str] = {
 
 
 async def close_signups_unattended(
-    bot: LeagueBot, *, cause: str
+    bot: LeagueBot, *, cause: str, cancel_timers: Callable[[str], None] | None = None
 ) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close.
 
@@ -188,7 +186,9 @@ async def close_signups_unattended(
     A season's end and every division done close the window with ``execute_forced_close``: the
     outcome gives the drivers it returned and the queue's jobs tell and close each one's signup
     channel, close the window in its channel and record that in the line, which this writes
-    none of.
+    none of. *cancel_timers* is handed it, as there, and so a season's end and every division
+    done must give it; the close timer's and the restart's close is the queue's own, whose jobs
+    cancel the timers themselves, and need not.
 
     Nothing is done where a window was not actually open: a module that is disabled produces
     nothing (the core specification, Modules), and a window not open needs no close, so both
@@ -216,7 +216,11 @@ async def close_signups_unattended(
         )
         return None
 
-    return await execute_forced_close(bot, audit_action=audit_action)
+    if cancel_timers is None:
+        raise TypeError(f"the {cause}'s close returns drivers, so it is handed their timers")
+    return await execute_forced_close(
+        bot, audit_action=audit_action, cancel_timers=cancel_timers
+    )
 
 
 # ---------------------------------------------------------------------------

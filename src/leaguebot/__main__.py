@@ -168,7 +168,8 @@ def _forget_setup(bot: LeagueBot) -> None:
 
 def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
     """Removes one driver's signup inactivity and channel-deletion timers, for the close that
-    returns them to Not Signed Up (`signup.close`) and for the signup module's switch-off."""
+    returns them to Not Signed Up (`signup.close`, and a season's end's through
+    `execute_forced_close`) and for the signup module's switch-off."""
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.review_changes import CORRECTION_TIMER
     from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
@@ -201,7 +202,9 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
-        return await close_signups_unattended(bot_, cause=cause)
+        return await close_signups_unattended(
+            bot_, cause=cause, cancel_timers=_cancel_wizard_timers(bot_)
+        )
 
     async def window_open() -> bool:
         if not await bot.module_service.is_signup_enabled():

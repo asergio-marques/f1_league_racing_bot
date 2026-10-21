@@ -138,7 +138,6 @@ ignore_imports =
     # #283: signup:
     leaguebot.core.services.in_memory_state -> leaguebot.signup.services.signup_views
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
-    leaguebot.core.cogs.module_cog -> leaguebot.signup.services.wizard_service
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
     # #283: weather, and core's own formatting helpers, which still sit in weather's
     # message builder:
