@@ -325,6 +325,32 @@ async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signu
     bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
+async def test_a_confirmation_the_stage_refuses_takes_no_review_down(monkeypatch):
+    """Ben's confirmation loses the race to Alex's: set_stage refuses a season that has left
+    configuration. Only a press that confirms takes a review down (core, "Confirming placements"),
+    so Ben's review is not asked down as confirmed, and when the stage does move it is."""
+    from leaguebot.core.cogs import season_cog
+
+    took_down = AsyncMock()
+    monkeypatch.setattr(season_cog, "_take_the_review_down", took_down)
+    refused = _bot()
+    refused.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    interaction = _interaction()
+    interaction.client = refused
+
+    await _cog(refused)._do_confirm_configuration(interaction)
+
+    took_down.assert_not_awaited()
+
+    moved = _bot()
+    interaction = _interaction()
+    interaction.client = moved
+
+    await _cog(moved)._do_confirm_configuration(interaction)
+
+    took_down.assert_awaited_once()
+
+
 # ── The button ─────────────────────────────────────────────────────────────────────
 #
 # The button reads its review from the review's row, not from its view's memory: the question's
@@ -487,17 +513,20 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     cog._configuration_faults = AsyncMock(return_value=[])
     cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
     env.bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
-    asked_first: list[dict] = []
+    asked_before: list[dict] = []
 
     async def _move_on(*_args, **_kwargs):
-        asked_first.extend(await _take_downs(env))
+        asked_before.extend(await _take_downs(env))
 
     env.bot.season_service.set_stage = AsyncMock(side_effect=_move_on)
 
     await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
 
     env.bot.season_service.set_stage.assert_awaited_once()
-    [payload] = asked_first
+    # Only a press that confirms takes the review down, so it is asked once the stage has moved
+    # and not before: a stage that refuses leaves the review standing (core :282).
+    assert asked_before == []
+    [payload] = await _take_downs(env)
     assert (payload["ending"], payload["question_id"]) == ("confirmed", channel.q.id)
     assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
     assert channel.deleted == []

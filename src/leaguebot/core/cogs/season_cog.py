@@ -2733,7 +2733,6 @@ class SeasonCog(commands.Cog):
         # configuration fixes nothing: the refusal's "Nothing has been confirmed" is then true.
         # Taking both in one transaction would have core hand a connection to the signup
         # module's service, a reach into a module the architecture does not allow.
-        await _take_the_review_down(self.bot, interaction)
         try:
             await self.bot.season_service.set_stage(cfg.season_id, target)
         except InvalidStageTransition:
@@ -2743,6 +2742,10 @@ class SeasonCog(commands.Cog):
                 what=what,
             )
             return False
+        # Only a press that confirms takes the review down (core, "Confirming placements"): this
+        # one is asked once the stage has moved, so a confirmation set_stage refuses leaves it
+        # standing. Nothing queued follows it here, so it still comes down ahead of the rest.
+        await _take_the_review_down(self.bot, interaction)
         if signup_on:
             # The season's signups are made under these settings, fixed from this moment.
             await self.bot.signup_module_service.snapshot_season_config(
