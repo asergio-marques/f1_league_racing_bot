@@ -259,7 +259,8 @@ audit record, which is how some settings came to have none.
   warning), which runs on that conversation's lane. A
   *conversation lane*, one for each channel the bot opens for a conversation (a driver's signup
   channel, a round's submission channel with its penalty review, an amendment's channel), carries
-  that conversation's own turns: a typed answer, a paste, a staging, and the posts in its own channel.
+  that conversation's own turns: a typed answer, a paste, a press within the conversation (a staging, a
+  choice, a resubmission), and the posts in its own channel.
   A conversation lane writes only its conversation's own tables, held at run time (see "The database"):
   the sessions a round's submission collects are its own until its review opens, saved on the
   round's lane, and so are a resubmission's drafts, while the swap of the round's results is the
