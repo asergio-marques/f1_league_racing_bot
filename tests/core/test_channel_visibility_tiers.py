@@ -27,6 +27,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.server_config import ServerConfig
+from tests.support.change_queue import in_a_job
 
 SERVER_ID = 4242
 MANAGER_ROLE = 222
@@ -100,9 +101,10 @@ async def _create_wizard_channel(*, league_admin_role_id):
     member = MagicMock(spec=discord.Member)
     member.name = "driver"
 
-    await WizardService._create_wizard_channel(
-        guild, member, None, MANAGER_ROLE, league_admin_role_id
-    )
+    with in_a_job():
+        await WizardService._create_wizard_channel(
+            guild, member, None, MANAGER_ROLE, league_admin_role_id
+        )
     return created["overwrites"]
 
 
