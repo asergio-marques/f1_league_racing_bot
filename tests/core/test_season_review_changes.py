@@ -634,6 +634,60 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     assert bool(render.await_args.kwargs.get("include_uncommitted")) is uncommitted
 
 
+async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
+        posting, tmp_path):
+    """Alex's review carries two pictures, each drawn by the image module into a directory of its
+    own (as `tempfile.mkdtemp(prefix="f1bot_render_")` makes it), the builder handing
+    `discard_render` to the change. Once the queue runs, both pictures are posted and neither
+    render directory is left behind."""
+    import tempfile
+    from pathlib import Path
+
+    from leaguebot.core.services.season_review_changes import season_review_post_change
+    from leaguebot.image.services.image_render_service import discard_render
+
+    made: list[Path] = []
+
+    def drawing(picture: Any) -> Path:
+        folder = Path(tempfile.mkdtemp(prefix="f1bot_render_", dir=tmp_path))
+        drawn = folder / f"{picture['kind']}.png"
+        drawn.write_bytes(b"\x89PNG\r\n\x1a\n")
+        made.append(drawn)
+        return drawn
+
+    attach_queue(posting.bot, posting.db_path, now=posting.clock, types=(
+        season_review_post_change(drawing=drawing, approve_view=lambda payload: APPROVE,
+                                  scheduler=posting.bot.scheduler_service,
+                                  discard=discard_render),
+    ))
+    await _review(posting)
+    await run_queue(posting.bot)
+
+    assert len(made) == 2 and len([m for m in _posts(posting.channel) if m.picture]) == 2
+    assert [path.parent.exists() for path in made] == [False, False]
+
+
+async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_render(
+        posting, monkeypatch):
+    """The real change types are registered, as the builder registers them. The factory of
+    `season.review.post` is handed the image module's `discard_render`, so that a picture's render
+    directory goes with it."""
+    from leaguebot.core.services import season_review_changes
+    from leaguebot.image.services.image_render_service import discard_render
+
+    handed: dict[str, Any] = {}
+    built = season_review_changes.season_review_post_change
+
+    def _capture(**kwargs: Any) -> Any:
+        handed.update(kwargs)
+        return built(**kwargs)
+
+    monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+
+    assert handed["discard"] is discard_render
+
+
 # ---------------------------------------------------------------------------
 # The restart (C98)
 # ---------------------------------------------------------------------------

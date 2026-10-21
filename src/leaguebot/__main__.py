@@ -468,7 +468,11 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.season_lifecycle_service import (
         wind_down_change,
     )
-    from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
+    from leaguebot.image.services.image_render_service import (
+        CONVERTER_NAME,
+        converter_available,
+        discard_render,
+    )
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.weather.services.forecast_changes import (
         forecast_change,
@@ -850,7 +854,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         season_review_changes.season_review_post_change(
             drawing=_review_drawing(bot), approve_view=_approve_view_for(bot),
-            scheduler=bot.scheduler_service,
+            scheduler=bot.scheduler_service, discard=discard_render,
         )
     )
     bot.change_queue.register(channel_tell_change())

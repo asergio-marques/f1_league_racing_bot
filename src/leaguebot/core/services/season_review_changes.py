@@ -399,15 +399,19 @@ async def _channel_of(ctx: StepContext) -> discord.TextChannel:
 
 
 def season_review_post_change(
-    *, drawing: ReviewDrawing, approve_view: ApproveViewFactory, scheduler: "SchedulerService"
+    *, drawing: ReviewDrawing, approve_view: ApproveViewFactory, scheduler: "SchedulerService",
+    discard: Callable[[Path], None] | None = None,
 ) -> ChangeType:
     """The `season.review.post` change type, for the builder to register.
 
     *drawing* draws a picture to a file (synchronously, raising where it will not draw),
     *approve_view* makes the question's view from the post's payload, and *scheduler* arms the
     `review_expiry` timer; the builder hands all three, so that core imports nothing of the image
-    module and no job looks a service up on the bot.
+    module and no job looks a service up on the bot. *discard*, where given, removes a drawn
+    picture once its job is over, whatever came of the post: the builder hands the image module's
+    `discard_render`, which takes the render's directory too; without it the file alone goes.
     """
+    discard_drawn = discard or (lambda path: path.unlink(missing_ok=True))
 
     async def check(_ctx: CheckContext) -> Verdict:
         return Verdict.go()
@@ -459,7 +463,7 @@ def season_review_post_change(
                 log.warning("season review: %s was refused as a picture: %s", picture["name"], exc)
             finally:
                 attachment.close()
-                drawn.unlink(missing_ok=True)
+                discard_drawn(drawn)
         if message is None:
             message = await send_notice(
                 channel, str(picture["text"]), allowed_mentions=_NO_MENTIONS
