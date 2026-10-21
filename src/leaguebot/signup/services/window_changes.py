@@ -66,8 +66,9 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
     StepView,
+    in_hand,
 )
-from leaguebot.core.services.season_end_changes import season_ending
+from leaguebot.core.services.season_end_changes import SEASON_ENDING, season_ending
 from leaguebot.core.services.season_lifecycle_service import (
     WINDOW_CLOSED_NOTICE,
     WINDOW_NOT_CLOSED,
@@ -120,6 +121,7 @@ NOT_RETURNED = "The drivers still signing up could not be returned to Not Signed
 __all__ = [
     "ARM_CLOSE", "AUDIT_AUTO_CLOSE", "AUDIT_CLOSE", "AUDIT_FORCE_CLOSE", "CLOSE", "CLOSE_LINE",
     "DELETE_CLOSED", "OPEN", "POST_INFO", "RETURN_DRIVERS", "armed_close_refusal",
+    "season_end_close_refusal",
     "discarded", "drivers_returned", "failed_jobs", "return_drivers_step", "window_close_change",
     "window_open_change", "window_was_closed",
 ]
@@ -486,6 +488,24 @@ def return_drivers_step(
     return Step(RETURN_DRIVERS, StepKind.SAVE, return_drivers, describe=describe_return)
 
 
+async def season_end_close_refusal(db_path: str) -> str | None:
+    """The refusal of a member's close of the window while the season's completion, cancellation,
+    abort or wind-down is in hand on the queue, naming the job nearest its turn, or None where none
+    is: that end closes signups itself (core's "Ending a season", one rule for every request about
+    a season whose end is in hand). Asked by `/signup close` before its confirmation, and by the
+    close's check, when asked (the command, and its Confirm Close button) and as it runs."""
+    jobs = [job or 0 for _payload, job in await in_hand(db_path, SEASON_ENDING)]
+    if not jobs:
+        return None
+    job = min(jobs)
+    named = f" (job #{job})" if job else ""
+    return (
+        f"⛔ The season's end is in hand on the queue{named} and closes signups itself, so "
+        "nothing was closed. If it has stopped, press Retry or Discard on its notice in the log "
+        "channel."
+    )
+
+
 def window_close_change(
     *,
     signup_module_service: Callable[[], "SignupModuleService"],
@@ -500,8 +520,9 @@ def window_close_change(
     bot's), ``window`` (the Sign Up button message of the window asked about), ``confirmed``
     (whether a manager was shown the drivers it returns and pressed Confirm Close),
     ``audit_action`` and, for the bot's, ``close_at`` (the time it was set to close). The window
-    is judged again as the change comes up to run. The bot's close leaves a season whose end or
-    wind-down is in hand on the queue to it (`season_ending`): no longer due at its check, it is
+    is judged again as the change comes up to run. A member's close is refused, first, while the
+    season's end or wind-down is in hand (`season_end_close_refusal`). The bot's close leaves a
+    season whose end or wind-down is in hand on the queue to it (`season_ending`): no longer due at its check, it is
     dropped; started already, as a close cut off by a stop is, it returns no driver it has not
     returned, and none of its jobs moves the season on (the signup specification's close of the
     window). *signup_module_service* is a getter, so that the
@@ -513,6 +534,10 @@ def window_close_change(
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         command = payload["cause"] == "command"
+        if command:
+            ending = await season_end_close_refusal(ctx.db_path)
+            if ending is not None:
+                return Verdict.refuse(ending)
         cfg = await signup_module_service().get_config()
         if cfg is None or not cfg.signups_open:
             if command:

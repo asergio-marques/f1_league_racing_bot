@@ -41,6 +41,7 @@ from leaguebot.signup.services.window_changes import (
     AUDIT_CLOSE,
     AUDIT_FORCE_CLOSE,
     armed_close_refusal,
+    season_end_close_refusal,
 )
 from leaguebot.core.services import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -1142,6 +1143,13 @@ class SignupCog(commands.Cog):
     @league_manager_only
     async def signup_close(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
+            return
+
+        # The season's end closes signups itself: refused at once, before any confirmation, as
+        # every request about a season whose end is in hand is (core, "Ending a season").
+        ending = await season_end_close_refusal(self.bot.db_path)
+        if ending is not None:
+            await refuse(interaction, ending, what=describe(interaction))
             return
 
         cfg = await self.bot.signup_module_service.get_config()

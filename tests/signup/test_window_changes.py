@@ -668,9 +668,10 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
 SEASON_ENDS = ("season.complete", "season.wind_down")
 
 
-async def _season_end_in_hand(league: SeasonLeague, kind: str) -> None:
+async def _season_end_in_hand(league: SeasonLeague, kind: str) -> int:
     """A *kind* change of season 7 in hand on the league's lane, asked after the close and stopped
-    at its first job, its next try an hour away: it stays in hand while the close runs."""
+    at its first job, its next try an hour away: it stays in hand while the close runs. Gives the
+    job's number."""
     import json
 
     later = league.clock.now + timedelta(hours=1)
@@ -680,12 +681,15 @@ async def _season_end_in_hand(league: SeasonLeague, kind: str) -> None:
             "VALUES (?, ?, ?, 'BOT', 'QUEUED', 'ending the season')",
             (kind, kind, json.dumps({"season_id": SEASON_ID})),
         )
-        await db.execute(
+        cursor = await db.execute(
             "INSERT INTO queued_change_steps (change_id, position, name, payload, tries, "
             "failing_since, last_failure, next_try_at) VALUES (?, 0, 'first', '{}', 1, ?, ?, ?)",
             (cursor.lastrowid, league.clock.now.isoformat(), "a fault", later.isoformat()),
         )
+        job = cursor.lastrowid
         await db.commit()
+    assert job is not None
+    return job
 
 
 async def _auto_close(league: SeasonLeague, cause: str) -> None:
@@ -750,6 +754,44 @@ async def test_a_close_cut_off_after_returning_its_drivers_tells_them_and_leaves
 
     assert len(_told(league)) == 1
     assert _locked_in(league)
+    assert await _season_stage(league) == "SIGNUPS"
+
+
+@pytest.mark.parametrize("kind", ("season.complete", "season.cancel", "season.abort",
+                                  "season.wind_down"))
+@pytest.mark.parametrize("asked", ("the command", "the command with drivers", "Confirm Close"))
+async def test_a_member_s_close_while_the_season_s_end_is_in_hand_is_refused_naming_the_job(
+    tmp_path, kind, asked,
+):
+    """The season's completion (cancellation, abort or wind-down) is in hand on the queue, stopped
+    at its first job. Manager 77 runs `/signup close` with nobody signing up, or with Kimi still
+    filling in the wizard, or is shown the confirmation before the end comes to be in hand and
+    then presses Confirm Close. Each is refused at once (core, "Ending a season"): he is told the
+    season's end is in hand and closes signups itself, naming its job and saying to press Retry
+    or Discard on its notice; the refusal is one ⛔ line in the log channel; no close is asked,
+    the window stays open and the season at Signups."""
+    from tests.support.change_queue import queued_log_lines
+
+    drivers = (SIGNING_UP,) if asked != "the command" else ()
+    league = await _close_league(tmp_path, *drivers)
+    if asked == "Confirm Close":
+        shown = await _signup_close(league)
+        job = await _season_end_in_hand(league, kind)
+        view = shown.response.send_message.await_args.kwargs["view"]
+        press = _manager(league)
+        await view.confirm.callback(press)
+    else:
+        job = await _season_end_in_hand(league, kind)
+        press = await _signup_close(league)
+
+    reply = acknowledgement(press)
+    assert "season's end is in hand" in reply and "closes signups itself" in reply, reply
+    assert f"job #{job}" in reply and "Retry or Discard" in reply, reply
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    assert len([line for line in lines if line.startswith("⛔")]) == 1, lines
+    assert await _changes_of(league, CLOSE_KIND) == []
+    await run_queue(league.bot)
+    assert (await _window(league))["signups_open"]
     assert await _season_stage(league) == "SIGNUPS"
 
 
