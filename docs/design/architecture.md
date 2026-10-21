@@ -817,9 +817,11 @@ to it would switch off the one failure path for every command.
    `outcome` (what became of a change it undid, in place of "may have been partly done"), and
    then returns. One failure still makes one line, and the base classes are spared a second
    report. The change queue's worker is a failure path too, and the
-   fallback where a stop cannot be recorded: its catch-all (`ChangeQueue._work`) puts the error
-   in the host's log, the worker pauses and looks again, and the job runs again, so that its
-   failure is recorded then. The hook a change type may give for a Discard of a change before it
+   fallback where a stop cannot be recorded: the lane's catch-all (`ChangeQueue._work_lane`, one
+   for each lane) puts the error in the host's log, that lane's worker pauses and looks again, and
+   the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
+   catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
+   before it looks again. The hook a change type may give for a Discard of a change before it
    started (`ChangeQueue._discard_follow_ons`) is not a failure path but a stated exception: its
    catch-all puts the error in the host's log alone, with no line to the log channel, and asks no
    follow-on, because a Discard is the queue's last way past a stop and a hook that raises must
