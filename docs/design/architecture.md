@@ -274,7 +274,7 @@ audit record, which is how some settings came to have none.
   change first. SQLite lets one writer in at a time, so one write lock, taken round each save and
   released at its commit, keeps that single writer in the process; no call to Discord is made under
   it, so a long save makes another lane's save wait in Python rather than fail on SQLite's busy
-  timeout. Inside the save of a step that has one, or a record, and under the lock, the job is asked
+  timeout. Inside the save of a save step, or of a step with a record, and under the lock, the job is asked
   again whether it is still due and whether its conversation still stands, since another lane's
   save may have landed between the check and the save. The tests run the lanes one at a time, taking the
   runnable lane head with the lowest change number, so a test's outcome does not depend on timing.
