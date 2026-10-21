@@ -42,11 +42,6 @@ CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
 ROUND_3 = round_id(PRO, 3)
 
-NO_CALL_CHANGE = (
-    "#439: the check-in call is posted by `run_rsvp_notice` at once, off the change queue, "
-    "rather than by its own job"
-)
-
 #: Every image module the check-in graphic could be redrawn through.
 _IMAGE_MODULES = ("image_rsvp_post", "image_rsvp_service", "image_render_service")
 
@@ -274,7 +269,6 @@ async def test_the_attachment_helper_never_raises(tmp_path, monkeypatch):
 # ── The toggle changes nothing else (FR-052) ──────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CALL_CHANGE)
 async def test_the_embed_and_the_view_are_built_before_and_regardless_of_the_graphic(
     tmp_path, monkeypatch,
 ):
@@ -283,9 +277,14 @@ async def test_the_embed_and_the_view_are_built_before_and_regardless_of_the_gra
     (tmp_path / "drawn").mkdir()
     (tmp_path / "plain").mkdir()
     drawn = await _call_league(tmp_path / "drawn")
-    _drawing(drawn, tmp_path, monkeypatch)
-    await _post_the_call(drawn)
+    with monkeypatch.context() as drawing_patch:
+        _drawing(drawn, tmp_path, drawing_patch)
+        await _post_the_call(drawn)
     plain = await _call_league(tmp_path / "plain", images=False)
+    # Each league is built at the host's clock to the second; the round's date must be one.
+    [round_row] = await drawn.rows("SELECT scheduled_at FROM rounds WHERE id = ?", ROUND_4)
+    await plain.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+                      round_row["scheduled_at"], ROUND_4)
     await _post_the_call(plain)
 
     sends = [league.channel(CHECK_IN).send.await_args_list[-1].kwargs for league in (drawn, plain)]
