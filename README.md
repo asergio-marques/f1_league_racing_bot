@@ -332,7 +332,7 @@ amendment again while the first is, or approving a season again (without naming 
 
 **A job that fails stops its lane.** Nothing behind it on that lane runs until it is cleared, and the other lanes carry on: a stopped conversation holds only itself, and a stopped league lane leaves every conversation running. The log channel
 gets one ❌ message, with **Retry** and **Discard** buttons, naming the job's number, the lane's channel where it is a conversation's, what it was,
-the request, who asked and the kind of fault, and the acknowledgement says the request is stopped
+the request, who asked and the kind of fault in plain words (that the bot could not read or write its database, that Discord refused a request, that the bot hit an internal fault, or the job's own reason), never the error's technical name, and the acknowledgement says the request is stopped
 and will be tried again. The notice of the league's lane always mentions the league admin role; a conversation's does only when no other conversation's stop notice is standing. A change asked for meanwhile is acknowledged, joins the back, and says
 which job the queue is stopped at. The bot tries the job again 1, 5, 10, 15, 30 and 60 minutes
 after it first failed, writing no line for a try that fails until the last, which says the bot has
