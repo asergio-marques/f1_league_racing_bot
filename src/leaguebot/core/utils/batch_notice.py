@@ -19,6 +19,11 @@ which is where they already go.
 The notice is posted and taken down by two jobs of the change that draws the graphics; the two
 functions here are what those jobs call, each raising whatever Discord raises so the queue stops
 at it.
+
+**`send_notice` is also the season review's posting point** (`season_review_changes`): its
+pictures, report sections and question are sent through it with their other parts (*extra*), so
+that core keeps one send of its own the direct-post check lists, rather than a second beside it
+for the review alone.
 """
 
 from __future__ import annotations
