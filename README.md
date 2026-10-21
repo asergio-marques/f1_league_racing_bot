@@ -340,10 +340,10 @@ stopped trying on its own. **Retry**, for a league manager or a league admin, tr
 and works at any time but while the job is being tried; after the hour it is the only way on, and a Retry that fails is recorded,
 naming who pressed it. **Discard**, for a league admin alone, drops that one job and the queue runs
 on, the log channel recording who discarded it and what was not done; the request's later jobs run,
-each checking it is still due. **A job without which a round would never run cannot be discarded**: the arming of a season's timed work once it is approved, and of an amended round's. Discard on it is refused, saying so, and the refusal is recorded; the job stays stopped. The only way on is to put right what stopped it and press Retry (or let the bot's own tries run). A job that goes through says so, and so does a stop that clears because the job is found no longer due or its request is refused at its check; either way its buttons come off. If a
+each checking it is still due. **A job without which a round would never run cannot be discarded**: the arming of a season's timed work once it is approved, the arming of an amended round's, and the opening of a round's results submission. Discard on it is refused, saying so, and the refusal is recorded; the job stays stopped. The only way on is to put right what stopped it and press Retry (or let the bot's own tries run). A job that goes through says so, and so does a stop that clears because the job is found no longer due or its request is refused at its check; either way its buttons come off. If a
 channel or permission was the fault, put it right first, then press Retry. After a restart a
 stopped queue stays stopped: the bot makes no try of its own, a line in the log channel says so,
-and only Retry or Discard moves it (Discard is refused on an arming). A button pressed by someone who may not use it, or on a notice
+and only Retry or Discard moves it (Discard is refused on any of those three jobs). A button pressed by someone who may not use it, or on a notice
 whose job no longer stops the queue, is refused and recorded; so is Retry or Discard pressed while
 that job is being tried, which tells you to press again once the try has ended.
 
