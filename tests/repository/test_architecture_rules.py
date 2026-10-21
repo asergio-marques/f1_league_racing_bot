@@ -1295,21 +1295,78 @@ def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_
 _SERVICE_SUFFIX = "_service"
 
 
+def _visible(bound: dict[tuple[str, str], set[str]], path: str, function: str) -> set[str]:
+    """The names bound to the bot that *function* in *path* sees: its own, and those of every
+    function it is nested in, as a closure does."""
+    return {
+        name
+        for (file, scope), names in bound.items()
+        if file == path and (function == scope or function.startswith(f"{scope}."))
+        for name in names
+    }
+
+
 def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
-    """The local names each function among *nodes* binds to the bot, ``_bot = bot_of(…)`` or
-    ``b: LeagueBot = self.bot``, the bot reached as `_reaches_the_bot` reads it, keyed by file and
-    function. A function nested in another sees its enclosing function's names too, as a closure
-    does."""
+    """The local names each function among *nodes* binds to the bot, keyed by file and function.
+
+    A name is bound to the bot by a plain assignment of it, ``_bot = bot_of(…)`` or
+    ``b: LeagueBot = self.bot``, the bot reached as `_reaches_the_bot` reads it or through a name
+    already bound to it; and by unpacking a call to a function of the same file that returns the
+    bot, ``ok, _bot, _user_id = await self._guard(…)``, at the place in the tuple it returns the
+    bot. A function returns the bot where one of its ``return`` statements gives it back whole or
+    at that place in a tuple. Bindings are followed to a fixed point, so a helper returning what
+    another helper returned is seen too. A function nested in another sees its enclosing
+    function's names (`_visible`)."""
+    nodes = list(nodes)
     bound: dict[tuple[str, str], set[str]] = {}
-    for path, function, node in nodes:
-        if isinstance(node, ast.Assign) and len(node.targets) == 1:
-            target, value = node.targets[0], node.value
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            target, value = node.target, node.value
-        else:
-            continue
-        if isinstance(target, ast.Name) and _reaches_the_bot(value):
-            bound.setdefault((path, function), set()).add(target.id)
+    #: Each function returning the bot, by file and name, to the places it returns it at: an index
+    #: into the tuple it returns, or None where it returns the bot whole.
+    returns: dict[tuple[str, str], set[int | None]] = {}
+
+    def is_the_bot(path: str, function: str, node: ast.expr) -> bool:
+        return _reaches_the_bot(node) or (
+            isinstance(node, ast.Name) and node.id in _visible(bound, path, function)
+        )
+
+    changed = True
+    while changed:
+        changed = False
+
+        def add(table: dict, key: tuple[str, str], item) -> None:
+            nonlocal changed
+            if item not in table.setdefault(key, set()):
+                table[key].add(item)
+                changed = True
+
+        for path, function, node in nodes:
+            if isinstance(node, ast.Return) and node.value is not None:
+                key = (path, function.rsplit(".", 1)[-1])
+                if isinstance(node.value, ast.Tuple):
+                    for index, element in enumerate(node.value.elts):
+                        if is_the_bot(path, function, element):
+                            add(returns, key, index)
+                elif is_the_bot(path, function, node.value):
+                    add(returns, key, None)
+                continue
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target, value = node.targets[0], node.value
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                target, value = node.target, node.value
+            else:
+                continue
+            if isinstance(value, ast.Await):
+                value = value.value
+            places = (
+                returns.get((path, _call_name(value)), set()) if isinstance(value, ast.Call)
+                else set()
+            )
+            if isinstance(target, ast.Name):
+                if is_the_bot(path, function, value) or None in places:
+                    add(bound, (path, function), target.id)
+            elif isinstance(target, ast.Tuple):
+                for index, element in enumerate(target.elts):
+                    if index in places and isinstance(element, ast.Name):
+                        add(bound, (path, function), element.id)
     return bound
 
 
@@ -1322,11 +1379,7 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
     bound = _locals_bound_to_the_bot(nodes)
 
     def bot_local(path: str, function: str, node: ast.expr) -> bool:
-        return isinstance(node, ast.Name) and any(
-            node.id in names
-            for (file, scope), names in bound.items()
-            if file == path and (function == scope or function.startswith(f"{scope}."))
-        )
+        return isinstance(node, ast.Name) and node.id in _visible(bound, path, function)
 
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
@@ -1396,8 +1449,10 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
+    ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
@@ -1475,6 +1530,41 @@ def test_the_lookup_check_follows_a_local_bound_to_the_bot():
     assert _service_lookups_among(_sample(source, path)) == Counter(
         {(path, "handler"): 3, (path, "handler.callback"): 1}
     )
+
+
+def test_the_lookup_check_follows_the_bot_unpacked_from_a_helper_that_returns_it():
+    """A name unpacked from a call to a function of the same file that returns the bot, at the
+    place in the tuple it returns it, is bound to the bot, and through a helper calling another:
+    ``_resolve`` returns ``(_bot, _user_id)``, ``_guard`` unpacks it and returns ``(True, _bot,
+    _user_id)``, and each reads a service through ``_bot``, as does a press unpacking ``_guard``'s.
+    A name at another place in the tuple, and one unpacked from a helper that never returns the
+    bot, are not."""
+    path = "signup/services/sample_views.py"
+    source = (
+        "class Review:\n"
+        "    async def _resolve(self, interaction):\n"
+        "        _bot = bot_of(interaction)\n"
+        "        _bot.signup_module_service.get()\n"
+        "        return _bot, 7\n"
+        "    async def _guard(self, interaction):\n"
+        "        _bot, _user_id = await self._resolve(interaction)\n"
+        "        _user_id.season_service.get()\n"
+        "        _bot.driver_service.get()\n"
+        "        return True, _bot, _user_id\n"
+        "    async def press(self, interaction):\n"
+        "        ok, _bot, _user_id = await self._guard(interaction)\n"
+        "        ok.season_service.get()\n"
+        "        _bot.wizard_service.get()\n"
+        "async def _other(interaction):\n"
+        "    return interaction.user, 7\n"
+        "async def elsewhere(interaction):\n"
+        "    who, _n = await _other(interaction)\n"
+        "    who.season_service.get()\n"
+    )
+
+    assert _service_lookups_among(_sample(source, path)) == Counter({
+        (path, "Review._resolve"): 1, (path, "Review._guard"): 1, (path, "Review.press"): 1,
+    })
 
 
 def test_a_listed_lookup_that_is_gone_fails_the_lookup_check():
