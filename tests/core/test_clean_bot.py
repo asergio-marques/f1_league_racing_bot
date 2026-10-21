@@ -41,12 +41,6 @@ BOT_USER = MagicMock(name="bot_user")
 SOMEONE_ELSE = SimpleNamespace(id=105, name="Kimi")
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
-NO_CLEAN_CHANGE = (
-    "#439: /clean-bot deletes at once, off the change queue, passing over a message gone or "
-    "refused rather than completing its job uncounted or stopping the queue"
-)
-
-
 @pytest.fixture
 async def league(tmp_path):
     """The league's queue, with every change type the builder registers, and channel 700, which
@@ -187,7 +181,6 @@ async def test_fewer_bot_messages_than_asked_for_is_reported_not_failed(league):
     assert "Only 1" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_a_message_already_gone_does_not_consume_the_count(league):
     """The bot's survivor, then its newest message. Admin cleans 1; the clean chooses the newest,
     which is deleted by hand before its delete runs. Its delete completes, the queue does not
@@ -211,7 +204,6 @@ async def test_a_message_already_gone_does_not_consume_the_count(league):
     assert "Deleted 0" in _last_said(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_a_refused_delete_stops_the_queue(league):
     """One of the bot's messages stands, and Discord refuses to delete it. Admin cleans 1: the
     queue stops at its delete job, and the message stands."""

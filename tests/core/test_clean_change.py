@@ -52,12 +52,6 @@ CLEANED = 700
 BOT_USER = SimpleNamespace(id=1, name="LeagueBot")
 DRIVER = SimpleNamespace(id=105, name="Kimi")
 
-NO_CLEAN_CHANGE = (
-    "#439: /clean-bot reads the channel and deletes the bot's messages at once, off the change "
-    "queue, counting a refused delete rather than stopping the queue"
-)
-
-
 @pytest.fixture
 async def env(tmp_path):
     """The league's queue, with every change type the builder registers, and channel 700 found
@@ -109,7 +103,6 @@ async def _cleans(env: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(env.db_path) if row["kind"] == KIND]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_clean_bot_is_acknowledged_and_deletes_the_chosen_messages_as_jobs(env):
     """Channel 700 holds, oldest first, three of the bot's messages A, B and C, with Kimi's
     between B and C. Admin runs `/clean-bot` for 2. Before the queue runs nothing is deleted and
@@ -138,7 +131,6 @@ async def test_clean_bot_is_acknowledged_and_deletes_the_chosen_messages_as_jobs
     assert "Deleted 2" in said[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_the_messages_are_chosen_when_its_job_runs(env):
     """The bot's messages A, B and C stand, C newest. The queue is stopped when Admin runs
     `/clean-bot` for 2; while it waits, C and B are deleted by hand. Once the stop clears, the
@@ -160,7 +152,6 @@ async def test_the_messages_are_chosen_when_its_job_runs(env):
     assert "Deleted 1" in _said(interaction)[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_clean_bot_may_delete_a_message_the_bot_posted_while_it_waited(env):
     """The bot's message A stands. The queue is stopped when Admin runs `/clean-bot` for 1; while
     it waits, the bot posts message N in the channel. Once the stop clears, N, the newest of the
@@ -178,7 +169,6 @@ async def test_clean_bot_may_delete_a_message_the_bot_posted_while_it_waited(env
     assert env.channel.messages == [a]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(env):
     """The bot's messages A and B stand, B newest; Discord refuses to delete A. Admin runs
     `/clean-bot` for 2: B is deleted and the queue stops at A's delete job. Admin discards it:
@@ -206,7 +196,6 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(env):
     assert str(a.id) in said
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_a_message_already_gone_is_not_counted(env):
     """The bot's messages A, B and C stand, C newest. Admin runs `/clean-bot` for 2; its first
     job chooses C and B, then B is deleted by hand before its delete runs. B's delete completes
@@ -227,7 +216,6 @@ async def test_a_message_already_gone_is_not_counted(env):
     assert "Deleted 1" in _said(interaction)[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLEAN_CHANGE)
 async def test_clean_bot_in_a_conversation_s_channel_runs_on_the_league_lane(env):
     """Channel 700 is a channel the bot keeps for a conversation, and that conversation's turns
     are stopped on a failed job. The bot's message A stands there. Admin runs `/clean-bot` for 1:
@@ -244,3 +232,35 @@ async def test_clean_bot_in_a_conversation_s_channel_runs_on_the_league_lane(env
     assert change["lane"] == "league"
     assert change["state"] == "DONE"
     assert env.channel.deleted == [a]
+
+
+async def test_the_change_is_refused_where_the_bot_may_not_manage_messages(env):
+    """The bot's message A stands in channel 700, where the bot has no Manage Messages. Admin runs
+    `/clean-bot` for 1: the change is refused with the permission named, nothing is saved, and A
+    stands."""
+    a = post_in(env.channel, BOT_USER)
+    env.channel.permissions_for = MagicMock(return_value=MagicMock(manage_messages=False))
+
+    interaction = await _clean(env, 1)
+    await run_queue(env.bot)
+
+    assert await _cleans(env) == []
+    assert any("Manage Messages" in line for line in _said(interaction))
+    assert env.channel.messages == [a]
+
+
+async def test_a_channel_gone_before_the_change_runs_refuses_it_and_deletes_nothing(env):
+    """The bot's message A stands in channel 700. Admin runs `/clean-bot` for 1; before the queue
+    runs the channel is gone from the server. The change is refused as it comes up to run, the
+    queue does not stop, and nothing is deleted."""
+    post_in(env.channel, BOT_USER)
+
+    await _clean(env, 1)
+    env.bot.get_channel = MagicMock(return_value=None)
+    env.bot.get_guild = MagicMock(return_value=None)
+    await run_queue(env.bot)
+
+    assert await stopped_job(env.db_path) is None
+    [change] = await _cleans(env)
+    assert change["state"] == "REFUSED"
+    assert env.channel.deleted == []
