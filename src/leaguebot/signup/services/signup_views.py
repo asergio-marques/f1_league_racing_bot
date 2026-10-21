@@ -596,7 +596,8 @@ class WithdrawButtonView(LeagueView):
     async def withdraw_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        """T041: Full implementation — verify user, call wizard_service.withdraw()."""
+        """Cancel Signup: check the presser is the driver, then ask `signup.end` through
+        `_withdraw`."""
         _bot, _user_id = await _resolve_view_context(
             interaction, self._discord_user_id
         )
