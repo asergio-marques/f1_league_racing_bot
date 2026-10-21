@@ -581,10 +581,11 @@ def window_close_change(
         )
 
     def _head(ctx: StepContext) -> str:
-        """What the line is headed with: the member who ran the close, or the cause of the bot's."""
+        """What the line is headed with: the member who ran the close, marked "(force)" where they
+        confirmed returning the drivers still signing up, or the cause of the bot's."""
         payload = ctx.payload
         if payload["cause"] == "command":
-            return f"{ctx.named} | /signup close"
+            return f"{ctx.named} | /signup close" + (" (force)" if payload["confirmed"] else "")
         head = AUTO_CLOSE_HEAD
         if payload.get("close_at"):
             armed = datetime.fromisoformat(str(payload["close_at"]))

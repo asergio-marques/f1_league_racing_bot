@@ -1000,7 +1000,9 @@ def _pressed(cog):
 async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     """The reply and the log say what the close did, not what the confirmation feared. The log
     used to record `in_progress_drivers_discarded: true` whoever was waiting (issue #128).
-    The number is the close's own, since a driver may have moved on while the buttons stood.
+    The number is the close's own, since a driver may have moved on while the buttons stood. The
+    line is headed "/signup close (force)", as a close confirmed over drivers still signing up
+    always was.
 
     Kimi (105) and a second driver (107) are still filling in the wizard; manager 77 runs
     `/signup close`, presses Confirm Close, and the queue runs the close, which returns both."""
@@ -1016,7 +1018,8 @@ async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     [window] = await league.rows("SELECT signups_open FROM signup_module_config WHERE id = 1")
     assert not window["signups_open"]
     assert "2 driver(s) still signing up were returned to Not Signed Up" in updated_reply(press)
-    [log] = [line for line in league.bot.log_channel.sent if "| /signup close |" in line]
+    [log] = [line for line in league.bot.log_channel.sent if "| /signup close (force) |" in line]
+    assert "| /signup close (force) | Success" in log
     assert "drivers_returned_to_not_signed_up: 2" in log
     assert "discarded" not in log
 
