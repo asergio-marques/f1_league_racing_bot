@@ -571,9 +571,9 @@ async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
 
 
 async def test_post_check_in_is_acknowledged_and_updated_with_the_call(tmp_path):
-    """The manager is answered that the call is under way and nothing is posted yet; once the
-    queue has run, one call stands in Pro's check-in channel, recorded, and the acknowledgement
-    is updated to say it was posted."""
+    """The manager is answered that the call is under way, capitalised as every member-facing
+    acknowledgement is, and nothing is posted yet; once the queue has run, one call stands in
+    Pro's check-in channel, recorded, and the acknowledgement is updated to say it was posted."""
     league = await _queue_league(tmp_path)
 
     interaction = await _post_check_in(league)
@@ -581,7 +581,7 @@ async def test_post_check_in_is_acknowledged_and_updated_with_the_call(tmp_path)
     assert _sent(league) == []
     await run_queue(league.bot)
 
-    assert acknowledged.startswith("⏳")
+    assert acknowledged.startswith("⏳ Posting the check-in call of round 4 in **Pro**.")
     assert _outcome(interaction) == "✅ Check-in call posted for round 4 of **Pro**."
     [posted] = _sent(league)
     [row] = await _call_record(league)

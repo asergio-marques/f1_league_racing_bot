@@ -126,11 +126,19 @@ def _doing_notice(payload: dict[str, Any]) -> str:
     )
 
 
-def _doing(payload: dict[str, Any]) -> str:
+def _what(payload: dict[str, Any]) -> str:
+    """The call, as a line names it mid-sentence."""
     return (
         f"posting the check-in call of round {payload.get('round_number', '?')} in "
         f"**{payload.get('division_name', '?')}**"
     )
+
+
+def _doing(payload: dict[str, Any]) -> str:
+    """The call, as the acknowledgement and the repeat refusal open with it: capitalised, as
+    every member-facing *doing* is."""
+    what = _what(payload)
+    return what[:1].upper() + what[1:]
 
 
 @posts_in_a_job
@@ -709,7 +717,7 @@ def check_in_steps(service: AttendanceService, *, now: Callable[[], datetime]) -
 
     async def describe_post(ctx: StepContext) -> str:
         return (
-            f"{_doing(ctx.payload)} (a call discarded is posted by hand with "
+            f"{_what(ctx.payload)} (a call discarded is posted by hand with "
             f"`/attendance post-check-in division: {ctx.payload.get('division_name', '?')} "
             f"round: {ctx.payload.get('round_number', '?')}`)"
         )
@@ -810,7 +818,7 @@ async def ask_check_in_call(
         "late": late,
     }
     await queue.ask(
-        CHECK_IN_CALL, payload, interaction=interaction, what=_doing(payload),
+        CHECK_IN_CALL, payload, interaction=interaction, what=_what(payload),
         refusal_what=refusal_what, origin=origin,
     )
 
