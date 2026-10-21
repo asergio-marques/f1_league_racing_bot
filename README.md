@@ -310,7 +310,7 @@ however many of your lines fail, and after the reply to your command where it ha
 answered yet. Where nobody's command can still be answered, such as a timed job, only the host's
 log records it.
 
-**Some changes are acknowledged at once and carried out one at a time.** You are told the change
+**Changes are acknowledged at once and carried out in order, one at a time on each lane.** You are told the change
 is under way, naming the number of its first job ("job #12"), that message is updated with what
 became of it, and a longer outcome is sent in parts. Each step of a change is a job with a number of
 its own, and the jobs run in order. Asking again for a change that has not started, with nothing
@@ -1181,7 +1181,7 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 > **The roles move with it.** The signed-up, division and team roles the driver holds are given to the new current account and taken from the one it replaces, where that one is still in the server. Anything Discord refuses is listed in the reply; the account change stands regardless.
 
-> **So does a held signup channel.** A signup channel still open after its approval or rejection moves to the new account and is deleted when it was already due. If the new account has a held channel of its own, that one is kept and the other is deleted at once.
+> **So does a held signup channel.** A signup channel still open after its approval or rejection moves to the new account and is deleted when it was already due. If the new account has a held channel of its own, that one is kept and the other is deleted when the queue reaches it.
 
 > **Naming another driver's account merges the two.** Where `new_user` is already a driver of its own — the usual case, a driver who signed up again on a new account before you noticed — the two become one driver owning every account of both. The one holding a seat or a signup in the live season is kept, and the other's results, history, seats and former-driver flag join it.
 
