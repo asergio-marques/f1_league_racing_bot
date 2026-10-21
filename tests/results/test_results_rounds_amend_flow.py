@@ -157,7 +157,6 @@ async def test_the_bot_and_both_staff_roles_are_let_in(tmp_path, monkeypatch):
     assert {2, MANAGER_ROLE_ID, ADMIN_ROLE_ID} <= _admitted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_league_with_no_league_admin_role_opens_it_to_the_interaction_role(
     tmp_path, monkeypatch,
 ):
@@ -165,6 +164,9 @@ async def test_a_league_with_no_league_admin_role_opens_it_to_the_interaction_ro
     channel is opened to the interaction role, and to no league admin role."""
     league = await _league(tmp_path, monkeypatch)
     _staffed(league, league_admin_role=False)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE server_configs SET league_admin_role_id = NULL")
+        await db.commit()
 
     await _ask_open(league)
 
@@ -459,14 +461,13 @@ async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path, monkeypat
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_second_amendment_of_an_open_session_is_refused(tmp_path, monkeypatch):
     """**The record of the first held its snapshot.** Replacing it — which the old
     `INSERT OR REPLACE` did — threw away the only way back to the classification raced, and left
     the first channel's stages live over rows the second was rewriting. Round 3 is already being
-    amended in channel 6666, its snapshot held. Alex asks to amend round 3 again: once the queue
-    runs, no channel is created, his acknowledgement is updated naming <#6666>, and the first
-    amendment's snapshot is untouched."""
+    amended in channel 6666, its snapshot held. Alex asks to amend round 3 again: the queue's
+    check at the ask refuses him at once, naming <#6666>; once it runs, no channel is created and
+    the first amendment's snapshot is untouched."""
     league = await _league(tmp_path, monkeypatch)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -480,7 +481,7 @@ async def test_a_second_amendment_of_an_open_session_is_refused(tmp_path, monkey
     interaction = await _ask_open(league)
 
     assert league.created == []
-    assert "<#6666>" in updated_reply(interaction)
+    assert "<#6666>" in acknowledgement(interaction)
     [row] = await _amendment_rows(league)
     assert row["pre_amendment_state"] == "{}"
 
@@ -714,16 +715,16 @@ async def test_the_chosen_sessions_are_pasted_in_turn_and_written_together(tmp_p
     ahead, and the Feature Race is asked for; after his Feature Race paste, Max is ahead."""
     league = await _league(tmp_path, monkeypatch, qualifying=True)
 
-    await _ask_open(league, sessions=("FEATURE_RACE", "QUALIFYING"))
+    await _ask_open(league, sessions=("FEATURE_RACE", "FEATURE_QUALIFYING"))
 
     [row] = await _amendment_rows(league)
-    assert json.loads(row["session_types"]) == ["QUALIFYING", "FEATURE_RACE"]
+    assert json.loads(row["session_types"]) == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
     assert "Qualifying" in _texts(league)[-1]
 
     await _type(league, QUALI_PASTE)
 
     assert await _winner(league) == LEWIS
-    assert await _drafts(league) == ["QUALIFYING"]
+    assert await _drafts(league) == ["FEATURE_QUALIFYING"]
     assert "Feature Race" in _texts(league)[-1]
 
     await _type(league, RACE_PASTE)
@@ -751,7 +752,6 @@ async def _lewis_moved(league: Any, monkeypatch: Any) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_later_paste_is_checked_against_the_earlier_one_not_the_old_rows(
     tmp_path, monkeypatch,
 ):
@@ -763,7 +763,7 @@ async def test_a_later_paste_is_checked_against_the_earlier_one_not_the_old_rows
     is refused."""
     league = await _league(tmp_path, monkeypatch, qualifying=True)
     await _lewis_moved(league, monkeypatch)
-    await _ask_open(league, sessions=("QUALIFYING", "FEATURE_RACE"))
+    await _ask_open(league, sessions=("FEATURE_QUALIFYING", "FEATURE_RACE"))
 
     await _type(league, QUALI_PASTE.replace("<@101>, FER", "<@101>, RBR"))
     await _type(league, RACE_PASTE.replace("<@101>, FER", "<@101>, RBR"))
@@ -774,7 +774,6 @@ async def test_a_later_paste_is_checked_against_the_earlier_one_not_the_old_rows
     assert not [line for line in league.bot.log_channel.sent if line.startswith("⛔ ")]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_a_later_paste_disagreeing_with_the_earlier_one_ends_the_amendment(
     tmp_path, monkeypatch,
 ):
@@ -784,7 +783,7 @@ async def test_a_later_paste_disagreeing_with_the_earlier_one_ends_the_amendment
     written, Lewis still ahead, the drafts dropped and the channel deleted."""
     league = await _league(tmp_path, monkeypatch, qualifying=True)
     await _lewis_moved(league, monkeypatch)
-    await _ask_open(league, sessions=("QUALIFYING", "FEATURE_RACE"))
+    await _ask_open(league, sessions=("FEATURE_QUALIFYING", "FEATURE_RACE"))
 
     await _type(league, QUALI_PASTE.replace("<@101>, FER", "<@101>, RBR"))
     await _type(league, RACE_PASTE)
