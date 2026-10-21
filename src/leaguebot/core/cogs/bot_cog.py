@@ -1012,7 +1012,13 @@ async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
 
 
 async def _open_progress(user: discord.User | discord.Member) -> discord.Message | None:
-    """The direct message the clean-up edits as it goes, or None where DMs are closed."""
+    """The direct message the clean-up edits as it goes, or None where DMs are closed.
+
+    Off the change queue, as the clean-up it reports on is (`clean_discord`): the message is the
+    reply to the owner's own command, not a post to the league, and the reset empties the database
+    the queue lives in, so there is nothing to hold a refusal for Retry and Discard. A refusal is
+    logged on the host and the progress goes to the log alone.
+    """
     try:
         return await user.send("🧹 Factory reset: starting the Discord clean-up.")
     except discord.HTTPException:

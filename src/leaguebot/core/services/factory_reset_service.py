@@ -268,6 +268,12 @@ async def clean_discord(
 
     Channels are visited in the order `gather_targets` gives, which is sorted, so a report
     of where it stopped reads the same against a second run.
+
+    **It stays off the change queue**, though it deletes messages and channels (named in
+    `POSTS_OFF_THE_QUEUE`): the reset empties the database the queue lives in and takes the
+    channels and roles with it, so no log channel remains to carry a notice and no lane to hold a
+    job for Retry and Discard. A refusal is therefore not a stop but a fault in *outcome*, which
+    the report names, and the run goes on.
     """
     moment = now or datetime.now(timezone.utc)
     outcome = CleanOutcome(total=len(targets.created) + len(targets.channels))
@@ -306,7 +312,11 @@ async def clean_discord(
 
 
 async def _delete_own_messages(channel, bot_user_id: int, now: datetime) -> int:
-    """Delete the bot's messages in *channel*: in bulk where Discord allows, singly where not."""
+    """Delete the bot's messages in *channel*: in bulk where Discord allows, singly where not.
+
+    Off the change queue for the reason `clean_discord` gives, which calls it: a refusal ends this
+    channel's clean-up and is reported as a fault of the reset, never retried.
+    """
     deleted = 0
     batch: list = []
     async for message in channel.history(limit=None):
