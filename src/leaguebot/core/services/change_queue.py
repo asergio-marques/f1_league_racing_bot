@@ -60,12 +60,14 @@ changes are then found no longer due in turn.
 
 **A conversation's save may write only its conversation's own tables.** A change type of a
 conversation's lane declares, in `ChangeType.writes`, the tables its kind writes (the conversation's
-own rows, never the league's); the connection of every save the lane makes for it, a `SAVE` step's
-or a record's, is given an SQLite authorizer (`_confine`) that refuses an insert, update or delete on
-any other table, and always allows the queue's own tables (`QUEUE_TABLES`: the job's mark, its audit
-records, its log lines and the changes it asks), so the mark, the lines and the refusal pass. A
+own rows, never the league's). A change type that declares `writes`, on whichever lane, has the
+connection of every save made for it, a `SAVE` step's or a record's, given an SQLite authorizer
+(`_confine`) that refuses an insert, update or delete on any table but those and the queue's own
+(`QUEUE_TABLES`: the job's mark, its audit records, its log lines and the changes it asks), so the
+mark, the lines and the refusal pass; an empty `writes` allows the queue's own tables alone. A
 breach raises in the step, rolling its save back whole and stopping the lane at the job, so it never
-lands. A league change type declares nothing and is not restricted. *Rejected:* trusting each step to
+lands. `writes=None`, the default, restricts nothing: most league change types leave it so, and a
+league change type may declare the tables it writes and be confined to them likewise. *Rejected:* trusting each step to
 keep to its tables, which a lane's own tests would never catch once the flows are many; and a
 separate connection per lane, which SQLite would not make a second writer. Pinned by
 `test_a_conversation_lane_s_save_may_not_write_another_table` and
@@ -399,7 +401,8 @@ _TABLE_WRITES = frozenset({sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3
 
 async def _confine(db: aiosqlite.Connection, writes: Collection[str] | None) -> None:
     """Refuse, on *db*, a write to any table but those of *writes* and the queue's own; see the
-    module. None leaves the connection unrestricted, as a league change's is."""
+    module. None leaves the connection unrestricted; an empty *writes* allows the queue's own
+    tables alone."""
     if writes is None:
         return
     allowed = {name.lower() for name in writes} | QUEUE_TABLES
@@ -440,9 +443,10 @@ class ChangeType:
     league asks back needs only its channel to stand. It reads on the connection it is handed.
     None where the change has no conversation to end.
 
-    *writes*, on a change type of a conversation's lane, are the tables its kind's saves may write,
-    the queue's own always besides (`QUEUE_TABLES`): a save writing another table raises and stops
-    the lane at the job. None, the league's, restricts nothing.
+    *writes*, where declared, on any lane, are the tables its kind's saves may write, the queue's
+    own always besides (`QUEUE_TABLES`): a save writing another table raises and stops the lane at
+    the job, and an empty set allows the queue's own tables alone. None restricts nothing; a change
+    type of a conversation's lane declares them.
 
     *turn_channel*, on a change that answers a message typed into a channel, says from the payload
     which channel: the channel then waits (`typed_turns.turn_waiting`) while the change is in hand,

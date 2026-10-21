@@ -474,14 +474,16 @@ columns before go-live for a cleaner line of ownership.
 
 **A conversation's lane writes only its own conversation's tables, and that is held at run time.**
 A change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`):
-its conversation's own rows, never the league's. The connection of every save the lane makes for
-it, a saving step's or a record's, is given an SQLite authoriser (`_confine` in
-`core/services/change_queue.py`) that refuses an insert, update or delete on any other table. The
-queue's own tables are always allowed (`QUEUE_TABLES`: the job's mark, its audit records, its log
-lines and the changes it asks for), so the mark, the lines and a follow-on pass. A write the
-authoriser refuses raises in the step, rolls its save back whole and stops the lane at that job,
-so it never lands. A change type that declares no tables, as every league change does, is not
-restricted. What a conversation hands the league, it asks of the league lane (see "How a change
+its conversation's own rows, never the league's. A change type that declares `writes`, on whichever
+lane it runs, has the connection of every save made for it, a saving step's or a record's, given an
+SQLite authoriser (`_confine` in `core/services/change_queue.py`) that refuses an insert, update or
+delete on any table but those. The queue's own tables are always allowed (`QUEUE_TABLES`: the job's
+mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
+follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
+the step, rolls its save back whole and stops the lane at that job, so it never lands. A change
+type whose `writes` is `None`, the default, is not restricted; most league change types leave it
+so, and a league change type may declare the tables it writes and be confined to them likewise, as
+replacing a round's results with its resubmission drafts does. What a conversation hands the league, it asks of the league lane (see "How a change
 is carried out").
 
 *Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
