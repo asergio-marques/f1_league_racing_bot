@@ -686,12 +686,19 @@ rule has two halves:
   lane's job would set for every other lane's code to see; and the job's number passed down to
   each posting function, which a caller outside a job could invent.
 - **The check.** A test fails on any function that posts without the decorator, unless it is
-  named off the queue with its reason (see "How the rules are checked").
+  named off the queue with its reason (see "How the rules are checked"). The router
+  (`core/services/output_router.py`) is exempt from it whole (`POSTING_ALLOWED`), as it is from the
+  check of posting outside the handlers: what it posts off the queue are the exceptions below, and
+  its forecast post carries the decorator all the same. Two calls that look like posts and are not
+  are named in `NOT_A_POST` with their reasons: the reply to the owner's own `!sync` command
+  (`guild_sync` in the entry point), and the queue's edit of a member's own acknowledgement
+  (`ChangeQueue._update_reply`), which answers the member and posts in no channel.
 
 The exceptions, each with its reason:
 
 - **A log line,** delivered by the router and sent again by its own retry (below), and **the stop
-  notice,** which says that a lane is stopped and so cannot wait on one.
+  notice,** which says that a lane is stopped and so cannot wait on one, with its buttons taken off
+  once the job clears (`OutputRouter.strip_view`), which cannot wait on the lane either.
 - **A reply** to a member's command or press, the queue's update of its acknowledgement with the
   outcome included: it answers the member and posts in no channel.
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
@@ -901,7 +908,8 @@ later on its own.
   the log channel (the check lists the six allowed, with their reasons), posting outside the
   handlers, a post made outside a job by a function that is neither decorated nor named off the
   queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no reason or no
-  function), a service or helper reaching the change queue through the bot, a service or helper
+  function; the router is exempt, `POSTING_ALLOWED`, and `NOT_A_POST` names the two calls that are
+  not posts, under "Every post is made in a job"), a service or helper reaching the change queue through the bot, a service or helper
   looking another service up on the bot, a table written by a module that does not own it, and a
   save outside a queued change. The job check is absolute, with no list of breaches left to grow;
   the two checks on the bot list today's breaches, each under the module pass that removes it.
