@@ -368,11 +368,6 @@ DRIVER_NOTICE = "🔒 Signups have closed."
 #: The timer that deletes a held signup channel a day on.
 DELETE_TIMER = "signup_channel_delete"
 
-NO_CLOSE_CHANGE = (
-    "#439: the signup window is closed by execute_forced_close off the queue, naming a failed "
-    "step and running on, with no signup.close change whose jobs stop the queue"
-)
-
 
 async def _close_league(tmp_path: Any, *drivers: int) -> SeasonLeague:
     """`setup_league` at Signups with the window open; each of *drivers* still filling in the
@@ -726,7 +721,6 @@ async def test_a_close_posts_the_drivers_notices_on_the_league_lane(tmp_path):
     assert await stopped_job(league.db_path, KIMI_LANE) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CLOSE_CHANGE)
 async def test_the_close_wins_over_a_last_answer_handed_over_behind_it(tmp_path):
     """Kimi is still filling in the wizard. Manager 77 confirms the close; then Kimi's last
     answer hands his signup to the league (`signup.submit`) behind it. When the queue runs, the
@@ -736,6 +730,12 @@ async def test_the_close_wins_over_a_last_answer_handed_over_behind_it(tmp_path)
     from leaguebot.core.models.change import ChangeOrigin
 
     league = await _close_league(tmp_path, SIGNING_UP)
+    # On his last question, a state of the wizard's own (the helper gives it the driver's).
+    await league.write(
+        "UPDATE signup_wizard_records SET wizard_state = 'COLLECTING_NOTES' "
+        "WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
 
     await _confirm_close(league)
     await league.bot.change_queue.ask(
