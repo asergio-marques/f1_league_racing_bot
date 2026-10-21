@@ -324,7 +324,7 @@ The one thing you cannot fake is a second person pressing the button, so it is w
 
 **One announcement**, pinging the base role, listing the slots and tracks and what will be asked of them, with a **Sign Up** button underneath.
 
-**A channel of their own** the moment they press it, named after them, visible to them and your admins and nobody else. Nine questions, one at a time, some answered by typing and some by pressing buttons. A red **Cancel Signup** button is on every question, and it is the only way they can back out or start again — there is no edit.
+**A channel of their own** once they press it, made as soon as the change queue reaches it, named after them, visible to them and your admins and nobody else. Nine questions, one at a time, some answered by typing and some by pressing buttons. A red **Cancel Signup** button is on every question, and it is the only way they can back out or start again — there is no edit.
 
 **A summary and a wait.** When they finish, everything they entered is read back to them with a note to wait for an admin to check it.
 
