@@ -1782,13 +1782,13 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
 # ---------------------------------------------------------------------------
 #
 # Nothing is undone because a stage's job failed ("Retry like any job"): it stops the queue, and the
-# stop notice names the kind of fault and never its message.
+# stop notice names the kind of fault in plain words, never the exception's type or message.
 
 
 async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
     """The report stage's save meets a database fault: the queue stops at it, the notice naming
-    the fault's type and not its message; discarded, the reply leads Alex back to Approve and
-    names no message either."""
+    the kind of fault in plain words, neither the exception's type nor its message; discarded,
+    the reply leads Alex back to Approve and names no message either."""
     import sqlite3
 
     league = await amend_league(tmp_path)
@@ -1799,7 +1799,8 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
         interaction = await _amend_reports(league)
     assert await stopped_at(league) == "apply"
     notice = league.log()
-    assert "OperationalError" in notice
+    assert "the bot could not read or write its database" in notice
+    assert "OperationalError" not in notice
     assert "database is locked" not in notice
 
     await discard_job(league.bot)
@@ -1812,15 +1813,16 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
 
 async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path):
     """The appeals stage's points cannot be recalculated: the queue stops at its save, the notice
-    naming the fault's type and not its message, and the amendment is neither undone nor
-    committed."""
+    naming the kind of fault in plain words, neither the exception's type nor its message, and
+    the amendment is neither undone nor committed."""
     league = await amend_league(tmp_path, reports_approved=True)
     with points_fail():
         await _amend_appeals(league, staged=[_correction()])
 
     assert await stopped_at(league) == "apply"
     notice = league.log()
-    assert "RuntimeError" in notice
+    assert "the bot hit an internal fault" in notice
+    assert "RuntimeError" not in notice
     assert "the points could not be calculated" not in notice
     row = await amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None

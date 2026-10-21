@@ -510,7 +510,7 @@ async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_pat
     job = await stopped_job(seeded.db_path)
     assert job is not None and job["name"] == "switch_off"
     [stop] = await _stop_lines(bot)
-    assert f"for {WHAT} ({NAMED}) failed (IntegrityError)." in stop
+    assert f"for {WHAT} ({NAMED}) failed (the bot could not read or write its database)." in stop
     reply = updated_reply(interaction)
     assert reply.startswith("❌") and f"job #{job['id']}" in reply
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "RUNNING"
@@ -633,7 +633,8 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
     removal = f"removing the verdict ({_link(VERDICTS_CHANNEL_ID, 5001)})"
     [stop] = await _stop_lines(bot)
     assert stop.startswith(
-        f"{STOPPED_AT}{job['id']}: {removal} for {WHAT} ({NAMED}) failed (Forbidden)."
+        f"{STOPPED_AT}{job['id']}: {removal} for {WHAT} ({NAMED}) failed "
+        "(Discord refused or failed a request from the bot)."
     )
     bot.clock.advance(minutes=1)
     await run_queue(bot)
@@ -716,7 +717,7 @@ async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(t
 
     assert (await stopped_job(seeded.db_path))["name"] == "take_down"
     [stop] = await _stop_lines(bot)
-    assert "failed (RuntimeError)." in stop
+    assert "failed (the bot hit an internal fault)." in stop
     assert await _flag(seeded.db_path) == 0
     assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "FINAL"
 
@@ -750,7 +751,7 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
     [stop] = await _stop_lines(bot)
     assert stop.startswith(
         f"{STOPPED_AT}{job['id']}: counting what was removed for {WHAT} ({NAMED}) failed "
-        "(RuntimeError)."
+        "(the bot hit an internal fault)."
     )
 
     await discard_job(bot)
@@ -812,7 +813,7 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
 
     [stop] = await _stop_lines(bot)
     assert "winding the season down" in stop
-    assert "failed (RuntimeError)." in stop
+    assert "failed (the bot hit an internal fault)." in stop
     assert (await _stopped_change(seeded.db_path))["kind"] == "season.wind_down"
     assert not any("not done" in line for line in await _lines(bot))
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"

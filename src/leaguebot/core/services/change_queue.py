@@ -190,6 +190,7 @@ from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.queue_stop_view import QueueStopView
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.in_a_job import running_job
+from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.log_lines import (
     cleared_line,
     conversation_ended_line,
@@ -1891,9 +1892,11 @@ class ChangeQueue:
 
     @staticmethod
     def _fault_kind(error: BaseException) -> str:
-        """The kind of fault *error* is, as a stop line names it: the exception's type, or the
-        reason for a bot change its check refused; for a failure a job gave Discord, the type of
-        the failure that caused it where it names one, else its reason.
+        """The kind of fault *error* is, as a stop line names it: in plain words
+        (`describe_fault`: that the bot could not read or write its database, that Discord refused
+        or failed a request, or an internal fault), never the exception's type or message; or the
+        reason for a bot change its check refused; for a failure a job gave Discord, the plain
+        words for the failure that caused it where it names one, else its reason.
 
         A job may add what its failure leaves (`StepFailedOnDiscord.notice`), which the stop
         notice and a failed Retry's line then carry after the kind: the amendment's check-in call
@@ -1904,14 +1907,14 @@ class ChangeQueue:
             return str(error)
         if isinstance(error, StepFailedOnDiscord):
             cause = error.__cause__
-            kind = error.reason if cause is None else type(cause).__name__
+            kind = error.reason if cause is None else describe_fault(cause)
             notice = error.notice
             if notice is None:
                 return kind
             if kind.endswith("."):
                 return f"{kind} {notice[:1].upper()}{notice[1:]}."
             return f"{kind}; {notice}"
-        return type(error).__name__
+        return describe_fault(error)
 
     async def _stop(
         self,

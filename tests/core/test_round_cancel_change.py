@@ -337,7 +337,7 @@ async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_na
     assert "posting the forecast note for **Pro**" in stop
     assert "`/round cancel`" in stop
     assert "Admin (`<@77>`)" in stop
-    assert "failed (Forbidden)" in stop
+    assert "failed (Discord refused or failed a request from the bot)" in stop
 
     await discard_job(league.bot)
 

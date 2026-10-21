@@ -36,8 +36,9 @@ Refusals are *not* failures, and they never reach this. A command that refuses a
 member itself, through `refuse` in `core/utils/log_lines.py`, rather than raising
 `app_commands.CheckFailure`, so everything that arrives here is a real fault.
 
-`describe_fault` names the kind of fault in plain words, for the one line that may: the
-factory reset's closing line naming what stopped its Discord clean-up.
+`describe_fault` names the kind of fault in plain words, for the lines that may: the factory
+reset's closing line naming what stopped its Discord clean-up, and the change queue's stop
+notice and failed Retry line naming what stopped a job.
 
 Autocomplete does not reach this either. `CommandTree._call` logs an autocomplete failure
 and returns before any `on_error` runs; see `core/utils/log_filters.py`.

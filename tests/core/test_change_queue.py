@@ -292,7 +292,7 @@ async def test_a_fault_is_reported_to_the_member_the_log_channel_and_the_host(en
 
     job = await stopped_job(env.db_path)
     stop = STOPPED_AT.format(
-        id=job["id"], job="doing the dummy step", request=WHAT, asker=NAMED, fault="RuntimeError",
+        id=job["id"], job="doing the dummy step", request=WHAT, asker=NAMED, fault="the bot hit an internal fault",
     )
     [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
     assert "a league manager or admin may press Retry" in notice.content
@@ -971,7 +971,7 @@ async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
     assert "Admin (`<@4242>`) | /dummy | Success" in sent
     job = await stopped_job(env.db_path)
     assert STOPPED_AT.format(
-        id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault="RuntimeError",
+        id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault="the bot hit an internal fault",
     ) in sent
 
 
@@ -1101,7 +1101,7 @@ async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it
     assert ran == []
     stop = [line for line in await _lines(env) if "The queue is stopped at job #" in line]
     assert len(stop) == 1
-    assert "`/checked`" in stop[0] and "(RuntimeError)" in stop[0]
+    assert "`/checked`" in stop[0] and "(the bot hit an internal fault)" in stop[0]
 
     await discard_job(env.bot)
 
@@ -1752,7 +1752,7 @@ async def test_a_bot_change_whose_check_passes_at_a_try_clears_its_stop_and_a_la
     assert again["tries"] == 1
     assert datetime.fromisoformat(again["failing_since"]) == NOW + timedelta(minutes=1)
     assert datetime.fromisoformat(again["next_try_at"]) == NOW + timedelta(minutes=2)
-    [second] = [m for m in env.bot.log_channel.posted if "(RuntimeError)" in m.content]
+    [second] = [m for m in env.bot.log_channel.posted if "(the bot hit an internal fault)" in m.content]
     assert second.id == again["notice_message_id"] and second.id != first.id
     assert {child.custom_id for child in second.view.children} == {"queue:retry", "queue:discard"}
     assert await _states(env) == ["RUNNING"]
@@ -1908,7 +1908,7 @@ async def test_a_record_that_raises_stops_the_queue_and_keeps_the_step_s_result(
     assert job is not None and job["name"] == "post"
     stop = STOPPED_AT.format(
         id=job["id"], job="posting round 3's results", request=WHAT, asker=NAMED,
-        fault="RuntimeError",
+        fault="the bot hit an internal fault",
     )
     assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
     assert job["result"] == {"id": 7, "sent": [7]}
@@ -2432,7 +2432,7 @@ async def test_a_refusal_hook_that_raises_stops_the_queue_at_the_change_and_a_di
     lines = await _lines(env)
     stop = [line for line in lines if "The queue is stopped at job #" in line]
     assert len(stop) == 1
-    assert WHAT in stop[0] and "(RuntimeError)" in stop[0]
+    assert WHAT in stop[0] and "(the bot hit an internal fault)" in stop[0]
     assert not any("refused for" in line for line in lines)
     assert len(await change_rows(env.db_path)) == 2
     assert hooks == [WHAT]
@@ -2699,6 +2699,48 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
     )
 
 
+@pytest.mark.parametrize(
+    "error, words, kind",
+    [
+        pytest.param(sqlite3.OperationalError("database is locked"),
+                     "the bot could not read or write its database", "OperationalError",
+                     id="a database fault"),
+        pytest.param(RuntimeError("boom"), "the bot hit an internal fault", "RuntimeError",
+                     id="an unexpected fault"),
+    ],
+)
+async def test_a_stop_notice_names_its_fault_in_plain_words_never_the_exception(
+    env, error, words, kind,
+):
+    """A job faults, once on the database ("database is locked") and once on something nobody
+    foresaw ("boom"). The stop notice in the log channel names the kind of fault in plain words,
+    "failed (the bot could not read or write its database)" or "failed (the bot hit an internal
+    fault)", and carries neither the exception's type nor its message; so does the line of a
+    Retry that fails again."""
+    api = _api()
+
+    async def _boom(_ctx):
+        raise error
+
+    _queue(env, _type(steps=[api.Step("a", api.StepKind.ACT, _boom)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None
+    stop = STOPPED_AT.format(id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault=words)
+    [notice] = [m.content for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+    assert kind not in notice and str(error) not in notice
+
+    await retry_job(env.bot)
+
+    retried = [m.content for m in env.bot.log_channel.posted
+               if m.content.startswith(f"❌ Retry of job #{job['id']} ")]
+    assert retried and f"failed ({words}). The queue stays stopped." in retried[-1]
+    assert kind not in retried[-1] and str(error) not in retried[-1]
+
+
 # ---------------------------------------------------------------------------
 # A failure's notice: what a job's failure leaves, on its stop notice (#439, slice 6)
 # ---------------------------------------------------------------------------
@@ -2706,17 +2748,19 @@ async def test_a_discard_hook_that_raises_is_logged_and_the_discard_goes_ahead_w
 @pytest.mark.parametrize(
     "notice, fault",
     [
-        pytest.param("the old one stands", "Forbidden; the old one stands", id="with a notice"),
-        pytest.param(None, "Forbidden", id="with none"),
+        pytest.param("the old one stands", "Discord refused or failed a request from the bot; the old one stands",
+                     id="with a notice"),
+        pytest.param(None, "Discord refused or failed a request from the bot", id="with none"),
     ],
 )
 async def test_a_failure_s_notice_is_carried_on_the_stop_notice_and_a_failed_retry_s_line(
     env, notice, fault,
 ):
     """A job Discord refuses (Forbidden) raises its failure with a notice saying what it leaves,
-    "the old one stands": the stop notice in the log channel reads "failed (Forbidden; the old one
-    stands)", and so does the line of a Retry that fails again. Raised with no notice, both read
-    "(Forbidden)", as before."""
+    "the old one stands": the stop notice in the log channel reads "failed (Discord refused or
+    failed a request from the bot; the old one stands)", and so does the line of a Retry that
+    fails again. Raised with no notice, both read "(Discord refused or failed a request from the
+    bot)", as before."""
     api = _api()
     refused = http_error(discord.Forbidden, status=403, text="Missing Access")
 
