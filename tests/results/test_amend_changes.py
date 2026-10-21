@@ -100,12 +100,6 @@ _SEATED = DivisionValidationData(
     team_names={3001: "Team 3001"}, team_of_shorthand={"fer": 3001},
 )
 
-NO_AMEND_ON_THE_QUEUE = (
-    "#439: `/results rounds amend` opens its channel, waits for each paste and choice, writes stage "
-    "one and lapses inside the command's coroutine, off the change queue, rather than through "
-    "`results.amend.open`, its turns, stage one, cancel and lapse"
-)
-
 
 def _alex() -> Any:
     return tier_member("admin", display_name="Alex", name="Alex#0001")

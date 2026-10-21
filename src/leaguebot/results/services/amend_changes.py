@@ -296,7 +296,10 @@ def amend_open_change(
                 (round_id,),
             )
         ).fetchone()
-        sessions = [SessionType(each) for each in payload["session_types"]]
+        # Recorded in running order whatever order the sessions were asked in: the pastes are
+        # taken in that order, and the first prompt asks for the first of them.
+        order = list(SessionType)
+        sessions = sorted((SessionType(each) for each in payload["session_types"]), key=order.index)
         slug = re.sub(r"[^a-z0-9-]", "", str(row["division_name"]).lower().replace(" ", "-"))[:20]
         # The league admin role is opened to the amendment channel on the same terms as the
         # interaction role: a league admin holds the league manager tier within their own, and a

@@ -48,7 +48,6 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.results.services import result_submission_service
 from leaguebot.results.services.result_submission_service import DivisionValidationData
 from tests.results.test_amend_changes import (
-    NO_AMEND_ON_THE_QUEUE,
     QUALI_PASTE,
     STALE_CHANNEL,
     RACE_PASTE,
@@ -705,7 +704,6 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_AMEND_ON_THE_QUEUE)
 async def test_the_chosen_sessions_are_pasted_in_turn_and_written_together(tmp_path, monkeypatch):
     """A round's reports and appeals are reviewed together, so the sessions being corrected are
     re-entered one after another, in running order whatever order they were ticked in, and written
