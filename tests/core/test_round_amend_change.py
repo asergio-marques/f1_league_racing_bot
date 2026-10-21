@@ -1335,6 +1335,32 @@ async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(t
     assert row["checkin_cleared"] == 0
 
 
+async def test_an_amendment_s_discarded_clean_up_delete_is_named_by_its_link(tmp_path):
+    """Attendance on. Pro's round 3 was raced twenty-three hours and fifty-five minutes ago, its
+    call standing (7001 to 7003). It is moved to a day from now; the save stops, and ten minutes
+    on, past the check-in's clean-up due a day after the old moment, a league admin discards it.
+    Discord refuses to delete the last notice (7002) and the queue stops there. A league admin
+    discards that too: the reply, still within Discord's fourteen minutes, names the last notice
+    by its link, for the admin to open and delete by hand, not by a bare message id."""
+    league = await ongoing_league(tmp_path, attendance=True)
+    await _place_r3(league, hours=-23, minutes=-55)
+    league.undeletable.add(CALL_MESSAGES[1])
+    press = await _amended(league, scheduled_at=_at(league, days=1))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(minutes=10)
+        await discard_job(league.bot)
+    assert await _stopped_at(league) == "delete_message"
+
+    await discard_job(league.bot)
+
+    told = _outcome(press)
+    named = ("could not be deleted a day after the round, and a league admin discarded it; "
+             f"delete it by hand (https://discord.test/{PRO_CH.checkin}/{CALL_MESSAGES[1]})")
+    assert named in told, told
+
+
 async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_once_it_is_discarded(
     tmp_path,
 ):

@@ -1050,10 +1050,10 @@ def check_in_clean_up_steps() -> dict[str, Step]:
             if view.name == DELETE_MESSAGE and "discarded" in (view.result or {}):
                 # Nothing would take it down again from its record, so the record goes with it.
                 await _forget_message(db, view.payload)
-                left.append(
-                    f"{view.payload['message_id']} in <#{view.payload['channel_id']}> "
-                    f"({view.payload.get('what', 'message')})"
-                )
+                # Named by the link its refused deletion kept, for an admin to open; by its
+                # channel where it kept none.
+                link = (view.result or {}).get("link") or f"in <#{view.payload['channel_id']}>"
+                left.append(f"{link} ({view.payload.get('what', 'message')})")
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
         lines: tuple[str, ...] = ()
         if left:

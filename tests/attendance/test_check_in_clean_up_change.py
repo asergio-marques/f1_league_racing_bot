@@ -120,8 +120,8 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it_for_delet
 ):
     """Q9: Discord refuses to delete the last notice (7002). The queue stops at its
     `delete_message`, the notice still standing. A league admin discards that job: the queue
-    runs on, the log channel's line names message 7002 to be deleted by hand, the announcement
-    (7003) is deleted, and the round's check-in is marked over."""
+    runs on, the log channel's line names message 7002 to be deleted by hand, by its link, the
+    announcement (7003) is deleted, and the round's check-in is marked over."""
     league = await _league(tmp_path)
     league.undeletable.add(LAST_NOTICE)
 
@@ -136,7 +136,8 @@ async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it_for_delet
     await discard_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert str(LAST_NOTICE) in league.log()[len(told_before):]
+    told = league.log()[len(told_before):]
+    assert f"https://discord.test/{CHECK_IN}/{LAST_NOTICE}" in told, told
     assert ANNOUNCEMENT not in league.channel(CHECK_IN).messages
     assert await _cleared(league)
 

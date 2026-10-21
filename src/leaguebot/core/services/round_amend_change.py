@@ -999,12 +999,14 @@ def round_amend_change(
                     "discarded it; it is taken down when the bot next starts",
                 ))
             elif each.name == DELETE_MESSAGE:
+                # Named by the link its refused deletion kept, for an admin to open; by its
+                # channel where it kept none.
+                link = result.get("link") or f"in <#{each.payload.get('channel_id')}>"
                 failures.append(notices.NoticeFailure(
                     division, "check-in call",
                     f"the {each.payload.get('what', 'message')} could not be deleted a day "
                     f"after the round, and a league admin discarded it; delete it by hand "
-                    f"(message {each.payload.get('message_id')} in "
-                    f"<#{each.payload.get('channel_id')}>)",
+                    f"({link})",
                 ))
             elif (weather := hooks.forecast_failure(each)) is not None:
                 failures.append(notices.NoticeFailure(division, *weather))
