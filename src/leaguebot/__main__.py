@@ -201,7 +201,7 @@ def _season_end_hooks(bot: LeagueBot) -> "SeasonEndHooks":
     from leaguebot.weather.services.forecast_changes import forecast_steps
 
     async def close_signups(bot_: LeagueBot, cause: str):
-        return await close_signups_unattended(bot_, cause=cause, hold_channels=False)
+        return await close_signups_unattended(bot_, cause=cause)
 
     async def window_open() -> bool:
         if not await bot.module_service.is_signup_enabled():

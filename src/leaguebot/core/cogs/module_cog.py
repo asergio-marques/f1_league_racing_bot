@@ -64,13 +64,11 @@ class ForcedCloseOutcome:
 
     It lives in core, beside the function that returns it: core callers (the season's end) use it
     too, and core imports nothing from the signup module for it. Every failure of the close is
-    raised and stops the queue, so ``failed`` (one plain sentence per failed step) stays empty.
+    raised and stops the queue, so the outcome names none.
     """
 
     #: How many drivers were returned to Not Signed Up, read at the moment of closing.
     returned: int
-    #: One sentence per failed step, in the order the steps run. Empty where nothing failed.
-    failed: tuple[str, ...] = ()
     #: The ids of the drivers returned, in the order the close read them. The change queue's jobs
     #: close each one's signup channel, so the close asked not to hold gives them back.
     returned_ids: tuple[str, ...] = ()
@@ -80,7 +78,6 @@ async def execute_forced_close(
     bot: LeagueBot,
     *,
     audit_action: str,
-    hold_channels: bool = False,
 ) -> ForcedCloseOutcome:
     """Return the drivers still filling in the signup wizard to Not Signed Up, for the change
     queue's close of the signup window, and say what it did.
@@ -93,8 +90,7 @@ async def execute_forced_close(
     Discord refuses stops the queue before the channel is locked, and it leaves the season's stage
     where it stands: the Sign Up button's deletion, the "Signups are now closed" post, the
     window's close and its audit are jobs of the change that asked for it (signup's
-    ``delete_button`` and ``post_closed``). *hold_channels* is the keyword the form that held the
-    channels itself was told apart by; only False is left, and True raises.
+    ``delete_button`` and ``post_closed``).
 
     Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
     wizard over in the same save (owed its closing notice), so a restart never tells a driver
@@ -110,8 +106,6 @@ async def execute_forced_close(
     The count is of transitions that succeeded, read at the moment of closing. The
     confirmation ``/signup close`` shows may be up to five minutes older than that.
     """
-    if hold_channels:
-        raise ValueError("the signup window is closed on the change queue only")
     cfg = await bot.signup_module_service.get_config()
     if cfg is None:
         return ForcedCloseOutcome(returned=0)
@@ -179,7 +173,7 @@ _UNATTENDED_CAUSES: dict[str, str] = {
 
 
 async def close_signups_unattended(
-    bot: LeagueBot, *, cause: str, hold_channels: bool = False
+    bot: LeagueBot, *, cause: str
 ) -> ForcedCloseOutcome | None:
     """Close the signup window where no member ran the close.
 
@@ -194,7 +188,7 @@ async def close_signups_unattended(
     A season's end and every division done close the window with ``execute_forced_close``: the
     outcome gives the drivers it returned and the queue's jobs tell and close each one's signup
     channel, close the window in its channel and record that in the line, which this writes
-    none of. *hold_channels* is as there: only False is left.
+    none of.
 
     Nothing is done where a window was not actually open: a module that is disabled produces
     nothing (the core specification, Modules), and a window not open needs no close, so both
@@ -222,9 +216,7 @@ async def close_signups_unattended(
         )
         return None
 
-    return await execute_forced_close(
-        bot, audit_action=audit_action, hold_channels=hold_channels
-    )
+    return await execute_forced_close(bot, audit_action=audit_action)
 
 
 # ---------------------------------------------------------------------------

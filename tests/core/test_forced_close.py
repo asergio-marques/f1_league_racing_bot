@@ -4,7 +4,7 @@ do.
 Issue #208, #439 slice 6b. `execute_forced_close` was once the shared sub-flow behind
 `/module disable signup`, the scheduled close and `/signup close`; those now ask the queue's own
 close (`signup.close`, `module.off:signup`, pinned in `tests/signup/test_window_changes.py`), and
-what is left here is the form a season's end closes the window with (`hold_channels=False`): it
+what is left here is the form a season's end closes the window with: it
 decides which drivers caught mid-signup are returned, and leaves telling them and closing their
 channels to the queue's jobs. Recording the window closed is left to signup's own `post_closed`
 job, whose record writes it (#439 slice 6b, C66), so these tests do not read it here.
@@ -171,9 +171,7 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     db_path = await _make_db(tmp_path, name=f"fc_{state.value}", drivers=[("101", state)])
     bot = _bot(db_path)
 
-    outcome = await execute_forced_close(
-        bot, audit_action="SIGNUP_SEASON_END_CLOSE", hold_channels=False
-    )
+    outcome = await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
 
     bot.driver_service.transition.assert_not_awaited()
     bot.scheduler_service.cancel_job.assert_not_called()
@@ -198,7 +196,7 @@ async def test_a_job_already_gone_is_stepped_over(tmp_path):
     bot = _bot(db_path)
     bot.scheduler_service = scheduler
 
-    outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
+    outcome = await execute_forced_close(bot, audit_action="X")
 
     assert list(outcome.returned_ids) == ["101"]
 
@@ -206,18 +204,17 @@ async def test_a_job_already_gone_is_stepped_over(tmp_path):
 async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_path):
     """Driver 101's transition is refused as the state machine refuses a driver who has moved
     on since the queue's close read them (`ValueError`): they are not counted as returned, none
-    of their timers is cancelled, and nothing is reported as failed (#457)."""
+    of their timers is cancelled, and the close does not raise (#457)."""
     db_path = await _make_db(
         tmp_path, name="fc_movedon", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
     )
     bot = _bot(db_path, transition_error=ValueError("not in PENDING_SIGNUP_COMPLETION"))
 
-    outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
+    outcome = await execute_forced_close(bot, audit_action="X")
 
     assert outcome.returned == 0
     assert list(outcome.returned_ids) == []
     bot.scheduler_service.cancel_job.assert_not_called()
-    assert list(outcome.failed) == []
 
 
 WIZARD_CHANNEL = 555
@@ -240,7 +237,7 @@ async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds
     bot = _bot(db_path)
     ended = _ends_recorded(bot)
 
-    outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
+    outcome = await execute_forced_close(bot, audit_action="X")
 
     bot.driver_service.transition.assert_awaited_once()
     assert bot.driver_service.transition.await_args.args == ("101", DriverState.NOT_SIGNED_UP)
@@ -249,7 +246,6 @@ async def test_a_close_asked_not_to_hold_gives_the_drivers_it_returned_and_holds
     assert _driver_notices(bot) == []
     assert outcome.returned == 1
     assert [str(uid) for uid in outcome.returned_ids] == ["101"]
-    assert list(outcome.failed) == []
 
 
 async def _real_services(tmp_path, *, name, hours_since_activity=1.0):
@@ -327,7 +323,7 @@ async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_s
     """Driver 101, part-way through the wizard, is returned to Not Signed Up by the window's
     close, on the real services.
 
-    - On the queue (`hold_channels=False`): 101 is Not Signed Up, their wizard unengaged and
+    - On the queue: 101 is Not Signed Up, their wizard unengaged and
       owed its closing notice, together, its channel kept for the queue's jobs.
     - The mark cannot be written (the wizard's record refuses the update): 101's return is
       rolled back with it, still Pending Signup Completion with the wizard as it was, and the
@@ -343,7 +339,7 @@ async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_s
 
     if case == "the mark fails":
         with pytest.raises(Exception) as raised:
-            await execute_forced_close(bot, audit_action="X", hold_channels=False)
+            await execute_forced_close(bot, audit_action="X")
         chain, error = [], raised.value
         while error is not None:
             chain.append(str(error))
@@ -355,7 +351,7 @@ async def test_the_queue_s_close_marks_each_driver_it_returns_owed_in_the_same_s
         assert await _window_still_open(bot.db_path)
         return
 
-    await execute_forced_close(bot, audit_action="X", hold_channels=False)
+    await execute_forced_close(bot, audit_action="X")
 
     assert await _state_of(bot.db_path, "101") == "NOT_SIGNED_UP"
     assert await _wizard_of(bot.db_path, "101") == ("UNENGAGED", WIZARD_CHANNEL)
@@ -414,7 +410,7 @@ async def test_a_kill_part_way_through_the_queue_s_close_leaves_no_returned_driv
     bot.driver_service.transition = _transition
 
     with pytest.raises(_Killed):
-        await execute_forced_close(bot, audit_action="X", hold_channels=False)
+        await execute_forced_close(bot, audit_action="X")
 
     # What stands at the moment of the kill, before anything after the loop could run.
     assert asked == ["101", "102"]
@@ -456,7 +452,7 @@ async def test_a_driver_whose_return_fails_keeps_their_timers_and_channel_and_is
     bot.driver_service.transition = AsyncMock(side_effect=_transition)
 
     with pytest.raises(StepFailedOnDiscord) as raised:
-        await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE", hold_channels=False)
+        await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
 
     first, second = asked
     assert sorted(asked) == ["101", "102"]
@@ -481,11 +477,10 @@ async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
         ],
     )
 
-    outcome = await execute_forced_close(_bot(db_path), audit_action="X", hold_channels=False)
+    outcome = await execute_forced_close(_bot(db_path), audit_action="X")
 
     assert outcome.returned == 2
     assert sorted(outcome.returned_ids) == ["101", "102"]
-    assert list(outcome.failed) == []
 
 
 # ---------------------------------------------------------------------------
@@ -499,23 +494,20 @@ async def test_the_queue_s_close_writes_no_audit_of_the_window(tmp_path):
     with the window's close, so a discarded post leaves no record that signups closed."""
     db_path = await _make_db(tmp_path, name="fc_audit")
 
-    await execute_forced_close(
-        _bot(db_path), audit_action="SIGNUP_DIVISIONS_DONE_CLOSE", hold_channels=False
-    )
+    await execute_forced_close(_bot(db_path), audit_action="SIGNUP_DIVISIONS_DONE_CLOSE")
 
     assert await _audit(db_path) == []
 
 
 async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
-    """No signup configuration exists: the close returns an outcome with nobody returned and
-    nothing failed, closes nothing and audits nothing."""
+    """No signup configuration exists: the close returns an outcome with nobody returned,
+    closes nothing and audits nothing."""
     db_path = await _make_db(tmp_path, name="fc_noconfig")
     bot = _bot(db_path, config=None)
 
-    outcome = await execute_forced_close(bot, audit_action="X", hold_channels=False)
+    outcome = await execute_forced_close(bot, audit_action="X")
 
     assert outcome.returned == 0
-    assert list(outcome.failed) == []
 
     bot.signup_module_service.set_window_closed.assert_not_awaited()
     assert await _audit(db_path) == []
@@ -574,7 +566,7 @@ async def test_a_close_nobody_ran_on_the_queue_leaves_its_audit_and_line_to_the_
     )
     bot = _unattended_bot(db_path)
 
-    outcome = await close_signups_unattended(bot, cause=cause, hold_channels=False)
+    outcome = await close_signups_unattended(bot, cause=cause)
 
     assert outcome is not None
     assert sorted(outcome.returned_ids) == ["101", "102"]
