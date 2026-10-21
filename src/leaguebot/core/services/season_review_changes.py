@@ -15,13 +15,14 @@ question) and ``evidence`` (what the report was computed from, kept with the que
   `delete_drawing_notice`: a picture is drawn by the callable the builder hands the factory,
   off the event loop, and posted with its text in place of it where Discord refuses the file
   (the same try). A picture that will not draw (a render fault, not Discord's) stops nothing: its
-  text stands in, the fault is kept on the job, and the question goes up without its button. The
+  text stands in, the fault is kept on the job, and the question is withheld. The
   reviewer is told which pictures did not draw in their reply, and the fault is written to the log
   channel besides, since the queue does not say whether a reply could be updated;
 - `post_report`, one per section;
 - `post_question`, whose record writes the review's `season_review_prompts` row (every report id,
   the evidence) and whose line records who ran the review; the Approve button is the view the
-  builder's factory makes, not made where a picture would not draw;
+  builder's factory makes. Where a picture would not draw it posts nothing and records nothing,
+  and `arm_expiry` finds no question to arm the five minutes from;
 - `arm_expiry`, which arms the `review_expiry` timer through the scheduler the builder handed,
   five minutes after the question's job was marked done: the five minutes start when the question
   appears.
@@ -505,13 +506,16 @@ def season_review_post_change(
 
     @posts_in_a_job
     async def post_question(ctx: StepContext) -> StepResult:
+        # A picture that would not draw withholds the question altogether (core's rule for every
+        # other fault of a review): no question, no five minutes, no expiry notice; the report
+        # stands and the outcome tells the reviewer which picture failed.
+        if _faults(ctx):
+            return StepResult(result={"dropped": True})
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         channel = await _channel_of(ctx)
-        extra: dict[str, Any] = {}
-        if not _faults(ctx):
-            extra["view"] = approve_view(dict(ctx.payload))
         message = await send_notice(
-            channel, str(ctx.payload["question"]), allowed_mentions=_NO_MENTIONS, **extra
+            channel, str(ctx.payload["question"]), allowed_mentions=_NO_MENTIONS,
+            view=approve_view(dict(ctx.payload)),
         )
         line = f"{ctx.named} | {ctx.payload['review']} | Review posted"
         return StepResult(
@@ -526,7 +530,9 @@ def season_review_post_change(
         db: aiosqlite.Connection, ctx: StepContext, result: StepResult
     ) -> None:
         """The review's row, saved with the question's mark: every report id, and the evidence
-        the report was computed from."""
+        the report was computed from. A question withheld has no row."""
+        if "new" not in (result.result or {}):
+            return
         await db.execute(
             "INSERT INTO season_review_prompts "
             "(message_id, season_id, channel_id, reviewer_id, review, report_message_ids, "
@@ -585,12 +591,19 @@ def season_review_post_change(
         if not faults:
             return ""
         body = "\n".join(f"\u2022 **{name}**: {fault}" for name, fault in faults)
+        # The review's family words what is withheld: a season's approval, or the placements'
+        # (or the configuration's) confirmation, as the review's other faults say.
+        withheld = {
+            "approve": "the season is **not** offered for approval",
+            "mid_season": "the placements are **not** offered for confirmation",
+            "configuration": "the configuration is **not** offered for confirmation",
+        }.get(str(ctx.payload.get("view", "approve")), "the review is **not** offered for approval")
         return (
             "\u26d4 **A graphic could not be drawn for this review.**\n"
             f"{body}\n"
-            "Its section was shown as text, and the season is **not** offered for approval "
-            f"while that stands. Correct the template or the assets it names, then run "
-            f"`{ctx.payload['review']}` again."
+            f"Its section was shown as text, and {withheld} "
+            "while that stands, so no question was posted. Correct the template or the assets "
+            f"it names, then run `{ctx.payload['review']}` again."
         )
 
     return ChangeType(

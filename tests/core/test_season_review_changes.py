@@ -19,7 +19,7 @@ the queue"; decision 19):
   report was computed from) and `arm_expiry`, which arms the `review_expiry` timer five minutes
   from the question's posting. A picture is drawn through the callable the builder hands the
   factory (`drawing`, run off the event loop), and posted as text in the same try where Discord
-  refuses it; one that will not draw is no stop: the Approve button is withheld and the reviewer
+  refuses it; one that will not draw is no stop: the question is withheld and the reviewer
   told why, in their reply or, once that can no longer be updated, the log channel.
 
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
@@ -546,8 +546,9 @@ async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_wh
 async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_the_reviewer_s_reply(
         posting):
     """Pro's lineup will not draw (its template's font cannot be loaded). Once the queue runs the
-    queue does not stop and the review is posted, but its question carries no Approve button, no
-    view is made for it, and Alex's reply is updated naming "Pro lineup" as not drawn."""
+    queue does not stop and the report is posted, but the question is withheld: none is posted, no
+    view is made, no row is kept for it and no five minutes are armed. Alex's reply is updated
+    naming "Pro lineup" as not drawn, and saying the season is not offered for approval."""
     posting.drawing.broken = {"Pro lineup"}
     _attach(posting)
     interaction = await _review(posting)
@@ -556,9 +557,37 @@ async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_
     assert await stopped_job(posting.db_path) is None
     [change] = await _changes(posting, POST)
     assert change["state"] == "DONE"
-    assert _question(posting.channel).view is None
+    assert QUESTION not in [m.content for m in _posts(posting.channel)]
+    assert REPORT[0] in [m.content for m in _posts(posting.channel)]
     assert posting.views == []
     assert "Pro lineup" in updated_reply(interaction)
+    assert "season is **not** offered for approval" in updated_reply(interaction)
+    async with get_connection(posting.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
+        assert (await cursor.fetchone())[0] == 0
+
+
+@pytest.mark.parametrize(("view", "withheld"), [
+    ("mid_season", "the placements are **not** offered for confirmation"),
+    ("configuration", "the configuration is **not** offered for confirmation"),
+])
+async def test_a_drawing_fault_words_what_is_withheld_by_the_review_s_family(
+        posting, view, withheld):
+    """Pro's lineup will not draw in a mid-season or a configuration review. Alex's reply says
+    the placements (or the configuration) are not offered for confirmation, as the review's
+    other faults say, and not that the season is not offered for approval."""
+    posting.drawing.broken = {"Pro lineup"}
+    _attach(posting)
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    await posting.bot.change_queue.ask(
+        POST, {**_payload(), "view": view}, interaction=interaction,
+        what="posting the review",
+    )
+    await run_queue(posting.bot)
+
+    assert withheld in updated_reply(interaction)
+    assert "season is **not** offered for approval" not in updated_reply(interaction)
 
 
 async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_be_updated(
