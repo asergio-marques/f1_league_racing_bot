@@ -247,6 +247,8 @@ If only the second group is waiting, the confirmation says nobody will lose thei
 
 Closing ahead of the time you set is two steps on purpose — the first is hard to do by accident. If you only want to move the deadline rather than close now, use `/signup close-time modify` with the new time and leave the window running.
 
+**If the season is ending, leave the window to it.** While the season's completion, cancellation or abort, or its wind-down once every division is done, is on the queue — waiting, running or stopped — `/signup close` is refused at once, before any confirmation, and so is a **Confirm Close** you press once it is. The refusal names the season's job: that change closes signups itself, so if it has stopped, press Retry or Discard on its notice in the log channel rather than closing by hand. A close time falling meanwhile closes nothing either, and no close moves the season on.
+
 Closing deletes the Sign Up button, posts a **Signups are now closed** notice in the channel, and tells anyone still filling in the questionnaire that it is over.
 
 **Closing moves the season on**, whether you close it or its close time does. Before the season has started, it moves to placements, where you build divisions and place drivers. Mid-season, it moves to placements for the new drivers where anyone is still Unassigned, awaiting approval or mid-correction, and straight back to ongoing where nobody is.
