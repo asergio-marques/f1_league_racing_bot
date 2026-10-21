@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -34,19 +34,6 @@ from leaguebot.core.utils.league_server import LeagueModal, guild_of
 from leaguebot.core.utils.log_lines import interaction_member, refuse
 
 log = logging.getLogger(__name__)
-
-
-def _as_utc(moment) -> datetime:
-    """A round's ``scheduled_at`` as an aware UTC datetime, however the driver hands it back.
-
-    SQLite stores it as an ISO 8601 string and aiosqlite returns it as one; a naive datetime,
-    from any source, is UTC as everything else here is.
-    """
-    if isinstance(moment, str):
-        moment = datetime.fromisoformat(moment)
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment
 
 
 def _command(interaction: discord.Interaction) -> str:
