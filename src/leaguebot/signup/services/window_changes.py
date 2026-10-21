@@ -66,9 +66,8 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
     StepView,
-    in_hand,
 )
-from leaguebot.core.services.season_end_changes import SEASON_ENDING, season_ending
+from leaguebot.core.services.season_end_changes import season_ending, season_ending_jobs
 from leaguebot.core.services.season_lifecycle_service import (
     WINDOW_CLOSED_NOTICE,
     WINDOW_NOT_CLOSED,
@@ -491,10 +490,11 @@ def return_drivers_step(
 async def season_end_close_refusal(db_path: str) -> str | None:
     """The refusal of a member's close of the window while the season's completion, cancellation,
     abort or wind-down is in hand on the queue, naming the job nearest its turn, or None where none
-    is: that end closes signups itself (core's "Ending a season", one rule for every request about
+    is (a wind-down counted only where it would run now, `season_ending_jobs`): that end closes
+    signups itself (core's "Ending a season", one rule for every request about
     a season whose end is in hand). Asked by `/signup close` before its confirmation, and by the
     close's check, when asked (the command, and its Confirm Close button) and as it runs."""
-    jobs = [job or 0 for _payload, job in await in_hand(db_path, SEASON_ENDING)]
+    jobs = [job or 0 for job in await season_ending_jobs(db_path)]
     if not jobs:
         return None
     job = min(jobs)
@@ -522,7 +522,8 @@ def window_close_change(
     ``audit_action`` and, for the bot's, ``close_at`` (the time it was set to close). The window
     is judged again as the change comes up to run. A member's close is refused, first, while the
     season's end or wind-down is in hand (`season_end_close_refusal`). The bot's close leaves a
-    season whose end or wind-down is in hand on the queue to it (`season_ending`): no longer due at its check, it is
+    season whose end or wind-down is in hand on the queue to it (`season_ending`, which counts a
+    wind-down only where it would run): no longer due at its check, it is
     dropped; started already, as a close cut off by a stop is, it returns no driver it has not
     returned, and none of its jobs moves the season on (the signup specification's close of the
     window). *signup_module_service* is a getter, so that the

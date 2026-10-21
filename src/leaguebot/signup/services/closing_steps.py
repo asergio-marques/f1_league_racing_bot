@@ -260,9 +260,9 @@ def window_close_steps(
     the close and has the queue write the "Signups closed" line, where the payload gives a
     ``head`` for it (a close a member ran writes its own line in its last job), and moves the
     season on where it says ``advance_season`` (a season's end moves its own, and a season whose
-    end or wind-down is in hand on the queue is left to it, `season_ending_on`): no window is ever
-    recorded closed without its notice up, and a refused post stops the queue with signups still
-    open.
+    end, or a wind-down that would run, is in hand on the queue is left to it, `season_ending_on`):
+    no window is ever recorded closed without its notice up, and a refused post stops the queue
+    with signups still open.
     Where its try posted and the record then failed, the message is kept for the next try to remove
     before it posts again. A window already closed by another hand is not closed twice.
     *signup_module_service* is a getter, so that the service is the one the bot holds when the job runs.

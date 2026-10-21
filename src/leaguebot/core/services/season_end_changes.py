@@ -106,6 +106,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     require_guild,
     end_signup_wizards_on,
     run_driver_pass_on,
+    wind_down_not_due_on,
     wind_down_steps,
 )
 from leaguebot.core.services.season_approval_change import NOT_FORGOTTEN
@@ -127,7 +128,7 @@ __all__ = [
     "SEASON_ABORT",
     "SEASON_CANCEL",
     "SEASON_COMPLETE",
-    "SEASON_ENDING",
+    "SEASON_ENDS",
     "anything_discarded",
     "discarded",
     "not_done_reply",
@@ -135,6 +136,7 @@ __all__ = [
     "season_complete_change",
     "season_end_in_hand",
     "season_ending",
+    "season_ending_jobs",
     "season_ending_on",
     "season_end_refusal",
     "shared_not_done",
@@ -312,9 +314,20 @@ async def season_end_in_hand(
     return nearest
 
 
-#: The changes that end a season or wind it down to Pending completion. Each closes the signup
+#: The changes that end a season: its completion, cancellation and abort. Each closes the signup
 #: window itself, where one stands open, and moves the season its own way.
-SEASON_ENDING = (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT, WIND_DOWN)
+SEASON_ENDS = (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT)
+
+
+async def _any_in_hand_on(db: aiosqlite.Connection, kinds: tuple[str, ...]) -> bool:
+    """Whether a change of *kinds* is queued, running or stopped on a failure, read on *db*."""
+    marks = ", ".join("?" for _ in kinds)
+    cursor = await db.execute(
+        f"SELECT 1 FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
+        "AND state IN ('QUEUED', 'RUNNING') LIMIT 1",
+        kinds,
+    )
+    return await cursor.fetchone() is not None
 
 
 async def season_ending_on(db: aiosqlite.Connection) -> bool:
@@ -323,23 +336,31 @@ async def season_ending_on(db: aiosqlite.Connection) -> bool:
 
     A close of the signup window leaves such a season to it, neither moving the season on nor, for
     the bot's own close, returning its drivers (the signup specification's close of the window):
-    the end and the wind-down close the window themselves. One season is live at a time, so an
-    end in hand is the live season's. Read on the caller's connection, so that a record may ask it
-    inside its save.
+    the end and the wind-down close the window themselves. A wind-down counts only where it would
+    run now, the season meeting its check (`wind_down_not_due_on`): the bot asks one wherever a
+    division may have been the season's last, and one its check will drop closes nothing, so it
+    holds no close back. One season is live at a time, so an end in hand is the live season's.
+    Read on the caller's connection, so that a record may ask it inside its save.
     """
-    marks = ", ".join("?" for _ in SEASON_ENDING)
-    cursor = await db.execute(
-        f"SELECT 1 FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
-        "AND state IN ('QUEUED', 'RUNNING') LIMIT 1",
-        SEASON_ENDING,
-    )
-    return await cursor.fetchone() is not None
+    if await _any_in_hand_on(db, SEASON_ENDS):
+        return True
+    return await _any_in_hand_on(db, (WIND_DOWN,)) and await wind_down_not_due_on(db) is None
 
 
 async def season_ending(db_path: str) -> bool:
     """`season_ending_on`, read on a connection of its own, for a check or a job's `still_due`."""
     async with get_connection(db_path) as db:
         return await season_ending_on(db)
+
+
+async def season_ending_jobs(db_path: str) -> list[int | None]:
+    """The job each change `season_ending` counts waits on, oldest first: `None` for one whose
+    jobs are all done and only its own close is left. Empty where none is in hand."""
+    kinds: list[str] = list(SEASON_ENDS)
+    async with get_connection(db_path) as db:
+        if await wind_down_not_due_on(db) is None:
+            kinds.append(WIND_DOWN)
+    return [job for _payload, job in await in_hand(db_path, kinds)]
 
 
 def amended(held: Any) -> str:

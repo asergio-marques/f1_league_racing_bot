@@ -672,6 +672,24 @@ WIND_DOWN_NOTICE = (
 )
 
 
+async def wind_down_not_due_on(db: aiosqlite.Connection) -> str | None:
+    """Why the wind-down would be dropped at its check now, or None where it would run: it runs
+    only while the live season is in an ongoing stage with every division finished or cancelled.
+
+    `wind_down_change`'s check, read on *db*, and how a close of the signup window tells a
+    wind-down that will run from one asked just in case (`season_ending_on`): the bot asks one
+    wherever a division may have been the season's last, and its check drops every one that was
+    not.
+    """
+    found = await live_season_stage_on(db)
+    if found is None or found[1] not in ONGOING_STAGES:
+        return "the season is not in an ongoing stage"
+    _, done = await _stage_and_whether_done_on(db, found[0])
+    if not done:
+        return "a division of the season is not done"
+    return None
+
+
 def wind_down_change(
     *, placement: PlacementService | None = None, hooks: SeasonEndHooks | None = None
 ) -> ChangeType:
@@ -696,13 +714,9 @@ def wind_down_change(
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        found = await live_season_stage(ctx.db_path)
-        if found is None or found[1] not in ONGOING_STAGES:
-            return Verdict.not_due("the season is not in an ongoing stage")
-        _, done = await _stage_and_whether_done(ctx.db_path, found[0])
-        if not done:
-            return Verdict.not_due("a division of the season is not done")
-        return Verdict.go()
+        async with get_connection(ctx.db_path) as db:
+            reason = await wind_down_not_due_on(db)
+        return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(_ctx: OutcomeContext) -> str:
         return ""

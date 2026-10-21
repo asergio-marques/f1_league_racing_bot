@@ -667,15 +667,26 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
 
 #: The changes that end a season or wind it down to Pending completion, each of which closes the
 #: window itself.
-SEASON_ENDS = ("season.complete", "season.wind_down")
+WIND_DOWN_KIND = "season.wind_down"
+SEASON_ENDS = ("season.complete", WIND_DOWN_KIND)
 
 
-async def _season_end_in_hand(league: SeasonLeague, kind: str) -> int:
+async def _wind_down_due(league: SeasonLeague) -> None:
+    """Season 7 as a wind-down finds it when it runs: signups open while it is raced (Ongoing,
+    signups open), and both its divisions finished."""
+    await league.write("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
+    await league.write("UPDATE divisions SET status = 'FINISHED' WHERE season_id = ?", SEASON_ID)
+
+
+async def _season_end_in_hand(league: SeasonLeague, kind: str, *, due: bool = True) -> int:
     """A *kind* change of season 7 in hand on the league's lane, asked after the close and stopped
-    at its first job, its next try an hour away: it stays in hand while the close runs. Gives the
-    job's number."""
+    at its first job, its next try an hour away: it stays in hand while the close runs. A
+    wind-down is one that would run, the season first put as it finds it (`_wind_down_due`),
+    unless *due* is False. Gives the job's number."""
     import json
 
+    if kind == WIND_DOWN_KIND and due:
+        await _wind_down_due(league)
     later = league.clock.now + timedelta(hours=1)
     async with get_connection(league.db_path) as db:
         cursor = await db.execute(
@@ -708,9 +719,10 @@ async def _auto_close(league: SeasonLeague, cause: str) -> None:
 async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_path, kind):
     """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
     the other the bot starts after the close time, and each asks the close. Before it runs, the
-    season's completion (or its wind-down to Pending completion) comes to be in hand on the queue,
-    behind it and stopped. When the close comes up to run it leaves the season to that end
-    (signup :56): it is dropped, the season stays at Signups, Kimi is not returned and not told,
+    season's completion (or its wind-down to Pending completion, the season raced with both its
+    divisions finished) comes to be in hand on the queue, behind it and stopped. When the close
+    comes up to run it leaves the season to that end (signup :56): it is dropped, the season stays
+    at its stage, Kimi is not returned and not told,
     nothing is posted in the signup channel and no line of the close is written."""
     from tests.support.change_queue import queued_log_lines
 
@@ -718,12 +730,13 @@ async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_pa
         league = await _close_league(tmp_path / cause, SIGNING_UP)
         await _auto_close(league, cause)
         await _season_end_in_hand(league, kind)
+        stage = await _season_stage(league)
 
         await run_queue(league.bot)
 
         [change] = await _changes_of(league, CLOSE_KIND)
         assert change["state"] == "DROPPED", cause
-        assert await _season_stage(league) == "SIGNUPS", cause
+        assert await _season_stage(league) == stage, cause
         assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION", cause
         assert _told(league) == [], cause
         assert _closed_notices(league) == [], cause
@@ -731,15 +744,21 @@ async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_pa
         assert not [line for line in lines if "Signups closed automatically" in line], cause
 
 
-@pytest.mark.parametrize("kind", SEASON_ENDS)
+@pytest.mark.parametrize(("kind", "due", "moved"), (
+    ("season.complete", True, None), (WIND_DOWN_KIND, True, None),
+    (WIND_DOWN_KIND, False, "PLACEMENTS"),
+))
 async def test_a_close_cut_off_after_returning_its_drivers_tells_them_and_leaves_the_season_to_its_end(
-    tmp_path, kind,
+    tmp_path, kind, due, moved,
 ):
     """The close timer fires with Kimi still filling in the wizard, and the bot stops once the
     close has returned him to Not Signed Up, before it has told him. While it is down, the
-    season's completion (or its wind-down) comes to be in hand on the queue, stopped. When the bot
-    starts again the close carries on: Kimi is told once and his channel locked, but the season is
-    left to its end and stays at Signups (signup :56)."""
+    season's completion (or its wind-down, the season raced with both its divisions finished)
+    comes to be in hand on the queue, stopped. When the bot starts again the close carries on:
+    Kimi is told once and his channel locked, but the season is left to its end and stays at its
+    stage (signup :56). A wind-down in hand while the season is still at Signups is one its check
+    will drop, which closes nothing: it holds nothing back, and the close moves the season on to
+    Placements."""
     league = await _close_league(tmp_path, SIGNING_UP)
     await _auto_close(league, "timer")
     for _ in range(10):
@@ -750,13 +769,14 @@ async def test_a_close_cut_off_after_returning_its_drivers_tells_them_and_leaves
     assert await _driver_state(league) == "NOT_SIGNED_UP"
     assert _told(league) == []
 
-    await _season_end_in_hand(league, kind)
+    await _season_end_in_hand(league, kind, due=due)
+    stage = await _season_stage(league)
     await league.restart()
     await run_queue(league.bot)
 
     assert len(_told(league)) == 1
     assert _locked_in(league)
-    assert await _season_stage(league) == "SIGNUPS"
+    assert await _season_stage(league) == (moved or stage)
 
 
 @pytest.mark.parametrize("kind", ("season.complete", "season.cancel", "season.abort",
@@ -771,7 +791,8 @@ async def test_a_member_s_close_while_the_season_s_end_is_in_hand_is_refused_nam
     then presses Confirm Close. Each is refused at once (core, "Ending a season"): he is told the
     season's end is in hand and closes signups itself, naming its job and saying to press Retry
     or Discard on its notice; the refusal is one ⛔ line in the log channel; no close is asked,
-    the window stays open and the season at Signups."""
+    the window stays open and the season at its stage. A wind-down is one that would run, the
+    season raced with both its divisions finished."""
     from tests.support.change_queue import queued_log_lines
 
     drivers = (SIGNING_UP,) if asked != "the command" else ()
@@ -792,9 +813,67 @@ async def test_a_member_s_close_while_the_season_s_end_is_in_hand_is_refused_nam
     lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
     assert len([line for line in lines if line.startswith("⛔")]) == 1, lines
     assert await _changes_of(league, CLOSE_KIND) == []
+    stage = await _season_stage(league)
     await run_queue(league.bot)
     assert (await _window(league))["signups_open"]
-    assert await _season_stage(league) == "SIGNUPS"
+    assert await _season_stage(league) == stage
+
+
+@pytest.mark.parametrize("asked", ("timer", "command"))
+async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, asked):
+    """Season 7 is raced with signups open (Ongoing, signups open) and two divisions, the first
+    finished and the second not. The first division's appeals are approved, and the bot asks a
+    wind-down in case it was the season's last (`appeals_approval_change`); its check will drop
+    it, as the second division is not done. Behind it, the window's close time passes and the
+    bot asks the close, or manager 77 runs `/signup close` with no close time set and nobody
+    signing up. Nothing ending the season is in hand that would close the window: the member's
+    close is not refused, the close goes ahead, the window is closed with its notice posted and
+    the season moves on to Ongoing, and the wind-down is dropped."""
+    from tests.support.change_queue import queued_log_lines
+
+    async def wind_down_asked() -> None:
+        # As the approval's save queues it, a follow-on of the bot's, unchecked until its turn.
+        async with get_connection(league.db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO queued_changes (kind, dedup_key, payload, origin, what) "
+                "VALUES (?, ?, '{}', 'BOT', ?)",
+                (WIND_DOWN_KIND, WIND_DOWN_KIND,
+                 "Winding the season down after approving round 3's appeals"),
+            )
+            for position, name in enumerate(("wind_down", "turn_down")):
+                await db.execute(
+                    "INSERT INTO queued_change_steps (change_id, position, name, payload) "
+                    "VALUES (?, ?, ?, '{}')",
+                    (cursor.lastrowid, position, name),
+                )
+            await db.commit()
+
+    league = await _close_league(tmp_path)
+    await league.write("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
+    [first, *_others] = await league.rows(
+        "SELECT id FROM divisions WHERE season_id = ? ORDER BY id", SEASON_ID
+    )
+    await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", first["id"])
+
+    if asked == "timer":
+        await _auto_close(league, "timer")
+        await wind_down_asked()
+    else:
+        await wind_down_asked()
+        press = await _signup_close(league)
+        reply = acknowledgement(press)
+        assert "season's end is in hand" not in reply, reply
+    await run_queue(league.bot)
+
+    [close] = await _changes_of(league, CLOSE_KIND)
+    assert close["state"] == "DONE", close
+    [ended] = await _changes_of(league, WIND_DOWN_KIND)
+    assert ended["state"] == "DROPPED", ended
+    assert not (await _window(league))["signups_open"]
+    assert len(_closed_notices(league)) == 1
+    assert await _season_stage(league) == "ONGOING"
+    lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+    assert not [line for line in lines if line.startswith("⛔")], lines
 
 
 async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as_jobs(tmp_path):
