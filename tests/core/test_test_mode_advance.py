@@ -404,9 +404,10 @@ async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
         mocks["run_result_submission_job"].assert_not_awaited()
 
 
-async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
+async def test_an_opened_submission_is_recorded_as_asked_of_the_queue(tmp_path):
     """Advance's line names the division and the round, and never says the results were
-    submitted: the submission is opened, not done (#482)."""
+    submitted: the submission is opened, not done (#482). Nor does it say the submission has
+    started: it is asked of the change queue, as the reply says, and names its phase so."""
     cog = _make_cog(await _make_db(tmp_path))
 
     await _advance(cog, _interaction(), _entry(4))
@@ -415,6 +416,8 @@ async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
     assert line.startswith("Maintainer (<@77>) | /test-mode advance")
     assert "Division 1" in line and "Round 3" in line
     assert "submitted" not in line.lower()
+    assert "phase: result submission (on the change queue)" in line
+    assert "started" not in line and "runs on its own" not in line
 
 
 async def _noop(round_id: int) -> None:

@@ -449,7 +449,7 @@ class TestModeCog(commands.Cog):
             )
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: result submission wizard started (it runs on its own)\n"
+                f"  phase: result submission (on the change queue)\n"
                 f"  division: {entry['division_name']}\n"
                 f"  round: Round {entry['round_number']}",
             )
