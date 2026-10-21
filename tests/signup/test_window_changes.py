@@ -819,6 +819,32 @@ async def test_a_member_s_close_while_the_season_s_end_is_in_hand_is_refused_nam
     assert await _season_stage(league) == stage
 
 
+async def test_a_member_s_close_names_the_job_of_an_end_still_doing_one(tmp_path):
+    """The season's cancellation is in hand with every job done and only its own close left, and
+    its completion is in hand too, stopped at its first job. Manager 77 runs `/signup close`: the
+    refusal names the completion's job, the one end with a job still to do."""
+    import json
+
+    league = await _close_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('season.cancel', 'season.cancel', ?, 'BOT', 'RUNNING', 'cancelling')",
+            (json.dumps({"season_id": SEASON_ID}),),
+        )
+        await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, done_at) "
+            "VALUES (?, 0, 'first', '{}', ?)",
+            (cursor.lastrowid, league.clock.now.isoformat()),
+        )
+        await db.commit()
+    job = await _season_end_in_hand(league, "season.complete")
+
+    reply = acknowledgement(await _signup_close(league))
+
+    assert f"job #{job}" in reply, reply
+
+
 @pytest.mark.parametrize("asked", ("timer", "command"))
 async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, asked):
     """Season 7 is raced with signups open (Ongoing, signups open) and two divisions, the first

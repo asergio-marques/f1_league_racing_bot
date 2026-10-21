@@ -494,11 +494,12 @@ async def season_end_close_refusal(db_path: str) -> str | None:
     signups itself (core's "Ending a season", one rule for every request about
     a season whose end is in hand). Asked by `/signup close` before its confirmation, and by the
     close's check, when asked (the command, and its Confirm Close button) and as it runs."""
-    jobs = [job or 0 for job in await season_ending_jobs(db_path)]
+    jobs = await season_ending_jobs(db_path)
     if not jobs:
         return None
-    job = min(jobs)
-    named = f" (job #{job})" if job else ""
+    # An end with only its own close left has no job to name; the lowest one that has is named.
+    numbered = [job for job in jobs if job is not None]
+    named = f" (job #{min(numbered)})" if numbered else ""
     return (
         f"⛔ The season's end is in hand on the queue{named} and closes signups itself, so "
         "nothing was closed. If it has stopped, press Retry or Discard on its notice in the log "
