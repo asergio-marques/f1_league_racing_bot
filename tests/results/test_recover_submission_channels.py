@@ -255,13 +255,6 @@ async def test_a_restart_with_nothing_open_does_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-#: Why a test of a restart mid-submission is expected to fail until the restart asks the queue.
-NO_SUBMISSION_RESTART = (
-    "#439: a restart clears a cut-off submission, deletes its channel and starts the submission "
-    "job itself, off the change queue, rather than asking for `results.submission.restart`"
-)
-
-
 def _asked_restart(stub) -> dict:
     """The one `results.submission.restart` recovery asked, for round 3 in channel 700."""
     payload = _asked_once(stub, "results.submission.restart")
@@ -269,7 +262,6 @@ def _asked_restart(stub) -> dict:
     return payload
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_the_submission_wizard_is_reopened(tmp_path):
     """Production has no `/test-mode advance` to fall back on, so without this the round is
     silently abandoned and nobody submits its results at all. Recovery asks the queue, as the
@@ -293,7 +285,6 @@ async def test_the_submission_wizard_is_reopened(tmp_path):
     assert await _rows(db_path, "round_submission_channels") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_guild_missing_from_the_cache_still_clears_the_row(tmp_path):
     """The database half can be put right without Discord, and leaving the row would have
     the round recovered again on every later restart. With the league's server missing from the
@@ -307,7 +298,6 @@ async def test_a_guild_missing_from_the_cache_still_clears_the_row(tmp_path):
     stubs["create_task"].assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SUBMISSION_RESTART)
 async def test_a_channel_already_gone_still_reopens_the_wizard(tmp_path):
     """Someone deleted it by hand between the crash and the restart, which changes nothing
     about the round needing its results: recovery still asks the queue for round 3's restart."""

@@ -1773,7 +1773,9 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
 
         log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
         try:
-            await ask_submission_restart(bot.change_queue, bot.db_path, round_id)
+            await ask_submission_restart(
+                bot.change_queue, bot.db_path, round_id, int(row["channel_id"]),
+            )
         except Exception:
             log.exception("Recovery: could not ask for round %s's submission restart", round_id)
 

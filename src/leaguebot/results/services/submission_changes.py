@@ -346,8 +346,10 @@ async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -
 def submission_restart_change() -> ChangeType:
     """The `results.submission.restart` change type, for the builder to register.
 
-    The payload is ``{"round_id": int}``. It is due while the round's submission row stands open
-    and in no review; a round cancelled or one whose row is gone is dropped.
+    The payload is ``{"round_id": int, "channel_id": int}``, the channel the restart found the
+    round's submission open in. It is due while the round's submission row stands open in that
+    channel and in no review; a round cancelled, one whose row is gone and one whose submission
+    has since been opened in another channel are dropped.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -355,8 +357,8 @@ def submission_restart_change() -> ChangeType:
             row = await (
                 await db.execute(
                     "SELECT closed, in_penalty_review FROM round_submission_channels "
-                    "WHERE round_id = ?",
-                    (int(ctx.payload["round_id"]),),
+                    "WHERE round_id = ? AND channel_id = ?",
+                    (int(ctx.payload["round_id"]), int(ctx.payload["channel_id"])),
                 )
             ).fetchone()
         if row is None or row["closed"] or row["in_penalty_review"]:
@@ -423,16 +425,18 @@ def submission_restart_change() -> ChangeType:
     )
 
 
-async def ask_submission_restart(queue: ChangeQueue, db_path: str, round_id: int) -> None:
-    """Ask the queue, as the bot, to clear *round_id*'s submission a restart cut short and open
-    it afresh. The round's number is read here to name the change."""
+async def ask_submission_restart(
+    queue: ChangeQueue, db_path: str, round_id: int, channel_id: int,
+) -> None:
+    """Ask the queue, as the bot, to clear *round_id*'s submission a restart cut short, found open
+    in *channel_id*, and open it afresh. The round's number is read here to name the change."""
     async with get_connection(db_path) as db:
         row = await (
             await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
         ).fetchone()
     number = "a round" if row is None else f"round {row['round_number']}"
     await queue.ask(
-        RESTART_KIND, {"round_id": round_id},
+        RESTART_KIND, {"round_id": round_id, "channel_id": channel_id},
         what=f"clearing {number}'s results submission a restart cut short",
         origin=ChangeOrigin.BOT,
     )
