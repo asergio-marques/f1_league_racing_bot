@@ -22,6 +22,7 @@
     - A division created by duplicating another shall not inherit the source division's forecast channel.
 - The bot shall output weather forecasts only in the forecast channel configured for the division of the round, and shall record the calculations behind each phase only in the server log channel.
 - Every forecast shall mention the division's configured role. The mystery round notice is the sole exception.
+    - The mention shall notify the role, in a forecast posted as text as in one posted as a graphic. Decided 2026-10-13.
 
 ### Phase deadlines
 - A "weather config phase-1-deadline" command shall be available to league managers, which shall have as input an integer standing for a number of days. This command configures the number of days before a round at which point Phase 1 shall be published.
@@ -136,6 +137,7 @@
 
 ## Supersession and cleanup
 - Each phase's message shall supersede the previous phase's, so that a division holds only one forecast for a round at any time.
+    - A forecast too long for one message is posted in parts, and every part shall be recorded with it and deleted with it, from the channel it was posted in, even after that channel has been changed for the division. Decided 2026-10-13.
 - The superseded message shall be deleted only once the new message has been posted, so that a failure to post leaves the previous forecast standing. The deletion of the superseded message is a job of its own on the change queue: one Discord refuses stops the queue and is tried again, the earlier forecast and its record standing meanwhile. Decided 2026-10-10.
 - Each phase shall be drawn and recorded, and its calculation written to the log channel, in one step, and its forecast posted in a step after it; a forecast Discord refuses, or whose forecast channel is unset or gone, stops the change queue, saying which, and is tried again as text. A forecast a league admin discards is not posted: its draw stands, recorded and logged. A phase or forecast whose turn on the queue comes after its round's race time is dropped, nothing drawn or posted for it. Decided 2026-10-10, 2026-10-11.
 - 24 hours after a round's scheduled start, whichever of the round's Phase 1, 2 and 3 messages still stands shall be deleted from every division's forecast channel, each deletion a job on the change queue: a Phase 3 message that was never posted, or was dropped because the race had been run, thus leaves no earlier forecast standing for good. A mystery round's notice is not deleted. Every message describing such a deletion, a reply, a stop notice, an outcome or a log line, shall name the phase it deletes. Decided 2026-10-10, 2026-10-12.
