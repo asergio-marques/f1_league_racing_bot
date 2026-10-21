@@ -24,6 +24,7 @@ given.
 """
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import aiosqlite
@@ -36,6 +37,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -44,8 +46,6 @@ from leaguebot.core.services.change_queue import (
     StepContext,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.utils.batch_notice import delete_notice
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -106,7 +106,9 @@ async def _choose(ctx: StepContext) -> StepResult:
     return StepResult(
         result={"chosen": len(chosen)},
         then=tuple(
-            PlannedStep(DELETE_MESSAGE, {"channel_id": channel_id, "message_id": each})
+            PlannedStep(DELETE_MESSAGE, {
+                "channel_id": channel_id, "message_id": each, "what": "bot message",
+            })
             for each in chosen
         ),
     )
@@ -114,27 +116,6 @@ async def _choose(ctx: StepContext) -> StepResult:
 
 async def _describe_choose(ctx: StepContext) -> str:
     return f"choosing the bot's messages to delete in <#{ctx.payload['channel_id']}>"
-
-
-@posts_in_a_job
-async def _delete_message(ctx: StepContext) -> StepResult:
-    """Delete one chosen message. A message already gone completes the job (the queue does so on
-    `NotFound`); any other refusal stops the queue, keeping the message's link for a Discard to
-    name."""
-    payload = ctx.step_payload
-    channel = await _channel(ctx.bot, int(payload["channel_id"]))
-    if channel is None:
-        return StepResult(result={"gone": True})
-    message = channel.get_partial_message(int(payload["message_id"]))
-    try:
-        await delete_notice(message)
-    except discord.NotFound:
-        raise
-    except discord.HTTPException as exc:
-        raise StepFailedOnDiscord(
-            "one of the bot's messages could not be deleted", result={"link": message.jump_url}
-        ) from exc
-    return StepResult(result={"deleted": True})
 
 
 async def _describe_delete(ctx: StepContext) -> str:
@@ -197,8 +178,9 @@ def clean_change() -> ChangeType:
     """The `core.clean` change type, for the builder to register."""
     steps: dict[str, Step] = {
         CHOOSE: Step(CHOOSE, StepKind.ACT, _choose, describe=_describe_choose),
-        DELETE_MESSAGE: Step(DELETE_MESSAGE, StepKind.DELETE, _delete_message,
-                             describe=_describe_delete),
+        DELETE_MESSAGE: dataclasses.replace(
+            standing_posts.delete_replaced_step(DELETE_MESSAGE), describe=_describe_delete
+        ),
         CLOSE: Step(CLOSE, StepKind.SAVE, _close, describe=_describe_close),
     }
 

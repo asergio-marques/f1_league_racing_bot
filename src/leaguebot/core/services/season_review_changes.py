@@ -34,9 +34,11 @@ a changed state (`refused`), or Approve was accepted (`confirmed`). Its payload 
 done, ``confirmed`` unless told) and ``press_failed`` (an earlier press failed and may have been
 partly done). Its jobs are:
 
-- one `delete_message` per message of the review, the question first, then the report, through the
-  shared delete step: a message already gone, or its channel, completes the job, and one Discord
-  refuses stops the queue, a Discard leaving it for deletion by hand;
+- one `delete_message` per message of the review, the question first, then the report, through
+  `_delete_review_message`, which is the shared delete step's rule (a message already gone, or its
+  channel, completes the job, and one Discord refuses stops the queue, a Discard leaving it for
+  deletion by hand) with one addition: a channel the cache lacks, as it does at a restart, is
+  fetched from Discord before it is taken to be gone;
 - `post_expiry`, but where the review was confirmed: the notice pinging the reviewer alone and
   naming the command to run again. A channel that is gone is nothing to tell. It also reads the
   reviewer's name, as a save waits on no second connection;
@@ -200,7 +202,12 @@ async def _review_channel(bot: Any, channel_id: int) -> discord.TextChannel | No
 async def _delete_review_message(ctx: StepContext) -> StepResult:
     """Delete one message of the review. A channel that is gone completes the job (the message
     went with it); a `NotFound` propagates, which the queue completes; any other Discord refusal
-    stops the queue, keeping the message's link for a Discard to name."""
+    stops the queue, keeping the message's link for a Discard to name.
+
+    This is `standing_posts`' delete step with a different channel lookup, not a reuse of it: the
+    take-down also runs at a restart, when the channel is in no cache, so the channel is fetched
+    from Discord (`_review_channel`) before it is taken to be gone, where the shared step asks the
+    league's server and counts a missing channel as gone."""
     payload = ctx.step_payload
     channel = await _review_channel(ctx.bot, int(payload["channel_id"]))
     if channel is None:
@@ -467,28 +474,21 @@ def season_review_post_change(
         )
         return StepResult(result=result, lines=(line,))
 
+    shared_delete = standing_posts.delete_replaced_step(DELETE_DRAWING_NOTICE)
+
     async def delete_drawing_notice(ctx: StepContext) -> StepResult:
         posted = next(
             (view.result for view in _view(ctx, POST_DRAWING_NOTICE) if view.result), None
         )
         if not posted or "new" not in posted:
             return StepResult(result={"dropped": True})
-        guild = await league_guild(ctx.bot)
-        if guild is None:
-            raise GuildUnavailable("the league's server is not in the cache")
-        channel = as_text_channel(guild.get_channel(int(posted["channel_id"])))
-        if channel is None:
-            return StepResult(result={"gone": True})
-        message = channel.get_partial_message(int(posted["new"]))
-        try:
-            await delete_notice(message)
-        except discord.NotFound:
-            raise
-        except discord.HTTPException as exc:
-            raise StepFailedOnDiscord(
-                "the drawing notice could not be deleted", result={"link": message.jump_url}
-            ) from exc
-        return StepResult(result={"deleted": True})
+        # The notice's id is known only once it is posted, after which the pictures come before
+        # its take-down, so it cannot be planned by `then` from its post: the job runs the shared
+        # delete step on the notice's recorded id.
+        return await shared_delete.run(dataclasses.replace(ctx, step_payload={
+            "channel_id": int(posted["channel_id"]), "message_id": int(posted["new"]),
+            "what": "drawing notice",
+        }))
 
     @posts_in_a_job
     async def post_report(ctx: StepContext) -> StepResult:
