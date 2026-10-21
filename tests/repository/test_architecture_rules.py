@@ -1295,15 +1295,52 @@ def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_
 _SERVICE_SUFFIX = "_service"
 
 
+def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
+    """The local names each function among *nodes* binds to the bot, ``_bot = bot_of(…)`` or
+    ``b: LeagueBot = self.bot``, the bot reached as `_reaches_the_bot` reads it, keyed by file and
+    function. A function nested in another sees its enclosing function's names too, as a closure
+    does."""
+    bound: dict[tuple[str, str], set[str]] = {}
+    for path, function, node in nodes:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        else:
+            continue
+        if isinstance(target, ast.Name) and _reaches_the_bot(value):
+            bound.setdefault((path, function), set()).add(target.id)
+    return bound
+
+
 def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
     """The services among *nodes* that a service or a helper looks up on the bot, ``bot.X_service``
-    or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it, counted by
-    file and function. The change queue is the queue check's, and not counted here."""
+    or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it or through a
+    local name bound to it (`_locals_bound_to_the_bot`), counted by file and function. The change
+    queue is the queue check's, and not counted here."""
+    nodes = list(nodes)
+    bound = _locals_bound_to_the_bot(nodes)
+
+    def bot_local(path: str, function: str, node: ast.expr) -> bool:
+        return isinstance(node, ast.Name) and any(
+            node.id in names
+            for (file, scope), names in bound.items()
+            if file == path and (function == scope or function.startswith(f"{scope}."))
+        )
+
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
         if not _is_a_service_or_helper(path):
             continue
         name = _attribute_read_on_the_bot(node)
+        if name is None and isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) \
+                and bot_local(path, function, node.value):
+            name = node.attr
+        elif (name is None and isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr" and len(node.args) >= 2
+                and bot_local(path, function, node.args[0])
+                and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+            name = node.args[1].value
         if name is not None and name.endswith(_SERVICE_SUFFIX):
             found[(path, function)] += 1
     return found
@@ -1359,6 +1396,8 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
+    ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
+    ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
@@ -1412,6 +1451,30 @@ def test_the_lookup_check_finds_a_lookup_in_a_utils_file():
     path = "core/utils/sample_helper.py"
 
     assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+
+
+def test_the_lookup_check_follows_a_local_bound_to_the_bot():
+    """A service read through a local name bound to the bot, ``_bot = bot_of(interaction)`` and
+    then ``_bot.X_service``, is counted as the read on the bot itself is, in the function that
+    binds it and in a closure inside it; a local bound to anything else is not."""
+    path = "signup/services/sample_views.py"
+    source = (
+        "async def handler(interaction, other):\n"
+        "    _bot = bot_of(interaction)\n"
+        "    _bot.signup_module_service.get()\n"
+        "    getattr(_bot, 'season_service', None)\n"
+        "    held: LeagueBot = interaction.client\n"
+        "    held.driver_service.get()\n"
+        "    unrelated = other.thing\n"
+        "    unrelated.season_service.get()\n"
+        "    _bot.change_queue.ask('kind', {})\n"
+        "    async def callback():\n"
+        "        _bot.placement_service.get()\n"
+    )
+
+    assert _service_lookups_among(_sample(source, path)) == Counter(
+        {(path, "handler"): 3, (path, "handler.callback"): 1}
+    )
 
 
 def test_a_listed_lookup_that_is_gone_fails_the_lookup_check():
