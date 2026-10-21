@@ -226,8 +226,9 @@ async def post_opening_sheet(
     """Post one division's opening attendance sheet, raising where it cannot be posted, and
     give the job its result (`attendance_service.sheet_result`).
 
-    Attendance's own posting, which always raises and saves nothing: it posts nothing for a
-    division never given a channel and raises for one given a channel the guild no longer holds.
+    Attendance's own posting, which always raises and saves nothing: a division with no
+    attendance channel stops the queue, its failure naming `/attendance channel attendance`, and
+    so does one given a channel the guild no longer holds.
     The opening sheet takes the division's live slot, which the job saves with its mark
     (`record_sheet_on`) and replaces by a job of its own. *as_text* leaves the graphic out, which
     is how a job retries.
@@ -366,8 +367,9 @@ async def post_final_sheet(
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
     cannot be posted, and give the job its result (`attendance_service.sheet_result`).
 
-    Attendance's own posting, which always raises and saves nothing: it posts nothing for a
-    division never given a channel and raises for one given a channel the guild no longer holds.
+    Attendance's own posting, which always raises and saves nothing: a division with no
+    attendance channel stops the queue, its failure naming `/attendance channel attendance`, and
+    so does one given a channel the guild no longer holds.
     The final sheet stands beside the last round's and takes no live slot, so nothing is saved for
     it and nothing deleted. *as_text* leaves the graphic out, which is how a job retries.
     """
