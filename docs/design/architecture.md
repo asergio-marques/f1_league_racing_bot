@@ -264,9 +264,8 @@ audit record, which is how some settings came to have none.
   A conversation lane writes only its conversation's own tables, held at run time (see "The database"):
   the sessions a round's submission collects are its own until its review opens, saved on the
   round's lane, and so are a resubmission's drafts, while the swap of the round's results is the
-  league's,
-  and what a conversation hands the league (a signup sent for review, a review opening, an approval)
-  it asks of the league lane as a follow-on, which waits there in order with the league's other
+  league's. What a conversation hands the league (a signup sent for review, a review opening, an
+  approval) it asks of the league lane as a follow-on, which waits there in order with the league's other
   changes. League work a conversation handed over posts back into that conversation's channel by
   asking a change of the conversation's lane, so that a broken channel stops only that
   conversation; a command's or timer's own posts there stay on the league lane. Each lane runs one change at a time, in the order put on it, with no exception: nothing
@@ -288,9 +287,9 @@ audit record, which is how some settings came to have none.
   league change that ends a conversation (a close, a cancellation, a season's end, a member leaving,
   an approval) marks it ended in its own save and does nothing else to the lane. Each change of that
   lane is then found no longer due when its turn comes, and dropped with a line saying so; a closing change asked back by the league needs only its channel to stand.
-  A cancellation is the exception for the pastes already waiting in a round's submission: it only
-  closes the submission, which stays open to them, and each is refused in the channel when its turn
-  comes (results specification, a submission closed by a cancellation takes nothing more); that
+  A cancellation is the exception for the pastes already waiting in a round's submission: it marks
+  the submission closed; its row stands, so they still run, and each is
+  refused in the channel when its turn comes (results specification, a submission closed by a cancellation takes nothing more); that
   conversation ends when its channel's deletion removes its row.
   A job of that lane already stopped stays stopped, with its notice: an admin's Retry runs a try that
   finds it no longer due and clears the stop, a Discard drops it, and the bot makes no try of its
