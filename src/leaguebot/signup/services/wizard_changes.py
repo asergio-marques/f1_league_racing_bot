@@ -221,7 +221,7 @@ def start_change(
             return Verdict.refuse("❌ Signup module is not configured. Contact an admin.")
         if await unfinished(ctx.db_path, closing_kinds):
             return Verdict.refuse(
-                "⛔ Signups are closing. Try again once they have closed, if they reopen."
+                "⛔ Signups are being closed, so a new signup cannot start."
             )
         guild = await league_guild(ctx.bot)
         if guild is not None and guild.get_member(int(user_id)) is None:

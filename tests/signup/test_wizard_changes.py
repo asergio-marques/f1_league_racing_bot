@@ -363,8 +363,9 @@ async def test_a_created_channel_whose_save_failed_is_deleted_before_the_next_tr
 
 async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tmp_path):
     """The close time has come and the timer has asked the queue to close the window, which has
-    not yet run. Kimi presses Sign Up: he is told signups are closing, no `signup.start` change
-    is asked, and when the queue runs no signup channel is created and he is not signing up."""
+    not yet run. Kimi presses Sign Up: he is told, plainly, that signups are being closed and a
+    new signup cannot start; no `signup.start` change is asked, and when the queue runs no signup
+    channel is created and he is not signing up."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
 
     league = await _league(tmp_path)
@@ -372,7 +373,7 @@ async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tm
 
     press = await _press_sign_up(league)
 
-    assert "closing" in _answered(press).lower()
+    assert "⛔ Signups are being closed, so a new signup cannot start." in _answered(press)
     assert await _changes_of(league, START_KIND) == []
     await run_queue(league.bot)
     assert league.created == []
