@@ -222,6 +222,10 @@ async def test_a_channel_doing_another_job_is_refused(db_path):
 
 
 async def test_setting_the_hub_it_already_is_changes_nothing(db_path):
+    """Core spec :91, one panel in the hub, and the refusal of a channel's own value. The hub is
+    7920, its panel 7930 standing: running the command for 7920 again is refused before anything
+    is written, so the panel 7930 is the one panel left standing — none posted beside it, none
+    deleted, and no refresh asked of the queue."""
     await _configure(db_path, hub_channel_id=HUB, hub_message_id=OLD_PANEL)
     channel = _channel(HUB)
     cog, interaction = _setup(db_path, channel)
@@ -231,6 +235,9 @@ async def test_setting_the_hub_it_already_is_changes_nothing(db_path):
     assert "already the hub channel" in _replied(interaction)
     assert "Nothing was changed" in _replied(interaction)
     channel.send.assert_not_awaited()
+    channel._partial.delete.assert_not_awaited()
+    assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": OLD_PANEL}
+    assert await stopped_job(db_path) is None
 
 
 async def test_a_channel_the_bot_cannot_manage_is_refused_before_anything_is_written(db_path):
