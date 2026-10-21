@@ -138,7 +138,7 @@ async def standing(tmp_path):
     async with get_connection(db_path) as db:
         await store_review_prompt(
             db, season_id=1, channel_id=REVIEW_CHANNEL, message_id=channel.q.id,
-            reviewer_id=REVIEWER, review=PLACEMENTS,
+            reviewer_id=REVIEWER, review=PLACEMENTS, verb="approved",
             report_message_ids=(channel.r1.id, channel.r2.id),
         )
         await db.commit()
@@ -956,6 +956,25 @@ async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorde
     cog._do_approve.assert_not_awaited()
     _refused_as_expired(standing, interaction)
     assert standing.channel.deleted == [] and standing.channel.sent == []
+
+
+@pytest.mark.parametrize("mark", ["UNDER_WAY", "TIMER_FIRED"])
+async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standing, mark):
+    """Alex's review stands past its five minutes and his first press is being worked (or the
+    timer has fired and waits for it). A second press is refused as expired, privately, and
+    recorded, but asks no take-down: the first press settles how the review ends, so its approval
+    cannot go through with the review taken down as an expired one."""
+    from leaguebot.core.services import season_review_changes
+
+    season_review_changes.mark_press(standing.channel.q.id, getattr(season_review_changes, mark))
+    view, cog = _approve_view(standing)
+    interaction = _press_on(standing, standing.channel.q)
+
+    await _press_approve(view, interaction)
+
+    cog._do_approve.assert_not_awaited()
+    _refused_as_expired(standing, interaction)
+    assert await _take_downs(standing) == []
 
 
 async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(standing):

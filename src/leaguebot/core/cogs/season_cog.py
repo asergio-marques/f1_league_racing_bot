@@ -5378,7 +5378,8 @@ class _ApproveView(LeagueView):
     async def _refuse_if_expired(
         self, interaction: discord.Interaction, review: StandingReview
     ) -> bool:
-        """Refuse a press made once the review's five minutes are up, and take the review down.
+        """Refuse a press made once the review's five minutes are up, and take the review down,
+        unless an earlier press is under way (or the timer waits for it), which ends it.
 
         The timer normally takes it down first; a press can still reach the button before the
         take-down has run, or behind a stopped queue. It confirms nothing, and the refusal is what
@@ -5393,6 +5394,11 @@ class _ApproveView(LeagueView):
             what=self._button,
             reason="the review's five minutes were up",
         )
+        if review.press in (UNDER_WAY, TIMER_FIRED):
+            # An earlier press is being worked, or the timer has fired and waits for it: that
+            # press settles how the review ends (`_press_worked`). Taking it down as refused here
+            # would let its approval through with the review gone as expired.
+            return True
         await take_review_down(self._cog.bot.change_queue, self._cog.bot.db_path,
                                review.question_id, REFUSED)
         return True
