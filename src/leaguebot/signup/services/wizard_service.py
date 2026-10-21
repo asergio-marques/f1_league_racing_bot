@@ -344,16 +344,6 @@ class WizardService:
             problems.append(f"the signup channel's permissions could not be moved: {exc}")
         return problems
 
-    # ------------------------------------------------------------------
-    # Public API stubs (implementations in T020–T049)
-    # ------------------------------------------------------------------
-
-
-
-
-
-
-
     @posts_in_a_job
     async def trigger_channel_hold(
         self,

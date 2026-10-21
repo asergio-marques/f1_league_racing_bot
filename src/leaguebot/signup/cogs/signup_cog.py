@@ -329,7 +329,7 @@ class SignupCog(commands.Cog):
             return
         await ask_member_left(self.bot.change_queue, self.bot.db_path, str(member.id))
 
-        # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
+        # Handle UNASSIGNED / ASSIGNED drivers (not covered by `signup.member_left`)
         try:
             departed = await departed_placed_driver(
                 self.bot.db_path, str(member.id), member.display_name or str(member.id)

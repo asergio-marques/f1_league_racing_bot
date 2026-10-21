@@ -7,7 +7,7 @@ change's own jobs, not at once; where the press is refused (the signup has moved
 is taken down by a change of its own on the driver's lane. The views and their
 Discord interaction callbacks (T031 AdminReviewView, T035 CorrectionParameterView) are in
 `signup/services/signup_views.py`, beside the jobs that post them; the pending reasons they park
-are held there too. The heavy state-machine logic is delegated to WizardService.
+are held there too. The review's work is the `signup.*` change types on the change queue.
 """
 
 from __future__ import annotations
