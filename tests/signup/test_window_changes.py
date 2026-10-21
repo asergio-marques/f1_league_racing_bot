@@ -578,7 +578,8 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
     now closed", so the queue stops at `post_closed`, and a league admin discards it. The window
     is not recorded closed and its close time stays armed, so `/signup close` would refuse: the
     line says to run `/signup close-time cancel` first, and so does the not-closed text a season's
-    end writes."""
+    end writes. Since `/signup close` refuses too while a season's end or wind-down is in hand,
+    the line says to let that finish first."""
     from leaguebot.core.cogs.module_cog import close_signups_unattended
     from leaguebot.core.services.season_lifecycle_service import WINDOW_NOT_CLOSED
 
@@ -595,6 +596,7 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
     assert "`/signup close`" in line and "`/signup close-time cancel`" in line
     assert line.index("`/signup close-time cancel`") > line.index("`/signup close`")
     assert "`/signup close-time cancel`" in WINDOW_NOT_CLOSED
+    assert "season's end or wind-down is still on the queue, let it finish first" in line, line
 
 
 async def test_a_confirm_after_the_window_changed_is_refused_when_it_runs(tmp_path):

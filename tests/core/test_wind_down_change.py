@@ -418,7 +418,9 @@ SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically d
 #: How a discarded closed notice is named: the window was not closed.
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
-    "Where a close time is set, run `/signup close-time cancel` first."
+    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
+    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
+    "until then."
 )
 #: How a driver returned and left untold would be named: never for a discarded closed notice,
 #: which drops only that post (b15-2).

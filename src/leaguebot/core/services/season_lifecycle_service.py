@@ -383,10 +383,13 @@ TAKE_DRIVER_ROLE = "take_driver_role"
 DELETE_BUTTON = "delete_button"
 POST_CLOSED = "post_closed"
 #: What a season's end, a wind-down or a close says of a window it could not close. A close time
-#: that was armed stays armed, and `/signup close` refuses while one is, so it is named first.
+#: that was armed stays armed, and `/signup close` refuses while one is, so it is named first; it
+#: refuses too while a season's end or wind-down is in hand on the queue, so that is named too.
 WINDOW_NOT_CLOSED = (
     "The signup window could not be closed. Close it with `/signup close`. "
-    "Where a close time is set, run `/signup close-time cancel` first."
+    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
+    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
+    "until then."
 )
 
 #: What a signup channel is told where the signup window closes under it.

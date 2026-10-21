@@ -128,7 +128,9 @@ NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
-    "Where a close time is set, run `/signup close-time cancel` first."
+    "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
+    "or wind-down is still on the queue, let it finish first, as `/signup close` is refused "
+    "until then."
 )
 FORECASTS_KEPT = (
     "The forecasts posted under test mode could not be cleared. Delete them by hand from each "
