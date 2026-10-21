@@ -1264,15 +1264,13 @@ def _sessions_text(session_types) -> str:
 
 
 async def _claim_amendment_on(db: aiosqlite.Connection, round_id: int) -> str | None:
-    """Take an open amendment's deadline, so that nothing else acts on it until it is returned.
+    """Take an open amendment's deadline, so that the sweep no longer finds it.
 
-    Four things act on an amendment once its first stage has written: approving its report
-    stage, approving its appeal stage, **Cancel**, and the sweep. Each rewrites or reverts the
-    same rows, and two at once — the sweep landing while a stage is being approved, or a
-    double click — would revert a round from under a stage still writing to it, or apply a
-    stage twice. So each first takes the deadline, by a compare-and-set of ``expires_at`` to
-    NULL that only one of them can win. The sweep reads only rows with a deadline, so a claimed
-    amendment is invisible to it as well.
+    The sweep's lapse is the only claimant (`amend_end_changes`): it takes the deadline in its
+    own save before it reverts the round, by a compare-and-set of ``expires_at`` to NULL that
+    only one save can win, so that a second lapse of the same amendment reverts nothing. The
+    approvals of the amendment's stages and its **Cancel** are changes on the queue and claim
+    nothing. The sweep reads only rows with a deadline, so a claimed amendment is invisible to it.
 
     Returns the deadline taken, or None where the
     amendment is not open: never begun, already committed or reverted, or claimed by another.
@@ -1433,11 +1431,6 @@ async def closed_by_cancellation(db_path: str, round_id: int) -> str | None:
             "results can no longer be entered. Nothing was saved."
         )
     return None
-
-
-#: How long one listener for a paste is given before the submission is read again. Long enough to
-#: cost nothing, short enough that a wizard whose channel was deleted does not wait on for days.
-SUBMISSION_WAIT_RECHECK_SECONDS = 300
 
 
 async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = None) -> bool:
