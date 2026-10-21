@@ -282,7 +282,7 @@ audit record, which is how some settings came to have none.
   worker while they are sent, so a long run of posts delays the changes behind it on that lane; that
   is the price of one change at a time to a lane. Job numbers stay one sequence across the lanes, so
   that "job #N" names one job anywhere. In the specifications "the queue" stays the league lane's
-  name, and a conversation lane is "the turns in" its channel.
+  name, and a conversation lane is "a conversation's lane".
 - **A conversation ends by the league's hand or its own, and its waiting turns are then dropped.** A
   league change that ends a conversation (a close, a cancellation, a season's end, a member leaving,
   an approval) marks it ended in its own save and does nothing else to the lane. Each change of that
