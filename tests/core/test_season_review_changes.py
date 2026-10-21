@@ -1060,6 +1060,36 @@ async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standin
     assert await _take_downs(standing) == []
 
 
+async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_past_its_timer(
+        standing, monkeypatch):
+    """Alex's review stands in channel 700, posted a moment ago. He presses Approve while an
+    approval of the season is in hand, and while the press is worked the review's five minutes
+    run out: its timer fires and leaves the review to the press. The press is refused, the season
+    being approved already, and the review's take-down is then asked, ending expired, so the
+    review does not stand past its five minutes (core: "Upon their passing its message shall be
+    deleted")."""
+    from leaguebot.core.services.season_approval_change import ALREADY_BEING_APPROVED
+
+    channel = standing.channel
+    await _posted_a_moment_ago(standing, channel.q.id)
+    fired = _expiry_callback(standing)
+
+    async def _in_hand(*_args: Any, **_kwargs: Any) -> bool:
+        await fired(channel.q.id)
+        return True
+
+    monkeypatch.setattr("leaguebot.core.cogs.season_cog.approval_in_hand", _in_hand)
+    view, cog = _approve_view(standing)
+    interaction = _press_on(standing, channel.q)
+
+    await _press_approve(view, interaction)
+
+    cog._do_approve.assert_not_awaited()
+    assert acknowledgement(interaction) == ALREADY_BEING_APPROVED
+    [payload] = await _take_downs(standing)
+    assert (payload["ending"], payload["question_id"]) == ("expired", channel.q.id)
+
+
 async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(standing):
     """The bot restarts with Alex's review standing in channel 700, posted on 7 September. The
     restart's step routes the button on Q again, before the queue starts, rather than leaving it

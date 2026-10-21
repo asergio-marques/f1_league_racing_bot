@@ -5430,7 +5430,10 @@ class _ApproveView(LeagueView):
         A press that went through has taken the review down (its own work asks that first). One
         refused or cancelled leaves it standing, to be pressed again within its five minutes,
         unless those ran out meanwhile or the season has changed since the review, for which it
-        ends as an expired one does, the press having recorded its own outcome. One that raised
+        ends as an expired one does, the press having recorded its own outcome. A press refused
+        because an approval is in hand says nothing of the season, but where the review's timer
+        fired while it was worked, the review is taken down as expired all the same: the timer
+        left that to the press, and nothing else would take it down. One that raised
         leaves the review up, marked, and, where the five minutes ran out meanwhile, takes it down
         now, its lapse saying an earlier press failed and may have been partly done.
         """
@@ -5452,7 +5455,7 @@ class _ApproveView(LeagueView):
         if press.went_through:
             # The confirmation asked the review's take-down itself, ahead of its own work.
             return
-        if press.leave_standing:
+        if press.leave_standing and current.press != TIMER_FIRED:
             mark_press(review.question_id, None)
         elif current.press == TIMER_FIRED or datetime.now(timezone.utc) >= current.deadline:
             await take_review_down(bot.change_queue, bot.db_path, review.question_id, EXPIRED)
