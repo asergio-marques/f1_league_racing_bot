@@ -914,14 +914,13 @@ def member_left_change(
         return tuple(planned)
 
     async def name_driver(ctx: StepContext) -> StepResult:
+        # A read that fails stops the lane like any job's (architecture, "Errors and failures"),
+        # rather than write the line under the member's id.
         user_id = str(ctx.step_payload["user_id"])
+        record = await signup().get_record(user_id)
         name = user_id
-        try:
-            record = await signup().get_record(user_id)
-            if record is not None:
-                name = record.server_display_name or record.discord_username or user_id
-        except Exception:  # noqa: BLE001 — the line is written under the member's id instead
-            log.warning("could not read the signup record of %s", user_id, exc_info=True)
+        if record is not None:
+            name = record.server_display_name or record.discord_username or user_id
         return StepResult(result={"name": name, "state": await state_label(user_id)})
 
     async def leave(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

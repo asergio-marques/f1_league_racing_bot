@@ -1213,6 +1213,30 @@ async def test_a_member_leaving_ends_their_signup_and_deletes_the_channel_as_job
                for line in league.bot.log_channel.sent)
 
 
+async def test_a_member_leaving_whose_signup_record_cannot_be_read_stops_the_league_lane(
+    tmp_path, monkeypatch
+):
+    """Kimi, part-way through signing up, leaves the server, and his signup record cannot be read
+    for the line's name. The job that reads it stops the league lane, as any job's fault does,
+    rather than write the line under his id: he is still Pending Signup Completion, his channel
+    stands, and no line says he left."""
+    league = await _league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now)
+    monkeypatch.setattr(
+        league.bot.signup_module_service, "get_record",
+        AsyncMock(side_effect=RuntimeError("the record could not be read")),
+    )
+
+    await _leave(league)
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "name_driver"
+    assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION"
+    assert league.order == []
+    assert not any("Driver left server" in line for line in league.bot.log_channel.sent)
+
+
 async def test_a_member_leaving_while_the_queue_is_stopped_keeps_their_channel_until_it_clears(
     tmp_path,
 ):
