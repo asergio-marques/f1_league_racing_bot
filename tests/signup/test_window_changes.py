@@ -819,6 +819,19 @@ async def test_a_member_s_close_while_the_season_s_end_is_in_hand_is_refused_nam
     assert await _season_stage(league) == stage
 
 
+async def test_a_member_s_close_of_a_closed_window_is_told_it_is_not_open(tmp_path):
+    """Signups are closed and the season's completion is in hand on the queue. Manager 77 runs
+    `/signup close`: he is told signups are not open, not that the season's end will close them."""
+    league = await _close_league(tmp_path)
+    await league.write("UPDATE signup_module_config SET signups_open = 0")
+    await _season_end_in_hand(league, "season.complete")
+
+    reply = acknowledgement(await _signup_close(league))
+
+    assert "Signups are not currently open" in reply, reply
+    assert "season's end is in hand" not in reply, reply
+
+
 async def test_a_member_s_close_names_the_job_of_an_end_still_doing_one(tmp_path):
     """The season's cancellation is in hand with every job done and only its own close left, and
     its completion is in hand too, stopped at its first job. Manager 77 runs `/signup close`: the

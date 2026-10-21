@@ -1145,18 +1145,18 @@ class SignupCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        # The season's end closes signups itself: refused at once, before any confirmation, as
-        # every request about a season whose end is in hand is (core, "Ending a season").
-        ending = await season_end_close_refusal(self.bot.db_path)
-        if ending is not None:
-            await refuse(interaction, ending, what=describe(interaction))
-            return
-
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
             await refuse(
                 interaction, "❌ Signups are not currently open.", what=describe(interaction)
             )
+            return
+
+        # The season's end closes signups itself: refused at once, before any confirmation, as
+        # every request about a season whose end is in hand is (core, "Ending a season").
+        ending = await season_end_close_refusal(self.bot.db_path)
+        if ending is not None:
+            await refuse(interaction, ending, what=describe(interaction))
             return
 
         # Guard: auto-close timer is armed — manual close is blocked (T019).
