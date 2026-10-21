@@ -7,8 +7,9 @@ for is recorded as flawless attendance for everyone, and nothing anywhere says o
 
 The call is now a job of a change on the queue (#439, slice 6b): a call that does not post stops
 the queue, and the stop notice in the log channel is what staff act on, saying what is left for the
-round; Retry posts it, and a Discard's line names the command that posts it by hand. The report
-`_report_call_failure` stays for a call given up at a restart, its deadline passed (#429).
+round; Retry posts it, and a Discard's line names the command that posts it by hand. The line
+`call_failure_text` forms carries a note of its own for a round whose deadline passed with no
+call standing (#429).
 
 The league is `ongoing_league`'s with attendance on: Pro (role 801), its check-in channel 603,
 round 4 moved to three days off with no call posted for it. The call is asked of the queue as its
@@ -18,13 +19,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import discord
-import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
-from leaguebot.attendance.services.rsvp_service import _report_call_failure
+from leaguebot.attendance.services.rsvp_service import call_failure_text
 from tests.support.change_queue import (
     attach_queue,
     discard_job,
@@ -42,12 +42,6 @@ NOTHING_LEFT = "no attendance rows are open for this round until this call is po
 #: What the stop notice says the round comes to meanwhile (attendance spec :120: "the round will
 #: count nothing against anyone until the call is posted").
 COUNTS_NOTHING = "will count nothing against anyone"
-
-
-def _bot():
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock()
-    return bot
 
 
 async def _league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
@@ -209,14 +203,11 @@ def test_the_command_the_note_names_is_a_real_one():
     assert "post-check-in" in {c.name for c in AttendanceCog.attendance.commands}
 
 
-@pytest.mark.asyncio
-async def test_a_report_can_carry_a_note_of_its_own():
-    """A call given up at a restart, its deadline passed (#429), cannot be posted by hand
-    either — the command refuses once the deadline has gone — so its report must not advise it.
-    The reporter takes the note it is given in place of the usual advice."""
-    bot = _bot()
-    await _report_call_failure(
-        bot,
+def test_a_report_can_carry_a_note_of_its_own():
+    """A round whose deadline passed with no call standing (#429) cannot have its call posted by
+    hand either — the command refuses once the deadline has gone — so its line must not advise
+    it. The line takes the note it is given in place of the usual advice."""
+    content = call_failure_text(
         division_id=7,
         division_name="Division 1",
         season_number=4,
@@ -225,6 +216,5 @@ async def test_a_report_can_carry_a_note_of_its_own():
         note="nothing can be done about it",
     )
 
-    (content,) = bot.output_router.post_log.await_args.args
     assert "  note: nothing can be done about it" in content
     assert "/attendance post-check-in" not in content

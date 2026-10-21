@@ -694,7 +694,7 @@ class AttendanceCog(commands.Cog):
 
         **A last resort, not a routine.** A call reaches a division from its scheduled job and
         from the recovery that re-arms it after a restart; this is the repair for when both
-        have failed, and the advice `_report_call_failure` writes to the log channel — post the
+        have failed, and the advice a failed call's line gives in the log channel — post the
         call again once the cause is cleared — had no command behind it until now. A league
         reaching for this regularly has a cause nobody has fixed.
 

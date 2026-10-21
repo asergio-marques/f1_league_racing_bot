@@ -247,8 +247,19 @@ def call_failure_text(
     reason: str,
     note: str | None = None,
 ) -> str:
-    """The log channel's line for a check-in call that did not post, with the advice `note`
-    replaces where it is given (`_report_call_failure`)."""
+    """The log channel's line for a check-in call that did not post, with the advice *note*
+    replaces where it is given.
+
+    **Why this exists.** A failed call used to reach ``log.error`` alone, which no league can
+    see, and the consequence is not a missing message but a silently wrong record: the round
+    holds no attendance rows, the penalty pass finds none, and the attendance sheet draws every
+    cell of that round empty, which means zero points for everyone.
+
+    **The note names the command that posts the call** (#123), with the division and round
+    filled in, so that the advice can be followed; `tests/attendance/
+    test_rsvp_call_failure_report.py` pins the name. *note* replaces that advice where it cannot
+    be followed (#429): a round whose deadline passed is past what the command will post.
+    """
     if note is None:
         note = (
             f"no attendance rows were opened for this round. Once the cause is "
@@ -264,59 +275,6 @@ def call_failure_text(
         f"  reason: {reason}\n"
         f"  note: {note}"
     )
-
-
-async def _report_call_failure(
-    bot: LeagueBot,
-    *,
-    division_id: int,
-    division_name: str,
-    season_number: int,
-    round_number: int,
-    reason: str,
-    note: str | None = None,
-) -> None:
-    """Tell the league's staff that a check-in call did not post.
-
-    **Why this exists.** A failed call used to reach ``log.error`` alone, which no league can
-    see, and the consequence is not a missing message — it is a silently wrong record. The
-    flow returns before ``bulk_insert_attendance_rows``, so the round holds no attendance rows
-    at all; the penalty pass iterates those rows and finds none; and the attendance sheet then
-    draws every cell of that round empty, which means **zero points** — a round nobody was
-    asked to check in for is recorded as flawless attendance for everyone.
-
-    **This fires whether or not the images module is enabled**, and whether or not the ``rsvp``
-    toggle is on. The fault is in the call, not in the picture, and a league that never draws a
-    graphic must still learn its calls are failing.
-
-    A call is never posted as text alone. The retry queue carries log lines, text alone —
-    ``retry_service.enqueue`` takes a ``content: str`` and re-posts it in chunks — so a call
-    replayed through it would arrive with no embed, no roster and no buttons: a message the
-    division cannot answer. Staff re-post it instead; the call an amendment posts again is a job
-    of the change queue, which tries it whole (`check_in_changes`' `post_call`).
-
-    **The note names the command that does it** (#123). It used to say only "post the call
-    again", which no command could do; `/attendance post-check-in` is that command, and naming
-    it here with the division and round already filled in is what makes the advice followable.
-    `tests/attendance/test_rsvp_call_failure_report.py` pins the name, so the two cannot drift apart.
-
-    *note* replaces that advice where it cannot be followed (#429). A call given up at a
-    restart, its deadline passed, is past what the command will post, and its report must not
-    send a manager to a command that refuses it.
-    """
-    try:
-        await bot.output_router.post_log(
-            call_failure_text(
-                division_id=division_id,
-                division_name=division_name,
-                season_number=season_number,
-                round_number=round_number,
-                reason=reason,
-                note=note,
-            ),
-        )
-    except Exception:  # noqa: BLE001 — reporting must never mask the original failure
-        log.exception("run_rsvp_notice: failed to report a failed check-in call")
 
 
 async def _checkin_attachment(
@@ -347,7 +305,7 @@ async def _checkin_attachment(
             deadline_hours = getattr(config, "rsvp_deadline_hours", None)
         except Exception:  # noqa: BLE001 — the deadline is optional on the graphic
             log.warning(
-                "run_rsvp_notice: the RSVP deadline could not be read for division %d, so the "
+                "_checkin_attachment: the RSVP deadline could not be read for division %d, so the "
                 "check-in graphic is drawn without it", division_id, exc_info=True,
             )
 
@@ -366,7 +324,7 @@ async def _checkin_attachment(
         )
     except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
         log.error(
-            "run_rsvp_notice: the check-in graphic could not be drawn for division %d: %s",
+            "_checkin_attachment: the check-in graphic could not be drawn for division %d: %s",
             division_id, exc, exc_info=True,
         )
         return None
