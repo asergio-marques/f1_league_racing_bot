@@ -885,15 +885,27 @@ class ChangeQueue:
 
         *Rejected:* a second table of replies, which the register of what is held in memory would
         carry beside `_held`; a kept reply is the same entry, left in `_held` under the finished
-        change's id until the later change takes it over or the memory is forgotten.
+        change's id until the later change takes it over, the memory is forgotten, or it could no
+        longer be updated: the later change may never come (an amendment cancelled or approved
+        asks no lapse), so a kept reply past `UPDATABLE_FOR` is let go whenever one is kept or
+        taken over (`_drop_lapsed_kept`). Pinned by
+        `test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated`.
         """
         held = self._held.get(change_id)
         if held is not None and held.borrowed is None:
             held.keep_for = (kind, key)
 
+    def _drop_lapsed_kept(self) -> None:
+        """Let go of every kept reply that could no longer be updated (see `keep_reply`)."""
+        for old_id, held in list(self._held.items()):
+            stamp = held.acknowledged
+            if held.kept and (stamp is None or self._clock() - stamp >= UPDATABLE_FOR):
+                del self._held[old_id]
+
     def _adopt_kept_reply(self, change_id: int, kind: str, key: str) -> None:
         """Hand the later change *change_id* the reply kept for its kind and key, where one is kept
         and can still be updated; one past that is dropped."""
+        self._drop_lapsed_kept()
         for old_id, held in list(self._held.items()):
             if not held.kept or held.keep_for != (kind, key):
                 continue
@@ -1617,6 +1629,7 @@ class ChangeQueue:
         held = self._held.get(change["id"])
         if held is not None and held.keep_for is not None:
             held.kept = True
+            self._drop_lapsed_kept()
         else:
             self._held.pop(change["id"], None)
         self._signal.set()

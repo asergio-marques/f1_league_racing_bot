@@ -589,6 +589,38 @@ async def test_an_outcome_after_fourteen_minutes_is_left_to_the_log_channel(env)
     assert await _states(env) == ["DONE"]
 
 
+def _keeping_for(env) -> Any:
+    """An `ACT` step keeping its change's reply for a later change of kind "lapse" whose key is
+    the payload's, as an amendment's opening keeps the manager's for its lapse."""
+    api = _api()
+
+    async def _run(ctx):
+        env.bot.change_queue.keep_reply(ctx.change_id, "lapse", ctx.payload["key"])
+        return api.StepResult()
+
+    return api.Step("keep", api.StepKind.ACT, _run)
+
+
+async def test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated(env):
+    """An opening keeps its reply for a lapse that never comes, as an amendment cancelled or
+    approved asks none. Fifteen minutes on, when that reply could no longer be updated, a second
+    opening keeps its own: the first is let go then, so that kept replies do not gather in memory
+    until a restart, and the second, still updatable, stays."""
+    queue = _queue(env, _type("opener", steps=[_keeping_for(env)]))
+
+    await _ask(env, "opener", {"key": "first"})
+    await run_queue(env.bot)
+    [first] = list(queue._held)
+    env.clock.advance(minutes=15)
+    await _ask(env, "opener", {"key": "second"})
+    await run_queue(env.bot)
+
+    [second] = list(queue._held)
+    assert second != first
+    assert queue._held[second].kept
+    assert queue._held[second].keep_for == ("lapse", "second")
+
+
 async def test_an_acknowledgement_that_cannot_be_updated_does_not_fail_the_change(env, caplog):
     caplog.set_level(logging.INFO)
     _queue(env, _type(steps=[_act("a", [])]))
