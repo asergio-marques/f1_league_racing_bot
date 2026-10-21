@@ -29,6 +29,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
+    FollowOn,
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
@@ -41,7 +42,9 @@ from leaguebot.core.services.season_lifecycle_service import advance_on_window_c
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
+    DiscardedContext,
     OutcomeContext,
+    RefusedContext,
     Step,
     StepContext,
 )
@@ -96,7 +99,7 @@ __all__ = [
     "DELETE_TIMER",
     "DELETE_KIND", "END", "EXPIRED", "EXPIRED_NOTICE", "HOLD", "INACTIVITY_TIMER", "KIND",
     "POST_CLOSED", "REASON_KIND", "SIGNUP_NOTICE", "ask_channel_delete", "ask_expiry", "closing_change",
-    "closing_steps", "reason_delete_change", "window_close_jobs", "window_close_steps",
+    "closing_steps", "reason_delete_change", "take_reason_down", "window_close_jobs", "window_close_steps",
 ]
 
 
@@ -357,6 +360,24 @@ def closing_change(
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=(),
     )
+
+
+def take_reason_down(context: RefusedContext | DiscardedContext) -> tuple[FollowOn, ...]:
+    """The change's `on_refused` and `on_discarded` for a rejection or a request for changes: the
+    manager's reason, typed in the driver's channel (``reason_channel_id`` and
+    ``reason_message_id`` of the payload), is taken down by `signup.reason.delete` when the press
+    is refused as it comes up to run, or discarded at its check before it started, so that a
+    reason the change will never take down does not stay where the driver can read it. A payload
+    that carries no reason (an expiry, a withdrawal) asks nothing."""
+    channel_id = context.payload.get("reason_channel_id")
+    message_id = context.payload.get("reason_message_id")
+    if channel_id is None or message_id is None:
+        return ()
+    return (FollowOn(
+        REASON_KIND,
+        {"channel_id": int(channel_id), "message_id": int(message_id)},
+        "taking down a manager's reason",
+    ),)
 
 
 def reason_delete_change() -> ChangeType:

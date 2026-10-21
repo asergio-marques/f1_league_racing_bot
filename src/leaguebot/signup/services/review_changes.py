@@ -106,6 +106,7 @@ from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
     INACTIVITY_TIMER,
     KIND as CLOSING,
+    take_reason_down,
 )
 from leaguebot.signup.services.signup_posting import post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, AdminReviewView
@@ -336,7 +337,9 @@ def request_changes_change(
 
     The payload is ``user_id`` (the driver's account, as text), ``actor_id`` and ``actor_name``
     (the manager), ``text`` (the reason they typed) and ``reason_message_id`` (the message it was
-    typed in, which the driver's lane takes down).
+    typed in, which the driver's lane takes down) with ``reason_channel_id`` (its channel); a press
+    the check refuses as it comes up to run, or an admin discards at the check, has the reason taken
+    down all the same (`take_reason_down`).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -423,6 +426,8 @@ def request_changes_change(
         key=lambda payload: f"{REQUEST}:{payload['user_id']}",
         doing=lambda payload: "Asking for changes to a signup",
         outcome=outcome,
+        on_refused=take_reason_down,
+        on_discarded=take_reason_down,
     )
 
 

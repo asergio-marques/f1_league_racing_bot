@@ -70,6 +70,7 @@ class AdminReviewCog(commands.Cog):
                 "user_id": pending["discord_user_id"], "reason": REJECTED,
                 "actor_id": actor.id, "actor_name": actor.display_name,
                 "text": reason, "reason_message_id": message.id,
+                "reason_channel_id": message.channel.id,
             }
         elif action == "request_changes":
             kind = REQUEST
@@ -77,6 +78,7 @@ class AdminReviewCog(commands.Cog):
                 "user_id": pending["discord_user_id"],
                 "actor_id": actor.id, "actor_name": actor.display_name,
                 "text": reason, "reason_message_id": message.id,
+                "reason_channel_id": message.channel.id,
             }
         else:
             return

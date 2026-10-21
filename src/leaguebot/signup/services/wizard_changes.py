@@ -89,6 +89,7 @@ from leaguebot.signup.services.closing_steps import (
     KIND as CLOSING,
     SIGNUP_NOTICE,
     closing_steps,
+    take_reason_down,
 )
 from leaguebot.signup.services.signup_posting import delete_channel, post
 from leaguebot.signup.services.signup_views import _BUTTON_OF, _NOTHING_DONE, IN_PROGRESS_STATES
@@ -708,6 +709,8 @@ def end_change(
             else "Withdrawing a signup"
         ),
         outcome=outcome,
+        on_refused=take_reason_down,
+        on_discarded=take_reason_down,
     )
 
 

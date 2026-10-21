@@ -38,6 +38,7 @@ from tests.support.change_queue import (
     http_error,
     member_interaction,
     run_queue,
+    stopped_job,
     typed_message,
     updated_reply,
 )
@@ -125,10 +126,12 @@ async def _approve(league: SeasonLeague, *, run: bool = True) -> Any:
 
 
 async def _type_reason(league: SeasonLeague, action: str, reason: str,
-                       *, moved_to: str | None = None) -> Any:
+                       *, moved_to: str | None = None,
+                       moved_after_ask: str | None = None) -> Any:
     """Manager 77 has pressed *action* ("reject" or "request_changes") on Kimi's review panel,
     the press deferred and parked as the button parks it; where *moved_to* is given Kimi's
-    signup moves on to that state meanwhile. 77 types *reason* in Kimi's channel, the review cog
+    signup moves on to that state meanwhile, and where *moved_after_ask* is given it moves on to
+    that state only once the queue has accepted the press, before the queue runs. 77 types *reason* in Kimi's channel, the review cog
     hears it, and the queue runs. Gives the stored press."""
     from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
 
@@ -155,6 +158,11 @@ async def _type_reason(league: SeasonLeague, action: str, reason: str,
         await AdminReviewCog(league.bot).on_message(message)
     finally:
         _PENDING_REASONS.clear()
+    if moved_after_ask is not None:
+        await league.write(
+            "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+            moved_after_ask, str(SIGNING_UP),
+        )
     await run_queue(league.bot)
     return press
 
@@ -598,3 +606,70 @@ async def test_a_reason_typed_after_the_signup_moved_on_is_taken_down(tmp_path, 
     standing = [m.content for m in league.channel(KIMI_CHANNEL).posted
                 if getattr(m, "content", None) == "Lap time could not be verified."]
     assert standing == [], standing
+
+
+def _reason_standing(league: SeasonLeague, reason: str) -> list[str]:
+    return [m.content for m in league.channel(KIMI_CHANNEL).posted
+            if getattr(m, "content", None) == reason]
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["reject", "request_changes"],
+    ids=["reject", "request-changes"],
+)
+async def test_a_reason_whose_press_is_refused_as_it_comes_up_to_run_is_taken_down(
+    tmp_path, action
+):
+    """Manager 77 presses Reject or Request Changes on Kimi's panel and types the reason while
+    Kimi is still awaiting review, so the queue accepts the press. Kimi withdraws before the
+    queue reaches it; the press is refused as it comes up to run, 77 is told the signup has moved
+    on, and the reason is deleted from Kimi's channel, where Kimi could otherwise read it."""
+    league = await _league(tmp_path)
+
+    await _type_reason(league, action, "Lap time could not be verified.",
+                       moved_after_ask="NOT_SIGNED_UP")
+
+    refusals = [line for line in _lines(league) if line.startswith("⛔")]
+    assert len(refusals) == 1 and "has moved on" in refusals[0], league.log()
+    assert _reason_standing(league, "Lap time could not be verified.") == []
+    assert await _state(league) == "NOT_SIGNED_UP"
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["reject", "request_changes"],
+    ids=["reject", "request-changes"],
+)
+async def test_a_reason_whose_press_is_discarded_at_its_check_is_taken_down(
+    tmp_path, monkeypatch, action
+):
+    """Manager 77 presses Reject or Request Changes on Kimi's panel and types the reason; the
+    queue accepts the press, but reading Kimi's profile raises as the check runs again when the
+    change starts, so the queue
+    stops at it. A league admin discards the job before any of it began, and the reason is
+    deleted from Kimi's channel, the change that would have taken it down having never run."""
+    from leaguebot.core.services.driver_service import DriverService
+
+    league = await _league(tmp_path)
+    original = DriverService.get_profile
+
+    calls: list[int] = []
+
+    async def failing(self: Any, *args: Any, **kwargs: Any) -> Any:
+        # The ask's own check passes; the check as the queue starts the change raises.
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("disk I/O error")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DriverService, "get_profile", failing)
+    await _type_reason(league, action, "Lap time could not be verified.")
+    assert await stopped_job(league.db_path) is not None
+    assert _reason_standing(league, "Lap time could not be verified.") != []
+
+    monkeypatch.setattr(DriverService, "get_profile", original)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert _reason_standing(league, "Lap time could not be verified.") == []
