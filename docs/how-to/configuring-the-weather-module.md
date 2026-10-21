@@ -69,7 +69,7 @@ Forecasts are posted **per division**, so a league with three divisions sets thr
 
 **This is the thing that blocks a season.** While weather is on, a season cannot be approved until every division has a forecast channel, and the bot names the ones that are missing.
 
-Each forecast also **pings the division's role**, the one set when the division was created. That is the role your drivers need if they want to be told a forecast has arrived.
+Each forecast also **pings the division's role**, the one set when the division was created. That is the role your drivers need if they want to be told a forecast has arrived. The role is notified whether the forecast is posted as text or as a picture. A forecast too long for one message goes out in parts, and a part Discord refuses stops the change queue until a league admin presses Retry or Discard (see [When a job stops the queue](configuring-the-core-bot.md#when-a-job-stops-the-queue)); if a division's forecast channel is changed later, an old forecast still comes down from the channel it was posted in.
 
 The bot's own workings — the numbers behind each draw — go to the log channel instead, never to the forecast channel. Your drivers see the forecast; you see how it was reached.
 
