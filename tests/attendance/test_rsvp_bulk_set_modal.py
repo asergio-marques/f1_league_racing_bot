@@ -259,7 +259,6 @@ async def _submit(bot, entries: str, interaction=None):
         division_name="Pro",
         division_id=DIVISION_ID,
         round_id=ROUND_ID,
-        embed_channel_id=EMBED_CHANNEL,
         embed_message_id=EMBED_MESSAGE,
         bot=bot,
     )

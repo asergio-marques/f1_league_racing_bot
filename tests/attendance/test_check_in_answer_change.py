@@ -247,7 +247,7 @@ async def test_test_rsvp_s_entries_are_saved_and_the_call_redrawn_once(tmp_path)
                                      created_at=league.clock.now)
     modal = _RsvpBulkSetModal(
         division_name="Pro", division_id=PRO, round_id=ROUND_3,
-        embed_channel_id=CHECK_IN, embed_message_id=CALL, bot=league.bot,
+        embed_message_id=CALL, bot=league.bot,
     )
     modal.entries._value = f"{LEWIS}, decline\n{MAX}, accept"  # type: ignore[attr-defined]
 
@@ -346,7 +346,7 @@ async def test_a_discarded_redraw_of_a_paste_says_the_call_could_not_be_redrawn(
                                      created_at=league.clock.now)
     modal = _RsvpBulkSetModal(
         division_name="Pro", division_id=PRO, round_id=ROUND_3,
-        embed_channel_id=CHECK_IN, embed_message_id=CALL, bot=league.bot,
+        embed_message_id=CALL, bot=league.bot,
     )
     modal.entries._value = f"{MAX}, accept"  # type: ignore[attr-defined]
 

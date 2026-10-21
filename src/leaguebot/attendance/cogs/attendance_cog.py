@@ -1035,7 +1035,6 @@ class AttendanceCog(commands.Cog):
                 division_name=div_row["division_name"],
                 division_id=division_id,
                 round_id=target_embed.round_id,
-                embed_channel_id=int(target_embed.channel_id),
                 embed_message_id=int(target_embed.message_id),
                 bot=self.bot,
             )
@@ -1070,7 +1069,6 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         division_name: str,
         division_id: int,
         round_id: int,
-        embed_channel_id: int,
         embed_message_id: int,
         bot: LeagueBot,
     ) -> None:
@@ -1078,7 +1076,6 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         self._division_name = division_name
         self._division_id = division_id
         self._round_id = round_id
-        self._embed_channel_id = embed_channel_id
         self._embed_message_id = embed_message_id
         self._bot = bot
 
