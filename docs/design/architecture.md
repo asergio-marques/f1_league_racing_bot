@@ -284,7 +284,7 @@ audit record, which is how some settings came to have none.
   change of that lane is then found no longer due when its turn comes (`conversation_open`), and
   dropped with a line saying so; a closing change asked back by the league needs only its channel
   to stand. A cancellation marks the submission closed and leaves its row, so `conversation_open`
-  still holds and each waiting paste reaches its turn, where its own check refuses it; the
+  still holds and each waiting paste reaches its turn, where its judging job refuses it; the
   conversation ends when its channel's deletion removes the row. A job of that lane already
   stopped stays stopped, with its notice, and the bot makes no try of its own on it (`_choose`
   clears its `next_try_at`): a Retry runs a try that finds it no longer due and clears the stop, a
