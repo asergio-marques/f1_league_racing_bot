@@ -19,7 +19,6 @@ from tests.support.change_queue import in_a_job, text_channel
 LOG_CHANNEL_ID = 101
 ADMIN_ROLE_ID = 901
 
-NO_NOTICE_ROLE = "#439: the router's stop notice takes no role to mention"
 DIVISION_ROLE_ID = 801
 
 
@@ -38,7 +37,6 @@ def _role_ids(mentions) -> set[int]:
     return {getattr(role, "id", role) for role in roles} if isinstance(roles, list) else set()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_NOTICE_ROLE)
 async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
     """The router posts a stop notice naming member 4242, the role 555 and the league admins' role
     901, which it is given to mention. In the message sent, the admins' role stands bare and is the

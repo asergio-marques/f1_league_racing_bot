@@ -514,7 +514,8 @@ class OutputRouter:
             last_msg: Optional[discord.Message] = None
             allowed = mentions if mentions is not None else (
                 discord.AllowedMentions.none() if mention_role is None
-                else discord.AllowedMentions(roles=[discord.Object(id=mention_role)])
+                else discord.AllowedMentions(
+                    everyone=False, users=False, roles=[discord.Object(id=mention_role)])
             )
             chunks = chunk_message(content)
             for number, chunk in enumerate(chunks, start=1):
