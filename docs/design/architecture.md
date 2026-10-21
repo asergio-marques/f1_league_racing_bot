@@ -775,7 +775,8 @@ as its specification asks; a failure always is. A command that asks for a change
   called by the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes. What the member
   and the log channel are told is the core specification's "When a command fails". A results
   amendment is no exception: it runs as changes on the queue, and a fault in one stops its lane
-  and is reported as any change's is, by the queue.
+  and is reported as any change's is, by the queue, but for the `names` job of its lapse and its
+  cancel, which goes ahead without the names (the first of the four places below).
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler on the bot.
 - **Background tasks** go through the helper that starts them.
@@ -831,6 +832,10 @@ to it would switch off the one failure path for every command.
    error in the host's log with the full details, and the Discard is refused all the same, naming
    the job in place of the reason, its refusal recorded in the log channel as any refused press
    is, because an undiscardable job is never dropped for want of its reason;
+   and the `names` job an amendment's lapse and its cancel share (`amend_end_changes._names_step`)
+   is a stated exception as well: its catch-all puts the error in the host's log and completes the
+   job with no names, so the revert goes ahead with a full tie ordered by user id, because a tie
+   so ordered is the lesser fault than a round not put back (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
