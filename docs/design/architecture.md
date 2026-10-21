@@ -471,6 +471,22 @@ a round can still be cancelled while results is switched off.
 *Rejected:* moving each module's columns off core's tables now, which touches every reader of those
 columns before go-live for a cleaner line of ownership.
 
+**A conversation's lane writes only its own conversation's tables, and that is held at run time.**
+A change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`):
+its conversation's own rows, never the league's. The connection of every save the lane makes for
+it, a saving step's or a record's, is given an SQLite authoriser (`_confine` in
+`core/services/change_queue.py`) that refuses an insert, update or delete on any other table. The
+queue's own tables are always allowed (`QUEUE_TABLES`: the job's mark, its audit records, its log
+lines and the changes it asks for), so the mark, the lines and a follow-on pass. A write the
+authoriser refuses raises in the step, rolls its save back whole and stops the lane at that job,
+so it never lands. A change type that declares no tables, as every league change does, is not
+restricted. What a conversation hands the league, it asks of the league lane (see "How a change
+is carried out").
+
+*Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
+once the flows are many; and a separate connection for each lane, which SQLite would not make a
+second writer.
+
 **Where a rule goes: the schema or a service.**
 
 - A rule about identity or reference (a round belongs to one division; the bot holds at most one
@@ -557,6 +573,23 @@ out when each of a round's events falls, and one function arms them. Every path 
 season approved, a round amended, a restart, test mode) uses those two, so the timings cannot drift
 apart between copies.
 
+**A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
+something must happen a set time after a job (a season review's, a correction's or an
+amendment's five minutes running out, a signup left unanswered for a day, a held signup channel's
+24 hours, the review channel's lock warning taken down after eight seconds), a job of its own,
+after the one whose record saved the row the timer is keyed to, arms a one-off timer through the
+scheduler service (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
+again replaces it). It is armed with no lateness limit, like every job, so one missed while the bot
+was down fires when it starts. The builder registers each kind's callback before the scheduler
+starts (`register_timer`). When the timer fires, its callback reads the row again and asks its
+change of the queue, as the bot's, or asks nothing where the work is no longer due; a callback that
+raises is logged on the host alone.
+
+A timer's change runs on the league lane, as every change a timer asks for does, but for a
+conversation's own tidying, which runs on that conversation's lane: the deletion of a held signup
+channel at the end of its 24 hours, and the taking down of the review channel's lock warning. A
+refusal of either then stops only that conversation (see "How a change is carried out").
+
 **Start-up runs once, in one function.** discord.py can report the bot as "ready" more than once in
 a single run, after a network drop, so start-up work does not belong in the handler for that event.
 Start-up:
@@ -628,7 +661,7 @@ kind has its own rules for failures and for later changes:
 |---|---|---|
 | **Log line** | configuration changes, outcomes, failures | sent to the log channel and retried by its own handler, not by the change queue; what a log line may hold is the core specification's "The record of what changed". The queue's stop notice is a log line with buttons, which the router posts without putting it on that retry |
 | **Standing post** | calendar, lineup, standings, results table, attendance sheet, forecast | each new one replaces the last, and the old message is deleted after the new one is up |
-| **Notice** | a cancellation notice, a verdict | its id is kept wherever it might later be edited or deleted |
+| **Notice** | a cancellation notice, a verdict, a round's check-in call (edited in place as drivers answer) | its id is kept wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
 
 The code that makes a post still builds its own text, pictures and buttons, and saves the message id
@@ -640,15 +673,55 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.
 
+**Every post is made in a job.** Every message the bot posts, edits or deletes, and every channel
+it makes or deletes, is a job of a change on the queue, so that each is recorded, is tried again on
+the queue's schedule, and stops its lane where it fails (see "How a change is carried out"). The
+rule has two halves:
+
+- **The decorator.** A function that posts carries `posts_in_a_job` (`core/utils/in_a_job.py`),
+  which raises before the post is made where it is called outside a job. The worker holds the
+  running job's number in a context variable around a job's `run` and `record` and nothing else,
+  so a change's check and a job's `still_due`, which run outside the job, see none, and code that
+  is not a step cannot claim to be one. The raise is a fault in the bot's own code: it stops the
+  lane at the step that made it, as any such fault does, and is never taken for a refusal by
+  Discord to be tried again as one. *Rejected:* a flag on the bot or on the queue, which one
+  lane's job would set for every other lane's code to see; and the job's number passed down to
+  each posting function, which a caller outside a job could invent.
+- **The check.** A test fails on any function that posts without the decorator, unless it is
+  named off the queue with its reason (see "How the rules are checked").
+
+The exceptions, each with its reason:
+
+- **A log line,** delivered by the router and sent again by its own retry (below), and **the stop
+  notice,** which says that a lane is stopped and so cannot wait on one.
+- **A reply** to a member's command or press, the queue's update of its acknowledgement with the
+  outcome included: it answers the member and posts in no channel.
+- **The factory reset's clean-up and its progress.** The reset empties the database the queue
+  lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
+  to the owner's own command.
+- **The turn-away.** A message typed into a conversation's channel while an earlier turn there
+  waits is answered at once with a note mentioning its author alone, and deleted
+  (`OutputRouter.turn_away`). Each is tried once; a refusal of either is logged on the host and
+  lost, never tried again, and the note stays. Queued, the note would come after the very turn it
+  explains, and could stop a lane for a courtesy. Beside it, the ⏳ mark a typed message is given
+  at once while its turn waits is a reaction made off the queue for the same reason, a refusal
+  logged and the turn going ahead (`core/services/typed_turns.py`); taking it off is a job, the
+  turn's last, so a mark that cannot be taken off stops the lane and is tried again.
+
 **Every post keeps three things,** whichever handler sends it:
 
 - **Its message id,** wherever the bot might later edit, delete or replace it. The owning module
   saves the id the handler hands back in the posting step, and asks the handler to delete the
   message it replaces in the step after, so each table keeps one writer. A message nobody recorded
   can never be found again, to be edited or deleted.
-- **Who it may mention,** stated where it is sent.
-- **What happens if it fails:** a post inside a change stops the queue and is retried on its
-  schedule, and named in the log channel (a log line that keeps failing, in the host's log). A log line the log channel cannot take is also
+- **Who it may mention,** stated where it is sent. A log line's mentions are wrapped so that they
+  name without notifying, but one: the stop notice's mention of the league admins' role
+  (`OutputRouter.post_notice`), the one mention the log channel notifies. Who it mentions is the
+  core specification's rule, and when the queue asks it is said under "How a change is carried
+  out".
+- **What happens if it fails:** a post made in a job stops its lane, is tried again on the
+  queue's schedule, and is named in the log channel; a post off the queue fails as its exception
+  above says (a log line that keeps failing, in the host's log). A log line the log channel cannot take is also
   told to the member it records (the core specification's "The record of what changed" holds who
   is told and when): the router finds the interaction through `core/utils/answering.py`, which
   records the one a task is answering, or takes the one the change queue holds, and the host's log
@@ -664,7 +737,7 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
   before the wipe and posts to it directly.
 
 **A failed post is sent again by its owning module, on the queue's schedule.** A post that fails
-inside a change is a job that fails, and stops the queue (see "How a change is carried out"): the
+is a job that fails, and stops its lane (see "How a change is carried out"): the
 queue runs the owning module's post again, as text, on that schedule. The text is then written at
 the moment it is finally sent, and the owning module saves the new message's id as it always does.
 No queue ever holds a picture; the constitution's Principle XIV, rule 8, says why. The old retry
@@ -821,8 +894,13 @@ later on its own.
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
   service, jobs armed with a lateness limit, private names used across modules, a new place naming
   the log channel (the check lists the six allowed, with their reasons), posting outside the
-  handlers, a table written by a module that does not own it, and a save outside a queued change.
-  That last check counts each function's `.commit()` and `.executescript()` calls, and a function
+  handlers, a post made outside a job by a function that is neither decorated nor named off the
+  queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no reason or no
+  function), a service or helper reaching the change queue through the bot, a service or helper
+  looking another service up on the bot, a table written by a module that does not own it, and a
+  save outside a queued change. The job check is absolute, with no list of breaches left to grow;
+  the two checks on the bot list today's breaches, each under the module pass that removes it.
+  The check of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls, and a function
   writing on a handed connection commits nothing and is not counted. It allows for good the
   migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on the
   database file itself), the queue's own records, the retry queue for log lines, and
