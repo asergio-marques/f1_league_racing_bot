@@ -1574,7 +1574,8 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     his signup channel 6405. The admin runs `/season cancel`; before the queue runs, the manager
     types CANCELLED into 690 and Kimi types his notes into 6405, each a turn on its channel's own
     lane, asked after the cancellation. The queue run: the season is cancelled, round 3's
-    submission closed and Kimi's wizard unengaged; both turns are then found no longer due and
+    submission closed and its channel deleted (the deletion's record taking the submission's row
+    with it) and Kimi's wizard unengaged; both turns are then found no longer due and
     dropped, nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
     and neither lane stopped."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
@@ -1636,7 +1637,7 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     await run_queue(league.bot)
 
     assert await _status(league) == "CANCELLED"
-    assert await _closed(league) == {R3: 1}
+    assert await _closed(league) == {}
     assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
     states = {row["id"]: row["state"] for row in await change_rows(league.db_path)}
     assert (states[paste], states[answer]) == ("DROPPED", "DROPPED")
