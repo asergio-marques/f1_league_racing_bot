@@ -20,6 +20,8 @@ from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, 
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
+    from leaguebot.image.services.image_lineup_post import LineupPostOutcome
     from leaguebot.core.services.cancellation_changes import CancellationHooks, SubmissionHooks
     from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
     from leaguebot.core.services.round_amend_change import AmendHooks
@@ -322,7 +324,8 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
     if kind == "lineup":
         from leaguebot.image.services import image_lineup_post
 
-        outcome: Any = await image_lineup_post.render_for_command(
+        outcome: "LineupPostOutcome | CalendarCommandOutcome"
+        outcome = await image_lineup_post.render_for_command(
             bot, await league_guild(bot), division_id,
             include_uncommitted=bool(picture.get("include_uncommitted")),
             obtain_missing_portraits=True,
@@ -338,7 +341,7 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
         )
     if outcome.png_path is None:
         raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
-    return cast("Path", outcome.png_path)
+    return outcome.png_path
 
 
 def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
