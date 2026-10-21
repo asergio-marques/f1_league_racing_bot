@@ -288,6 +288,32 @@ async def test_a_discarded_channel_creation_leaves_the_driver_free_to_press_sign
     assert (await _wizard(league)) is not None
 
 
+async def test_a_discarded_start_posts_no_welcome_and_arms_no_24_hours(tmp_path):
+    """Kimi presses Sign Up; his channel (6500) is made, but the save that starts his signup
+    fails (the driver profiles refuse the write) and an admin discards that job. The jobs after it
+    find they are no longer due (core :130): no 24 hours are armed and neither the welcome nor
+    the first question is posted in his channel; he is told his signup was not started and to
+    press Sign Up again."""
+    league = await _league(tmp_path)
+    for event in ("INSERT", "UPDATE"):
+        await league.write(
+            f"CREATE TRIGGER start_refused_{event.lower()} BEFORE {event} ON driver_profiles "
+            "BEGIN SELECT RAISE(ABORT, 'the signup could not be started'); END"
+        )
+
+    press = await _press_sign_up(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path, "league")
+    assert job is not None and job["name"] == "start"
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert league.created == [NEW_CHANNEL]
+    assert _armed(league, INACTIVITY_TIMER) == []
+    assert league.channel(NEW_CHANNEL).texts == []
+    assert "Your signup was not started" in _answered(press)
+
+
 async def test_the_wizard_row_is_saved_with_the_channel_s_mark(tmp_path):
     """Kimi presses Sign Up and the queue runs. His wizard's row is saved naming the channel
     created (6500), in the save that marks `create_channel` done: once that job is done, the

@@ -179,7 +179,9 @@ def start_change(
 
     The driver's status moves only where the channel was made: `start`, like the 24 hours and the
     welcome, is not due where a Discard dropped `create_channel`, so that the driver is left able
-    to press Sign Up again, as the outcome tells them.
+    to press Sign Up again, as the outcome tells them. Nor are the 24 hours and the welcome due
+    where a Discard dropped `start`: a signup never started is neither armed to lapse nor put its
+    first question.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -358,6 +360,12 @@ def start_change(
     async def has_channel(ctx: StepContext) -> bool:
         return _created(ctx) is not None
 
+    async def has_started(ctx: StepContext) -> bool:
+        """Whether the signup was started: its channel made and `start` not discarded."""
+        return _created(ctx) is not None and not any(
+            view.name == START_JOB and "discarded" in (view.result or {}) for view in ctx.steps
+        )
+
     @posts_in_a_job
     async def post_welcome(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
@@ -452,11 +460,11 @@ def start_change(
             START_JOB, StepKind.SAVE, start, still_due=has_channel, describe=describe_start
         ),
         ARM_INACTIVITY: Step(
-            ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=has_channel,
+            ARM_INACTIVITY, StepKind.ACT, arm_inactivity, still_due=has_started,
             describe=describe_arm,
         ),
         POST_WELCOME: Step(
-            POST_WELCOME, StepKind.ACT, post_welcome, still_due=has_channel,
+            POST_WELCOME, StepKind.ACT, post_welcome, still_due=has_started,
             describe=describe_welcome,
         ),
     }
