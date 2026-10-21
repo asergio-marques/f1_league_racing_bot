@@ -190,9 +190,7 @@ async def test_a_stop_after_the_corrections_are_saved_announces_the_appeals_and_
     sent = league.sent_to(VERDICTS_CHANNEL)
     assert verdict_headings(league) == sent[:1]
     assert len(sent) == 2
-    # No job deletes the prompt on its own; it goes with the channel, whose deletion is the
-    # one thing taken down.
-    assert ("delete", SUBMISSION_CHANNEL, APPEALS_PROMPT) not in league.events
+    assert APPEALS_PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
     assert _channel_deletions(league) == [SUBMISSION_CHANNEL]
     assert appeals_prompts(league) == []
 

@@ -216,9 +216,11 @@ def _lane(change: dict[str, Any]) -> str:
 
 
 def _texts(league: ReviewLeague) -> list[str]:
+    """What the amend channel shows of what the bot posted there: the messages standing, or,
+    once the channel is deleted, those it held as it went."""
     amend = league.channel(AMEND_CHANNEL)
-    return [str(amend.messages[mid].content) for mid in league.sent_to(AMEND_CHANNEL)
-            if mid in amend.messages]
+    shown = {**amend.held_at_deletion, **amend.messages}
+    return [str(shown[mid].content) for mid in league.sent_to(AMEND_CHANNEL) if mid in shown]
 
 
 def _deleted(league: ReviewLeague, cid: int = AMEND_CHANNEL) -> bool:
