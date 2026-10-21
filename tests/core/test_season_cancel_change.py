@@ -1559,15 +1559,10 @@ async def test_work_in_hand_that_is_not_the_season_s_end_does_not_refuse_it(
 # `end` (through the season end's hooks, never by core writing signup's table). Each lane's waiting
 # turns are then found no longer due when they come, and dropped.
 
-NO_SEASON_END_ENDS_THE_CONVERSATIONS = (
-    "#439: a submission and a signup wizard have no lane of their own, their answers taken off the "
-    "change queue, so a season's end leaves no turn of theirs to find no longer due"
-)
 SUBMISSION_TURN = "results.submission.turn"
 KIMI_TURN = "test.kimi_turn"
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SEASON_END_ENDS_THE_CONVERSATIONS)
 async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     """Pro's round 3 waits for its results, its submission open in channel 690 with nothing
     accepted; driver 105 (Kimi) is part-way through signing up, his wizard collecting his notes in
@@ -1576,7 +1571,7 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     lane, asked after the cancellation. The queue run: the season is cancelled, round 3's
     submission closed and its channel deleted (the deletion's record taking the submission's row
     with it) and Kimi's wizard unengaged; both turns are then found no longer due and
-    dropped, nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
+    dropped (the manager's whole, Kimi's job marked done as dropped), nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
     and neither lane stopped."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
@@ -1640,7 +1635,11 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     assert await _closed(league) == {}
     assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
     states = {row["id"]: row["state"] for row in await change_rows(league.db_path)}
-    assert (states[paste], states[answer]) == ("DROPPED", "DROPPED")
+    # The manager's turn, whose check refuses a closed submission, is dropped whole; Kimi's, whose
+    # check here passes, begins and has its one job found no longer due and marked done as dropped.
+    assert (states[paste], states[answer]) == ("DROPPED", "DONE")
+    [kimi_job] = await step_rows(league.db_path, answer)
+    assert kimi_job["done_at"] is not None and kimi_job["result"] == {"dropped": True}
     assert await league.rows("SELECT * FROM session_results WHERE round_id = ?", R3) == []
     assert posted == []
     assert await stopped_job(league.db_path, f"channel:{SUBMISSION_CHANNEL}") is None
