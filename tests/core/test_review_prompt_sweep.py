@@ -123,6 +123,7 @@ async def _store(
     *,
     review: str = PLACEMENTS,
     report_message_ids: tuple[int, ...] = (),
+    verb: str | None = None,
 ) -> None:
     """One review prompt standing in channel 700, posted for Alex's review of season 1."""
     async with get_connection(env.db_path) as db:
@@ -134,6 +135,7 @@ async def _store(
             reviewer_id=REVIEWER_ID,
             review=review,
             report_message_ids=report_message_ids,
+            verb=verb,
         )
         await db.commit()
 
@@ -393,3 +395,33 @@ async def test_a_prompt_whose_report_list_cannot_be_read_is_still_cleared(league
     assert len(league.channel.sent) == 1
     assert _lapses(league)
     assert await _rows(league.db_path) == []
+
+
+@pytest.mark.parametrize(
+    ("review", "verb", "custom_id"),
+    [
+        (PLACEMENTS, "approved", "season_review:approve"),
+        (PLACEMENTS, "confirmed", "season_review:confirm_placements"),
+        ("/season config-review", "confirmed", None),
+    ],
+)
+async def test_each_standing_review_is_routed_under_its_own_button(league, review, verb, custom_id):
+    """At a restart the sweep routes each standing question's button again by its message id. A
+    placements approval keeps `season_review:approve`, a mid-season confirmation keeps
+    `season_review:confirm_placements`: routed under the other's id, a press finds no item and
+    Discord drops it without a refusal."""
+    question = post_in(league.channel, BOT_USER)
+    await _store(league, question.id, review=review, verb=verb)
+    league.bot.add_view = MagicMock()
+
+    await _recover_expired_review_prompts(league.bot)
+
+    league.bot.add_view.assert_called_once()
+    routed = league.bot.add_view.call_args.args[0]
+    assert league.bot.add_view.call_args.kwargs["message_id"] == question.id
+    ids = [item.custom_id for item in routed.children]
+    if custom_id is None:
+        assert "season_review:approve" not in ids
+        assert "season_review:confirm_placements" not in ids
+    else:
+        assert ids == [custom_id]

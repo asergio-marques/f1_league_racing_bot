@@ -1799,7 +1799,7 @@ async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
     try:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
-                "SELECT message_id, reviewer_id, review FROM season_review_prompts"
+                "SELECT message_id, reviewer_id, review, verb FROM season_review_prompts"
             )
             prompts = await cursor.fetchall()
         in_hand = {
@@ -1831,11 +1831,17 @@ async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
 
 def _review_view_of(row: aiosqlite.Row) -> str:
     """The family of the button a standing review's row belongs to, as the builder's factory of
-    review views names it: the configuration review by its command, any other by the placements
-    approval's. A mid-season confirmation is routed as the approval is, which differs from it in
-    what it says it has not done: the take-down queued beside it is what ends the review, and a
-    press that reaches the button before then is refused all the same."""
-    return "configuration" if str(row["review"]) == "/season config-review" else "approve"
+    review views names it. The configuration review is told by its command. The other command,
+    `/season placements-review`, posts two kinds of question whose buttons carry different custom
+    ids: the placements approval (``approve``, row verb ``approved``) and the mid-season
+    confirmation (``mid_season``, row verb ``confirmed``), which `record_question` writes from the
+    view it was posted with. Routed under the wrong id, a press finds no item and is dropped
+    without a refusal, so the row's verb is what is read."""
+    from leaguebot.core.services.season_review_changes import VERBS
+
+    if str(row["review"]) == "/season config-review":
+        return "configuration"
+    return "approve" if str(row["verb"]) == VERBS["approve"] else "mid_season"
 
 
 async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
