@@ -222,7 +222,7 @@ audit record, which is how some settings came to have none.
   confirmation uses it to tell the review's channel of a refusal its member can no longer be told
   of. It may likewise ask one where a league admin discards a member's change stopped at its check
   before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal hook
-  that raises stops the queue at the change's first job, as a check that raises does, and the
+  that raises stops its lane at the change's first job, as a check that raises does, and the
   change is checked again at each try; a discard hook that raises is logged on the host and the
   Discard goes ahead without it, Discard being the queue's last way past a stop. *Rejected:*
   planning a step on the refused change, which would leave a refused change with jobs to run.
@@ -230,7 +230,7 @@ audit record, which is how some settings came to have none.
   its work is no longer due, as a job that fires after its work was cancelled does nothing (see
   "Timed work and restarts"). Where it is refused by its check for any reason but that its work is
   no longer due (a channel unset, the bot's permission lost), it has nobody to refuse, so it stops
-  the queue like a job that fails (below), at its first job and with the check's reason, and is
+  its lane like a job that fails (below), at its first job and with the check's reason, and is
   checked again at each try. So does any change, a member's included, whose check raises as it
   starts; meanwhile the log channel records what failed, as the core
   specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
@@ -242,14 +242,14 @@ audit record, which is how some settings came to have none.
   What a change type refuses is read from the database and the queue, never from a flag kept in
   memory, so it holds across a restart. A bot's request that this check finds no longer due (a
   review reopened for a round that has since gone final) is dropped, not stopped: only a channel
-  missing or unusable stops the queue.
+  missing or unusable stops its lane.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
   `steward_module.md` §4 does for the cycle close. A round's approval is one such step: the
   penalties or corrections, the recalculated points, the round's attendance, the standings
   snapshots and the round's new status are saved together, and a fault in any of them rolls the
-  whole step back and stops the queue there (results specification, stage one: what the commit
+  whole step back and stops its lane there (results specification, stage one: what the commit
   writes shall be saved together).
 - **One change at a time to a lane.** The queue is divided into lanes. The *league lane* carries
   every change to what the league shares (its configuration, its seasons, results, standings,
@@ -340,14 +340,14 @@ audit record, which is how some settings came to have none.
   ended conversation's channel is deleted. That one arises only in a conversation's own channel,
   which the ending takes down. The design accepts all three. Constitution XIV rule 8 ("at most one such message stands at any
   moment") is amended with the queue to allow the first two; the third is a conversation's post,
-  which no replacement rule covers, and is accepted by the design alone. A `record` that raises is not a stop of the bot: its save is rolled back, the queue stops at
+  which no replacement rule covers, and is accepted by the design alone. A `record` that raises is not a stop of the bot: its save is rolled back, its lane stops at
   the job like any failure, and what the step returned is kept on the job (`StepContext.kept`,
   which a step's next try reads, and which the first try finds empty), so the next try removes
   the copy already sent before it posts again. A post of several messages that fails part-way
   keeps the ids already sent the same way. Scanning the channel to spot such a copy is not done: `steward_module.md` §7
   rejects scanning a channel as guesswork, and that reasoning carries over.
 
-  A deletion that fails stops the queue like any other job (below). A deletion that follows a post
+  A deletion that fails stops its lane like any other job (below). A deletion that follows a post
   which was discarded deletes nothing, since the post left no new message for the old one to give
   way to. A deletion that is discarded leaves both messages standing.
 - **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
@@ -388,7 +388,7 @@ audit record, which is how some settings came to have none.
   what would follow from dropping the job, in the job's own terms, so that the refusal can name
   the round or the season. Discard on the job is refused as any refused press is, and saves
   nothing else: no discarded mark, no Discard line, no audit record, no follow-on, and the job
-  stays the one the queue is stopped at. Retry, and the bot's own tries, clear it as they clear
+  stays the one its lane is stopped at. Retry, and the bot's own tries, clear it as they clear
   any job. The notice keeps both buttons, and it is the button that refuses: the notice is one
   persistent view with fixed identities, found again after a restart, and a notice without Discard
   would need a second view, chosen for each notice and registered at start. *Rejected:* that second view; and a
@@ -400,7 +400,7 @@ audit record, which is how some settings came to have none.
   and names the job, and the channel of a conversation's lane. Who a stop notice
   mentions is the core specification's rule; the mention is asked only for a notice that has
   not yet landed, so that a restart's line and an hour's line mention nobody. They work directly on the queue's own records, and are not changes put on the
-  queue: the queue is stopped, so a change put on it could not run. Each press is saved with its own record (the line, and
+  queue: the lane is stopped, so a change put on it could not run. Each press is saved with its own record (the line, and
   for a Discard the audit record), and a press that is refused is recorded as well. A press made
   while the worker of that job's lane is trying that job's change, its check included, is refused,
   to be made again once the try has ended: each press is taken under the lock the workers hold as
@@ -409,7 +409,7 @@ audit record, which is how some settings came to have none.
 
   After a restart a stopped job stays stopped, as "When the bot stops" in the core specification
   has it: the bot makes no try of its own, whatever the schedule had left, and only Retry or
-  Discard moves the queue (Retry alone where the job may not be discarded). A change a stop cut
+  Discard moves the lane (Retry alone where the job may not be discarded). A change a stop cut
   off with no job failed carries on from its first step not done.
 
   *Rejected:* a failed job stepping aside while later changes go ahead, and a job tried once and
@@ -829,7 +829,7 @@ to it would switch off the one failure path for every command.
    the job in place of the reason, its refusal recorded in the log channel as any refused press
    is, because an undiscardable job is never dropped for want of its reason;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
-   the rest. Inside a queued change, each item is a job: one that fails stops the queue until
+   the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
    work (above). Neither applies where an operation's own rule is all or nothing, as a points
    amendment's save is (the results specification's "Changing points system mid-season");
