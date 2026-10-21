@@ -417,8 +417,9 @@ audit record, which is how some settings came to have none.
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. The lanes are not a job stepping aside: within each lane
   nothing overtakes, and a conversation runs apart only because its work is its own and what it
-  hands the league goes to the league lane's back. *Rejected:* a queue for each module; and the
-  league dropping a stopped conversation's job when it ends the conversation, which would let a
+  hands the league goes to the league lane's back. *Rejected:* a queue for each module, which
+  leaves the conversations of one module waiting on each other and the league's work split across
+  queues with no one order; and the league dropping a stopped conversation's job when it ends the conversation, which would let a
   change overtake a stop. Also rejected: an automatic try after a restart, which
   "When the bot stops" in the core specification rules out.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
