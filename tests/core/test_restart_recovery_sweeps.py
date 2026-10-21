@@ -497,7 +497,7 @@ async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_roun
 
     [line] = _amend_lines(league)
     assert (
-        "  Amendment channel deleted; nothing needed putting back. If the amendment had not "
+        "  Amendment channel being deleted; nothing needed putting back. If the amendment had not "
         "been approved, re-run /results rounds amend. If it had, its channels may be "
         "part-rebuilt: run /results rounds sync and /results standings sync."
     ) in line.splitlines()
@@ -602,7 +602,7 @@ async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_pat
 
     [line] = _amend_lines(league)
     assert (
-        "  Amendment channel deleted, and the round put back as it was. Please re-run "
+        "  Amendment channel being deleted, and the round put back as it was. Please re-run "
         "/results rounds amend."
     ) in line.splitlines()
 
@@ -611,7 +611,9 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
     bot restarted before the amendment was approved, and the queue's lapse puts the round back.
     The README promises this is recorded as a lapse: one line, naming Alex as its starter, with
-    the session being amended, what became of it and what to do next beneath it."""
+    the session being amended, what became of it and what to do next beneath it. The line is
+    written before the channel's deletion, the job after it, runs, so it says the channel is
+    being deleted, never that it was."""
     league = await _amend_league(tmp_path, amended=True)
 
     await _restart_and_run(league)
@@ -623,7 +625,7 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
         f"(started by Alex (<@{STARTER_ID}>))"
     )
     assert (
-        "  Amendment channel deleted, and the round put back as it was. Please re-run "
+        "  Amendment channel being deleted, and the round put back as it was. Please re-run "
         "/results rounds amend."
     ) in detail
     assert "Feature Race" in "\n".join(detail), detail

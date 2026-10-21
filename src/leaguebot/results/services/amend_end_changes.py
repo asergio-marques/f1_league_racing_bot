@@ -456,7 +456,7 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
             line = (
                 f"ℹ️ {what}, started by {named}, was ended by a restart\n"
                 f"  Sessions: {shown}\n"
-                "  Amendment channel deleted; nothing needed putting back. If the "
+                "  Amendment channel being deleted; nothing needed putting back. If the "
                 "amendment had not been approved, re-run /results rounds amend. If it had, "
                 "its channels may be part-rebuilt: run /results rounds sync and "
                 "/results standings sync."
@@ -464,7 +464,7 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
         elif cause == RESTART:
             line = abandoned_line(named, what, lapsed=True, detail=(
                 f"Sessions: {shown}\n"
-                "Amendment channel deleted, and the round put back as it was. Please "
+                "Amendment channel being deleted, and the round put back as it was. Please "
                 "re-run /results rounds amend."
             ))
         elif cause == SWEEP:
