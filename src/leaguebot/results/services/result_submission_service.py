@@ -619,19 +619,6 @@ async def _recompute_session_points_on(db: aiosqlite.Connection, round_id: int) 
         )
 
 
-async def _snapshot_staged_drivers(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    staged,
-) -> list[dict]:
-    """:func:`_snapshot_staged_drivers_on`, on a connection of its own."""
-    if not staged:
-        return []
-    async with get_connection(db_path) as db:
-        return await _snapshot_staged_drivers_on(db, round_id, division_id, staged)
-
-
 async def _snapshot_staged_drivers_on(
     db: aiosqlite.Connection,
     round_id: int,
