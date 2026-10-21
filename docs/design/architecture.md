@@ -251,49 +251,45 @@ audit record, which is how some settings came to have none.
   snapshots and the round's new status are saved together, and a fault in any of them rolls the
   whole step back and stops its lane there (results specification, stage one: what the commit
   writes shall be saved together).
-- **One change at a time to a lane.** The queue is divided into lanes. The *league lane* carries
-  every change to what the league shares (its configuration, its seasons, results, standings,
-  drivers' status, the posts in the league's channels), and every change a command, a timer, a
-  start step or a Discord event outside every conversation asks for, whole, even where it posts in a conversation's channel,
-  save a conversation's own tidying (a held signup channel's deletion, the review channel's lock
-  warning), which runs on that conversation's lane. A
-  *conversation lane*, one for each channel the bot opens for a conversation (a driver's signup
-  channel, a round's submission channel with its penalty review, an amendment's channel), carries
-  that conversation's own turns: a typed answer, a paste, a press within the conversation (a staging, a
-  choice, a resubmission), and the posts in its own channel.
-  A conversation lane writes only its conversation's own tables, held at run time (see "The database"):
-  the sessions a round's submission collects are its own until its review opens, saved on the
-  round's lane, and so are a resubmission's drafts, while the swap of the round's results is the
-  league's. What a conversation hands the league (a signup sent for review, a review opening, an
-  approval) it asks of the league lane as a follow-on, which waits there in order with the league's other
-  changes. League work a conversation handed over posts back into that conversation's channel by
-  asking a change of the conversation's lane, so that a broken channel stops only that
-  conversation; a command's or timer's own posts there stay on the league lane. Each lane runs one change at a time, in the order put on it, with no exception: nothing
-  on a lane overtakes a change, not even one whose job is stopped (below). Lanes run side by side,
-  the league lane always and at most three conversation lanes with it, the rest waiting oldest
-  change first. SQLite lets one writer in at a time, so one write lock, taken round each save and
-  released at its commit, keeps that single writer in the process; no call to Discord is made under
-  it, so a long save makes another lane's save wait in Python rather than fail on SQLite's busy
-  timeout. Inside the save of a save step, or of a step with a record, and under the lock, the job is asked
-  again whether it is still due and whether its conversation still stands, since another lane's
-  save may have landed between the check and the save. The tests run the lanes one at a time, taking the
-  runnable lane head with the lowest change number, so a test's outcome does not depend on timing.
-  Two presses of the same button can no longer run into each other. A change's posts hold its lane's
-  worker while they are sent, so a long run of posts delays the changes behind it on that lane; that
-  is the price of one change at a time to a lane. Job numbers stay one sequence across the lanes, so
-  that "job #N" names one job anywhere. In the specifications "the queue" stays the league lane's
-  name, and a conversation lane is "a conversation's lane".
-- **A conversation ends by the league's hand or its own, and its waiting turns are then dropped.** A
-  league change that ends a conversation (a close, a cancellation, a season's end, a member leaving,
-  an approval) marks it ended in its own save and does nothing else to the lane. Each change of that
-  lane is then found no longer due when its turn comes, and dropped with a line saying so; a closing change asked back by the league needs only its channel to stand.
-  A cancellation is the exception for the pastes already waiting in a round's submission: it marks
-  the submission closed; its row stands, so they still run, and each is
-  refused in the channel when its turn comes (results specification, a submission closed by a cancellation takes nothing more); that
-  conversation ends when its channel's deletion removes its row.
-  A job of that lane already stopped stays stopped, with its notice: an admin's Retry runs a try that
-  finds it no longer due and clears the stop, a Discard drops it, and the bot makes no try of its
-  own on it. A refused deletion of the conversation's channel stops the lane that asked: a
+- **One change at a time to a lane.** The queue is divided into lanes: the *league lane*, and a
+  *conversation lane* for each channel the bot opens for a conversation, keyed by that channel
+  (`"channel:<id>"`). Which lane carries what is the core specification's ("How a change is carried
+  out"); a change type gives its lane from the payload (`ChangeType.lane`), so the same request
+  always lands on the same lane, and a follow-on takes its own kind's lane, not its asker's. A
+  conversation lane writes only its conversation's own tables, held at run time (see "The
+  database"): the sessions a round's submission collects are its own until its review opens, and so
+  are a resubmission's drafts, while the swap of the round's results is the league's. What a
+  conversation hands the league it asks of the league lane as a follow-on, which waits there in
+  order with the league's other changes. League work a conversation handed over posts back into
+  that conversation's channel by asking a change of the conversation's lane, so that a broken
+  channel stops only that conversation. Nothing on a lane overtakes the change at its head, not
+  even one whose job is stopped (below): `_choose` takes, of each lane, its running change or else
+  its oldest queued one. Lanes run side by side, the league lane always and at most three
+  conversation lanes with it, the rest waiting oldest change first. SQLite lets one writer in at a
+  time, so one write lock, taken round each save and released at its commit, keeps that single
+  writer in the process; no call to Discord is made under it, so a long save makes another lane's
+  save wait in Python rather than fail on SQLite's busy timeout. Inside the save of a save step, or
+  of a step with a record, and under the lock, the job is asked again whether it is still due and
+  whether its conversation still stands (`conversation_open`), since another lane's save may have
+  landed between the check and the save. The tests run the lanes one at a time, taking the runnable
+  lane head with the lowest change number, so a test's outcome does not depend on timing. A
+  change's posts hold its lane's worker while they are sent, so a long run of posts delays the
+  changes behind it on that lane; that is the price of one change at a time to a lane. Job numbers
+  are one sequence across the lanes, so that "job #N" names one job anywhere. In the
+  specifications "the queue" stays the league lane's name, and a conversation lane is "a
+  conversation's lane".
+- **A conversation ends by the league's hand or its own, and its waiting turns are then dropped.**
+  Which changes end a conversation, and the exception a round's cancellation makes for the pastes
+  waiting in its submission, are the core specification's ("How a change is carried out"). A change
+  that ends a conversation marks it ended in its own save and does nothing else to the lane. Each
+  change of that lane is then found no longer due when its turn comes (`conversation_open`), and
+  dropped with a line saying so; a closing change asked back by the league needs only its channel
+  to stand. A cancellation marks the submission closed and leaves its row, so `conversation_open`
+  still holds and each waiting paste reaches its turn, where its own check refuses it; the
+  conversation ends when its channel's deletion removes the row. A job of that lane already
+  stopped stays stopped, with its notice, and the bot makes no try of its own on it (`_choose`
+  clears its `next_try_at`): a Retry runs a try that finds it no longer due and clears the stop, a
+  Discard drops it. A refused deletion of the conversation's channel stops the lane that asked: a
   conversation ending itself stops its own, a league change ending it stops the league.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
@@ -588,10 +584,9 @@ starts (`register_timer`). When the timer fires, its callback reads the row agai
 change of the queue, as the bot's, or asks nothing where the work is no longer due; a callback that
 raises is logged on the host alone.
 
-A timer's change runs on the league lane, as every change a timer asks for does, but for a
-conversation's own tidying, which runs on that conversation's lane: the deletion of a held signup
-channel at the end of its 24 hours, and the taking down of the review channel's lock warning. A
-refusal of either then stops only that conversation (see "How a change is carried out").
+Which lane a timer's change runs on is the core specification's ("How a change is carried out",
+where a conversation's own timers run on its lane); the callback asks its change as any request is
+asked, and the change type gives the lane from the payload (`ChangeType.lane`).
 
 **Start-up runs once, in one function.** discord.py can report the bot as "ready" more than once in
 a single run, after a network drop, so start-up work does not belong in the handler for that event.
