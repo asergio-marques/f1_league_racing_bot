@@ -275,9 +275,8 @@ audit record, which is how some settings came to have none.
   lane head with the lowest change number, so a test's outcome does not depend on timing. A
   change's posts hold its lane's worker while they are sent, so a long run of posts delays the
   changes behind it on that lane; that is the price of one change at a time to a lane. Job numbers
-  are one sequence across the lanes, so that "job #N" names one job anywhere. In the
-  specifications "the queue" stays the league lane's name, and a conversation lane is "a
-  conversation's lane".
+  are one sequence across the lanes, so that "job #N" names one job anywhere. The
+  specifications call the league lane "the queue" and a conversation lane "a conversation's lane".
 - **A conversation ends by the league's hand or its own, and its waiting turns are then dropped.**
   Which changes end a conversation, and the exception a round's cancellation makes for the pastes
   waiting in its submission, are the core specification's ("How a change is carried out"). A change
@@ -778,8 +777,8 @@ as its specification asks; a failure always is. A command that asks for a change
 - **Commands, buttons and forms** go through `report_failure` (`core/utils/interaction_errors.py`),
   called by the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes. What the member
   and the log channel are told is the core specification's "When a command fails". A results
-  amendment is no exception: it runs as changes on the queue, and a fault in one stops its lane
-  and is reported as any change's is, by the queue, but for the `names` job of its lapse and its
+  amendment runs as changes on the queue, and a fault in one stops its lane and is reported as any
+  change's is, by the queue, but for the `names` job of its lapse and its
   cancel, which goes ahead without the names (the first of the four places below).
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler on the bot.
