@@ -103,13 +103,14 @@ behind it could not run. Each is a press on the stop notice (`QueueStopView`) an
 a line, where the presser may not use it or the notice's job no longer stops the queue.
 
 **A job without which a round would never run cannot be discarded** (`Step.undiscardable`): the
-arming of a season's timed work once it is approved, and of an amended round's. Dropping it would
-leave no repair a league could make, since nothing else arms a round again. Its Discard is refused
+arming of a season's timed work once it is approved, the arming of an amended round's, and the
+opening of a round's results submission. Dropping one would leave no repair a league could make,
+since nothing else arms a round again or opens its submission. Its Discard is refused
 and recorded as any refused press is, the job stays stopped, and only Retry, or the bot's own
 tries, clears it. The notice keeps its Discard button all the same: `QueueStopView` is one
 persistent view with fixed `custom_id`s, found again after a restart, and a notice without the
 button would need a second view chosen per notice. A change stopped at its check, before any job
-ran, is still discarded whole, since no arming job can be its check.
+ran, is still discarded whole, since none of those jobs can be its check.
 
 **The stop notice is one log-channel message** carrying the stop line and the buttons. It is
 posted by the router's `post_notice`, after the stop's save and never on the log-line retry queue
