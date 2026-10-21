@@ -38,6 +38,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.audit_service import record_system_change_on
+from leaguebot.core.services.season_end_changes import season_ending_on
 from leaguebot.core.services.season_lifecycle_service import advance_on_window_close_on
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -258,7 +259,8 @@ def window_close_steps(
     record closes the window with the post's id (so the next opening deletes the notice), audits
     the close and has the queue write the "Signups closed" line, where the payload gives a
     ``head`` for it (a close a member ran writes its own line in its last job), and moves the
-    season on where it says ``advance_season`` (a season's end moves its own): no window is ever
+    season on where it says ``advance_season`` (a season's end moves its own, and a season whose
+    end or wind-down is in hand on the queue is left to it, `season_ending_on`): no window is ever
     recorded closed without its notice up, and a refused post stops the queue with signups still
     open.
     Where its try posted and the record then failed, the message is kept for the next try to remove
@@ -294,7 +296,9 @@ def window_close_steps(
             db, change_type=str(ctx.step_payload["audit_action"]), old_value="open",
             new_value="closed", now=now(),
         )
-        if ctx.step_payload.get("advance_season"):
+        # A season whose end or wind-down is in hand on the queue is left to it, which moves it
+        # its own way.
+        if ctx.step_payload.get("advance_season") and not await season_ending_on(db):
             await advance_on_window_close_on(db)
 
     async def window_stands(_ctx: StepContext) -> bool:

@@ -67,6 +67,7 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
+from leaguebot.core.services.season_end_changes import season_ending
 from leaguebot.core.services.season_lifecycle_service import (
     WINDOW_CLOSED_NOTICE,
     WINDOW_NOT_CLOSED,
@@ -499,7 +500,11 @@ def window_close_change(
     bot's), ``window`` (the Sign Up button message of the window asked about), ``confirmed``
     (whether a manager was shown the drivers it returns and pressed Confirm Close),
     ``audit_action`` and, for the bot's, ``close_at`` (the time it was set to close). The window
-    is judged again as the change comes up to run. *signup_module_service* is a getter, so that the
+    is judged again as the change comes up to run. The bot's close leaves a season whose end or
+    wind-down is in hand on the queue to it (`season_ending`): no longer due at its check, it is
+    dropped; started already, as a close cut off by a stop is, it returns no driver it has not
+    returned, and none of its jobs moves the season on (the signup specification's close of the
+    window). *signup_module_service* is a getter, so that the
     service is the one the bot holds when the job runs. *returned_by_close* are the states it turns
     away, *cancel_timers* removes one driver's inactivity and deletion timers, and *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer.
@@ -522,7 +527,27 @@ def window_close_change(
             return Verdict.not_due("the signup window is not the one this close was asked about")
         if command and cfg.close_at is not None:
             return Verdict.refuse(f"⛔ {armed_close_refusal(cfg.close_at)}")
+        if not command and await season_ending(ctx.db_path):
+            return Verdict.not_due(
+                "a season's end or wind-down is in hand on the queue, and closes the window itself"
+            )
         return Verdict.go()
+
+    async def not_left_to_the_season(ctx: StepContext) -> bool:
+        """Whether the bot's close still returns its drivers: not where a season's end or
+        wind-down has come to be in hand since the close started, as a close cut off by a stop
+        finds at the next start. The drivers are then left to that end, which returns them
+        itself, and the close plans nothing more."""
+        return ctx.payload["cause"] == "command" or not await season_ending(ctx.db_path)
+
+    async def drivers_were_returned(ctx: StepContext) -> bool:
+        """Whether the close's line is still to be written: not where the bot's close left its
+        drivers to a season's end, and so did nothing, which, like a bot change found no longer
+        due, writes no line."""
+        return not any(
+            view.name == RETURN_DRIVERS and (view.result or {}).get("dropped")
+            for view in ctx.steps
+        )
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         return (
@@ -591,11 +616,17 @@ def window_close_change(
     steps: dict[str, Step] = {
         **closing_steps(now=now, arm_once=arm_once),
         **window_close_steps(signup_module_service=signup_module_service, now=now),
-        RETURN_DRIVERS: return_drivers_step(
-            signup_module_service=signup_module_service, returned_by_close=returned_by_close,
-            cancel_timers=cancel_timers,
+        RETURN_DRIVERS: dataclasses.replace(
+            return_drivers_step(
+                signup_module_service=signup_module_service, returned_by_close=returned_by_close,
+                cancel_timers=cancel_timers,
+            ),
+            still_due=not_left_to_the_season,
         ),
-        CLOSE_LINE: Step(CLOSE_LINE, StepKind.SAVE, close_line, describe=describe_line),
+        CLOSE_LINE: Step(
+            CLOSE_LINE, StepKind.SAVE, close_line, still_due=drivers_were_returned,
+            describe=describe_line,
+        ),
     }
     return ChangeType(
         kind=CLOSE,

@@ -663,6 +663,96 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
         assert any("returned" in text and "1" in text for text in beneath), (cause, line)
 
 
+#: The changes that end a season or wind it down to Pending completion, each of which closes the
+#: window itself.
+SEASON_ENDS = ("season.complete", "season.wind_down")
+
+
+async def _season_end_in_hand(league: SeasonLeague, kind: str) -> None:
+    """A *kind* change of season 7 in hand on the league's lane, asked after the close and stopped
+    at its first job, its next try an hour away: it stays in hand while the close runs."""
+    import json
+
+    later = league.clock.now + timedelta(hours=1)
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES (?, ?, ?, 'BOT', 'QUEUED', 'ending the season')",
+            (kind, kind, json.dumps({"season_id": SEASON_ID})),
+        )
+        await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, tries, "
+            "failing_since, last_failure, next_try_at) VALUES (?, 0, 'first', '{}', 1, ?, ?, ?)",
+            (cursor.lastrowid, league.clock.now.isoformat(), "a fault", later.isoformat()),
+        )
+        await db.commit()
+
+
+async def _auto_close(league: SeasonLeague, cause: str) -> None:
+    """The window's close time has passed and the bot asks its close, by the timer or at a
+    restart (*cause*)."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+
+    set_at = league.clock.now - timedelta(minutes=1)
+    await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
+    await close_signups_unattended(league.bot, cause=cause)
+
+
+@pytest.mark.parametrize("kind", SEASON_ENDS)
+async def test_the_bot_s_close_leaves_a_season_whose_end_is_in_hand_to_it(tmp_path, kind):
+    """Two leagues, each with Kimi still filling in the wizard: in one the close timer fires, in
+    the other the bot starts after the close time, and each asks the close. Before it runs, the
+    season's completion (or its wind-down to Pending completion) comes to be in hand on the queue,
+    behind it and stopped. When the close comes up to run it leaves the season to that end
+    (signup :56): it is dropped, the season stays at Signups, Kimi is not returned and not told,
+    nothing is posted in the signup channel and no line of the close is written."""
+    from tests.support.change_queue import queued_log_lines
+
+    for cause in ("timer", "restart"):
+        league = await _close_league(tmp_path / cause, SIGNING_UP)
+        await _auto_close(league, cause)
+        await _season_end_in_hand(league, kind)
+
+        await run_queue(league.bot)
+
+        [change] = await _changes_of(league, CLOSE_KIND)
+        assert change["state"] == "DROPPED", cause
+        assert await _season_stage(league) == "SIGNUPS", cause
+        assert await _driver_state(league) == "PENDING_SIGNUP_COMPLETION", cause
+        assert _told(league) == [], cause
+        assert _closed_notices(league) == [], cause
+        lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        assert not [line for line in lines if "Signups closed automatically" in line], cause
+
+
+@pytest.mark.parametrize("kind", SEASON_ENDS)
+async def test_a_close_cut_off_after_returning_its_drivers_tells_them_and_leaves_the_season_to_its_end(
+    tmp_path, kind,
+):
+    """The close timer fires with Kimi still filling in the wizard, and the bot stops once the
+    close has returned him to Not Signed Up, before it has told him. While it is down, the
+    season's completion (or its wind-down) comes to be in hand on the queue, stopped. When the bot
+    starts again the close carries on: Kimi is told once and his channel locked, but the season is
+    left to its end and stays at Signups (signup :56)."""
+    league = await _close_league(tmp_path, SIGNING_UP)
+    await _auto_close(league, "timer")
+    for _ in range(10):
+        if [job for job in await _close_jobs(league)
+                if job["name"] == "return_drivers" and job["done_at"]]:
+            break
+        await run_queue(league.bot, steps=1)
+    assert await _driver_state(league) == "NOT_SIGNED_UP"
+    assert _told(league) == []
+
+    await _season_end_in_hand(league, kind)
+    await league.restart()
+    await run_queue(league.bot)
+
+    assert len(_told(league)) == 1
+    assert _locked_in(league)
+    assert await _season_stage(league) == "SIGNUPS"
+
+
 async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as_jobs(tmp_path):
     """Kimi is still filling in the wizard. Manager 77 runs `/module disable signup`. Until the
     queue runs, the module is still on and the window open. When it runs, the

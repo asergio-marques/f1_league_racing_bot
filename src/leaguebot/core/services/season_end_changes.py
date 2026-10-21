@@ -97,6 +97,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     SIGNUP_NOTICE,
     TAKE_DRIVER_ROLE,
     TURN_DOWN_STEP,
+    WIND_DOWN,
     WIND_DOWN_STEP,
     WINDOW_NOT_CLOSED,
     SeasonEndHooks,
@@ -126,12 +127,15 @@ __all__ = [
     "SEASON_ABORT",
     "SEASON_CANCEL",
     "SEASON_COMPLETE",
+    "SEASON_ENDING",
     "anything_discarded",
     "discarded",
     "not_done_reply",
     "season_abort_change",
     "season_complete_change",
     "season_end_in_hand",
+    "season_ending",
+    "season_ending_on",
     "season_end_refusal",
     "shared_not_done",
     "test_mode_on",
@@ -306,6 +310,36 @@ async def season_end_in_hand(
             if nearest is None or (job or 0) < nearest[1]:
                 nearest = (kind, job or 0)
     return nearest
+
+
+#: The changes that end a season or wind it down to Pending completion. Each closes the signup
+#: window itself, where one stands open, and moves the season its own way.
+SEASON_ENDING = (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT, WIND_DOWN)
+
+
+async def season_ending_on(db: aiosqlite.Connection) -> bool:
+    """Whether a season's end (its completion, cancellation or abort) or its wind-down to Pending
+    completion is in hand on the queue, queued, running or stopped on a failure, as read on *db*.
+
+    A close of the signup window leaves such a season to it, neither moving the season on nor, for
+    the bot's own close, returning its drivers (the signup specification's close of the window):
+    the end and the wind-down close the window themselves. One season is live at a time, so an
+    end in hand is the live season's. Read on the caller's connection, so that a record may ask it
+    inside its save.
+    """
+    marks = ", ".join("?" for _ in SEASON_ENDING)
+    cursor = await db.execute(
+        f"SELECT 1 FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
+        "AND state IN ('QUEUED', 'RUNNING') LIMIT 1",
+        SEASON_ENDING,
+    )
+    return await cursor.fetchone() is not None
+
+
+async def season_ending(db_path: str) -> bool:
+    """`season_ending_on`, read on a connection of its own, for a check or a job's `still_due`."""
+    async with get_connection(db_path) as db:
+        return await season_ending_on(db)
 
 
 def amended(held: Any) -> str:
