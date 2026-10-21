@@ -843,7 +843,7 @@ Clear it in this order.
 
 A job that goes through says so, and its notice loses its buttons. So does a stop that clears because the job is found no longer due, or because the request it belonged to is refused at its check.
 
-**A change that ends a conversation** (a round's cancellation closing its submission, say) marks it ended: the answers waiting in it are dropped as no longer due, and a turn already stopped stays stopped until Retry or Discard.
+**A change that ends a conversation** (a season's end returning a driver mid-signup, say) marks it ended: the answers waiting in it are dropped as no longer due, and a turn already stopped stays stopped until Retry or Discard. Cancelling a round is the exception for its submission: it closes the submission, and each paste already waiting there is refused in the channel when its turn comes.
 
 **After a restart a stopped queue stays stopped.** The bot makes no try of its own, one line in the log channel says so, and only Retry or Discard moves it (Discard is refused on an arming). A change the bot was part-way through, with no job failed, is finished as the bot starts: a round whose review or approval is on the queue is left to it, and one that never reached the queue is put back through it.
 
