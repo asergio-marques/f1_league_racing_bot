@@ -404,7 +404,7 @@ async def _confine(db: aiosqlite.Connection, writes: Collection[str] | None) -> 
         return
     allowed = {name.lower() for name in writes} | QUEUE_TABLES
 
-    def _authorize(
+    def _authorise(
         action: int, table: str | None, _arg2: str | None, _database: str | None,
         _source: str | None,
     ) -> int:
@@ -412,7 +412,7 @@ async def _confine(db: aiosqlite.Connection, writes: Collection[str] | None) -> 
             return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
 
-    await db.set_authorizer(_authorize)
+    await db.set_authorizer(_authorise)
 
 
 def league_lane(_payload: dict[str, Any]) -> str:
