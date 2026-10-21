@@ -832,7 +832,7 @@ Some changes are carried out as a list of jobs, one after another, each with a n
 
 You will see:
 
-- **One ❌ message in the log channel**, with **Retry** and **Discard** buttons. It names the job's number, the lane's channel where it is a conversation's, what the job was, the request it belongs to, who asked and the kind of fault, and it mentions the league admin role (a conversation's notice only when no other conversation's is standing). The reply to the request says it is stopped and will be tried again. Managers and admins have to be able to read the log channel to use the buttons.
+- **One ❌ message in the log channel**, with **Retry** and **Discard** buttons. It names the job's number, the lane's channel where it is a conversation's, what the job was, the request it belongs to, who asked and the kind of fault in plain words (that the bot could not read or write its database, that Discord refused a request, that the bot hit an internal fault, or the job's own reason such as a channel not set), never the error's technical name, and it mentions the league admin role (a conversation's notice only when no other conversation's is standing). The reply to the request says it is stopped and will be tried again. Managers and admins have to be able to read the log channel to use the buttons.
 - **A request asked meanwhile is acknowledged as usual**, joins the back of the queue, and says which job the queue is stopped at. It runs once that job is cleared.
 
 Clear it in this order.
