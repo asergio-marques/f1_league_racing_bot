@@ -40,6 +40,7 @@ from pathlib import Path
 
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.models.image_module import PostingOrigin
@@ -478,6 +479,7 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
 # ── Post ──────────────────────────────────────────────────────────────────
 
 
+@posts_in_a_job
 async def post_championship(
     bot: LeagueBot,
     channel,

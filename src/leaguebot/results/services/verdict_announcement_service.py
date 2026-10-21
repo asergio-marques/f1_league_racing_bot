@@ -13,6 +13,7 @@ from pathlib import Path
 import aiosqlite
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.driver_service import current_account_map_for_division
@@ -393,6 +394,7 @@ async def _record_announcement_on(
     )
 
 
+@posts_in_a_job
 async def _send_verdict(
     bot: LeagueBot,
     target_channel,

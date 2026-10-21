@@ -25,7 +25,10 @@ from __future__ import annotations
 
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 
+
+@posts_in_a_job
 async def send_notice(
     channel, text: str, *, allowed_mentions: discord.AllowedMentions | None = None, **extra
 ):
@@ -42,6 +45,7 @@ async def send_notice(
     return await channel.send(text, **extra)
 
 
+@posts_in_a_job
 async def delete_notice(message) -> None:
     """Delete the notice *message*, raising whatever Discord raises, a message already gone
     (``discord.NotFound``) included.

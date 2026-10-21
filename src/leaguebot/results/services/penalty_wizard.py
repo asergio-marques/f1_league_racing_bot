@@ -15,6 +15,7 @@ from typing import Any
 
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.change import StepFailedOnDiscord
@@ -715,6 +716,7 @@ async def _ask_confirm(
 # Prompt refresh helper
 # ---------------------------------------------------------------------------
 
+@posts_in_a_job
 async def _delete_review_message(state: PenaltyReviewState, message_id: int | None) -> None:
     """Delete one of the review's own messages from its channel, where it is still there."""
     if message_id is None:
@@ -743,6 +745,7 @@ async def _take_down_approval(state: PenaltyReviewState) -> None:
     await _delete_review_message(state, message_id)
 
 
+@posts_in_a_job
 async def _refresh_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing prompt message to reflect the current staged list.
 
@@ -806,6 +809,7 @@ async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
     return "\n".join(lines)
 
 
+@posts_in_a_job
 async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing appeals prompt message to reflect current staged_appeals. As
     `_refresh_prompt`, a message gone is passed over and a refused edit raises."""
@@ -1396,6 +1400,7 @@ class _ConfirmClearView(LeagueView):
 # Approval step helper (T019, T020)
 # ---------------------------------------------------------------------------
 
+@posts_in_a_job
 async def _show_approval_step(
     interaction: discord.Interaction | None, state: PenaltyReviewState
 ) -> int | None:

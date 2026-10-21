@@ -10,6 +10,7 @@ from typing import NamedTuple
 import aiosqlite
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import current_account_map_for_division
@@ -106,6 +107,7 @@ async def throttle() -> None:
         await asyncio.sleep(POSTING_THROTTLE_SECONDS)
 
 
+@posts_in_a_job
 async def _send_chunked(
     channel: discord.TextChannel, content: str
 ) -> list[discord.Message]:
@@ -170,6 +172,7 @@ def _parse_ids(raw: str | None) -> list[int] | None:
     return ids or None
 
 
+@posts_in_a_job
 async def delete_round_channel(
     channel: discord.abc.GuildChannel | discord.Thread, *, reason: str
 ) -> None:
@@ -183,6 +186,7 @@ async def delete_round_channel(
     await channel.delete(reason=reason)
 
 
+@posts_in_a_job
 async def _delete_posting(
     channel: discord.TextChannel,
     anchor_msg_id: int,
@@ -730,6 +734,7 @@ def compose_standings_message(heading: str, label: str, sections: list[str]) -> 
     return "\n\n".join([top, *sections])
 
 
+@posts_in_a_job
 async def produce_standings(
     db_path: str,
     division_id: int,

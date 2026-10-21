@@ -1058,49 +1058,16 @@ def _posts_outside_a_job_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_POSTS_OUTSIDE_A_JOB: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/utils/batch_notice.py", "delete_notice"): (1, SLICE["6b"]),
-    ("core/utils/batch_notice.py", "send_notice"): (1, SLICE["6b"]),
-    ("image/services/image_standings_post.py", "post_championship"): (1, SLICE["6b"]),
-    ("image/services/image_verdict_banner_post.py", "try_post"): (3, SLICE["6b"]),
-    ("results/services/penalty_wizard.py", "_delete_review_message"): (1, SLICE["6b"]),
-    ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, SLICE["6b"]),
-    ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, SLICE["6b"]),
-    ("results/services/penalty_wizard.py", "_show_approval_step"): (1, SLICE["6b"]),
-    ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, SLICE["6b"]),
-    ("results/services/results_post_service.py", "_delete_posting"): (1, SLICE["6b"]),
-    ("results/services/results_post_service.py", "_send_chunked"): (2, SLICE["6b"]),
-    ("results/services/results_post_service.py", "delete_round_channel"): (1, SLICE["6b"]),
-    ("results/services/results_post_service.py", "produce_standings"): (1, SLICE["6b"]),
-    ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, SLICE["6b"]),
-    ("signup/services/wizard_service.py", "WizardService._create_wizard_channel"): (1, SLICE["6b"]),
-    ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, SLICE["6b"]),
-}
-
-
-def test_every_post_is_made_in_a_job():
-    """Every message the bot posts, edits or deletes, and every channel it makes or deletes, is a
-    job of a change on the change queue, but a log line, a reply to a member's command or press,
-    the stop notice, and the posts named in `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change
-    is carried out" and "Posting to Discord"). The rule has two halves: a function that posts
-    carries `posts_in_a_job`, which raises where it runs outside a job, and this check finds every
-    function that posts and carries neither the decorator nor a reason here. The router is
-    excepted as the posting check excepts it (`POSTING_ALLOWED`): its log lines and stop notice
-    stay off the queue, and its forecast post carries the decorator. Today's undecorated posts are
-    listed under the slice that decorates or moves each."""
-    _check("every post is made in a job", _posts_outside_a_job_among(_nodes()),
-           KNOWN_POSTS_OUTSIDE_A_JOB)
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "#439: posts are still made outside a job, listed in KNOWN_POSTS_OUTSIDE_A_JOB until slice "
-    "6b's last code commit (C102) empties it"
-))
 def test_no_post_is_made_outside_a_job_but_those_named_off_the_queue():
-    """The job check made absolute (slice 6b, C102): once every post is decorated, moved onto the
-    queue or named in `POSTS_OFF_THE_QUEUE` with its reason, no function anywhere posts outside a
-    job, with no list of exceptions left to grow. Until then `test_every_post_is_made_in_a_job`
-    holds the list of what is left, which each commit shrinks."""
+    """The job check, absolute (slice 6b, C102): every message the bot posts, edits or deletes,
+    and every channel it makes or deletes, is a job of a change on the change queue, but a log
+    line, a reply to a member's command or press, the stop notice, and the posts named in
+    `POSTS_OFF_THE_QUEUE` (architecture.md, "How a change is carried out" and "Posting to
+    Discord"). A function that posts carries `posts_in_a_job`, which raises where it runs outside
+    a job, or is named in `POSTS_OFF_THE_QUEUE` with its reason; no function anywhere posts
+    outside a job, with no list of exceptions left to grow. The router is excepted as the posting
+    check excepts it (`POSTING_ALLOWED`): its log lines and stop notice stay off the queue, and
+    its forecast post carries the decorator."""
     found = _posts_outside_a_job_among(_nodes())
 
     assert not found, sorted(found)

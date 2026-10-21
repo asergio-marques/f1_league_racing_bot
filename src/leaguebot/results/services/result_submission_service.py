@@ -3093,6 +3093,7 @@ class ResubmissionCancelView(LeagueView):
 CANCELLED_LINE = "↩️ **Resubmission cancelled.** The earlier results stand."
 
 
+@posts_in_a_job
 async def take_down_cancel_message(message: discord.Message | discord.PartialMessage) -> None:
     """Take the Cancel button off the resubmission's announcement; one already gone is no fault.
 

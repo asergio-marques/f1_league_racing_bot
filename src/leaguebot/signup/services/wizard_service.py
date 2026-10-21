@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import discord
 
+from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
@@ -203,6 +204,7 @@ class WizardService:
     # ------------------------------------------------------------------
 
     @staticmethod
+    @posts_in_a_job
     async def _create_wizard_channel(
         guild: discord.Guild,
         member: discord.Member,
@@ -352,6 +354,7 @@ class WizardService:
 
 
 
+    @posts_in_a_job
     async def trigger_channel_hold(
         self,
         discord_user_id: str,
