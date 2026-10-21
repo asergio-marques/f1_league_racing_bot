@@ -254,7 +254,7 @@ audit record, which is how some settings came to have none.
 - **One change at a time to a lane.** The queue is divided into lanes. The *league lane* carries
   every change to what the league shares (its configuration, its seasons, results, standings,
   drivers' status, the posts in the league's channels), and every change a command, a timer, a
-  Discord event or a start step asks for, whole, even where it posts in a conversation's channel,
+  start step or a Discord event outside every conversation asks for, whole, even where it posts in a conversation's channel,
   save a conversation's own tidying (a held signup channel's deletion, the review channel's lock
   warning), which runs on that conversation's lane. A
   *conversation lane*, one for each channel the bot opens for a conversation (a driver's signup
