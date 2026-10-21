@@ -30,6 +30,7 @@ from leaguebot.core.services.config_service import ConfigService
 from tests.support.change_queue import (
     Clock,
     attach_queue,
+    change_rows,
     http_error,
     league_double,
     run_queue,
@@ -237,7 +238,7 @@ async def test_setting_the_hub_it_already_is_changes_nothing(db_path):
     channel.send.assert_not_awaited()
     channel._partial.delete.assert_not_awaited()
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": OLD_PANEL}
-    assert await stopped_job(db_path) is None
+    assert await change_rows(db_path) == []
 
 
 async def test_a_channel_the_bot_cannot_manage_is_refused_before_anything_is_written(db_path):
