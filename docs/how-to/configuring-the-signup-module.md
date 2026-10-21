@@ -17,7 +17,7 @@ This guide covers the signup module only. Setting the bot up, creating a season 
 
 ## A note on four words
 
-**Wizard** — the private channel a driver gets when they press the button, and the run of questions inside it. One per driver, named after them, deleted 24 hours after their signup ends. A closing notice Discord refuses stops that driver's conversation, or the league's queue where a close of the window or a season's end asked for it, until you press Retry or Discard on the stop notice; the channel is neither locked nor set for deletion meanwhile, and a notice you discard leaves it locked and set for deletion without it.
+**Wizard** — the private channel a driver gets when they press the button, and the run of questions inside it. One per driver, named after them, deleted 24 hours after their signup ends. A closing notice Discord refuses stops that driver's conversation, or the league's queue where a close of the window, an expiry or a season's end asked for it, until you press Retry or Discard on the stop notice; the channel is neither locked nor set for deletion meanwhile, and a notice you discard leaves it locked and set for deletion without it.
 
 **Slot** — a day and time you offer as a race slot, so drivers can say which ones they can make. You set the list; they tick the ones that suit. Nothing else in the bot uses them — they exist so you can work out who can race when.
 
@@ -326,7 +326,7 @@ The one thing you cannot fake is a second person pressing the button, so it is w
 
 **A summary and a wait.** When they finish, everything they entered is read back to them with a note to wait for an admin to check it.
 
-**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later. If Discord refuses the closing notice, the queue stops with Retry and Discard on the stop notice, and the channel is neither locked nor set for deletion until you press one; discarding it leaves the channel locked and set for deletion without the notice, named in the log channel.
+**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later. If Discord refuses the closing notice, that driver's lane alone stops, with Retry and Discard on the stop notice, and the channel is neither locked nor set for deletion until you press one; discarding it leaves the channel locked and set for deletion without the notice, named in the log channel.
 
 **A lineup post**, once placements are confirmed, in whichever channel that division uses.
 
