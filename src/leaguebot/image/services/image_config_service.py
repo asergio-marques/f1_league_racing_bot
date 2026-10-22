@@ -11,7 +11,11 @@ import dataclasses
 from typing import Any
 import logging
 
+import aiosqlite
+
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.services.setting_change import Saved
 from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
 from leaguebot.image.models.image_module import ImageConfig
 
@@ -60,13 +64,7 @@ class ImageConfigService:
 
     async def get_config(self) -> ImageConfig | None:
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT * FROM image_config"
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return None
-        return _row_to_config(row)
+            return await read_config_on(db)
 
     async def get_toggles(self) -> dict[str, bool]:
         """Return every aspect's state. Aspects with no row read as disabled."""
@@ -84,7 +82,7 @@ class ImageConfigService:
     # ── Writes ────────────────────────────────────────────────────────────
 
     async def create_with_defaults(self) -> ImageConfig:
-        """Create the config row and all eight toggle rows in one transaction.
+        """Create the config row and all nine toggle rows in one transaction.
 
         Idempotent: an existing configuration is left exactly as it is, which is what
         makes re-enabling after a disable lossless (FR-004a).
@@ -126,26 +124,14 @@ class ImageConfigService:
         return dataclasses.replace(current, **changes)
 
     async def set_field(self, column: str, value: str) -> bool:
-        """Write a single configuration column, guarded by the allow-list.
+        """Write a single configuration column, committing; whether the value changed.
 
-        Returns whether the value changed: False where the column already held *value*, in
-        which case nothing is written, so that the caller can say so rather than report a
-        change that was not made.
+        The committing twin of `set_field_on`, which the settings use inside their own save.
         """
-        if column not in SETTABLE_COLUMNS:
-            raise UnknownConfigField(f"`{column}` is not a settable image config field.")
-
-        # Column name is interpolated because SQLite cannot parameterise identifiers;
-        # it is safe only because it was checked against the allow-list above.
         async with get_connection(self._db_path) as db:
-            row = await (await db.execute(f"SELECT {column} FROM image_config")).fetchone()
-            if row is not None and row[0] == value:
-                return False
-            await db.execute(
-                f"UPDATE image_config SET {column} = ?", (value,)
-            )
+            saved = await set_field_on(db, column, value)
             await db.commit()
-        return True
+        return saved.changed
 
     async def set_pfp_flag(self, column: str, enabled: bool) -> None:
         """Write one of the three portrait toggles.
@@ -160,39 +146,15 @@ class ImageConfigService:
         await self.set_flag(column, enabled)
 
     async def set_flag(self, column: str, enabled: bool) -> bool:
-        """Write any boolean configuration column, guarded by its own allow-list.
-
-        Returns whether the flag changed: False where it already stood as *enabled*, in which
-        case nothing is written.
-
-        The generalisation of `set_pfp_flag`, which now delegates here: a second boolean
-        arrived with the per-tier colours (051) and two identical setters differing only in
-        the set they check would be one of them going stale.
-        """
-        if column not in FLAG_COLUMNS:
-            raise UnknownConfigField(f"`{column}` is not a settable image config flag.")
-
-        # Column name is interpolated because SQLite cannot parameterise identifiers;
-        # it is safe only because it was checked against the allow-list above.
+        """Write any boolean configuration column, committing; whether the flag changed."""
         async with get_connection(self._db_path) as db:
-            row = await (await db.execute(f"SELECT {column} FROM image_config")).fetchone()
-            if row is not None and bool(row[0]) == enabled:
-                return False
-            await db.execute(
-                f"UPDATE image_config SET {column} = ?", (1 if enabled else 0,)
-            )
+            saved = await set_flag_on(db, column, enabled)
             await db.commit()
-        return True
+        return saved.changed
 
     async def set_aspect(self, aspect: str, enabled: bool) -> None:
-        if aspect not in ASPECTS:
-            raise UnknownConfigField(f"`{aspect}` is not a known image aspect.")
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES (?, ?) "
-                "ON CONFLICT(aspect) DO UPDATE SET enabled = excluded.enabled",
-                (aspect, int(enabled)),
-            )
+            await set_aspect_on(db, aspect, enabled)
             await db.commit()
 
     async def toggle_aspect(self, aspect: str) -> bool:
@@ -212,95 +174,20 @@ class ImageConfigService:
     async def set_tier_colour(
         self, division_name: str, slot: str, colour: str
     ) -> bool:
-        """Set one slot's colour for one tier, replacing whatever stood there.
-
-        Returns whether the colour changed: False where the slot already held *colour*, in
-        which case nothing is written.
-
-        *slot* is normalised and validated here as well as at the command, because this is
-        the last point before it reaches a CSS selector and a service is not entitled to
-        assume its caller checked. *colour* is expected to have been through
-        ``normalise_hex`` already and is stored as given.
-        """
-        from leaguebot.image.utils.asset_resolver import normalise
-        from leaguebot.image.utils.svg_palette import normalise_slot
-
-        key = normalise(division_name or "")
-        if not key:
-            raise UnknownConfigField("a division name is required.")
-        canonical = normalise_slot(slot)
+        """Set one slot's colour for one tier, committing; whether the colour changed."""
         async with get_connection(self._db_path) as db:
-            held = await (
-                await db.execute(
-                    "SELECT colour FROM image_tier_colour WHERE division_slug = ? AND slot = ?",
-                    (key, canonical),
-                )
-            ).fetchone()
-            if held is not None and held["colour"] == colour:
-                return False
-            await db.execute(
-                "INSERT INTO image_tier_colour (division_slug, slot, colour) "
-                "VALUES (?, ?, ?) "
-                "ON CONFLICT(division_slug, slot) "
-                "DO UPDATE SET colour = excluded.colour",
-                (key, canonical, colour),
-            )
+            saved = await set_tier_colours_on(db, division_name, {slot: colour})
             await db.commit()
-        return True
+        return saved.changed
 
     async def set_tier_colours(
         self, division_name: str, colours: dict[str, str]
     ) -> int:
-        """Set several slots for one tier at once, returning how many it changed.
-
-        A slot already holding its colour is not one of them and is not written; where every
-        slot named is held, the count is 0 and nothing is written at all.
-
-        **Merged, not replaced** (decided 2026-09-08): a slot the caller does not name keeps
-        the colour it had. A league pasting a partial palette is correcting part of a scheme,
-        not declaring the whole of it, and losing the rest to an omission would be a silent
-        cost. It is also what makes this consistent with `set_tier_colour`, which upserts.
-
-        One transaction, so a bulk set is all-or-nothing at the database even though the
-        import above it decides atomicity per division.
-        """
-        from leaguebot.image.utils.asset_resolver import normalise
-        from leaguebot.image.utils.svg_palette import normalise_slot
-
-        key = normalise(division_name or "")
-        if not key:
-            raise UnknownConfigField("a division name is required.")
-        if not colours:
-            return 0
-
+        """Set several slots for one tier at once, committing; how many it changed."""
         async with get_connection(self._db_path) as db:
-            held = {
-                row["slot"]: row["colour"]
-                for row in await (
-                    await db.execute(
-                        "SELECT slot, colour FROM image_tier_colour WHERE division_slug = ?",
-                        (key,),
-                    )
-                ).fetchall()
-            }
-            rows = [
-                (key, canonical, colour)
-                for canonical, colour in sorted(
-                    (normalise_slot(slot), colour) for slot, colour in colours.items()
-                )
-                if held.get(canonical) != colour
-            ]
-            if not rows:
-                return 0
-            await db.executemany(
-                "INSERT INTO image_tier_colour (division_slug, slot, colour) "
-                "VALUES (?, ?, ?) "
-                "ON CONFLICT(division_slug, slot) "
-                "DO UPDATE SET colour = excluded.colour",
-                rows,
-            )
+            saved = await set_tier_colours_on(db, division_name, colours)
             await db.commit()
-        return len(rows)
+        return len(saved.audits)
 
     async def get_tier_palette(self, division_name: str) -> dict[str, str]:
         """Every slot this tier has a colour for. The render path's only reader."""
@@ -375,6 +262,184 @@ class ImageConfigService:
             palettes.setdefault(row["division_slug"], {})[row["slot"]] = row["colour"]
         return palettes
 
+
+
+# ── Writes on a connection ────────────────────────────────────────────────
+#
+# The settings' saves (`image_settings`) write through these, on the connection the change
+# queue hands a step, never committing: the value and its audit entry stand or fall together.
+# Each judges "held" on the connection that writes (a change ahead may have moved the value),
+# keeps the allow-list of its committing twin above, and returns what `Saved` carries.
+
+
+async def read_config_on(db: aiosqlite.Connection) -> ImageConfig | None:
+    """The stored configuration read on *db*, or None before the module has one."""
+    row = await (await db.execute("SELECT * FROM image_config")).fetchone()
+    if row is None:
+        return None
+    return _row_to_config(row)
+
+
+async def set_field_on(db: aiosqlite.Connection, column: str, value: str) -> Saved:
+    """Write one text configuration column on *db*, guarded by the allow-list.
+
+    A value already held writes nothing and comes back unchanged; otherwise one
+    `IMAGE_CONFIG_SET` entry records `{column: old}` → `{column: value}`.
+    """
+    if column not in SETTABLE_COLUMNS:
+        raise UnknownConfigField(f"`{column}` is not a settable image config field.")
+
+    # Column name is interpolated because SQLite cannot parameterise identifiers;
+    # it is safe only because it was checked against the allow-list above.
+    row = await (await db.execute(f"SELECT {column} FROM image_config")).fetchone()
+    old = None if row is None else row[0]
+    if row is not None and old == value:
+        return Saved(changed=False)
+    await db.execute(f"UPDATE image_config SET {column} = ?", (value,))
+    return Saved(
+        changed=True, audits=(AuditRecord("IMAGE_CONFIG_SET", {column: old}, {column: value}),)
+    )
+
+
+async def set_flag_on(db: aiosqlite.Connection, column: str, enabled: bool) -> Saved:
+    """Write one boolean configuration column on *db*, guarded by its own allow-list.
+
+    Held means standing as *enabled* already: nothing is written. Otherwise one
+    `IMAGE_CONFIG_SET` entry records `{column: old}` → `{column: enabled}`, as booleans.
+    """
+    if column not in FLAG_COLUMNS:
+        raise UnknownConfigField(f"`{column}` is not a settable image config flag.")
+
+    row = await (await db.execute(f"SELECT {column} FROM image_config")).fetchone()
+    old = None if row is None else bool(row[0])
+    if old is not None and old == enabled:
+        return Saved(changed=False)
+    await db.execute(f"UPDATE image_config SET {column} = ?", (1 if enabled else 0,))
+    return Saved(
+        changed=True,
+        audits=(AuditRecord("IMAGE_CONFIG_SET", {column: old}, {column: enabled}),),
+    )
+
+
+async def set_aspect_on(db: aiosqlite.Connection, aspect: str, enabled: bool) -> Saved:
+    """Switch one image output on or off on *db*.
+
+    An output with no row reads as off. Held writes nothing; otherwise one `IMAGE_ASPECT_SET`
+    entry records `{"aspect", "enabled": old}` → `{"aspect", "enabled": new}`.
+    """
+    if aspect not in ASPECTS:
+        raise UnknownConfigField(f"`{aspect}` is not a known image aspect.")
+    row = await (
+        await db.execute("SELECT enabled FROM image_aspect_toggles WHERE aspect = ?", (aspect,))
+    ).fetchone()
+    old = False if row is None else bool(row[0])
+    if old == enabled:
+        return Saved(changed=False)
+    await db.execute(
+        "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES (?, ?) "
+        "ON CONFLICT(aspect) DO UPDATE SET enabled = excluded.enabled",
+        (aspect, int(enabled)),
+    )
+    return Saved(
+        changed=True,
+        audits=(
+            AuditRecord(
+                "IMAGE_ASPECT_SET",
+                {"aspect": aspect, "enabled": old},
+                {"aspect": aspect, "enabled": enabled},
+            ),
+        ),
+    )
+
+
+async def set_tier_colours_on(
+    db: aiosqlite.Connection, division_name: str, colours: dict[str, str]
+) -> Saved:
+    """Set one or several slots for one tier on *db*; one entry per slot changed.
+
+    **Merged, not replaced** (decided 2026-09-08): a slot the caller does not name keeps the
+    colour it had. A league pasting a partial palette is correcting part of a scheme, not
+    declaring the whole of it, and losing the rest to an omission would be a silent cost.
+    A slot already holding its colour is not changed and not written; where every slot named is
+    held, nothing is written at all.
+
+    *division_name* and each slot are normalised and validated here as well as at the command,
+    because this is the last point before a CSS selector and a service is not entitled to assume
+    its caller checked. Each colour is expected to have been through ``normalise_hex`` already.
+    One `IMAGE_TIER_COLOUR_SET` entry per slot changed records the division as it was named,
+    the canonical slot and the colour before and after; it carries no division id, a tier's
+    colours outliving the season that holds its division.
+    """
+    from leaguebot.image.utils.asset_resolver import normalise
+    from leaguebot.image.utils.svg_palette import normalise_slot
+
+    key = normalise(division_name or "")
+    if not key:
+        raise UnknownConfigField("a division name is required.")
+    if not colours:
+        return Saved(changed=False)
+
+    held = {
+        row["slot"]: row["colour"]
+        for row in await (
+            await db.execute(
+                "SELECT slot, colour FROM image_tier_colour WHERE division_slug = ?", (key,)
+            )
+        ).fetchall()
+    }
+    changes = [
+        (canonical, colour)
+        for canonical, colour in sorted(
+            (normalise_slot(slot), colour) for slot, colour in colours.items()
+        )
+        if held.get(canonical) != colour
+    ]
+    if not changes:
+        return Saved(changed=False)
+    await db.executemany(
+        "INSERT INTO image_tier_colour (division_slug, slot, colour) VALUES (?, ?, ?) "
+        "ON CONFLICT(division_slug, slot) DO UPDATE SET colour = excluded.colour",
+        [(key, canonical, colour) for canonical, colour in changes],
+    )
+    return Saved(
+        changed=True,
+        audits=tuple(
+            AuditRecord(
+                "IMAGE_TIER_COLOUR_SET",
+                {"division": division_name, "slot": canonical, "colour": held.get(canonical)},
+                {"division": division_name, "slot": canonical, "colour": colour},
+            )
+            for canonical, colour in changes
+        ),
+    )
+
+
+async def set_daily_portraits_on(db: aiosqlite.Connection, time_of_day: str) -> Saved:
+    """Turn daily portrait updates on at *time_of_day* on *db*: the time and the flag in one write.
+
+    Held means both already stand so. Otherwise one `IMAGE_CONFIG_SET` entry holds both columns,
+    `{"pfp_daily": old, "pfp_daily_time": old}` → `{True, new}`: the confirmation is one change.
+    """
+    row = await (
+        await db.execute("SELECT pfp_daily, pfp_daily_time FROM image_config")
+    ).fetchone()
+    old_flag = None if row is None else bool(row["pfp_daily"])
+    old_time = None if row is None else row["pfp_daily_time"]
+    if old_flag is True and old_time == time_of_day:
+        return Saved(changed=False)
+    await db.execute(
+        "UPDATE image_config SET pfp_daily = 1, pfp_daily_time = ?", (time_of_day,)
+    )
+    return Saved(
+        changed=True,
+        audits=(
+            AuditRecord(
+                "IMAGE_CONFIG_SET",
+                {"pfp_daily": old_flag, "pfp_daily_time": old_time},
+                {"pfp_daily": True, "pfp_daily_time": time_of_day},
+            ),
+        ),
+    )
 
 
 def portrait_configuration_fault(config) -> str | None:

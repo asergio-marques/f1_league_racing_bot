@@ -43,8 +43,6 @@ from tests.support.undecorate import undecorate
 
 #: Why a test here fails until the per-tier colour settings run on the change queue.
 UNBUILT = "#439: the per-tier colour settings do not run on the change queue yet"
-#: Why a test here fails until the image configuration's writers on a connection are written.
-UNBUILT_ON_FORMS = "#439: the image configuration's writers on a connection are not written yet"
 
 TOGGLE = "images config per-tier-colour-toggle"
 SET_COLOUR = "images config per-tier-set-colour"
@@ -330,7 +328,6 @@ def test_the_division_parameter_completes_like_every_other():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_the_flag_is_written_through_the_boolean_setter(tmp_path):
     """`set_field_on` is string-valued, and a boolean through it would store `'True'`: it
     refuses the flag, and the toggle stores an integer."""
@@ -376,7 +373,6 @@ async def test_the_declared_slots_helper_ignores_invalid_templates():
     assert await declared_colour_slots(validity) == {"accent"}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 def test_the_service_exposes_what_the_commands_call():
     from leaguebot.image.services import image_config_service
 

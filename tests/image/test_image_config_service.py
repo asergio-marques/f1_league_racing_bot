@@ -24,12 +24,6 @@ from leaguebot.image.services.image_config_service import (
 )
 from tests.support import saves
 
-#: Why a test of a writer on a connection fails until the build writes it.
-UNBUILT_ON_FORMS = (
-    "#439: the image configuration's writers on a connection (set_field_on, set_flag_on, "
-    "set_aspect_on, set_tier_colours_on) are not written yet"
-)
-
 
 async def _on(db_path: str, name: str, *args):
     """Call the image service's writer *name* on a connection of the test's own, commit what it
@@ -110,7 +104,6 @@ async def test_get_config_returns_none_before_creation(service):
 # ── The allow-list ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_field_rejects_column_outside_allow_list(service, db_path):
     await service.create_with_defaults()
     for forbidden in ("module_enabled", "server_id", "nonexistent_column"):
@@ -118,7 +111,6 @@ async def test_set_field_rejects_column_outside_allow_list(service, db_path):
             await _on(db_path, "set_field_on", forbidden, "x")
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_allow_list_covers_all_settable_columns(service, db_path):
     # The text columns: the template directory, the template filenames, the asset
     # directories, the preferences and the portrait time. The three portrait toggles are
@@ -134,14 +126,12 @@ async def test_allow_list_covers_all_settable_columns(service, db_path):
         assert getattr(cfg, column) == "probe"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_aspect_rejects_unknown_aspect(service, db_path):
     await service.create_with_defaults()
     with pytest.raises(UnknownConfigField):
         await _on(db_path, "set_aspect_on", "not_an_aspect", True)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_toggling_one_aspect_leaves_the_others_alone(service, db_path):
     await service.create_with_defaults()
     saved = await _on(db_path, "set_aspect_on", "standings", True)
@@ -654,7 +644,6 @@ async def _writes(db_path: str) -> int:
     return row["n"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_path):
     await service.create_with_defaults()
     first = await _on(db_path, "set_field_on", "template_directory", "resources/custom")
@@ -671,7 +660,6 @@ async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_pat
     assert (await service.get_config()).template_directory == "resources/custom"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path):
     await service.create_with_defaults()
     assert (await _on(db_path, "set_flag_on", "per_tier_colour_enabled", True)).changed is True
@@ -686,7 +674,6 @@ async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path
     assert (await service.get_config()).per_tier_colour_enabled is True
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_tier_colour_reports_a_held_colour_and_writes_nothing(service, db_path):
     """Held as the league would type it again: the division and slot in another case name the
     same stored colour."""
@@ -703,7 +690,6 @@ async def test_set_tier_colour_reports_a_held_colour_and_writes_nothing(service,
     assert await service.get_tier_palette("Division 1") == {"accent": "#A78BFA"}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_tier_colours_counts_only_the_slots_it_changes(service, db_path):
     """A bulk set carries one audit entry per slot it changed: a slot already holding its colour
     is not one of them, and where every slot named is held, nothing is written at all."""
