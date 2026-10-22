@@ -128,8 +128,10 @@ class Setting:
     acknowledgement; *check* judges a request at the ask and as it starts; *save* writes on the
     connection it is handed and returns what it did; *reply* forms the member's answer from the
     payload and every step's result, by step name; *writes* are the tables the save may write;
-    *not_saved* is what a fault's reply says became of the change; *after* are the steps that may
-    follow the save, by name.
+    *not_saved* is what a fault's reply says became of the change, or a function of the payload
+    that returns it, for a setting whose command is a paste as well as a single value (the check
+    that raises as the change starts is not handed the payload, so asks it with an empty one);
+    *after* are the steps that may follow the save, by name.
     """
 
     kind: str
@@ -139,7 +141,7 @@ class Setting:
     save: Callable[[aiosqlite.Connection, dict[str, Any]], Awaitable[Saved]]
     reply: Callable[[dict[str, Any], Mapping[str, dict[str, Any]]], str]
     writes: tuple[str, ...]
-    not_saved: str = NOTHING_SAVED
+    not_saved: str | Callable[[dict[str, Any]], str] = NOTHING_SAVED
     after: Mapping[str, After] = field(default_factory=dict)
 
 
@@ -160,16 +162,23 @@ def _lowered(text: str) -> str:
     return text[:1].lower() + text[1:]
 
 
+def _not_saved(setting: Setting, payload: dict[str, Any]) -> str:
+    """What a fault in *setting*'s change says became of it, for the change of *payload*."""
+    words = setting.not_saved
+    return words(payload) if callable(words) else words
+
+
 def _check_fault_reply(setting: Setting, what: str) -> str:
     """The reply for a check that raised as the change started. The hook is not handed the
     payload, so the command to run again is the change's *what* where that names one; a button or
     a form has none, and the reply asks for the change again."""
+    words = _not_saved(setting, {})
     if what.startswith("`/") and what.endswith("`"):
-        outcome = setting.not_saved.format(command=what.strip("`"))
-    elif "{command}" in setting.not_saved:
+        outcome = words.format(command=what.strip("`"))
+    elif "{command}" in words:
         outcome = NOTHING_SAVED_NO_COMMAND
     else:
-        outcome = setting.not_saved
+        outcome = words
     return failure_reply(what, outcome)
 
 
@@ -221,7 +230,8 @@ def setting_change(setting: Setting) -> ChangeType:
         results = {view.name: dict(view.result) for view in ctx.steps if view.result is not None}
         if results.get(SAVE, {}).get("failed"):
             return failure_reply(
-                ctx.what, setting.not_saved.format(command=setting.command(ctx.payload))
+                ctx.what,
+                _not_saved(setting, ctx.payload).format(command=setting.command(ctx.payload)),
             )
         reply = setting.reply(ctx.payload, results)
         for view in ctx.steps:
