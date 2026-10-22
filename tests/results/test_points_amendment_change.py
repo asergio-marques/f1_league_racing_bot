@@ -62,6 +62,7 @@ from tests.support.points_league import (
     write,
 )
 from tests.support.review_league import block_queue, candidate, run_until_done, stopped_at
+from tests.support.settings_league import last_said
 
 KIND = "results.points_amendment.approve"
 
@@ -620,13 +621,15 @@ async def test_the_staging_commands_are_refused_while_the_approval_is_in_hand(
 
 async def test_the_staging_commands_run_again_once_the_approval_is_done_or_discarded(tmp_path):
     """Once the approval is done, `toggle` turns amendment mode on again; once a league admin
-    discards its save, `session` stages again."""
+    discards its save, `session` stages again. Each is read from what the reply says once the
+    change has run, after any acknowledgement."""
     for name in ("done", "discarded"):
         (tmp_path / name).mkdir()
     done = await points_league(tmp_path / "done")
     await press_approve(done)
     await run_queue(done.bot)
-    assert (await run_staging(done, "toggle")).reply.startswith("✅ Amendment mode enabled.")
+    toggled = await run_staging(done, "toggle")
+    assert last_said(toggled.interaction).startswith("✅ Amendment mode enabled.")
 
     discarded = await points_league(tmp_path / "discarded")
     with _standings_fail():
@@ -635,7 +638,7 @@ async def test_the_staging_commands_run_again_once_the_approval_is_done_or_disca
     assert await stopped_at(discarded) == "apply"
     await discard_job(discarded.bot)
     staged = await run_staging(discarded, "session", position=1, points=27)
-    assert staged.reply.startswith("✅ Updated in modification store")
+    assert last_said(staged.interaction).startswith("✅ Updated in modification store")
 
 
 # ---------------------------------------------------------------------------
