@@ -21,7 +21,11 @@ these two tests would object.
 The setters are exercised against a real migrated database rather than a double, because
 what they are chiefly at risk of getting wrong is the `ON CONFLICT` upsert — that it updates
 the one column named and leaves the other two as they were, and that a second call does not
-insert a second row.
+insert a second row. Since #439 the deadline commands save through a settings change on the
+change queue; the writes here go through `tests.support.saves.set_deadline`, the tests' own
+committing twin of the service's write on a connection, which answers as the old setters did:
+the configuration where it changed, ``None`` where the value was held, the refusal where it is
+out of order.
 """
 from __future__ import annotations
 
@@ -34,11 +38,9 @@ from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 from leaguebot.weather.services.weather_config_service import (
     describe_deadlines,
     get_weather_pipeline_config,
-    set_phase_1_days,
-    set_phase_2_days,
-    set_phase_3_hours,
     validate_ordering,
 )
+from tests.support.saves import set_deadline
 
 #: The horizons the bot ships with, per the specification's "By default" clauses.
 PACKAGED_DEFAULTS = (5, 2, 2)
@@ -55,6 +57,21 @@ async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "weather_config.db")
     await run_migrations(db_path)
     return db_path
+
+
+def _setter(column: str):
+    """A committing setter of one deadline *column*, called as the old setters were."""
+
+    async def _set(db_path: str, value: int):
+        return await set_deadline(db_path, column, value)
+
+    _set.__name__ = f"set_{column}"
+    return _set
+
+
+PHASE_1 = _setter("phase_1_days")
+PHASE_2 = _setter("phase_2_days")
+PHASE_3 = _setter("phase_3_hours")
 
 
 async def _stored(db_path: str) -> tuple[int, int, int] | None:
@@ -100,7 +117,7 @@ async def test_absent_row_reads_as_the_packaged_defaults(tmp_path):
 async def test_stored_row_is_read_back(tmp_path):
     """A configured league gets its own horizons, not the packaged ones."""
     db_path = await _make_db(tmp_path)
-    await set_phase_1_days(db_path, 10)
+    await PHASE_1(db_path, 10)
 
     config = await get_weather_pipeline_config(db_path)
 
@@ -200,9 +217,9 @@ def test_phase_3_rejection_states_both_values_in_hours():
 #: Each setter, a legal value for it, and the triple that value should produce from the
 #: packaged defaults. Driving all three keeps a rename that stops halfway from surviving.
 SETTERS = [
-    (set_phase_1_days, 10, (10, 2, 2)),
-    (set_phase_2_days, 3, (5, 3, 2)),
-    (set_phase_3_hours, 6, (5, 2, 6)),
+    (PHASE_1, 10, (10, 2, 2)),
+    (PHASE_2, 3, (5, 3, 2)),
+    (PHASE_3, 6, (5, 2, 6)),
 ]
 
 
@@ -241,9 +258,9 @@ async def test_setters_compose(tmp_path):
     """Setting all three in turn leaves every one of them stored."""
     db_path = await _make_db(tmp_path)
 
-    await set_phase_1_days(db_path, 14)
-    await set_phase_2_days(db_path, 7)
-    await set_phase_3_hours(db_path, 12)
+    await PHASE_1(db_path, 14)
+    await PHASE_2(db_path, 7)
+    await PHASE_3(db_path, 12)
 
     assert await _stored(db_path) == (14, 7, 12)
     assert await _row_count(db_path) == 1
@@ -252,9 +269,9 @@ async def test_setters_compose(tmp_path):
 @pytest.mark.parametrize(
     "setter, value",
     [
-        (set_phase_1_days, 1),   # 24 h, inside the 48 h Phase 2
-        (set_phase_2_days, 5),   # 120 h, equal to the 120 h Phase 1
-        (set_phase_3_hours, 48),  # equal to the 48 h Phase 2
+        (PHASE_1, 1),   # 24 h, inside the 48 h Phase 2
+        (PHASE_2, 5),   # 120 h, equal to the 120 h Phase 1
+        (PHASE_3, 48),  # equal to the 48 h Phase 2
     ],
     ids=["phase_1", "phase_2", "phase_3"],
 )
@@ -267,7 +284,7 @@ async def test_violating_value_is_refused_and_writes_nothing(setter, value, tmp_
     db_path = await _make_db(tmp_path)
     # A real row to be left untouched: Phase 3 at 3 hours, which the packaged defaults do not
     # hold, so the write is made rather than answered as nothing changed.
-    await set_phase_3_hours(db_path, 3)
+    await PHASE_3(db_path, 3)
     before = await _stored(db_path)
     assert before == (5, 2, 3)
 
@@ -287,10 +304,10 @@ async def test_a_violation_is_judged_against_the_stored_values_not_the_defaults(
     could not reach 10 days while Phase 1 still stood at the packaged 5.
     """
     db_path = await _make_db(tmp_path)
-    assert not isinstance(await set_phase_1_days(db_path, 20), str)
-    assert not isinstance(await set_phase_2_days(db_path, 10), str)
+    assert not isinstance(await PHASE_1(db_path, 20), str)
+    assert not isinstance(await PHASE_2(db_path, 10), str)
 
-    result = await set_phase_1_days(db_path, 5)
+    result = await PHASE_1(db_path, 5)
 
     assert isinstance(result, str)
     assert await _stored(db_path) == (20, 10, 2)
@@ -303,7 +320,7 @@ async def test_a_violation_is_judged_against_the_stored_values_not_the_defaults(
 
 @pytest.mark.parametrize(
     "setter, held",
-    [(set_phase_1_days, 5), (set_phase_2_days, 2), (set_phase_3_hours, 2)],
+    [(PHASE_1, 5), (PHASE_2, 2), (PHASE_3, 2)],
     ids=["phase_1", "phase_2", "phase_3"],
 )
 async def test_the_packaged_value_given_again_writes_nothing(setter, held, tmp_path):
@@ -339,7 +356,7 @@ async def test_the_league_holds_one_row_at_most(tmp_path):
     import sqlite3
 
     db_path = await _make_db(tmp_path)
-    await set_phase_1_days(db_path, 10)
+    await PHASE_1(db_path, 10)
 
     async with get_connection(db_path) as db:
         with pytest.raises(sqlite3.IntegrityError):
