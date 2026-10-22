@@ -526,7 +526,6 @@ async def test_a_template_saves_with_its_audit_entry_and_line(tmp_path, column):
     await _saves_with_record(tmp_path, CASES[f"template-{column}"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["aspect-on", "aspect-off"])
 async def test_switching_an_output_saves_with_its_audit_entry_and_line(tmp_path, route):
     """`/images config toggle Calendar`, switching the calendar on from off, and off from on:
@@ -704,7 +703,6 @@ async def test_a_template_broken_by_a_directory_set_ahead_of_it_is_refused_when_
     assert (await log_lines(league))[-1].startswith(_refused("`/images template calendar`"))
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_output_whose_drawings_broke_meanwhile_is_refused_when_it_runs_naming_why(
     tmp_path
 ):
@@ -975,7 +973,6 @@ async def test_a_check_after_the_save_that_faults_says_the_setting_is_saved_and_
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_two_presses_of_an_output_toggle_while_the_first_waits_are_one_change(tmp_path):
     """`/images config toggle Calendar` run twice with the calendar off before the queue runs:
     both read "off" and ask to switch it on, so the second is refused as a repeat, and once run
@@ -995,7 +992,6 @@ async def test_two_presses_of_an_output_toggle_while_the_first_waits_are_one_cha
     assert len(await change_rows(league.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_output_toggle_found_already_switched_when_it_runs_changes_nothing(tmp_path):
     """Image :180, a flip resolved when asked: `/images config toggle Calendar` with the calendar
     off asks to switch it on. Before the change runs the calendar is switched on (written here

@@ -208,7 +208,6 @@ async def test_switching_on_is_refused_while_the_drawing_is_broken(tmp_path):
     assert "Calendar: the drawing file can't be found" in line
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_switching_on_succeeds_when_the_drawing_is_sound(tmp_path):
     """Acknowledged at once; once run, the calendar is on, the reply says so, and one success
     line names the command."""
@@ -222,7 +221,6 @@ async def test_switching_on_succeeds_when_the_drawing_is_sound(tmp_path):
     assert "Calendar image output: enabled" in assert_one_line(league.bot, TOGGLE)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_switching_off_is_never_refused(tmp_path):
     """Off posts as text and draws nothing, so no drawing can stand in the way.
 

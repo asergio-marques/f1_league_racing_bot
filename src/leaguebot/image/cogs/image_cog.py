@@ -30,13 +30,17 @@ from leaguebot.image.models.image_constants import (
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
-from leaguebot.image.services.image_settings import DIRECTORY, TEMPLATE, TEMPLATE_DIRECTORY
+from leaguebot.image.services.image_settings import (
+    ASPECT,
+    DIRECTORY,
+    TEMPLATE,
+    TEMPLATE_DIRECTORY,
+)
 from leaguebot.image.services.image_setting_advice import (
     colour_shortfall_lines,
     declared_colour_slots,
     fastest_lap_contrast_lines,
     measure_fastest_lap_contrast,
-    toggle_enabled_lines,
 )
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import (
@@ -1003,7 +1007,7 @@ class ImageCog(commands.Cog):
         self, interaction: discord.Interaction, aspect: app_commands.Choice[str]
     ) -> None:
         # Switching an output *on* reports what still blocks it, and answering that means
-        # `_aspect_blocking_reasons` → `template_reports` → `evaluate_all_templates`,
+        # the setting's check (`aspect_blocking_reasons`) → `template_reports` → `evaluate_all_templates`,
         # which parses all sixteen template SVGs from disk on every call and caches
         # nothing. That is a third of a second on a development machine and several times
         # that on the Raspberry Pi's SD card, so the reply arrived after Discord had
@@ -1013,90 +1017,18 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        label = ASPECT_LABELS[aspect.value]
-
-        # Switching *off* is always allowed: the output reverts to text, which needs no
-        # drawing at all, so nothing about the templates can stand in the way.
-        if await self._config_service.is_aspect_enabled(aspect.value):
-            await self._config_service.set_aspect(aspect.value, False)
-            await self._reply(
-                interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
-            )
-            await _record(
-                self.bot, interaction, _command(interaction), "Success",
-                f"{label} image output: disabled",
-            )
-            return
-
-        # Switching *on* is refused while the drawings behind it are unusable, and the
-        # aspect is left off. Enabling it would produce an aspect that cannot draw — one
-        # that withholds the season's approval, and posts nothing where a driver would
-        # otherwise have read text. The check is made against the configured directory,
-        # so it answers for the files the league actually has.
-        blocking = await self._aspect_blocking_reasons_if_enabled(aspect.value)
-        if blocking:
-            body = "\n".join(f"  • {reason}" for reason in blocking)
-            await refuse(
-                interaction,
-                f"⛔ **{label}** image output was **not** switched on — "
-                f"it cannot be drawn as things stand:\n{body}\n"
-                f"Put that right and run this command again. The output is still posted "
-                f"as text in the meantime.",
-                what=describe_command(interaction),
-                reason="\n".join(blocking),
-            )
-            return
-
-        await self._config_service.set_aspect(aspect.value, True)
-        lines = toggle_enabled_lines(aspect.value, label, [])
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"{label} image output: enabled",
+        # The flip is resolved here, from the state read now (image :180): the change asked is
+        # the state opposite the one the member saw. Switching *off* is always allowed, the
+        # output reverting to text. Switching *on* is refused while the drawings behind it are
+        # unusable, the output left off; the setting's check makes that refusal at the ask and
+        # again as the change starts.
+        enabled = not await self._config_service.is_aspect_enabled(aspect.value)
+        await self.bot.change_queue.ask(
+            ASPECT,
+            {"aspect": aspect.value, "enabled": enabled},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
-
-    async def _aspect_blocking_reasons(self, aspect: str) -> list[str]:
-        statuses = await self._validity_service.aspect_statuses()
-        for status in statuses:
-            if status.aspect == aspect:
-                return status.blocking_reasons
-        return []
-
-    async def _aspect_blocking_reasons_if_enabled(
-        self, aspect: str
-    ) -> list[str]:
-        """What would stop *aspect* drawing, asked while it is still switched off.
-
-        `aspect_statuses` reads the stored toggles, and an aspect that is off reports its
-        problems as ``disabled_reasons`` rather than ``blocking_reasons`` — so asking the
-        ordinary way, before the toggle is written, always answers "nothing blocks it".
-        The toggle is therefore overridden for this one question, which is what lets the
-        command refuse *before* storing rather than storing and then complaining.
-        """
-        from leaguebot.image.services.image_render_service import converter_available
-        from leaguebot.image.services.image_validity_service import build_aspect_statuses
-
-        toggles = dict(await self._config_service.get_toggles())
-        toggles[aspect] = True
-
-        reports = await self._validity_service.template_reports()
-        statuses = build_aspect_statuses(
-            toggles,
-            reports,
-            disabled_source_modules=await self._validity_service.disabled_source_modules(),
-            converter_available=converter_available(),
-            # The shortfall is passed here too, and must be: this builds its own status
-            # list rather than calling `aspect_statuses`, so an aspect could otherwise be
-            # switched on while a template of it wanted a colour no tier had set (051).
-            colour_shortfall=await self._validity_service.colour_shortfall(
-                reports
-            ),
-        )
-        for status in statuses:
-            if status.aspect == aspect:
-                return status.blocking_reasons
-        return []
 
     # ── Presentation preferences ──────────────────────────────────────────
 
