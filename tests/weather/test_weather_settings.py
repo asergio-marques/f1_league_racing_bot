@@ -20,6 +20,7 @@ from tests.support.change_queue import (
     acknowledgement,
     change_rows,
     run_queue,
+    stopped_job,
 )
 from tests.support.settings_league import (
     audit_rows,
@@ -251,3 +252,50 @@ async def test_a_fault_in_a_deadline_s_save_saves_nothing_and_the_lane_goes_on(t
     ] != []
     assert not any("| Success" in line and "phase-1" in line for line in lines)
     assert last_said(behind).startswith("✅ Phase 2 deadline set to **3 day(s)**")
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_check_fault_when_a_deadline_runs_says_nothing_was_saved_records_a_failure_and_the_lane_goes_on(
+    tmp_path,
+):
+    """A Phase 1 deadline passes its check when asked, a Phase 2 deadline is asked behind it,
+    and the module's flag then faults once as it is read: the first read is the Phase 1 change's
+    check as it comes up to run. Nothing of it is saved, the member is told so and to run it
+    again, one failure line naming the kind of fault is recorded and no refusal line, the change
+    is ended without stopping the queue, and the Phase 2 deadline behind it still runs."""
+    league = await settings_league(tmp_path)
+
+    asked = await _ask(league, 1, 6)
+    behind = await _ask(league, 2, 3)
+    modules = league.bot.module_service
+    read = modules.is_weather_enabled
+    reads = 0
+
+    async def _faults_once() -> bool:
+        nonlocal reads
+        reads += 1
+        if reads == 1:
+            raise RuntimeError("the module flags could not be read")
+        return await read()
+
+    modules.is_weather_enabled = _faults_once
+    await run_queue(league.bot)
+
+    assert last_said(asked) == failure_reply(
+        "`/weather config phase-1-deadline`",
+        "Nothing was saved. Run `/weather config phase-1-deadline` again to retry.",
+    )
+    assert await _deadlines(league.db_path) == {
+        "phase_1_days": 5, "phase_2_days": 3, "phase_3_hours": 2,
+    }
+    lines = await log_lines(league)
+    assert [line for line in lines if line.startswith("❌ ")] == [
+        f"❌ `/weather config phase-1-deadline` failed for {NAMED} — RuntimeError. "
+        "The details are in the host's log."
+    ]
+    assert not any(line.startswith("⛔") for line in lines)
+    assert [a["new_value"] for a in await audit_rows(league.db_path)] == [{"phase_2_days": 3}]
+    assert [row["state"] for row in await change_rows(league.db_path)] == ["REFUSED", "DONE"]
+    assert await stopped_job(league.db_path) is None
+    assert last_said(behind).startswith("✅ Phase 2 deadline set to **3 day(s)**")
+    assert reads >= 2
