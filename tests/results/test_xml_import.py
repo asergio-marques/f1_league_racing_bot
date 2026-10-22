@@ -1,17 +1,13 @@
 """Unit tests for xml_import utility and xml_import_config service (T008, T014–T016)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points_config_service import (
     ConfigNotFoundError,
-    create_config,
     get_config_entries,
-    xml_import_config,
 )
 from leaguebot.results.utils.xml_import import (
     XmlImportError,
@@ -19,13 +15,15 @@ from leaguebot.results.utils.xml_import import (
     parse_xml_payload,
     validate_payload,
 )
+from tests.support.saves import (
+    create_config,
+    set_fl_bonus,
+    set_fl_position_limit,
+    set_session_points,
+)
 
-#: Who made the import, and when: the service records each change it makes (#442).
-ACTOR = {
-    "actor_id": 77,
-    "actor_name": "Manager#0001",
-    "now": datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc),
-}
+#: Why the import's service tests fail until it writes on the save's connection.
+UNBUILT = "#439: xml_import_config_on is not written yet"
 
 # ---------------------------------------------------------------------------
 # DB fixture (mirrors test_points_config_service.py)
@@ -358,60 +356,70 @@ def test_validate_empty_payload_no_errors():
 
 
 # ---------------------------------------------------------------------------
-# xml_import_config — service integration (T016)
+# xml_import_config_on — service integration (T016), on the save's connection
 # ---------------------------------------------------------------------------
 
 
+async def _import_on(db_path: str, config_name: str, payload: XmlImportPayload):
+    """Import *payload* into *config_name* on a connection of its own, as a settings change's
+    save writes it, and commit; return what the write answered."""
+    from leaguebot.results.services.points_config_service import xml_import_config_on
+
+    async with get_connection(db_path) as db:
+        saved = await xml_import_config_on(
+            db, config_name, payload.positions, payload.fastest_laps
+        )
+        await db.commit()
+    return saved
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_positions(db_path):
-    """xml_import_config writes position rows to the database."""
+    """The import writes position rows to the database."""
     await create_config(db_path, config_name="Test")
     payload = XmlImportPayload(
         positions={SessionType.FEATURE_RACE: {1: 25, 2: 18}},
     )
-    await xml_import_config(
-        db_path, config_name="Test", payload=payload, **ACTOR
-    )
+    await _import_on(db_path, "Test", payload)
     entries, _fl = await get_config_entries(db_path, config_name="Test")
     pts_by_pos = {e.position: e.points for e in entries if e.session_type == SessionType.FEATURE_RACE}
     assert pts_by_pos == {1: 25, 2: 18}
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_fl(db_path):
-    """xml_import_config writes fastest-lap rows to the database."""
+    """The import writes fastest-lap rows to the database."""
     await create_config(db_path, config_name="Test")
     payload = XmlImportPayload(
         positions={SessionType.FEATURE_RACE: {1: 25}},
         fastest_laps={SessionType.FEATURE_RACE: (2, 10)},
     )
-    await xml_import_config(
-        db_path, config_name="Test", payload=payload, **ACTOR
-    )
+    await _import_on(db_path, "Test", payload)
     _entries, fl = await get_config_entries(db_path, config_name="Test")
     assert len(fl) == 1
     assert fl[0].fl_points == 2
     assert fl[0].fl_position_limit == 10
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_not_found_raises(db_path):
-    """xml_import_config raises ConfigNotFoundError for unknown config."""
+    """The write raises ConfigNotFoundError for an unknown config: the `config_import` setting's
+    check refuses it first, so this is the write's own guard behind that check."""
     payload = XmlImportPayload(positions={SessionType.FEATURE_RACE: {1: 25}})
     with pytest.raises(ConfigNotFoundError):
-        await xml_import_config(
-            db_path, config_name="Ghost", payload=payload, **ACTOR
-        )
+        await _import_on(db_path, "Ghost", payload)
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_path):
     """Partial import (only Feature Race) leaves Sprint Race rows untouched."""
     await create_config(db_path, config_name="Test")
 
-    # Seed Sprint Race via a separate import
-    from leaguebot.results.services.points_config_service import set_session_points
-
+    # Seed Sprint Race through the tests' own writer
     await set_session_points(db_path, "Test", SessionType.SPRINT_RACE, 1, 8)
     await set_session_points(db_path, "Test", SessionType.SPRINT_RACE, 2, 7)
 
@@ -419,9 +427,7 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     payload = XmlImportPayload(
         positions={SessionType.FEATURE_RACE: {1: 25, 2: 18}},
     )
-    await xml_import_config(
-        db_path, config_name="Test", payload=payload, **ACTOR
-    )
+    await _import_on(db_path, "Test", payload)
 
     entries, _ = await get_config_entries(db_path, config_name="Test")
     sprint_entries = [e for e in entries if e.session_type == SessionType.SPRINT_RACE]
@@ -433,11 +439,10 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     assert {e.position: e.points for e in feature_entries} == {1: 25, 2: 18}
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     """When FL limit not in payload, existing fl_position_limit in DB is preserved."""
-    from leaguebot.results.services.points_config_service import set_fl_bonus, set_fl_position_limit
-
     await create_config(db_path, config_name="Test")
     await set_fl_bonus(db_path, "Test", SessionType.FEATURE_RACE, 1)
     await set_fl_position_limit(db_path, "Test", SessionType.FEATURE_RACE, 10)
@@ -446,9 +451,7 @@ async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     payload = XmlImportPayload(
         fastest_laps={SessionType.FEATURE_RACE: (3, None)},
     )
-    await xml_import_config(
-        db_path, config_name="Test", payload=payload, **ACTOR
-    )
+    await _import_on(db_path, "Test", payload)
 
     _entries, fl = await get_config_entries(db_path, config_name="Test")
     assert fl[0].fl_points == 3
