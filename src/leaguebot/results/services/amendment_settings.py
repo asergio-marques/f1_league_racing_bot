@@ -9,7 +9,8 @@ approval taken in hand by a change ahead of it on the queue is taken into accoun
 refuses first where the results module is off, then where the live season is not one the command
 may act on (`stage_refusal`), is no longer the season asked about, or has its points amendment
 being approved (`staging_refusal`: nothing outside the approval may put back or undo what it
-approves).
+approves). A command that stages values is refused for a configuration the season does not hold
+(`_not_held`), naming those it does.
 
 **What a change carries.** Every payload is plain JSON, as the queue stores it, and names the
 season it was asked about (`season_id`). A session is its `SessionType` value. The points of a
@@ -42,6 +43,7 @@ from leaguebot.results.services.points_config_service import (
     points_value_refusal,
 )
 from leaguebot.results.services.points_settings import MODULE_OFF
+from leaguebot.results.services.season_points_service import get_season_config_names
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -63,6 +65,7 @@ IN_SETUP = (
     "set up takes its points from the configurations attached to it: change those with "
     "`/results config`."
 )
+NOT_THE_SEASONS = "❌ Config **{name}** is not one of this season's points configurations: {held}."
 UNCOMMITTED = (
     "❌ Cannot disable amendment mode — uncommitted changes exist. "
     "Use `/results amend revert` to discard or `/results amend review` to apply."
@@ -111,6 +114,15 @@ async def _mode_off(ctx: CheckContext) -> bool:
         ctx.db_path, int(ctx.payload["season_id"])
     )
     return state is None or not state.amendment_active
+
+
+async def _not_held(ctx: CheckContext) -> Verdict | None:
+    """The refusal where the season does not score on the configuration named, else None."""
+    name = str(ctx.payload["config"])
+    held = await get_season_config_names(ctx.db_path, int(ctx.payload["season_id"]))
+    if name in held:
+        return None
+    return Verdict.refuse(NOT_THE_SEASONS.format(name=name, held=", ".join(held) or "none"))
 
 
 def _amend_mode(modules: "ModuleService", seasons: "SeasonService") -> Setting:
@@ -227,6 +239,9 @@ def _amend_points(modules: "ModuleService", seasons: "SeasonService") -> Setting
             return refusal
         if await _mode_off(ctx):
             return Verdict.refuse(MODE_NOT_ACTIVE)
+        not_held = await _not_held(ctx)
+        if not_held is not None:
+            return not_held
         if not ctx.payload.get("bulk"):
             # A paste's values were ranged by the cog as it parsed them; a single one is held
             # to the same rule here.
@@ -347,6 +362,9 @@ def _amend_fastest_lap(modules: "ModuleService", seasons: "SeasonService") -> Se
                     "❌ Fastest-lap bonus cannot be set for qualifying sessions."
                 )
             return Verdict.refuse("❌ Position limit cannot be set for qualifying sessions.")
+        not_held = await _not_held(ctx)
+        if not_held is not None:
+            return not_held
         out_of_range = (
             points_value_refusal(points=int(ctx.payload["fl_points"]))
             if column(ctx.payload) == "fl_points"

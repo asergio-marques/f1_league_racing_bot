@@ -41,9 +41,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the fold-ins' tests fail until each is built.
-NOT_HELD = "#439: the amend commands do not refuse a configuration the season does not hold yet"
-
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 CONFIG = "Standard"
@@ -1149,7 +1146,6 @@ async def test_a_position_below_one_negative_points_or_a_limit_below_one_is_refu
     assert await log_lines(league) == [_refused(f"`/{command}`", reply)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_HELD)
 @pytest.mark.parametrize(
     ("ask", "what"),
     [
