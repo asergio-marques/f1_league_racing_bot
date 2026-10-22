@@ -55,6 +55,7 @@ async def create_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
     return Saved(
         changed=True,
         audits=(AuditRecord("POINTS_CONFIG_ADD", {}, {"config": config_name}),),
+        details=(f"config: {config_name}",),
         result={"config": config_name},
     )
 
@@ -166,6 +167,7 @@ async def remove_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
             },
             {},
         ),),
+        details=(f"config: {config_name}",),
         result={"config": config_name, "detached_from": detached_from},
     )
 
