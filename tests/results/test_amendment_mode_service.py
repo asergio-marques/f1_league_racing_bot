@@ -15,8 +15,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why the tests here fail until the writers are built.
-UNBUILT = "#439: results/services/amendment_mode_service.py has no writers on a connection yet"
 SEASON_ID = 1
 CONFIG = "Standard"
 
@@ -83,7 +81,6 @@ STAGED = "SELECT position, points FROM season_modification_entries ORDER BY posi
 STAGED_FL = "SELECT fl_points, fl_position_limit FROM season_modification_fl"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_the_mode_on_copies_the_season_s_points(tmp_path):
     """Turning amendment mode on for season 1 copies its positions and fastest-lap row into the
     modification store, the flag clear, with one `POINTS_AMENDMENT_MODE_SET` entry from off to
@@ -103,7 +100,6 @@ async def test_turning_the_mode_on_copies_the_season_s_points(tmp_path):
     assert await _rows(db_path, STAGED_FL) == [(1, 10)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_it_off_empties_the_store(tmp_path):
     """Turning amendment mode off for season 1, nothing staged, empties the modification store
     and records one `POINTS_AMENDMENT_MODE_SET` entry from on to off."""
@@ -120,7 +116,6 @@ async def test_turning_it_off_empties_the_store(tmp_path):
     assert await _rows(db_path, STAGED_FL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_reverting_names_each_differing_row_in_its_audit_value(tmp_path):
     """Reverting the store with P1 staged at 26 puts P1 back to 25 and clears the flag, with one
     `POINTS_AMENDMENT_REVERTED` entry whose old value lists the one row that differed and whose
@@ -139,7 +134,6 @@ async def test_reverting_names_each_differing_row_in_its_audit_value(tmp_path):
     assert await _rows(db_path, MODE) == [(1, 0)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_staging_the_held_points_changes_nothing(tmp_path):
     """Staging P1 at 25, which the store already holds, changes nothing: no audit entry, and the
     modified flag left clear."""
@@ -152,7 +146,6 @@ async def test_staging_the_held_points_changes_nothing(tmp_path):
     assert await _rows(db_path, MODE) == [(1, 0)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_staging_a_fastest_lap_keeps_the_other_column(tmp_path):
     """Staging the Feature Race fastest-lap bonus at 2 keeps the staged limit of 10, with one
     `POINTS_AMENDMENT_FL_STAGED` entry."""
@@ -167,7 +160,6 @@ async def test_staging_a_fastest_lap_keeps_the_other_column(tmp_path):
     assert await _rows(db_path, STAGED_FL) == [(2, 10)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_mode_writers_commit_nothing(tmp_path):
     """Each writer, its connection closed without a commit, leaves the season as it was:
     turning the mode on, staging P1 at 27 and reverting a staged P1 of 26."""
