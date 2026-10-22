@@ -25,8 +25,6 @@ from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 
 SERVER_ID = 4242
-#: Why a test here fails until the advice has left the image cog.
-UNBUILT_ADVICE = "#439: the image advice has not moved to image_setting_advice yet"
 #: Why a test here fails until the image settings run on the change queue.
 UNBUILT = "#439: the image settings do not run on the change queue yet"
 
@@ -573,7 +571,7 @@ def test_live_and_pending_aspects_partition_the_eight():
 
 def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
     """An aspect that posts must not tell a manager it does nothing (the 035 wording)."""
-    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.services.image_setting_advice import toggle_enabled_lines
     from leaguebot.image.models.image_constants import ASPECT_LABELS, LIVE_POSTING_ASPECTS
 
     for aspect in sorted(LIVE_POSTING_ASPECTS):
@@ -585,7 +583,7 @@ def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
 
 def test_toggle_reply_for_a_pending_aspect_says_so():
     """An aspect with no posting path still warns, or the manager thinks it broken."""
-    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.services.image_setting_advice import toggle_enabled_lines
     from leaguebot.image.models.image_constants import ASPECT_LABELS, PENDING_POSTING_ASPECTS
 
     for aspect in PENDING_POSTING_ASPECTS:
@@ -597,7 +595,7 @@ def test_toggle_reply_for_a_pending_aspect_says_so():
 
 def test_toggle_reply_keeps_blocking_reasons():
     """The not-yet notice must not have displaced the invalid-configuration warning."""
-    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.services.image_setting_advice import toggle_enabled_lines
 
     lines = toggle_enabled_lines("calendar", "Calendar", ["the template is missing"])
     text = "\n".join(lines)
@@ -1035,7 +1033,6 @@ def _race_template(background_markup: str) -> bytes:
     ).encode()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1054,7 +1051,6 @@ async def test_contrast_is_measured_against_the_declared_background(
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1078,7 +1074,6 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_unmeasurable_when_template_is_invalid(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1093,7 +1088,6 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     assert "invalid" in reading.problem.lower()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1117,7 +1111,6 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     assert reports["results_race_template"].valid
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1135,7 +1128,6 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     assert "not" in reading.problem.lower() and "plain colour" in reading.problem.lower()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1166,7 +1158,7 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
 
 
 def _lines(reading) -> list[str]:
-    from leaguebot.image.cogs.image_cog import fastest_lap_contrast_lines
+    from leaguebot.image.services.image_setting_advice import fastest_lap_contrast_lines
 
     return fastest_lap_contrast_lines(reading)
 
@@ -1245,7 +1237,6 @@ async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     assert "Division 1" not in reply
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1267,7 +1258,6 @@ async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     assert reading.divisions == ("Division 2",)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1290,7 +1280,6 @@ async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     assert reading.divisions == ()
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1316,7 +1305,6 @@ async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     assert reading.ratio == pytest.approx(1.662, abs=0.001)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1342,7 +1330,6 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     assert reading.every_division is False
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classes_are_written(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1372,7 +1359,6 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
     assert reading.divisions == ("Division 1",)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1413,7 +1399,6 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     [[], [("SETUP", [])]],
     ids=["no season", "a season with no division"],
 )
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_no_season_under_way_measures_as_authored_and_says_so(
     db_path, module_service, config_service, template_dir, monkeypatch, seasons
 ):
@@ -1441,7 +1426,6 @@ async def test_no_season_under_way_measures_as_authored_and_says_so(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_per_tier_colours_off_say_nothing_of_a_season(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1458,7 +1442,6 @@ async def test_per_tier_colours_off_say_nothing_of_a_season(
     assert len(_lines(reading)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_names_every_tier_sharing_the_lowest(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1487,7 +1470,6 @@ async def test_contrast_names_every_tier_sharing_the_lowest(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_contrast_says_it_is_the_same_for_every_division(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1512,7 +1494,7 @@ async def test_contrast_says_it_is_the_same_for_every_division(
 
 
 def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast
 
     reading = FastestLapContrast(
         ratio=4.478, background="#777777", divisions=("A", "B", "C")
@@ -1526,7 +1508,7 @@ def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
 
 def test_tiers_tied_on_different_colours_are_named_without_one():
     """Two plates can differ and still read at the same figure; neither colour is *the* one."""
-    from leaguebot.image.cogs.image_cog import FastestLapContrast
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast
 
     reading = FastestLapContrast(ratio=21.0, background=None, divisions=("A", "B"))
 
@@ -1535,7 +1517,6 @@ def test_tiers_tied_on_different_colours_are_named_without_one():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1571,7 +1552,7 @@ async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
 
 
 def test_unmeasured_tiers_with_different_reasons_share_one_line():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast
 
     reading = FastestLapContrast(
         ratio=21.0,
@@ -1585,7 +1566,6 @@ def test_unmeasured_tiers_with_different_reasons_share_one_line():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_every_tier_unmeasurable_is_reported_once(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1607,7 +1587,7 @@ async def test_every_tier_unmeasurable_is_reported_once(
 
 
 def test_the_reply_warns_below_the_legibility_threshold():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(ratio=3.0, background="#777777"))
 
@@ -1616,7 +1596,7 @@ def test_the_reply_warns_below_the_legibility_threshold():
 
 
 def test_the_reply_says_why_nothing_was_measured():
-    from leaguebot.image.cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+    from leaguebot.image.services.image_setting_advice import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(problem="no plate."))
 

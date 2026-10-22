@@ -43,8 +43,6 @@ from tests.support.undecorate import undecorate
 
 #: Why a test here fails until the per-tier colour settings run on the change queue.
 UNBUILT = "#439: the per-tier colour settings do not run on the change queue yet"
-#: Why a test here fails until the advice has left the image cog.
-UNBUILT_ADVICE = "#439: the image advice has not moved to image_setting_advice yet"
 #: Why a test here fails until the image configuration's writers on a connection are written.
 UNBUILT_ON_FORMS = "#439: the image configuration's writers on a connection are not written yet"
 
@@ -352,7 +350,6 @@ async def test_the_flag_is_written_through_the_boolean_setter(tmp_path):
     assert tuple(row) == ("integer", 1)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 def test_the_declared_slots_helper_reads_the_reports_rather_than_the_files():
     """Layer 1 has already parsed all sixteen; reading them again to ask this is waste."""
     from leaguebot.image.services.image_setting_advice import declared_colour_slots
@@ -362,7 +359,6 @@ def test_the_declared_slots_helper_reads_the_reports_rather_than_the_files():
     assert "load_svg" not in source
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT_ADVICE)
 async def test_the_declared_slots_helper_ignores_invalid_templates():
     from leaguebot.image.services.image_setting_advice import declared_colour_slots
 
