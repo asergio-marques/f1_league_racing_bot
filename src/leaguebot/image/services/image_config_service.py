@@ -123,46 +123,6 @@ class ImageConfigService:
         changes: dict[str, Any] = {column: value}
         return dataclasses.replace(current, **changes)
 
-    async def set_field(self, column: str, value: str) -> bool:
-        """Write a single configuration column, committing; whether the value changed.
-
-        The committing twin of `set_field_on`, which the settings use inside their own save.
-        """
-        async with get_connection(self._db_path) as db:
-            saved = await set_field_on(db, column, value)
-            await db.commit()
-        return saved.changed
-
-    async def set_pfp_flag(self, column: str, enabled: bool) -> None:
-        """Write one of the three portrait toggles.
-
-        Separate from `set_field` because these are booleans and that setter is string-valued.
-        The at-least-one rule between `pfp_prerender` and `pfp_daily` is **not** enforced here:
-        it is a rule about a command being refused, and lives in `pfp_change_refusal` so that
-        the caller can state the refusal rather than catching an exception to do it.
-        """
-        if column not in PFP_FLAG_COLUMNS:
-            raise UnknownConfigField(column)
-        await self.set_flag(column, enabled)
-
-    async def set_flag(self, column: str, enabled: bool) -> bool:
-        """Write any boolean configuration column, committing; whether the flag changed."""
-        async with get_connection(self._db_path) as db:
-            saved = await set_flag_on(db, column, enabled)
-            await db.commit()
-        return saved.changed
-
-    async def set_aspect(self, aspect: str, enabled: bool) -> None:
-        async with get_connection(self._db_path) as db:
-            await set_aspect_on(db, aspect, enabled)
-            await db.commit()
-
-    async def toggle_aspect(self, aspect: str) -> bool:
-        """Flip an aspect and return its new state."""
-        current = await self.is_aspect_enabled(aspect)
-        await self.set_aspect(aspect, not current)
-        return not current
-
     # ── Per-tier colours (051) ────────────────────────────────────────────
     #
     # A table of their own rather than columns here, because the set of slots is the
@@ -170,24 +130,6 @@ class ImageConfigService:
     # division's normalised name so a tier's palette survives the season rollover that
     # replaces its `divisions` row — the same reasoning, and the same `normalise()`, that
     # makes a tier's logo `division_1.svg`.
-
-    async def set_tier_colour(
-        self, division_name: str, slot: str, colour: str
-    ) -> bool:
-        """Set one slot's colour for one tier, committing; whether the colour changed."""
-        async with get_connection(self._db_path) as db:
-            saved = await set_tier_colours_on(db, division_name, {slot: colour})
-            await db.commit()
-        return saved.changed
-
-    async def set_tier_colours(
-        self, division_name: str, colours: dict[str, str]
-    ) -> int:
-        """Set several slots for one tier at once, committing; how many it changed."""
-        async with get_connection(self._db_path) as db:
-            saved = await set_tier_colours_on(db, division_name, colours)
-            await db.commit()
-        return len(saved.audits)
 
     async def get_tier_palette(self, division_name: str) -> dict[str, str]:
         """Every slot this tier has a colour for. The render path's only reader."""

@@ -2030,12 +2030,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The standing posts
-    # The results, weather and image settings commands
-    ("image/services/image_config_service.py", "ImageConfigService.set_aspect"): (1, SLICE[7]),
-    ("image/services/image_config_service.py", "ImageConfigService.set_field"): (1, SLICE[7]),
-    ("image/services/image_config_service.py", "ImageConfigService.set_flag"): (1, SLICE[7]),
-    ("image/services/image_config_service.py", "ImageConfigService.set_tier_colour"): (1, SLICE[7]),
-    ("image/services/image_config_service.py", "ImageConfigService.set_tier_colours"): (1, SLICE[7]),
     # Core's pass
     ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
