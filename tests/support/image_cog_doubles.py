@@ -102,8 +102,8 @@ def said(double: MagicMock) -> str:
 
 
 def logged(bot: MagicMock) -> list[str]:
-    """Every line given to the log channel, in order: for the real-queue form, every line the
-    queue saved for it."""
+    """Every line given to the log channel, in order: for the real-queue form, those the log
+    channel took, then those waiting on a retry."""
     db_path = _queued_db(bot)
     if db_path is None:
         return [call.args[0] for call in bot.output_router.post_log.await_args_list]
@@ -114,7 +114,9 @@ def logged(bot: MagicMock) -> list[str]:
             "SELECT content FROM pending_messages WHERE channel_id = ? ORDER BY id",
             (LOG_CHANNEL_ID,),
         ).fetchall()
-    return [row[0] for row in rows]
+    from tests.support.settings_league import unruled
+
+    return [unruled(str(line)) for line in bot.log_channel.sent] + [unruled(r[0]) for r in rows]
 
 
 def assert_one_refusal(bot: MagicMock, what: str) -> str:

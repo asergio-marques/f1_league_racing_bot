@@ -12,7 +12,7 @@ the builder registers registered.
 `interaction(bot, command)` is a member's interaction for `/<command>`, as `member_interaction`
 gives one, whose follow-up returns a message that records its edits, so that `said` reads every
 word the member saw, in order: the response, its edits, each follow-up and that follow-up's edits.
-`audit_rows` reads the audit log; `fault_in` makes a named writer raise inside the save.
+`log_lines` reads every log line written, `audit_rows` the audit log; `fault_in` makes a named writer raise inside the save.
 """
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ from tests.support.change_queue import (
     attach_queue,
     league_double,
     member_interaction,
+    queued_log_lines,
     seed_server,
 )
 
@@ -149,6 +150,19 @@ def last_said(double: Any) -> str:
     """What the member's reply reads now: the last word `said` holds."""
     words = said(double)
     return words[-1] if words else ""
+
+
+async def log_lines(league: SettingsLeague) -> list[str]:
+    """Every log line written: those the log channel took, then those waiting on a retry, each
+    without the rule the log channel draws beneath a post."""
+    taken = [unruled(str(line)) for line in league.bot.log_channel.sent]
+    return taken + [unruled(line) for line in await queued_log_lines(league.db_path)]
+
+
+def unruled(line: str) -> str:
+    """*line* without the rule of "―" the log channel draws beneath it, where it carries one."""
+    head, _, last = line.rpartition("\n")
+    return head if head and last and set(last) == {"―"} else line
 
 
 async def audit_rows(db_path: str) -> list[dict[str, Any]]:
