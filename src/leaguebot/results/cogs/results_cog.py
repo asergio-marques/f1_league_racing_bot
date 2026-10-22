@@ -19,6 +19,8 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
 from leaguebot.results.services.points_settings import (
     CONFIG_ADD,
+    CONFIG_ATTACH,
+    CONFIG_DETACH,
     CONFIG_FASTEST_LAP,
     CONFIG_IMPORT,
     CONFIG_POINTS,
@@ -29,10 +31,6 @@ from leaguebot.results.services.points_config_service import (
     STANDS_BLOCKS_AMENDMENT,
     ConfigNotFoundError,
     ordering_notice,
-)
-from leaguebot.results.services.season_points_service import (
-    ConfigNotAttachedError,
-    SeasonNotInSetupError,
 )
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
@@ -930,36 +928,17 @@ class ResultsCog(commands.Cog):
     async def config_append(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await refuse(interaction, "\u274c No season found for this server.", what=describe(interaction))
             return
-        try:
-            await season_points_service.attach_config(
-                self.bot.db_path, season.id, name, season.status,
-            )
-        except SeasonNotInSetupError:
-            await refuse(
-                interaction,
-                "\u274c Config attachment is only allowed for seasons in SETUP.",
-                what=describe(interaction),
-            )
-            return
-        except ConfigNotFoundError:
-            await refuse(
-                interaction,
-                f"\u274c Config **{name}** does not exist on this server, so nothing was "
-                f"attached. Check the spelling, or create it with `/results config add`.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Config **{name}** attached to the current season.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config append | Success\n"
-            f"  config: {name}",
+        # Whether the season is in setup, and the configuration exists, are the change's to judge,
+        # at the ask and again as it starts.
+        await self.bot.change_queue.ask(
+            CONFIG_ATTACH,
+            {"season_id": season.id, "config": name},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="detach", description="Detach a config from the current season in SETUP.")
@@ -968,37 +947,17 @@ class ResultsCog(commands.Cog):
     async def config_detach(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await refuse(interaction, "\u274c No season found for this server.", what=describe(interaction))
             return
-        try:
-            await season_points_service.detach_config(
-                self.bot.db_path, season.id, name, season.status
-            )
-        except SeasonNotInSetupError:
-            await refuse(
-                interaction,
-                "\u274c Config detachment is only allowed for seasons in SETUP.",
-                what=describe(interaction),
-            )
-            return
-        except ConfigNotAttachedError:
-            await self._answer_nothing_changed(
-                interaction,
-                "results config detach",
-                f"Config **{name}** is not attached to this season.",
-                f"config: {name}",
-                "reason: it was not attached",
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Config **{name}** detached from the current season.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config detach | Success\n"
-            f"  config: {name}",
+        # Whether the season is in setup is the change's to judge, at the ask and
+        # again as it starts.
+        await self.bot.change_queue.ask(
+            CONFIG_DETACH,
+            {"season_id": season.id, "config": name},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

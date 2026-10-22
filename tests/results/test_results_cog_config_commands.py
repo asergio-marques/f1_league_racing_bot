@@ -33,9 +33,6 @@ from tests.support.undecorate import undecorate
 SERVER_ID = 7700
 SEASON_ID = 21
 
-#: Why a test fails until appending a configuration runs on the change queue.
-UNBUILT = "#439: appending a points configuration does not run on the change queue yet"
-
 
 @pytest.fixture
 async def league(tmp_path):
@@ -107,7 +104,6 @@ async def test_config_append_does_not_claim_success_for_a_typo(league):
     assert "attached to the current season" not in _replies(asked)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_config_append_still_attaches_a_real_name(league):
     """A gate that refuses everything is no better than one that refuses nothing: acknowledged
     at once, and attached when the change runs."""

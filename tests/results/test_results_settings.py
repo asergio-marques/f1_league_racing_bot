@@ -567,14 +567,12 @@ async def test_an_xml_import_saves_its_values_audit_entries_and_line_together(tm
     await _saves_with_record(tmp_path, CASES[route])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_attaching_a_configuration_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results config append Standard` with season 1 in setup holding none: attached, one
     `POINTS_CONFIG_ATTACH` entry from not attached to attached, and its Success line."""
     await _saves_with_record(tmp_path, CASES["config-append"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_detaching_a_configuration_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results config detach Standard` with season 1 in setup holding it: detached, one
     `POINTS_CONFIG_DETACH` entry from attached to not, and its Success line."""
@@ -962,9 +960,9 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
         pytest.param("amend-toggle-off", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("amend-toggle-on", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         "config-add",
-        pytest.param("config-append", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-append",
         "config-bulk-session",
-        pytest.param("config-detach", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-detach",
         "config-fl",
         "config-fl-plimit",
         "config-remove",
