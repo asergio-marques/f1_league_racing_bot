@@ -1,7 +1,10 @@
 """Unit tests for ImageConfigService — T009.
 
 Covers the defaults every enable must produce, the single-transaction creation of the
-config row plus eight toggle rows, and the allow-list guarding the generic setter.
+config row plus nine toggle rows, and the allow-list guarding the writers on a connection
+(`set_field_on`, `set_flag_on`, `set_aspect_on`, `set_tier_colours_on`), each of which writes on
+the connection it is handed, commits nothing and returns a `Saved` (#439, slice 7). Seeding goes
+through the tests' own committing writers, `tests/support/saves.py`.
 """
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ import pytest
 
 from types import SimpleNamespace
 
-from leaguebot.core.db.database import run_migrations
+from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
 from leaguebot.image.models.image_module import ImageConfig
 from leaguebot.image.services.image_config_service import (
@@ -19,6 +22,25 @@ from leaguebot.image.services.image_config_service import (
     UnknownConfigField,
     pfp_change_refusal,
 )
+from tests.support import saves
+
+#: Why a test of a writer on a connection fails until the build writes it.
+UNBUILT_ON_FORMS = (
+    "#439: the image configuration's writers on a connection (set_field_on, set_flag_on, "
+    "set_aspect_on, set_tier_colours_on) are not written yet"
+)
+
+
+async def _on(db_path: str, name: str, *args):
+    """Call the image service's writer *name* on a connection of the test's own, commit what it
+    wrote, and return its `Saved`."""
+    from leaguebot.image.services import image_config_service
+
+    form = getattr(image_config_service, name)
+    async with get_connection(db_path) as db:
+        saved = await form(db, *args)
+        await db.commit()
+    return saved
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -71,8 +93,8 @@ async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(servic
 
 async def test_create_with_defaults_is_idempotent(service):
     await service.create_with_defaults()
-    await service.set_field("template_directory", "resources/custom")
-    await service.set_aspect("standings", True)
+    await saves.set_field(service, "template_directory", "resources/custom")
+    await saves.set_aspect(service, "standings", True)
 
     await service.create_with_defaults()
 
@@ -88,38 +110,43 @@ async def test_get_config_returns_none_before_creation(service):
 # ── The allow-list ────────────────────────────────────────────────────────
 
 
-async def test_set_field_rejects_column_outside_allow_list(service):
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
+async def test_set_field_rejects_column_outside_allow_list(service, db_path):
     await service.create_with_defaults()
     for forbidden in ("module_enabled", "server_id", "nonexistent_column"):
         with pytest.raises(UnknownConfigField):
-            await service.set_field(forbidden, "x")
+            await _on(db_path, "set_field_on", forbidden, "x")
 
 
-async def test_allow_list_covers_all_settable_columns(service):
-    # 1 template dir + 15 filenames + 8 asset dirs + 4 preferences + the portrait time
-    # = 29 scalar columns. With the 8 toggles that is 37 configuration values in total
-    # (SC-008). The three portrait toggles are booleans and are deliberately outside this
-    # set -- they are written through `set_pfp_flag`, not the string-valued `set_field`.
-    # The eighth asset directory is the division logo, added 2026-09-02.
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
+async def test_allow_list_covers_all_settable_columns(service, db_path):
+    # The text columns: the template directory, the template filenames, the asset
+    # directories, the preferences and the portrait time. The three portrait toggles are
+    # booleans and are deliberately outside this set -- they are written through
+    # `set_flag_on`, not the string-valued `set_field_on`.
     assert len(SETTABLE_COLUMNS) == 30
     assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
     await service.create_with_defaults()
-    for column in SETTABLE_COLUMNS:
-        await service.set_field(column, "probe")
+    for column in sorted(SETTABLE_COLUMNS):
+        await _on(db_path, "set_field_on", column, "probe")
     cfg = await service.get_config()
     for column in SETTABLE_COLUMNS:
         assert getattr(cfg, column) == "probe"
 
 
-async def test_set_aspect_rejects_unknown_aspect(service):
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
+async def test_set_aspect_rejects_unknown_aspect(service, db_path):
     await service.create_with_defaults()
     with pytest.raises(UnknownConfigField):
-        await service.set_aspect("not_an_aspect", True)
+        await _on(db_path, "set_aspect_on", "not_an_aspect", True)
 
 
-async def test_toggling_one_aspect_leaves_the_others_alone(service):
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
+async def test_toggling_one_aspect_leaves_the_others_alone(service, db_path):
     await service.create_with_defaults()
-    await service.toggle_aspect("standings")
+    saved = await _on(db_path, "set_aspect_on", "standings", True)
+
+    assert saved.changed is True
 
     toggles = await service.get_toggles()
     assert toggles["standings"] is True
@@ -593,8 +620,9 @@ def test_the_rule_does_not_bind_while_portraits_are_disabled():
 
 # ── A value already held (#482) ───────────────────────────────────────────
 #
-# A setting given the value it already holds is no change: the setter says so and writes
-# nothing, so the command answers "Nothing changed", as the results and attendance setters do.
+# A setting given the value it already holds is no change: the writer on a connection returns
+# a `Saved` that changed nothing and carries no audit entry, and writes nothing, so the setting
+# answers "Nothing changed", as the results and attendance setters do.
 # "Writes nothing" is observed through triggers on a table of the test's own, which count every
 # statement that inserts or updates a row, an update to the same value included.
 
@@ -626,48 +654,69 @@ async def _writes(db_path: str) -> int:
     return row["n"]
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_path):
     await service.create_with_defaults()
-    assert await service.set_field("template_directory", "resources/custom") is True
+    first = await _on(db_path, "set_field_on", "template_directory", "resources/custom")
+    assert first.changed is True
+    assert [a.change_type for a in first.audits] == ["IMAGE_CONFIG_SET"]
     await _count_writes(db_path)
 
-    assert await service.set_field("template_directory", "resources/custom") is False
+    held = await _on(db_path, "set_field_on", "template_directory", "resources/custom")
+
+    assert held.changed is False
+    assert held.audits == ()
 
     assert await _writes(db_path) == 0
     assert (await service.get_config()).template_directory == "resources/custom"
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path):
     await service.create_with_defaults()
-    assert await service.set_flag("per_tier_colour_enabled", True) is True
+    assert (await _on(db_path, "set_flag_on", "per_tier_colour_enabled", True)).changed is True
     await _count_writes(db_path)
 
-    assert await service.set_flag("per_tier_colour_enabled", True) is False
+    held = await _on(db_path, "set_flag_on", "per_tier_colour_enabled", True)
+
+    assert held.changed is False
+    assert held.audits == ()
 
     assert await _writes(db_path) == 0
     assert (await service.get_config()).per_tier_colour_enabled is True
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_tier_colour_reports_a_held_colour_and_writes_nothing(service, db_path):
     """Held as the league would type it again: the division and slot in another case name the
     same stored colour."""
-    assert await service.set_tier_colour("Division 1", "accent", "#A78BFA") is True
+    first = await _on(db_path, "set_tier_colours_on", "Division 1", {"accent": "#A78BFA"})
+    assert first.changed is True
     await _count_writes(db_path)
 
-    assert await service.set_tier_colour("division 1", "Accent", "#A78BFA") is False
+    held = await _on(db_path, "set_tier_colours_on", "division 1", {"Accent": "#A78BFA"})
+
+    assert held.changed is False
+    assert held.audits == ()
 
     assert await _writes(db_path) == 0
     assert await service.get_tier_palette("Division 1") == {"accent": "#A78BFA"}
 
 
+@pytest.mark.xfail(strict=True, reason=UNBUILT_ON_FORMS)
 async def test_set_tier_colours_counts_only_the_slots_it_changes(service, db_path):
-    """A bulk set returns how many slots it changed: a slot already holding its colour is not
-    one of them, and where every slot named is held, nothing is written at all."""
-    assert await service.set_tier_colours("Division 1", {"accent": "#A78BFA", "wash": "#101418"}) == 2
-    assert await service.set_tier_colours("Division 1", {"accent": "#A78BFA", "wash": "#202428"}) == 1
+    """A bulk set carries one audit entry per slot it changed: a slot already holding its colour
+    is not one of them, and where every slot named is held, nothing is written at all."""
+    both = {"accent": "#A78BFA", "wash": "#101418"}
+    one = {"accent": "#A78BFA", "wash": "#202428"}
+    assert len((await _on(db_path, "set_tier_colours_on", "Division 1", both)).audits) == 2
+    assert len((await _on(db_path, "set_tier_colours_on", "Division 1", one)).audits) == 1
     await _count_writes(db_path)
 
-    assert await service.set_tier_colours("Division 1", {"accent": "#A78BFA", "wash": "#202428"}) == 0
+    held = await _on(db_path, "set_tier_colours_on", "Division 1", one)
+
+    assert held.changed is False
+    assert held.audits == ()
 
     assert await _writes(db_path) == 0
     assert await service.get_tier_palette("Division 1") == {"accent": "#A78BFA", "wash": "#202428"}
