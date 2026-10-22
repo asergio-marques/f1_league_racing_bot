@@ -104,7 +104,6 @@ async def test_attach_config_blocked_outside_setup(tmp_path):
     ) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_attach_config_success_in_setup(db_path):
     """Attaching "CFG" to a season in setup, on the save's connection: the season holds it,
     and the write answers that it changed something, with one `POINTS_CONFIG_ATTACH` entry."""
