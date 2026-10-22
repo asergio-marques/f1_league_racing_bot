@@ -19,7 +19,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
+from tests.support import saves
 from tests.support.season_points import snapshot_points
 
 SRC = Path(__file__).resolve().parents[2] / "src"
@@ -60,12 +60,12 @@ def _cog(db_path):
 
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
-    await points_config_service.create_config(db_path, config_name)
+    await saves.create_config(db_path, config_name)
     for position, pts in points:
-        await points_config_service.set_session_points(
+        await saves.set_session_points(
             db_path, config_name, SessionType.FEATURE_RACE, position, pts
         )
-    await season_points_service.attach_config(
+    await saves.attach_config(
         db_path, SEASON_ID, config_name, "SETUP"
     )
 
