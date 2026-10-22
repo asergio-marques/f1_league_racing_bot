@@ -3074,7 +3074,6 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
     assert ran == ["a"]
 
 
-@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
 async def test_a_step_cannot_both_end_on_a_fault_and_be_undiscardable(env):
     """A job that ends on a fault never stops its lane, so it can never be offered for a discard:
     a step carrying both is refused when its type is registered."""
