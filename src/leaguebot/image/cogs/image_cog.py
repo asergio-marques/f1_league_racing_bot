@@ -33,14 +33,14 @@ from leaguebot.image.services.image_config_service import pfp_change_refusal, ti
 from leaguebot.image.services.image_settings import (
     ASPECT,
     DIRECTORY,
+    FASTEST_LAP_COLOUR,
+    PRESENTATION,
     TEMPLATE,
     TEMPLATE_DIRECTORY,
 )
 from leaguebot.image.services.image_setting_advice import (
     colour_shortfall_lines,
     declared_colour_slots,
-    fastest_lap_contrast_lines,
-    measure_fastest_lap_contrast,
 )
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import (
@@ -58,7 +58,7 @@ from leaguebot.core.utils.paths import (
     resolve_within_project_root,
 )
 from leaguebot.core.utils.time_parsing import parse_time_of_day
-from leaguebot.core.utils.timezones import clear_zone_cache, is_known_zone, zone_names
+from leaguebot.core.utils.timezones import clear_zone_cache, zone_names
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
@@ -408,10 +408,6 @@ class ImageCog(commands.Cog):
     @property
     def _validity_service(self):
         return self.bot.image_validity_service
-
-    @property
-    def _render_service(self):
-        return self.bot.image_render_service
 
     @staticmethod
     async def _reply(interaction: discord.Interaction, content: str) -> None:
@@ -1064,31 +1060,13 @@ class ImageCog(commands.Cog):
             )
             return
 
-        # 2. Store it. Storing *before* measuring is deliberate: an unmeasurable
-        #    contrast must never cost the manager their input (FR-026, FR-027).
-        if not await self._config_service.set_field("fastest_lap_colour", canonical):
-            await self._already_held(
-                interaction, "the fastest-lap colour", f"`{canonical}`",
-                f"Fastest-lap colour: {canonical}",
-            )
-            return
-        lines = [f"✅ Fastest-lap colour set to `{canonical}`."]
-
-        # 3. Measure and report the contrast against the template's own background.
-        lines += fastest_lap_contrast_lines(
-            await measure_fastest_lap_contrast(
-                canonical,
-                config=self._config_service,
-                render=self._render_service,
-                validity=self._validity_service,
-                seasons=self.bot.season_service,
-            )
-        )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Fastest-lap colour: {canonical}",
+        # 2. Ask the change. The setting stores the colour *before* it measures it: an
+        #    unmeasurable contrast must never cost the manager their input (FR-026, FR-027).
+        await self.bot.change_queue.ask(
+            FASTEST_LAP_COLOUR,
+            {"value": canonical},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     # ── Per-tier colours (051) ────────────────────────────────────────────
@@ -1446,31 +1424,14 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        # Through the memoised list rather than `available_timezones()`, which walks the
-        # whole TZPATH tree on every call — 325 ms cold on the Pi, for one membership test.
+        # An unknown zone is refused by the setting's check, at the ask and again as the change
+        # starts.
         candidate = zone.strip()
-        if not is_known_zone(candidate):
-            await refuse(
-                interaction,
-                f"❌ `{candidate}` is not a recognised time zone. "
-                f"Use an IANA name such as `Europe/Lisbon` or `UTC`.",
-                what=describe_command(interaction),
-            )
-            return
-
-        if not await self._config_service.set_field("time_zone", candidate):
-            await self._already_held(
-                interaction, "the time zone", f"`{candidate}`", f"Time zone: {candidate}"
-            )
-            return
-        await self._reply(
-            interaction,
-            f"✅ Time zone set to `{candidate}`.\n"
-            f"Times are shown in the offset that zone carries **on the date displayed**, "
-            f"so a season spanning a daylight-saving change stays correct.",
-        )
-        await _record(
-            self.bot, interaction, _command(interaction), "Success", f"Time zone: {candidate}"
+        await self.bot.change_queue.ask(
+            PRESENTATION,
+            {"column": "time_zone", "value": candidate, "shown": candidate},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config_time_zone.autocomplete("zone")
@@ -1508,16 +1469,11 @@ class ImageCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        if not await self._config_service.set_field("time_format", clock.value):
-            await self._already_held(
-                interaction, "the clock format", clock.name,
-                f"Clock format: {clock.name} ({clock.value})",
-            )
-            return
-        await self._reply(interaction, f"✅ Clock format set to **{clock.name}**.")
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Clock format: {clock.name} ({clock.value})",
+        await self.bot.change_queue.ask(
+            PRESENTATION,
+            {"column": "time_format", "value": clock.value, "shown": clock.name},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config.command(
@@ -1558,16 +1514,11 @@ class ImageCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        if not await self._config_service.set_field("date_format", style.value):
-            await self._already_held(
-                interaction, "the date format", style.name,
-                f"Date format: {style.name} ({style.value})",
-            )
-            return
-        await self._reply(interaction, f"✅ Date format set to **{style.name}**.")
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Date format: {style.name} ({style.value})",
+        await self.bot.change_queue.ask(
+            PRESENTATION,
+            {"column": "date_format", "value": style.value, "shown": style.name},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     # ── /images config view ───────────────────────────────────────────────

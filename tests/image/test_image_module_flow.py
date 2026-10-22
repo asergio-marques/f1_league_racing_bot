@@ -25,8 +25,6 @@ from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 
 SERVER_ID = 4242
-#: Why a test here fails until the image settings run on the change queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
 
 
 @pytest.fixture
@@ -1198,7 +1196,6 @@ async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, pa
         await saves.set_tier_colours(config_service, division, colours)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     tmp_path, template_dir, monkeypatch
 ):

@@ -313,9 +313,13 @@ REPLY_PATHS = {
 }
 
 
+#: The changes asked that already run on the queue, so no longer marked as failing.
+ON_THE_QUEUE = {"fastest-lap-colour, stored"}
+
+
 def _reply_path(name: str) -> Any:
     """*name* as a case, a change asked marked as failing until it runs on the queue."""
-    if REPLY_PATHS[name][-1]:
+    if REPLY_PATHS[name][-1] and name not in ON_THE_QUEUE:
         return pytest.param(name, id=name, marks=pytest.mark.xfail(strict=True, reason=UNBUILT))
     return pytest.param(name, id=name)
 

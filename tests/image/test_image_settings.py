@@ -534,7 +534,6 @@ async def test_switching_an_output_saves_with_its_audit_entry_and_line(tmp_path,
     await _saves_with_record(tmp_path, CASES[route])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["time-zone", "time-format", "date-format"])
 async def test_the_presentation_settings_save_with_their_audit_entries_and_lines(tmp_path, route):
     """The time zone set to Europe/Lisbon, the clock to 12-hour and the date format to
@@ -543,7 +542,6 @@ async def test_the_presentation_settings_save_with_their_audit_entries_and_lines
     await _saves_with_record(tmp_path, CASES[route])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_fastest_lap_colour_saves_with_its_audit_entry_and_line(tmp_path):
     """`/images config fastest-lap-colour #00FF00`: once run, the colour is stored, with one
     `IMAGE_CONFIG_SET` entry from #A020F0, and its Success line; the reply opens with today's
@@ -654,7 +652,6 @@ async def test_confirming_daily_portraits_saves_the_time_and_the_flag_in_one_sav
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_image_setting_whose_audit_entry_fails_saves_nothing_and_the_lane_goes_on(
     tmp_path
 ):
@@ -918,7 +915,6 @@ async def test_the_directory_reply_says_whether_it_resolves(tmp_path, path, verd
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_contrast_is_measured_after_the_colour_is_saved(tmp_path):
     """`/images config fastest-lap-colour #00FF00`: nothing reads the templates before the queue
     runs, and every read of them made to measure the contrast finds #00FF00 already stored; the
@@ -946,7 +942,6 @@ async def test_the_contrast_is_measured_after_the_colour_is_saved(tmp_path):
     assert len(reply.splitlines()) > 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_check_after_the_save_that_faults_says_the_setting_is_saved_and_the_lane_goes_on(
     tmp_path
 ):
