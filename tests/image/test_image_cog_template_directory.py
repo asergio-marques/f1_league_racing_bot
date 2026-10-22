@@ -52,8 +52,6 @@ from tests.support.settings_league import settings_league
 from tests.support.undecorate import undecorate
 
 COMMAND = "images config template-directory"
-#: Why a test here fails until the image settings run on the change queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
 #: The folder the bot ships its sixteen templates in, every one of them sound.
 SHIPPED = "resources/defaults/templates"
 #: A folder inside the project root that holds no template at all.
@@ -133,7 +131,6 @@ def _problems_found(monkeypatch, problems) -> list[Any]:
     return asked
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_folder_holding_every_valid_template_is_stored(tmp_path):
     """Every output switched on, the folder moved to the one the bot ships: acknowledged at
     once; once run, the folder is stored, the reply says every drawing the switched-on outputs

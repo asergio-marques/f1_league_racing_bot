@@ -30,10 +30,10 @@ from leaguebot.image.models.image_constants import (
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
+from leaguebot.image.services.image_settings import DIRECTORY, TEMPLATE_DIRECTORY
 from leaguebot.image.services.image_setting_advice import (
     colour_shortfall_lines,
     declared_colour_slots,
-    directory_verdict,
     fastest_lap_contrast_lines,
     measure_fastest_lap_contrast,
     toggle_enabled_lines,
@@ -48,7 +48,11 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
-from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
+from leaguebot.core.utils.paths import (
+    PathContainmentError,
+    relative_to_root,
+    resolve_within_project_root,
+)
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.timezones import clear_zone_cache, is_known_zone, zone_names
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
@@ -432,18 +436,17 @@ class ImageCog(commands.Cog):
         await _record(self.bot, interaction, _command(interaction), "Nothing changed", detail)
 
     async def _set_directory(
-        self, interaction: discord.Interaction, column: str, value: str, label: str
+        self, interaction: discord.Interaction, column: str, value: str
     ) -> None:
         """Shared body for the eight asset directories.
 
-        A path that escapes the project root is rejected here, at the point of
-        configuration, rather than surfacing as a render failure later (FR-011, FR-016).
-        The stored value is left unchanged on rejection.
+        A path that escapes the project root is rejected here, at once, at the point of
+        configuration, rather than surfacing as a render failure later (FR-011, FR-016). The
+        stored value is left unchanged on rejection. What passes is asked of the change queue
+        (`image_settings`), which stores it and says whether the folder resolves.
         """
         if not await self._module_gate(interaction):
             return
-
-        from leaguebot.core.utils.paths import resolve_within_project_root
 
         try:
             resolved = resolve_within_project_root(value)
@@ -459,20 +462,12 @@ class ImageCog(commands.Cog):
             await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
-        stored = relative_to_root(resolved)
-        if not await self._config_service.set_field(column, stored):
-            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
-            return
-
-        # Report the effect immediately, so the administrator does not need a second
-        # command to learn whether the new location resolves.
-        verdict = directory_verdict(resolved)
-
-        await self._reply(
-            interaction,
-            f"✅ **{label}** set to `{stored}`.\n{verdict}\nSearched: `{resolved}`",
+        await self.bot.change_queue.ask(
+            DIRECTORY,
+            {"column": column, "value": relative_to_root(resolved)},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
-        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
 
     async def _set_template_filename(
         self, interaction: discord.Interaction, column: str, filename: str
@@ -771,13 +766,8 @@ class ImageCog(commands.Cog):
         files, and able to fix it — rather than letting it surface as a render failure at
         the next scheduled post, when nobody is looking.
         """
-        from leaguebot.image.services.image_validity_service import blocking_template_problems
-        from leaguebot.core.utils.paths import resolve_within_project_root
-
         if not await self._module_gate(interaction):
             return
-
-        label = "Template directory"
 
         try:
             resolved = resolve_within_project_root(directory)
@@ -799,78 +789,13 @@ class ImageCog(commands.Cog):
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
 
-        proposed = await self._config_service.candidate_config(
-            "template_directory", stored
+        # The check at the ask is the survey, and the change runs it again as it comes up.
+        await self.bot.change_queue.ask(
+            TEMPLATE_DIRECTORY,
+            {"value": stored},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
-        if proposed is None:
-            await self._reject_directory(
-                interaction, label, "this server has no image configuration to amend."
-            )
-            return
-
-        # The FR-007 survey, which also backs `/season placements-review` and the confirmation of placements, so
-        # the three surfaces cannot disagree about whether a template is usable.
-        #
-        # Scoped to the aspects that are switched on, as those two are: a folder holding
-        # no verdicts drawing is a perfectly good folder for a league that posts verdicts
-        # as text, and refusing it would force every league to supply all sixteen before
-        # it could move its artwork. Switching an aspect on checks its own drawings at
-        # that moment, so nothing reaches a posting path unverified.
-        toggles = await self._config_service.get_toggles()
-        problems = blocking_template_problems(proposed, toggles)
-        if problems:
-            await self._reject_directory(
-                interaction,
-                label,
-                f"`{stored}` does not hold every template the bot needs "
-                f"for the outputs you have switched on.",
-                problems=problems,
-                searched=resolved,
-            )
-            return
-
-        if not await self._config_service.set_field("template_directory", stored):
-            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
-            return
-        await self._reply(
-            interaction,
-            f"✅ **{label}** set to `{stored}`.\n"
-            f"✅ Every drawing the outputs you have switched on need is present and "
-            f"valid.\nSearched: `{resolved}`",
-        )
-        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
-
-    async def _reject_directory(
-        self,
-        interaction: discord.Interaction,
-        label: str,
-        reason: str,
-        *,
-        problems: list | None = None,
-        searched=None,
-    ) -> None:
-        """Refuse a directory change, naming every fault and leaving the config alone.
-
-        Recorded in the log channel as a refusal of the command, and the whole reply goes, in as
-        many parts as it needs: a manager fixing a folder needs every template at fault.
-        """
-        from leaguebot.image.services.image_validity_service import describe
-
-        lines = [
-            f"❌ **{label}** was **not** changed — {reason}",
-            "The previously configured folder is still in force.",
-        ]
-
-        if problems:
-            lines.append("")
-            for problem in problems:
-                lines.append(f"  ↳ {describe(problem)}")
-
-        if searched is not None:
-            lines.append("")
-            lines.append(f"Searched: `{searched}`")
-
-        await refuse(interaction, "\n".join(lines), what=describe_command(interaction))
 
     # ── The sixteen template filename commands ────────────────────────────
     #
@@ -1015,7 +940,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_track_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "track_image_directory", directory, "Circuit images")
+        await self._set_directory(interaction, "track_image_directory", directory)
 
     @config.command(
         name="team-image-directory",
@@ -1024,7 +949,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_team_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "team_image_directory", directory, "Team badges")
+        await self._set_directory(interaction, "team_image_directory", directory)
 
     @config.command(
         name="flag-directory",
@@ -1033,7 +958,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_flag_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "flag_directory", directory, "Nationality flags")
+        await self._set_directory(interaction, "flag_directory", directory)
 
     @config.command(
         name="driver-image-directory",
@@ -1042,7 +967,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_driver_image_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "driver_image_directory", directory, "Driver portraits")
+        await self._set_directory(interaction, "driver_image_directory", directory)
 
     @config.command(
         name="marker-directory",
@@ -1051,7 +976,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_marker_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "marker_directory", directory, "Markers and result marks")
+        await self._set_directory(interaction, "marker_directory", directory)
 
     @config.command(
         name="weather-icon-directory",
@@ -1060,7 +985,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_weather_icon_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "weather_icon_directory", directory, "Weather icons")
+        await self._set_directory(interaction, "weather_icon_directory", directory)
 
     @config.command(
         name="tyre-directory",
@@ -1069,7 +994,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_tyre_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "tyre_directory", directory, "Tyre compounds")
+        await self._set_directory(interaction, "tyre_directory", directory)
 
     @config.command(
         name="division-logo-directory",
@@ -1078,7 +1003,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(directory="Path relative to the project root.")
     @league_manager_only
     async def config_division_logo_directory(self, interaction: discord.Interaction, directory: str) -> None:
-        await self._set_directory(interaction, "division_logo_directory", directory, "Division logos")
+        await self._set_directory(interaction, "division_logo_directory", directory)
 
     # ── /images config toggle ─────────────────────────────────────────────
 

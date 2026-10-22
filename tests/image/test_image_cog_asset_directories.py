@@ -36,8 +36,6 @@ from tests.support.image_cog_doubles import (
 from tests.support.settings_league import settings_league
 from tests.support.undecorate import undecorate
 
-#: Why a test here fails until the image settings run on the change queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
 #: A folder inside the project root that is not there yet.
 NOT_YET = "resources/league/not-there-yet"
 #: A path inside the project root that is a file, not a folder.
@@ -118,7 +116,6 @@ def test_the_config_group_stays_inside_the_discord_ceiling():
 # ── an artwork folder that is not there yet is accepted ───────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(tmp_path):
     """The difference from `template-directory`, and the reason for two bodies.
 
@@ -136,7 +133,6 @@ async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(tmp_pat
     assert "✅ **Division logos** set to" in interaction.said[-1]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_folder_that_exists_reports_that_it_resolves(tmp_path):
     """Acknowledged at once; once run, the reply says it resolves, and one success line,
     saved with the folder, names the command itself, the folder set beneath."""
@@ -151,7 +147,6 @@ async def test_a_folder_that_exists_reports_that_it_resolves(tmp_path):
     assert any(packaged in detail for detail in details), details
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_path_that_is_a_file_is_stored_but_called_out(tmp_path):
     """Acknowledged at once; once run, the path is stored and the reply calls it out as not
     a directory."""

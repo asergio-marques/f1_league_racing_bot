@@ -503,7 +503,6 @@ async def _saves_with_record(tmp_path: Any, case: Case) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("column", sorted(ASSET_DIRECTORIES))
 async def test_an_asset_directory_saves_with_its_audit_entry_and_line(tmp_path, column):
     """Each of the eight asset directory commands, pointed from the league's folder at the one
@@ -512,7 +511,6 @@ async def test_an_asset_directory_saves_with_its_audit_entry_and_line(tmp_path, 
     await _saves_with_record(tmp_path, CASES[f"directory-{column}"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_template_directory_saves_with_its_audit_entry_and_line(tmp_path):
     """`/images config template-directory resources/league/templates`, every output switched
     off: once run, the folder is stored, with one `IMAGE_CONFIG_SET` entry from the shipped
@@ -897,7 +895,6 @@ async def test_turning_portraits_off_when_the_daily_job_cannot_be_removed_says_s
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     ("path", "verdict"),
     [
