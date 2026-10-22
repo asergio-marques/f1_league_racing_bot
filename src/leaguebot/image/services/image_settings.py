@@ -35,9 +35,9 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
-from leaguebot.core.services.setting_change import After, Saved, Setting
+from leaguebot.core.services.setting_change import NOTHING_SAVED, After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.core.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (
@@ -47,8 +47,15 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from leaguebot.image.services.image_config_service import set_aspect_on, set_field_on
+from leaguebot.image.services.image_config_service import (
+    set_aspect_on,
+    set_field_on,
+    set_flag_on,
+    set_tier_colours_on,
+)
 from leaguebot.image.services.image_setting_advice import (
+    colour_shortfall_lines,
+    declared_colour_slots,
     directory_verdict,
     fastest_lap_contrast_lines,
     measure_fastest_lap_contrast,
@@ -68,14 +75,24 @@ if TYPE_CHECKING:
 ASPECT = "image.setting.aspect"
 DIRECTORY = "image.setting.directory"
 FASTEST_LAP_COLOUR = "image.setting.fastest_lap_colour"
+PER_TIER = "image.setting.per_tier"
 PRESENTATION = "image.setting.presentation"
 TEMPLATE_DIRECTORY = "image.setting.template_directory"
 TEMPLATE = "image.setting.template"
+TIER_COLOURS = "image.setting.tier_colours"
+TIER_IMPORT = "image.setting.tier_import"
 
 #: The name of the step that advises on a saved setting.
 ADVISE = "advise"
 
 MODULE_OFF = "❌ The Image module is not enabled. Use `/module enable images` first."
+#: The refusal of a form submitted after the module was switched off while it stood open.
+FORM_MODULE_OFF = (
+    "❌ The Image module was switched off while this form was open. Nothing was stored."
+)
+#: What a fault in the save of a pasted palette, or of a colour import, says became of it.
+PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
+IMPORT_NOT_SAVED = "Nothing from the import was saved. Run the import again to retry."
 NO_CONFIGURATION = "this server has no image configuration to amend."
 
 #: What a reply adds when the advice after a saved setting faults: the setting stands.
@@ -93,11 +110,11 @@ def _held(setting: str, value: str) -> str:
     return f"ℹ️ Nothing changed: {setting} is already **{value}**."
 
 
-def _with(saved: Saved, detail: str, *, advised: bool = False, **result: Any) -> Saved:
-    """*saved* with the value beneath its line, what its reply reads and, where *advised*, the
+def _with(saved: Saved, *details: str, advised: bool = False, **result: Any) -> Saved:
+    """*saved* with the values beneath its line, what its reply reads and, where *advised*, the
     advice step planned after it (the queue plans it only where the save changed something)."""
     then = (PlannedStep(ADVISE),) if advised else ()
-    return dataclasses.replace(saved, details=(detail,), result=result, then=then)
+    return dataclasses.replace(saved, details=details, result=result, then=then)
 
 
 def _advice_after(run: Callable[[StepContext], Awaitable[StepResult]]) -> Mapping[str, After]:
@@ -514,6 +531,214 @@ def _fastest_lap_colour(
     )
 
 
+def _per_tier(modules: "ModuleService", validity: "ImageValidityService") -> Setting:
+    """`/images config per-tier-colour-toggle`: `{"enabled"}`, the flip resolved when asked.
+
+    What the reply says beneath the flip (the colour shortfall when switching on, which reads the
+    sixteen-template sweep, or what off means) is advice after the save.
+    """
+
+    def state(payload: dict[str, Any]) -> str:
+        return "on" if payload["enabled"] else "off"
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        return await _module_refusal(modules) or Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        saved = await set_flag_on(db, "per_tier_colour_enabled", bool(payload["enabled"]))
+        return _with(saved, f"Per-tier colours: {state(payload)}", advised=True)
+
+    async def advise(ctx: StepContext) -> StepResult:
+        lines = await colour_shortfall_lines(validity, bool(ctx.payload["enabled"]))
+        return StepResult(result={"lines": lines})
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        if not results["save"]["changed"]:
+            return _held("the per-tier colours setting", state(payload))
+        return "\n".join([f"✅ Per-tier colours are now **{state(payload)}**.", *_advice(results)])
+
+    return Setting(
+        kind=PER_TIER,
+        command=lambda _payload: "/images config per-tier-colour-toggle",
+        doing=lambda payload: f"Turning per-tier colours {state(payload)}",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_config",),
+        after=_advice_after(advise),
+    )
+
+
+#: What switching per-tier colours off means, said beneath the reply.
+_OFF_MEANS = (
+    "Your templates draw the colours they were authored in, and nothing is validated while "
+    "this is off.",
+)
+
+#: The commands a tier's colours are set through, by whether the form was used.
+_TIER_COMMANDS = {False: "/images config per-tier-set-colour", True: "/images config per-tier-bulk-colour"}
+
+
+def _tier_colours(
+    modules: "ModuleService", config: "ImageConfigService", validity: "ImageValidityService"
+) -> Setting:
+    """One tier's colours: `{"division", "colours", "form"}`, slot to canonical colour.
+
+    The division is as the member typed it, the slots and colours already validated and
+    canonical (the command refuses what it cannot read, storing nothing). *form* says the colours
+    were pasted into the palette form, which refuses in its own words when the module was switched
+    off while it stood open and says "paste it again" of a fault. A slot is merged into the tier's
+    palette, never replacing the rest; the slots no template marks and per-tier colours being off
+    are said after the save, once the sweep has been read.
+    """
+
+    def colours(payload: dict[str, Any]) -> dict[str, str]:
+        return dict(payload["colours"])
+
+    async def check(ctx: CheckContext) -> Verdict:
+        if await modules.is_images_enabled():
+            return Verdict.go()
+        return Verdict.refuse(FORM_MODULE_OFF if ctx.payload["form"] else MODULE_OFF)
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        division = str(payload["division"])
+        named = colours(payload)
+        saved = await set_tier_colours_on(db, division, named)
+        if payload["form"]:
+            details = (
+                f"Tier colours: {division}",
+                *(f"{slot} = {colour}" for slot, colour in named.items()),
+            )
+        else:
+            ((slot, colour),) = named.items()
+            details = (f"Tier colour: {division} / {slot} = {colour}",)
+        return _with(saved, *details, advised=True, written=len(saved.audits))
+
+    async def advise(ctx: StepContext) -> StepResult:
+        declared = await declared_colour_slots(validity)
+        unknown = sorted(set(colours(ctx.payload)) - declared)
+        lines: list[str] = []
+        if ctx.payload["form"]:
+            if unknown:
+                lines.append(
+                    f"ℹ️ No template of yours marks {', '.join(f'`{s}`' for s in unknown)} yet."
+                )
+        else:
+            if unknown:
+                lines.append(
+                    f"ℹ️ No template of yours marks `{unknown[0]}` yet, so nothing will "
+                    f"change until one does."
+                )
+            current = await config.get_config()
+            if current is not None and not current.per_tier_colour_enabled:
+                lines.append(
+                    "ℹ️ Per-tier colours are **off**, so this is stored but not drawn. "
+                    "Turn them on with `/images config per-tier-colour-toggle`."
+                )
+        return StepResult(result={"lines": lines})
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        division = str(payload["division"])
+        named = colours(payload)
+        if not payload["form"]:
+            ((slot, colour),) = named.items()
+            if not results["save"]["changed"]:
+                return _held(f"`{slot}` for **{division}**", f"`{colour}`")
+            return "\n".join(
+                [f"✅ **{division}** — `{slot}` set to `{colour}`.", *_advice(results)]
+            )
+        written = int(results["save"]["written"])
+        if not results["save"]["changed"]:
+            return f"ℹ️ Nothing changed: every colour named is already held for **{division}**."
+        held = ""
+        if written < len(named):
+            held = f" ({written} changed, {len(named) - written} already held)"
+        return "\n".join(
+            [
+                f"✅ **{division}** — {len(named)} colour(s) set{held}.",
+                *(f"  • `{slot}` = `{colour}`" for slot, colour in named.items()),
+                *_advice(results),
+            ]
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        division = payload["division"]
+        if payload["form"]:
+            return f"Setting {len(payload['colours'])} colour(s) for **{division}**"
+        ((slot, colour),) = colours(payload).items()
+        return f"Setting `{slot}` for **{division}** to `{colour}`"
+
+    return Setting(
+        kind=TIER_COLOURS,
+        command=lambda payload: _TIER_COMMANDS[bool(payload["form"])],
+        doing=doing,
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_tier_colour",),
+        not_saved=lambda payload: PASTE_NOT_SAVED if payload["form"] else NOTHING_SAVED,
+        after=_advice_after(advise),
+    )
+
+
+def _tier_import(modules: "ModuleService") -> Setting:
+    """`/images config colour-xml-import`: `{"blocks", "passed_over"}`, every tier in one save.
+
+    *blocks* are the divisions the document named whose colours could be read, each
+    `{"division", "colours"}`; *passed_over* are the reasons for the blocks the command passed
+    over. A division is never half applied, and neither is the import: one fault saves none of
+    its tiers and the member is told to run the import again.
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        return await _module_refusal(modules) or Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        blocks = list(payload["blocks"])
+        audits: list[AuditRecord] = []
+        for block in blocks:
+            written = await set_tier_colours_on(db, str(block["division"]), block["colours"])
+            audits.extend(written.audits)
+        passed_over = list(payload["passed_over"])
+        details = [f"{block['division']}: {len(block['colours'])} colour(s)" for block in blocks]
+        if passed_over:
+            details.append("passed over:")
+            details += [f"  {problem}" for problem in passed_over]
+        saved = Saved(changed=bool(audits), audits=tuple(audits))
+        return _with(saved, *details, written=len(audits))
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        blocks = list(payload["blocks"])
+        passed_over = list(payload["passed_over"])
+        written = int(results["save"]["written"])
+        named = sum(len(block["colours"]) for block in blocks)
+        lines: list[str] = []
+        if blocks and not written:
+            lines.append("ℹ️ Nothing changed: every colour named is already held.")
+        elif blocks:
+            held = f" ({written} changed, {named - written} already held)" if written < named else ""
+            lines.append(f"✅ Imported {named} colour(s) across {len(blocks)} tier(s){held}.")
+            lines += [
+                f"  • **{block['division']}** — {len(block['colours'])} colour(s)"
+                for block in blocks
+            ]
+        if passed_over:
+            lines.append(f"⚠️ {len(passed_over)} block(s) were not imported:")
+            lines += [f"  • {problem}" for problem in passed_over]
+        return "\n".join(lines)
+
+    return Setting(
+        kind=TIER_IMPORT,
+        command=lambda _payload: "/images config colour-xml-import",
+        doing=lambda payload: f"Importing colours for {len(payload['blocks'])} tier(s)",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_tier_colour",),
+        not_saved=IMPORT_NOT_SAVED,
+    )
+
+
 def image_settings(
     *,
     modules: "ModuleService",
@@ -535,10 +760,15 @@ def image_settings(
         _aspect(modules, config, validity),
         _presentation(modules),
         _fastest_lap_colour(modules, config, validity, render, seasons),
+        _per_tier(modules, validity),
+        _tier_colours(modules, config, validity),
+        _tier_import(modules),
     )
 
 
 __all__ = [
-    "ADVISE", "ASPECT", "DIRECTORY", "FASTEST_LAP_COLOUR", "MODULE_OFF", "NOT_CHECKED",
-    "PRESENTATION", "TEMPLATE", "TEMPLATE_DIRECTORY", "aspect_blocking_reasons", "image_settings",
+    "ADVISE", "ASPECT", "DIRECTORY", "FASTEST_LAP_COLOUR", "FORM_MODULE_OFF", "IMPORT_NOT_SAVED",
+    "MODULE_OFF", "NOT_CHECKED", "PASTE_NOT_SAVED", "PER_TIER", "PRESENTATION", "TEMPLATE",
+    "TEMPLATE_DIRECTORY", "TIER_COLOURS", "TIER_IMPORT", "aspect_blocking_reasons",
+    "image_settings",
 ]
