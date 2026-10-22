@@ -19,6 +19,11 @@ is the other half: one table over every command the rule touches, exercised in f
 The third is why `/results rounds amend` appears in the permitted table rather than the refused
 one, while everything else under `/results` is refused: it is the season's last chance to
 correct its record before `/season complete` draws the final classification off it.
+
+`/results reserves toggle`, `/results amend toggle` and `/results amend revert` are settings
+changes on the change queue (#439, slice 7), checked as they are asked: their entries attach the
+real queue to the test's bot, every change type the builder registers registered, and run it, so
+that the refusal is the same whether the command or the change's check gives it.
 """
 from __future__ import annotations
 
@@ -34,6 +39,8 @@ from leaguebot.core.cogs.team_cog import TeamCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from leaguebot.weather.cogs.weather_cog import WeatherCog
+from tests.support.change_queue import attach_queue, change_rows, league_double, run_queue
+from tests.support.settings_league import NOW
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22400
@@ -160,6 +167,21 @@ def _cog(cls, bot):
     return cog
 
 
+def _attach_the_queue(bot, interaction) -> None:
+    """Give *bot* what the real change queue needs — the league's log and interaction channels,
+    its server configuration and a real router — and attach the queue on the test's database,
+    "now" pinned, its services the bot's own; *interaction* is answered as *bot*'s."""
+    from leaguebot.core.services.output_router import OutputRouter
+
+    double = league_double(bot.db_path)
+    for name in ("log_channel", "interaction_channel", "get_channel", "fetch_channel",
+                 "get_guild", "config_service", "attendance_after_review"):
+        setattr(bot, name, getattr(double, name))
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=bot.db_path)
+    interaction.client = bot
+    attach_queue(bot, bot.db_path, now=NOW)
+
+
 # ---------------------------------------------------------------------------
 # The table. Each entry runs one command against the bot it is given.
 # ---------------------------------------------------------------------------
@@ -193,7 +215,10 @@ async def _calendar_sync(bot, interaction):
 
 
 async def _reserves_toggle(bot, interaction):
+    """A settings change on the queue (#439, slice 7): asked, then the queue run."""
+    _attach_the_queue(bot, interaction)
     await undecorate(ResultsCog.reserves_toggle)(_cog(ResultsCog, bot), interaction, "Pro")
+    await run_queue(bot)
 
 
 async def _standings_sync(bot, interaction):
@@ -223,11 +248,17 @@ async def _rounds_sync(bot, interaction):
 
 
 async def _amend_toggle(bot, interaction):
+    """A settings change on the queue (#439, slice 7): asked, then the queue run."""
+    _attach_the_queue(bot, interaction)
     await undecorate(ResultsCog.amend_toggle)(_cog(ResultsCog, bot), interaction)
+    await run_queue(bot)
 
 
 async def _amend_revert(bot, interaction):
+    """A settings change on the queue (#439, slice 7): asked, then the queue run."""
+    _attach_the_queue(bot, interaction)
     await undecorate(ResultsCog.amend_revert)(_cog(ResultsCog, bot), interaction)
+    await run_queue(bot)
 
 
 async def _amend_review(bot, interaction):
@@ -282,7 +313,8 @@ async def test_every_closed_command_is_refused_in_pending_completion(tmp_path, n
 
 
 async def test_the_reserves_setting_is_not_written_in_pending_completion(tmp_path):
-    """The one command of the set that writes on its way past, so the one worth reading back."""
+    """The one command of the set that writes on its way past, so the one worth reading back:
+    refused at once, nothing queued, reserves still shown."""
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
 
@@ -297,6 +329,7 @@ async def test_the_reserves_setting_is_not_written_in_pending_completion(tmp_pat
             )
         ).fetchone()
     assert row["reserves_in_standings"] == 1
+    assert await change_rows(db_path) == []
 
 
 # ---------------------------------------------------------------------------
