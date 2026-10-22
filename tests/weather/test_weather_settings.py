@@ -33,9 +33,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the tests here fail until the deadlines run on the queue.
-UNBUILT = "#439: the weather deadlines do not run on the change queue yet"
-
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: The defaults a league starts from: Phase 1 5 days, Phase 2 2 days, Phase 3 2 hours.
@@ -85,7 +82,6 @@ def _refused(reply: str, phase: int) -> str:
     return f"⛔ `/weather config phase-{phase}-deadline` refused for {NAMED} — {reply.removeprefix('❌ ')}"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     ("phase", "value", "details"),
     [
@@ -117,7 +113,6 @@ async def test_each_deadline_saves_its_value_audit_entry_and_line_together(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_deadline_is_acknowledged_then_updated_with_all_three_deadlines(tmp_path):
     """The member is answered at once that the Phase 1 deadline is being set to 6 day(s), and
     that answer is updated, once the change has run, with today's success naming the other two."""
@@ -132,7 +127,6 @@ async def test_a_deadline_is_acknowledged_then_updated_with_all_three_deadlines(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_held_deadline_answers_nothing_changed_with_its_line_and_no_audit_entry(tmp_path):
     """A deadline asked for the value it already holds is acknowledged, not refused, and when
     it runs answers that nothing changed, with a "Nothing changed" line and no audit entry."""
@@ -149,7 +143,6 @@ async def test_a_held_deadline_answers_nothing_changed_with_its_line_and_no_audi
     assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_deadline_asked_before_placements_are_confirmed_and_run_after_is_refused(tmp_path):
     """A deadline asked while no season is confirmed, whose season's placements are confirmed
     before it runs, is refused when it runs in today's words, the deadline left as it was."""
@@ -183,7 +176,6 @@ async def test_a_deadline_out_of_order_with_one_set_ahead_of_it_is_refused_when_
     assert (await log_lines(league))[-1] == _refused(reply, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_deadline_asked_while_the_module_is_turned_off_ahead_of_it_is_refused(tmp_path):
     """A deadline asked while weather is on, the module turned off before it runs, is refused
     when it runs as the module refusal, nothing saved."""
@@ -225,7 +217,6 @@ async def test_the_refusals_keep_today_s_order(tmp_path, weather_on, confirmed, 
     assert await log_lines(league) == [_refused(reply, 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_fault_in_a_deadline_s_save_saves_nothing_and_the_lane_goes_on(tmp_path):
     """The audit write of a Phase 1 deadline's save faults: nothing is saved, the member is told
     so and to run it again, one failure line is recorded, and a Phase 2 deadline asked behind it
@@ -254,7 +245,6 @@ async def test_a_fault_in_a_deadline_s_save_saves_nothing_and_the_lane_goes_on(t
     assert last_said(behind).startswith("✅ Phase 2 deadline set to **3 day(s)**")
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_check_fault_when_a_deadline_runs_says_nothing_was_saved_records_a_failure_and_the_lane_goes_on(
     tmp_path,
 ):

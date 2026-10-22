@@ -67,9 +67,6 @@ from tests.support.undecorate import undecorate
 SERVER_ID = 7161
 DB_PATH = "/nonexistent/weather.db"  # the view tests' doubles never open it
 
-#: Why a deadline test fails until the deadlines run on the change queue.
-UNBUILT = "#439: the weather deadlines do not run on the change queue yet"
-
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 MODULE_OFF = "❌ The Weather module is not enabled."
@@ -274,11 +271,7 @@ async def test_command_rejects_a_value_below_one(tmp_path, phase, bad_value):
 
 @pytest.mark.parametrize(
     "phase",
-    [
-        1,
-        pytest.param(2, marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param(3, marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-    ],
+    [1, 2, 3],
     ids=COMMAND_IDS,
 )
 async def test_one_is_accepted(tmp_path, phase):
@@ -339,7 +332,6 @@ async def test_service_rejection_reaches_the_user_unchanged(tmp_path, phase, val
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
 async def test_success_reaches_the_service_with_the_value(tmp_path, phase):
     """The command asks one deadline change carrying its column and the value typed, and once it
@@ -356,7 +348,6 @@ async def test_success_reaches_the_service_with_the_value(tmp_path, phase):
     assert await _deadlines(league.db_path) == {**DEFAULTS, column: value}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
 async def test_success_reports_all_three_deadlines(tmp_path, phase):
     """"Each successful command shall report the resulting values of all three deadlines."
@@ -380,7 +371,6 @@ async def test_success_reports_all_three_deadlines(tmp_path, phase):
         assert token in text, f"{token!r} missing from {text!r}"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
 async def test_success_is_written_to_the_log_channel(tmp_path, phase):
     """"... and shall be written to the log channel." Nothing is recorded when the command is
@@ -404,7 +394,6 @@ async def test_success_is_written_to_the_log_channel(tmp_path, phase):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
 async def test_success_is_acknowledged_before_the_save(tmp_path, phase):
     """The command answers at once, without deferring, that the deadline is being set, and saves
@@ -428,7 +417,6 @@ async def test_success_is_acknowledged_before_the_save(tmp_path, phase):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("phase", PHASES, ids=COMMAND_IDS)
 async def test_a_held_value_changes_nothing(tmp_path, phase):
     """A deadline given the value it already holds is not a change, and no refusal: it is
