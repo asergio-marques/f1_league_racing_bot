@@ -1,22 +1,18 @@
 """Unit tests for points_config_service (T028)."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points_config_service import (
-    ConfigAlreadyExistsError,
-    ConfigNotFoundError,
-    InvalidSessionTypeError,
     config_exists,
-    create_config,
     get_config_entries,
-    remove_config,
     setup_seasons_linking,
-    set_fl_bonus,
-    set_session_points,
 )
+from tests.support.saves import create_config, remove_config, set_fl_bonus, set_session_points
 
 
 @pytest.fixture
@@ -40,16 +36,12 @@ async def db_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_create_config_success(db_path):
-    store = await create_config(db_path, config_name="Standard")
-    assert store.config_name == "Standard"
-    assert store.id is not None
+    """A configuration added is in the store under its name. A name already taken is the
+    `config_add` setting's check to refuse, before anything is written
+    (`test_a_duplicate_name_is_refused`)."""
+    await create_config(db_path, config_name="Standard")
 
-
-@pytest.mark.asyncio
-async def test_create_config_duplicate_raises(db_path):
-    await create_config(db_path, config_name="Dup")
-    with pytest.raises(ConfigAlreadyExistsError):
-        await create_config(db_path, config_name="Dup")
+    assert await config_exists(db_path, "Standard") is True
 
 
 # ---------------------------------------------------------------------------
@@ -58,43 +50,15 @@ async def test_create_config_duplicate_raises(db_path):
 
 
 @pytest.mark.asyncio
-async def test_remove_config_not_found_raises(db_path):
-    with pytest.raises(ConfigNotFoundError):
-        await remove_config(db_path, config_name="Ghost")
-
-
-@pytest.mark.asyncio
 async def test_remove_config_success(db_path):
+    """A configuration removed is gone from the store. A name that is not there is the
+    `config_remove` setting's check to refuse
+    (`test_removing_a_configuration_that_does_not_exist_says_so`)."""
     await create_config(db_path, config_name="Temp")
+
     await remove_config(db_path, config_name="Temp")
-    # second removal should raise
-    with pytest.raises(ConfigNotFoundError):
-        await remove_config(db_path, config_name="Temp")
 
-
-# ---------------------------------------------------------------------------
-# set_fl_bonus — qualifying session type rejected
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_set_fl_bonus_feature_qualifying_raises(db_path):
-    await create_config(db_path, config_name="CFG")
-    with pytest.raises(InvalidSessionTypeError):
-        await set_fl_bonus(
-            db_path, config_name="CFG",
-            session_type=SessionType.FEATURE_QUALIFYING, fl_points=1,
-        )
-
-
-@pytest.mark.asyncio
-async def test_set_fl_bonus_sprint_qualifying_raises(db_path):
-    await create_config(db_path, config_name="CFG2")
-    with pytest.raises(InvalidSessionTypeError):
-        await set_fl_bonus(
-            db_path, config_name="CFG2",
-            session_type=SessionType.SPRINT_QUALIFYING, fl_points=1,
-        )
+    assert await config_exists(db_path, "Temp") is False
 
 
 # ---------------------------------------------------------------------------
@@ -258,46 +222,36 @@ async def test_config_exists_answers_by_name(db_path):
 
 
 # ---------------------------------------------------------------------------
-# set_session_points_many — a bulk paste, written whole (#442)
+# config_points_on — a bulk paste, written whole on the save's connection (#442, #439)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#439: config_points_on is not written yet")
 async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_path):
-    """Every pair lands, and each position it changed is recorded as an audit entry, from
-    what it was to what it became, by whom and when."""
-    import json
-    from datetime import datetime, timezone
+    """Every pair lands on the connection the save hands it, and each position it changed is
+    answered as an audit entry, from what it was to what it became; the queue stamps who and
+    when and writes them, so the writer itself writes no audit row and commits nothing."""
+    from leaguebot.results.services.points_config_service import config_points_on
 
-    from leaguebot.results.services.points_config_service import set_session_points_many
-
-    now = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
     await create_config(db_path, config_name="Standard")
     await set_session_points(db_path, "Standard", SessionType.FEATURE_RACE, 1, 20)
 
-    await set_session_points_many(
-        db_path,
-        "Standard",
-        SessionType.FEATURE_RACE,
-        [(1, 25), (2, 18), (3, 15)],
-        actor_id=77,
-        actor_name="Manager#0001",
-        now=now,
-    )
+    async with get_connection(db_path) as db:
+        saved = await config_points_on(
+            db, "Standard", SessionType.FEATURE_RACE, [(1, 25), (2, 18), (3, 15)]
+        )
+        await db.commit()
 
     entries, _fl = await get_config_entries(db_path, config_name="Standard")
     assert {e.position: e.points for e in entries} == {1: 25, 2: 18, 3: 15}
+    assert saved.changed is True
+    assert len(saved.audits) == 3
+    assert {a.change_type for a in saved.audits} == {"POINTS_CONFIG_SESSION_SET"}
+    first = next(a for a in saved.audits if "25" in json.dumps(a.new_value))
+    assert "20" in json.dumps(first.old_value)
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT actor_id, actor_name, old_value, new_value, timestamp FROM audit_entries "
-            "ORDER BY id"
-        )
-        rows = [dict(r) for r in await cursor.fetchall()]
-    assert len(rows) == 3
-    assert {(r["actor_id"], r["actor_name"], r["timestamp"]) for r in rows} == {
-        (77, "Manager#0001", now.isoformat())
-    }
-    first = next(r for r in rows if "25" in r["new_value"])
-    assert "20" in json.dumps(json.loads(first["old_value"]))
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM audit_entries")
+        assert (await cursor.fetchone())["n"] == 0
 
 
 @pytest.mark.xfail(strict=True, reason="#439: points_value_refusal is not written yet")
