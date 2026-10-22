@@ -3021,7 +3021,7 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
     ran: list[str] = []
     told: list[tuple[str, str]] = []
 
-    def _on_check_fault(what: str, error: BaseException) -> str:
+    def _on_check_fault(what: str, payload: dict, error: BaseException) -> str:
         told.append((what, type(error).__name__))
         return f"❌ {what} could not be checked."
 

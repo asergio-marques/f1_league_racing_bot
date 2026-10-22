@@ -76,10 +76,6 @@ from leaguebot.core.utils.interaction_errors import failure_line, failure_reply
 #: `{command}` is the command to run again.
 NOTHING_SAVED = "Nothing was saved. Run `{command}` again to retry."
 
-#: What the same says where the change was not asked by a command that can be run again (a
-#: button, a form): there is no command to name.
-NOTHING_SAVED_NO_COMMAND = "Nothing was saved. Ask for it again to retry."
-
 #: The name of the step that saves the setting.
 SAVE = "save"
 
@@ -168,18 +164,13 @@ def _not_saved(setting: Setting, payload: dict[str, Any]) -> str:
     return words(payload) if callable(words) else words
 
 
-def _check_fault_reply(setting: Setting, what: str) -> str:
-    """The reply for a check that raised as the change started. The hook is not handed the
-    payload, so the command to run again is the change's *what* where that names one; a button or
-    a form has none, and the reply asks for the change again."""
-    words = _not_saved(setting, {})
-    if what.startswith("`/") and what.endswith("`"):
-        outcome = words.format(command=what.strip("`"))
-    elif "{command}" in words:
-        outcome = NOTHING_SAVED_NO_COMMAND
-    else:
-        outcome = words
-    return failure_reply(what, outcome)
+def _check_fault_reply(setting: Setting, what: str, payload: dict[str, Any]) -> str:
+    """The reply for a check that raised as the change started, formed as the outcome path forms
+    the reply to a fault in the save: the setting's own words for its payload, the command filled
+    in."""
+    return failure_reply(
+        what, _not_saved(setting, payload).format(command=setting.command(payload))
+    )
 
 
 def _after_step(after: After) -> Step:
@@ -253,11 +244,11 @@ def setting_change(setting: Setting) -> ChangeType:
         doing=setting.doing,
         outcome=outcome,
         writes=setting.writes,
-        on_check_fault=lambda what, _error: _check_fault_reply(setting, what),
+        on_check_fault=lambda what, payload, _error: _check_fault_reply(setting, what, payload),
     )
 
 
 __all__ = [
-    "After", "NOTHING_SAVED", "NOTHING_SAVED_NO_COMMAND", "SAVE", "Saved", "Setting",
+    "After", "NOTHING_SAVED", "SAVE", "Saved", "Setting",
     "setting_change",
 ]

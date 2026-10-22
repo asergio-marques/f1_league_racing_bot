@@ -493,7 +493,7 @@ class ChangeType:
     stands in the log alone once the reply can no longer be updated.
 
     *on_check_fault*, where set, makes a check that raises as a **member's** change starts end the
-    change instead of stopping the lane: it is handed the change's `what` and the error and returns
+    change instead of stopping the lane: it is handed the change's `what`, its payload and the error, and returns
     the reply the acknowledgement is updated with, and the queue records the failure line. It
     applies to a member's change only: a bot's change whose check raises still stops its lane.
     """
@@ -515,7 +515,7 @@ class ChangeType:
     plan: Callable[[dict[str, Any]], tuple[PlannedStep, ...]] | None = None
     finished_lines: Callable[[OutcomeContext], tuple[str, ...]] | None = None
     tell_origin: Callable[[OutcomeContext], str | None] | None = None
-    on_check_fault: Callable[[str, BaseException], str] | None = None
+    on_check_fault: Callable[[str, dict[str, Any], BaseException], str] | None = None
 
     def opening_steps(self, payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         """The steps saved when the change is asked for with *payload*: *opening*, or where the
@@ -1492,7 +1492,7 @@ class ChangeQueue:
         if hook is None or change["origin"] != ChangeOrigin.MEMBER.value:
             return False
         try:
-            reply = hook(change["what"], error)
+            reply = hook(change["what"], json.loads(change["payload"]), error)
         except Exception as hook_error:  # noqa: BLE001 — a hook that raises stops the queue
             log.log(self._failure_level(pending), "the check-fault hook of %s raised (change %s)",
                     change["what"], change["id"], exc_info=hook_error)
