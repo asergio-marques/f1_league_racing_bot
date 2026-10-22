@@ -759,7 +759,7 @@ class ResultsCog(commands.Cog):
 
         **It asks first where a season in setup stands on the configuration** (decided
         2026-09-15, issue #132). The removal takes the attachment with it — see
-        `points_config_service.remove_config` for why that is the season's only link to the
+        `points_config_service.remove_config_on` for why that is the season's only link to the
         points, and why an approved season's is left alone — so the season quietly stops
         being the season the manager built. Naming the season and waiting is the difference
         between a deliberate teardown and a surprise found at the next `/season placements-review`.

@@ -3,14 +3,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from datetime import datetime
-from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,
@@ -19,9 +16,6 @@ from leaguebot.results.models.points_config import (
     SessionType,
 )
 from leaguebot.results.utils.points_ordering import ordering_violations
-
-if TYPE_CHECKING:
-    from leaguebot.results.utils.xml_import import XmlImportPayload
 
 log = logging.getLogger(__name__)
 
@@ -100,17 +94,6 @@ async def create_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
     )
 
 
-async def create_config(db_path: str, config_name: str) -> PointsConfigStore:
-    async with get_connection(db_path) as db:
-        await create_config_on(db, config_name)
-        await db.commit()
-        cursor = await db.execute(
-            "SELECT id FROM points_config_store WHERE config_name = ?", (config_name,)
-        )
-        row = await sole_row(cursor)
-    return PointsConfigStore(id=row["id"], config_name=config_name)
-
-
 async def config_exists(db_path: str, config_name: str) -> bool:
     """Whether the league's points store holds a configuration under this name.
 
@@ -162,7 +145,30 @@ async def remove_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
     What the removal throws away is the audit entry's old value (Constitution V): the name,
     every position it paid by session type, every fastest-lap bonus and limit, and the numbers
     of the setup seasons it was detached from. Raises :class:`ConfigNotFoundError` where there
-    is no such configuration. See :func:`remove_config` for why only a setup season's link goes.
+    is no such configuration.
+
+    **Why the links go with it, and why only those of a season in setup** (decided
+    2026-09-15, issue #132). A link is a bare name in ``season_points_links`` with no
+    foreign key, so deleting the store row on its own left a season pointing at nothing:
+    the approval's prerequisite still counted the link, and the snapshot then raised
+    `ConfigNotFoundError` mid-command. A season that was fine became unapprovable without
+    anyone touching it.
+
+    A season **in setup** has taken no copy of the configuration yet — the snapshot runs at
+    approval — so the link is the only thing that connects the two, and it is worthless once
+    the configuration is gone. A season that has been **approved** — ACTIVE, or COMPLETED
+    and kept as history — is the opposite case, and its link is deliberately left alone: it
+    scores from its own `season_points_entries` copy, taken at approval and independent of
+    the server's store from that moment, and the link is what offers that copy as a choice
+    when results are submitted. Clearing it would take a running season's points
+    configuration off the submission buttons — a live regression in place of a setup-time
+    one — and would rewrite what a finished season is recorded as having run on.
+
+    Pinned by ``test_remove_config_leaves_an_approved_seasons_link_alone``: the scoping is
+    the whole of the decision and reads like an oversight without it.
+
+    The deletes share the caller's transaction with the store row, so a removal cannot
+    half-happen and leave the orphan it exists to prevent.
     """
     config_id = await _get_config_id(db, config_name)
     positions: dict[str, dict[int, int]] = {}
@@ -212,37 +218,6 @@ async def remove_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
     )
 
 
-async def remove_config(db_path: str, config_name: str) -> None:
-    """Delete a named points configuration, and the setup-season links that named it.
-
-    **Why the links go with it, and why only those of a season in setup** (decided
-    2026-09-15, issue #132). A link is a bare name in ``season_points_links`` with no
-    foreign key, so deleting the store row on its own left a season pointing at nothing:
-    the approval's prerequisite still counted the link, and the snapshot then raised
-    `ConfigNotFoundError` mid-command. A season that was fine became unapprovable without
-    anyone touching it.
-
-    A season **in setup** has taken no copy of the configuration yet — the snapshot runs at
-    approval — so the link is the only thing that connects the two, and it is worthless once
-    the configuration is gone. A season that has been **approved** — ACTIVE, or COMPLETED
-    and kept as history — is the opposite case, and its link is deliberately left alone: it
-    scores from its own `season_points_entries` copy, taken at approval and independent of
-    the server's store from that moment, and the link is what offers that copy as a choice
-    when results are submitted. Clearing it would take a running season's points
-    configuration off the submission buttons — a live regression in place of a setup-time
-    one — and would rewrite what a finished season is recorded as having run on.
-
-    Pinned by ``test_remove_config_leaves_an_approved_seasons_link_alone``: the scoping is
-    the whole of the decision and reads like an oversight without it.
-
-    The deletes share one transaction with the store row, so a removal cannot half-happen
-    and leave the orphan it exists to prevent.
-    """
-    async with get_connection(db_path) as db:
-        await remove_config_on(db, config_name)
-        await db.commit()
-
-
 async def _get_config_id(db: aiosqlite.Connection, config_name: str) -> int:
     cursor = await db.execute(
         "SELECT id FROM points_config_store WHERE config_name = ?",
@@ -252,18 +227,6 @@ async def _get_config_id(db: aiosqlite.Connection, config_name: str) -> int:
     if row is None:
         raise ConfigNotFoundError(config_name)
     return row["id"]
-
-
-async def set_session_points(
-    db_path: str,
-    config_name: str,
-    session_type: SessionType,
-    position: int,
-    points: int,
-) -> None:
-    async with get_connection(db_path) as db:
-        await config_points_on(db, config_name, session_type, [(position, points)])
-        await db.commit()
 
 
 async def held_position_points(
@@ -426,28 +389,6 @@ def _fastest_lap_value(
         "config": config_name, "session_type": session_type.value,
         "fl_points": fl_points, "fl_position_limit": fl_limit,
     }
-
-
-async def set_fl_bonus(
-    db_path: str,
-    config_name: str,
-    session_type: SessionType,
-    fl_points: int,
-) -> None:
-    async with get_connection(db_path) as db:
-        await config_fastest_lap_on(db, config_name, session_type, fl_points=fl_points)
-        await db.commit()
-
-
-async def set_fl_position_limit(
-    db_path: str,
-    config_name: str,
-    session_type: SessionType,
-    limit: int,
-) -> None:
-    async with get_connection(db_path) as db:
-        await config_fastest_lap_on(db, config_name, session_type, fl_position_limit=limit)
-        await db.commit()
 
 
 async def get_config_entries(
@@ -654,45 +595,6 @@ async def config_points_on(
     )
 
 
-async def set_session_points_many(
-    db_path: str,
-    config_name: str,
-    session_type: SessionType,
-    pairs: list[tuple[int, int]],
-    *,
-    actor_id: int,
-    actor_name: str,
-    now: datetime,
-) -> None:
-    """Set every ``(position, points)`` of *pairs* in one transaction, recording each change.
-
-    A bulk paste is all or nothing: either every pair is written, with an audit entry for each
-    position whose points changed, from what to what, or — where anything fails before the
-    commit — none is, and no entry either. A position repeated in *pairs* takes its last
-    value. Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
-    """
-    async with get_connection(db_path) as db:
-        saved = await config_points_on(db, config_name, session_type, pairs)
-        await _record(db, saved, actor_id=actor_id, actor_name=actor_name, now=now)
-        await db.commit()
-
-
-async def _record(
-    db: aiosqlite.Connection, saved: Saved, *, actor_id: int, actor_name: str, now: datetime
-) -> None:
-    """Write each audit entry of *saved* on *db* for the actor, until the queue does it."""
-    for audit in saved.audits:
-        await record_change_on(
-            db,
-            actor_id=actor_id,
-            actor_name=actor_name,
-            change_type=audit.change_type,
-            old_value=audit.old_value,
-            new_value=audit.new_value,
-            now=now,
-        )
-
-
 async def xml_import_config_on(
     db: aiosqlite.Connection,
     config_name: str,
@@ -747,29 +649,3 @@ async def xml_import_config_on(
             _fastest_lap_value(config_name, session_type, fl_pts, fl_limit),
         ))
     return Saved(changed=bool(audits), audits=tuple(audits))
-
-
-async def xml_import_config(
-    db_path: str,
-    config_name: str,
-    payload: "XmlImportPayload",
-    *,
-    actor_id: int,
-    actor_name: str,
-    now: datetime,
-) -> None:
-    """Atomically upsert all position and fastest-lap rows from *payload*, recording each change.
-
-    Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
-    All writes happen inside a single DB connection; the
-    aiosqlite context manager rolls back automatically on any exception before
-    ``db.commit()``. Each position whose points change, and each fastest-lap bonus that
-    changes, gets an audit entry from what to what by *actor_id* at *now*, on the same
-    connection, so the import and its record land together or not at all.
-    """
-    async with get_connection(db_path) as db:
-        saved = await xml_import_config_on(
-            db, config_name, payload.positions, payload.fastest_laps
-        )
-        await _record(db, saved, actor_id=actor_id, actor_name=actor_name, now=now)
-        await db.commit()

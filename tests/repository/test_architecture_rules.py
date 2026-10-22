@@ -2037,13 +2037,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The standing posts
     # The results, weather and image settings commands
-    ("results/services/points_config_service.py", "create_config"): (1, SLICE[7]),
-    ("results/services/points_config_service.py", "remove_config"): (1, SLICE[7]),
-    ("results/services/points_config_service.py", "set_fl_bonus"): (1, SLICE[7]),
-    ("results/services/points_config_service.py", "set_fl_position_limit"): (1, SLICE[7]),
-    ("results/services/points_config_service.py", "set_session_points"): (1, SLICE[7]),
-    ("results/services/points_config_service.py", "set_session_points_many"): (1, SLICE[7]),
-    ("results/services/points_config_service.py", "xml_import_config"): (1, SLICE[7]),
     ("results/services/season_points_service.py", "attach_config"): (1, SLICE[7]),
     ("results/services/season_points_service.py", "detach_config"): (1, SLICE[7]),
     ("core/services/amendment_service.py", "enable_amendment_mode"): (1, SLICE[7]),
