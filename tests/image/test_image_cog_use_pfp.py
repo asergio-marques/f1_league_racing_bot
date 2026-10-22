@@ -8,28 +8,39 @@ the configuration left as it stood.
 Every outcome is recorded in the log channel (#482): a refusal as one "⛔" line, a success as
 one line naming the command, and the confirmation that enables daily updates as cancelled,
 lapsed, refused, succeeded or failed — once, however often it is pressed.
+
+The toggles and the confirmation run on the change queue (#439, slice 7): each is driven past
+its permission guard on a league built by the migrations, with the real image services, a
+scheduler double and the real queue, which the test runs. A refusal at the ask is answered at
+once and queues nothing; a change asked is acknowledged at once and answered once it has run,
+the daily job armed or removed by a job after the save, the success line written only once the
+job is armed.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog, PortraitTimeConfirm, PortraitTimeModal
+from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
-    MEMBER,
+    QUEUED_MEMBER as MEMBER,
     assert_one_line,
     assert_one_refusal,
     interaction as _image_interaction,
     log_bot,
     logged,
     said,
-    scheduler,
 )
+from tests.support.settings_league import audit_rows, settings_league, switch
 from tests.support.undecorate import undecorate
 
+#: Why a test here fails until the image settings run on the change queue.
+UNBUILT = "#439: the image settings do not run on the change queue yet"
 #: The command the confirmation belongs to, as its log lines name it.
 DAILY = "`/images use-pfp daily-toggle`"
 #: The portrait-time form, as its refusals name it.
@@ -43,301 +54,332 @@ ENDED = (
     "\n  Daily driver-portrait updates are unchanged."
     "\n  Run `/images use-pfp daily-toggle` again to enable them."
 )
+#: Each toggle's command body, and the command as a league types it.
+COMMANDS = {
+    "use_pfp_toggle": "images use-pfp toggle",
+    "use_pfp_prerender_toggle": "images use-pfp prerender-toggle",
+    "use_pfp_daily_toggle": "images use-pfp daily-toggle",
+}
+#: The portrait settings, as the league starts with them.
+PACKAGED = {"use_pfp": 0, "pfp_prerender": 1, "pfp_daily": 0, "pfp_daily_time": "03:00"}
 
 
-def _unwrap(command):
-    """Past whatever tier guard the command wears, to the body."""
-    return undecorate(command)
-
-
-def _interaction(bot=None, command=None):
-    """An interaction from "Race Control" for `/<command>`, through *bot*'s log channel.
+def _interaction(league, command=None):
+    """An interaction from "Race Control" for `/<command>` (None: a form's or a button's), on
+    *league*'s bot.
 
     It tracks whether it has been answered, as discord.py's does, so a refusal and a reply after
     a button's message is edited both land where a member would see them.
     """
-    return _image_interaction(command, bot=bot if bot is not None else log_bot())
+    return _image_interaction(command, bot=league.bot)
 
 
-def _cog(*, module_enabled=True, **config):
-    values = {
-        "use_pfp": False,
-        "pfp_prerender": True,
-        "pfp_daily": False,
-        "pfp_daily_time": "03:00",
-    }
-    values.update(config)
-
-    bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=module_enabled)
-    bot.image_config_service.get_config = AsyncMock(return_value=SimpleNamespace(**values))
-    bot.image_config_service.set_pfp_flag = AsyncMock()
-    bot.image_config_service.set_field = AsyncMock()
-    bot.output_router.post_log = AsyncMock()
-    bot.scheduler_service = MagicMock()
-    return ImageCog(bot), bot
+async def _league(tmp_path, *, modules=("images",), **config) -> tuple[ImageCog, Any]:
+    """A league with *modules* on and its portrait settings as `PACKAGED` with *config* written
+    over them; its bot is `log_bot`'s real-queue form. Returns the cog and the league."""
+    league = await settings_league(tmp_path, modules=modules)
+    if "images" in modules:
+        values = {**PACKAGED, **config}
+        async with get_connection(league.db_path) as db:
+            for column, value in values.items():
+                stored = int(value) if isinstance(value, bool) else value
+                await db.execute(f"UPDATE image_config SET {column} = ?", (stored,))
+            await db.commit()
+    log_bot(league)
+    return ImageCog(league.bot), league
 
 
-def _said(interaction) -> str:
-    return said(interaction)
+async def _portraits(league) -> dict[str, Any]:
+    """The four portrait settings as stored."""
+    async with get_connection(league.db_path) as db:
+        row = await (await db.execute(
+            "SELECT use_pfp, pfp_prerender, pfp_daily, pfp_daily_time FROM image_config"
+        )).fetchone()
+    return dict(row)
 
 
-async def _form(cog, bot) -> PortraitTimeModal:
+async def _write(league, sql: str) -> None:
+    async with get_connection(league.db_path) as db:
+        await db.execute(sql)
+        await db.commit()
+
+
+async def _run(cog, league, name: str):
+    """Run the toggle *name* past its tier guard, then the queue; returns the interaction."""
+    interaction = _interaction(league, COMMANDS[name])
+    await undecorate(getattr(ImageCog, name))(cog, interaction)
+    await run_queue(league.bot)
+    return interaction
+
+
+def _acknowledged(interaction) -> None:
+    """Acknowledged at once as under way."""
+    assert any(text and text.startswith("⏳ ") for text in interaction.said), interaction.said
+
+
+def _not_asked(interaction) -> None:
+    """Answered at once, nothing queued."""
+    assert not any(text and text.startswith("⏳ ") for text in interaction.said), interaction.said
+
+
+def _fail_to_arm(league) -> None:
+    """The scheduler refusing the daily job, as a job store refusing it would."""
+    league.scheduler.schedule_portrait_refresh.side_effect = RuntimeError(
+        "the job store refused the job"
+    )
+
+
+async def _form(cog, league) -> PortraitTimeModal:
     """The portrait-time form, as `/images use-pfp daily-toggle` opens it."""
-    opener = _interaction(bot, "images use-pfp daily-toggle")
-    await _unwrap(cog.use_pfp_daily_toggle)(cog, opener)
+    opener = _interaction(league, "images use-pfp daily-toggle")
+    await undecorate(ImageCog.use_pfp_daily_toggle)(cog, opener)
     return opener.response.send_modal.await_args.args[0]
 
 
-async def _confirmation(cog, bot, time="19:00"):
+async def _confirmation(cog, league, time="19:00"):
     """The confirmation the form sends for *time*, and the form's own interaction."""
-    modal = await _form(cog, bot)
+    modal = await _form(cog, league)
     modal.time_of_day._value = time
-    submitted = _interaction(bot)
+    submitted = _interaction(league)
     await modal.on_submit(submitted)
     return submitted.response.send_message.await_args.kwargs["view"], submitted
+
+
+async def _confirm(view, league):
+    """Press the confirmation's ✅ Confirm, then run the queue; returns the press."""
+    press = _interaction(league)
+    await view.confirm.callback(press)
+    await run_queue(league.bot)
+    return press
 
 
 # ── The module gate ───────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "name", ["use_pfp_toggle", "use_pfp_prerender_toggle", "use_pfp_daily_toggle"]
-)
-async def test_every_command_refuses_while_the_module_is_disabled(name):
-    cog, bot = _cog(module_enabled=False)
-    interaction = _interaction()
+@pytest.mark.parametrize("name", sorted(COMMANDS))
+async def test_every_command_refuses_while_the_module_is_disabled(name, tmp_path):
+    cog, league = await _league(tmp_path, modules=())
 
-    await _unwrap(getattr(cog, name))(cog, interaction)
+    interaction = await _run(cog, league, name)
 
-    assert "Image module is not enabled" in _said(interaction)
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
+    assert "Image module is not enabled" in said(interaction)
+    _not_asked(interaction)
+    interaction.response.send_modal.assert_not_awaited()
+    assert await audit_rows(league.db_path) == []
 
 
 # ── The master toggle ─────────────────────────────────────────────────────
 
 
-async def test_the_master_toggle_enables_portraits():
-    cog, bot = _cog(use_pfp=False)
-    interaction = _interaction()
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_master_toggle_enables_portraits(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=False)
 
-    await _unwrap(cog.use_pfp_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_toggle")
 
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "use_pfp", True
-    )
-    assert "enabled" in _said(interaction)
+    _acknowledged(interaction)
+    assert (await _portraits(league))["use_pfp"] == 1
+    assert "enabled" in interaction.said[-1]
 
 
-async def test_the_master_toggle_disables_portraits_and_stops_the_daily_job():
-    cog, bot = _cog(use_pfp=True, pfp_daily=True)
-    interaction = _interaction()
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_master_toggle_disables_portraits_and_stops_the_daily_job(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_daily=True)
 
-    await _unwrap(cog.use_pfp_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_toggle")
 
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "use_pfp", False
-    )
+    _acknowledged(interaction)
+    assert (await _portraits(league))["use_pfp"] == 0
     # A job left running against a setting that says no would keep fetching.
-    bot.scheduler_service.cancel_portrait_refresh.assert_called_once_with()
+    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
 
 
-async def test_enabling_the_master_toggle_re_arms_a_standing_daily_setting():
-    cog, bot = _cog(use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
-    interaction = _interaction()
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_enabling_the_master_toggle_re_arms_a_standing_daily_setting(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
 
-    await _unwrap(cog.use_pfp_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_toggle")
 
-    bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with(
-        "07:45"
-    )
+    _acknowledged(interaction)
+    league.scheduler.schedule_portrait_refresh.assert_called_once_with("07:45")
 
 
 # ── The two sub-toggles need the master on ────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "name", ["use_pfp_prerender_toggle", "use_pfp_daily_toggle"]
-)
-async def test_a_sub_toggle_refuses_while_portraits_are_disabled(name):
-    cog, bot = _cog(use_pfp=False)
-    interaction = _interaction()
+@pytest.mark.parametrize("name", ["use_pfp_prerender_toggle", "use_pfp_daily_toggle"])
+async def test_a_sub_toggle_refuses_while_portraits_are_disabled(name, tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=False)
 
-    await _unwrap(getattr(cog, name))(cog, interaction)
+    interaction = await _run(cog, league, name)
 
-    assert "not being obtained from Discord" in _said(interaction)
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
+    assert "not being obtained from Discord" in said(interaction)
+    _not_asked(interaction)
+    assert await _portraits(league) == PACKAGED
 
 
-async def test_prerender_toggles_off_while_the_daily_job_stands():
-    cog, bot = _cog(use_pfp=True, pfp_prerender=True, pfp_daily=True)
-    interaction = _interaction()
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_prerender_toggles_off_while_the_daily_job_stands(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_prerender=True, pfp_daily=True)
 
-    await _unwrap(cog.use_pfp_prerender_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_prerender_toggle")
 
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "pfp_prerender", False
-    )
+    _acknowledged(interaction)
+    assert (await _portraits(league))["pfp_prerender"] == 0
 
 
 # ── The at-least-one rule, at the command surface ─────────────────────────
 
 
-async def test_disabling_the_last_trigger_is_refused_and_changes_nothing():
-    cog, bot = _cog(use_pfp=True, pfp_prerender=True, pfp_daily=False)
-    interaction = _interaction()
+async def test_disabling_the_last_trigger_is_refused_and_changes_nothing(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_prerender=True, pfp_daily=False)
 
-    await _unwrap(cog.use_pfp_prerender_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_prerender_toggle")
 
-    said = _said(interaction)
-    assert "Cannot disable pre-render updates" in said
-    assert "Enable daily updates first" in said
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
-
-
-async def test_disabling_the_last_trigger_is_refused_the_other_way_round():
-    cog, bot = _cog(use_pfp=True, pfp_prerender=False, pfp_daily=True)
-    interaction = _interaction()
-
-    await _unwrap(cog.use_pfp_daily_toggle)(cog, interaction)
-
-    said = _said(interaction)
-    assert "Cannot disable daily updates" in said
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
-    bot.scheduler_service.cancel_portrait_refresh.assert_not_called()
+    reply = said(interaction)
+    assert "Cannot disable pre-render updates" in reply
+    assert "Enable daily updates first" in reply
+    _not_asked(interaction)
+    assert (await _portraits(league))["pfp_prerender"] == 1
 
 
-async def test_the_master_toggle_is_never_refused_by_the_rule():
+async def test_disabling_the_last_trigger_is_refused_the_other_way_round(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_prerender=False, pfp_daily=True)
+
+    interaction = await _run(cog, league, "use_pfp_daily_toggle")
+
+    assert "Cannot disable daily updates" in said(interaction)
+    _not_asked(interaction)
+    assert (await _portraits(league))["pfp_daily"] == 1
+    league.scheduler.cancel_portrait_refresh.assert_not_called()
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_master_toggle_is_never_refused_by_the_rule(tmp_path):
     # Turning the feature off wholesale is what an invalid configuration was an awkward
     # spelling of, so it cannot itself be invalid.
-    cog, bot = _cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-    interaction = _interaction()
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_prerender=False, pfp_daily=False)
 
-    await _unwrap(cog.use_pfp_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_toggle")
 
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "use_pfp", False
-    )
+    _acknowledged(interaction)
+    assert (await _portraits(league))["use_pfp"] == 0
 
 
 # ── The daily toggle's modal ──────────────────────────────────────────────
 
 
-async def test_enabling_the_daily_job_opens_the_modal_and_commits_nothing_yet():
-    cog, bot = _cog(use_pfp=True, pfp_daily=False, pfp_daily_time="03:00")
-    interaction = _interaction()
+async def test_enabling_the_daily_job_opens_the_modal_and_commits_nothing_yet(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_daily=False, pfp_daily_time="03:00")
 
-    await _unwrap(cog.use_pfp_daily_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_daily_toggle")
 
     interaction.response.send_modal.assert_awaited_once()
     modal = interaction.response.send_modal.await_args.args[0]
     assert isinstance(modal, PortraitTimeModal)
     # Prefilled with what is stored, so a manager need not remember it.
     assert modal.time_of_day.default == "03:00"
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
+    _not_asked(interaction)
+    assert (await _portraits(league))["pfp_daily"] == 0
 
 
-async def test_the_modal_says_the_time_is_utc():
+async def test_the_modal_says_the_time_is_utc(tmp_path):
     # The manager is naming a zone they did not choose; the scheduler is UTC throughout.
-    cog, _bot = _cog(use_pfp=True)
+    cog, _league_ = await _league(tmp_path, use_pfp=True)
     modal = PortraitTimeModal(cog, "03:00")
 
     assert "UTC" in modal.time_of_day.label
 
 
-async def test_disabling_the_daily_job_needs_no_modal():
-    cog, bot = _cog(use_pfp=True, pfp_prerender=True, pfp_daily=True)
-    interaction = _interaction()
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_disabling_the_daily_job_needs_no_modal(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True, pfp_prerender=True, pfp_daily=True)
 
-    await _unwrap(cog.use_pfp_daily_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_daily_toggle")
 
     interaction.response.send_modal.assert_not_awaited()
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "pfp_daily", False
-    )
-    bot.scheduler_service.cancel_portrait_refresh.assert_called_once_with()
+    _acknowledged(interaction)
+    assert (await _portraits(league))["pfp_daily"] == 0
+    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
 
 
-async def test_an_unreadable_time_changes_nothing():
-    cog, bot = _cog(use_pfp=True)
+async def test_an_unreadable_time_changes_nothing(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
     modal = PortraitTimeModal(cog, "03:00")
     modal.time_of_day._value = "half past three"
-    interaction = _interaction()
+    interaction = _interaction(league)
 
     await modal.on_submit(interaction)
+    await run_queue(league.bot)
 
-    assert "Could not read" in _said(interaction)
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
+    assert "Could not read" in said(interaction)
+    assert (await _portraits(league))["pfp_daily"] == 0
 
 
-async def test_a_readable_time_asks_for_confirmation_before_committing():
-    cog, bot = _cog(use_pfp=True)
+async def test_a_readable_time_asks_for_confirmation_before_committing(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
     modal = PortraitTimeModal(cog, "03:00")
     modal.time_of_day._value = "7pm"
-    interaction = _interaction()
+    interaction = _interaction(league)
 
     await modal.on_submit(interaction)
+    await run_queue(league.bot)
 
-    said = _said(interaction)
-    assert "19:00 UTC" in said and "Confirm" in said
+    reply = said(interaction)
+    assert "19:00 UTC" in reply and "Confirm" in reply
     view = interaction.response.send_message.await_args.kwargs["view"]
     assert isinstance(view, PortraitTimeConfirm)
     # Nothing is committed by the modal itself.
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
+    assert await _portraits(league) == {**PACKAGED, "use_pfp": 1}
 
 
-async def test_confirming_stores_the_time_enables_the_job_and_arms_it():
-    """Confirm stores the time, enables daily updates, arms the job and takes its buttons down,
-    so the same confirmation cannot be pressed again."""
-    cog, bot = _cog(use_pfp=True)
-    view, _submitted = await _confirmation(cog, bot)
-    interaction = _interaction(bot)
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_confirming_stores_the_time_enables_the_job_and_arms_it(tmp_path):
+    """Confirm takes its buttons down, so the same confirmation cannot be pressed again, and is
+    acknowledged; once run, the time and the flag are stored, the job armed, and the reply names
+    the time."""
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, _submitted = await _confirmation(cog, league)
 
-    await view.confirm.callback(interaction)
+    interaction = await _confirm(view, league)
 
-    bot.image_config_service.set_field.assert_awaited_once_with(
-        "pfp_daily_time", "19:00"
-    )
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "pfp_daily", True
-    )
-    bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with(
-        "19:00"
-    )
-    assert "19:00 UTC" in _said(interaction)
+    stored = await _portraits(league)
+    assert (stored["pfp_daily"], stored["pfp_daily_time"]) == (1, "19:00")
+    league.scheduler.schedule_portrait_refresh.assert_called_once_with("19:00")
+    _acknowledged(interaction)
+    assert "19:00 UTC" in interaction.said[-1]
     interaction.response.edit_message.assert_awaited()
     assert interaction.response.edit_message.await_args.kwargs.get("view", "kept") is None
 
 
-async def test_cancelling_the_confirmation_changes_nothing():
-    cog, bot = _cog(use_pfp=True)
-    view, _submitted = await _confirmation(cog, bot)
-    interaction = _interaction(bot)
+async def test_cancelling_the_confirmation_changes_nothing(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, _submitted = await _confirmation(cog, league)
+    interaction = _interaction(league)
 
     await view.cancel.callback(interaction)
+    await run_queue(league.bot)
 
-    assert "Cancelled" in _said(interaction)
-    bot.image_config_service.set_field.assert_not_awaited()
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
-    bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
+    assert "Cancelled" in said(interaction)
+    assert await _portraits(league) == {**PACKAGED, "use_pfp": 1}
+    league.scheduler.schedule_portrait_refresh.assert_not_called()
 
 
-async def test_a_scheduler_failure_does_not_lose_the_setting():
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_scheduler_failure_does_not_lose_the_setting(tmp_path):
     """The setting is stored first, so startup recovery arms the job on the next restart; the
-    member is told so as a failure, never as a success (F1)."""
-    cog, bot = _cog(use_pfp=True)
-    bot.scheduler_service = scheduler(fails=True)
-    view, _submitted = await _confirmation(cog, bot)
-    interaction = _interaction(bot)
+    member is told so as a failure, never as a success (F1), and the one line is the failure."""
+    cog, league = await _league(tmp_path, use_pfp=True)
+    _fail_to_arm(league)
+    view, _submitted = await _confirmation(cog, league)
 
-    await view.confirm.callback(interaction)
+    interaction = await _confirm(view, league)
 
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        "pfp_daily", True
-    )
-    reply = _said(interaction)
+    _acknowledged(interaction)
+    assert (await _portraits(league))["pfp_daily"] == 1
+    reply = interaction.said[-1]
     assert STORED_AT_RESTART in reply and "✅" not in reply
-    lines = logged(bot)
+    lines = logged(league.bot)
     assert len(lines) == 1, lines
     assert lines[0].startswith("❌ ") and f"failed for {MEMBER}" in lines[0], lines[0]
 
@@ -350,36 +392,38 @@ def _http_error() -> discord.HTTPException:
     return discord.HTTPException(MagicMock(status=500, reason="Server Error"), "gone")
 
 
-async def test_cancelling_is_recorded_and_takes_the_buttons_down():
-    cog, bot = _cog(use_pfp=True)
-    view, _submitted = await _confirmation(cog, bot)
-    press = _interaction(bot)
+async def test_cancelling_is_recorded_and_takes_the_buttons_down(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, _submitted = await _confirmation(cog, league)
+    press = _interaction(league)
 
     await view.cancel.callback(press)
 
-    assert logged(bot) == [f"↩️ {DAILY} cancelled by {MEMBER}{ENDED}"]
+    assert logged(league.bot) == [f"↩️ {DAILY} cancelled by {MEMBER}{ENDED}"]
     press.response.edit_message.assert_awaited()
     assert press.response.edit_message.await_args.kwargs.get("view", "kept") is None
 
 
-async def test_a_lapse_is_recorded_naming_who_opened_it_and_takes_the_buttons_down():
-    cog, bot = _cog(use_pfp=True)
-    view, submitted = await _confirmation(cog, bot)
+async def test_a_lapse_is_recorded_naming_who_opened_it_and_takes_the_buttons_down(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, submitted = await _confirmation(cog, league)
 
     await view.on_timeout()
 
-    assert logged(bot) == [f"⌛ {DAILY} lapsed unconfirmed (started by {MEMBER}){ENDED}"]
+    assert logged(league.bot) == [
+        f"⌛ {DAILY} lapsed unconfirmed (started by {MEMBER}){ENDED}"
+    ]
     submitted.edit_original_response.assert_awaited()
     assert submitted.edit_original_response.await_args.kwargs.get("view", "kept") is None
 
 
 @pytest.mark.parametrize("ending", ["cancel", "lapse"])
-async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(ending):
-    cog, bot = _cog(use_pfp=True)
-    view, submitted = await _confirmation(cog, bot)
+async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(ending, tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, submitted = await _confirmation(cog, league)
 
     if ending == "cancel":
-        press = _interaction(bot)
+        press = _interaction(league)
         press.response.edit_message.side_effect = _http_error()
         await view.cancel.callback(press)
         mark = "↩️ "
@@ -388,38 +432,43 @@ async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(end
         await view.on_timeout()
         mark = "⌛ "
 
-    lines = logged(bot)
+    lines = logged(league.bot)
     assert len(lines) == 1 and lines[0].startswith(f"{mark}{DAILY} "), lines
 
 
-# ── The daily job is scheduled before the master toggle answers (F2) ─────
+# ── The success is recorded only once the daily job is armed (F2) ────────
 
 
-async def test_the_master_toggle_arms_the_daily_job_before_it_replies():
-    cog, bot = _cog(use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
-    interaction = _interaction(bot, "images use-pfp toggle")
-    told_by_then = []
-    bot.scheduler_service.schedule_portrait_refresh.side_effect = (
-        lambda *_args: told_by_then.append(list(interaction.said))
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_master_toggle_arms_the_daily_job_before_the_success_is_recorded(tmp_path):
+    """Portraits switched on with daily updates standing at 07:45: acknowledged at once; when
+    it runs, no line has been written by the time the job is armed, and one success line
+    follows it."""
+    cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
+    recorded_by_then = []
+    league.scheduler.schedule_portrait_refresh.side_effect = (
+        lambda *_args: recorded_by_then.append(logged(league.bot))
     )
 
-    await _unwrap(cog.use_pfp_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_toggle")
 
-    assert told_by_then == [[]]
-    assert_one_line(bot, "images use-pfp toggle")
+    _acknowledged(interaction)
+    assert recorded_by_then == [[]]
+    assert_one_line(league.bot, "images use-pfp toggle")
 
 
-async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_success():
-    cog, bot = _cog(use_pfp=False, pfp_daily=True)
-    bot.scheduler_service = scheduler(fails=True)
-    interaction = _interaction(bot, "images use-pfp toggle")
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_success(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=False, pfp_daily=True)
+    _fail_to_arm(league)
 
-    await _unwrap(cog.use_pfp_toggle)(cog, interaction)
+    interaction = await _run(cog, league, "use_pfp_toggle")
 
-    bot.image_config_service.set_pfp_flag.assert_awaited_once_with("use_pfp", True)
-    reply = _said(interaction)
+    _acknowledged(interaction)
+    assert (await _portraits(league))["use_pfp"] == 1
+    reply = interaction.said[-1]
     assert STORED_AT_RESTART in reply and "✅" not in reply
-    lines = logged(bot)
+    lines = logged(league.bot)
     assert len(lines) == 1, lines
     assert lines[0].startswith(f"❌ `/images use-pfp toggle` failed for {MEMBER}"), lines[0]
 
@@ -427,43 +476,59 @@ async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_suc
 # ── One save per confirmation (F10) ───────────────────────────────────────
 
 
-async def test_a_second_press_of_confirm_saves_nothing_and_is_refused():
-    cog, bot = _cog(use_pfp=True)
-    view, _submitted = await _confirmation(cog, bot)
-    first, second = _interaction(bot), _interaction(bot)
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_second_press_of_confirm_saves_nothing_and_is_refused(tmp_path):
+    """The first press is acknowledged and, once run, saves the daily setting with one audit
+    entry and one success line; a second press of the same confirmation is refused at once,
+    saving nothing and arming nothing more."""
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, _submitted = await _confirmation(cog, league)
 
-    await view.confirm.callback(first)
-    await view.confirm.callback(second)
+    first = await _confirm(view, league)
+    second = await _confirm(view, league)
 
-    bot.image_config_service.set_field.assert_awaited_once()
-    bot.image_config_service.set_pfp_flag.assert_awaited_once()
-    bot.scheduler_service.schedule_portrait_refresh.assert_called_once()
-    assert "ℹ️ This confirmation has already been answered." in _said(second)
-    lines = logged(bot)
+    _acknowledged(first)
+    league.scheduler.schedule_portrait_refresh.assert_called_once()
+    assert len(await audit_rows(league.db_path)) == 1
+    assert "ℹ️ This confirmation has already been answered." in said(second)
+    _not_asked(second)
+    lines = logged(league.bot)
     assert len(lines) == 2, lines
-    assert lines[0].startswith(f"{MEMBER} | /images use-pfp daily-toggle | Success"), lines[0]
-    assert lines[1].startswith("⛔ ") and f"refused for {MEMBER} — " in lines[1], lines[1]
+    assert sum(
+        line.startswith(f"{MEMBER} | /images use-pfp daily-toggle | Success") for line in lines
+    ) == 1, lines
+    assert sum(
+        line.startswith("⛔ ") and f"refused for {MEMBER} — " in line for line in lines
+    ) == 1, lines
 
 
-async def test_the_confirmation_is_not_stopped_until_cancel_and_confirm_have_finished():
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_confirmation_is_not_stopped_until_cancel_and_confirm_have_finished(
+    tmp_path, monkeypatch
+):
     """A stopped view answers no press at all, so stopping one before its press has finished
-    would leave a second press unanswered and unrecorded rather than refused."""
-    cog, bot = _cog(use_pfp=True)
-    cancelled, _submitted = await _confirmation(cog, bot)
-    confirmed, _submitted = await _confirmation(cog, bot)
-    while_posting, while_committing = [], []
-    bot.output_router.post_log = AsyncMock(
+    would leave a second press unanswered and unrecorded rather than refused: a cancel is not
+    stopped while its ending is recorded, nor a confirm while its change is asked."""
+    cog, league = await _league(tmp_path, use_pfp=True)
+    cancelled, _submitted = await _confirmation(cog, league)
+    confirmed, _submitted = await _confirmation(cog, league)
+    while_posting, while_asking = [], []
+    league.bot.output_router.post_log = AsyncMock(
         side_effect=lambda *_args, **_kwargs: while_posting.append(cancelled.is_finished())
     )
-    bot.image_config_service.set_pfp_flag = AsyncMock(
-        side_effect=lambda *_args, **_kwargs: while_committing.append(confirmed.is_finished())
-    )
+    ask = league.bot.change_queue.ask
 
-    await cancelled.cancel.callback(_interaction(bot))
-    await confirmed.confirm.callback(_interaction(bot))
+    async def _asking(*args, **kwargs):
+        while_asking.append(confirmed.is_finished())
+        return await ask(*args, **kwargs)
+
+    monkeypatch.setattr(league.bot.change_queue, "ask", _asking)
+
+    await cancelled.cancel.callback(_interaction(league))
+    await confirmed.confirm.callback(_interaction(league))
 
     assert while_posting[0] is False
-    assert while_committing == [False]
+    assert while_asking == [False]
     assert cancelled.is_finished() and confirmed.is_finished()
 
 
@@ -505,56 +570,60 @@ _CONFIRM_CHANGED_SINCE_OPENING = [
 ]
 
 
-def _change_since_opening(bot, setting, value) -> None:
+async def _change_since_opening(league, setting, value) -> None:
     """Another manager changed *setting* to *value* while the form or confirmation was open."""
     if setting == "module_enabled":
-        bot.module_service.is_images_enabled.return_value = value
+        await switch(league.bot, ("images",), on=value)
     else:
-        setattr(bot.image_config_service.get_config.return_value, setting, value)
+        await _write(league, f"UPDATE image_config SET {setting} = {int(value)}")
 
 
 @pytest.mark.parametrize(("setting", "value", "reply"), _CONFIRM_CHANGED_SINCE_OPENING)
-async def test_confirm_writes_nothing_once_things_changed_since_opening(setting, value, reply):
-    cog, bot = _cog(use_pfp=True)
-    view, _submitted = await _confirmation(cog, bot)
-    _change_since_opening(bot, setting, value)
-    press = _interaction(bot)
+async def test_confirm_writes_nothing_once_things_changed_since_opening(
+    setting, value, reply, tmp_path
+):
+    """Refused at once by the daily setting's check, nothing queued: the time stays 03:00, no
+    audit entry, the job not armed, and one "⛔" line."""
+    cog, league = await _league(tmp_path, use_pfp=True)
+    view, _submitted = await _confirmation(cog, league)
+    await _change_since_opening(league, setting, value)
 
-    await view.confirm.callback(press)
+    press = await _confirm(view, league)
 
-    bot.image_config_service.set_field.assert_not_awaited()
-    bot.image_config_service.set_pfp_flag.assert_not_awaited()
-    bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
-    assert reply in _said(press)
-    lines = logged(bot)
+    assert (await _portraits(league))["pfp_daily_time"] == "03:00"
+    assert await audit_rows(league.db_path) == []
+    league.scheduler.schedule_portrait_refresh.assert_not_called()
+    assert reply in said(press)
+    _not_asked(press)
+    lines = logged(league.bot)
     assert len(lines) == 1, lines
     assert lines[0].startswith("⛔ ") and f"refused for {MEMBER} — " in lines[0], lines[0]
 
 
 @pytest.mark.parametrize(("setting", "value", "reply"), _CHANGED_SINCE_OPENING)
 async def test_the_form_asks_for_no_confirmation_once_things_changed_since_opening(
-    setting, value, reply
+    setting, value, reply, tmp_path
 ):
-    cog, bot = _cog(use_pfp=True)
-    modal = await _form(cog, bot)
-    _change_since_opening(bot, setting, value)
+    cog, league = await _league(tmp_path, use_pfp=True)
+    modal = await _form(cog, league)
+    await _change_since_opening(league, setting, value)
     modal.time_of_day._value = "19:00"
-    submitted = _interaction(bot)
+    submitted = _interaction(league)
 
     await modal.on_submit(submitted)
 
-    assert reply in _said(submitted)
+    assert reply in said(submitted)
     assert all("view" not in call.kwargs for call in submitted.response.send_message.await_args_list)
-    assert_one_refusal(bot, FORM)
+    assert_one_refusal(league.bot, FORM)
 
 
-async def test_an_unreadable_time_is_recorded_as_a_refusal_of_the_form():
-    cog, bot = _cog(use_pfp=True)
-    modal = await _form(cog, bot)
+async def test_an_unreadable_time_is_recorded_as_a_refusal_of_the_form(tmp_path):
+    cog, league = await _league(tmp_path, use_pfp=True)
+    modal = await _form(cog, league)
     modal.time_of_day._value = "half past three"
-    submitted = _interaction(bot)
+    submitted = _interaction(league)
 
     await modal.on_submit(submitted)
 
-    assert "Could not read" in _said(submitted)
-    assert_one_refusal(bot, FORM)
+    assert "Could not read" in said(submitted)
+    assert_one_refusal(league.bot, FORM)
