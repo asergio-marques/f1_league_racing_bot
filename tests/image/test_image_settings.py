@@ -74,6 +74,10 @@ NOT_CHECKED = (
     "`/images config view` shows how it stands."
 )
 IMPORT_NOT_SAVED = "Nothing from the import was saved. Run the import again to retry."
+#: What a pasted palette whose save faults says became of it, as the results pastes do (plan 2.9).
+PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
+#: The colour form a pasted palette arrives through, as its replies and lines name it.
+PALETTE_FORM = "the “Set one tier's colours” form"
 CALENDAR = app_commands.Choice(name="Calendar", value="calendar")
 TWELVE_HOUR = app_commands.Choice(name="12-hour (2:30 PM)", value="12H")
 TWO_TIERS = (
@@ -598,6 +602,35 @@ async def test_a_colour_import_saves_every_tier_in_one_save_with_its_audit_entri
 
     (tmp_path / "again").mkdir()
     await _saves_with_record(tmp_path / "again", CASES["tier-import"])
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_fault_in_a_pasted_palette_s_save_saves_none_of_it_says_paste_it_again_and_the_lane_goes_on(
+    tmp_path
+):
+    """The "Set one tier's colours" form for Division 1, pasting accent and ink, whose save
+    faults on its audit entry: neither colour is saved, the member is told nothing from the
+    paste was saved and to paste it again, one failure line names the form and no Success line
+    names the colours, no job is stopped, and `/images config time-format` asked behind it is
+    saved."""
+    league = await _league(tmp_path)
+
+    asked = await CASES["tier-palette"].ask(league)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot, steps=1)
+    behind = await _time_format()(league)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == failure_reply(PALETTE_FORM, PASTE_NOT_SAVED)
+    assert await _rows(league.db_path, TIER_COLOURS) == []
+    assert [a["change_type"] for a in await audit_rows(league.db_path)] == ["IMAGE_CONFIG_SET"]
+    lines = await log_lines(league)
+    assert [line for line in lines if line.startswith("❌ ")] == [
+        line for line in lines if line.startswith(_failed(PALETTE_FORM))
+    ] != []
+    assert not any("Tier colours: Division 1" in line for line in lines)
+    assert await stopped_job(league.db_path) is None
+    assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)
