@@ -382,8 +382,10 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
-            modification_ordering_warnings,
             modify_session_points,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
+            modification_ordering_warnings,
         )
 
         await interaction.response.defer(ephemeral=True)
@@ -1534,6 +1536,8 @@ class ResultsCog(commands.Cog):
             AmendmentModifiedError,
             disable_amendment_mode,
             enable_amendment_mode,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
             get_amendment_state,
         )
 
@@ -1584,8 +1588,10 @@ class ResultsCog(commands.Cog):
 
         from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
-            get_amendment_state,
             revert_modification_store,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
+            get_amendment_state,
         )
 
         season = await season_for_command(
@@ -1645,8 +1651,10 @@ class ResultsCog(commands.Cog):
 
         from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
-            modification_ordering_warnings,
             modify_session_points,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
+            modification_ordering_warnings,
             staged_position_points,
         )
 
@@ -1737,6 +1745,8 @@ class ResultsCog(commands.Cog):
         from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
             modify_fl_bonus,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
             staged_fastest_lap,
         )
 
@@ -1802,6 +1812,8 @@ class ResultsCog(commands.Cog):
         from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
             modify_fl_position_limit,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
             staged_fastest_lap,
         )
 
@@ -1898,9 +1910,11 @@ class ResultsCog(commands.Cog):
 
         from leaguebot.core.services.amendment_service import (
             approval_faults,
-            get_amendment_state,
             get_modification_store_diff,
             validate_modification_ordering,
+        )
+        from leaguebot.results.services.amendment_mode_service import (
+            get_amendment_state,
         )
 
         season = await season_for_command(
