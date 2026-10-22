@@ -489,14 +489,12 @@ async def _saves_with_record(tmp_path: Any, case: Case) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_adding_a_configuration_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results config add Sprint`, once run, holds Sprint, one `POINTS_CONFIG_ADD` entry from
     nothing to the name, and its Success line."""
     await _saves_with_record(tmp_path, CASES["config-add"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["straight", "confirmed"])
 async def test_removing_a_configuration_records_its_whole_table_and_the_seasons_it_left(
     tmp_path, route
@@ -650,7 +648,6 @@ async def test_toggling_reserve_visibility_records_it_against_the_division(tmp_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_results_setting_whose_audit_entry_fails_saves_nothing_and_the_lane_goes_on(
     tmp_path
 ):
@@ -695,7 +692,6 @@ async def test_a_configuration_removed_ahead_of_a_points_change_refuses_it_when_
     assert await _rows(league.db_path, POINTS) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_setting_asked_before_results_is_turned_off_and_run_after_is_refused(tmp_path):
     """`/results config add Sprint` asked while results is on, the module turned off before it
     runs: refused when it runs with the module refusal, Sprint not added."""
@@ -856,7 +852,6 @@ async def test_a_same_value_stage_leaves_the_modified_flag_as_it_stood(tmp_path)
     assert await _rows(league.db_path, MODE) == [(1, 0)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_removal_asked_without_confirmation_is_refused_when_a_setup_season_took_it_up_meanwhile(
     tmp_path
 ):
@@ -962,8 +957,29 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
     assert last_said(behind) == "✅ Config **Other** created. All positions default to 0 points."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
-@pytest.mark.parametrize("route", sorted(CASES))
+@pytest.mark.parametrize(
+    "route",
+    [
+        pytest.param("amend-bulk-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("amend-fl", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("amend-fl-plimit", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("amend-revert", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("amend-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("amend-toggle-off", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("amend-toggle-on", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-add",
+        pytest.param("config-append", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("config-bulk-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("config-detach", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("config-fl", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("config-fl-plimit", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-remove",
+        pytest.param("config-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("config-xml-import-file", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("config-xml-import-form", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        pytest.param("reserves-toggle", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    ],
+)
 async def test_the_results_settings_are_acknowledged_naming_what_is_set(tmp_path, route):
     """Each results settings command, form or import is answered first with the queue's
     acknowledgement naming what is being set (a form's and a file import's as a follow-up to its

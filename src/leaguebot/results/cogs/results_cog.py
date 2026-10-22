@@ -18,8 +18,8 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.points_settings import CONFIG_ADD, CONFIG_REMOVE
 from leaguebot.results.services.points_config_service import (
-    ConfigAlreadyExistsError,
     ConfigNotFoundError,
     InvalidSessionTypeError,
 )
@@ -691,9 +691,12 @@ class _ConfirmRemoveConfigView(LeagueView):
             await refuse(interaction, "\u26d4 Not your action.", what=self._what(interaction, button))
             return
         self.stop()
-        await interaction.response.defer(ephemeral=True)
-        await self._cog._apply_config_remove(
-            interaction, self._config_name, what=self._what(interaction, button)
+        await self._cog.bot.change_queue.ask(
+            CONFIG_REMOVE,
+            {"config": self._config_name, "confirmed": True},
+            interaction=interaction,
+            what="`/results config remove`",
+            refusal_what=self._what(interaction, button),
         )
 
     @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
@@ -910,28 +913,14 @@ class ResultsCog(commands.Cog):
     async def config_add(self, interaction: discord.Interaction, name: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
         # A configuration's name is shown in replies and reviews, and held to the rules every
-        # name a league types is held to (#362).
+        # name a league types is held to (#362). Judged at once, before the change is asked.
         refusal = NAME.check("configuration name", name).refusal
         if refusal is not None:
             await refuse(interaction, f"\u274c {refusal}", what=describe(interaction))
             return
-        try:
-            await points_config_service.create_config(self.bot.db_path, name)
-        except ConfigAlreadyExistsError:
-            await refuse(
-                interaction,
-                f"\u274c A config named **{name}** already exists on this server.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Config **{name}** created. All positions default to 0 points.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config add | Success\n"
-            f"  config: {name}",
+        await self.bot.change_queue.ask(
+            CONFIG_ADD, {"config": name}, interaction=interaction, what=describe(interaction)
         )
 
     @config_group.command(name="remove", description="Remove a named points configuration.")
@@ -959,25 +948,19 @@ class ResultsCog(commands.Cog):
         """
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
 
-        if not await points_config_service.config_exists(
-            self.bot.db_path, name
-        ):
-            await refuse(
-                interaction, f"\u274c Config **{name}** not found.", what=describe(interaction)
+        standing = await points_config_service.setup_seasons_linking(self.bot.db_path, name)
+        if not standing:
+            await self.bot.change_queue.ask(
+                CONFIG_REMOVE,
+                {"config": name, "confirmed": False},
+                interaction=interaction,
+                what=describe(interaction),
             )
             return
 
-        standing = await points_config_service.setup_seasons_linking(
-            self.bot.db_path, name
-        )
-        if not standing:
-            await self._apply_config_remove(interaction, name, what=describe(interaction))
-            return
-
         seasons = ", ".join(f"**Season #{number}**" for _, number in standing)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"\u26a0\ufe0f **{name}** is attached to {seasons}, which is still being set up.\n"
             f"Removing it deletes the configuration outright — every position of every "
             f"session type, with no undo — and detaches it from that season, which will then "
@@ -985,27 +968,6 @@ class ResultsCog(commands.Cog):
             f"Remove it anyway?",
             view=_ConfirmRemoveConfigView(self, interaction.user.id, name, posted=interaction),
             ephemeral=True,
-        )
-
-    async def _apply_config_remove(
-        self, interaction: discord.Interaction, name: str, *, what: str
-    ) -> None:
-        """Remove the configuration and report it.
-
-        Shared by the straight path and the confirmation button, so the two cannot come to
-        differ about what removing one does or about what the log records. *what* names the
-        command or the button that asked, for the refusal where the configuration has gone in
-        the meantime.
-        """
-        try:
-            await points_config_service.remove_config(self.bot.db_path, name)
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=what)
-            return
-        await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config remove | Success\n"
-            f"  config: {name}",
         )
 
     @config_group.command(name="session", description="Set points for a finishing position in a session type.")

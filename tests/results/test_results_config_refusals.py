@@ -34,8 +34,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why a refusal when the change runs fails until the points settings run on the queue.
-UNBUILT = "#439: the points settings do not run on the change queue yet"
 OTHER_ADMIN = 5151
 CONFIG = "100%"
 MISSING = "75%"
@@ -108,7 +106,6 @@ def _case(case_id, command, run, reply, *, season_status="SETUP", at_once=True, 
         _case(
             "remove-gone-meanwhile", "results config remove", _remove_gone_meanwhile,
             f"❌ Config **{CONFIG}** not found.", at_once=False,
-            marks=pytest.mark.xfail(strict=True, reason=UNBUILT),
         ),
         _case(
             "session-not-found", "results config session",

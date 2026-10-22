@@ -48,9 +48,6 @@ from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
 from tests.support.settings_league import interaction, last_said, log_lines, said, settings_league
 from tests.support.undecorate import undecorate
 
-#: Why a test fails until adding and removing a configuration run on the change queue.
-UNBUILT = "#439: adding and removing a points configuration do not run on the change queue yet"
-
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 OTHER_ADMIN = 88
@@ -169,7 +166,6 @@ async def test_removing_is_refused_while_the_module_is_disabled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_configuration_is_created(tmp_path):
     """Admin adds 100%: acknowledged at once, nothing created until the change runs; then the
     configuration stands and the reply names it."""
@@ -218,7 +214,6 @@ async def test_a_refused_creation_is_recorded_as_a_refusal(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_created_configuration_is_logged_by_name(tmp_path):
     """Nothing is recorded when Admin asks; once the change has run, one line names the command
     and the configuration."""
@@ -245,7 +240,6 @@ async def test_removing_a_configuration_that_does_not_exist_says_so(tmp_path):
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_configuration_nothing_depends_on_is_removed_without_asking(tmp_path):
     """With nothing attached there is nothing to lose, and nagging on every removal is how
     a confirmation stops being read: acknowledged at once, no question, and removed when the
@@ -318,7 +312,6 @@ async def test_the_question_says_what_removing_costs(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_removes_the_configuration(tmp_path):
     """Season #3, in setup, stands on 100%; Admin was asked and presses "Remove it anyway": the
     press is acknowledged at once, and the configuration is removed when the change runs."""
@@ -439,7 +432,6 @@ async def test_both_routes_log_the_removal_identically(tmp_path):
     assert len(await log_lines(straight)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_removal_that_finds_nothing_is_reported_not_raised(tmp_path):
     """The configuration can go between the confirmation and the change's run — another admin
     removing it in the meantime must not raise at this one: Admin's press is acknowledged, and
