@@ -5,14 +5,17 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services import season_points_service
 from leaguebot.results.services.season_points_service import (
-    SeasonNotInSetupError,
-    attach_config,
     get_season_points_view,
     validate_monotonic_ordering,
 )
+from tests.support.saves import attach_config, create_config, set_session_points
 from tests.support.season_points import snapshot_points
+from tests.support.settings_league import settings_league
+
+#: Why the attach tests fail until the attachment is a setting on the change queue.
+UNBUILT = "#439: the config_attach setting and attach_config_on are not written yet"
 
 
 # ---------------------------------------------------------------------------
@@ -47,61 +50,109 @@ async def _make_season(db_path: str, status: str = "SETUP") -> int:
 
 async def _make_config_with_entries(db_path: str, config_name: str) -> None:
     """Create a server config with Feature Race P1=25, P2=18, P3=15."""
-    await points_config_service.create_config(db_path, config_name=config_name)
+    await create_config(db_path, config_name=config_name)
     for pos, pts in [(1, 25), (2, 18), (3, 15)]:
-        await points_config_service.set_session_points(
+        await set_session_points(
             db_path, config_name=config_name,
             session_type=SessionType.FEATURE_RACE, position=pos, points=pts,
         )
 
 
 # ---------------------------------------------------------------------------
-# attach_config — blocked outside SETUP
+# attaching — the season's status and the name are the config_attach setting's check; the
+# write on the save's connection only attaches
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_attach_config_blocked_outside_setup(db_path):
-    season_id = await _make_season(db_path, status="ACTIVE")
-    await _make_config_with_entries(db_path, "CFG")
-    with pytest.raises(SeasonNotInSetupError):
-        await attach_config(db_path, season_id=season_id, config_name="CFG", season_status="ACTIVE")
+async def _attach_verdict(tmp_path, *, status: str, name: str):
+    """A league with results on, one season in *status* and the configuration "CFG" created;
+    the `config_attach` setting's check asked, as a member asks it, to attach *name*.
+    Returns the league, the season's id and the check's verdict."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.change_queue import CheckContext
+    from leaguebot.results.services.points_settings import points_settings
+
+    league = await settings_league(tmp_path, modules=("results",))
+    season_id = await _make_season(league.db_path, status=status)
+    await _make_config_with_entries(league.db_path, "CFG")
+    (setting,) = [
+        s for s in points_settings(
+            modules=league.bot.module_service, seasons=league.bot.season_service
+        )
+        if s.kind == "results.setting.config_attach"
+    ]
+    verdict = await setting.check(CheckContext(
+        payload={"season_id": season_id, "config": name},
+        bot=league.bot,
+        db_path=league.db_path,
+        origin=ChangeOrigin.MEMBER,
+    ))
+    return league, season_id, verdict
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_attach_config_blocked_outside_setup(tmp_path):
+    """The season is active: the check refuses in today's words, and nothing is attached."""
+    from leaguebot.core.models.change import VerdictKind
+
+    league, season_id, verdict = await _attach_verdict(tmp_path, status="ACTIVE", name="CFG")
+
+    assert verdict.kind is VerdictKind.REFUSE
+    assert verdict.reply == "\u274c Config attachment is only allowed for seasons in SETUP."
+    assert await season_points_service.get_attached_config_names(
+        league.db_path, season_id
+    ) == []
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_attach_config_success_in_setup(db_path):
+    """Attaching "CFG" to a season in setup, on the save's connection: the season holds it,
+    and the write answers that it changed something, with one `POINTS_CONFIG_ATTACH` entry."""
+    from leaguebot.results.services.season_points_service import attach_config_on
+
     season_id = await _make_season(db_path, status="SETUP")
     await _make_config_with_entries(db_path, "CFG")
-    await attach_config(db_path, season_id=season_id, config_name="CFG", season_status="SETUP")
+
+    async with get_connection(db_path) as db:
+        saved = await attach_config_on(db, season_id, "CFG")
+        await db.commit()
+
     names = await season_points_service.get_attached_config_names(db_path, season_id)
     assert "CFG" in names
+    assert saved.changed is True
+    assert [a.change_type for a in saved.audits] == ["POINTS_CONFIG_ATTACH"]
 
 
-@pytest.mark.asyncio
-async def test_attach_config_rejects_a_name_not_in_the_store(db_path):
-    """#132. A typo attached a phantom that only surfaced as silence at approval."""
-    season_id = await _make_season(db_path, status="SETUP")
-    await _make_config_with_entries(db_path, "Standard")
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_attach_config_rejects_a_name_not_in_the_store(tmp_path):
+    """#132. A typo attached a phantom that only surfaced as silence at approval. The season
+    is in setup and "Standrad" was never created: the check refuses, naming the way out, and
+    nothing is attached."""
+    from leaguebot.core.models.change import VerdictKind
 
-    with pytest.raises(points_config_service.ConfigNotFoundError):
-        await attach_config(
-            db_path, season_id=season_id, config_name="Standrad",
-            season_status="SETUP",
-        )
+    league, season_id, verdict = await _attach_verdict(
+        tmp_path, status="SETUP", name="Standrad"
+    )
 
-    assert await season_points_service.get_attached_config_names(db_path, season_id) == []
+    assert verdict.kind is VerdictKind.REFUSE
+    assert "does not exist on this server, so nothing was attached" in verdict.reply
+    assert "/results config add" in verdict.reply
+    assert await season_points_service.get_attached_config_names(
+        league.db_path, season_id
+    ) == []
 
 
-@pytest.mark.asyncio
-async def test_attach_config_checks_the_season_status_before_the_name(db_path):
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_attach_config_checks_the_season_status_before_the_name(tmp_path):
     """An active season is refused for being active, whatever was typed into it."""
-    season_id = await _make_season(db_path, status="ACTIVE")
+    from leaguebot.core.models.change import VerdictKind
 
-    with pytest.raises(SeasonNotInSetupError):
-        await attach_config(
-            db_path, season_id=season_id, config_name="Whatever",
-            season_status="ACTIVE",
-        )
+    _league, _season_id, verdict = await _attach_verdict(
+        tmp_path, status="ACTIVE", name="Whatever"
+    )
+
+    assert verdict.kind is VerdictKind.REFUSE
+    assert verdict.reply == "\u274c Config attachment is only allowed for seasons in SETUP."
 
 
 # ---------------------------------------------------------------------------
@@ -276,9 +327,9 @@ async def test_get_season_points_view_trailing_zero_collapse(db_path):
 
 async def _make_bad_config(db_path: str, config_name: str) -> None:
     """A config a manager could build today: first place worth less than second."""
-    await points_config_service.create_config(db_path, config_name=config_name)
+    await create_config(db_path, config_name=config_name)
     for pos, pts in [(1, 10), (2, 25)]:
-        await points_config_service.set_session_points(
+        await set_session_points(
             db_path, config_name=config_name,
             session_type=SessionType.FEATURE_RACE, position=pos, points=pts,
         )
@@ -362,14 +413,14 @@ async def test_attached_ordering_skips_a_name_attached_but_never_created(db_path
 async def test_attached_ordering_judges_each_session_type_on_its_own(db_path):
     """A league scoring qualifying differently is not compared across the two tables."""
     season_id = await _make_season(db_path)
-    await points_config_service.create_config(db_path, config_name="MIXED")
+    await create_config(db_path, config_name="MIXED")
     for pos, pts in [(1, 25), (2, 18)]:
-        await points_config_service.set_session_points(
+        await set_session_points(
             db_path, config_name="MIXED",
             session_type=SessionType.FEATURE_RACE, position=pos, points=pts,
         )
     for pos, pts in [(1, 1), (2, 3)]:
-        await points_config_service.set_session_points(
+        await set_session_points(
             db_path, config_name="MIXED",
             session_type=SessionType.FEATURE_QUALIFYING, position=pos, points=pts,
         )
