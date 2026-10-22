@@ -2909,3 +2909,185 @@ async def test_a_failure_s_record_that_raises_leaves_neither_its_row_nor_the_fai
     assert await _scratch(env) == []
     assert (await _step_marks(env))[0] == (0, None)
     assert await stopped_job(env.db_path) is None
+
+
+# ---------------------------------------------------------------------------
+# A job that ends on a fault rather than stopping its lane (#439, slice 7)
+# ---------------------------------------------------------------------------
+
+#: Why the tests of a job ending on a fault are expected to fail until the queue has it.
+ENDS_ON_A_FAULT = "#439: the queue has no Step.on_fault or ChangeType.on_check_fault yet"
+
+
+def _ended_by(line: str) -> Any:
+    """An `on_fault` marking its step failed with *line* as the step's only line."""
+    api = _api()
+
+    def _on_fault(_ctx, _error):
+        return api.StepResult(result={"failed": True}, lines=(line,))
+
+    return _on_fault
+
+
+def _failed_or_fine(ctx) -> str:
+    """An outcome saying whether any step of the change failed, read from its results."""
+    return "❌ It failed." if any((s.result or {}).get("failed") for s in ctx.steps) else "✅ Fine."
+
+
+@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
+async def test_a_step_that_ends_on_a_fault_is_marked_done_and_its_lane_goes_on(env):
+    """A step with `on_fault` that raises is marked done with what `on_fault` returns: no stop
+    notice, its line written, the change carrying on to its next step and its outcome reading the
+    failed step's result, and the change asked behind it running."""
+    api = _api()
+    ran: list[str] = []
+
+    async def _boom(_ctx):
+        ran.append("a")
+        raise RuntimeError("boom")
+
+    ending = api.Step("a", api.StepKind.ACT, _boom, on_fault=_ended_by("❌ Step a ended."))
+    _queue(
+        env,
+        _type(steps=[ending, _act("b", ran)], outcome=_failed_or_fine),
+        _type("later", steps=[_act("later", ran)]),
+    )
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+
+    assert ran == ["a", "b", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+    assert await stopped_job(env.db_path) is None
+    assert all(s["done_at"] for s in await step_rows(env.db_path))
+    lines = await _lines(env)
+    assert lines.count("❌ Step a ended.") == 1
+    assert not any("The queue is stopped" in line for line in lines)
+    assert not any(getattr(m, "view", None) for m in env.bot.log_channel.posted)
+    assert updated_reply(interaction) == "❌ It failed."
+
+
+@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
+@pytest.mark.parametrize("fault_in", ["its run", "its audit entry"])
+async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monkeypatch, fault_in):
+    """A `SAVE` step with `on_fault` that faults, in its own run or in the queue's write of its
+    audit entry, keeps none of its writes, its audit entry or its own line: only its mark and
+    `on_fault`'s line are saved."""
+    from leaguebot.core.services import change_queue
+
+    api = _api()
+
+    async def _run(db, _ctx):
+        await db.execute("INSERT INTO scratch (v) VALUES ('written')")
+        if fault_in == "its run":
+            raise RuntimeError("boom")
+        return api.StepResult(
+            audits=(api.AuditRecord("DUMMY_SET", {"v": None}, {"v": "written"}),),
+            lines=("✅ Written.",),
+        )
+
+    if fault_in == "its audit entry":
+        async def _no_audit(*_args, **_kwargs):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        monkeypatch.setattr(change_queue, "record_change_on", _no_audit)
+
+    ending = api.Step("a", api.StepKind.SAVE, _run, on_fault=_ended_by("❌ Nothing was written."))
+    _queue(env, _type(steps=[ending], outcome=_failed_or_fine))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    assert await _scratch(env) == []
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM audit_entries")
+        assert (await cursor.fetchone())[0] == 0
+    assert [bool(s["done_at"]) for s in await step_rows(env.db_path)] == [True]
+    assert await _states(env) == ["DONE"]
+    lines = await _lines(env)
+    assert "❌ Nothing was written." in lines
+    assert "✅ Written." not in lines
+    assert await stopped_job(env.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
+async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_where_its_type_says_so(
+    env,
+):
+    """A check that raises as a member's change starts, where its type has `on_check_fault`, ends
+    the change: the acknowledgement is updated with what `on_check_fault` returns, one failure line
+    is written and no refusal line, and the lane goes on. A bot's change of the same type, and a
+    member's change of a type without it, still stop the lane."""
+    api = _api()
+    holder = {"raise": False}
+    ran: list[str] = []
+    told: list[tuple[str, str]] = []
+
+    def _on_check_fault(what: str, error: BaseException) -> str:
+        told.append((what, type(error).__name__))
+        return f"❌ {what} could not be checked."
+
+    checked = dataclasses.replace(
+        _type("checked", steps=[_act("c", ran)], check=_check_raising_when(holder)),
+        on_check_fault=_on_check_fault,
+    )
+    _queue(
+        env,
+        checked,
+        _type("unhooked", steps=[_act("u", ran)], check=_check_raising_when(holder)),
+        _type("dummy", steps=[_act("a", ran)]),
+    )
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, "checked", interaction=interaction, what="`/checked`")
+    await _ask(env, "dummy")
+    holder["raise"] = True
+    await run_queue(env.bot)
+
+    assert await _states(env) == ["REFUSED", "DONE"]
+    assert ran == ["a"]
+    assert told == [("`/checked`", "RuntimeError")]
+    assert updated_reply(interaction) == "❌ `/checked` could not be checked."
+    lines = await _lines(env)
+    assert [line for line in lines if line.startswith("❌ `/checked` failed for ")] == [
+        f"❌ `/checked` failed for {NAMED} — RuntimeError. The details are in the host's log."
+    ]
+    assert not any(line.startswith("⛔") for line in lines)
+    assert await stopped_job(env.db_path) is None
+
+    holder["raise"] = False
+    await _ask(env, "checked", payload={"n": 2}, origin=api.ChangeOrigin.BOT, what="`/checked`")
+    holder["raise"] = True
+    await run_queue(env.bot)
+
+    assert (await stopped_job(env.db_path))["name"] == "c"
+    await discard_job(env.bot)
+
+    holder["raise"] = False
+    await _ask(env, "unhooked", what="`/unhooked`")
+    holder["raise"] = True
+    await run_queue(env.bot)
+
+    assert (await stopped_job(env.db_path))["name"] == "u"
+    assert ran == ["a"]
+
+
+@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
+async def test_a_step_cannot_both_end_on_a_fault_and_be_undiscardable(env):
+    """A job that ends on a fault never stops its lane, so it can never be offered for a discard:
+    a step carrying both is refused when its type is registered."""
+    api = _api()
+
+    async def _never(_ctx):
+        return "a round would never run"
+
+    step = api.Step(
+        "a", api.StepKind.ACT, _act("a", []).run,
+        on_fault=_ended_by("❌ Ended."), undiscardable=_never,
+    )
+    queue = _queue(env)
+
+    with pytest.raises(ValueError):
+        queue.register(_type(steps=[step]))
