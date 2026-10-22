@@ -1568,11 +1568,6 @@ async def reserves_in_standings(db_path: str, division_id: int) -> bool:
         return await reserves_in_standings_on(db, division_id)
 
 
-async def _get_show_reserves(db_path: str, division_id: int) -> bool:
-    """Return the reserves_in_standings flag for a division (default True)."""
-    return await reserves_in_standings(db_path, division_id)
-
-
 async def set_reserves_in_standings_on(
     db: aiosqlite.Connection, division_id: int, shown: bool
 ) -> Saved:

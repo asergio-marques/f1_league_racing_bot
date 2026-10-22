@@ -702,7 +702,6 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._load_driver_rows"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("core/services/season_classification_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("core/services/season_classification_service.py", "leaguebot.results.services.results_post_service._get_show_reserves"): (2, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
