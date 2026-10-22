@@ -22,9 +22,6 @@ from tests.support.saves import (
     set_session_points,
 )
 
-#: Why the import's service tests fail until it writes on the save's connection.
-UNBUILT = "#439: xml_import_config_on is not written yet"
-
 # ---------------------------------------------------------------------------
 # DB fixture (mirrors test_points_config_service.py)
 # ---------------------------------------------------------------------------
@@ -373,7 +370,6 @@ async def _import_on(db_path: str, config_name: str, payload: XmlImportPayload):
     return saved
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_positions(db_path):
     """The import writes position rows to the database."""
@@ -387,7 +383,6 @@ async def test_xml_import_config_upserts_positions(db_path):
     assert pts_by_pos == {1: 25, 2: 18}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_fl(db_path):
     """The import writes fastest-lap rows to the database."""
@@ -403,7 +398,6 @@ async def test_xml_import_config_upserts_fl(db_path):
     assert fl[0].fl_position_limit == 10
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_not_found_raises(db_path):
     """The write raises ConfigNotFoundError for an unknown config: the `config_import` setting's
@@ -413,7 +407,6 @@ async def test_xml_import_config_not_found_raises(db_path):
         await _import_on(db_path, "Ghost", payload)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_path):
     """Partial import (only Feature Race) leaves Sprint Race rows untouched."""
@@ -439,7 +432,6 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     assert {e.position: e.points for e in feature_entries} == {1: 25, 2: 18}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.asyncio
 async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     """When FL limit not in payload, existing fl_position_limit in DB is preserved."""

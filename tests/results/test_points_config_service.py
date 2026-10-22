@@ -226,7 +226,6 @@ async def test_config_exists_answers_by_name(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: config_points_on is not written yet")
 async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_path):
     """Every pair lands on the connection the save hands it, and each position it changed is
     answered as an audit entry, from what it was to what it became; the queue stamps who and

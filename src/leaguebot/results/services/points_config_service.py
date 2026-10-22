@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.services.audit_service import record_change_on
+from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
@@ -36,18 +38,36 @@ class InvalidSessionTypeError(Exception):
     pass
 
 
+async def create_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
+    """Add the points configuration *config_name* on *db*, committing nothing.
+
+    One `POINTS_CONFIG_ADD` entry, from nothing to the name. Raises
+    :class:`ConfigAlreadyExistsError` where the name is taken: the setting's check refuses that
+    first, so this is the write's own guard behind it.
+    """
+    try:
+        await db.execute(
+            "INSERT INTO points_config_store (config_name) VALUES (?)",
+            (config_name,),
+        )
+    except aiosqlite.IntegrityError:
+        raise ConfigAlreadyExistsError(config_name)
+    return Saved(
+        changed=True,
+        audits=(AuditRecord("POINTS_CONFIG_ADD", {}, {"config": config_name}),),
+        result={"config": config_name},
+    )
+
+
 async def create_config(db_path: str, config_name: str) -> PointsConfigStore:
     async with get_connection(db_path) as db:
-        try:
-            cursor = await db.execute(
-                "INSERT INTO points_config_store (config_name) VALUES (?)",
-                (config_name,),
-            )
-            await db.commit()
-            row_id = inserted_id(cursor)
-        except aiosqlite.IntegrityError:
-            raise ConfigAlreadyExistsError(config_name)
-    return PointsConfigStore(id=row_id, config_name=config_name)
+        await create_config_on(db, config_name)
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT id FROM points_config_store WHERE config_name = ?", (config_name,)
+        )
+        row = await sole_row(cursor)
+    return PointsConfigStore(id=row["id"], config_name=config_name)
 
 
 async def config_exists(db_path: str, config_name: str) -> bool:
@@ -65,6 +85,24 @@ async def config_exists(db_path: str, config_name: str) -> bool:
         return await cursor.fetchone() is not None
 
 
+async def setup_seasons_linking_on(
+    db: aiosqlite.Connection, config_name: str
+) -> list[tuple[int, int]]:
+    """The ``(season_id, season_number)`` of every season in setup attached to this name, read
+    on *db*."""
+    cursor = await db.execute(
+        """
+        SELECT s.id AS id, s.season_number AS season_number
+        FROM season_points_links AS l
+        JOIN seasons AS s ON s.id = l.season_id
+        WHERE l.config_name = ? AND s.status = 'SETUP'
+        ORDER BY s.season_number, s.id
+        """,
+        (config_name,),
+    )
+    return [(r["id"], r["season_number"]) for r in await cursor.fetchall()]
+
+
 async def setup_seasons_linking(
     db_path: str, config_name: str
 ) -> list[tuple[int, int]]:
@@ -74,17 +112,62 @@ async def setup_seasons_linking(
     the removal will take the configuration away from rather than asking a blind yes.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT s.id AS id, s.season_number AS season_number
-            FROM season_points_links AS l
-            JOIN seasons AS s ON s.id = l.season_id
-            WHERE l.config_name = ? AND s.status = 'SETUP'
-            ORDER BY s.season_number, s.id
-            """,
-            (config_name,),
-        )
-        return [(r["id"], r["season_number"]) for r in await cursor.fetchall()]
+        return await setup_seasons_linking_on(db, config_name)
+
+
+async def remove_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
+    """Delete the points configuration *config_name* on *db*, committing nothing.
+
+    What the removal throws away is the audit entry's old value (Constitution V): the name,
+    every position it paid by session type, every fastest-lap bonus and limit, and the numbers
+    of the setup seasons it was detached from. Raises :class:`ConfigNotFoundError` where there
+    is no such configuration. See :func:`remove_config` for why only a setup season's link goes.
+    """
+    config_id = await _get_config_id(db, config_name)
+    positions: dict[str, dict[int, int]] = {}
+    cursor = await db.execute(
+        "SELECT session_type, position, points FROM points_config_entries "
+        "WHERE config_id = ? ORDER BY session_type, position",
+        (config_id,),
+    )
+    for row in await cursor.fetchall():
+        positions.setdefault(row["session_type"], {})[row["position"]] = row["points"]
+    fastest_laps: dict[str, dict[str, int | None]] = {}
+    cursor = await db.execute(
+        "SELECT session_type, fl_points, fl_position_limit FROM points_config_fl "
+        "WHERE config_id = ? ORDER BY session_type",
+        (config_id,),
+    )
+    for row in await cursor.fetchall():
+        fastest_laps[row["session_type"]] = {
+            "fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"],
+        }
+    detached_from = [number for _, number in await setup_seasons_linking_on(db, config_name)]
+    await db.execute("DELETE FROM points_config_store WHERE id = ?", (config_id,))
+    await db.execute(
+        """
+        DELETE FROM season_points_links
+        WHERE config_name = ?
+          AND season_id IN (
+              SELECT id FROM seasons WHERE status = 'SETUP'
+          )
+        """,
+        (config_name,),
+    )
+    return Saved(
+        changed=True,
+        audits=(AuditRecord(
+            "POINTS_CONFIG_REMOVE",
+            {
+                "config": config_name,
+                "positions": positions,
+                "fastest_laps": fastest_laps,
+                "detached_from": detached_from,
+            },
+            {},
+        ),),
+        result={"config": config_name, "detached_from": detached_from},
+    )
 
 
 async def remove_config(db_path: str, config_name: str) -> None:
@@ -114,27 +197,7 @@ async def remove_config(db_path: str, config_name: str) -> None:
     and leave the orphan it exists to prevent.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM points_config_store WHERE config_name = ?",
-            (config_name,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            raise ConfigNotFoundError(config_name)
-        await db.execute(
-            "DELETE FROM points_config_store WHERE id = ?",
-            (row["id"],),
-        )
-        await db.execute(
-            """
-            DELETE FROM season_points_links
-            WHERE config_name = ?
-              AND season_id IN (
-                  SELECT id FROM seasons WHERE status = 'SETUP'
-              )
-            """,
-            (config_name,),
-        )
+        await remove_config_on(db, config_name)
         await db.commit()
 
 
@@ -157,16 +220,7 @@ async def set_session_points(
     points: int,
 ) -> None:
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, config_name)
-        await db.execute(
-            """
-            INSERT INTO points_config_entries (config_id, session_type, position, points)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(config_id, session_type, position)
-            DO UPDATE SET points = excluded.points
-            """,
-            (config_id, session_type.value, position, points),
-        )
+        await config_points_on(db, config_name, session_type, [(position, points)])
         await db.commit()
 
 
@@ -217,6 +271,30 @@ async def held_fastest_lap(
     return {"fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"]}
 
 
+async def ordering_warnings_on(
+    db: aiosqlite.Connection,
+    config_name: str,
+    session_type: SessionType,
+) -> list[str]:
+    """:func:`ordering_warnings` read on *db*, so a save can judge the table it has just written."""
+    try:
+        config_id = await _get_config_id(db, config_name)
+    except ConfigNotFoundError:
+        return []
+    cursor = await db.execute(
+        "SELECT position, points FROM points_config_entries "
+        "WHERE config_id = ? AND session_type = ?",
+        (config_id, session_type.value),
+    )
+    rows = await cursor.fetchall()
+    return [
+        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
+        for position, points, next_position, next_points in ordering_violations(
+            [(r["position"], r["points"]) for r in rows]
+        )
+    ]
+
+
 async def ordering_warnings(
     db_path: str,
     config_name: str,
@@ -237,23 +315,75 @@ async def ordering_warnings(
     told so by :class:`ConfigNotFoundError` and does not need telling twice.
     """
     async with get_connection(db_path) as db:
-        try:
-            config_id = await _get_config_id(db, config_name)
-        except ConfigNotFoundError:
-            return []
-        cursor = await db.execute(
-            "SELECT position, points FROM points_config_entries "
-            "WHERE config_id = ? AND session_type = ?",
-            (config_id, session_type.value),
-        )
-        rows = await cursor.fetchall()
+        return await ordering_warnings_on(db, config_name, session_type)
 
-    return [
-        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
-        for position, points, next_position, next_points in ordering_violations(
-            [(r["position"], r["points"]) for r in rows]
+
+async def config_fastest_lap_on(
+    db: aiosqlite.Connection,
+    config_name: str,
+    session_type: SessionType,
+    *,
+    fl_points: int | None = None,
+    fl_position_limit: int | None = None,
+) -> Saved:
+    """Set a race session's fastest-lap bonus and/or position limit on *db*, committing nothing.
+
+    Only the column given is set; the other is kept as it stands, the bonus being 0 and the limit
+    unset where the session has no row yet. A value the session already holds changes nothing: no
+    write, no entry. Otherwise one `POINTS_CONFIG_FL_SET` entry records the bonus and the limit as
+    they were and as they are, in the shape the import records them in. Raises
+    :class:`InvalidSessionTypeError` for a qualifying session and :class:`ConfigNotFoundError`
+    for a configuration that does not exist: the setting's check refuses both first.
+    """
+    if session_type.is_qualifying:
+        raise InvalidSessionTypeError(
+            "Fastest-lap bonus and position limit cannot be set for qualifying session type: "
+            f"{session_type.value}"
         )
-    ]
+    config_id = await _get_config_id(db, config_name)
+    cursor = await db.execute(
+        "SELECT fl_points, fl_position_limit FROM points_config_fl "
+        "WHERE config_id = ? AND session_type = ?",
+        (config_id, session_type.value),
+    )
+    existing = await cursor.fetchone()
+    old = (existing["fl_points"], existing["fl_position_limit"]) if existing else (None, None)
+    held = {"fl_points": old[0], "fl_position_limit": old[1]}
+    asked = {"fl_points": fl_points, "fl_position_limit": fl_position_limit}
+    if existing is not None and all(
+        held[name] == value for name, value in asked.items() if value is not None
+    ):
+        return Saved(changed=False)
+    new_points = fl_points if fl_points is not None else (old[0] if existing else 0)
+    new_limit = fl_position_limit if fl_position_limit is not None else old[1]
+    await db.execute(
+        """
+        INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(config_id, session_type)
+        DO UPDATE SET fl_points = excluded.fl_points,
+                      fl_position_limit = excluded.fl_position_limit
+        """,
+        (config_id, session_type.value, new_points, new_limit),
+    )
+    return Saved(
+        changed=True,
+        audits=(AuditRecord(
+            "POINTS_CONFIG_FL_SET",
+            _fastest_lap_value(config_name, session_type, old[0], old[1]),
+            _fastest_lap_value(config_name, session_type, new_points, new_limit),
+        ),),
+    )
+
+
+def _fastest_lap_value(
+    config_name: str, session_type: SessionType, fl_points: int | None, fl_limit: int | None
+) -> dict[str, object]:
+    """One fastest-lap row as an audit entry records it."""
+    return {
+        "config": config_name, "session_type": session_type.value,
+        "fl_points": fl_points, "fl_position_limit": fl_limit,
+    }
 
 
 async def set_fl_bonus(
@@ -262,28 +392,8 @@ async def set_fl_bonus(
     session_type: SessionType,
     fl_points: int,
 ) -> None:
-    if session_type.is_qualifying:
-        raise InvalidSessionTypeError(
-            f"Fastest-lap bonus cannot be set for qualifying session type: {session_type.value}"
-        )
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, config_name)
-        # Preserve existing fl_position_limit if row already exists
-        cursor = await db.execute(
-            "SELECT fl_position_limit FROM points_config_fl WHERE config_id = ? AND session_type = ?",
-            (config_id, session_type.value),
-        )
-        existing = await cursor.fetchone()
-        fl_position_limit = existing["fl_position_limit"] if existing else None
-        await db.execute(
-            """
-            INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(config_id, session_type)
-            DO UPDATE SET fl_points = excluded.fl_points
-            """,
-            (config_id, session_type.value, fl_points, fl_position_limit),
-        )
+        await config_fastest_lap_on(db, config_name, session_type, fl_points=fl_points)
         await db.commit()
 
 
@@ -293,27 +403,8 @@ async def set_fl_position_limit(
     session_type: SessionType,
     limit: int,
 ) -> None:
-    if session_type.is_qualifying:
-        raise InvalidSessionTypeError(
-            f"Fastest-lap position limit cannot be set for qualifying session type: {session_type.value}"
-        )
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, config_name)
-        cursor = await db.execute(
-            "SELECT fl_points FROM points_config_fl WHERE config_id = ? AND session_type = ?",
-            (config_id, session_type.value),
-        )
-        existing = await cursor.fetchone()
-        fl_points = existing["fl_points"] if existing else 0
-        await db.execute(
-            """
-            INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(config_id, session_type)
-            DO UPDATE SET fl_position_limit = excluded.fl_position_limit
-            """,
-            (config_id, session_type.value, fl_points, limit),
-        )
+        await config_fastest_lap_on(db, config_name, session_type, fl_position_limit=limit)
         await db.commit()
 
 
@@ -455,33 +546,69 @@ async def _position_points(
     return None if row is None else row["points"]
 
 
-async def _record_position_change(
+def _position_value(
+    config_name: str, session_type: SessionType, position: int, points: int | None
+) -> dict[str, object]:
+    """One position's points as an audit entry records them."""
+    return {
+        "config": config_name, "session_type": session_type.value,
+        "position": position, "points": points,
+    }
+
+
+async def _write_position(
     db: aiosqlite.Connection,
+    config_id: int,
     config_name: str,
     session_type: SessionType,
     position: int,
-    old: int | None,
-    new: int,
-    *,
-    actor_id: int,
-    actor_name: str,
-    now: datetime,
-) -> None:
-    """Record one position's points changing, from what to what, inside the caller's write."""
-    await record_change_on(
-        db,
-        actor_id=actor_id,
-        actor_name=actor_name,
-        change_type="POINTS_CONFIG_SESSION_SET",
-        old_value={
-            "config": config_name, "session_type": session_type.value,
-            "position": position, "points": old,
-        },
-        new_value={
-            "config": config_name, "session_type": session_type.value,
-            "position": position, "points": new,
-        },
-        now=now,
+    points: int,
+) -> AuditRecord | None:
+    """Upsert one position's points; the audit entry for it where the points changed."""
+    old = await _position_points(db, config_id, session_type, position)
+    if old == points:
+        return None
+    await db.execute(
+        """
+        INSERT INTO points_config_entries (config_id, session_type, position, points)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(config_id, session_type, position)
+        DO UPDATE SET points = excluded.points
+        """,
+        (config_id, session_type.value, position, points),
+    )
+    return AuditRecord(
+        "POINTS_CONFIG_SESSION_SET",
+        _position_value(config_name, session_type, position, old),
+        _position_value(config_name, session_type, position, points),
+    )
+
+
+async def config_points_on(
+    db: aiosqlite.Connection,
+    config_name: str,
+    session_type: SessionType,
+    pairs: list[tuple[int, int]],
+) -> Saved:
+    """Set every ``(position, points)`` of *pairs* on *db*, committing nothing.
+
+    One `POINTS_CONFIG_SESSION_SET` entry for each position whose points change, from what to
+    what; a position already paying what is asked writes nothing, and where none changes the
+    answer is unchanged. A position repeated in *pairs* takes its last value. The ordering of the
+    table the writes leave behind is read on the same connection into ``result["warnings"]``
+    (see :func:`ordering_warnings`), for the reply to warn with. Raises
+    :class:`ConfigNotFoundError` if *config_name* does not exist.
+    """
+    config_id = await _get_config_id(db, config_name)
+    audits = []
+    for position, points in pairs:
+        audit = await _write_position(db, config_id, config_name, session_type, position, points)
+        if audit is not None:
+            audits.append(audit)
+    return Saved(
+        changed=bool(audits),
+        audits=tuple(audits),
+        result={"warnings": await ordering_warnings_on(db, config_name, session_type)},
     )
 
 
@@ -503,24 +630,81 @@ async def set_session_points_many(
     value. Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
     """
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, config_name)
-        for position, points in pairs:
-            old = await _position_points(db, config_id, session_type, position)
-            await db.execute(
-                """
-                INSERT INTO points_config_entries (config_id, session_type, position, points)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(config_id, session_type, position)
-                DO UPDATE SET points = excluded.points
-                """,
-                (config_id, session_type.value, position, points),
-            )
-            if old != points:
-                await _record_position_change(
-                    db, config_name, session_type, position, old, points,
-                    actor_id=actor_id, actor_name=actor_name, now=now,
-                )
+        saved = await config_points_on(db, config_name, session_type, pairs)
+        await _record(db, saved, actor_id=actor_id, actor_name=actor_name, now=now)
         await db.commit()
+
+
+async def _record(
+    db: aiosqlite.Connection, saved: Saved, *, actor_id: int, actor_name: str, now: datetime
+) -> None:
+    """Write each audit entry of *saved* on *db* for the actor, until the queue does it."""
+    for audit in saved.audits:
+        await record_change_on(
+            db,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            change_type=audit.change_type,
+            old_value=audit.old_value,
+            new_value=audit.new_value,
+            now=now,
+        )
+
+
+async def xml_import_config_on(
+    db: aiosqlite.Connection,
+    config_name: str,
+    positions: Mapping[SessionType, Mapping[int, int]],
+    fastest_laps: Mapping[SessionType, tuple[int, int | None]],
+) -> Saved:
+    """Upsert every position and fastest-lap row of an import on *db*, committing nothing.
+
+    One entry for each position whose points change and each fastest-lap row that changes, from
+    what to what; a value already held writes nothing, and where nothing changes the answer is
+    unchanged. A fastest-lap row naming no limit keeps the one it holds. Raises
+    :class:`ConfigNotFoundError` if *config_name* does not exist.
+    """
+    config_id = await _get_config_id(db, config_name)
+    audits = []
+    for session_type, by_position in positions.items():
+        for position, points in by_position.items():
+            audit = await _write_position(
+                db, config_id, config_name, session_type, position, points
+            )
+            if audit is not None:
+                audits.append(audit)
+    for session_type, (fl_pts, fl_limit) in fastest_laps.items():
+        cursor = await db.execute(
+            "SELECT fl_points, fl_position_limit FROM points_config_fl "
+            "WHERE config_id = ? AND session_type = ?",
+            (config_id, session_type.value),
+        )
+        existing = await cursor.fetchone()
+        if fl_limit is None:
+            # Preserve existing fl_position_limit if row already exists
+            fl_limit = existing["fl_position_limit"] if existing else None
+        old_fl = (
+            (existing["fl_points"], existing["fl_position_limit"]) if existing else (None, None)
+        )
+        if old_fl == (fl_pts, fl_limit):
+            continue
+        await db.execute(
+            """
+            INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(config_id, session_type)
+            DO UPDATE SET
+                fl_points = excluded.fl_points,
+                fl_position_limit = excluded.fl_position_limit
+            """,
+            (config_id, session_type.value, fl_pts, fl_limit),
+        )
+        audits.append(AuditRecord(
+            "POINTS_CONFIG_FL_SET",
+            _fastest_lap_value(config_name, session_type, old_fl[0], old_fl[1]),
+            _fastest_lap_value(config_name, session_type, fl_pts, fl_limit),
+        ))
+    return Saved(changed=bool(audits), audits=tuple(audits))
 
 
 async def xml_import_config(
@@ -542,68 +726,8 @@ async def xml_import_config(
     connection, so the import and its record land together or not at all.
     """
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, config_name)
-
-        # --- position rows ------------------------------------------------
-        for session_type, pos_dict in payload.positions.items():
-            for position, points in pos_dict.items():
-                old = await _position_points(db, config_id, session_type, position)
-                await db.execute(
-                    """
-                    INSERT INTO points_config_entries (config_id, session_type, position, points)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(config_id, session_type, position)
-                    DO UPDATE SET points = excluded.points
-                    """,
-                    (config_id, session_type.value, position, points),
-                )
-                if old != points:
-                    await _record_position_change(
-                        db, config_name, session_type, position, old, points,
-                        actor_id=actor_id, actor_name=actor_name, now=now,
-                    )
-
-        # --- fastest-lap rows ---------------------------------------------
-        for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
-            cursor = await db.execute(
-                "SELECT fl_points, fl_position_limit FROM points_config_fl "
-                "WHERE config_id = ? AND session_type = ?",
-                (config_id, session_type.value),
-            )
-            existing = await cursor.fetchone()
-            if fl_limit is None:
-                # Preserve existing fl_position_limit if row already exists
-                fl_limit = existing["fl_position_limit"] if existing else None
-            old_fl = (
-                (existing["fl_points"], existing["fl_position_limit"]) if existing else (None, None)
-            )
-
-            await db.execute(
-                """
-                INSERT INTO points_config_fl (config_id, session_type, fl_points, fl_position_limit)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(config_id, session_type)
-                DO UPDATE SET
-                    fl_points = excluded.fl_points,
-                    fl_position_limit = excluded.fl_position_limit
-                """,
-                (config_id, session_type.value, fl_pts, fl_limit),
-            )
-            if old_fl != (fl_pts, fl_limit):
-                await record_change_on(
-                    db,
-                    actor_id=actor_id,
-                    actor_name=actor_name,
-                    change_type="POINTS_CONFIG_FL_SET",
-                    old_value={
-                        "config": config_name, "session_type": session_type.value,
-                        "fl_points": old_fl[0], "fl_position_limit": old_fl[1],
-                    },
-                    new_value={
-                        "config": config_name, "session_type": session_type.value,
-                        "fl_points": fl_pts, "fl_position_limit": fl_limit,
-                    },
-                    now=now,
-                )
-
+        saved = await xml_import_config_on(
+            db, config_name, payload.positions, payload.fastest_laps
+        )
+        await _record(db, saved, actor_id=actor_id, actor_name=actor_name, now=now)
         await db.commit()
