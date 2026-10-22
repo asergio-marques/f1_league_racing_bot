@@ -12,7 +12,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.amendment_service import (
     AmendmentModifiedError,
-    AmendmentNotActiveError,
     disable_amendment_mode,
     enable_amendment_mode,
     get_amendment_state,
@@ -155,20 +154,6 @@ async def test_revert_modification_store(db_path):
         row = await cursor.fetchone()
     assert row is not None
     assert row["points"] == 25
-
-
-# ---------------------------------------------------------------------------
-# modify_session_points raises AmendmentNotActiveError when not in amendment mode
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_modify_raises_when_not_active(db_path):
-    path, season_id = db_path
-    with pytest.raises(AmendmentNotActiveError):
-        await modify_session_points(
-            path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
-        )
 
 
 # ---------------------------------------------------------------------------

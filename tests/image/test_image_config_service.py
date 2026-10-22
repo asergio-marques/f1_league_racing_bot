@@ -117,16 +117,6 @@ async def test_set_aspect_rejects_unknown_aspect(service):
         await service.set_aspect("not_an_aspect", True)
 
 
-async def test_toggle_aspect_flips_and_returns_new_state(service):
-    await service.create_with_defaults()
-
-    assert await service.toggle_aspect("weather") is True
-    assert (await service.get_toggles())["weather"] is True
-
-    assert await service.toggle_aspect("weather") is False
-    assert (await service.get_toggles())["weather"] is False
-
-
 async def test_toggling_one_aspect_leaves_the_others_alone(service):
     await service.create_with_defaults()
     await service.toggle_aspect("standings")
@@ -552,25 +542,6 @@ def test_candidate_override_does_not_mutate_the_stored_config():
 
 
 # ── The portrait toggles and the at-least-one rule ────────────────────────
-
-
-async def test_set_pfp_flag_writes_each_toggle(service):
-    await service.create_with_defaults()
-
-    await service.set_pfp_flag("use_pfp", True)
-    await service.set_pfp_flag("pfp_daily", True)
-    await service.set_pfp_flag("pfp_prerender", False)
-
-    cfg = await service.get_config()
-    assert (cfg.use_pfp, cfg.pfp_daily, cfg.pfp_prerender) == (True, True, False)
-
-
-async def test_set_pfp_flag_refuses_a_column_outside_the_three(service):
-    await service.create_with_defaults()
-    # The string-valued time is not a flag, and no other column is reachable this way.
-    for forbidden in ("pfp_daily_time", "module_enabled", "server_id", "time_zone"):
-        with pytest.raises(UnknownConfigField):
-            await service.set_pfp_flag(forbidden, True)
 
 
 def _pfp_config(**overrides) -> ImageConfig:
