@@ -235,7 +235,8 @@ def _amend_points(modules: "ModuleService", seasons: "SeasonService") -> Setting
             return dataclasses.replace(
                 saved,
                 result=result,
-                outcome=f"{len(pairs)} change(s)",
+                # A paste of values all staged already writes nothing, and is recorded as that.
+                outcome=f"{len(pairs)} change(s)" if saved.changed else None,
                 details=(f"config: {name}, session: {session.label()}", *values),
             )
         (position, points), = pairs
@@ -254,6 +255,10 @@ def _amend_points(modules: "ModuleService", seasons: "SeasonService") -> Setting
         label = _session(payload).label()
         stands = not saved["changed"]
         if payload.get("bulk"):
+            if stands:
+                return _nothing_changed(
+                    f"Nothing changed: every position pasted already stands in config **{name}**."
+                )
             lines = [
                 f"✅ Amended in modification store for config **{name}** ({label}):\n"
                 + "\n".join(

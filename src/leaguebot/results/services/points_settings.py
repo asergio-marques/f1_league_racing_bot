@@ -180,7 +180,8 @@ def _config_points(modules: "ModuleService") -> Setting:
             values = tuple(f"P{position} \u2192 {points} pts" for position, points in pairs)
             return dataclasses.replace(
                 saved,
-                outcome=f"{len(pairs)} change(s)",
+                # A paste of values all held writes nothing, and is recorded as that.
+                outcome=f"{len(pairs)} change(s)" if saved.changed else None,
                 details=(f"config: {name}, session: {session.label()}", *values),
             )
         (position, points), = pairs
@@ -199,6 +200,10 @@ def _config_points(modules: "ModuleService") -> Setting:
         label = session.label()
         stands = not saved["changed"]
         if payload.get("bulk"):
+            if stands:
+                return _nothing_changed(
+                    f"Nothing changed: every position pasted already stands in config **{name}**."
+                )
             lines = [
                 f"\u2705 Applied to config **{name}** ({label}):\n"
                 + "\n".join(
@@ -386,10 +391,17 @@ def _config_import(modules: "ModuleService") -> Setting:
                 details=(f"config: {name}", "reason: the import named no session"),
             )
         return dataclasses.replace(
-            saved, outcome="Success", details=(f"config: {name}", *value_lines(payload))
+            saved,
+            outcome="Success" if saved.changed else None,
+            details=(f"config: {name}", *value_lines(payload)),
         )
 
-    def reply(payload: dict[str, Any], _results: Any) -> str:
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        if (payload["positions"] or payload["fastest_laps"]) and not results[SAVE]["changed"]:
+            return _nothing_changed(
+                "Nothing changed: every value imported already stands in config "
+                f"**{payload['config']}**."
+            )
         lines: list[str] = []
         for session, pairs in payload["positions"].items():
             lines.append(f"  **{SessionType(session).label()}**: {len(pairs)} position(s) updated")
@@ -461,11 +473,14 @@ def _config_attach(modules: "ModuleService", seasons: "SeasonService") -> Settin
         saved = await season_points_service.attach_config_on(
             db, int(payload["season_id"]), str(payload["config"])
         )
-        return dataclasses.replace(
-            saved, outcome="Success", details=(f"config: {payload['config']}",)
-        )
+        return dataclasses.replace(saved, details=(f"config: {payload['config']}",))
 
-    def reply(payload: dict[str, Any], _results: Any) -> str:
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        if not results[SAVE]["changed"]:
+            return _nothing_changed(
+                f"Nothing changed: config **{payload['config']}** is already attached to the "
+                "current season."
+            )
         return f"\u2705 Config **{payload['config']}** attached to the current season."
 
     return Setting(

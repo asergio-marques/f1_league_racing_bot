@@ -42,7 +42,6 @@ from tests.support.settings_league import (
 from tests.support.undecorate import undecorate
 
 #: Why the fold-ins' tests fail until each is built.
-HELD_PASTE = "#439: a paste, an import or an append of held values does not answer 'Nothing changed' yet"
 SETUP_TOGGLE = "#439: /results amend toggle is not refused while the season is in setup yet"
 RANGES = "#439: the single-value points commands do not check their ranges yet"
 NOT_HELD = "#439: the amend commands do not refuse a configuration the season does not hold yet"
@@ -1027,7 +1026,6 @@ async def test_an_xml_form_submitted_after_the_module_was_turned_off_is_refused(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=HELD_PASTE)
 @pytest.mark.parametrize(
     ("ask", "setup", "command", "reply"),
     [
@@ -1057,7 +1055,6 @@ async def test_a_paste_or_import_of_values_already_held_changes_nothing_and_says
     assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=HELD_PASTE)
 async def test_attaching_a_configuration_already_attached_changes_nothing_and_says_so(tmp_path):
     """`/results config append Standard` with season 1, in setup, already holding it: answered
     that nothing changed, a "Nothing changed" line, no audit entry, one link still."""
