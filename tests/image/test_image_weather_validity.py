@@ -341,19 +341,49 @@ def test_the_naming_command_accepts_a_template_above_its_floor(
     assert check_template(_config(), key) is None
 
 
-def test_nothing_is_written_before_the_check_passes():
+async def test_nothing_is_written_before_the_check_passes(templates, tmp_path, monkeypatch):
     """The refusal leaves the stored value as it stood, by construction.
 
-    ``_set_template_filename`` builds a proposal, checks it, and returns on a problem — the
-    write is downstream of every check. Asserted on the source because the ordering *is* the
-    guarantee: no amount of behavioural testing of the happy path would catch a store moved
-    above the check.
+    A league with images on, its template folder holding the six sound weather drawings, asks
+    `/images template weather-p2-sprint` to name `short.svg`, a phase 2 sprint drawing with three
+    sessions where four are the floor; the change is run. It is refused naming the template and
+    saying the previous filename is still in force, the stored filename is the one it held, and
+    no image audit entry is written. The check is the setting's, run before its save, so the guarantee
+    holds whether the refusal comes at the ask or as the change runs.
     """
-    import inspect
-
+    from leaguebot.core.db.database import get_connection
     from leaguebot.image.cogs.image_cog import ImageCog
+    from leaguebot.image.services import image_validity_service
+    from tests.support.change_queue import run_queue
+    from tests.support.image_cog_doubles import interaction as _interaction, log_bot
+    from tests.support.settings_league import audit_rows, settings_league
+    from tests.support.undecorate import undecorate
 
-    source = inspect.getsource(ImageCog._set_template_filename)
-    check = source.index("check_template(proposed, column)")
-    store = source.index("set_field(")
-    assert check < store, "the filename is stored before its template is checked"
+    column = "weather_p2_sprint_template"
+    (templates / "short.svg").write_bytes(_p2(3))
+    monkeypatch.setattr(
+        image_validity_service, "resolve_within_project_root",
+        lambda directory, root=None: tmp_path / directory,
+    )
+    league = await settings_league(tmp_path, modules=("images",))
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE image_config SET template_directory = 'templates'")
+        await db.commit()
+    log_bot(league)
+
+    asked = _interaction("images template weather-p2-sprint", bot=league.bot)
+    await undecorate(ImageCog.config_weather_p2_sprint_template)(
+        ImageCog(league.bot), asked, filename="short.svg"
+    )
+    await run_queue(league.bot)
+
+    assert asked.said[-1].startswith(
+        "❌ **Weather — phase 2 (sprint)** template was **not** changed — "
+    ), asked.said
+    assert asked.said[-1].endswith("The previously configured filename is still in force.")
+    async with get_connection(league.db_path) as db:
+        stored = (await (await db.execute(f"SELECT {column} FROM image_config")).fetchone())[0]
+    assert stored == TEMPLATE_COLUMNS[column]
+    assert [
+        row for row in await audit_rows(league.db_path) if row["change_type"].startswith("IMAGE_")
+    ] == []
