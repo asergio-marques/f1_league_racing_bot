@@ -20,27 +20,36 @@ season's — so a server between seasons has nothing to amend.
 The toggle is a single command doing two opposite things, which is why each direction is tested
 for its own reply *and* its own log line: a league reading its log needs to see which way the
 mode went, and the two entries are written separately.
+
+**Both commands are settings changes on the change queue** (#439, slice 7): a refusal the state
+when asked gives is answered at once, nothing queued; anything else is saved when the change runs,
+its reply and line following. The tests drive the real commands on a league built by the
+migrations, with the real services and queue, and run the queue: a season under way built on the
+points configuration `Standard`, 25 for a win and 18 for second, its amendment mode in the state
+each test names.
 """
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 
-from leaguebot.core.models.season import SeasonStage
-
+from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.services.amendment_service import (
-    AmendmentModifiedError,
-    AmendmentNotActiveError,
-)
+from tests.support import saves
+from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
+from tests.support.settings_league import interaction, log_lines, said, settings_league
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 12108
 SEASON_ID = 3
-ACTOR_ID = 77
+CONFIG = "Standard"
+#: The member as a log line names them, the mention wrapped so it notifies nobody.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
+#: When a change is staged, for the writer that still takes it until the build.
+NOW = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
+MODE = "SELECT amendment_active, modified_flag FROM season_amendment_state"
+STAGED = "SELECT position, points FROM season_modification_entries ORDER BY position"
 
 
 # ---------------------------------------------------------------------------
@@ -48,100 +57,72 @@ ACTOR_ID = 77
 # ---------------------------------------------------------------------------
 
 
-def _make_cog(
-    *,
-    results_enabled: bool = True,
-    season=SimpleNamespace(
-        id=SEASON_ID, season_number=1, status="ACTIVE", stage=SeasonStage.ONGOING
-    ),
-) -> ResultsCog:
-    bot = MagicMock()
-    bot.db_path = "/tmp/does-not-matter.db"
-    bot.module_service = MagicMock()
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.season_service = MagicMock()
-    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
-
-    cog = ResultsCog.__new__(ResultsCog)
-    cog.bot = bot
-    return cog
-
-
-def _interaction():
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = ACTOR_ID
-    interaction.user.display_name = "Manager"
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
-
-
-def _state(active: bool | None, *, modified: bool = True):
-    """`None` where no store exists at all, which is distinct from one that is off. A store
-    holds staged changes unless *modified* is False: a revert of nothing staged changes nothing
-    (#482), so a revert that does something needs something staged."""
-    return (
-        None
-        if active is None
-        else SimpleNamespace(amendment_active=active, modified_flag=modified)
-    )
-
-
-@contextmanager
-def _amendment(*, state=None, **overrides):
-    """The amendment service stubbed, and no points approval of the season in hand.
-
-    The staging commands ask the change queue whether an approval of the season is in hand
-    (#439, slice 3), and the cog's `db_path` here is a placeholder no league database stands
-    behind, so that reading is stubbed to find none.
-    """
-    mocks = {
-        "get_amendment_state": AsyncMock(return_value=state),
-        "enable_amendment_mode": AsyncMock(return_value=None),
-        "disable_amendment_mode": AsyncMock(return_value=None),
-        "revert_modification_store": AsyncMock(return_value=None),
-    }
-    mocks.update(overrides)
-    with ExitStack() as stack:
-        for name, mock in mocks.items():
-            stack.enter_context(patch(f"leaguebot.core.services.amendment_service.{name}", new=mock))
-        stack.enter_context(
-            patch(
-                "leaguebot.results.services.points_amendment_change.approval_in_hand",
-                new=AsyncMock(return_value=None),
+async def _league(tmp_path: Any, *, results: bool = True, season: bool = True,
+                  mode: str | None = None) -> Any:
+    """A league with results on (*results*); with *season*, a season under way (SEASON_ID) built
+    on CONFIG, 25 for a win and 18 for second. *mode* is None (never amended: no store at all),
+    "off" (amended once, the mode since turned off), "on" (on, nothing staged) or "staged" (on,
+    P1 staged at 26)."""
+    league = await settings_league(tmp_path, modules=("results",) if results else ())
+    await saves.create_config(league.db_path, CONFIG)
+    if season:
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+                "VALUES (?, 1, '2026-01-01', 'ACTIVE', 'ONGOING')",
+                (SEASON_ID,),
             )
+            await db.execute(
+                "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+                (SEASON_ID, CONFIG),
+            )
+            for position, points in ((1, 25), (2, 18)):
+                await db.execute(
+                    "INSERT INTO season_points_entries "
+                    "(season_id, config_name, session_type, position, points) "
+                    "VALUES (?, ?, 'FEATURE_RACE', ?, ?)",
+                    (SEASON_ID, CONFIG, position, points),
+                )
+            await db.commit()
+    if mode is not None:
+        await saves.enable_amendment_mode(league.db_path, SEASON_ID)
+    if mode == "off":
+        await saves.disable_amendment_mode(league.db_path, SEASON_ID)
+    if mode == "staged":
+        await saves.modify_session_points(
+            league.db_path, SEASON_ID, CONFIG, "FEATURE_RACE", [(1, 26)],
+            actor_id=MEMBER_ID, actor_name="Admin", now=NOW,
         )
-        yield mocks
+    return league
 
 
-async def _toggle(cog, interaction):
-    await undecorate(ResultsCog.amend_toggle)(cog, interaction)
+async def _rows(db_path: str, sql: str) -> list[tuple[Any, ...]]:
+    async with get_connection(db_path) as db:
+        return [tuple(row) for row in await (await db.execute(sql)).fetchall()]
 
 
-async def _revert(cog, interaction):
-    await undecorate(ResultsCog.amend_revert)(cog, interaction)
+async def _toggle(league: Any) -> Any:
+    """Run `/results amend toggle` as Admin, then the queue."""
+    asked = interaction(league.bot, "results amend toggle")
+    await undecorate(ResultsCog.amend_toggle)(ResultsCog(league.bot), asked)
+    await run_queue(league.bot)
+    return asked
 
 
-def _logged(cog) -> str:
-    return "\n".join(
-        str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list
-    )
+async def _revert(league: Any) -> Any:
+    """Run `/results amend revert` as Admin, then the queue."""
+    asked = interaction(league.bot, "results amend revert")
+    await undecorate(ResultsCog.amend_revert)(ResultsCog(league.bot), asked)
+    await run_queue(league.bot)
+    return asked
+
+
+def _replied(asked: Any) -> str:
+    return "\n".join(said(asked))
+
+
+async def _logged(league: Any) -> str:
+    return "\n".join(await log_lines(league))
 
 
 # ---------------------------------------------------------------------------
@@ -150,33 +131,33 @@ def _logged(cog) -> str:
 
 
 @pytest.mark.parametrize("command", [_toggle, _revert], ids=["toggle", "revert"])
-async def test_both_commands_are_refused_while_the_module_is_disabled(command):
-    cog = _make_cog(results_enabled=False)
-    interaction = _interaction()
+async def test_both_commands_are_refused_while_the_module_is_disabled(tmp_path, command):
+    """Results off, the season's mode on with P1 staged: refused at once, nothing queued, the
+    mode and the store as they were."""
+    league = await _league(tmp_path, results=False, mode="staged")
 
-    with _amendment() as svc:
-        await command(cog, interaction)
+    asked = await command(league)
 
-    assert "not enabled" in _replied(interaction)
-    svc["enable_amendment_mode"].assert_not_awaited()
-    svc["revert_modification_store"].assert_not_awaited()
+    assert "not enabled" in _replied(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _rows(league.db_path, MODE) == [(1, 1)]
+    assert await _rows(league.db_path, STAGED) == [(1, 26), (2, 18)]
 
 
 @pytest.mark.parametrize("command", [_toggle, _revert], ids=["toggle", "revert"])
-async def test_both_commands_need_a_season(command):
+async def test_both_commands_need_a_season(tmp_path, command):
     """The store hangs off one, and the points being amended are that season's."""
-    cog = _make_cog(season=None)
-    interaction = _interaction()
+    league = await _league(tmp_path, season=False)
 
-    with _amendment() as svc:
-        await command(cog, interaction)
+    asked = await command(league)
 
     # The refusal names the archive rule (issue #224): a server whose only season is
     # completed or cancelled reaches this same branch, because the command now asks for
     # the *live* season and an archived one is never returned.
-    assert "there is none" in _replied(interaction)
-    assert "archive" in _replied(interaction)
-    svc["enable_amendment_mode"].assert_not_awaited()
+    assert "there is none" in _replied(asked)
+    assert "archive" in _replied(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _rows(league.db_path, MODE) == []
 
 
 # ---------------------------------------------------------------------------
@@ -184,49 +165,43 @@ async def test_both_commands_need_a_season(command):
 # ---------------------------------------------------------------------------
 
 
-async def test_amendment_mode_is_enabled_when_it_was_off():
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_amendment_mode_is_enabled_when_it_was_off(tmp_path):
+    league = await _league(tmp_path, mode="off")
 
-    with _amendment(state=_state(False)) as svc:
-        await _toggle(cog, interaction)
+    asked = await _toggle(league)
 
-    svc["enable_amendment_mode"].assert_awaited_once()
-    assert "enabled" in _replied(interaction)
+    assert await _rows(league.db_path, MODE) == [(1, 0)]
+    assert "enabled" in _replied(asked)
 
 
-async def test_a_season_that_has_never_amended_starts_a_store():
+async def test_a_season_that_has_never_amended_starts_a_store(tmp_path):
     """No state row at all is the same as off — a league amending for the first time must
-    not be refused for never having done it before."""
-    cog = _make_cog()
-    interaction = _interaction()
+    not be refused for never having done it before. The store starts as the season's points."""
+    league = await _league(tmp_path)
 
-    with _amendment(state=_state(None)) as svc:
-        await _toggle(cog, interaction)
+    await _toggle(league)
 
-    svc["enable_amendment_mode"].assert_awaited_once()
+    assert await _rows(league.db_path, MODE) == [(1, 0)]
+    assert await _rows(league.db_path, STAGED) == [(1, 25), (2, 18)]
 
 
-async def test_enabling_says_the_store_was_initialised():
+async def test_enabling_says_the_store_was_initialised(tmp_path):
     """The store is the thing the manager is about to type into, and a bare "enabled"
     would not tell them where their edits are going."""
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await _league(tmp_path, mode="off")
 
-    with _amendment(state=_state(False)):
-        await _toggle(cog, interaction)
+    asked = await _toggle(league)
 
-    assert "Modification store initialised" in _replied(interaction)
+    assert "Modification store initialised" in _replied(asked)
 
 
-async def test_enabling_is_logged_as_enabled():
+async def test_enabling_is_logged_as_enabled(tmp_path):
     """The toggle is one command doing two opposite things, so the log has to say which."""
-    cog = _make_cog()
+    league = await _league(tmp_path, mode="off")
 
-    with _amendment(state=_state(False)):
-        await _toggle(cog, _interaction())
+    await _toggle(league)
 
-    assert "amendment_mode: enabled" in _logged(cog)
+    assert "amendment_mode: enabled" in await _logged(league)
 
 
 # ---------------------------------------------------------------------------
@@ -234,79 +209,60 @@ async def test_enabling_is_logged_as_enabled():
 # ---------------------------------------------------------------------------
 
 
-async def test_amendment_mode_is_disabled_when_it_was_on():
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_amendment_mode_is_disabled_when_it_was_on(tmp_path):
+    league = await _league(tmp_path, mode="on")
 
-    with _amendment(state=_state(True)) as svc:
-        await _toggle(cog, interaction)
+    asked = await _toggle(league)
 
-    svc["disable_amendment_mode"].assert_awaited_once()
-    assert "disabled" in _replied(interaction)
+    assert await _rows(league.db_path, MODE) == [(0, 0)]
+    assert "disabled" in _replied(asked)
 
 
-async def test_disabling_is_logged_as_disabled():
-    cog = _make_cog()
+async def test_disabling_is_logged_as_disabled(tmp_path):
+    league = await _league(tmp_path, mode="on")
 
-    with _amendment(state=_state(True)):
-        await _toggle(cog, _interaction())
+    await _toggle(league)
 
-    assert "amendment_mode: disabled" in _logged(cog)
+    assert "amendment_mode: disabled" in await _logged(league)
 
 
-async def test_disabling_is_refused_while_changes_are_pending():
+async def test_disabling_is_refused_while_changes_are_pending(tmp_path):
     """The store holds edits nobody has approved. Turning the mode off would discard them
     silently — a manager who spent an evening retyping a points table would lose it to a
-    command they thought was a toggle."""
-    cog = _make_cog()
-    interaction = _interaction()
+    command they thought was a toggle. Refused at once, nothing queued, the mode still on."""
+    league = await _league(tmp_path, mode="staged")
 
-    with _amendment(
-        state=_state(True),
-        disable_amendment_mode=AsyncMock(side_effect=AmendmentModifiedError("pending")),
-    ):
-        await _toggle(cog, interaction)
+    asked = await _toggle(league)
 
-    assert "uncommitted changes exist" in _replied(interaction)
+    assert "uncommitted changes exist" in _replied(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _rows(league.db_path, MODE) == [(1, 1)]
 
 
-async def test_the_refusal_names_both_ways_out():
+async def test_the_refusal_names_both_ways_out(tmp_path):
     """Discarding deliberately and applying are genuinely different decisions, and a
     manager blocked here needs to be told they have both."""
-    cog = _make_cog()
-    interaction = _interaction()
+    league = await _league(tmp_path, mode="staged")
 
-    with _amendment(
-        state=_state(True),
-        disable_amendment_mode=AsyncMock(side_effect=AmendmentModifiedError("pending")),
-    ):
-        await _toggle(cog, interaction)
+    asked = await _toggle(league)
 
-    replied = _replied(interaction)
+    replied = _replied(asked)
     assert "/results amend revert" in replied
     assert "/results amend review" in replied
 
 
-async def test_a_refused_disable_is_not_logged_as_a_success():
+async def test_a_refused_disable_is_not_logged_as_a_success(tmp_path):
     """The mode is still on, and a log saying otherwise would have a league believe their
     staged edits were gone: the log records the refusal and its reason instead."""
-    cog = _make_cog()
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "results amend toggle"
+    league = await _league(tmp_path, mode="staged")
 
-    with _amendment(
-        state=_state(True),
-        disable_amendment_mode=AsyncMock(side_effect=AmendmentModifiedError("pending")),
-    ):
-        await _toggle(cog, interaction)
+    await _toggle(league)
 
-    assert "disabled" not in _logged(cog)
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/results amend toggle` refused for Manager (<@{ACTOR_ID}>) — "
+    assert await log_lines(league) == [
+        f"⛔ `/results amend toggle` refused for {NAMED} — "
         "Cannot disable amendment mode — uncommitted changes exist. "
         "Use `/results amend revert` to discard or `/results amend review` to apply."
-    )
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -314,51 +270,43 @@ async def test_a_refused_disable_is_not_logged_as_a_success():
 # ---------------------------------------------------------------------------
 
 
-async def test_the_store_is_reverted_to_the_season_s_points():
-    cog = _make_cog()
-    interaction = _interaction()
+async def test_the_store_is_reverted_to_the_season_s_points(tmp_path):
+    """P1 staged at 26: once the change has run the store holds the season's 25 again."""
+    league = await _league(tmp_path, mode="staged")
 
-    with _amendment(state=_state(True)) as svc:
-        await _revert(cog, interaction)
+    asked = await _revert(league)
 
-    svc["revert_modification_store"].assert_awaited_once()
-    assert "reverted" in _replied(interaction)
+    assert await _rows(league.db_path, STAGED) == [(1, 25), (2, 18)]
+    assert "reverted" in _replied(asked)
 
 
-@pytest.mark.parametrize("active", [False, None], ids=["mode-off", "no-store"])
-async def test_reverting_is_refused_when_the_mode_is_not_on(active):
+@pytest.mark.parametrize("mode", ["off", None], ids=["mode-off", "no-store"])
+async def test_reverting_is_refused_when_the_mode_is_not_on(tmp_path, mode):
     """There is no store to revert, and doing nothing quietly would leave a manager
-    believing they had discarded changes that were never staged."""
-    cog = _make_cog()
-    interaction = _interaction()
+    believing they had discarded changes that were never staged. Refused at once, nothing
+    queued."""
+    league = await _league(tmp_path, mode=mode)
 
-    with _amendment(state=_state(active)) as svc:
-        await _revert(cog, interaction)
+    asked = await _revert(league)
 
-    assert "not active" in _replied(interaction)
-    svc["revert_modification_store"].assert_not_awaited()
+    assert "not active" in _replied(asked)
+    assert await change_rows(league.db_path) == []
 
 
-async def test_a_refused_revert_is_recorded_as_a_refusal():
+async def test_a_refused_revert_is_recorded_as_a_refusal(tmp_path):
     """Nothing was reverted, so the log records the refusal and its reason, never a revert."""
-    cog = _make_cog()
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = "results amend revert"
+    league = await _league(tmp_path, mode="off")
 
-    with _amendment(state=_state(False)):
-        await _revert(cog, interaction)
+    await _revert(league)
 
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/results amend revert` refused for Manager (<@{ACTOR_ID}>) — "
-        "Amendment mode is not active."
-    )
+    assert await log_lines(league) == [
+        f"⛔ `/results amend revert` refused for {NAMED} — Amendment mode is not active."
+    ]
 
 
-async def test_a_successful_revert_is_logged():
-    cog = _make_cog()
+async def test_a_successful_revert_is_logged(tmp_path):
+    league = await _league(tmp_path, mode="staged")
 
-    with _amendment(state=_state(True)):
-        await _revert(cog, _interaction())
+    await _revert(league)
 
-    assert "amend revert" in _logged(cog)
+    assert "amend revert" in await _logged(league)
