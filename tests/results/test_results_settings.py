@@ -41,8 +41,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the tests here fail until the results settings run on the queue.
-UNBUILT = "#439: the results settings do not run on the change queue yet"
 #: Why the fold-ins' tests fail until each is built.
 HELD_PASTE = "#439: a paste, an import or an append of held values does not answer 'Nothing changed' yet"
 SETUP_TOGGLE = "#439: /results amend toggle is not refused while the season is in setup yet"
@@ -618,7 +616,6 @@ async def test_an_amend_bulk_paste_saves_its_positions_audit_entries_and_line_to
     await _saves_with_record(tmp_path, CASES["amend-bulk-session"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_toggling_reserve_visibility_records_it_against_the_division(tmp_path):
     """`/results reserves toggle Pro`, reserves shown: hidden, one `RESERVES_IN_STANDINGS_SET`
     entry carrying Pro's division id, and its Success line naming the division."""
@@ -711,7 +708,6 @@ async def test_amendment_mode_turned_off_ahead_of_a_staged_change_refuses_it_whe
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_season_reaching_pending_completion_ahead_of_a_reserves_toggle_refuses_it(tmp_path):
     """`/results reserves toggle Pro` asked while season 1 is under way; the season reaches
     Pending completion before it runs: refused then in today's pending-completion words, the
@@ -954,7 +950,7 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
         "config-session",
         "config-xml-import-file",
         "config-xml-import-form",
-        pytest.param("reserves-toggle", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "reserves-toggle",
     ],
 )
 async def test_the_results_settings_are_acknowledged_naming_what_is_set(tmp_path, route):
@@ -972,7 +968,6 @@ async def test_the_results_settings_are_acknowledged_naming_what_is_set(tmp_path
     assert len(await change_rows(league.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_reserve_visibility_flips_from_the_state_read_when_asked(tmp_path):
     """`/results reserves toggle Pro` with Pro's reserves hidden: it asks to show them, says so
     in its acknowledgement, and once run they are shown, with the reply saying visible."""
@@ -987,7 +982,6 @@ async def test_reserve_visibility_flips_from_the_state_read_when_asked(tmp_path)
     assert await _rows(league.db_path, RESERVES) == [(1,)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_reserves_toggle_found_already_switched_when_it_runs_changes_nothing(tmp_path):
     """A flip resolved when asked: `/results reserves toggle Pro` with Pro's reserves hidden asks
     to show them. Before the change runs they are shown (written here as a change that started

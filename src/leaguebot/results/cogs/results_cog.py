@@ -30,8 +30,10 @@ from leaguebot.results.services.points_settings import (
     CONFIG_IMPORT,
     CONFIG_POINTS,
     CONFIG_REMOVE,
+    RESERVES,
 )
 from leaguebot.results.services.points_config_service import ConfigNotFoundError
+from leaguebot.results.services.results_post_service import reserves_in_standings
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import (
@@ -1529,8 +1531,6 @@ class ResultsCog(commands.Cog):
     async def reserves_toggle(self, interaction: discord.Interaction, division: str) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results reserves toggle"
         )
@@ -1545,41 +1545,14 @@ class ResultsCog(commands.Cog):
             )
             return
 
-        from leaguebot.core.db.database import get_connection
-        async with get_connection(self.bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT reserves_in_standings FROM division_results_config WHERE division_id = ?",
-                (div.id,),
-            )
-            row = await cursor.fetchone()
-
-        current = (
-            bool(row["reserves_in_standings"])
-            if row and row["reserves_in_standings"] is not None
-            else True
-        )
-        new_value = not current
-
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO division_results_config (division_id, reserves_in_standings)
-                VALUES (?, ?)
-                ON CONFLICT (division_id) DO UPDATE
-                    SET reserves_in_standings = excluded.reserves_in_standings
-                """,
-                (div.id, 1 if new_value else 0),
-            )
-            await db.commit()
-
-        state_str = "visible" if new_value else "hidden"
-        await interaction.followup.send(
-            f"\u2705 Reserve visibility for **{division}** set to **{state_str}**.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results reserves toggle | Success\n"
-            f"  division: {division}\n"
-            f"  reserves_in_standings: {state_str}",
+        # The flip is resolved here, from the state the member saw: a second press while the first
+        # waits asks the same thing, and is refused as a repeat.
+        shown = not await reserves_in_standings(self.bot.db_path, div.id)
+        await self.bot.change_queue.ask(
+            RESERVES,
+            {"division_id": div.id, "division": division, "shown": shown},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
