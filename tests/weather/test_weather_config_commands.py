@@ -271,7 +271,11 @@ async def test_command_rejects_a_value_below_one(tmp_path, phase, bad_value):
 
 @pytest.mark.parametrize(
     "phase",
-    [1, 2, 3],
+    [
+        1,
+        pytest.param(2),
+        pytest.param(3),
+    ],
     ids=COMMAND_IDS,
 )
 async def test_one_is_accepted(tmp_path, phase):
