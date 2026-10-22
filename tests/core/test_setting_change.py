@@ -39,9 +39,6 @@ from tests.support.change_queue import (
     updated_reply,
 )
 
-#: Why every test here is expected to fail until the setting change is built.
-UNBUILT = "#439: core/services/setting_change.py and the queue's on_fault are not built yet"
-
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 KIND = "dummy.setting.value"
 #: The member's command, as the change is asked with it and as its failure line names it.
@@ -198,8 +195,11 @@ async def _audits(env) -> list[tuple[str, Any, Any, int]]:
 
 
 async def _lines(env) -> list[str]:
-    """Every log line written: those the log channel took, then those waiting on a retry."""
-    return list(env.bot.log_channel.sent) + await queued_log_lines(env.db_path)
+    """Every log line written: those the log channel took, then those waiting on a retry, each
+    without the separator the router puts beneath it (`OutputRouter._as_log_line`)."""
+    rule = "\n" + "\u2015" * 36
+    lines = list(env.bot.log_channel.sent) + await queued_log_lines(env.db_path)
+    return [line.removesuffix(rule) for line in lines]
 
 
 async def _states(env) -> list[str]:
@@ -215,7 +215,6 @@ def _success_line(value: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_setting_s_value_audit_entry_and_line_are_saved_in_one_save(env, monkeypatch):
     """The audit entry's write raising undoes the value with it: no success line, the failure
     line queued instead, and the lane not stopped, the request behind it running."""
@@ -245,7 +244,6 @@ async def test_a_setting_s_value_audit_entry_and_line_are_saved_in_one_save(env,
     assert [(a[1], a[2]) for a in await _audits(env)] == [({"value": 5}, {"value": 7})]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_value_already_held_writes_a_nothing_changed_line_and_no_audit_entry(env):
     _league(env)
     interaction = member_interaction(env.bot)
@@ -259,7 +257,6 @@ async def test_a_value_already_held_writes_a_nothing_changed_line_and_no_audit_e
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_line_names_the_member_the_command_and_the_values_beneath(env):
     """One line, "Name (<@id>) | command | Success", the values beneath it; one audit entry naming
     the member, from the value held to the value set."""
@@ -387,7 +384,6 @@ async def test_the_acknowledgement_names_what_is_being_set(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_fault_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(env):
     from leaguebot.core.services.setting_change import NOTHING_SAVED
 
@@ -440,7 +436,6 @@ async def test_the_steps_after_the_save_run_only_when_it_changed_something(env):
     assert updated_reply(changed) == "✅ The dummy value is now **6**.\nChecked."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_stop_after_the_save_runs_the_steps_after_it_on_restart(env):
     _league(env, after="advise")
 
@@ -460,7 +455,6 @@ async def test_a_stop_after_the_save_runs_the_steps_after_it_on_restart(env):
     assert (await _lines(env)).count(_success_line(6)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_fault_in_a_step_after_the_save_keeps_the_setting_and_says_what_was_not_done(env):
     _league(env, after="advise")
     env.knobs["after_faults"] = 1
@@ -479,7 +473,6 @@ async def test_a_fault_in_a_step_after_the_save_keeps_the_setting_and_says_what_
     assert await _value(env) == 7
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_line_carried_by_a_step_after_the_save_is_written_only_when_it_succeeds(env):
     """Where the step after the save carries the line (the daily job's arming), the success line
     waits for it: written once it succeeds, and never where it fails, the failure line standing
@@ -507,7 +500,6 @@ async def test_a_line_carried_by_a_step_after_the_save_is_written_only_when_it_s
     assert await stopped_job(env.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_check_fault_when_the_setting_runs_says_nothing_was_saved_records_a_failure_and_the_lane_goes_on(
     env,
 ):
