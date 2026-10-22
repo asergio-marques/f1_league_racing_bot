@@ -40,6 +40,28 @@ async def get_amendment_state(db_path: str, season_id: int) -> SeasonAmendmentSt
     )
 
 
+async def modification_ordering_warnings_on(
+    db: aiosqlite.Connection,
+    season_id: int,
+    config_name: str,
+    session_type: str,
+) -> list[str]:
+    """:func:`modification_ordering_warnings` read on *db*, so a save can judge the table it has
+    just written."""
+    cursor = await db.execute(
+        "SELECT position, points FROM season_modification_entries "
+        "WHERE season_id = ? AND config_name = ? AND session_type = ?",
+        (season_id, config_name, session_type),
+    )
+    rows = await cursor.fetchall()
+    return [
+        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
+        for position, points, next_position, next_points in ordering_violations(
+            [(r["position"], r["points"]) for r in rows]
+        )
+    ]
+
+
 async def modification_ordering_warnings(
     db_path: str,
     season_id: int,
@@ -57,19 +79,9 @@ async def modification_ordering_warnings(
     championship.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT position, points FROM season_modification_entries "
-            "WHERE season_id = ? AND config_name = ? AND session_type = ?",
-            (season_id, config_name, session_type),
+        return await modification_ordering_warnings_on(
+            db, season_id, config_name, session_type
         )
-        rows = await cursor.fetchall()
-
-    return [
-        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
-        for position, points, next_position, next_points in ordering_violations(
-            [(r["position"], r["points"]) for r in rows]
-        )
-    ]
 
 
 async def staged_position_points(
