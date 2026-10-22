@@ -867,6 +867,37 @@ async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(t
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_turning_portraits_off_when_the_daily_job_cannot_be_removed_says_so_and_the_lane_goes_on(
+    tmp_path
+):
+    """`/images use-pfp toggle` turning portraits off with both updates on and the daily job
+    armed, the scheduler refusing to remove the job: portraits stay off, the reply is the
+    success followed by a note that the job could not be removed and does nothing while the
+    setting is off, the Success line and one failure line are written, no job is stopped, and
+    `/images config time-format` asked behind it is saved."""
+    league = await _league(tmp_path, **BOTH_UPDATES)
+    league.scheduler.cancel_portrait_refresh.side_effect = RuntimeError("the job store refused")
+
+    asked = await _slash("use_pfp_toggle", "images use-pfp toggle")(league)
+    assert said(asked)[0].startswith("⏳ Turning **Discord profile pictures** off. ")
+    behind = await _time_format()(league)
+    await run_queue(league.bot)
+
+    assert await _rows(league.db_path, _column("use_pfp")) == [(0,)]
+    league.scheduler.cancel_portrait_refresh.assert_called_once_with()
+    reply = last_said(asked)
+    assert reply.startswith("❌ **Discord profile pictures** disabled.")
+    assert reply.endswith(NOT_REMOVED)
+    lines = await log_lines(league)
+    assert lines.count(
+        f"{NAMED} | /images use-pfp toggle | Success\n  Discord profile pictures: disabled"
+    ) == 1
+    assert [line for line in lines if line.startswith(_failed("`/images use-pfp toggle`"))]
+    assert await stopped_job(league.db_path) is None
+    assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     ("path", "verdict"),
     [
