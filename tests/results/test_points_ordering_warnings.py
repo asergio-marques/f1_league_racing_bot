@@ -57,9 +57,6 @@ RACE = app_commands.Choice(name="Feature Race", value="FEATURE_RACE")
 #: When a staged change is made, handed to the service rather than read off the clock.
 NOW = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
 
-#: Why a notice test fails until the notice moves to the points configuration service.
-NOTICE_MOVED = "#439: the ordering notice is not the points configuration service's yet"
-
 
 def _notice() -> Any:
     """`ordering_notice`, where the points configuration service keeps it."""
@@ -169,13 +166,11 @@ async def _table(form: str, db_path: str) -> dict[int, int]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_a_clean_table_produces_no_notice_at_all():
     """Empty string, so every caller can concatenate it without asking first."""
     assert _notice()(CONFIG, "Feature Race", []) == ""
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_the_notice_names_the_config_the_session_and_who_will_refuse():
     notice = _notice()(CONFIG, "Feature Race", ["position 1 (10 pts) < position 2 (25 pts)"])
 

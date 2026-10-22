@@ -54,8 +54,6 @@ MISSING = "75%"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 
-#: Why an ordering notice test fails until the notice moves to the points configuration service.
-NOTICE_MOVED = "#439: the ordering notice is not the points configuration service's yet"
 #: Why a command test fails until the points settings run on the change queue.
 UNBUILT = "#439: the points settings do not run on the change queue yet"
 
@@ -75,7 +73,6 @@ def _notice() -> tuple[Any, str, str]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_a_table_in_order_earns_no_notice():
     """Callers concatenate this unconditionally, so it has to be empty rather than a
     cheerful sentence — every successful edit would otherwise carry one."""
@@ -83,7 +80,6 @@ def test_a_table_in_order_earns_no_notice():
     assert ordering_notice(CONFIG, "Feature Race", []) == ""
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_a_broken_table_names_the_configuration_and_the_session():
     """A league can hold several configurations and each has four tables; a notice naming
     neither leaves a manager checking all of them."""
@@ -94,7 +90,6 @@ def test_a_broken_table_names_the_configuration_and_the_session():
     assert "Feature Race" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_the_notice_lists_every_violation():
     """One fix often reveals the next, and a manager working from a partial list would
     come back to the same command repeatedly."""
@@ -107,7 +102,6 @@ def test_the_notice_lists_every_violation():
     assert "P8" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_the_notice_states_the_rule_that_was_broken():
     """Naming the positions is not enough — a manager has to know *why* those two are a
     problem before they can decide which to change."""
@@ -117,7 +111,6 @@ def test_the_notice_states_the_rule_that_was_broken():
     assert "cannot be worth as much as the one above it" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_the_notice_says_the_change_was_saved_anyway():
     """The edit has already been applied. A warning that read like a refusal would have a
     manager re-running a command that had already worked."""
@@ -127,7 +120,6 @@ def test_the_notice_says_the_change_was_saved_anyway():
     assert "has been saved" in notice
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE_MOVED)
 def test_the_notice_says_which_refusal_is_coming():
     """Its whole job beyond naming the fault. The two consequences differ, and a manager
     mid-amendment is not blocked by the season's approval."""
