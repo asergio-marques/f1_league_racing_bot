@@ -72,6 +72,24 @@ class InvalidSessionTypeError(Exception):
     pass
 
 
+def points_value_refusal(
+    *, position: int | None = None, points: int | None = None, limit: int | None = None
+) -> str | None:
+    """Why a single position, points value or fastest-lap limit is out of range, or None.
+
+    The bulk paste's rule, held to one value: a position or a limit below 1, or points below 0.
+    The position is judged before the points. Pure: the settings' checks call it with what the
+    command was given, so a value that could never be stored is refused at the ask.
+    """
+    if position is not None and position < 1:
+        return f"\u274c Position must be >= 1, got {position}."
+    if points is not None and points < 0:
+        return f"\u274c Points must be >= 0, got {points}."
+    if limit is not None and limit < 1:
+        return f"\u274c Position limit must be >= 1, got {limit}."
+    return None
+
+
 async def create_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
     """Add the points configuration *config_name* on *db*, committing nothing.
 

@@ -42,7 +42,6 @@ from tests.support.settings_league import (
 from tests.support.undecorate import undecorate
 
 #: Why the fold-ins' tests fail until each is built.
-RANGES = "#439: the single-value points commands do not check their ranges yet"
 NOT_HELD = "#439: the amend commands do not refuse a configuration the season does not hold yet"
 
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
@@ -1112,7 +1111,6 @@ async def test_amendment_mode_is_refused_while_the_season_is_in_setup(tmp_path, 
     assert await log_lines(league) == [_refused("`/results amend toggle`", reply)]
 
 
-@pytest.mark.xfail(strict=True, reason=RANGES)
 @pytest.mark.parametrize(
     ("method", "command", "args", "reply", "setup"),
     [

@@ -39,6 +39,7 @@ from leaguebot.results.services.points_config_service import (
     BLOCKS_AMENDMENT,
     STANDS_BLOCKS_AMENDMENT,
     ordering_notice,
+    points_value_refusal,
 )
 from leaguebot.results.services.points_settings import MODULE_OFF
 
@@ -226,6 +227,13 @@ def _amend_points(modules: "ModuleService", seasons: "SeasonService") -> Setting
             return refusal
         if await _mode_off(ctx):
             return Verdict.refuse(MODE_NOT_ACTIVE)
+        if not ctx.payload.get("bulk"):
+            # A paste's values were ranged by the cog as it parsed them; a single one is held
+            # to the same rule here.
+            (position, points), = ctx.payload["pairs"]
+            out_of_range = points_value_refusal(position=int(position), points=int(points))
+            if out_of_range is not None:
+                return Verdict.refuse(out_of_range)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
@@ -339,6 +347,13 @@ def _amend_fastest_lap(modules: "ModuleService", seasons: "SeasonService") -> Se
                     "❌ Fastest-lap bonus cannot be set for qualifying sessions."
                 )
             return Verdict.refuse("❌ Position limit cannot be set for qualifying sessions.")
+        out_of_range = (
+            points_value_refusal(points=int(ctx.payload["fl_points"]))
+            if column(ctx.payload) == "fl_points"
+            else points_value_refusal(limit=int(ctx.payload["fl_position_limit"]))
+        )
+        if out_of_range is not None:
+            return Verdict.refuse(out_of_range)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:

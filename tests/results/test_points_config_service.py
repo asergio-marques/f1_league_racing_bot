@@ -253,7 +253,6 @@ async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_p
         assert (await cursor.fetchone())["n"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#439: points_value_refusal is not written yet")
 @pytest.mark.parametrize(
     ("given", "refusal"),
     [

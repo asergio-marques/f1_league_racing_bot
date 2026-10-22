@@ -169,6 +169,15 @@ def _config_points(modules: "ModuleService") -> Setting:
         name = str(ctx.payload["config"])
         if not await points_config_service.config_exists(ctx.db_path, name):
             return Verdict.refuse(_not_found(name))
+        if not ctx.payload.get("bulk"):
+            # A paste's values were ranged by the cog as it parsed them; a single one is held
+            # to the same rule here.
+            (position, points), = ctx.payload["pairs"]
+            refusal = points_config_service.points_value_refusal(
+                position=int(position), points=int(points)
+            )
+            if refusal is not None:
+                return Verdict.refuse(refusal)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
@@ -271,6 +280,15 @@ def _config_fastest_lap(modules: "ModuleService") -> Setting:
                     "\u274c Fastest-lap bonus cannot be set for qualifying sessions."
                 )
             return Verdict.refuse("\u274c Position limit cannot be set for qualifying sessions.")
+        refusal = (
+            points_config_service.points_value_refusal(points=int(ctx.payload["fl_points"]))
+            if column(ctx.payload) == "fl_points"
+            else points_config_service.points_value_refusal(
+                limit=int(ctx.payload["fl_position_limit"])
+            )
+        )
+        if refusal is not None:
+            return Verdict.refuse(refusal)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
