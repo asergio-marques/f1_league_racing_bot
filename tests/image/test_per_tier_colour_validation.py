@@ -28,6 +28,8 @@ from leaguebot.image.services.image_validity_service import (
 )
 
 CALENDAR = "calendar_template"
+#: Why a test here fails until the aspect rule has left the image cog.
+UNBUILT = "#439: aspect_blocking_reasons has not left the image cog yet"
 
 
 def _report(key=CALENDAR, *, valid=True, slots=frozenset()):
@@ -200,7 +202,7 @@ def test_the_shortfall_reaches_every_surface():
     the reason appears in the rolled-up status, which is the only thing any of them sees.
     Were a surface to grow its own copy of the rule, this would still pass — so it is
     paired with `test_the_aspect_toggle_passes_the_shortfall_through`, which pins the one
-    caller that builds its own list.
+    rule that builds its own list.
     """
     shortfall = {CALENDAR: ["`accent` is not set for **Division 1**"]}
     statuses = build_aspect_statuses(
@@ -213,27 +215,46 @@ def test_the_shortfall_reaches_every_surface():
     assert any("accent" in reason for reason in calendar.reasons)
 
 
-def test_the_aspect_toggle_passes_the_shortfall_through():
-    """The toggle path that builds its own status list must pass the shortfall too.
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
+    """The rule the toggle asks builds its own status list, so it must pass the shortfall too.
 
-    There are two of these and only one is at risk. `_aspect_blocking_reasons` reads
-    `aspect_statuses`, which computes the shortfall itself; `_aspect_blocking_reasons_if_enabled`
-    overrides the stored toggle and so builds its own list, which is the one that could
-    silently omit it and let an aspect be switched on over an unset colour.
-
-    Asserted against the source, in the manner of
-    `test_every_asset_class_has_a_command_of_its_own`: the alternative is a live gateway.
+    `aspect_blocking_reasons` (plan 2.10) asks what would stop an output drawing while it is
+    still switched off, overriding the stored toggle, and so builds its own status list rather
+    than reading `aspect_statuses`: the one place that could silently omit the shortfall and let
+    an output be switched on over an unset colour. The calendar is off and its drawing marks an
+    `accent` slot; asked with no tier's `accent` set, the rule names that colour as the one
+    reason, having asked the validity service it was handed; asked with every colour set, it
+    names nothing.
     """
-    import inspect
+    import leaguebot.image.services.image_render_service as render
 
-    from leaguebot.image.cogs.image_cog import ImageCog
+    monkeypatch.setattr(render, "converter_available", lambda: True)
+    from leaguebot.image.services import image_settings
 
-    assert "colour_shortfall=" in inspect.getsource(
-        ImageCog._aspect_blocking_reasons_if_enabled
+    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
+    config = MagicMock()
+    config.get_toggles = AsyncMock(return_value={"calendar": False})
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={CALENDAR: _report(slots={"accent"})})
+    validity.disabled_source_modules = AsyncMock(return_value=set())
+    validity.colour_shortfall = AsyncMock(
+        return_value={CALENDAR: ["`accent` is not set for **Division 1**"]}
     )
-    # The other reads `aspect_statuses`, which carries it already — pinned so that a
-    # refactor which stops it doing so is caught here rather than in production.
-    assert "aspect_statuses(" in inspect.getsource(ImageCog._aspect_blocking_reasons)
+
+    reasons = await image_settings.aspect_blocking_reasons(
+        "calendar", config=config, validity=validity
+    )
+    assert reasons == [
+        "`calendar_template` needs a per-tier colour: `accent` is not set for **Division 1**. "
+        "Set it with `/images config per-tier-set-colour`."
+    ]
+    validity.colour_shortfall.assert_awaited()
+
+    validity.colour_shortfall = AsyncMock(return_value={})
+    assert await image_settings.aspect_blocking_reasons(
+        "calendar", config=config, validity=validity
+    ) == []
 
 
 # ── The season approval gate ──────────────────────────────────────────────
