@@ -10,15 +10,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.amendment_service import (
-    AmendmentModifiedError,
-    disable_amendment_mode,
-    enable_amendment_mode,
-    get_amendment_state,
-    modify_session_points,
-    revert_modification_store,
-)
+from leaguebot.core.services.amendment_service import get_amendment_state
 from tests.support.change_queue import run_queue, stopped_job
+from tests.support.saves import (
+    enable_amendment_mode,
+    modify_fl_bonus,
+    modify_fl_position_limit,
+    modify_session_points,
+)
 from tests.support.season_league import (
     AM,
     CALL_MESSAGES,
@@ -81,79 +80,6 @@ async def _seed_season_points(db_path: str, season_id: int) -> None:
             (season_id,),
         )
         await db.commit()
-
-
-# ---------------------------------------------------------------------------
-# disable_amendment_mode raises AmendmentModifiedError when modified_flag=1
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_disable_raises_when_modified_flag(db_path):
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    # Manually set modified_flag=1
-    async with get_connection(path) as db:
-        await db.execute(
-            "UPDATE season_amendment_state SET modified_flag = 1 WHERE season_id = ?",
-            (season_id,),
-        )
-        await db.commit()
-
-    with pytest.raises(AmendmentModifiedError):
-        await disable_amendment_mode(path, season_id)
-
-
-@pytest.mark.asyncio
-async def test_disable_succeeds_when_not_modified(db_path):
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    # modified_flag is 0 after enable — should succeed
-    await disable_amendment_mode(path, season_id)
-    state = await get_amendment_state(path, season_id)
-    assert state is not None
-    assert not state.amendment_active
-
-
-# ---------------------------------------------------------------------------
-# revert_modification_store — resets entries and clears modified_flag
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_revert_modification_store(db_path):
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await enable_amendment_mode(path, season_id)
-
-    # Modify something in the modification store
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
-    )
-
-    # Confirm flag is set
-    state = await get_amendment_state(path, season_id)
-    assert state is not None and state.modified_flag
-
-    # Revert
-    await revert_modification_store(path, season_id)
-
-    # Flag should be cleared
-    state = await get_amendment_state(path, season_id)
-    assert state is not None
-    assert not state.modified_flag
-
-    # Modification store should match the original season points (25 pts)
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT points FROM season_modification_entries WHERE season_id = ? AND position = 1",
-            (season_id,),
-        )
-        row = await cursor.fetchone()
-    assert row is not None
-    assert row["points"] == 25
 
 
 # ---------------------------------------------------------------------------
@@ -1054,7 +980,6 @@ async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
     amending the bonus would have seen the panel accept the change and the old bonus keep
     being awarded.
     """
-    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1090,7 +1015,6 @@ async def test_an_approved_amendment_empties_the_modification_store(db_path):
     mode would show the previous amendment's figures as though they were pending changes,
     and approving it would rewrite the season with them.
     """
-    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -2037,8 +1961,6 @@ async def test_an_approved_amendment_reposts_every_results_table_with_the_new_po
 
 
 async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
-    from leaguebot.core.services.amendment_service import modify_fl_bonus
-
     path, season_id = db_path
     await _seed_points_config(path, season_id)
     _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
@@ -2056,7 +1978,6 @@ async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
 async def test_rescoring_keeps_the_fastest_lap_override(db_path):
     """The runner-up was given the fastest lap by hand; the rescoring must not hand it back
     to the quickest time."""
-    from leaguebot.core.services.amendment_service import modify_fl_bonus
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2082,7 +2003,6 @@ async def test_rescoring_keeps_the_fastest_lap_override(db_path):
 
 async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
     """Third set the quickest lap; with the bonus now limited to the top two, nobody holds it."""
-    from leaguebot.core.services.amendment_service import modify_fl_position_limit
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2353,36 +2273,3 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
         assert (await _race_points(path, session_id))[_WINNER] == (25, 0), (
             "a failed approval kept part of its rescoring"
         )
-
-
-# ---------------------------------------------------------------------------
-# modify_session_points stages a whole paste at once (#442)
-# ---------------------------------------------------------------------------
-
-
-async def test_modify_session_points_stages_every_pair_in_one_transaction(db_path):
-    """Every pair is staged, the store is marked modified, and each staged change is recorded
-    as an audit entry, by whom and when."""
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await enable_amendment_mode(path, season_id)
-
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(1, 30), (2, 20), (3, 10)], **ACTOR
-    )
-
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT position, points FROM season_modification_entries "
-            "WHERE season_id = ? AND session_type = 'FEATURE_RACE' ORDER BY position",
-            (season_id,),
-        )
-        staged = [tuple(r) for r in await cursor.fetchall()]
-        cursor = await db.execute(
-            "SELECT actor_id, actor_name, timestamp FROM audit_entries ORDER BY id"
-        )
-        audited = [tuple(r) for r in await cursor.fetchall()]
-    assert staged == [(1, 30), (2, 20), (3, 10)]
-    state = await get_amendment_state(path, season_id)
-    assert state is not None and state.modified_flag
-    assert audited == [(99, "Admin#0001", ACTOR["now"].isoformat())] * 3
