@@ -39,6 +39,7 @@ from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verd
 from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
 from leaguebot.core.services.setting_change import After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root
+from leaguebot.core.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASSET_DIRECTORIES,
@@ -47,7 +48,12 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_LABELS,
 )
 from leaguebot.image.services.image_config_service import set_aspect_on, set_field_on
-from leaguebot.image.services.image_setting_advice import directory_verdict, toggle_enabled_lines
+from leaguebot.image.services.image_setting_advice import (
+    directory_verdict,
+    fastest_lap_contrast_lines,
+    measure_fastest_lap_contrast,
+    toggle_enabled_lines,
+)
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -61,6 +67,8 @@ if TYPE_CHECKING:
 
 ASPECT = "image.setting.aspect"
 DIRECTORY = "image.setting.directory"
+FASTEST_LAP_COLOUR = "image.setting.fastest_lap_colour"
+PRESENTATION = "image.setting.presentation"
 TEMPLATE_DIRECTORY = "image.setting.template_directory"
 TEMPLATE = "image.setting.template"
 
@@ -383,6 +391,129 @@ def _aspect(
     )
 
 
+#: Each presentation column: its command, the words a line and a held reply give it, and how the
+#: acknowledgement says what is being set. The zone is shown as stored, the two formats as the
+#: member chose them.
+_PRESENTATION: dict[str, tuple[str, str, str]] = {
+    "time_zone": ("time-zone", "Time zone", "the time zone"),
+    "time_format": ("time-format", "Clock format", "the clock format"),
+    "date_format": ("date-format", "Date format", "the date format"),
+}
+
+
+def _presentation(modules: "ModuleService") -> Setting:
+    """The time zone, the clock format and the date format: `{"column", "value", "shown"}`.
+
+    *shown* is how the member sees the value: the name of the choice picked for the two formats,
+    the zone itself for the zone. A zone is checked against the memoised list of IANA names, not
+    `available_timezones()`, which walks the whole TZPATH tree on every call (325 ms cold on the
+    Pi, for one membership test).
+    """
+
+    def shown(payload: dict[str, Any]) -> str:
+        return str(payload["shown"])
+
+    async def check(ctx: CheckContext) -> Verdict:
+        off = await _module_refusal(modules)
+        if off is not None:
+            return off
+        if ctx.payload["column"] == "time_zone" and not is_known_zone(str(ctx.payload["value"])):
+            return Verdict.refuse(
+                f"❌ `{ctx.payload['value']}` is not a recognised time zone. "
+                f"Use an IANA name such as `Europe/Lisbon` or `UTC`."
+            )
+        return Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        column = str(payload["column"])
+        value = str(payload["value"])
+        saved = await set_field_on(db, column, value)
+        name = _PRESENTATION[column][1]
+        if column == "time_zone":
+            return _with(saved, f"{name}: {value}")
+        return _with(saved, f"{name}: {shown(payload)} ({value})")
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        column = str(payload["column"])
+        if column == "time_zone":
+            if not results["save"]["changed"]:
+                return _held("the time zone", f"`{payload['value']}`")
+            return (
+                f"✅ Time zone set to `{payload['value']}`.\n"
+                f"Times are shown in the offset that zone carries **on the date displayed**, "
+                f"so a season spanning a daylight-saving change stays correct."
+            )
+        if not results["save"]["changed"]:
+            return _held(_PRESENTATION[column][2], shown(payload))
+        return f"✅ {_PRESENTATION[column][1]} set to **{shown(payload)}**."
+
+    def doing(payload: dict[str, Any]) -> str:
+        if payload["column"] == "time_zone":
+            return f"Setting the time zone to `{payload['value']}`"
+        return f"Setting {_PRESENTATION[str(payload['column'])][2]} to **{shown(payload)}**"
+
+    return Setting(
+        kind=PRESENTATION,
+        command=lambda payload: f"/images config {_PRESENTATION[str(payload['column'])][0]}",
+        doing=doing,
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_config",),
+    )
+
+
+def _fastest_lap_colour(
+    modules: "ModuleService",
+    config: "ImageConfigService",
+    validity: "ImageValidityService",
+    render: "ImageRenderService",
+    seasons: "SeasonService",
+) -> Setting:
+    """`/images config fastest-lap-colour`: `{"value"}`, the colour in its canonical form.
+
+    A malformed value is refused at once by the command, leaving the stored colour untouched
+    (FR-025). The contrast against the template's plate is measured after the save, in the
+    `advise` step, so that an unmeasurable contrast never costs the manager their input
+    (FR-026, FR-027).
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        return await _module_refusal(modules) or Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        value = str(payload["value"])
+        saved = await set_field_on(db, "fastest_lap_colour", value)
+        return _with(saved, f"Fastest-lap colour: {value}", advised=True)
+
+    async def advise(ctx: StepContext) -> StepResult:
+        reading = await measure_fastest_lap_contrast(
+            str(ctx.payload["value"]),
+            config=config,
+            render=render,
+            validity=validity,
+            seasons=seasons,
+        )
+        return StepResult(result={"lines": fastest_lap_contrast_lines(reading)})
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        value = str(payload["value"])
+        if not results["save"]["changed"]:
+            return _held("the fastest-lap colour", f"`{value}`")
+        return "\n".join([f"✅ Fastest-lap colour set to `{value}`.", *_advice(results)])
+
+    return Setting(
+        kind=FASTEST_LAP_COLOUR,
+        command=lambda _payload: "/images config fastest-lap-colour",
+        doing=lambda payload: f"Setting the fastest-lap colour to `{payload['value']}`",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_config",),
+        after=_advice_after(advise),
+    )
+
+
 def image_settings(
     *,
     modules: "ModuleService",
@@ -402,10 +533,12 @@ def image_settings(
         _template_directory(modules, config),
         _template(modules, config),
         _aspect(modules, config, validity),
+        _presentation(modules),
+        _fastest_lap_colour(modules, config, validity, render, seasons),
     )
 
 
 __all__ = [
-    "ADVISE", "ASPECT", "DIRECTORY", "MODULE_OFF", "NOT_CHECKED", "TEMPLATE",
-    "TEMPLATE_DIRECTORY", "aspect_blocking_reasons", "image_settings",
+    "ADVISE", "ASPECT", "DIRECTORY", "FASTEST_LAP_COLOUR", "MODULE_OFF", "NOT_CHECKED",
+    "PRESENTATION", "TEMPLATE", "TEMPLATE_DIRECTORY", "aspect_blocking_reasons", "image_settings",
 ]
