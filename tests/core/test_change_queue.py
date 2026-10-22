@@ -198,8 +198,11 @@ async def _ask(env, kind: str = "dummy", payload=None, *, interaction=None, orig
 
 
 async def _lines(env) -> list[str]:
-    """Every log line written: those the log channel took, then those waiting on a retry."""
-    return list(env.bot.log_channel.sent) + await queued_log_lines(env.db_path)
+    """Every log line written: those the log channel took, then those waiting on a retry, each
+    without the separator the router puts beneath it (`OutputRouter._as_log_line`)."""
+    rule = "\n" + "\u2015" * 36
+    lines = list(env.bot.log_channel.sent) + await queued_log_lines(env.db_path)
+    return [line.removesuffix(rule) for line in lines]
 
 
 async def _scratch(env) -> list[str]:
@@ -2915,10 +2918,6 @@ async def test_a_failure_s_record_that_raises_leaves_neither_its_row_nor_the_fai
 # A job that ends on a fault rather than stopping its lane (#439, slice 7)
 # ---------------------------------------------------------------------------
 
-#: Why the tests of a job ending on a fault are expected to fail until the queue has it.
-ENDS_ON_A_FAULT = "#439: the queue has no Step.on_fault or ChangeType.on_check_fault yet"
-
-
 def _ended_by(line: str) -> Any:
     """An `on_fault` marking its step failed with *line* as the step's only line."""
     api = _api()
@@ -2934,7 +2933,6 @@ def _failed_or_fine(ctx) -> str:
     return "❌ It failed." if any((s.result or {}).get("failed") for s in ctx.steps) else "✅ Fine."
 
 
-@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
 async def test_a_step_that_ends_on_a_fault_is_marked_done_and_its_lane_goes_on(env):
     """A step with `on_fault` that raises is marked done with what `on_fault` returns: no stop
     notice, its line written, the change carrying on to its next step and its outcome reading the
@@ -2969,7 +2967,6 @@ async def test_a_step_that_ends_on_a_fault_is_marked_done_and_its_lane_goes_on(e
     assert updated_reply(interaction) == "❌ It failed."
 
 
-@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
 @pytest.mark.parametrize("fault_in", ["its run", "its audit entry"])
 async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monkeypatch, fault_in):
     """A `SAVE` step with `on_fault` that faults, in its own run or in the queue's write of its
@@ -3012,7 +3009,6 @@ async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monke
     assert await stopped_job(env.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ENDS_ON_A_FAULT)
 async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_where_its_type_says_so(
     env,
 ):
