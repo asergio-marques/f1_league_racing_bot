@@ -32,8 +32,6 @@ from tests.support.image_cog_doubles import interaction as _interaction, log_bot
 from tests.support.settings_league import settings_league
 from tests.support.undecorate import undecorate
 
-#: Why a test here fails until the image settings run on the change queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
 #: A filename the shipped template folder does not hold.
 MISSING = "nothing-here.svg"
 
@@ -67,7 +65,6 @@ async def _run(league, column, filename=None):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     "column",
     ["lineup_template", "calendar_template", "verdicts_template"],

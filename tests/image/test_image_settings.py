@@ -518,7 +518,6 @@ async def test_the_template_directory_saves_with_its_audit_entry_and_line(tmp_pa
     await _saves_with_record(tmp_path, CASES["template-directory"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("column", TEMPLATES)
 async def test_a_template_saves_with_its_audit_entry_and_line(tmp_path, column):
     """The first and the last of the sixteen template commands by name, the template standing at
@@ -684,7 +683,6 @@ async def test_an_image_setting_whose_audit_entry_fails_saves_nothing_and_the_la
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_template_broken_by_a_directory_set_ahead_of_it_is_refused_when_it_runs(tmp_path):
     """The template directory asked to move to a folder holding no template, then the calendar
     template (standing at `old.svg`) asked to be the shipped file, which the shipped folder

@@ -30,7 +30,7 @@ from leaguebot.image.models.image_constants import (
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
-from leaguebot.image.services.image_settings import DIRECTORY, TEMPLATE_DIRECTORY
+from leaguebot.image.services.image_settings import DIRECTORY, TEMPLATE, TEMPLATE_DIRECTORY
 from leaguebot.image.services.image_setting_advice import (
     colour_shortfall_lines,
     declared_colour_slots,
@@ -479,8 +479,6 @@ class ImageCog(commands.Cog):
         file, and able to fix it. Nothing is written until every check passes, so a
         rejection leaves the stored value exactly as it stood.
         """
-        from leaguebot.image.services.image_validity_service import check_template
-
         # Validation parses the named SVG from disk, which outruns Discord's three-second
         # window on a slow host as readily as the sixteen-template sweep does.
         await interaction.response.defer(ephemeral=True)
@@ -500,39 +498,14 @@ class ImageCog(commands.Cog):
             )
             return
 
-        proposed = await self._config_service.candidate_config(
-            column, candidate
-        )
-        if proposed is None:
-            await self._reject(
-                interaction, label, "this server has no image configuration to amend."
-            )
-            return
-
-        problem = check_template(proposed, column)
-        if problem is not None:
-            await self._reject(interaction, label, problem.message())
-            return
-
-        # No stand-in comparison is made, for any type. The lineup was the only one that
-        # ever needed it — its fields were named after a league's own teams, so at this
-        # moment they could be compared only against a *stand-in* for the division that
-        # would be drawn, and XIV.9 made such a divergence a warning and not a refusal.
-        # Every field of every template is now verifiable against the file alone, so
-        # `check_template` above either passes or refuses and nothing is left to warn
-        # about (047 FR-024).
-        if not await self._config_service.set_field(column, candidate):
-            await self._already_held(
-                interaction, f"the {label} template", f"`{candidate}`",
-                f"{label} template: {candidate}",
-            )
-            return
-
-        lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success", f"{label} template: {candidate}"
+        # The check at the ask parses the named file, and the change runs it again as it
+        # comes up. Nothing is written until every check passes, so a rejection leaves the
+        # stored value exactly as it stood.
+        await self.bot.change_queue.ask(
+            TEMPLATE,
+            {"column": column, "value": candidate},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     async def _reject(
