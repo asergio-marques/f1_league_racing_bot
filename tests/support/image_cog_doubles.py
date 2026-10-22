@@ -55,7 +55,8 @@ def interaction(command: str | None = None, *, bot: MagicMock | None = None) -> 
     *command* is the command's full name as a league types it, without the slash ("images
     config time-zone"); ``None`` is an interaction with no command, a form's or a button's.
     Every reply, by `response.send_message`, `followup.send` or an edit of the message a button
-    sits on that gives it content, lands in ``.said`` in order.
+    sits on that gives it content, lands in ``.said`` in order. Through the real-queue bot, the
+    interaction is asked in the league's server and channel, as the queue saves a change.
     """
     double = MagicMock()
     double.guild_id = 1
@@ -93,6 +94,14 @@ def interaction(command: str | None = None, *, bot: MagicMock | None = None) -> 
     double.edit_original_response = AsyncMock(side_effect=_edit)
     double.command = SimpleNamespace(qualified_name=command) if command else None
     double.client = bot if bot is not None else log_bot()
+    if _queued_db(double.client):
+        # The queue saves the change against the league's server and the channel it was asked
+        # in, and names the member as Discord gives one.
+        from tests.support.change_queue import INTERACTION_CHANNEL_ID, SERVER_ID, member
+
+        double.guild_id = SERVER_ID
+        double.channel_id = INTERACTION_CHANNEL_ID
+        double.user = member(42, "Race Control", "Race Control#0001")
     return double
 
 
