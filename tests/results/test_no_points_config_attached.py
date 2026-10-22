@@ -20,7 +20,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
+from tests.support import saves
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5700
@@ -73,11 +73,11 @@ async def test_a_season_with_nothing_attached_has_none(db_path):
 
 
 async def test_a_season_with_a_configuration_attached_has_one(db_path):
-    await points_config_service.create_config(db_path, "Standard")
-    await points_config_service.set_session_points(
+    await saves.create_config(db_path, "Standard")
+    await saves.set_session_points(
         db_path, "Standard", SessionType.FEATURE_RACE, 1, 25
     )
-    await season_points_service.attach_config(db_path, SEASON_ID, "Standard", "SETUP")
+    await saves.attach_config(db_path, SEASON_ID, "Standard", "SETUP")
 
     assert await _cog(db_path)._no_points_config_attached(SEASON_ID) is False
 
