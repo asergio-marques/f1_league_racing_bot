@@ -10,17 +10,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import maybe_await
 from tests.support.settings_league import settings_league
 
-#: Why the tests here fail until the two rules have left the cog.
-UNBUILT = "#439: daily_portraits_refusal and aspect_blocking_reasons have not left the image cog yet"
 
-
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_daily_portraits_refusal_reads_the_module_it_is_handed():
     """Asked with a module service saying images are off, the rule refuses in today's words, the
     form's naming it a form and the confirmation's not, having asked the service it was handed;

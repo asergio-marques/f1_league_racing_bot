@@ -47,8 +47,12 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
+from leaguebot.core.utils.interaction_errors import failure_reply
 from leaguebot.image.services.image_config_service import (
+    pfp_change_refusal,
+    read_config_on,
     set_aspect_on,
+    set_daily_portraits_on,
     set_field_on,
     set_flag_on,
     set_tier_colours_on,
@@ -75,7 +79,9 @@ if TYPE_CHECKING:
 ASPECT = "image.setting.aspect"
 DIRECTORY = "image.setting.directory"
 FASTEST_LAP_COLOUR = "image.setting.fastest_lap_colour"
+DAILY_PORTRAITS = "image.setting.daily_portraits"
 PER_TIER = "image.setting.per_tier"
+PORTRAITS = "image.setting.portraits"
 PRESENTATION = "image.setting.presentation"
 TEMPLATE_DIRECTORY = "image.setting.template_directory"
 TEMPLATE = "image.setting.template"
@@ -84,6 +90,9 @@ TIER_IMPORT = "image.setting.tier_import"
 
 #: The name of the step that advises on a saved setting.
 ADVISE = "advise"
+#: The names of the steps that arm and remove the daily portrait job after the save.
+ARM_DAILY = "arm_daily"
+DISARM_DAILY = "disarm_daily"
 
 MODULE_OFF = "❌ The Image module is not enabled. Use `/module enable images` first."
 #: The refusal of a form submitted after the module was switched off while it stood open.
@@ -100,6 +109,21 @@ NOT_CHECKED = (
     "⚠️ The setting is saved, but it could not be checked against your templates; "
     "`/images config view` shows how it stands."
 )
+
+#: What a daily job that cannot be armed says became of the change: the setting is stored before
+#: the job is scheduled, and the start-up recovery arms it.
+DAILY_JOB_NOT_SCHEDULED = (
+    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+)
+#: What a reply adds when the daily job cannot be removed: the setting stands, and the job does
+#: nothing while it is off.
+DAILY_JOB_NOT_REMOVED = (
+    "⚠️ The setting is saved, but the daily job could not be removed; it does nothing while "
+    "the setting is off."
+)
+
+#: The command the daily portrait confirmation belongs to, as the log channel names it.
+DAILY_TOGGLE = "/images use-pfp daily-toggle"
 
 #: The label of the template directory, as the replies and the line name it.
 TEMPLATE_DIRECTORY_LABEL = "Template directory"
@@ -179,6 +203,35 @@ async def aspect_blocking_reasons(
         if status.aspect == aspect:
             return list(status.blocking_reasons)
     return []
+
+
+async def daily_portraits_refusal(
+    *, modules: "ModuleService", config: "ImageConfigService", form: bool
+) -> str | None:
+    """Why daily portrait updates can no longer be enabled, or None if they still can.
+
+    Asked again when the time-of-day form is submitted, when its confirmation is pressed and as
+    the change runs, since any may come after another manager switched the module or portraits
+    off, or enabled the daily updates. *form* says which is asking, so that a confirmation does
+    not call itself a form.
+    """
+    if not await modules.is_images_enabled():
+        return (
+            f"❌ The Image module was switched off while this {'form ' if form else ''}"
+            f"was open. Nothing was stored."
+        )
+    current = await config.get_config()
+    if current is None or not current.use_pfp:
+        return (
+            "❌ Driver portraits stopped being obtained from Discord while this was open. "
+            "Nothing was changed."
+        )
+    if current.pfp_daily:
+        return (
+            "ℹ️ Daily driver-portrait updates were already enabled while this was open. "
+            "Nothing was changed."
+        )
+    return None
 
 
 def _directory(modules: "ModuleService") -> Setting:
@@ -739,6 +792,174 @@ def _tier_import(modules: "ModuleService") -> Setting:
     )
 
 
+def _arm_daily(scheduler: "SchedulerService", command: Callable[[dict[str, Any]], str]) -> After:
+    """The step that arms the daily portrait job once the time and the flag are saved.
+
+    It carries the success line: a job that cannot be armed records no success (image
+    specification :132). The setting stays stored and the lane goes on; the reply says the job
+    will be scheduled when the bot next starts, as it always has.
+    """
+
+    async def run(ctx: StepContext) -> StepResult:
+        kept = next((view.result or {} for view in ctx.steps if view.name == "save"), {})
+        scheduler.schedule_portrait_refresh(str(ctx.payload.get("time") or kept["daily_time"]))
+        return StepResult()
+
+    return After(
+        step=Step(ARM_DAILY, StepKind.ACT, run),
+        fault_reply=lambda payload, _reply: failure_reply(
+            f"`{command(payload)}`", DAILY_JOB_NOT_SCHEDULED
+        ),
+        carries_line=True,
+    )
+
+
+def _disarm_daily(scheduler: "SchedulerService") -> After:
+    """The step that removes the daily portrait job once portraits or daily updates are off.
+
+    It may fail without holding up the queue: the setting stays saved and the reply says the job
+    could not be removed and does nothing while the setting is off.
+    """
+
+    async def run(_ctx: StepContext) -> StepResult:
+        scheduler.cancel_portrait_refresh()
+        return StepResult()
+
+    return After(
+        step=Step(DISARM_DAILY, StepKind.ACT, run),
+        fault_reply=lambda _payload, reply: f"{reply}\n{DAILY_JOB_NOT_REMOVED}",
+    )
+
+
+#: Each portrait toggle: its command and the label its replies and its line give it.
+_PORTRAITS: dict[str, tuple[str, str]] = {
+    "use_pfp": ("/images use-pfp toggle", "Discord profile pictures"),
+    "pfp_prerender": ("/images use-pfp prerender-toggle", "Pre-render portrait updates"),
+    "pfp_daily": ("/images use-pfp daily-toggle", "Daily driver-portrait updates"),
+}
+
+NOT_OBTAINED = (
+    "❌ Driver portraits are not being obtained from Discord. "
+    "Use `/images use-pfp toggle` first."
+)
+
+
+def _portraits(
+    modules: "ModuleService", config: "ImageConfigService", scheduler: "SchedulerService"
+) -> Setting:
+    """The three portrait toggles: `{"column", "enabled"}`, a flip resolved when asked.
+
+    The two sub-toggles govern how portraits are kept up to date, which is no question while the
+    bot is not obtaining them at all, and a change that would leave neither update on is refused
+    (`pfp_change_refusal`), both at the ask and as the change runs. The daily job follows the
+    save: armed after portraits are switched on with daily updates set, removed after portraits
+    or the daily updates are switched off. The arming carries the success line.
+    """
+
+    def label(payload: dict[str, Any]) -> str:
+        return _PORTRAITS[str(payload["column"])][1]
+
+    def command(payload: dict[str, Any]) -> str:
+        return _PORTRAITS[str(payload["column"])][0]
+
+    def state(payload: dict[str, Any]) -> str:
+        return "on" if payload["enabled"] else "off"
+
+    async def check(ctx: CheckContext) -> Verdict:
+        off = await _module_refusal(modules)
+        if off is not None:
+            return off
+        column = str(ctx.payload["column"])
+        current = await config.get_config()
+        if column == "use_pfp":
+            if current is None:
+                return Verdict.refuse("❌ The image module has no configuration yet.")
+        elif current is None or not current.use_pfp:
+            return Verdict.refuse(NOT_OBTAINED)
+        refusal = pfp_change_refusal(current, column, bool(ctx.payload["enabled"]))
+        if refusal is not None:
+            return Verdict.refuse(f"❌ {refusal}")
+        return Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        column = str(payload["column"])
+        enabled = bool(payload["enabled"])
+        saved = await set_flag_on(db, column, enabled)
+        shown = "enabled" if enabled else "disabled"
+        stored = await read_config_on(db)
+        daily_time = None if stored is None else stored.pfp_daily_time
+        then: tuple[PlannedStep, ...] = ()
+        if not enabled and column in ("use_pfp", "pfp_daily"):
+            then = (PlannedStep(DISARM_DAILY),)
+        elif enabled and column == "use_pfp" and stored is not None and stored.pfp_daily:
+            then = (PlannedStep(ARM_DAILY),)
+        return dataclasses.replace(
+            _with(saved, f"{label(payload)}: {shown}", daily_time=daily_time), then=then
+        )
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        if not results["save"]["changed"]:
+            return _held(label(payload), state(payload))
+        shown = "enabled" if payload["enabled"] else "disabled"
+        return f"{'✅' if payload['enabled'] else '❌'} **{label(payload)}** {shown}."
+
+    return Setting(
+        kind=PORTRAITS,
+        command=command,
+        doing=lambda payload: f"Turning **{label(payload)}** {state(payload)}",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_config",),
+        after={ARM_DAILY: _arm_daily(scheduler, command), DISARM_DAILY: _disarm_daily(scheduler)},
+    )
+
+
+def _daily_portraits(
+    modules: "ModuleService", config: "ImageConfigService", scheduler: "SchedulerService"
+) -> Setting:
+    """Confirming daily portrait updates at a time: `{"time"}`, normalised and in UTC.
+
+    The time and the flag are saved together, as one change with one audit entry, and the job is
+    armed after the save by the step that carries the success line. The refusal is asked again as
+    the change runs, the confirmation having stood open while another manager changed the module
+    or the setting.
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        refusal = await daily_portraits_refusal(modules=modules, config=config, form=False)
+        return Verdict.go() if refusal is None else Verdict.refuse(refusal)
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        time_of_day = str(payload["time"])
+        saved = await set_daily_portraits_on(db, time_of_day)
+        return dataclasses.replace(
+            _with(saved, f"Time of day: {time_of_day} UTC"), then=(PlannedStep(ARM_DAILY),)
+        )
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        if not results["save"]["changed"]:
+            return _held("Daily driver-portrait updates", "on")
+        return (
+            f"✅ **Daily driver-portrait updates** enabled, running at "
+            f"**{payload['time']} UTC** each day."
+        )
+
+    command = lambda _payload: DAILY_TOGGLE  # noqa: E731
+    return Setting(
+        kind=DAILY_PORTRAITS,
+        command=command,
+        doing=lambda payload: (
+            f"Enabling daily driver-portrait updates at **{payload['time']} UTC**"
+        ),
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_config",),
+        after={ARM_DAILY: _arm_daily(scheduler, command)},
+    )
+
+
 def image_settings(
     *,
     modules: "ModuleService",
@@ -763,12 +984,15 @@ def image_settings(
         _per_tier(modules, validity),
         _tier_colours(modules, config, validity),
         _tier_import(modules),
+        _portraits(modules, config, scheduler),
+        _daily_portraits(modules, config, scheduler),
     )
 
 
 __all__ = [
-    "ADVISE", "ASPECT", "DIRECTORY", "FASTEST_LAP_COLOUR", "FORM_MODULE_OFF", "IMPORT_NOT_SAVED",
-    "MODULE_OFF", "NOT_CHECKED", "PASTE_NOT_SAVED", "PER_TIER", "PRESENTATION", "TEMPLATE",
+    "ADVISE", "ARM_DAILY", "ASPECT", "DAILY_JOB_NOT_REMOVED", "DAILY_JOB_NOT_SCHEDULED",
+    "DAILY_PORTRAITS", "DAILY_TOGGLE", "DIRECTORY", "DISARM_DAILY", "FASTEST_LAP_COLOUR", "FORM_MODULE_OFF", "IMPORT_NOT_SAVED",
+    "MODULE_OFF", "NOT_CHECKED", "PASTE_NOT_SAVED", "PER_TIER", "PORTRAITS", "PRESENTATION", "TEMPLATE",
     "TEMPLATE_DIRECTORY", "TIER_COLOURS", "TIER_IMPORT", "aspect_blocking_reasons",
-    "image_settings",
+    "daily_portraits_refusal", "image_settings",
 ]
