@@ -45,7 +45,6 @@ from tests.support.undecorate import undecorate
 UNBUILT = "#439: the results settings do not run on the change queue yet"
 #: Why the fold-ins' tests fail until each is built.
 HELD_PASTE = "#439: a paste, an import or an append of held values does not answer 'Nothing changed' yet"
-FLAG_LEFT = "#439: an amend paste of staged values still sets the modified flag"
 SETUP_TOGGLE = "#439: /results amend toggle is not refused while the season is in setup yet"
 RANGES = "#439: the single-value points commands do not check their ranges yet"
 NOT_HELD = "#439: the amend commands do not refuse a configuration the season does not hold yet"
@@ -595,28 +594,24 @@ async def test_reverting_the_modification_store_records_what_was_discarded(tmp_p
     await _saves_with_record(tmp_path, CASES["amend-revert"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_staging_a_position_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results amend session Standard Feature Race 1 27`: P1 staged at 27, one
     `POINTS_AMENDMENT_STAGED` entry from 25 to 27, and today's Success line."""
     await _saves_with_record(tmp_path, CASES["amend-session"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_staging_a_fastest_lap_bonus_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results amend fl Standard Feature Race 2`: the bonus staged at 2, one
     `POINTS_AMENDMENT_FL_STAGED` entry from 1 to 2, and today's Success line."""
     await _saves_with_record(tmp_path, CASES["amend-fl"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_staging_a_fastest_lap_limit_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results amend fl-plimit Standard Feature Race 8`: the limit staged at 8, one
     `POINTS_AMENDMENT_FL_STAGED` entry from top 10 to top 8, and today's Success line."""
     await _saves_with_record(tmp_path, CASES["amend-fl-plimit"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_amend_bulk_paste_saves_its_positions_audit_entries_and_line_together(tmp_path):
     """The amend bulk form pasting P1 30 and P2 20: both staged, one `POINTS_AMENDMENT_STAGED`
     entry per position, and one "2 change(s)" line with both values."""
@@ -697,7 +692,6 @@ async def test_a_setting_asked_before_results_is_turned_off_and_run_after_is_ref
     assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_amendment_mode_turned_off_ahead_of_a_staged_change_refuses_it_when_it_runs(tmp_path):
     """With amendment mode on and nothing staged, `/results amend toggle` (off) is asked, then
     `/results amend session Standard Feature Race 1 27`: the second is acknowledged, and when it
@@ -815,7 +809,6 @@ async def test_the_ordering_warning_is_judged_on_the_table_the_change_left(tmp_p
     )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_same_value_stage_leaves_the_modified_flag_as_it_stood(tmp_path):
     """`/results amend session Standard Feature Race 1 25` with the mode on and nothing staged:
     acknowledged, then answered that nothing changed, with a "Nothing changed" line, no audit
@@ -863,7 +856,6 @@ async def test_a_removal_asked_without_confirmation_is_refused_when_a_setup_seas
     assert await _rows(league.db_path, STORE) == [(CONFIG,)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_approval_in_hand_refuses_a_staging_asked_before_it_when_it_runs(tmp_path):
     """In the points league (P1 staged at 26), `/results amend session Standard Feature Race 1
     27` is asked, then `/results amend review`'s ✅ Approve is pressed before the queue runs: the
@@ -894,10 +886,7 @@ async def test_an_approval_in_hand_refuses_a_staging_asked_before_it_when_it_run
     ("kind", "setup", "what"),
     [
         ("config", {}, "`/results config bulk-session`"),
-        pytest.param(
-            "amend", AMENDING, "`/results amend bulk-session`",
-            marks=pytest.mark.xfail(strict=True, reason=UNBUILT),
-        ),
+        ("amend", AMENDING, "`/results amend bulk-session`"),
     ],
     ids=["config-bulk-session", "amend-bulk-session"],
 )
@@ -948,11 +937,11 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
 @pytest.mark.parametrize(
     "route",
     [
-        pytest.param("amend-bulk-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("amend-fl", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("amend-fl-plimit", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "amend-bulk-session",
+        "amend-fl",
+        "amend-fl-plimit",
         "amend-revert",
-        pytest.param("amend-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "amend-session",
         "amend-toggle-off",
         "amend-toggle-on",
         "config-add",
@@ -1093,7 +1082,6 @@ async def test_attaching_a_configuration_already_attached_changes_nothing_and_sa
     assert await _rows(league.db_path, LINKS) == [(SEASON_ID, CONFIG)]
 
 
-@pytest.mark.xfail(strict=True, reason=FLAG_LEFT)
 async def test_an_amend_bulk_paste_of_values_already_staged_leaves_the_modified_flag(tmp_path):
     """The amend bulk form pasting P1 25, which the store already stages, with the modified flag
     clear: the flag stays clear and no audit entry is written."""

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
 import discord
 from discord import app_commands
@@ -17,7 +16,12 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
-from leaguebot.results.services.amendment_settings import AMEND_MODE, AMEND_REVERT
+from leaguebot.results.services.amendment_settings import (
+    AMEND_FASTEST_LAP,
+    AMEND_MODE,
+    AMEND_POINTS,
+    AMEND_REVERT,
+)
 from leaguebot.results.services.points_settings import (
     CONFIG_ADD,
     CONFIG_ATTACH,
@@ -27,12 +31,7 @@ from leaguebot.results.services.points_settings import (
     CONFIG_POINTS,
     CONFIG_REMOVE,
 )
-from leaguebot.results.services.points_config_service import (
-    BLOCKS_AMENDMENT,
-    STANDS_BLOCKS_AMENDMENT,
-    ConfigNotFoundError,
-    ordering_notice,
-)
+from leaguebot.results.services.points_config_service import ConfigNotFoundError
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import (
@@ -41,7 +40,7 @@ from leaguebot.core.utils.channel_guard import (
     changes_nothing,
 )
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -53,7 +52,6 @@ from leaguebot.core.utils.league_server import (
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -150,8 +148,6 @@ def _parse_bulk_lines(
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
-#: What a bulk paste that could not be written tells its member: nothing was saved, and how to retry.
-_PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
 #: What a Reject, and the amend review panel's lapse, leave beneath their line in the log channel.
 _NOTHING_APPROVED = (
     "Nothing has been approved. The staged changes and amendment mode remain. "
@@ -204,17 +200,6 @@ async def _approval_holds_staging(
         return False
     await refuse(interaction, staging_refusal(season.season_number, job), what=what)
     return True
-
-
-def _bulk_values(valid: list[tuple[int, int]]) -> str:
-    """The values a paste set, one per line, for its log line."""
-    return "".join(f"\n  P{position} \u2192 {points} pts" for position, points in valid)
-
-
-async def _send_in_parts(interaction: discord.Interaction, text: str) -> None:
-    """Follow up with *text*, in as many messages as it needs."""
-    for part in chunk_message(text):
-        await interaction.followup.send(part, ephemeral=True)
 
 
 class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
@@ -309,14 +294,6 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         self._db_path = db_path
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modify_session_points,
-        )
-        from leaguebot.results.services.amendment_mode_service import (
-            modification_ordering_warnings,
-        )
-
         await interaction.response.defer(ephemeral=True)
         bot = bot_of(interaction)
         what = "`/results amend bulk-session`"
@@ -327,13 +304,11 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
 
         # Gated here as well as on the command that opened it (issue #224). A modal can be
         # submitted long after it was shown, and the season can reach Pending completion in
-        # between — a window that writes to the store is exactly the one worth closing twice.
+        # between; the change's check judges it again as it starts.
         season = await season_for_command(
             interaction, bot.season_service, "results amend bulk-session"
         )
         if season is None:
-            return
-        if await _approval_holds_staging(interaction, self._db_path, season, what=what):
             return
 
         valid, errors, overrides = _parse_bulk_lines(self.entries.value)
@@ -345,50 +320,19 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
             await refuse(interaction, reply, what=what, reason=reason)
             return
 
-        try:
-            await modify_session_points(
-                self._db_path,
-                season.id,
-                self._config_name,
-                self._session.value,
-                valid,
-                actor_id=interaction.user.id,
-                actor_name=str(interaction.user),
-                now=datetime.now(timezone.utc),
-            )
-        except AmendmentNotActiveError:
-            await refuse(interaction, "\u274c Amendment mode is not active.", what=what)
-            return
-        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
-            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
-            return
-
-        lines = [
-            f"\u2705 Amended in modification store for config **{self._config_name}** "
-            f"({self._session.name}):\n"
-            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
-        ]
-        if overrides:
-            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
-        # Judged once, on the table the whole paste has left staged — as the config
-        # modal above does, and for the same reason.
-        notice = ordering_notice(
-            self._config_name,
-            self._session.name,
-            await modification_ordering_warnings(
-                self._db_path, season.id, self._config_name, self._session.value
-            ),
-            BLOCKS_AMENDMENT,
-        )
-        if notice:
-            lines.append(notice.lstrip("\n"))
-        await _send_in_parts(interaction, "\n".join(lines))
-
-        await bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /results amend bulk-session | {len(valid)} change(s)\n"
-            f"  config: {self._config_name}, session: {self._session.name}"
-            + _bulk_values(valid),
+        # The mode, the configuration and any approval in hand are the change's to judge.
+        await bot.change_queue.ask(
+            AMEND_POINTS,
+            {
+                "season_id": season.id,
+                "config": self._config_name,
+                "session": self._session.value,
+                "pairs": [[position, points] for position, points in valid],
+                "bulk": True,
+                "notes": overrides,
+            },
+            interaction=interaction,
+            what=what,
         )
 
 
@@ -1280,80 +1224,23 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modify_session_points,
-        )
-        from leaguebot.results.services.amendment_mode_service import (
-            modification_ordering_warnings,
-            staged_position_points,
-        )
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend session"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        stands = False
-        try:
-            # A store that is not in amendment mode holds nothing, so a request made outside
-            # the mode never stands: it reaches the store's own refusal, which comes first.
-            stands = points_config_service.values_stand(
-                await staged_position_points(
-                    self.bot.db_path, season.id, name, session.value, position
-                ),
-                {"points": points},
-            )
-            if not stands:
-                await modify_session_points(
-                    self.bot.db_path,
-                    season.id,
-                    name,
-                    session.value,
-                    [(position, points)],
-                    actor_id=interaction.user.id,
-                    actor_name=str(interaction.user),
-                    now=datetime.now(timezone.utc),
-                )
-        except AmendmentNotActiveError:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-        notice = ordering_notice(
-            name,
-            session.name,
-            await modification_ordering_warnings(
-                self.bot.db_path, season.id, name, session.value
-            ),
-            STANDS_BLOCKS_AMENDMENT if stands else BLOCKS_AMENDMENT,
-        )
-        if stands:
-            await self._answer_nothing_changed(
-                interaction,
-                "results amend session",
-                f"Nothing changed: **{name}** {session.name} P{position} already stands at "
-                f"{points} pts in the modification store." + notice,
-                f"config: {name}",
-                f"session: {session.name}, position: {position}, points: {points}",
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} P{position} \u2192 {points} pts."
-            + notice,
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend session | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, position: {position}, points: {points}",
+        # The mode, the configuration and any approval in hand are the change's to judge.
+        await self.bot.change_queue.ask(
+            AMEND_POINTS,
+            {
+                "season_id": season.id,
+                "config": name,
+                "session": session.value,
+                "pairs": [[position, points]],
+                "bulk": False,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(name="fl", description="Set fastest-lap bonus in the modification store.")
@@ -1373,54 +1260,21 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modify_fl_bonus,
-        )
-        from leaguebot.results.services.amendment_mode_service import (
-            staged_fastest_lap,
-        )
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        try:
-            if points_config_service.values_stand(
-                await staged_fastest_lap(self.bot.db_path, season.id, name, session.value),
-                {"fl_points": points},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results amend fl",
-                    f"Nothing changed: **{name}** {session.name} FL bonus already stands at "
-                    f"{points} pts in the modification store.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_bonus: {points}",
-                )
-                return
-            await modify_fl_bonus(self.bot.db_path, season.id, name, session.value, points)
-        except AmendmentNotActiveError:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} FL bonus \u2192 {points} pts.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_bonus: {points}",
+        await self.bot.change_queue.ask(
+            AMEND_FASTEST_LAP,
+            {
+                "season_id": season.id,
+                "config": name,
+                "session": session.value,
+                "fl_points": points,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(name="fl-plimit", description="Set fastest-lap position limit in the modification store.")
@@ -1440,54 +1294,21 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            modify_fl_position_limit,
-        )
-        from leaguebot.results.services.amendment_mode_service import (
-            staged_fastest_lap,
-        )
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl-plimit"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        try:
-            if points_config_service.values_stand(
-                await staged_fastest_lap(self.bot.db_path, season.id, name, session.value),
-                {"fl_position_limit": limit},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results amend fl-plimit",
-                    f"Nothing changed: **{name}** {session.name} FL position limit already "
-                    f"stands at top {limit} in the modification store.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_position_limit: {limit}",
-                )
-                return
-            await modify_fl_position_limit(self.bot.db_path, season.id, name, session.value, limit)
-        except AmendmentNotActiveError:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Updated in modification store: **{name}** {session.name} FL position limit \u2192 top {limit}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl-plimit | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_position_limit: {limit}",
+        await self.bot.change_queue.ask(
+            AMEND_FASTEST_LAP,
+            {
+                "season_id": season.id,
+                "config": name,
+                "session": session.value,
+                "fl_position_limit": limit,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(
@@ -1506,7 +1327,8 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         # Before the modal, not after: showing one and refusing its submission would have a
-        # manager type a screenful of positions to no purpose.
+        # manager type a screenful of positions to no purpose. The submission asks the change,
+        # whose check judges it again.
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend bulk-session"
         )

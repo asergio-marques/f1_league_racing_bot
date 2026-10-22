@@ -41,8 +41,6 @@ from tests.support.settings_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the tests here fail until the points edits run on the queue.
-UNBUILT = "#439: the points edits do not run on the change queue yet"
 #: The member as a saved log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 CONFIG = "100%"
@@ -146,7 +144,6 @@ async def test_a_config_set_to_the_value_it_holds_changes_nothing(tmp_path, comm
     assert len(await audit_rows(league.db_path)) == before
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("command", sorted(_AMEND_SETS))
 async def test_an_amend_set_to_the_value_staged_changes_nothing(tmp_path, command):
     """The season is in amendment mode with nothing staged; its store gives 25 pts for a win
@@ -207,7 +204,7 @@ async def test_a_revert_with_nothing_staged_records_that_nothing_changed(tmp_pat
     "command",
     [
         "results config session",
-        pytest.param("results amend session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "results amend session",
     ],
 )
 async def test_a_same_value_set_on_an_out_of_order_table_keeps_the_warning(tmp_path, command):
