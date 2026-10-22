@@ -27,6 +27,12 @@ still needs the setting stored, and a plain UPDATE would silently do nothing on 
 
 **All three are gated on the module.** They post into channels the results module owns, and a
 league with it switched off would be given a success message over a post that never happened.
+
+**The reserves toggle is a settings change on the change queue** (#439, slice 7): it reads the
+division's visibility when asked and asks the flip; a refusal the state when asked gives is
+answered at once, nothing queued, and anything else is saved when the change runs, its reply and
+line following. Its tests drive the real command on a league built by the migrations, with the
+real services and queue, and run the queue before reading what was saved.
 """
 from __future__ import annotations
 
@@ -40,11 +46,16 @@ from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
+from tests.support.settings_league import interaction as member_asks
+from tests.support.settings_league import log_lines, said, settings_league
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 11908
 SEASON_ID = 1
 DIVISION_ID = 11
+#: The member as a log line names them, the mention wrapped so it notifies nobody.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +196,48 @@ async def _rounds_sync(cog, interaction, *, division="Pro", status="ok"):
 
 
 async def _toggle(cog, interaction, *, division="Pro"):
+    """Run `/results reserves toggle` for *division* through *cog*, then the queue."""
     await undecorate(ResultsCog.reserves_toggle)(cog, interaction, division)
+    await run_queue(cog.bot)
+
+
+async def _league(tmp_path, *, results: bool = True, status: str = "ACTIVE",
+                  config_row: bool = True, reserves: int | None = 1):
+    """A league built by the migrations with the real services and queue, results on
+    (*results*), whose one season (SEASON_ID, *status*) holds the division Pro (DIVISION_ID):
+    showing reserves (*reserves* 1), hiding them (0), or with no results configuration at all
+    (*config_row* False)."""
+    league = await settings_league(tmp_path, modules=("results",) if results else ())
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+            "VALUES (?, 1, '2026-01-01', ?, ?)",
+            (SEASON_ID, status, "ONGOING" if status == "ACTIVE" else status),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Pro', 1, 555)",
+            (DIVISION_ID, SEASON_ID),
+        )
+        if config_row:
+            await db.execute(
+                "INSERT INTO division_results_config (division_id, reserves_in_standings) "
+                "VALUES (?, ?)",
+                (DIVISION_ID, reserves),
+            )
+        await db.commit()
+    return league
+
+
+async def _toggled(league, *, division="Pro"):
+    """Run `/results reserves toggle` for *division* as Admin on *league*, then the queue."""
+    asked = member_asks(league.bot, "results reserves toggle")
+    await _toggle(ResultsCog(league.bot), asked, division=division)
+    return asked
+
+
+def _said(asked) -> str:
+    return "\n".join(said(asked))
 
 
 async def _reserves(db_path) -> int | None:
@@ -445,20 +497,20 @@ def _refusal(case_id, command, run, reply, **kwargs):
     ],
 )
 async def test_every_sync_and_toggle_refusal_is_recorded(tmp_path, command, run, reply, kwargs):
-    """The manager Alex names a division the season does not hold, or syncs one with no
-    channel to post in: Alex is refused as today, and one line records the refusal and its
-    reason."""
-    db_path = await _make_db(tmp_path, name="refusals")
-    cog = _make_cog(db_path)
-    interaction = _answering_interaction(cog, command)
+    """The member Admin names a division the season does not hold, or syncs one with no
+    channel to post in: Admin is refused at once as today, nothing is queued or toggled, and
+    one line records the refusal and its reason."""
+    league = await _league(tmp_path)
+    asked = member_asks(league.bot, command)
 
-    await run(cog, interaction, **kwargs)
+    await run(ResultsCog(league.bot), asked, **kwargs)
 
-    interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/{command}` refused for Alex (<@4242>) — {reply.removeprefix('❌ ')}"
-    )
-    assert await _reserves(db_path) == 1
+    assert said(asked) == [reply]
+    assert await log_lines(league) == [
+        f"⛔ `/{command}` refused for {NAMED} — {reply.removeprefix('❌ ')}"
+    ]
+    assert await change_rows(league.db_path) == []
+    assert await _reserves(league.db_path) == 1
 
 
 async def test_the_two_syncs_call_different_services(tmp_path):
@@ -480,79 +532,74 @@ async def test_the_two_syncs_call_different_services(tmp_path):
 
 
 async def test_a_division_showing_reserves_is_toggled_to_hidden(tmp_path):
-    db_path = await _make_db(tmp_path, name="reserves_hide", reserves=1)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """Pro showing reserves: once the change has run they are hidden, and the reply says so."""
+    league = await _league(tmp_path, reserves=1)
 
-    await _toggle(cog, interaction)
+    asked = await _toggled(league)
 
-    assert await _reserves(db_path) == 0
-    assert "hidden" in _replied(interaction)
+    assert await _reserves(league.db_path) == 0
+    assert "hidden" in _said(asked)
 
 
 async def test_a_division_hiding_reserves_is_toggled_to_visible(tmp_path):
-    db_path = await _make_db(tmp_path, name="reserves_show", reserves=0)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """Pro hiding reserves: once the change has run they are visible, and the reply says so."""
+    league = await _league(tmp_path, reserves=0)
 
-    await _toggle(cog, interaction)
+    asked = await _toggled(league)
 
-    assert await _reserves(db_path) == 1
-    assert "visible" in _replied(interaction)
+    assert await _reserves(league.db_path) == 1
+    assert "visible" in _said(asked)
 
 
 async def test_a_division_with_no_configuration_is_showing_reserves(tmp_path):
     """The schema default, and the league never chose otherwise — so the first toggle must
     *hide* them. Reading it wrongly makes the first press appear to do nothing, and every
-    press after that does the opposite of what the manager expects."""
-    db_path = await _make_db(tmp_path, name="reserves_default", config_row=False)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    press after that does the opposite of what the manager expects. Read from the database once
+    the change has run."""
+    league = await _league(tmp_path, config_row=False)
 
-    await _toggle(cog, interaction)
+    asked = await _toggled(league)
 
-    assert await _reserves(db_path) == 0
-    assert "hidden" in _replied(interaction)
+    assert await _reserves(league.db_path) == 0
+    assert "hidden" in _said(asked)
 
 
 async def test_the_setting_is_written_for_a_division_that_had_no_configuration(tmp_path):
     """A plain UPDATE would silently do nothing on a division that has never had a results
     configuration, and the toggle would report a change it did not make."""
-    db_path = await _make_db(tmp_path, name="reserves_upsert", config_row=False)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path, config_row=False)
 
-    await _toggle(cog, _interaction())
+    await _toggled(league)
 
-    assert await _reserves(db_path) is not None
+    assert await _reserves(league.db_path) is not None
 
 
 async def test_toggling_twice_returns_to_where_it_started(tmp_path):
-    """Which is what makes it a toggle rather than a switch that only goes one way."""
-    db_path = await _make_db(tmp_path, name="reserves_twice", reserves=1)
-    cog = _make_cog(db_path)
+    """Which is what makes it a toggle rather than a switch that only goes one way: two
+    toggles, each run before the next is asked."""
+    league = await _league(tmp_path, reserves=1)
 
-    await _toggle(cog, _interaction())
-    await _toggle(cog, _interaction())
+    await _toggled(league)
+    await _toggled(league)
 
-    assert await _reserves(db_path) == 1
+    assert await _reserves(league.db_path) == 1
 
 
 async def test_the_toggle_leaves_the_divisions_other_settings_alone(tmp_path):
     """The upsert names one column; a row rebuilt from scratch would clear the channels the
-    division posts into."""
-    db_path = await _make_db(tmp_path, name="reserves_keeps")
-    async with get_connection(db_path) as db:
+    division posts into. Read from the database once the change has run."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
         await db.execute(
             "UPDATE division_results_config SET results_channel_id = 700, "
             "standings_channel_id = 701 WHERE division_id = ?",
             (DIVISION_ID,),
         )
         await db.commit()
-    cog = _make_cog(db_path)
 
-    await _toggle(cog, _interaction())
+    await _toggled(league)
 
-    async with get_connection(db_path) as db:
+    async with get_connection(league.db_path) as db:
         cursor = await db.execute(
             "SELECT results_channel_id, standings_channel_id FROM division_results_config "
             "WHERE division_id = ?",
@@ -564,50 +611,49 @@ async def test_the_toggle_leaves_the_divisions_other_settings_alone(tmp_path):
 
 async def test_the_toggle_is_logged_with_the_state_it_reached(tmp_path):
     """"Toggled" tells a reader nothing; which way it went is the whole content."""
-    db_path = await _make_db(tmp_path, name="reserves_log", reserves=1)
-    cog = _make_cog(db_path)
+    league = await _league(tmp_path, reserves=1)
 
-    await _toggle(cog, _interaction())
+    await _toggled(league)
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
+    logged = "\n".join(await log_lines(league))
     assert "/results reserves toggle" in logged
     assert "hidden" in logged
     assert "Pro" in logged
 
 
 async def test_an_unknown_division_is_not_toggled(tmp_path):
-    db_path = await _make_db(tmp_path, name="reserves_nodiv")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """A division the season does not hold: refused at once, nothing queued or toggled."""
+    league = await _league(tmp_path)
 
-    await _toggle(cog, interaction, division="Rookie")
+    asked = await _toggled(league, division="Rookie")
 
-    assert "Rookie" in _replied(interaction)
-    assert await _reserves(db_path) == 1
+    assert "Rookie" in _said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _reserves(league.db_path) == 1
 
 
 async def test_a_server_with_no_season_is_not_toggled(tmp_path):
-    db_path = await _make_db(tmp_path, name="reserves_noseason")
-    cog = _make_cog(db_path, season=None)
-    interaction = _interaction()
+    """The league's only season is completed: refused at once, nothing queued or toggled."""
+    league = await _league(tmp_path, status="COMPLETED")
 
-    await _toggle(cog, interaction)
+    asked = await _toggled(league)
 
     # The refusal names the archive rule (issue #224): a server whose only season is
     # completed or cancelled reaches this same branch, because the command now asks for
     # the *live* season and an archived one is never returned.
-    assert "there is none" in _replied(interaction)
-    assert "archive" in _replied(interaction)
-    assert await _reserves(db_path) == 1
+    assert "there is none" in _said(asked)
+    assert "archive" in _said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _reserves(league.db_path) == 1
 
 
 async def test_the_toggle_is_refused_while_the_module_is_off(tmp_path):
-    """The setting only affects standings the results module posts."""
-    db_path = await _make_db(tmp_path, name="reserves_off")
-    cog = _make_cog(db_path, enabled=False)
-    interaction = _interaction()
+    """The setting only affects standings the results module posts: refused before anything is
+    deferred, nothing queued or toggled."""
+    league = await _league(tmp_path, results=False)
 
-    await _toggle(cog, interaction)
+    asked = await _toggled(league)
 
-    assert await _reserves(db_path) == 1
-    interaction.response.defer.assert_not_awaited()
+    assert await _reserves(league.db_path) == 1
+    assert await change_rows(league.db_path) == []
+    asked.response.defer.assert_not_awaited()
