@@ -189,10 +189,16 @@ async def test_a_long_configuration_report_is_sent_in_the_parts_core_splits_it_i
 
 # ── A22: a refused folder's reply arrives whole ───────────────────────────
 
+#: The folder the bot ships its templates in, inside the project root.
+SHIPPED_TEMPLATES = "resources/defaults/templates"
 
-async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts():
-    cog = ImageCog(log_bot())
-    asked = interaction("images config template-directory", bot=cog.bot)
+
+async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts(tmp_path, monkeypatch):
+    """`/images config template-directory` on a folder the survey finds six long faults in: the
+    refusal names every one and the folder searched, in more than one part, each fitting one
+    Discord message."""
+    import leaguebot.image.services.image_validity_service as validity
+
     problems = [
         Problem(
             kind="NOT_FOUND",
@@ -202,19 +208,28 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts():
         for index in range(6)
     ]
 
-    await cog._reject_directory(
-        asked,
-        "Template directory",
-        "`resources/mine` does not hold every template the bot needs.",
-        problems=problems,
-        searched="resources/mine",
-    )
+    def survey(config, toggles, **kwargs):
+        return list(problems)
+
+    monkeypatch.setattr(validity, "blocking_template_problems", survey)
+    try:
+        import leaguebot.image.services.image_settings as image_settings
+    except ImportError:
+        pass
+    else:
+        monkeypatch.setattr(image_settings, "blocking_template_problems", survey, raising=False)
+    league = await _league(tmp_path)
+
+    asked = await _run_with(league, "images config template-directory", SHIPPED_TEMPLATES)
 
     reply = said(asked)
     assert all(len(part) <= 2000 for part in asked.said)
     assert len(asked.said) > 1
     assert "fault 5: " in reply
-    assert "Searched: `resources/mine`" in reply
+    assert any(
+        line.startswith("Searched: `") and line.endswith(f"{SHIPPED_TEMPLATES}`")
+        for line in reply.splitlines()
+    ), reply
 
 
 # ── A5: each command's own refusal ────────────────────────────────────────
