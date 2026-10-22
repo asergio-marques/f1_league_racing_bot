@@ -54,9 +54,6 @@ MISSING = "75%"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 
-#: Why a command test fails until the points settings run on the change queue.
-UNBUILT = "#439: the points settings do not run on the change queue yet"
-
 
 def _notice() -> tuple[Any, str, str]:
     """`ordering_notice` and the two consequences it names, where the service keeps them."""

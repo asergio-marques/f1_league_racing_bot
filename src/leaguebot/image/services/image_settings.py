@@ -40,13 +40,14 @@ from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
 from leaguebot.core.services.setting_change import After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_constants import (
+    ASPECT_LABELS,
     ASSET_DIRECTORIES,
     ASSET_LABELS,
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from leaguebot.image.services.image_config_service import set_field_on
-from leaguebot.image.services.image_setting_advice import directory_verdict
+from leaguebot.image.services.image_config_service import set_aspect_on, set_field_on
+from leaguebot.image.services.image_setting_advice import directory_verdict, toggle_enabled_lines
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
+ASPECT = "image.setting.aspect"
 DIRECTORY = "image.setting.directory"
 TEMPLATE_DIRECTORY = "image.setting.template_directory"
 TEMPLATE = "image.setting.template"
@@ -118,6 +120,40 @@ def _template_refusal(label: str, reason: str) -> Verdict:
         f"❌ **{label}** template was **not** changed — {reason}\n"
         f"The previously configured filename is still in force."
     )
+
+
+async def aspect_blocking_reasons(
+    aspect: str, *, config: "ImageConfigService", validity: "ImageValidityService"
+) -> list[str]:
+    """What would stop *aspect* drawing, asked while it is still switched off.
+
+    `aspect_statuses` reads the stored toggles, and an aspect that is off reports its problems
+    as ``disabled_reasons`` rather than ``blocking_reasons``, so asking the ordinary way, before
+    the toggle is written, always answers "nothing blocks it". The toggle is therefore
+    overridden for this one question, which is what lets the setting refuse *before* storing
+    rather than storing and then complaining. The configuration is left as it stands.
+    """
+    from leaguebot.image.services.image_render_service import converter_available
+    from leaguebot.image.services.image_validity_service import build_aspect_statuses
+
+    toggles = dict(await config.get_toggles())
+    toggles[aspect] = True
+
+    reports = await validity.template_reports()
+    statuses = build_aspect_statuses(
+        toggles,
+        reports,
+        disabled_source_modules=await validity.disabled_source_modules(),
+        converter_available=converter_available(),
+        # The shortfall is passed here too, and must be: this builds its own status list rather
+        # than calling `aspect_statuses`, so an aspect could otherwise be switched on while a
+        # template of it wanted a colour no tier had set (051).
+        colour_shortfall=await validity.colour_shortfall(reports),
+    )
+    for status in statuses:
+        if status.aspect == aspect:
+            return list(status.blocking_reasons)
+    return []
 
 
 def _directory(modules: "ModuleService") -> Setting:
@@ -284,6 +320,69 @@ def _template(modules: "ModuleService", config: "ImageConfigService") -> Setting
     )
 
 
+def _aspect(
+    modules: "ModuleService", config: "ImageConfigService", validity: "ImageValidityService"
+) -> Setting:
+    """`/images config toggle`: `{"aspect", "enabled"}`, the flip resolved when it was asked.
+
+    Switching an output *off* is never refused: it reverts to text, which needs no drawing at
+    all. Switching one *on* is refused while the drawings behind it are unusable, the output
+    left off, since an output that cannot draw withholds the season's approval and posts nothing
+    where a driver would otherwise have read text. The check is made against the configured
+    directory, so it answers for the files the league actually has, and again as the change
+    starts. An output found already in the state asked for, where two presses raced, changes
+    nothing and says so.
+    """
+
+    def label(payload: dict[str, Any]) -> str:
+        return ASPECT_LABELS[str(payload["aspect"])]
+
+    def state(payload: dict[str, Any]) -> str:
+        return "on" if payload["enabled"] else "off"
+
+    async def check(ctx: CheckContext) -> Verdict:
+        off = await _module_refusal(modules)
+        if off is not None:
+            return off
+        if not ctx.payload["enabled"]:
+            return Verdict.go()
+        blocking = await aspect_blocking_reasons(
+            str(ctx.payload["aspect"]), config=config, validity=validity
+        )
+        if not blocking:
+            return Verdict.go()
+        body = "\n".join(f"  • {reason}" for reason in blocking)
+        return Verdict.refuse(
+            f"⛔ **{label(ctx.payload)}** image output was **not** switched on — "
+            f"it cannot be drawn as things stand:\n{body}\n"
+            f"Put that right and run this command again. The output is still posted "
+            f"as text in the meantime.",
+            "\n".join(blocking),
+        )
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        saved = await set_aspect_on(db, str(payload["aspect"]), bool(payload["enabled"]))
+        shown = "enabled" if payload["enabled"] else "disabled"
+        return _with(saved, f"{label(payload)} image output: {shown}")
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        if not results["save"]["changed"]:
+            return _held(label(payload), state(payload))
+        if not payload["enabled"]:
+            return f"❌ **{label(payload)}** image output **disabled**. Posting stays as text."
+        return "\n".join(toggle_enabled_lines(str(payload["aspect"]), label(payload), []))
+
+    return Setting(
+        kind=ASPECT,
+        command=lambda _payload: "/images config toggle",
+        doing=lambda payload: f"Switching **{label(payload)}** image output {state(payload)}",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("image_aspect_toggles",),
+    )
+
+
 def image_settings(
     *,
     modules: "ModuleService",
@@ -302,10 +401,11 @@ def image_settings(
         _directory(modules),
         _template_directory(modules, config),
         _template(modules, config),
+        _aspect(modules, config, validity),
     )
 
 
 __all__ = [
-    "ADVISE", "DIRECTORY", "MODULE_OFF", "NOT_CHECKED", "TEMPLATE", "TEMPLATE_DIRECTORY",
-    "image_settings",
+    "ADVISE", "ASPECT", "DIRECTORY", "MODULE_OFF", "NOT_CHECKED", "TEMPLATE",
+    "TEMPLATE_DIRECTORY", "aspect_blocking_reasons", "image_settings",
 ]

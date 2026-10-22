@@ -45,7 +45,6 @@ async def test_daily_portraits_refusal_reads_the_module_it_is_handed():
     assert await maybe_await(daily_portraits_refusal(modules=on, config=config, form=False)) is None
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_aspect_blocking_reasons_overrides_the_toggle_for_the_question(tmp_path, monkeypatch):
     """The calendar switched off and its template pointed at a file that is not there: the
     league's own statuses report nothing blocking the calendar, it being off, but the rule,

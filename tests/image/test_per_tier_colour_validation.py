@@ -28,8 +28,6 @@ from leaguebot.image.services.image_validity_service import (
 )
 
 CALENDAR = "calendar_template"
-#: Why a test here fails until the aspect rule has left the image cog.
-UNBUILT = "#439: aspect_blocking_reasons has not left the image cog yet"
 
 
 def _report(key=CALENDAR, *, valid=True, slots=frozenset()):
@@ -215,7 +213,6 @@ def test_the_shortfall_reaches_every_surface():
     assert any("accent" in reason for reason in calendar.reasons)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
     """The rule the toggle asks builds its own status list, so it must pass the shortfall too.
 
