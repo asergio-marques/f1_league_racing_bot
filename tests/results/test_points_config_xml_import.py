@@ -65,8 +65,6 @@ from tests.support.undecorate import undecorate
 CONFIG = "Standard"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: Why a test of the acknowledgement fails until the import runs on the change queue.
-UNBUILT = "#439: the XML import does not run on the change queue yet"
 
 VALID_XML = """
 <config>
@@ -457,7 +455,6 @@ async def test_a_command_without_a_file_opens_the_modal(tmp_path):
     assert isinstance(asked.response.send_modal.await_args.args[0], XmlImportModal)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_command_with_a_file_defers_and_imports(tmp_path):
     """The file is read and parsed, which does not fit in three seconds reliably, so the command
     defers; the queue's acknowledgement follows as a follow-up, and the import is saved when the
@@ -514,7 +511,6 @@ async def test_the_command_is_refused_while_the_module_is_off(tmp_path):
     assert await _rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_modal_defers_before_importing(tmp_path):
     """The modal path cannot defer in the command — `send_modal` has to be the first
     response — so the deferral moves into `on_submit`, where the slow read is; the queue's

@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,14 +20,13 @@ from leaguebot.results.services import points_config_service, season_points_serv
 from leaguebot.results.services.points_settings import (
     CONFIG_ADD,
     CONFIG_FASTEST_LAP,
+    CONFIG_IMPORT,
     CONFIG_POINTS,
     CONFIG_REMOVE,
 )
 from leaguebot.results.services.points_config_service import (
     BLOCKS_AMENDMENT,
-    BLOCKS_APPROVAL,
     STANDS_BLOCKS_AMENDMENT,
-    STANDS_BLOCKS_APPROVAL,
     ConfigNotFoundError,
     ordering_notice,
 )
@@ -268,53 +266,19 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
             reply, reason = _bulk_refusal(errors)
             await refuse(interaction, reply, what=what, reason=reason)
             return
-        not_found = f"\u274c Config **{self._config_name}** not found."
-        if not await points_config_service.config_exists(self._db_path, self._config_name):
-            await refuse(interaction, not_found, what=what)
-            return
 
-        try:
-            await points_config_service.set_session_points_many(
-                self._db_path,
-                self._config_name,
-                session_type,
-                valid,
-                actor_id=interaction.user.id,
-                actor_name=str(interaction.user),
-                now=datetime.now(timezone.utc),
-            )
-        except ConfigNotFoundError:
-            await refuse(interaction, not_found, what=what)
-            return
-        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
-            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
-            return
-
-        lines = [
-            f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
-            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
-        ]
-        if overrides:
-            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
-        # The ordering is judged once, on the table the whole paste has left behind,
-        # rather than line by line. A bulk paste is one act of authorship, and a
-        # complaint per line would bury the reply under restatements of one fault.
-        notice = ordering_notice(
-            self._config_name,
-            self._session.name,
-            await points_config_service.ordering_warnings(
-                self._db_path, self._config_name, session_type
-            ),
-        )
-        if notice:
-            lines.append(notice.lstrip("\n"))
-        await _send_in_parts(interaction, "\n".join(lines))
-
-        await bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /results config bulk-session | {len(valid)} change(s)\n"
-            f"  config: {self._config_name}, session: {self._session.name}"
-            + _bulk_values(valid),
+        # The configuration is judged by the change's check, at the ask and as it starts.
+        await bot.change_queue.ask(
+            CONFIG_POINTS,
+            {
+                "config": self._config_name,
+                "session": session_type.value,
+                "pairs": [[position, points] for position, points in valid],
+                "bulk": True,
+                "notes": overrides,
+            },
+            interaction=interaction,
+            what=what,
         )
 
 
@@ -451,12 +415,7 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await _run_xml_import(
-            interaction,
-            self.xml_payload.value,
-            self._config_name,
-            self._db_path,
-        )
+        await _run_xml_import(interaction, self.xml_payload.value, self._config_name)
 
 
 def xml_import_named(config_name: str) -> str:
@@ -468,22 +427,15 @@ async def _run_xml_import(
     interaction: discord.Interaction,
     xml_text: str,
     config_name: str,
-    db_path: str,
 ) -> None:
     """Shared logic for modal and file-attachment XML import paths.
 
-    Parses, validates, persists, and replies with an ephemeral summary. Every outcome is
-    recorded in the log channel: a success with the values it set, a refusal (a payload that
-    does not parse, points out of order, a configuration that does not exist) in the standard
-    refusal form with its detail as the reason, and a failure in the standard failure form.
-
-    **A database fault is caught by name and reported here**, through `report_failure`, rather
-    than left to the form's or the command's failure path, so that its one line names the
-    configuration the import was writing, and its reply says that nothing from the import was
-    saved: the import is one transaction, so a fault leaves the configuration as it was. Any
-    other error propagates to the failure path.
+    Parses and validates the payload, then asks the import as a change. What cannot be read, or
+    is out of order, is refused here at once, in the standard refusal form with its detail as the
+    reason; the configuration and the module are judged by the change's check, at the ask and as
+    it starts. The change writes the values, records them and replies; a fault in its save is the
+    setting's, saves nothing and says to run the import again.
     """
-    from leaguebot.results.services.points_config_service import ConfigNotFoundError, xml_import_config
     from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
     what = xml_import_named(config_name)
@@ -513,66 +465,23 @@ async def _run_xml_import(
         )
         return
 
-    # --- persist ----------------------------------------------------------
-    try:
-        await xml_import_config(
-            db_path,
-            config_name,
-            payload,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            now=datetime.now(timezone.utc),
-        )
-    except ConfigNotFoundError:
-        await refuse(interaction, f"❌ Config **{config_name}** not found.", what=what)
-        return
-    except sqlite3.Error as exc:
-        await report_failure(
-            interaction,
-            exc,
-            what=what,
-            outcome="Nothing from the import was saved. Run the import again to retry.",
-        )
-        return
-
-    # --- success reply ----------------------------------------------------
-    lines: list[str] = []
-    for session_type, pos_dict in payload.positions.items():
-        lines.append(f"  **{session_type.label()}**: {len(pos_dict)} position(s) updated")
-    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
-        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
-        lines.append(f"  **{session_type.label()}** FL: {fl_pts} pts{limit_text}")
-    if warnings:
-        lines.append("⚠️ Warnings:")
-        lines.extend(f"  • {w}" for w in warnings)
-
-    summary = "\n".join(lines) or "No changes."
-    await interaction.followup.send(
-        f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
-    )
-    if not payload.positions and not payload.fastest_laps:
-        # A file naming no session wrote nothing: recorded as that, never as a success.
-        await bot_of(interaction).output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            "| /results config xml-import | Nothing changed\n"
-            f"  config: {config_name}\n"
-            "  reason: the import named no session",
-        )
-        return
-    # The values set, beneath the line, as "The record of what changed" asks.
-    values: list[str] = []
-    for session_type, pos_dict in payload.positions.items():
-        values.append(
-            f"  {session_type.label()}: "
-            + ", ".join(f"P{position} {points}" for position, points in sorted(pos_dict.items()))
-        )
-    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
-        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
-        values.append(f"  {session_type.label()} fastest lap: {fl_pts} pts{limit_text}")
-    await bot_of(interaction).output_router.post_log(
-        f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-        "| /results config xml-import | Success\n"
-        f"  config: {config_name}" + "".join(f"\n{line}" for line in values),
+    # --- ask --------------------------------------------------------------
+    await bot_of(interaction).change_queue.ask(
+        CONFIG_IMPORT,
+        {
+            "config": config_name,
+            "positions": {
+                session.value: [[position, points] for position, points in pairs.items()]
+                for session, pairs in payload.positions.items()
+            },
+            "fastest_laps": {
+                session.value: [points, limit]
+                for session, (points, limit) in payload.fastest_laps.items()
+            },
+            "warnings": list(warnings),
+        },
+        interaction=interaction,
+        what=what,
     )
 
 
@@ -1317,9 +1226,7 @@ class ResultsCog(commands.Cog):
                 await refuse(interaction, "❌ File could not be decoded as UTF-8.", what=what)
                 return
 
-            await _run_xml_import(
-                interaction, xml_text, name, self.bot.db_path
-            )
+            await _run_xml_import(interaction, xml_text, name)
 
     # ------------------------------------------------------------------
     # /results amend group — T025

@@ -554,14 +554,12 @@ async def test_setting_a_fastest_lap_limit_saves_it_with_its_audit_entry_and_lin
     await _saves_with_record(tmp_path, CASES["config-fl-plimit"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_bulk_paste_saves_its_positions_audit_entries_and_line_together(tmp_path):
     """The bulk form pasting P1 30 and P2 20 into Standard's Feature Race: both saved, one
     `POINTS_CONFIG_SESSION_SET` entry per position, and one "2 change(s)" line with both values."""
     await _saves_with_record(tmp_path, CASES["config-bulk-session"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["config-xml-import-form", "config-xml-import-file"])
 async def test_an_xml_import_saves_its_values_audit_entries_and_line_together(tmp_path, route):
     """An XML import of P1 30 and P2 20 into Standard's Feature Race, through the form and as an
@@ -898,12 +896,14 @@ async def test_an_approval_in_hand_refuses_a_staging_asked_before_it_when_it_run
     assert ("Standard", "FEATURE_RACE", 1, 26) in (await points_state(league))["staged"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     ("kind", "setup", "what"),
     [
         ("config", {}, "`/results config bulk-session`"),
-        ("amend", AMENDING, "`/results amend bulk-session`"),
+        pytest.param(
+            "amend", AMENDING, "`/results amend bulk-session`",
+            marks=pytest.mark.xfail(strict=True, reason=UNBUILT),
+        ),
     ],
     ids=["config-bulk-session", "amend-bulk-session"],
 )
@@ -929,7 +929,6 @@ async def test_a_fault_in_a_paste_s_save_saves_none_of_it_says_paste_it_again_an
     assert last_said(behind) == "✅ Config **Other** created. All positions default to 0 points."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lane_goes_on(tmp_path):
     """An XML import of P1 30 and P2 20 whose audit write faults: nothing is saved, the member
     is told nothing from the import was saved and to run it again, one failure line names the
@@ -964,14 +963,14 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
         pytest.param("amend-toggle-on", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         "config-add",
         pytest.param("config-append", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("config-bulk-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-bulk-session",
         pytest.param("config-detach", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         "config-fl",
         "config-fl-plimit",
         "config-remove",
         "config-session",
-        pytest.param("config-xml-import-file", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("config-xml-import-form", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-xml-import-file",
+        "config-xml-import-form",
         pytest.param("reserves-toggle", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
     ],
 )
@@ -1030,7 +1029,6 @@ async def test_a_reserves_toggle_found_already_switched_when_it_runs_changes_not
     assert lines[0].split("\n")[0] == f"{NAMED} | /results reserves toggle | Nothing changed"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_xml_form_submitted_after_the_module_was_turned_off_is_refused(tmp_path):
     """The XML import form, shown while results was on, is submitted after the module was
     turned off: refused with the module refusal and its "⛔" line, nothing imported."""
