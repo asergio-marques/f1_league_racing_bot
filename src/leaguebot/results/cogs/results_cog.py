@@ -17,6 +17,7 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.amendment_settings import AMEND_MODE, AMEND_REVERT
 from leaguebot.results.services.points_settings import (
     CONFIG_ADD,
     CONFIG_ATTACH,
@@ -1218,13 +1219,7 @@ class ResultsCog(commands.Cog):
     async def amend_toggle(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.amendment_service import (
-            AmendmentModifiedError,
-            disable_amendment_mode,
-            enable_amendment_mode,
-        )
         from leaguebot.results.services.amendment_mode_service import (
             get_amendment_state,
         )
@@ -1234,86 +1229,36 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
 
+        # The flip is resolved here, from the state the member saw: a second press while the first
+        # waits asks the same thing, and is refused as a repeat. The approval in hand, and whether
+        # staged changes forbid turning it off, are the change's to judge.
         state = await get_amendment_state(self.bot.db_path, season.id)
         currently_on = state is not None and state.amendment_active
-
-        if not currently_on:
-            await enable_amendment_mode(self.bot.db_path, season.id)
-            await interaction.followup.send(
-                "\u2705 Amendment mode enabled. Modification store initialised.", ephemeral=True
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
-                f"  amendment_mode: enabled",
-            )
-        else:
-            try:
-                await disable_amendment_mode(self.bot.db_path, season.id)
-                await interaction.followup.send("\u2705 Amendment mode disabled.", ephemeral=True)
-                await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
-                    f"  amendment_mode: disabled",
-                )
-            except AmendmentModifiedError:
-                await refuse(
-                    interaction,
-                    "\u274c Cannot disable amendment mode \u2014 uncommitted changes exist. "
-                    "Use `/results amend revert` to discard or `/results amend review` to apply.",
-                    what=describe(interaction),
-                )
+        await self.bot.change_queue.ask(
+            AMEND_MODE,
+            {"season_id": season.id, "active": not currently_on},
+            interaction=interaction,
+            what=describe(interaction),
+        )
 
     @amend_group.command(name="revert", description="Revert all modification store changes to the season points.")
     @league_manager_only
     async def amend_revert(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.core.services.amendment_service import (
-            AmendmentNotActiveError,
-            revert_modification_store,
-        )
-        from leaguebot.results.services.amendment_mode_service import (
-            get_amendment_state,
-        )
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend revert"
         )
         if season is None:
             return
-        if await _approval_holds_staging(
-            interaction, self.bot.db_path, season, what=describe(interaction)
-        ):
-            return
-
-        state = await get_amendment_state(self.bot.db_path, season.id)
-        if state is None or not state.amendment_active:
-            await refuse(
-                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
-            )
-            return
-
-        if not state.modified_flag:
-            await self._answer_nothing_changed(
-                interaction,
-                "results amend revert",
-                "Nothing changed: nothing is staged, so the modification store already "
-                "matches the season's points.",
-            )
-            return
-
-        await revert_modification_store(self.bot.db_path, season.id)
-        await interaction.followup.send(
-            "\u2705 Modification store reverted to current season points.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend revert | Success",
+        # The mode being on, and the approval in hand, are the change's to judge.
+        await self.bot.change_queue.ask(
+            AMEND_REVERT,
+            {"season_id": season.id},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @amend_group.command(name="session", description="Set points in the modification store for a session position.")

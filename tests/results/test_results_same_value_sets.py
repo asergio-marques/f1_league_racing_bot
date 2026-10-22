@@ -164,7 +164,6 @@ async def test_an_amend_set_to_the_value_staged_changes_nothing(tmp_path, comman
     assert await _modified_flag(league.db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("command", sorted(_AMEND_SETS))
 async def test_a_same_value_amend_leaves_amendment_mode_free_to_switch_off(tmp_path, command):
     """After an amend that staged nothing has run, `/results amend toggle` switches amendment
@@ -187,7 +186,6 @@ async def test_a_same_value_amend_leaves_amendment_mode_free_to_switch_off(tmp_p
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_revert_with_nothing_staged_records_that_nothing_changed(tmp_path):
     """Amendment mode is on and nothing is staged. Admin runs `/results amend revert` and the
     queue runs: told nothing changed, and one nothing-changed line, never a revert."""

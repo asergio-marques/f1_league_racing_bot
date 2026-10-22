@@ -579,7 +579,6 @@ async def test_detaching_a_configuration_saves_it_with_its_audit_entry_and_line(
     await _saves_with_record(tmp_path, CASES["config-detach"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["amend-toggle-on", "amend-toggle-off"])
 async def test_turning_amendment_mode_on_and_off_saves_each_with_its_audit_entry_and_line(
     tmp_path, route
@@ -589,7 +588,6 @@ async def test_turning_amendment_mode_on_and_off_saves_each_with_its_audit_entry
     await _saves_with_record(tmp_path, CASES[route])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_reverting_the_modification_store_records_what_was_discarded(tmp_path):
     """`/results amend revert` with P1 staged at 26: the store back to 25 and 18, one
     `POINTS_AMENDMENT_REVERTED` entry whose old value names the one row that differed and whose
@@ -736,7 +734,6 @@ async def test_a_season_reaching_pending_completion_ahead_of_a_reserves_toggle_r
     assert await _rows(league.db_path, RESERVES) == [(1,)]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_two_presses_of_the_amendment_toggle_while_the_first_waits_are_one_change(tmp_path):
     """`/results amend toggle` run twice with the mode off before the queue runs: both read
     "off" and ask to turn it on, so the second is refused as a repeat, and once run the mode is
@@ -756,7 +753,6 @@ async def test_two_presses_of_the_amendment_toggle_while_the_first_waits_are_one
     assert len(await change_rows(league.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_amendment_toggle_found_already_on_when_it_runs_changes_nothing(tmp_path):
     """A flip resolved when asked: `/results amend toggle` with the mode off asks to turn it on.
     Before the change runs the mode is turned on (written here as a change that started before
@@ -955,10 +951,10 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
         pytest.param("amend-bulk-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("amend-fl", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("amend-fl-plimit", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("amend-revert", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "amend-revert",
         pytest.param("amend-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("amend-toggle-off", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("amend-toggle-on", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "amend-toggle-off",
+        "amend-toggle-on",
         "config-add",
         "config-append",
         "config-bulk-session",
