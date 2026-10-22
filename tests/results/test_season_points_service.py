@@ -14,9 +14,6 @@ from tests.support.saves import attach_config, create_config, set_session_points
 from tests.support.season_points import snapshot_points
 from tests.support.settings_league import settings_league
 
-#: Why the attach tests fail until the attachment is a setting on the change queue.
-UNBUILT = "#439: the config_attach setting and attach_config_on are not written yet"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -90,7 +87,6 @@ async def _attach_verdict(tmp_path, *, status: str, name: str):
     return league, season_id, verdict
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_attach_config_blocked_outside_setup(tmp_path):
     """The season is active: the check refuses in today's words, and nothing is attached."""
     from leaguebot.core.models.change import VerdictKind
@@ -122,7 +118,6 @@ async def test_attach_config_success_in_setup(db_path):
     assert [a.change_type for a in saved.audits] == ["POINTS_CONFIG_ATTACH"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_attach_config_rejects_a_name_not_in_the_store(tmp_path):
     """#132. A typo attached a phantom that only surfaced as silence at approval. The season
     is in setup and "Standrad" was never created: the check refuses, naming the way out, and
@@ -141,7 +136,6 @@ async def test_attach_config_rejects_a_name_not_in_the_store(tmp_path):
     ) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_attach_config_checks_the_season_status_before_the_name(tmp_path):
     """An active season is refused for being active, whatever was typed into it."""
     from leaguebot.core.models.change import VerdictKind

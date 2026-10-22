@@ -27,9 +27,10 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import Verdict
 from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service
+from leaguebot.results.services import points_config_service, season_points_service
 from leaguebot.results.services.points_config_service import (
     BLOCKS_APPROVAL,
     STANDS_BLOCKS_APPROVAL,
@@ -47,6 +48,8 @@ CONFIG_REMOVE = "results.setting.config_remove"
 CONFIG_POINTS = "results.setting.config_points"
 CONFIG_FASTEST_LAP = "results.setting.config_fastest_lap"
 CONFIG_IMPORT = "results.setting.config_import"
+CONFIG_ATTACH = "results.setting.config_attach"
+CONFIG_DETACH = "results.setting.config_detach"
 
 MODULE_OFF = "❌ The Results & Standings module is not enabled on this server."
 
@@ -401,19 +404,125 @@ def _config_import(modules: "ModuleService") -> Setting:
     )
 
 
+async def _setup_season_refusal(
+    ctx: CheckContext, seasons: "SeasonService", *, attaching: bool
+) -> str | None:
+    """Why the season the request named cannot take its points configurations changed, or None.
+
+    The season is the server's latest, as the commands have always found it; one that is no
+    longer the one asked about (a newer season began meanwhile) is not in setup either. Only a
+    season in setup takes an attachment or a detachment.
+    """
+    season = await seasons.get_season_for_server()
+    if season is None:
+        return "\u274c No season found for this server."
+    if season.id != int(ctx.payload["season_id"]) or season.status is not SeasonStatus.SETUP:
+        return (
+            "\u274c Config attachment is only allowed for seasons in SETUP."
+            if attaching
+            else "\u274c Config detachment is only allowed for seasons in SETUP."
+        )
+    return None
+
+
+def _config_attach(modules: "ModuleService", seasons: "SeasonService") -> Setting:
+    """`/results config append`: a configuration the server holds, attached to the season in setup.
+
+    The season's status is judged before the name, so a season under way is refused for being
+    under way whatever was typed (#132: a name the store does not hold is refused, naming the
+    way out, since nothing below the check can tell a typo from a configuration).
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        if not await modules.is_results_enabled():
+            return Verdict.refuse(MODULE_OFF)
+        refusal = await _setup_season_refusal(ctx, seasons, attaching=True)
+        if refusal is not None:
+            return Verdict.refuse(refusal)
+        name = str(ctx.payload["config"])
+        if not await points_config_service.config_exists(ctx.db_path, name):
+            return Verdict.refuse(
+                f"\u274c Config **{name}** does not exist on this server, so nothing was "
+                "attached. Check the spelling, or create it with `/results config add`."
+            )
+        return Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        saved = await season_points_service.attach_config_on(
+            db, int(payload["season_id"]), str(payload["config"])
+        )
+        return dataclasses.replace(
+            saved, outcome="Success", details=(f"config: {payload['config']}",)
+        )
+
+    def reply(payload: dict[str, Any], _results: Any) -> str:
+        return f"\u2705 Config **{payload['config']}** attached to the current season."
+
+    return Setting(
+        kind=CONFIG_ATTACH,
+        command=lambda _payload: "/results config append",
+        doing=lambda payload: f"Attaching config **{payload['config']}** to the current season",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("season_points_links",),
+    )
+
+
+def _config_detach(modules: "ModuleService", seasons: "SeasonService") -> Setting:
+    """`/results config detach`: a configuration taken off the season in setup.
+
+    A name the season does not hold is "Nothing changed", not a refusal.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        if not await modules.is_results_enabled():
+            return Verdict.refuse(MODULE_OFF)
+        refusal = await _setup_season_refusal(ctx, seasons, attaching=False)
+        if refusal is not None:
+            return Verdict.refuse(refusal)
+        return Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        name = str(payload["config"])
+        saved = await season_points_service.detach_config_on(db, int(payload["season_id"]), name)
+        if not saved.changed:
+            return dataclasses.replace(
+                saved, details=(f"config: {name}", "reason: it was not attached")
+            )
+        return dataclasses.replace(saved, details=(f"config: {name}",))
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        name = payload["config"]
+        if not results[SAVE]["changed"]:
+            return _nothing_changed(f"Config **{name}** is not attached to this season.")
+        return f"\u2705 Config **{name}** detached from the current season."
+
+    return Setting(
+        kind=CONFIG_DETACH,
+        command=lambda _payload: "/results config detach",
+        doing=lambda payload: f"Detaching config **{payload['config']}** from the current season",
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("season_points_links",),
+    )
+
+
 def points_settings(*, modules: "ModuleService", seasons: "SeasonService") -> tuple[Setting, ...]:
     """The points configurations' settings: the services are read through those handed in."""
-    del seasons  # handed now for the settings that read the season (the append, the detach)
     return (
         _config_add(modules),
         _config_remove(modules),
         _config_points(modules),
         _config_fastest_lap(modules),
         _config_import(modules),
+        _config_attach(modules, seasons),
+        _config_detach(modules, seasons),
     )
 
 
 __all__ = [
-    "CONFIG_ADD", "CONFIG_FASTEST_LAP", "CONFIG_IMPORT", "CONFIG_POINTS", "CONFIG_REMOVE",
-    "MODULE_OFF", "points_settings",
+    "CONFIG_ADD", "CONFIG_ATTACH", "CONFIG_DETACH", "CONFIG_FASTEST_LAP", "CONFIG_IMPORT",
+    "CONFIG_POINTS", "CONFIG_REMOVE", "MODULE_OFF", "points_settings",
 ]
