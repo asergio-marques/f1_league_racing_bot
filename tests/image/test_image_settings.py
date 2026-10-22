@@ -937,6 +937,29 @@ async def test_two_presses_of_an_output_toggle_while_the_first_waits_are_one_cha
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_an_output_toggle_found_already_switched_when_it_runs_changes_nothing(tmp_path):
+    """Image :180, a flip resolved when asked: `/images config toggle Calendar` with the calendar
+    off asks to switch it on. Before the change runs the calendar is switched on (written here
+    as a change that started before the ask would leave it). When it runs it finds the calendar
+    already on: it changes nothing and says so, never switching it back off, with one "Nothing
+    changed" line and no audit entry."""
+    league = await _league(tmp_path)
+
+    asked = await _toggle()(league)
+    await _write(league.db_path, "UPDATE image_aspect_toggles SET enabled = 1 WHERE aspect = 'calendar'")
+    await run_queue(league.bot)
+
+    reply = last_said(asked)
+    assert reply.startswith("ℹ️ Nothing changed: "), reply
+    assert "Calendar" in reply and "already **on**" in reply
+    assert await _rows(league.db_path, CALENDAR_SWITCH) == [(1,)]
+    assert await audit_rows(league.db_path) == []
+    lines = await log_lines(league)
+    assert len(lines) == 1
+    assert lines[0].split("\n")[0] == f"{NAMED} | /images config toggle | Nothing changed"
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sub_toggle_whose_partner_was_switched_off_ahead_is_refused_when_it_runs(tmp_path):
     """Portraits obtained from Discord with both updates on: `prerender-toggle` asked to turn
     pre-render updates off, then `daily-toggle` asked to turn daily updates off while pre-render
