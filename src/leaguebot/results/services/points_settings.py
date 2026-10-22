@@ -8,6 +8,10 @@ run at the ask and again as the change starts, so a configuration removed, a mod
 a season taken up by a change ahead of it on the queue is taken into account. Every check refuses
 first where the results module is off.
 
+`results.setting.reserves` is `/results reserves toggle`: the payload names the division
+(`division_id`, and `division` as typed) and the state asked for (`shown`), the flip having been
+resolved when the command was asked.
+
 A name typed is held to the rules every name is held to in the command, at once, before it is
 asked (`NAME.check`); a change's check judges only the state.
 
@@ -29,8 +33,13 @@ from leaguebot.core.models.change import Verdict
 from leaguebot.core.services.change_queue import CheckContext
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
+from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services import (
+    points_config_service,
+    results_post_service,
+    season_points_service,
+)
 from leaguebot.results.services.points_config_service import (
     BLOCKS_APPROVAL,
     STANDS_BLOCKS_APPROVAL,
@@ -50,6 +59,7 @@ CONFIG_FASTEST_LAP = "results.setting.config_fastest_lap"
 CONFIG_IMPORT = "results.setting.config_import"
 CONFIG_ATTACH = "results.setting.config_attach"
 CONFIG_DETACH = "results.setting.config_detach"
+RESERVES = "results.setting.reserves"
 
 MODULE_OFF = "❌ The Results & Standings module is not enabled on this server."
 
@@ -509,6 +519,64 @@ def _config_detach(modules: "ModuleService", seasons: "SeasonService") -> Settin
     )
 
 
+def _reserves(modules: "ModuleService", seasons: "SeasonService") -> Setting:
+    """`/results reserves toggle`: whether a division of the live season shows its reserves.
+
+    The flip was resolved when the command was asked (`shown` is the state asked for), so a
+    division found already in that state when the change runs, two presses having raced,
+    changes nothing and says so.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        if not await modules.is_results_enabled():
+            return Verdict.refuse(MODULE_OFF)
+        season = await seasons.get_setup_or_active_season()
+        if season is None:
+            return Verdict.refuse(str(stage_refusal(None, "results reserves toggle")))
+        refusal = stage_refusal(season.stage, "results reserves toggle")
+        if refusal is not None:
+            return Verdict.refuse(refusal)
+        division_id = int(ctx.payload["division_id"])
+        if not any(d.id == division_id for d in await seasons.get_divisions(season.id)):
+            return Verdict.refuse(f"\u274c Division '{ctx.payload['division']}' not found.")
+        return Verdict.go()
+
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        shown = bool(payload["shown"])
+        saved = await results_post_service.set_reserves_in_standings_on(
+            db, int(payload["division_id"]), shown
+        )
+        return dataclasses.replace(
+            saved,
+            details=(
+                f"division: {payload['division']}",
+                f"reserves_in_standings: {'visible' if shown else 'hidden'}",
+            ),
+        )
+
+    def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        state = "visible" if payload["shown"] else "hidden"
+        if not results[SAVE]["changed"]:
+            return _nothing_changed(
+                f"Nothing changed: reserve visibility for **{payload['division']}** is "
+                f"already **{state}**."
+            )
+        return f"\u2705 Reserve visibility for **{payload['division']}** set to **{state}**."
+
+    return Setting(
+        kind=RESERVES,
+        command=lambda _payload: "/results reserves toggle",
+        doing=lambda payload: (
+            f"Setting reserve visibility for **{payload['division']}** to "
+            f"**{'visible' if payload['shown'] else 'hidden'}**"
+        ),
+        check=check,
+        save=save,
+        reply=reply,
+        writes=("division_results_config",),
+    )
+
+
 def points_settings(*, modules: "ModuleService", seasons: "SeasonService") -> tuple[Setting, ...]:
     """The points configurations' settings: the services are read through those handed in."""
     return (
@@ -519,10 +587,11 @@ def points_settings(*, modules: "ModuleService", seasons: "SeasonService") -> tu
         _config_import(modules),
         _config_attach(modules, seasons),
         _config_detach(modules, seasons),
+        _reserves(modules, seasons),
     )
 
 
 __all__ = [
     "CONFIG_ADD", "CONFIG_ATTACH", "CONFIG_DETACH", "CONFIG_FASTEST_LAP", "CONFIG_IMPORT",
-    "CONFIG_POINTS", "CONFIG_REMOVE", "MODULE_OFF", "points_settings",
+    "CONFIG_POINTS", "CONFIG_REMOVE", "MODULE_OFF", "RESERVES", "points_settings",
 ]
