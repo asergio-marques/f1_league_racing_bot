@@ -17,18 +17,6 @@ from leaguebot.results.utils.points_ordering import ordering_message, ordering_v
 log = logging.getLogger(__name__)
 
 
-class SeasonNotInSetupError(Exception):
-    pass
-
-
-class ConfigAlreadyAttachedError(Exception):
-    pass
-
-
-class ConfigNotAttachedError(Exception):
-    pass
-
-
 class StagedPointsNotApprovable(Exception):
     """The staged points cannot be installed, and nothing was written (#507).
 
@@ -94,51 +82,6 @@ async def detach_config_on(db: aiosqlite.Connection, season_id: int, config_name
     )
 
 
-async def attach_config(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    season_status: str,
-) -> None:
-    """Attach one of the league's points configurations to a season in setup.
-
-    Raises :class:`points_config_service.ConfigNotFoundError` for a name the server's store
-    does not hold. **The check is here because nothing below it can make one** (#132):
-    ``season_points_links.config_name`` is bare ``TEXT`` with no foreign key, so a mistyped
-    name inserts as happily as a real one and is reported as attached by `/season placements-review`.
-    The first thing that ever noticed was the snapshot at approval, which raised in the
-    middle of a deferred command — and with no error handler on the tree, said nothing at
-    all. Refusing at the moment the name is typed is the only place the manager still knows
-    what they meant.
-    """
-    if season_status != "SETUP":
-        raise SeasonNotInSetupError(
-            f"Config attachment is only allowed for seasons in SETUP (status: {season_status})"
-        )
-    if not await points_config_service.config_exists(db_path, config_name):
-        raise points_config_service.ConfigNotFoundError(config_name)
-    async with get_connection(db_path) as db:
-        await attach_config_on(db, season_id, config_name)
-        await db.commit()
-
-
-async def detach_config(
-    db_path: str,
-    season_id: int,
-    config_name: str,
-    season_status: str,
-) -> None:
-    if season_status != "SETUP":
-        raise SeasonNotInSetupError(
-            f"Config detachment is only allowed for seasons in SETUP (status: {season_status})"
-        )
-    async with get_connection(db_path) as db:
-        saved = await detach_config_on(db, season_id, config_name)
-        await db.commit()
-        if not saved.changed:
-            raise ConfigNotAttachedError(config_name)
-
-
 async def get_attached_config_names(db_path: str, season_id: int) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -155,7 +98,7 @@ async def missing_attached_configs(
 ) -> list[str]:
     """Every name this season is linked to that the server's points store does not hold.
 
-    `attach_config` refuses to make such a link, but two doors are still open to one: a
+    the attach setting's check refuses to make such a link, but two doors are still open to one: a
     database written before that refusal existed, and `/results config remove`, which takes
     the configuration out from under any season that is not in setup. So the approval gate
     reads this rather than trusting the attachment to have been checked.

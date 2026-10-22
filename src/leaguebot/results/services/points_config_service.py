@@ -97,8 +97,8 @@ async def create_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
 async def config_exists(db_path: str, config_name: str) -> bool:
     """Whether the league's points store holds a configuration under this name.
 
-    Asked by :func:`season_points_service.attach_config`, which records a season's link to a
-    configuration by name into a column carrying no foreign key. Nothing beneath it objects
+    Asked by the attach setting's check, which asks before a season's link to a configuration is
+    recorded by name into a column carrying no foreign key. Nothing beneath it objects
     to a name that was never created, so the check has to be made above (#132).
     """
     async with get_connection(db_path) as db:
