@@ -769,6 +769,44 @@ async def test_two_presses_of_the_amendment_toggle_while_the_first_waits_are_one
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_an_amendment_toggle_found_already_on_when_it_runs_changes_nothing(tmp_path):
+    """A flip resolved when asked: `/results amend toggle` with the mode off asks to turn it on.
+    Before the change runs the mode is turned on (written here as a change that started before
+    the ask would leave it: the flag set and the season's points copied into the store). When it
+    runs it finds the mode already on: it changes nothing and says so, never turning it back
+    off, with one "Nothing changed" line and no audit entry."""
+    league = await _league(tmp_path, **ACTIVE)
+
+    asked = await CASES["amend-toggle-on"].ask(league)
+    assert said(asked)[0].startswith("⏳ Turning amendment mode on. ")
+    for table, columns in (("entries", "position, points"),
+                           ("fl", "fl_points, fl_position_limit")):
+        await _write(
+            league.db_path,
+            f"INSERT INTO season_modification_{table} (season_id, config_name, session_type, "
+            f"{columns}) SELECT season_id, config_name, session_type, {columns} "
+            f"FROM season_points_{table}",
+        )
+    await _write(
+        league.db_path,
+        "INSERT INTO season_amendment_state (season_id, amendment_active, modified_flag) "
+        "VALUES (?, 1, 0)",
+        SEASON_ID,
+    )
+    await run_queue(league.bot)
+
+    reply = last_said(asked)
+    assert reply.startswith("ℹ️ Nothing changed: "), reply
+    assert "amendment mode" in reply.lower() and "already **on**" in reply
+    assert await _rows(league.db_path, MODE) == [(1, 0)]
+    assert await _rows(league.db_path, STAGED) == [(1, 25), (2, 18)]
+    assert await audit_rows(league.db_path) == []
+    lines = await log_lines(league)
+    assert len(lines) == 1
+    assert lines[0].split("\n")[0] == f"{NAMED} | /results amend toggle | Nothing changed"
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_ordering_warning_is_judged_on_the_table_the_change_left(tmp_path):
     """`/results config session` P1 → 20 is asked, then P2 → 24, in order with the P1 of 25
     held when asked: the second is acknowledged, and once both run, P2 above P1 leaves the table
@@ -954,6 +992,31 @@ async def test_reserve_visibility_flips_from_the_state_read_when_asked(tmp_path)
 
     assert last_said(asked) == "✅ Reserve visibility for **Pro** set to **visible**."
     assert await _rows(league.db_path, RESERVES) == [(1,)]
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_reserves_toggle_found_already_switched_when_it_runs_changes_nothing(tmp_path):
+    """A flip resolved when asked: `/results reserves toggle Pro` with Pro's reserves hidden asks
+    to show them. Before the change runs they are shown (written here as a change that started
+    before the ask would leave them). When it runs it finds them already visible: it changes
+    nothing and says so, never hiding them again, with one "Nothing changed" line and no audit
+    entry."""
+    league = await _league(tmp_path, **ACTIVE)
+    await _write(league.db_path, "UPDATE division_results_config SET reserves_in_standings = 0")
+
+    asked = await CASES["reserves-toggle"].ask(league)
+    assert said(asked)[0].startswith("⏳ Setting reserve visibility for **Pro** to **visible**. ")
+    await _write(league.db_path, "UPDATE division_results_config SET reserves_in_standings = 1")
+    await run_queue(league.bot)
+
+    reply = last_said(asked)
+    assert reply.startswith("ℹ️ Nothing changed: "), reply
+    assert "**Pro**" in reply and "already **visible**" in reply
+    assert await _rows(league.db_path, RESERVES) == [(1,)]
+    assert await audit_rows(league.db_path) == []
+    lines = await log_lines(league)
+    assert len(lines) == 1
+    assert lines[0].split("\n")[0] == f"{NAMED} | /results reserves toggle | Nothing changed"
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)

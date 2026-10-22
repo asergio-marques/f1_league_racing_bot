@@ -993,6 +993,49 @@ async def test_an_output_toggle_found_already_switched_when_it_runs_changes_noth
 
 
 @pytest.mark.xfail(strict=True, reason=UNBUILT)
+@pytest.mark.parametrize(
+    ("method", "command", "column", "label", "setup", "state"),
+    [
+        ("use_pfp_toggle", "images use-pfp toggle", "use_pfp", "Discord profile pictures",
+         {}, "on"),
+        ("use_pfp_prerender_toggle", "images use-pfp prerender-toggle", "pfp_prerender",
+         "Pre-render portrait updates", {"use_pfp": 1, "pfp_prerender": 0, "pfp_daily": 1}, "on"),
+        ("use_pfp_daily_toggle", "images use-pfp daily-toggle", "pfp_daily",
+         "Daily driver-portrait updates", BOTH_UPDATES, "off"),
+    ],
+    ids=["toggle", "prerender-toggle", "daily-toggle"],
+)
+async def test_a_portrait_toggle_found_already_switched_when_it_runs_changes_nothing(
+    tmp_path, method, command, column, label, setup, state
+):
+    """Image :180 for each `/images use-pfp` toggle, a flip resolved when asked: `toggle` with
+    portraits off and `prerender-toggle` with pre-render updates off each ask to turn theirs on;
+    `daily-toggle`, whose turning on opens the time form rather than asking a flip, is taken
+    with daily updates on, asking to turn them off. Before the change runs the setting is put
+    where it asks (written here as a change that started before the ask would leave it). When it
+    runs it finds it already there: it changes nothing and says so, never flipping it back, with
+    one "Nothing changed" line, no audit entry, and the daily job neither armed nor removed."""
+    league = await _league(tmp_path, **setup)
+    wanted = int(state == "on")
+
+    asked = await _slash(method, command)(league)
+    assert said(asked)[0].startswith(f"⏳ Turning **{label}** {state}. ")
+    await _write(league.db_path, f"UPDATE image_config SET {column} = ?", wanted)
+    await run_queue(league.bot)
+
+    reply = last_said(asked)
+    assert reply.startswith("ℹ️ Nothing changed: "), reply
+    assert label in reply and f"already **{state}**" in reply
+    assert await _rows(league.db_path, _column(column)) == [(wanted,)]
+    assert await audit_rows(league.db_path) == []
+    league.scheduler.schedule_portrait_refresh.assert_not_called()
+    league.scheduler.cancel_portrait_refresh.assert_not_called()
+    lines = await log_lines(league)
+    assert len(lines) == 1
+    assert lines[0].split("\n")[0] == f"{NAMED} | /{command} | Nothing changed"
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sub_toggle_whose_partner_was_switched_off_ahead_is_refused_when_it_runs(tmp_path):
     """Portraits obtained from Discord with both updates on: `prerender-toggle` asked to turn
     pre-render updates off, then `daily-toggle` asked to turn daily updates off while pre-render
