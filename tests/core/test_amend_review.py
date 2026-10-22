@@ -54,6 +54,7 @@ from leaguebot.core.models.season import SeasonStage
 # otherwise bind the mock for the rest of the session and break every later test of the change.
 import leaguebot.results.services.points_amendment_change  # noqa: F401
 from leaguebot.results.cogs.results_cog import ResultsCog
+from tests.support.saves import amendment_readers
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 12108
@@ -235,7 +236,7 @@ async def _review(
     discord.ui.View.wait = _wait  # type: ignore[assignment]
     try:
         with patch(
-            "leaguebot.core.services.amendment_service.get_amendment_state",
+            f"{amendment_readers()}.get_amendment_state",
             new=AsyncMock(return_value=state),
         ), patch(
             "leaguebot.core.services.amendment_service.get_modification_store_diff",

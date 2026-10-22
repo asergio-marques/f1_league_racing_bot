@@ -235,6 +235,22 @@ async def modify_fl_position_limit(db_path: str, season_id: int, config_name: st
     await _commit(db_path, form, season_id, config_name, session_type, fl_position_limit=limit)
 
 
+def amendment_readers() -> str:
+    """The module the amendment mode's readers live in, for a test that reads or patches them.
+
+    The build moves `get_amendment_state`, `staged_position_points`, `staged_fastest_lap` and
+    `modification_ordering_warnings` from core to results unchanged; the commands look each up
+    there at call time, so a patch must name results' module once it holds them, and core's
+    until then.
+    """
+    return AMENDMENT_MODE if _on_form(AMENDMENT_MODE, "get_amendment_state") else AMENDMENT
+
+
+async def get_amendment_state(db_path: str, season_id: int) -> Any:
+    """The season's amendment state, read from wherever `amendment_readers` finds the reader."""
+    return await _today(amendment_readers(), "get_amendment_state")(db_path, season_id)
+
+
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
