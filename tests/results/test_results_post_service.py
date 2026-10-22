@@ -1104,7 +1104,6 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     assert await _stored() == stored
 
 
-@pytest.mark.xfail(strict=True, reason="#439: results_post_service has no public reserves reader yet")
 async def test_the_public_reserves_reader_defaults_to_shown(tmp_path):
     """The public reserves reader, on a database built by the migrations, reads a division with
     no results configuration as showing its reserves, and one whose reserves are hidden as not."""
