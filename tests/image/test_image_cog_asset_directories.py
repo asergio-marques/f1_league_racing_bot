@@ -11,71 +11,77 @@ things separate them from `template-directory`, which used to share it:
   exactly as it was. Rejecting at the moment of configuration is the point: the manager is
   present and holding the files, where a render failure at the next scheduled post is not.
 
-The commands are exercised through the shared body rather than through the decorated
-callbacks, which are wrapped by `@league_manager_only` and cannot be
-invoked without a gateway.
+Each command runs on the change queue (#439, slice 7): it is driven past its permission guard on
+a league built by the migrations, with the real image services and the real queue, which the
+test runs; the member's reply is the acknowledgement's update, and the lines are those the log
+channel took and those the queue saved.
 """
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS
-from leaguebot.core.utils.paths import PathContainmentError
+from tests.support.change_queue import run_queue
 from tests.support.image_cog_doubles import (
     assert_one_line,
     assert_one_refusal,
     interaction as _interaction,
     log_bot,
-    logged,
     said,
 )
+from tests.support.settings_league import settings_league
+from tests.support.undecorate import undecorate
+
+#: Why a test here fails until the image settings run on the change queue.
+UNBUILT = "#439: the image settings do not run on the change queue yet"
+#: A folder inside the project root that is not there yet.
+NOT_YET = "resources/league/not-there-yet"
+#: A path inside the project root that is a file, not a folder.
+A_FILE = "resources/README.md"
 
 
-
-def _cog(monkeypatch, *, resolved: Path | None = None, contained=True):
-    """The cog, unbound, with the module on and a store that reports each value as a change.
-
-    Replies go through the real `_reply`, so a refusal and a success are read off the
-    interaction alike; the bot carries the log channel the lines are recorded in.
-    """
-    cog = MagicMock(spec=ImageCog)
-    cog.bot = log_bot()
-    cog._config_service = MagicMock()
-    cog._config_service.set_field = AsyncMock(return_value=True)
-    cog._module_gate = AsyncMock(return_value=True)
-    cog._reply = ImageCog._reply
-
-    import leaguebot.core.utils.paths as paths
-
-    if contained:
-        monkeypatch.setattr(
-            paths, "resolve_within_project_root", lambda value, root=None: resolved
-        )
-    else:
-        def _refuse(value, root=None):
-            raise PathContainmentError(value, Path("/elsewhere"))
-
-        monkeypatch.setattr(paths, "resolve_within_project_root", _refuse)
-
-    import leaguebot.image.cogs.image_cog as cog_module
-
-    monkeypatch.setattr(cog_module, "relative_to_root", lambda r: "resources/league/mine")
-    return cog
+async def _league(tmp_path, *, modules=("images",)) -> Any:
+    """A league with *modules* on and the image configuration's defaults; its bot is
+    `log_bot`'s real-queue form."""
+    league = await settings_league(tmp_path, modules=modules)
+    log_bot(league)
+    return league
 
 
 def _command(column: str) -> str:
     return f"images config {ASSET_DIRECTORIES[column][0]}"
 
 
-async def _run(cog, column="division_logo_directory", label="Division logos"):
-    """Run the command for *column*; returns the interaction, which holds every reply."""
-    interaction = _interaction(_command(column), bot=cog.bot)
-    await ImageCog._set_directory(cog, interaction, column, "resources/league/mine", label)
+def _packaged(column: str) -> str:
+    """The folder the bot ships for *column*'s class, which exists."""
+    return ASSET_DIRECTORIES[column][2]
+
+
+async def _run(league, column="division_logo_directory", value=None):
+    """Run the command for *column* given *value* (the class's packaged folder by default),
+    then the queue; returns the interaction, which holds every reply."""
+    name = ASSET_DIRECTORIES[column][0]
+    interaction = _interaction(_command(column), bot=league.bot)
+    method = getattr(ImageCog, f"config_{name.replace('-', '_')}")
+    await undecorate(method)(
+        ImageCog(league.bot), interaction, directory=value or _packaged(column)
+    )
+    await run_queue(league.bot)
     return interaction
+
+
+async def _stored(league, column="division_logo_directory") -> str:
+    async with get_connection(league.db_path) as db:
+        return (await (await db.execute(f"SELECT {column} FROM image_config")).fetchone())[0]
+
+
+def _acknowledged(interaction) -> None:
+    """Acknowledged at once as under way, before anything else was said."""
+    assert interaction.said and interaction.said[0].startswith("⏳ "), interaction.said
 
 
 # ── every class reaches the same body ─────────────────────────────────────
@@ -112,73 +118,77 @@ def test_the_config_group_stays_inside_the_discord_ceiling():
 # ── an artwork folder that is not there yet is accepted ───────────────────
 
 
-async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(
-    monkeypatch, tmp_path
-):
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(tmp_path):
     """The difference from `template-directory`, and the reason for two bodies.
 
     Every class has a packaged second tier, so an empty folder still draws every graphic.
-    Refusing it would stop a league naming where its artwork is *going* to live.
+    Refusing it would stop a league naming where its artwork is *going* to live. Acknowledged
+    at once; once run, the folder is stored and the reply warns that nothing is there yet.
     """
-    cog = _cog(monkeypatch, resolved=tmp_path / "not-yet")
+    league = await _league(tmp_path)
 
-    interaction = await _run(cog)
+    interaction = await _run(league, value=NOT_YET)
 
-    cog._config_service.set_field.assert_awaited_once_with(
-        "division_logo_directory", "resources/league/mine"
-    )
-    assert "Nothing is there yet" in said(interaction)
-    assert "✅ **Division logos** set to" in said(interaction)
-
-
-async def test_a_folder_that_exists_reports_that_it_resolves(monkeypatch, tmp_path):
-    """And records one success line naming the command itself, the folder set beneath."""
-    cog = _cog(monkeypatch, resolved=tmp_path)
-
-    interaction = await _run(cog)
-
-    assert "✅ Resolves." in said(interaction)
-    details = assert_one_line(cog.bot, "images config division-logo-directory")
-    assert any("resources/league/mine" in detail for detail in details), details
+    _acknowledged(interaction)
+    assert await _stored(league) == NOT_YET
+    assert "Nothing is there yet" in interaction.said[-1]
+    assert "✅ **Division logos** set to" in interaction.said[-1]
 
 
-async def test_a_path_that_is_a_file_is_stored_but_called_out(monkeypatch, tmp_path):
-    target = tmp_path / "a-file.svg"
-    target.write_bytes(b"<svg/>")
-    cog = _cog(monkeypatch, resolved=target)
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_folder_that_exists_reports_that_it_resolves(tmp_path):
+    """Acknowledged at once; once run, the reply says it resolves, and one success line,
+    saved with the folder, names the command itself, the folder set beneath."""
+    league = await _league(tmp_path)
 
-    interaction = await _run(cog)
+    interaction = await _run(league)
 
-    assert "not a directory" in said(interaction)
+    _acknowledged(interaction)
+    assert "✅ Resolves." in interaction.said[-1]
+    details = assert_one_line(league.bot, "images config division-logo-directory")
+    packaged = _packaged("division_logo_directory")
+    assert any(packaged in detail for detail in details), details
+
+
+@pytest.mark.xfail(strict=True, reason=UNBUILT)
+async def test_a_path_that_is_a_file_is_stored_but_called_out(tmp_path):
+    """Acknowledged at once; once run, the path is stored and the reply calls it out as not
+    a directory."""
+    league = await _league(tmp_path)
+
+    interaction = await _run(league, value=A_FILE)
+
+    _acknowledged(interaction)
+    assert await _stored(league) == A_FILE
+    assert "not a directory" in interaction.said[-1]
 
 
 # ── containment ───────────────────────────────────────────────────────────
 
 
-async def test_a_path_escaping_the_project_root_is_refused_and_stores_nothing(
-    monkeypatch,
-):
-    """The stored value must be left alone, not overwritten with something unusable; the
-    refusal is recorded as one "⛔" line naming the command."""
-    cog = _cog(monkeypatch, contained=False)
+async def test_a_path_escaping_the_project_root_is_refused_and_stores_nothing(tmp_path):
+    """Refused at once: the stored value must be left alone, not overwritten with something
+    unusable; the refusal is recorded as one "⛔" line naming the command."""
+    league = await _league(tmp_path)
+    before = await _stored(league)
 
-    interaction = await _run(cog)
+    interaction = await _run(league, value="../elsewhere")
 
-    cog._config_service.set_field.assert_not_awaited()
+    assert await _stored(league) == before
     assert "The stored value is unchanged." in said(interaction)
-    assert_one_refusal(cog.bot, "`/images config division-logo-directory`")
+    assert_one_refusal(league.bot, "`/images config division-logo-directory`")
 
 
-async def test_nothing_is_stored_while_the_module_is_disabled(monkeypatch, tmp_path):
-    """The gate answers and records its own refusal; the body adds nothing to either."""
-    cog = _cog(monkeypatch, resolved=tmp_path)
-    cog._module_gate = AsyncMock(return_value=False)
+async def test_nothing_is_stored_while_the_module_is_disabled(tmp_path):
+    """Refused at once with the module's refusal, said once, and one "⛔" line naming the
+    command; nothing is stored."""
+    league = await _league(tmp_path, modules=())
 
-    interaction = await _run(cog)
+    interaction = await _run(league)
 
-    cog._config_service.set_field.assert_not_awaited()
-    assert interaction.said == []
-    assert logged(cog.bot) == []
+    assert len(interaction.said) == 1 and "not enabled" in interaction.said[0], interaction.said
+    assert_one_refusal(league.bot, "`/images config division-logo-directory`")
 
 
 # ── the label reaches the manager, per class ──────────────────────────────
@@ -187,10 +197,11 @@ async def test_nothing_is_stored_while_the_module_is_disabled(monkeypatch, tmp_p
 @pytest.mark.parametrize(
     "column", sorted(ASSET_DIRECTORIES), ids=sorted(ASSET_DIRECTORIES)
 )
-async def test_each_class_names_itself_in_the_confirmation(monkeypatch, tmp_path, column):
-    """A manager setting eight folders in a row needs to know which one just moved."""
-    cog = _cog(monkeypatch, resolved=tmp_path)
+async def test_each_class_names_itself_in_the_confirmation(tmp_path, column):
+    """A manager setting eight folders in a row needs to know which one just moved: the reply,
+    once the change has run, names the class."""
+    league = await _league(tmp_path)
 
-    interaction = await _run(cog, column=column, label=ASSET_LABELS[column])
+    interaction = await _run(league, column=column)
 
-    assert ASSET_LABELS[column] in said(interaction)
+    assert ASSET_LABELS[column] in interaction.said[-1]
