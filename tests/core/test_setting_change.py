@@ -275,7 +275,6 @@ async def test_the_line_names_the_member_the_command_and_the_values_beneath(env)
     assert await _value(env) == 6
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_value_held_when_asked_is_set_when_a_change_ahead_moved_it(env):
     """Held 5: 6 is asked, then 5 while 6 waits. 5 is not refused for being held when asked, and
     once 6 has run it sets 5 again."""
@@ -299,7 +298,6 @@ async def test_a_value_held_when_asked_is_set_when_a_change_ahead_moved_it(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_request_its_check_refuses_is_refused_at_once_and_nothing_is_queued(env):
     _league(env)
     env.knobs["refuse"] = True
@@ -313,7 +311,6 @@ async def test_a_request_its_check_refuses_is_refused_at_once_and_nothing_is_que
     assert await _value(env) == 5
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_setting_its_check_refuses_when_it_runs_is_refused_and_says_why(env):
     _league(env)
     interaction = member_interaction(env.bot)
@@ -329,7 +326,6 @@ async def test_a_setting_its_check_refuses_when_it_runs_is_refused_and_says_why(
     assert await _audits(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_same_setting_to_the_same_value_while_it_waits_is_refused_as_a_repeat(env):
     _league(env)
     second = member_interaction(env.bot)
@@ -344,7 +340,6 @@ async def test_the_same_setting_to_the_same_value_while_it_waits_is_refused_as_a
     assert len(await change_rows(env.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_same_setting_to_another_value_while_it_waits_is_queued_behind_it(env):
     _league(env)
 
@@ -359,7 +354,6 @@ async def test_the_same_setting_to_another_value_while_it_waits_is_queued_behind
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_acknowledgement_names_what_is_being_set(env):
     """The member is told at once what is being set; a command that deferred is told through a
     follow-up, and that message is updated with the outcome."""
@@ -415,7 +409,6 @@ async def test_a_fault_in_the_save_saves_nothing_says_to_run_it_again_and_the_la
     assert [(a[1], a[2]) for a in await _audits(env)] == [({"value": 5}, {"value": 7})]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_setting_s_own_not_saved_words_replace_the_generic_ones(env):
     _league(env, not_saved=PASTE_NOT_SAVED)
     env.knobs["save_faults"] = 1
@@ -428,7 +421,6 @@ async def test_a_setting_s_own_not_saved_words_replace_the_generic_ones(env):
     assert await _value(env) == 5
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_steps_after_the_save_run_only_when_it_changed_something(env):
     """The save hands back its steps after it either way; they are planned only where it changed
     the value."""
@@ -538,7 +530,6 @@ async def test_a_check_fault_when_the_setting_runs_says_nothing_was_saved_record
     assert await _value(env) == 7
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_setting_writing_a_table_it_does_not_declare_saves_nothing(env):
     """The queue's authoriser refuses the write to a table the setting does not declare; the save
     is ended by its fault path, nothing of it kept, and the lane goes on."""
