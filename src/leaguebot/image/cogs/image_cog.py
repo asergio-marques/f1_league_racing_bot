@@ -28,27 +28,29 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_LABELS,
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
-from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
+from leaguebot.image.services.image_config_service import tier_name_refusal
 from leaguebot.image.services.image_settings import (
     ASPECT,
+    DAILY_PORTRAITS,
+    DAILY_TOGGLE,
     DIRECTORY,
     FASTEST_LAP_COLOUR,
     PER_TIER,
+    PORTRAITS,
     PRESENTATION,
     TEMPLATE,
     TEMPLATE_DIRECTORY,
     TIER_COLOURS,
     TIER_IMPORT,
+    daily_portraits_refusal,
 )
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import (
     describe as describe_command,
     describe_form,
-    report_failure,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.paths import (
     PathContainmentError,
@@ -115,7 +117,9 @@ class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
         # The form may have stood open while another manager changed the module or the setting,
         # and a confirmation offered for a change that can no longer be made would only be
         # refused at the end of it.
-        stale = await self._cog.daily_portraits_refusal(form=True)
+        stale = await daily_portraits_refusal(
+            modules=self._cog.bot.module_service, config=self._cog._config_service, form=True
+        )
         if stale is not None:
             await refuse(interaction, stale, what=what)
             return
@@ -127,10 +131,6 @@ class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
             view=PortraitTimeConfirm(self._cog, normalised, interaction),
             ephemeral=True,
         )
-
-
-#: The command the portrait confirmation belongs to, as the log channel names it.
-DAILY_TOGGLE = "/images use-pfp daily-toggle"
 
 
 class PortraitTimeConfirm(LeagueView):
@@ -184,7 +184,12 @@ class PortraitTimeConfirm(LeagueView):
             return
         try:
             await self._take_down(interaction.response.edit_message)
-            await self._cog.commit_daily_portraits(interaction, self._normalised)
+            await self._cog.bot.change_queue.ask(
+                DAILY_PORTRAITS,
+                {"time": self._normalised},
+                interaction=interaction,
+                what=f"`{DAILY_TOGGLE}`",
+            )
         finally:
             self.stop()
 
@@ -306,39 +311,6 @@ async def _module_still_on(cog, interaction: discord.Interaction, form: discord.
     return False
 
 
-def _command(interaction: discord.Interaction) -> str:
-    """The slash command *interaction* ran, as a success line names it: "/images config view"."""
-    return describe_command(interaction).strip("`")
-
-
-async def _record(
-    bot: LeagueBot,
-    interaction: discord.Interaction,
-    what: str,
-    outcome: str,
-    *details: str,
-) -> None:
-    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
-
-    For a success and for nothing changed; *what* is the command as the line names it,
-    "/images config time-zone". The post is bare: a line reporting that nothing went wrong
-    is no place for a catch-all, so a post that raises reaches the command's error handling.
-    A refusal, a cancel, a lapse and a fault have lines of their own
-    (`core/utils/log_lines.py`, `report_failure`).
-    """
-    await bot.output_router.post_log(
-        f"{interaction_member(interaction)} | {what} | {outcome}"
-        + "".join(f"\n  {detail}" for detail in details)
-    )
-
-
-#: What a failure to schedule the daily portrait job says became of the change: the setting is
-#: stored before the job is scheduled, and the start-up recovery arms it.
-DAILY_JOB_NOT_SCHEDULED = (
-    "The setting is stored, and the daily job will be scheduled when the bot next starts."
-)
-
-
 class ImageCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -420,18 +392,6 @@ class ImageCog(commands.Cog):
                 await interaction.followup.send(part, ephemeral=True)
             else:
                 await interaction.response.send_message(part, ephemeral=True)
-
-    async def _already_held(
-        self, interaction: discord.Interaction, setting: str, value: str, detail: str
-    ) -> None:
-        """Answer a setting given the value it already holds: nothing is changed or written.
-
-        The reply says so in the form results and attendance use, and one "Nothing changed"
-        line records it, with *detail* beneath. Only a command that would otherwise have been
-        carried out gets here: every refusal has been made first.
-        """
-        await self._reply(interaction, f"ℹ️ Nothing changed: {setting} is already **{value}**.")
-        await _record(self.bot, interaction, _command(interaction), "Nothing changed", detail)
 
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str
@@ -542,85 +502,6 @@ class ImageCog(commands.Cog):
             return None
         return config
 
-    async def _apply_pfp_flag(
-        self, interaction: discord.Interaction, config, column: str, enabled: bool, label: str
-    ) -> bool:
-        """Write one toggle, or refuse and leave the configuration as it stood."""
-        refusal = pfp_change_refusal(config, column, enabled)
-        if refusal is not None:
-            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
-            return False
-
-        await self._config_service.set_pfp_flag(column, enabled)
-        await self._pfp_flag_written(interaction, label, enabled)
-        return True
-
-    async def _pfp_flag_written(
-        self, interaction: discord.Interaction, label: str, enabled: bool
-    ) -> None:
-        """Tell the member a toggle is written, and record it under the command that ran."""
-        state = "enabled" if enabled else "disabled"
-        await self._reply(interaction, f"{'✅' if enabled else '❌'} **{label}** {state}.")
-        await _record(
-            self.bot, interaction, _command(interaction), "Success", f"{label}: {state}"
-        )
-
-    async def daily_portraits_refusal(self, *, form: bool) -> str | None:
-        """Why daily portrait updates can no longer be enabled, or None if they still can.
-
-        Asked again when the time-of-day form is submitted and when its confirmation is
-        pressed, since either may have stood open while another manager switched the module
-        or portraits off, or enabled the daily updates. *form* says which is asking, so that
-        a confirmation does not call itself a form.
-        """
-        if not await self.bot.module_service.is_images_enabled():
-            return (
-                f"❌ The Image module was switched off while this {'form ' if form else ''}"
-                f"was open. Nothing was stored."
-            )
-        config = await self._config_service.get_config()
-        if config is None or not config.use_pfp:
-            return (
-                "❌ Driver portraits stopped being obtained from Discord while this was open. "
-                "Nothing was changed."
-            )
-        if config.pfp_daily:
-            return (
-                "ℹ️ Daily driver-portrait updates were already enabled while this was open. "
-                "Nothing was changed."
-            )
-        return None
-
-    async def commit_daily_portraits(
-        self, interaction: discord.Interaction, normalised: str
-    ) -> None:
-        """Enable the daily refresh at *normalised* UTC and arm the scheduled job.
-
-        The job is armed before the member is told anything, so that one that cannot be armed
-        is a failure with the setting stored, which start-up recovery arms on the next restart.
-        """
-        what = f"`{DAILY_TOGGLE}`"
-        stale = await self.daily_portraits_refusal(form=False)
-        if stale is not None:
-            await refuse(interaction, stale, what=what)
-            return
-
-        await self._config_service.set_field("pfp_daily_time", normalised)
-        await self._config_service.set_pfp_flag("pfp_daily", True)
-        try:
-            self.bot.scheduler_service.schedule_portrait_refresh(normalised)
-        except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
-            await report_failure(interaction, exc, what=what, outcome=DAILY_JOB_NOT_SCHEDULED)
-            return
-        await self._reply(
-            interaction,
-            f"✅ **Daily driver-portrait updates** enabled, running at "
-            f"**{normalised} UTC** each day.",
-        )
-        await _record(
-            self.bot, interaction, DAILY_TOGGLE, "Success", f"Time of day: {normalised} UTC"
-        )
-
     @use_pfp.command(
         name="toggle",
         description="Obtain driver portraits from their Discord profile pictures.",
@@ -639,34 +520,15 @@ class ImageCog(commands.Cog):
             )
             return
 
-        enabling = not config.use_pfp
-        refusal = pfp_change_refusal(config, "use_pfp", enabling)
-        if refusal is not None:
-            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
-            return
-
-        await self._config_service.set_pfp_flag("use_pfp", enabling)
-
-        # The daily job is armed by the master toggle as well as by its own, so that turning
-        # the feature off stops the fetching rather than leaving a job running against a
-        # setting that says no. The job is scheduled before the member is told anything: a
-        # job that cannot be scheduled is a failure, with the setting stored, and not a
-        # success followed by an apology.
-        if enabling and config.pfp_daily:
-            try:
-                self.bot.scheduler_service.schedule_portrait_refresh(config.pfp_daily_time)
-            except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
-                await report_failure(
-                    interaction,
-                    exc,
-                    what=describe_command(interaction),
-                    outcome=DAILY_JOB_NOT_SCHEDULED,
-                )
-                return
-        elif not enabling:
-            self.bot.scheduler_service.cancel_portrait_refresh()
-
-        await self._pfp_flag_written(interaction, "Discord profile pictures", enabling)
+        # The flip is resolved here, as the member saw the state; the daily job follows the
+        # save as a job of its own (`image_settings`), so a job that cannot be scheduled is a
+        # failure with the setting stored, and not a success followed by an apology.
+        await self.bot.change_queue.ask(
+            PORTRAITS,
+            {"column": "use_pfp", "enabled": not config.use_pfp},
+            interaction=interaction,
+            what=describe_command(interaction),
+        )
 
     @use_pfp.command(
         name="prerender-toggle",
@@ -677,12 +539,11 @@ class ImageCog(commands.Cog):
         config = await self._guard_portraits_enabled(interaction)
         if config is None:
             return
-        await self._apply_pfp_flag(
-            interaction,
-            config,
-            "pfp_prerender",
-            not config.pfp_prerender,
-            "Pre-render portrait updates",
+        await self.bot.change_queue.ask(
+            PORTRAITS,
+            {"column": "pfp_prerender", "enabled": not config.pfp_prerender},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @use_pfp.command(
@@ -697,12 +558,12 @@ class ImageCog(commands.Cog):
 
         if config.pfp_daily:
             # Turning it off needs no time and therefore no modal.
-            if await self._apply_pfp_flag(
-                interaction, config, "pfp_daily", False, "Daily driver-portrait updates"
-            ):
-                self.bot.scheduler_service.cancel_portrait_refresh(
-
-                )
+            await self.bot.change_queue.ask(
+                PORTRAITS,
+                {"column": "pfp_daily", "enabled": False},
+                interaction=interaction,
+                what=describe_command(interaction),
+            )
             return
 
         # A modal must be the initial response, so nothing above this may defer.

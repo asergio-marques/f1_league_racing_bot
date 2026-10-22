@@ -623,7 +623,6 @@ async def test_a_fault_in_a_pasted_palette_s_save_saves_none_of_it_says_paste_it
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["portraits-master", "portraits-prerender", "portraits-daily-off"])
 async def test_each_portrait_toggle_saves_with_its_audit_entry_and_line(tmp_path, route):
     """`/images use-pfp toggle` turning portraits on (daily updates off, so nothing is armed),
@@ -633,7 +632,6 @@ async def test_each_portrait_toggle_saves_with_its_audit_entry_and_line(tmp_path
     await _saves_with_record(tmp_path, CASES[route])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_daily_portraits_saves_the_time_and_the_flag_in_one_save(tmp_path):
     """✅ Confirm on daily portrait updates at 04:30 UTC, portraits obtained from Discord: once
     run, the time and the flag are stored, with one `IMAGE_CONFIG_SET` entry holding both, the
@@ -727,7 +725,6 @@ async def test_an_output_whose_drawings_broke_meanwhile_is_refused_when_it_runs_
     assert "Calendar: the drawing file can't be found" in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
     """✅ Confirm on daily updates at 04:30: the save stores the time and the flag without
     arming the job or writing the Success line; the job after it arms the job at 04:30 and
@@ -748,7 +745,6 @@ async def test_the_daily_job_is_armed_by_a_job_after_the_save(tmp_path):
     assert (await log_lines(league)).count(success) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("route", ["confirm", "master-toggle"])
 async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lane_goes_on(
     tmp_path, route
@@ -785,7 +781,6 @@ async def test_a_daily_job_that_cannot_be_armed_is_reported_as_today_and_the_lan
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_stop_after_daily_portraits_are_saved_arms_the_job_when_the_change_carries_on(
     tmp_path
 ):
@@ -810,7 +805,6 @@ async def test_a_stop_after_daily_portraits_are_saved_arms_the_job_when_the_chan
     assert [row["state"] for row in await change_rows(league.db_path)] == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_portraits_off_removes_the_daily_job_after_the_save(tmp_path):
     """`/images use-pfp toggle` turning portraits off, daily updates on: the save stores the
     switch without touching the daily job; the job after it removes the daily job, once, and
@@ -829,7 +823,6 @@ async def test_turning_portraits_off_removes_the_daily_job_after_the_save(tmp_pa
     assert last_said(asked) == "❌ **Discord profile pictures** disabled."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(tmp_path):
     """`/images use-pfp daily-toggle` turning daily updates off, the scheduler refusing to remove
     the job: the setting stays off, the reply is the success followed by a note that the job
@@ -853,7 +846,6 @@ async def test_a_daily_job_that_cannot_be_removed_says_so_and_the_lane_goes_on(t
     assert last_said(behind) == "✅ Clock format set to **12-hour (2:30 PM)**."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_portraits_off_when_the_daily_job_cannot_be_removed_says_so_and_the_lane_goes_on(
     tmp_path
 ):
@@ -1005,7 +997,6 @@ async def test_an_output_toggle_found_already_switched_when_it_runs_changes_noth
     assert lines[0].split("\n")[0] == f"{NAMED} | /images config toggle | Nothing changed"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     ("method", "command", "column", "label", "setup", "state"),
     [
@@ -1048,7 +1039,6 @@ async def test_a_portrait_toggle_found_already_switched_when_it_runs_changes_not
     assert lines[0].split("\n")[0] == f"{NAMED} | /{command} | Nothing changed"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_sub_toggle_whose_partner_was_switched_off_ahead_is_refused_when_it_runs(tmp_path):
     """Portraits obtained from Discord with both updates on: `prerender-toggle` asked to turn
     pre-render updates off, then `daily-toggle` asked to turn daily updates off while pre-render
@@ -1077,7 +1067,6 @@ async def test_a_sub_toggle_whose_partner_was_switched_off_ahead_is_refused_when
 KINDS = {case.kind: name for name, case in reversed(list(CASES.items()))}
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("kind", sorted(KINDS))
 async def test_the_image_settings_are_acknowledged_naming_what_is_set(tmp_path, kind):
     """One command, form, import or button of each of the eleven image settings is answered

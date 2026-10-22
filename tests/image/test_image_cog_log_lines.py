@@ -42,8 +42,6 @@ from tests.support.image_cog_doubles import (
 from tests.support.settings_league import audit_rows, settings_league
 from tests.support.undecorate import undecorate
 
-#: Why a test here fails until the image settings run on the change queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
 
 
 def _commands() -> list[app_commands.Command]:
@@ -533,7 +531,6 @@ def _audited_by_the_member(audits: list[dict[str, Any]]) -> None:
         assert audit["actor_id"] == 42, audit
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("name, arguments, config, values", SUCCESSES)
 async def test_a_success_records_one_line_naming_its_own_command(
     tmp_path, name, arguments, config, values
@@ -554,7 +551,6 @@ async def test_a_success_records_one_line_naming_its_own_command(
     _audited_by_the_member(await audit_rows(league.db_path))
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_confirming_daily_portraits_records_one_line_naming_the_command(tmp_path):
     """The Confirm's line names `/images use-pfp daily-toggle`, the command that opened the
     form, with the time set beneath, once the daily job is armed."""
@@ -678,7 +674,6 @@ HELD = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("name, arguments, config, values", HELD)
 async def test_a_value_already_held_changes_nothing(tmp_path, name, arguments, config, values):
     """Acknowledged at once; once run, nothing is written, the reply says "Nothing changed",
