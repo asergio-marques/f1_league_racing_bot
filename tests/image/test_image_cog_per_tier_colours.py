@@ -165,7 +165,6 @@ def _not_asked(asked) -> None:
 # ── The toggle ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_toggle_stores_what_it_was_given(tmp_path):
     league = await _league(tmp_path)
 
@@ -175,7 +174,6 @@ async def test_the_toggle_stores_what_it_was_given(tmp_path):
     assert await _per_tier(league) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_it_on_reports_what_is_still_wanted(tmp_path):
     """The moment the shortfall becomes real is the moment to say so: read once the colour
     setting is saved."""
@@ -188,7 +186,6 @@ async def test_turning_it_on_reports_what_is_still_wanted(tmp_path):
     assert "accent" in reply and "Division 1" in reply and "calendar_template" in reply, reply
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_it_on_with_everything_set_says_so(tmp_path):
     league = await _league(tmp_path)
 
@@ -198,7 +195,6 @@ async def test_turning_it_on_with_everything_set_says_so(tmp_path):
     assert "every tier" in asked.said[-1].lower(), asked.said
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_turning_it_off_demands_nothing(tmp_path):
     league = await _league(tmp_path, per_tier=True, shortfall=WANTED)
 
@@ -224,7 +220,6 @@ async def test_nothing_is_stored_while_the_module_is_disabled(tmp_path):
 # ── Setting a colour ──────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_colour_is_stored_canonically(tmp_path):
     league = await _league(tmp_path, declared={"accent"})
 
@@ -257,7 +252,6 @@ async def test_a_malformed_slot_stores_nothing(slot, tmp_path):
     assert "Nothing was stored" in said(asked)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_slot_no_template_marks_is_stored_and_called_out(tmp_path):
     """Stored, because a slot may be set before the template that uses it is drawn."""
     league = await _league(tmp_path, declared={"wash"})
@@ -269,7 +263,6 @@ async def test_a_slot_no_template_marks_is_stored_and_called_out(tmp_path):
     assert "No template of yours marks" in asked.said[-1], asked.said
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_slot_a_template_marks_is_not_called_out(tmp_path):
     league = await _league(tmp_path, declared={"accent"})
 
@@ -279,7 +272,6 @@ async def test_a_slot_a_template_marks_is_not_called_out(tmp_path):
     assert "No template of yours marks" not in said(asked)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_storing_while_the_feature_is_off_says_it_will_not_draw(tmp_path):
     league = await _league(tmp_path, per_tier=False, declared={"accent"})
 
@@ -290,7 +282,6 @@ async def test_storing_while_the_feature_is_off_says_it_will_not_draw(tmp_path):
     assert "off" in reply and "per-tier-colour-toggle" in reply, reply
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_storing_while_the_feature_is_on_says_nothing_of_the_sort(tmp_path):
     league = await _league(tmp_path, per_tier=True, declared={"accent"})
 
@@ -385,7 +376,6 @@ def test_the_service_exposes_what_the_commands_call():
 # ── Bulk paste and XML import ─────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_clean_block_is_stored(tmp_path):
     league = await _league(tmp_path, declared={"accent", "ink"})
 
@@ -417,7 +407,6 @@ async def test_every_bad_line_is_named_not_just_the_first(tmp_path):
     assert said(submitted).count("•") == 3
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_bulk_slot_no_template_marks_is_called_out(tmp_path):
     league = await _league(tmp_path, declared={"accent"})
 
@@ -436,7 +425,6 @@ TWO_TIERS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_good_xml_import_stores_every_block(tmp_path):
     league = await _league(tmp_path)
 
@@ -447,7 +435,6 @@ async def test_a_good_xml_import_stores_every_block(tmp_path):
     assert "2 tier(s)" in asked.said[-1], asked.said
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_rejected_block_does_not_stop_the_others(tmp_path):
     """The decision: one mistyped tier does not cost a league the rest of the import."""
     league = await _league(tmp_path)
@@ -475,7 +462,6 @@ async def test_unreadable_xml_stores_nothing(tmp_path):
     assert "Nothing was stored" in said(asked)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_import_is_always_logged(tmp_path):
     """One success line naming `/images config colour-xml-import`, each tier beneath, saved
     once the change has run."""
@@ -569,7 +555,6 @@ async def test_the_bulk_form_refuses_a_division_name_with_no_letter_or_digit(tmp
     assert_one_refusal(league.bot, "the “Set one tier's colours” form")
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_import_passes_over_a_division_name_with_no_letter_or_digit(tmp_path):
     """Passed over with the other rejected blocks; the tiers beside it are still stored."""
     league = await _league(tmp_path)
@@ -589,7 +574,6 @@ async def test_the_import_passes_over_a_division_name_with_no_letter_or_digit(tm
     assert any(UNSTORABLE in detail for detail in details), details
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_an_import_naming_one_tier_twice_under_two_spellings_stores_only_the_first(
     tmp_path,
 ):

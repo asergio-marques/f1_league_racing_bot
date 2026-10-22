@@ -577,7 +577,6 @@ async def test_confirming_daily_portraits_records_one_line_naming_the_command(tm
     _audited_by_the_member(await audit_rows(league.db_path))
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_pasted_palette_records_one_line_naming_the_command_that_opened_its_form(
     tmp_path,
 ):
@@ -594,7 +593,6 @@ async def test_a_pasted_palette_records_one_line_naming_the_command_that_opened_
     assert len(await audit_rows(league.db_path)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_part_applied_import_lists_the_blocks_it_passed_over(tmp_path):
     """A7: acknowledged, then one Success line, the tier stored beneath and "passed over:"
     naming the block that could not be read; the reply names it too."""
@@ -702,7 +700,6 @@ async def test_a_value_already_held_changes_nothing(tmp_path, name, arguments, c
         assert _carries(details, forms), (forms, details)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_per_tier_colours_already_on_say_nothing_changed_alone(tmp_path):
     """Turning per-tier colours on when they are already on lists no missing colour, though
     the calendar, switched on, declares colours no tier holds: the owner's decision of
@@ -721,7 +718,6 @@ async def test_per_tier_colours_already_on_say_nothing_changed_alone(tmp_path):
     assert_one_line(league.bot, "images config per-tier-colour-toggle", "Nothing changed")
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_pasted_palette_already_held_changes_nothing(tmp_path):
     """Every colour in the pasted palette is already the tier's: once run, the form's reply
     says so, the line names the command that opened it, and no audit entry is saved."""
@@ -735,7 +731,6 @@ async def test_a_pasted_palette_already_held_changes_nothing(tmp_path):
     assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
     "document, passed_over",
     [

@@ -21,7 +21,6 @@ from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
-    ASPECTS,
     ASSET_LABELS,
     PENDING_POSTING_ASPECTS,
     TEMPLATE_COLUMNS,
@@ -34,13 +33,12 @@ from leaguebot.image.services.image_settings import (
     ASPECT,
     DIRECTORY,
     FASTEST_LAP_COLOUR,
+    PER_TIER,
     PRESENTATION,
     TEMPLATE,
     TEMPLATE_DIRECTORY,
-)
-from leaguebot.image.services.image_setting_advice import (
-    colour_shortfall_lines,
-    declared_colour_slots,
+    TIER_COLOURS,
+    TIER_IMPORT,
 )
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import (
@@ -1099,23 +1097,13 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        state = "on" if enable else "off"
-        if not await self._config_service.set_flag("per_tier_colour_enabled", enable):
-            await self._already_held(
-                interaction,
-                "the per-tier colours setting",
-                state,
-                f"Per-tier colours: {state}",
-            )
-            return
-        lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
-
-        lines += await colour_shortfall_lines(self._validity_service, enable)
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Per-tier colours: {'on' if enable else 'off'}",
+        # The colour shortfall switching on reports is the setting's advice, read after the
+        # save; a setting found already as asked when it runs changes nothing and says so.
+        await self.bot.change_queue.ask(
+            PER_TIER,
+            {"enabled": enable},
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config.command(
@@ -1137,9 +1125,9 @@ class ImageCog(commands.Cog):
         self, interaction, division: str, slot: str, colour: str
     ) -> None:
         """Shared body for the setter. See `_set_per_tier_colours` for why it is split."""
-        # Whether any template marks the slot comes from `declared_colour_slots`, which
-        # reads `template_reports` and so the whole sixteen-template sweep. Deferred first,
-        # as `config_toggle` is, so the refusals below answer on the followup too.
+        # Whether any template marks the slot is the setting's advice, read after the save from
+        # `template_reports` and so the whole sixteen-template sweep. Deferred first, as
+        # `config_toggle` is, so the refusals below answer on the followup too.
         await interaction.response.defer(ephemeral=True)
 
         if not await self._module_gate(interaction):
@@ -1173,39 +1161,17 @@ class ImageCog(commands.Cog):
             )
             return
 
-        if not await self._config_service.set_tier_colour(
-            division, canonical_slot, canonical_colour
-        ):
-            await self._already_held(
-                interaction,
-                f"`{canonical_slot}` for **{division}**",
-                f"`{canonical_colour}`",
-                f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
-            )
-            return
-        lines = [f"✅ **{division}** — `{canonical_slot}` set to `{canonical_colour}`."]
-
-        # A slot no template marks is stored all the same and merely reported, exactly as
-        # an unmeasurable fastest-lap contrast is: the input is the league's, and a slot
-        # may reasonably be set before the template that uses it is drawn.
-        declared = await declared_colour_slots(self._validity_service)
-        if canonical_slot not in declared:
-            lines.append(
-                f"ℹ️ No template of yours marks `{canonical_slot}` yet, so nothing will "
-                f"change until one does."
-            )
-
-        config = await self._config_service.get_config()
-        if config is not None and not config.per_tier_colour_enabled:
-            lines.append(
-                "ℹ️ Per-tier colours are **off**, so this is stored but not drawn. "
-                "Turn them on with `/images config per-tier-colour-toggle`."
-            )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, _command(interaction), "Success",
-            f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
+        # What no template marks, and per-tier colours being off, are said after the save, once
+        # the templates have been read: the slot is stored all the same.
+        await self.bot.change_queue.ask(
+            TIER_COLOURS,
+            {
+                "division": division,
+                "colours": {canonical_slot: canonical_colour},
+                "form": False,
+            },
+            interaction=interaction,
+            what=describe_command(interaction),
         )
 
     @config.command(
@@ -1256,38 +1222,11 @@ class ImageCog(commands.Cog):
             )
             return
 
-        written = await self._config_service.set_tier_colours(
-            division, colours
-        )
-        if not written:
-            await self._reply(
-                interaction,
-                f"ℹ️ Nothing changed: every colour named is already held for **{division}**.",
-            )
-            await _record(
-                self.bot, interaction, "/images config per-tier-bulk-colour", "Nothing changed",
-                f"Tier colours: {division}",
-                *(f"{slot} = {colour}" for slot, colour in colours.items()),
-            )
-            return
-        held = ""
-        if written < len(colours):
-            held = f" ({written} changed, {len(colours) - written} already held)"
-        lines = [f"✅ **{division}** — {len(colours)} colour(s) set{held}."]
-        lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
-
-        declared = await declared_colour_slots(self._validity_service)
-        unknown = sorted(set(colours) - declared)
-        if unknown:
-            lines.append(
-                f"ℹ️ No template of yours marks {', '.join(f'`{s}`' for s in unknown)} yet."
-            )
-
-        await self._reply(interaction, "\n".join(lines))
-        await _record(
-            self.bot, interaction, "/images config per-tier-bulk-colour", "Success",
-            f"Tier colours: {division}",
-            *(f"{slot} = {colour}" for slot, colour in colours.items()),
+        await self.bot.change_queue.ask(
+            TIER_COLOURS,
+            {"division": division, "colours": colours, "form": True},
+            interaction=interaction,
+            what=describe_form(form) if form is not None else describe_command(interaction),
         )
 
     @config.command(
@@ -1380,38 +1319,17 @@ class ImageCog(commands.Cog):
             )
             return
 
-        written = 0
-        for block in blocks:
-            written += await self._config_service.set_tier_colours(
-                block.division, block.colours
-            )
-        named = sum(len(b.colours) for b in blocks)
-
-        lines = []
-        if blocks and not written:
-            lines.append("ℹ️ Nothing changed: every colour named is already held.")
-        elif blocks:
-            held = ""
-            if written < named:
-                held = f" ({written} changed, {named - written} already held)"
-            lines.append(
-                f"✅ Imported {named} colour(s) across {len(blocks)} tier(s){held}."
-            )
-            lines += [
-                f"  • **{b.division}** — {len(b.colours)} colour(s)" for b in blocks
-            ]
-        if problems:
-            lines.append(f"⚠️ {len(problems)} block(s) were not imported:")
-            lines += [f"  • {problem}" for problem in problems]
-
-        await self._reply(interaction, "\n".join(lines))
-        details = [f"{b.division}: {len(b.colours)} colour(s)" for b in blocks]
-        if problems:
-            details.append("passed over:")
-            details += [f"  {problem}" for problem in problems]
-        await _record(
-            self.bot, interaction, "/images config colour-xml-import",
-            "Success" if written else "Nothing changed", *details,
+        await self.bot.change_queue.ask(
+            TIER_IMPORT,
+            {
+                "blocks": [
+                    {"division": block.division, "colours": dict(block.colours)}
+                    for block in blocks
+                ],
+                "passed_over": list(problems),
+            },
+            interaction=interaction,
+            what=describe_form(form) if form is not None else describe_command(interaction),
         )
 
     @config.command(

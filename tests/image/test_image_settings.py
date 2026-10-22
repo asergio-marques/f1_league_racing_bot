@@ -549,14 +549,12 @@ async def test_the_fastest_lap_colour_saves_with_its_audit_entry_and_line(tmp_pa
     await _saves_with_record(tmp_path, CASES["fastest-lap-colour"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_per_tier_colours_toggle_saves_with_its_audit_entry_and_line(tmp_path):
     """`/images config per-tier-colour-toggle True`: once run, per-tier colours are on, with one
     `IMAGE_CONFIG_SET` entry from off to on, and its Success line."""
     await _saves_with_record(tmp_path, CASES["per-tier-toggle"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_tier_colour_saves_with_its_audit_entry_and_line(tmp_path):
     """`/images config per-tier-set-colour Division 1 accent #A78BFA`: once run, the colour is
     stored for division_1, with one `IMAGE_TIER_COLOUR_SET` entry naming the division and the
@@ -564,7 +562,6 @@ async def test_a_tier_colour_saves_with_its_audit_entry_and_line(tmp_path):
     await _saves_with_record(tmp_path, CASES["tier-colour"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_pasted_palette_saves_each_colour_changed_with_its_audit_entry_and_one_line(
     tmp_path
 ):
@@ -598,7 +595,6 @@ async def test_a_colour_import_saves_every_tier_in_one_save_with_its_audit_entri
     await _saves_with_record(tmp_path / "again", CASES["tier-import"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_fault_in_a_pasted_palette_s_save_saves_none_of_it_says_paste_it_again_and_the_lane_goes_on(
     tmp_path
 ):

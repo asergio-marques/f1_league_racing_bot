@@ -47,8 +47,6 @@ from tests.support.settings_league import record_followups, settings_league
 from tests.support.undecorate import undecorate
 
 TOGGLE = "images config toggle"
-#: Why a test here fails until the image settings run on the change queue.
-UNBUILT = "#439: the image settings do not run on the change queue yet"
 #: Whether the calendar output is switched on.
 CALENDAR_SWITCH = "SELECT enabled FROM image_aspect_toggles WHERE aspect = 'calendar'"
 
@@ -313,18 +311,7 @@ REPLY_PATHS = {
 }
 
 
-#: The changes asked that already run on the queue, so no longer marked as failing.
-ON_THE_QUEUE = {"fastest-lap-colour, stored"}
-
-
-def _reply_path(name: str) -> Any:
-    """*name* as a case, a change asked marked as failing until it runs on the queue."""
-    if REPLY_PATHS[name][-1] and name not in ON_THE_QUEUE:
-        return pytest.param(name, id=name, marks=pytest.mark.xfail(strict=True, reason=UNBUILT))
-    return pytest.param(name, id=name)
-
-
-@pytest.mark.parametrize("path", [_reply_path(name) for name in sorted(REPLY_PATHS)])
+@pytest.mark.parametrize("path", sorted(REPLY_PATHS))
 async def test_every_reply_after_the_defer_goes_to_the_followup(path, tmp_path):
     images_enabled, seed, command, drive, phrase, asked = REPLY_PATHS[path]
     league = await _league(tmp_path, modules=("images",) if images_enabled else ())
