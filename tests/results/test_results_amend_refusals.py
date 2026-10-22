@@ -1,4 +1,4 @@
-"""Every refusal of `/results amend` toggle, revert, session, fl and fl-plimit is recorded (#482).
+"""Every refusal of `/results amend` toggle, revert, session, fl and fl-plimit is recorded (#482; #439, slice 7).
 
 The rule is the core specification's "The record of what changed": a refusal is recorded as one
 line naming the member, what was refused and why. Each case runs one of the commands against a
@@ -6,136 +6,87 @@ running season in a state the bot turns it away in — amendment mode off, or on
 staged when the manager asks to switch it off — and expects today's reply, seen by the manager
 alone, and exactly one standard refusal line.
 
-The season's points and its amendment state live in a real database built from the production
-migrations, so a case holds whatever the command reads before it refuses.
+The commands ask a change on the queue, checked at the ask (core :125): where the state when
+asked refuses it, the refusal is given at once and nothing is queued.
+
+The league is built from the production migrations with the real queue, so a case holds whatever
+the command reads before it refuses.
 """
 from __future__ import annotations
 
-import os
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
+from discord import app_commands
 
-from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.amendment_service import enable_amendment_mode
+from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog
+from tests.support import saves
+from tests.support.change_queue import MEMBER_ID, change_rows
+from tests.support.settings_league import interaction, log_lines, said, settings_league
 from tests.support.undecorate import undecorate
 
-ACTOR_ID = 4242
 CONFIG = "100%"
+SEASON_ID = 1
 
 
-async def _db(tmp_path, amendment: str) -> tuple[str, int]:
-    """A running season scored by CONFIG (Feature Race P1 25 pts, fastest lap 1 pt in the top
-    10), its amendment mode *amendment*: "none" never switched on, "off" switched off again,
-    "staged" on with a change staged."""
-    db_path = os.path.join(str(tmp_path), "amend_refusals.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
+async def _league(tmp_path, amendment: str) -> Any:
+    """A league, results alone on, with a running season scored by CONFIG (Feature Race P1
+    25 pts, fastest lap 1 pt in the top 10), its amendment mode *amendment*: "none" never
+    switched on, "off" switched off again, "staged" on with a change staged."""
+    league = await settings_league(tmp_path, modules=("results",))
+    async with get_connection(league.db_path) as db:
         await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
+            "INSERT INTO seasons (id, season_number, start_date, status, stage) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE', 'ONGOING')",
+            (SEASON_ID,),
         )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 1)"
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+            (SEASON_ID, CONFIG),
         )
-        season_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO season_points_entries (season_id, config_name, session_type, "
             "position, points) VALUES (?, ?, 'FEATURE_RACE', 1, 25)",
-            (season_id, CONFIG),
+            (SEASON_ID, CONFIG),
         )
         await db.execute(
             "INSERT INTO season_points_fl (season_id, config_name, session_type, fl_points, "
             "fl_position_limit) VALUES (?, ?, 'FEATURE_RACE', 1, 10)",
-            (season_id, CONFIG),
+            (SEASON_ID, CONFIG),
         )
         await db.commit()
-    assert season_id is not None
     if amendment != "none":
-        await enable_amendment_mode(db_path, season_id)
-        async with get_connection(db_path) as db:
+        await saves.enable_amendment_mode(league.db_path, SEASON_ID)
+        async with get_connection(league.db_path) as db:
             await db.execute(
                 "UPDATE season_amendment_state SET amendment_active = ?, modified_flag = ? "
                 "WHERE season_id = ?",
-                (int(amendment == "staged"), int(amendment == "staged"), season_id),
+                (int(amendment == "staged"), int(amendment == "staged"), SEASON_ID),
             )
             await db.commit()
-    return db_path, season_id
+    return league
 
 
-def _cog(db_path: str, season_id: int) -> ResultsCog:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    bot.season_service.get_setup_or_active_season = AsyncMock(
-        return_value=SimpleNamespace(
-            id=season_id, season_number=1, status="ACTIVE", stage=SeasonStage.ONGOING
-        )
-    )
-    bot.output_router.post_log = AsyncMock(return_value=None)
-    cog = ResultsCog.__new__(ResultsCog)
-    cog.bot = bot
-    return cog
+_RACE = app_commands.Choice(name="Feature Race", value="FEATURE_RACE")
 
 
-def _interaction(cog: ResultsCog, command: str):
-    """`/<command>` run by the league manager Alex, answering as Discord's does."""
-    state = {"done": False}
-
-    async def _answer(*_args, **_kwargs):
-        state["done"] = True
-
-    interaction = MagicMock()
-    interaction.client = cog.bot
-    interaction.command.qualified_name = command
-    interaction.user.id = ACTOR_ID
-    interaction.user.display_name = "Alex"
-    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
-    interaction.response.send_message = AsyncMock(side_effect=_answer)
-    interaction.response.defer = AsyncMock(side_effect=_answer)
-    interaction.followup.send = AsyncMock()
-    return interaction
+def _run(method: str, *args: Any):
+    async def run(league: Any, asked: Any) -> None:
+        await undecorate(getattr(ResultsCog, method))(ResultsCog(league.bot), asked, *args)
+    return run
 
 
-_RACE = SimpleNamespace(value="FEATURE_RACE", name="Feature Race")
-
-
-async def _toggle(cog, interaction):
-    await undecorate(ResultsCog.amend_toggle)(cog, interaction)
-
-
-async def _revert(cog, interaction):
-    await undecorate(ResultsCog.amend_revert)(cog, interaction)
-
-
-async def _session(cog, interaction):
-    await undecorate(ResultsCog.amend_session)(cog, interaction, CONFIG, _RACE, 1, 30)
-
-
-async def _fl(cog, interaction):
-    await undecorate(ResultsCog.amend_fl)(cog, interaction, CONFIG, _RACE, 2)
-
-
-async def _plimit(cog, interaction):
-    await undecorate(ResultsCog.amend_fl_plimit)(cog, interaction, CONFIG, _RACE, 8)
-
-
+_toggle = _run("amend_toggle")
+_revert = _run("amend_revert")
+_session = _run("amend_session", CONFIG, _RACE, 1, 30)
+_fl = _run("amend_fl", CONFIG, _RACE, 2)
+_plimit = _run("amend_fl_plimit", CONFIG, _RACE, 8)
 # The same three, asking for the values the store already holds: the refusal comes first
 # (slice 3, decision 23), never "nothing changed".
-async def _session_same(cog, interaction):
-    await undecorate(ResultsCog.amend_session)(cog, interaction, CONFIG, _RACE, 1, 25)
-
-
-async def _fl_same(cog, interaction):
-    await undecorate(ResultsCog.amend_fl)(cog, interaction, CONFIG, _RACE, 1)
-
-
-async def _plimit_same(cog, interaction):
-    await undecorate(ResultsCog.amend_fl_plimit)(cog, interaction, CONFIG, _RACE, 10)
+_session_same = _run("amend_session", CONFIG, _RACE, 1, 25)
+_fl_same = _run("amend_fl", CONFIG, _RACE, 1)
+_plimit_same = _run("amend_fl_plimit", CONFIG, _RACE, 10)
 
 
 _NOT_ACTIVE = "❌ Amendment mode is not active."
@@ -170,24 +121,24 @@ def _case(case_id, command, run, amendment, reply):
     ],
 )
 async def test_every_amend_refusal_is_recorded(tmp_path, command, run, amendment, reply):
-    """The manager Alex is refused as today, nothing is staged or switched, and one line
-    records the refusal and its reason."""
-    db_path, season_id = await _db(tmp_path, amendment)
-    cog = _cog(db_path, season_id)
-    interaction = _interaction(cog, command)
+    """The member Admin is refused at once as today, nothing is queued, staged or switched, and
+    one line records the refusal and its reason."""
+    league = await _league(tmp_path, amendment)
+    asked = interaction(league.bot, command)
 
-    await run(cog, interaction)
+    await run(league, asked)
 
-    interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
+    assert said(asked) == [reply]
+    assert await change_rows(league.db_path) == []
     reason = reply.removeprefix("❌ ")
-    cog.bot.output_router.post_log.assert_awaited_once_with(
-        f"⛔ `/{command}` refused for Alex (<@{ACTOR_ID}>) — {reason}"
-    )
-    async with get_connection(db_path) as db:
+    assert await log_lines(league) == [
+        f"⛔ `/{command}` refused for Admin (`<@{MEMBER_ID}>`) — {reason}"
+    ]
+    async with get_connection(league.db_path) as db:
         cursor = await db.execute(
             "SELECT amendment_active, modified_flag FROM season_amendment_state "
             "WHERE season_id = ?",
-            (season_id,),
+            (SEASON_ID,),
         )
         row = await cursor.fetchone()
     expected = {"none": None, "off": (0, 0), "staged": (1, 1)}[amendment]
