@@ -18,14 +18,18 @@ from discord.ext import commands
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import points_config_service, season_points_service
-from leaguebot.results.services.points_settings import CONFIG_ADD, CONFIG_REMOVE
+from leaguebot.results.services.points_settings import (
+    CONFIG_ADD,
+    CONFIG_FASTEST_LAP,
+    CONFIG_POINTS,
+    CONFIG_REMOVE,
+)
 from leaguebot.results.services.points_config_service import (
     BLOCKS_AMENDMENT,
     BLOCKS_APPROVAL,
     STANDS_BLOCKS_AMENDMENT,
     STANDS_BLOCKS_APPROVAL,
     ConfigNotFoundError,
-    InvalidSessionTypeError,
     ordering_notice,
 )
 from leaguebot.results.services.season_points_service import (
@@ -951,55 +955,16 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-        stands = False
-        try:
-            # The refusal first: a configuration that is not there is refused whatever was
-            # asked, and only a request that could have been carried out can change nothing.
-            stands = points_config_service.values_stand(
-                await points_config_service.held_position_points(
-                    self.bot.db_path, name, SessionType(session.value), position
-                ),
-                {"points": points},
-            )
-            if not stands:
-                await points_config_service.set_session_points(
-                    self.bot.db_path,
-                    name,
-                    SessionType(session.value),
-                    position,
-                    points,
-                )
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
-            return
-        notice = ordering_notice(
-            name,
-            session.name,
-            await points_config_service.ordering_warnings(
-                self.bot.db_path, name, SessionType(session.value)
-            ),
-            STANDS_BLOCKS_APPROVAL if stands else BLOCKS_APPROVAL,
-        )
-        if stands:
-            await self._answer_nothing_changed(
-                interaction,
-                "results config session",
-                f"Nothing changed: **{session.name}** position {position} already awards "
-                f"{points} pts in config **{name}**." + notice,
-                f"config: {name}",
-                f"session: {session.name}, position: {position}, points: {points}",
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Set **{session.name}** position {position} \u2192 {points} pts in config **{name}**."
-            + notice,
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config session | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, position: {position}, points: {points}",
+        await self.bot.change_queue.ask(
+            CONFIG_POINTS,
+            {
+                "config": name,
+                "session": session.value,
+                "pairs": [[position, points]],
+                "bulk": False,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="fl", description="Set the fastest-lap bonus for a race session type.")
@@ -1019,45 +984,11 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if points_config_service.values_stand(
-                await points_config_service.held_fastest_lap(
-                    self.bot.db_path, name, SessionType(session.value)
-                ),
-                {"fl_points": points},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results config fl",
-                    f"Nothing changed: the fastest-lap bonus for **{session.name}** is already "
-                    f"{points} pts "
-                    f"in config **{name}**.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_bonus: {points}",
-                )
-                return
-            await points_config_service.set_fl_bonus(
-                self.bot.db_path, name, SessionType(session.value), points
-            )
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
-            return
-        except InvalidSessionTypeError:
-            await refuse(
-                interaction,
-                "\u274c Fastest-lap bonus cannot be set for qualifying sessions.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Set fastest-lap bonus for **{session.name}** \u2192 {points} pts in config **{name}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_bonus: {points}",
+        await self.bot.change_queue.ask(
+            CONFIG_FASTEST_LAP,
+            {"config": name, "session": session.value, "fl_points": points},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="fl-plimit", description="Set the position eligibility limit for fastest-lap bonus.")
@@ -1077,44 +1008,11 @@ class ResultsCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if points_config_service.values_stand(
-                await points_config_service.held_fastest_lap(
-                    self.bot.db_path, name, SessionType(session.value)
-                ),
-                {"fl_position_limit": limit},
-            ):
-                await self._answer_nothing_changed(
-                    interaction,
-                    "results config fl-plimit",
-                    f"Nothing changed: the fastest-lap position limit for **{session.name}** is already "
-                    f"top {limit} in config **{name}**.",
-                    f"config: {name}",
-                    f"session: {session.name}, fl_position_limit: {limit}",
-                )
-                return
-            await points_config_service.set_fl_position_limit(
-                self.bot.db_path, name, SessionType(session.value), limit
-            )
-        except ConfigNotFoundError:
-            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
-            return
-        except InvalidSessionTypeError:
-            await refuse(
-                interaction,
-                "\u274c Position limit cannot be set for qualifying sessions.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.followup.send(
-            f"\u2705 Set fastest-lap position limit for **{session.name}** \u2192 top {limit} eligible in config **{name}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl-plimit | Success\n"
-            f"  config: {name}\n"
-            f"  session: {session.name}, fl_position_limit: {limit}",
+        await self.bot.change_queue.ask(
+            CONFIG_FASTEST_LAP,
+            {"config": name, "session": session.value, "fl_position_limit": limit},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @config_group.command(name="append", description="Attach a server config to the current season in SETUP.")

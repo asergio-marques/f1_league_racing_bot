@@ -197,7 +197,6 @@ async def _session(league, *, name: str = CONFIG, position: int = 1, points: int
     return await _run(league, "session", "config_session", name, choice, position, points)
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_position_s_points_are_set(tmp_path):
     """Admin sets Feature Race P1 to 25 in 100%: acknowledged at once, and once the change has
     run the table holds it and the reply names the position."""

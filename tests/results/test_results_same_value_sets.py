@@ -131,7 +131,6 @@ async def _assert_nothing_changed(league, asked, command: str) -> None:
     assert CONFIG in line
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize("command", sorted(_CONFIG_SETS))
 async def test_a_config_set_to_the_value_it_holds_changes_nothing(tmp_path, command):
     """100% gives 25 pts for a Feature Race win and 1 pt for its fastest lap in the top 10.
@@ -206,9 +205,12 @@ async def test_a_revert_with_nothing_staged_records_that_nothing_changed(tmp_pat
     assert await _modified_flag(league.db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 @pytest.mark.parametrize(
-    "command", ["results config session", "results amend session"]
+    "command",
+    [
+        "results config session",
+        pytest.param("results amend session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+    ],
 )
 async def test_a_same_value_set_on_an_out_of_order_table_keeps_the_warning(tmp_path, command):
     """The Feature Race table gives 18 pts for a win and 25 for second, out of order. Admin

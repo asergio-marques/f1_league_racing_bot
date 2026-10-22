@@ -536,21 +536,18 @@ async def test_removing_a_configuration_records_its_whole_table_and_the_seasons_
     assert list(old["fastest_laps"].values()) == [{"fl_points": 1, "fl_position_limit": 10}]
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_setting_a_position_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results config session Standard Feature Race 1 26`: P1 pays 26, one
     `POINTS_CONFIG_SESSION_SET` entry from 25 to 26, and today's Success line."""
     await _saves_with_record(tmp_path, CASES["config-session"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_setting_a_fastest_lap_bonus_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results config fl Standard Feature Race 2`: the bonus is 2, the limit kept at 10, one
     `POINTS_CONFIG_FL_SET` entry from 1 to 2, and today's Success line."""
     await _saves_with_record(tmp_path, CASES["config-fl"])
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_setting_a_fastest_lap_limit_saves_it_with_its_audit_entry_and_line(tmp_path):
     """`/results config fl-plimit Standard Feature Race 8`: the limit is 8, the bonus kept at 1,
     one `POINTS_CONFIG_FL_SET` entry from top 10 to top 8, and today's Success line."""
@@ -674,7 +671,6 @@ async def test_a_results_setting_whose_audit_entry_fails_saves_nothing_and_the_l
     assert last_said(behind) == "✅ Config **Other** created. All positions default to 0 points."
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_a_configuration_removed_ahead_of_a_points_change_refuses_it_when_it_runs(tmp_path):
     """`/results config remove Standard` asked, then `/results config session Standard Feature
     Race 1 26`: the second is acknowledged, and when it runs is refused as not found, nothing
@@ -802,7 +798,6 @@ async def test_an_amendment_toggle_found_already_on_when_it_runs_changes_nothing
     assert lines[0].split("\n")[0] == f"{NAMED} | /results amend toggle | Nothing changed"
 
 
-@pytest.mark.xfail(strict=True, reason=UNBUILT)
 async def test_the_ordering_warning_is_judged_on_the_table_the_change_left(tmp_path):
     """`/results config session` P1 → 20 is asked, then P2 → 24, in order with the P1 of 25
     held when asked: the second is acknowledged, and once both run, P2 above P1 leaves the table
@@ -971,10 +966,10 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
         pytest.param("config-append", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("config-bulk-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("config-detach", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("config-fl", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
-        pytest.param("config-fl-plimit", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-fl",
+        "config-fl-plimit",
         "config-remove",
-        pytest.param("config-session", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
+        "config-session",
         pytest.param("config-xml-import-file", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("config-xml-import-form", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
         pytest.param("reserves-toggle", marks=pytest.mark.xfail(strict=True, reason=UNBUILT)),
