@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import Verdict
+from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.change_queue import CheckContext
 from leaguebot.core.services.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.core.utils.season_gate import stage_refusal
@@ -55,6 +56,11 @@ AMEND_FASTEST_LAP = "results.setting.amend_fastest_lap"
 MODE_NOT_ACTIVE = "❌ Amendment mode is not active."
 NOT_THE_SEASON_ASKED = (
     "❌ The season this was asked for is no longer the current one, so nothing was changed."
+)
+IN_SETUP = (
+    "❌ `/results amend toggle` amends the points of a season under way. A season still being "
+    "set up takes its points from the configurations attached to it: change those with "
+    "`/results config`."
 )
 UNCOMMITTED = (
     "❌ Cannot disable amendment mode — uncommitted changes exist. "
@@ -109,7 +115,8 @@ async def _mode_off(ctx: CheckContext) -> bool:
 def _amend_mode(modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """`/results amend toggle`: the mode turned on or off, as the flip was resolved when asked.
 
-    Turning it off is refused while changes are staged. A mode found already in the state asked
+    It is refused while the season is still in setup, which takes its points from the
+    configurations attached to it. Turning it off is refused while changes are staged. A mode found already in the state asked
     for, where two presses raced, changes nothing and says so.
     """
 
@@ -120,6 +127,9 @@ def _amend_mode(modules: "ModuleService", seasons: "SeasonService") -> Setting:
         refusal = await _gate(ctx, modules, seasons, "results amend toggle")
         if refusal is not None:
             return refusal
+        season = await seasons.get_setup_or_active_season()
+        if season is not None and season.status is SeasonStatus.SETUP:
+            return Verdict.refuse(IN_SETUP)
         if not ctx.payload["active"]:
             state = await amendment_mode_service.get_amendment_state(
                 ctx.db_path, int(ctx.payload["season_id"])

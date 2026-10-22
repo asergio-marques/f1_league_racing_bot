@@ -42,7 +42,6 @@ from tests.support.settings_league import (
 from tests.support.undecorate import undecorate
 
 #: Why the fold-ins' tests fail until each is built.
-SETUP_TOGGLE = "#439: /results amend toggle is not refused while the season is in setup yet"
 RANGES = "#439: the single-value points commands do not check their ranges yet"
 NOT_HELD = "#439: the amend commands do not refuse a configuration the season does not hold yet"
 
@@ -1093,7 +1092,6 @@ async def test_an_amend_bulk_paste_of_values_already_staged_leaves_the_modified_
             "❌ `/results amend toggle` amends the points of a season under way. A season still "
             "being set up takes its points from the configurations attached to it: change those "
             "with `/results config`.",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_TOGGLE),
         ),
         (None, stage_refusal(None, "results amend toggle")),
         ("pending", stage_refusal(SeasonStage.PENDING_COMPLETION, "results amend toggle")),
